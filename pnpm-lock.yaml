@@ -207,6 +207,9 @@ importers:
       '@types/testing-library__jest-dom':
         specifier: ^6.0.0
         version: 6.0.0
+      baseline-browser-mapping:
+        specifier: ^2.10.0
+        version: 2.10.0
       eslint:
         specifier: ^9.39.3
         version: 9.39.3(jiti@2.6.1)
@@ -265,6 +268,58 @@ importers:
       '@cognia/plugin-sdk':
         specifier: workspace:*
         version: link:../..
+    devDependencies:
+      '@extism/js-pdk':
+        specifier: ^1.1.1
+        version: 1.1.1
+      esbuild:
+        specifier: ^0.20.0
+        version: 0.20.2
+
+  plugins/typescript/android-aab-to-apk:
+    dependencies:
+      '@cognia/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../../plugin-sdk-ts
+    devDependencies:
+      '@extism/js-pdk':
+        specifier: ^1.1.1
+        version: 1.1.1
+      esbuild:
+        specifier: ^0.20.0
+        version: 0.20.2
+
+  plugins/typescript/git-workspace-summary:
+    dependencies:
+      '@cognia/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../../plugin-sdk-ts
+    devDependencies:
+      '@extism/js-pdk':
+        specifier: ^1.1.1
+        version: 1.1.1
+      esbuild:
+        specifier: ^0.20.0
+        version: 0.20.2
+
+  plugins/typescript/local-api-workbench:
+    dependencies:
+      '@cognia/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../../plugin-sdk-ts
+    devDependencies:
+      '@extism/js-pdk':
+        specifier: ^1.1.1
+        version: 1.1.1
+      esbuild:
+        specifier: ^0.20.0
+        version: 0.20.2
+
+  plugins/typescript/port-inspector:
+    dependencies:
+      '@cognia/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../../plugin-sdk-ts
     devDependencies:
       '@extism/js-pdk':
         specifier: ^1.1.1

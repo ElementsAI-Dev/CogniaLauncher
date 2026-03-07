@@ -1,263 +1,333 @@
-import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { OnboardingWizard } from "./onboarding-wizard";
+import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { OnboardingWizard } from './onboarding-wizard';
 
-// ResizeObserver is required by Radix Tooltip's useSize hook
 global.ResizeObserver = class ResizeObserver {
   observe() {}
   unobserve() {}
   disconnect() {}
 } as unknown as typeof ResizeObserver;
 
-jest.mock("@/components/providers/locale-provider", () => ({
+jest.mock('@/components/providers/locale-provider', () => ({
   useLocale: () => ({
-    locale: "en",
+    locale: 'en',
     setLocale: jest.fn(),
     t: (key: string, params?: Record<string, string | number>) => {
       const translations: Record<string, string> = {
-        "onboarding.wizardTitle": "Setup Wizard",
-        "onboarding.wizardDesc": "Get started with CogniaLauncher",
-        "onboarding.stepOf": `Step ${params?.current || 1} of ${params?.total || 7}`,
-        "onboarding.skip": "Skip",
-        "onboarding.back": "Back",
-        "onboarding.next": "Next",
-        "onboarding.finish": "Finish",
-        "onboarding.welcomeTitle": "Welcome",
-        "onboarding.welcomeDesc": "Welcome description",
-        "onboarding.welcomeFeature1Title": "F1",
-        "onboarding.welcomeFeature1Desc": "F1 desc",
-        "onboarding.welcomeFeature2Title": "F2",
-        "onboarding.welcomeFeature2Desc": "F2 desc",
-        "onboarding.welcomeFeature3Title": "F3",
-        "onboarding.welcomeFeature3Desc": "F3 desc",
-        "onboarding.welcomeHint": "Hint",
+        'onboarding.wizardTitle': 'Setup Wizard',
+        'onboarding.wizardDesc': 'Get started with CogniaLauncher',
+        'onboarding.stepOf': `Step ${params?.current || 1} of ${params?.total || 1}`,
+        'onboarding.skip': 'Skip',
+        'onboarding.back': 'Back',
+        'onboarding.next': 'Next',
+        'onboarding.finish': 'Finish',
+        'onboarding.stepModeSelection': 'Choose Mode',
+        'onboarding.stepWelcome': 'Welcome',
+        'onboarding.stepLanguage': 'Language',
+        'onboarding.stepTheme': 'Theme',
+        'onboarding.stepEnvironmentDetection': 'Environments',
+        'onboarding.stepMirrors': 'Mirrors',
+        'onboarding.stepShellInit': 'Shell',
+        'onboarding.stepComplete': 'Done',
       };
+
       return translations[key] || key;
     },
   }),
 }));
 
-jest.mock("next-themes", () => ({
-  useTheme: () => ({ theme: "system", setTheme: jest.fn() }),
+jest.mock('next-themes', () => ({
+  useTheme: () => ({ theme: 'system', setTheme: jest.fn() }),
 }));
 
-jest.mock("@/lib/stores/onboarding", () => ({
-  ONBOARDING_STEPS: ["welcome", "language", "theme", "environment-detection", "mirrors", "shell-init", "complete"],
-}));
-
-jest.mock("@/lib/constants/mirrors", () => ({
+jest.mock('@/lib/constants/mirrors', () => ({
   MIRROR_PRESETS: {
-    default: { labelKey: "default", npm: "npm-url", pypi: "pypi-url", crates: "crates-url", go: "go-url" },
+    default: { labelKey: 'default', npm: 'npm-url', pypi: 'pypi-url', crates: 'crates-url', go: 'go-url' },
   },
 }));
 
-jest.mock("@/lib/tauri", () => ({
+jest.mock('@/lib/tauri', () => ({
   isTauri: () => false,
 }));
+
+jest.mock('./steps/mode-selection-step', () => ({
+  ModeSelectionStep: ({
+    selectedMode,
+    onSelectMode,
+  }: {
+    selectedMode: 'quick' | 'detailed' | null;
+    onSelectMode: (mode: 'quick' | 'detailed') => void;
+  }) => (
+    <div>
+      <div>Mode Selection Step</div>
+      <div>{selectedMode ?? 'no-mode'}</div>
+      <button type="button" onClick={() => onSelectMode('quick')}>
+        Pick Quick
+      </button>
+      <button type="button" onClick={() => onSelectMode('detailed')}>
+        Pick Detailed
+      </button>
+    </div>
+  ),
+}));
+
+jest.mock('./steps/welcome-step', () => ({
+  WelcomeStep: () => <div>Welcome Step</div>,
+}));
+
+jest.mock('./steps/language-step', () => ({
+  LanguageStep: () => <div>Language Step</div>,
+}));
+
+jest.mock('./steps/theme-step', () => ({
+  ThemeStep: () => <div>Theme Step</div>,
+}));
+
+jest.mock('./steps/environment-detection-step', () => ({
+  EnvironmentDetectionStep: ({ mode }: { mode: 'quick' | 'detailed' }) => (
+    <div>Environment Step {mode}</div>
+  ),
+}));
+
+jest.mock('./steps/mirrors-step', () => ({
+  MirrorsStep: ({ mode }: { mode: 'quick' | 'detailed' }) => <div>Mirrors Step {mode}</div>,
+}));
+
+jest.mock('./steps/shell-init-step', () => ({
+  ShellInitStep: ({ mode }: { mode: 'quick' | 'detailed' }) => <div>Shell Step {mode}</div>,
+}));
+
+jest.mock('./steps/complete-step', () => ({
+  CompleteStep: ({ mode }: { mode: 'quick' | 'detailed' }) => <div>Complete Step {mode}</div>,
+}));
+
+const quickStepIds = [
+  'mode-selection',
+  'language',
+  'theme',
+  'environment-detection',
+  'mirrors',
+  'shell-init',
+  'complete',
+] as const;
+
+const detailedStepIds = [
+  'mode-selection',
+  'welcome',
+  'language',
+  'theme',
+  'environment-detection',
+  'mirrors',
+  'shell-init',
+  'complete',
+] as const;
 
 const defaultProps = {
   open: true,
   currentStep: 0,
-  totalSteps: 7,
-  progress: 14,
+  stepIds: ['mode-selection'] as const,
+  mode: null,
+  totalSteps: 1,
+  progress: 0,
   isFirstStep: true,
   isLastStep: false,
   tourCompleted: false,
   onNext: jest.fn(),
   onPrev: jest.fn(),
   onGoTo: jest.fn(),
+  onSelectMode: jest.fn(),
   onComplete: jest.fn(),
   onSkip: jest.fn(),
   onStartTour: jest.fn(),
   onClose: jest.fn(),
 };
 
-describe("OnboardingWizard", () => {
+describe('OnboardingWizard', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  it("renders when open", () => {
+  it('renders mode selection first and disables next without a chosen mode', () => {
     render(<OnboardingWizard {...defaultProps} />);
-    expect(screen.getByText("14%")).toBeInTheDocument();
+
+    expect(screen.getByText('Mode Selection Step')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+    expect(screen.getByText('Step 1 of 1')).toBeInTheDocument();
+    expect(screen.getByText('0%')).toBeInTheDocument();
   });
 
-  it("does not render when closed", () => {
-    render(<OnboardingWizard {...defaultProps} open={false} />);
-    expect(screen.queryByText("14%")).not.toBeInTheDocument();
-  });
-
-  it("renders Next button on first step", () => {
+  it('passes mode selection changes upward', async () => {
     render(<OnboardingWizard {...defaultProps} />);
-    expect(screen.getByText("Next")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Pick Detailed' }));
+
+    expect(defaultProps.onSelectMode).toHaveBeenCalledWith('detailed');
   });
 
-  it("does not render Back button on first step", () => {
-    render(<OnboardingWizard {...defaultProps} />);
-    expect(screen.queryByText("Back")).not.toBeInTheDocument();
-  });
-
-  it("renders Back button on middle step", () => {
+  it('renders quick-mode middle steps with back and skip controls', () => {
     render(
       <OnboardingWizard
         {...defaultProps}
         currentStep={2}
+        stepIds={quickStepIds}
+        mode="quick"
+        totalSteps={quickStepIds.length}
+        progress={33}
         isFirstStep={false}
         isLastStep={false}
       />,
     );
-    expect(screen.getByText("Back")).toBeInTheDocument();
+
+    expect(screen.getByText('Theme Step')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Back' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Skip' })).toBeInTheDocument();
+    expect(screen.getByText('Step 3 of 7')).toBeInTheDocument();
   });
 
-  it("renders Skip button on middle step", () => {
+  it('renders detailed-mode welcome step when selected', () => {
+    render(
+      <OnboardingWizard
+        {...defaultProps}
+        currentStep={1}
+        stepIds={detailedStepIds}
+        mode="detailed"
+        totalSteps={detailedStepIds.length}
+        progress={14}
+        isFirstStep={false}
+        isLastStep={false}
+      />,
+    );
+
+    expect(screen.getByText('Welcome Step')).toBeInTheDocument();
+    expect(screen.getByText('Step 2 of 8')).toBeInTheDocument();
+  });
+
+  it('renders finish button on the last step', () => {
+    render(
+      <OnboardingWizard
+        {...defaultProps}
+        currentStep={quickStepIds.length - 1}
+        stepIds={quickStepIds}
+        mode="quick"
+        totalSteps={quickStepIds.length}
+        progress={100}
+        isFirstStep={false}
+        isLastStep
+      />,
+    );
+
+    expect(screen.getByText('Complete Step quick')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Finish' })).toBeInTheDocument();
+  });
+
+  it('calls navigation handlers from footer buttons', async () => {
     render(
       <OnboardingWizard
         {...defaultProps}
         currentStep={2}
+        stepIds={quickStepIds}
+        mode="quick"
+        totalSteps={quickStepIds.length}
+        progress={33}
         isFirstStep={false}
         isLastStep={false}
       />,
     );
-    expect(screen.getByText("Skip")).toBeInTheDocument();
-  });
 
-  it("renders Finish button on last step", () => {
-    render(
-      <OnboardingWizard
-        {...defaultProps}
-        currentStep={6}
-        isFirstStep={false}
-        isLastStep={true}
-      />,
-    );
-    expect(screen.getByText("Finish")).toBeInTheDocument();
-  });
+    await userEvent.click(screen.getByRole('button', { name: 'Back' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Next' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Skip' }));
 
-  it("calls onNext when Next is clicked", async () => {
-    render(<OnboardingWizard {...defaultProps} />);
-    await userEvent.click(screen.getByText("Next"));
+    expect(defaultProps.onPrev).toHaveBeenCalledTimes(1);
     expect(defaultProps.onNext).toHaveBeenCalledTimes(1);
-  });
-
-  it("calls onComplete when Finish is clicked", async () => {
-    render(
-      <OnboardingWizard
-        {...defaultProps}
-        currentStep={6}
-        isFirstStep={false}
-        isLastStep={true}
-      />,
-    );
-    await userEvent.click(screen.getByText("Finish"));
-    expect(defaultProps.onComplete).toHaveBeenCalledTimes(1);
-  });
-
-  it("calls onSkip when Skip is clicked", async () => {
-    render(
-      <OnboardingWizard
-        {...defaultProps}
-        currentStep={2}
-        isFirstStep={false}
-        isLastStep={false}
-      />,
-    );
-    await userEvent.click(screen.getByText("Skip"));
     expect(defaultProps.onSkip).toHaveBeenCalledTimes(1);
   });
 
-  it("renders step indicators for all steps", () => {
-    render(<OnboardingWizard {...defaultProps} />);
-    // 7 steps = 7 step indicator buttons (each with aria-label)
-    const stepButtons = screen.getAllByRole("button").filter((btn) =>
-      btn.classList.contains("rounded-full"),
-    );
-    expect(stepButtons.length).toBe(7);
-  });
-
-  it("calls onPrev when Back is clicked", async () => {
+  it('calls finish on the final step', async () => {
     render(
       <OnboardingWizard
         {...defaultProps}
-        currentStep={3}
+        currentStep={quickStepIds.length - 1}
+        stepIds={quickStepIds}
+        mode="quick"
+        totalSteps={quickStepIds.length}
+        progress={100}
+        isFirstStep={false}
+        isLastStep
+      />,
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Finish' }));
+
+    expect(defaultProps.onComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses step indicator buttons from the active step list', async () => {
+    render(
+      <OnboardingWizard
+        {...defaultProps}
+        currentStep={2}
+        stepIds={quickStepIds}
+        mode="quick"
+        totalSteps={quickStepIds.length}
+        progress={33}
         isFirstStep={false}
         isLastStep={false}
       />,
     );
-    await userEvent.click(screen.getByText("Back"));
-    expect(defaultProps.onPrev).toHaveBeenCalledTimes(1);
+
+    const languageStepButton = screen.getByLabelText('Language');
+    await userEvent.click(languageStepButton);
+
+    expect(defaultProps.onGoTo).toHaveBeenCalledWith(1);
   });
 
-  it("does not show Skip on first step", () => {
-    render(<OnboardingWizard {...defaultProps} />);
-    expect(screen.queryByText("Skip")).not.toBeInTheDocument();
-  });
-
-  it("does not show Skip on last step", () => {
-    render(
+  it('handles keyboard navigation for next, back, and finish', async () => {
+    const { rerender } = render(
       <OnboardingWizard
         {...defaultProps}
-        currentStep={6}
+        currentStep={2}
+        stepIds={quickStepIds}
+        mode="quick"
+        totalSteps={quickStepIds.length}
+        progress={33}
         isFirstStep={false}
-        isLastStep={true}
+        isLastStep={false}
       />,
     );
-    expect(screen.queryByText("Skip")).not.toBeInTheDocument();
-  });
 
-  it("displays progress percentage", () => {
-    render(<OnboardingWizard {...defaultProps} progress={57} />);
-    expect(screen.getByText("57%")).toBeInTheDocument();
-  });
+    await userEvent.keyboard('{ArrowLeft}');
+    await userEvent.keyboard('{Enter}');
 
-  it("displays step count text", () => {
-    render(<OnboardingWizard {...defaultProps} />);
-    expect(screen.getByText("Step 1 of 7")).toBeInTheDocument();
-  });
-
-  it("calls onNext on ArrowRight key", () => {
-    render(<OnboardingWizard {...defaultProps} />);
-    window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight" }));
-    expect(defaultProps.onNext).toHaveBeenCalledTimes(1);
-  });
-
-  it("calls onPrev on ArrowLeft key when not first step", () => {
-    render(
-      <OnboardingWizard {...defaultProps} currentStep={3} isFirstStep={false} isLastStep={false} />,
-    );
-    window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft" }));
     expect(defaultProps.onPrev).toHaveBeenCalledTimes(1);
-  });
+    expect(defaultProps.onNext).toHaveBeenCalledTimes(1);
 
-  it("does not call onPrev on ArrowLeft when on first step", () => {
-    render(<OnboardingWizard {...defaultProps} />);
-    window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft" }));
-    expect(defaultProps.onPrev).not.toHaveBeenCalled();
-  });
-
-  it("calls onComplete on Enter key when on last step", () => {
-    render(
-      <OnboardingWizard {...defaultProps} currentStep={6} isFirstStep={false} isLastStep={true} />,
+    rerender(
+      <OnboardingWizard
+        {...defaultProps}
+        currentStep={quickStepIds.length - 1}
+        stepIds={quickStepIds}
+        mode="quick"
+        totalSteps={quickStepIds.length}
+        progress={100}
+        isFirstStep={false}
+        isLastStep
+      />,
     );
-    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+
+    await userEvent.keyboard('{Enter}');
+
     expect(defaultProps.onComplete).toHaveBeenCalledTimes(1);
   });
 
-  it("calls onSkip on Escape key", () => {
+  it('calls onClose when the dialog is dismissed', async () => {
     render(<OnboardingWizard {...defaultProps} />);
-    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
-    expect(defaultProps.onSkip).toHaveBeenCalledTimes(1);
-  });
 
-  it("does not respond to keyboard when closed", () => {
-    render(<OnboardingWizard {...defaultProps} open={false} />);
-    window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight" }));
-    expect(defaultProps.onNext).not.toHaveBeenCalled();
-  });
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText('Mode Selection Step')).toBeInTheDocument();
 
-  it("applies slide animation class to step content", () => {
-    render(<OnboardingWizard {...defaultProps} />);
-    // Dialog renders in a portal, so query the entire document
-    const animatedDiv = document.querySelector(".animate-in");
-    expect(animatedDiv).not.toBeNull();
+    await userEvent.keyboard('{Escape}');
+
+    expect(defaultProps.onSkip).toHaveBeenCalled();
   });
 });

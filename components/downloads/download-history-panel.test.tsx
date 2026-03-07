@@ -52,7 +52,7 @@ describe("DownloadHistoryPanel", () => {
     historyStats: null as HistoryStats | null,
     historyQuery: "",
     onHistoryQueryChange: jest.fn(),
-    onClearHistory: jest.fn(),
+    onClearHistory: jest.fn<(days?: number) => void>(),
     onRemoveRecord: jest.fn(),
     t: mockT,
   };
@@ -209,7 +209,7 @@ describe("DownloadHistoryPanel", () => {
   });
 
   it("calls onClearHistory when clicking clear button", async () => {
-    const onClearHistory = jest.fn();
+    const onClearHistory = jest.fn<(days?: number) => void>();
     render(
       <DownloadHistoryPanel
         {...defaultProps}
@@ -225,6 +225,28 @@ describe("DownloadHistoryPanel", () => {
     );
 
     expect(onClearHistory).toHaveBeenCalledTimes(1);
+    expect(onClearHistory).toHaveBeenCalledWith(undefined);
+  });
+
+  it("calls onClearHistory with retention days when clearing older history", async () => {
+    const onClearHistory = jest.fn<(days?: number) => void>();
+    render(
+      <DownloadHistoryPanel
+        {...defaultProps}
+        history={[makeRecord()]}
+        onClearHistory={onClearHistory}
+      />,
+    );
+
+    await userEvent.type(
+      screen.getByPlaceholderText("downloads.historyPanel.retentionDays"),
+      "30",
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "downloads.historyPanel.clearOlder" }),
+    );
+
+    expect(onClearHistory).toHaveBeenCalledWith(30);
   });
 
   it("calls onRemoveRecord when clicking remove button on a record", async () => {

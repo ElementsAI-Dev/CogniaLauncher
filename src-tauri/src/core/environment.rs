@@ -1170,6 +1170,33 @@ mod tests {
         assert!(detected.source_path.is_none());
     }
 
+    #[tokio::test]
+    async fn detect_version_matches_shared_detection_for_default_project_sources() {
+        let manager = EnvironmentManager::new(Arc::new(RwLock::new(ProviderRegistry::new())));
+        let dir = tempdir().unwrap();
+        std::fs::write(dir.path().join(".tool-versions"), "nodejs 20.10.0\n").unwrap();
+
+        let sources = crate::core::project_env_detect::default_detection_sources("node")
+            .iter()
+            .map(|source| (*source).to_string())
+            .collect::<Vec<_>>();
+        let shared_detected = crate::core::project_env_detect::detect_env_version(
+            "node",
+            dir.path(),
+            &sources,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+
+        let detected = manager.detect_version("node", dir.path()).await.unwrap().unwrap();
+        assert_eq!(detected.env_type, shared_detected.env_type);
+        assert_eq!(detected.version, shared_detected.version);
+        assert_eq!(detected.source, shared_detected.source);
+        assert_eq!(detected.source_type, shared_detected.source_type);
+        assert_eq!(detected.source_path, shared_detected.source_path);
+    }
+
     #[test]
     fn compare_semver_basic() {
         assert_eq!(compare_semver("1.0.0", "1.0.0"), 0);

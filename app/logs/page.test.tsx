@@ -1,6 +1,7 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import LogsPage from './page';
+import { toast } from 'sonner';
 
 type MockLogFile = {
   name: string;
@@ -21,23 +22,24 @@ const buildLogFiles = (count: number): MockLogFile[] =>
   }));
 
 const freezeBackgroundLoad = () => {
-  mockLogListFiles.mockImplementation(() => new Promise(() => {}));
-  mockLogGetDir.mockImplementation(() => new Promise(() => {}));
-  mockGetTotalSize.mockImplementation(() => new Promise(() => {}));
+  mockLoadLogFiles.mockImplementation(() => new Promise(() => {}));
+  mockGetLogDirectory.mockImplementation(() => new Promise(() => {}));
 };
 
 let mockLogFiles: MockLogFile[] = defaultFiles;
 let mockSelectedLogFile: string | null = null;
 let mockIsTauri = false;
 
-const mockSetLogFiles = jest.fn();
 const mockSetSelectedLogFile = jest.fn();
-const mockCleanupLogs = jest.fn().mockResolvedValue(null);
-const mockDeleteLogFiles = jest.fn().mockResolvedValue(null);
-const mockGetTotalSize = jest.fn().mockResolvedValue(0);
+const mockCleanupLogs = jest.fn();
+const mockDeleteLogFiles = jest.fn();
+const mockDeleteLogFile = jest.fn();
 const mockClearLogs = jest.fn();
-const mockLogListFiles = jest.fn().mockResolvedValue([]);
-const mockLogGetDir = jest.fn().mockResolvedValue('');
+const mockLoadLogFiles = jest.fn();
+const mockGetLogDirectory = jest.fn();
+const mockClearLogFile = jest.fn();
+const mockPreviewCleanupLogs = jest.fn();
+const mockExportLogFile = jest.fn();
 
 jest.mock('@/components/providers/locale-provider', () => ({
   useLocale: () => ({
@@ -53,16 +55,28 @@ jest.mock('@/components/providers/locale-provider', () => ({
         'logs.noFiles': 'No log files found',
         'logs.loadError': 'Failed to load log files',
         'logs.openDir': 'Open Directory',
+        'logs.copyDir': 'Copy Folder Path',
+        'logs.copyFilePath': 'Copy File Path',
+        'logs.exportDiagnostic': 'Export Diagnostic',
         'logs.openDirError': 'Failed to open directory',
         'logs.viewFile': 'View File',
         'logs.currentSession': 'Current Session',
         'logs.management': 'Management',
         'logs.deleteSelected': 'Delete Selected',
+        'logs.deleteSuccess': 'Deleted {count} log file(s)',
+        'logs.deleteFailed': 'Delete failed',
+        'logs.cleanupSuccess': 'Cleaned up {count} files, freed {size}',
+        'logs.cleanupNone': 'No log files need cleanup',
+        'logs.partialWarning': '{count} warning(s) occurred',
+        'logs.copyPathSuccess': 'Path copied to clipboard',
+        'logs.copyPathFailed': 'Failed to copy path',
+        'logs.clear': 'Clear logs',
         'logs.pageSize': 'Per page',
         'logs.pageInfo': 'Page {current} of {total}',
         'common.refresh': 'Refresh',
         'common.previous': 'Previous',
         'common.next': 'Next',
+        'common.delete': 'Delete',
       };
       if (params) {
         let result = translations[key] || key;
@@ -79,8 +93,7 @@ jest.mock('@/components/providers/locale-provider', () => ({
 jest.mock('@/lib/stores/log', () => ({
   useLogStore: () => ({
     logFiles: mockLogFiles,
-    setLogFiles: mockSetLogFiles,
-    getLogStats: () => ({ total: 42, error: 5, warn: 10, info: 27 }),
+    getLogStats: () => ({ total: 42, byLevel: { trace: 0, debug: 0, info: 27, warn: 10, error: 5 } }),
     selectedLogFile: mockSelectedLogFile,
     setSelectedLogFile: mockSetSelectedLogFile,
   }),
@@ -90,15 +103,18 @@ jest.mock('@/hooks/use-logs', () => ({
   useLogs: () => ({
     cleanupLogs: mockCleanupLogs,
     deleteLogFiles: mockDeleteLogFiles,
-    getTotalSize: mockGetTotalSize,
+    deleteLogFile: mockDeleteLogFile,
     clearLogs: mockClearLogs,
+    loadLogFiles: mockLoadLogFiles,
+    getLogDirectory: mockGetLogDirectory,
+    clearLogFile: mockClearLogFile,
+    previewCleanupLogs: mockPreviewCleanupLogs,
+    exportLogFile: mockExportLogFile,
   }),
 }));
 
 jest.mock('@/lib/tauri', () => ({
   isTauri: () => mockIsTauri,
-  logListFiles: () => mockLogListFiles(),
-  logGetDir: () => mockLogGetDir(),
 }));
 
 jest.mock('sonner', () => ({
@@ -115,7 +131,16 @@ jest.mock('@/components/log', () => ({
 
 jest.mock('@/components/log/log-file-viewer', () => ({
   LogFileViewer: ({ open, fileName }: { open: boolean; fileName: string | null }) =>
-    open ? <div data-testid="log-file-viewer">{fileName}</div> : null,
+    open ? (
+      <div
+        role="dialog"
+        aria-label={`Historical Log Viewer: ${fileName ?? ''}`}
+        data-testid="log-file-viewer"
+        className="w-[min(96vw,72rem)] max-w-5xl max-h-[85dvh] overflow-hidden"
+      >
+        {fileName}
+      </div>
+    ) : null,
 }));
 
 jest.mock('@/components/log/log-management-card', () => ({
@@ -142,31 +167,35 @@ describe('LogsPage', () => {
     mockIsTauri = false;
     mockLogFiles = defaultFiles;
     mockSelectedLogFile = null;
-    mockDeleteLogFiles.mockResolvedValue(null);
-    mockLogListFiles.mockResolvedValue([]);
-    mockLogGetDir.mockResolvedValue('');
-    mockGetTotalSize.mockResolvedValue(0);
+    mockLoadLogFiles.mockResolvedValue({ ok: true, data: defaultFiles });
+    mockGetLogDirectory.mockResolvedValue({ ok: true, data: '' });
+    mockDeleteLogFiles.mockResolvedValue({ ok: true, data: { deletedCount: 0, freedBytes: 0 } });
+    mockDeleteLogFile.mockResolvedValue({ ok: true, data: { deletedCount: 1, freedBytes: 512 } });
+    mockClearLogFile.mockResolvedValue({ ok: true, data: { deletedCount: 1, freedBytes: 512 } });
+    mockCleanupLogs.mockResolvedValue({ ok: true, data: { deletedCount: 1, freedBytes: 512 } });
+    mockPreviewCleanupLogs.mockResolvedValue({
+      ok: true,
+      data: { deletedCount: 1, freedBytes: 512, protectedCount: 1, status: 'success', warnings: [] },
+    });
+    mockExportLogFile.mockResolvedValue({
+      ok: true,
+      data: {
+        content: '{}',
+        fileName: 'diagnostic.json',
+        sizeBytes: 2,
+        status: 'success',
+        redactedCount: 0,
+        sanitized: true,
+        warnings: [],
+      },
+    });
   });
 
-  it('renders page title', () => {
+  it('renders page title and tabs', () => {
     render(<LogsPage />);
     expect(screen.getByText('Logs')).toBeInTheDocument();
-  });
-
-  it('renders realtime and files tabs', () => {
-    render(<LogsPage />);
     expect(screen.getByText('Real-time')).toBeInTheDocument();
     expect(screen.getByText('Files')).toBeInTheDocument();
-  });
-
-  it('renders log stats badge in realtime tab', () => {
-    render(<LogsPage />);
-    expect(screen.getByText('42')).toBeInTheDocument();
-  });
-
-  it('renders log files count badge', () => {
-    render(<LogsPage />);
-    expect(screen.getByText('2')).toBeInTheDocument();
   });
 
   it('shows desktop-only message in files tab for non-Tauri', async () => {
@@ -180,30 +209,7 @@ describe('LogsPage', () => {
     });
   });
 
-  it('keeps files tab content bounded to avoid competing page scroll', async () => {
-    const user = userEvent.setup();
-    render(<LogsPage />);
-
-    await user.click(screen.getByRole('tab', { name: /Files/ }));
-
-    const filesTabContent = screen.getByTestId('logs-files-tab-content');
-
-    expect(filesTabContent).toHaveClass('min-h-0');
-    expect(filesTabContent).toHaveClass('overflow-hidden');
-    expect(filesTabContent).not.toHaveClass('overflow-auto');
-  });
-
-  it('renders refresh button', () => {
-    render(<LogsPage />);
-    expect(screen.getByText('Refresh')).toBeInTheDocument();
-  });
-
-  it('renders management tab (visible on mobile)', () => {
-    render(<LogsPage />);
-    expect(screen.getByText('Management')).toBeInTheDocument();
-  });
-
-  it('renders only the current page rows when file count exceeds page size', async () => {
+  it('renders only current page rows when file count exceeds page size', async () => {
     const user = userEvent.setup();
     mockIsTauri = true;
     mockLogFiles = buildLogFiles(25);
@@ -283,33 +289,76 @@ describe('LogsPage', () => {
     });
   });
 
-  it('uses bounded file-list scroll area and triggers history viewer selection in Tauri mode', async () => {
+  it('shows clear-history action in tauri file management view', async () => {
     const user = userEvent.setup();
     mockIsTauri = true;
-    mockLogFiles = defaultFiles;
-    freezeBackgroundLoad();
-    mockSetSelectedLogFile.mockImplementation((fileName: string | null) => {
-      mockSelectedLogFile = fileName;
-    });
 
-    const { rerender } = render(<LogsPage />);
+    render(<LogsPage />);
     await user.click(screen.getByRole('tab', { name: /Files/ }));
 
-    const filesTabContent = screen.getByTestId('logs-files-tab-content');
-    const filesListScrollArea = screen.getByTestId('logs-files-list-scroll-area');
+    expect(await screen.findByRole('button', { name: 'Clear logs' })).toBeInTheDocument();
+  });
 
-    expect(filesTabContent).toHaveClass('min-h-0');
-    expect(filesTabContent).toHaveClass('overflow-hidden');
-    expect(filesListScrollArea).toHaveClass('h-full');
-    expect(filesListScrollArea).toHaveClass('min-h-0');
-    expect(filesListScrollArea).not.toHaveClass('max-h-[calc(100vh-320px)]');
+  it('requests opening the historical viewer when a log file row is activated', async () => {
+    const user = userEvent.setup();
+    mockIsTauri = true;
 
-    const rows = screen.getAllByTestId('log-file-row');
-    await user.click(rows[1]);
+    render(<LogsPage />);
+    await user.click(screen.getByRole('tab', { name: /Files/ }));
+
+    const rows = await screen.findAllByTestId('log-file-row');
+    await user.click(within(rows[1]).getByTitle('View File'));
 
     expect(mockSetSelectedLogFile).toHaveBeenCalledWith(defaultFiles[1].name);
+  });
 
-    rerender(<LogsPage />);
-    expect(screen.getByTestId('log-file-viewer')).toHaveTextContent(defaultFiles[1].name);
+  it('preserves the bounded historical viewer contract when a file is selected', () => {
+    mockIsTauri = true;
+    mockSelectedLogFile = defaultFiles[1].name;
+
+    render(<LogsPage />);
+
+    const viewer = screen.getByRole('dialog', {
+      name: `Historical Log Viewer: ${defaultFiles[1].name}`,
+    });
+
+    expect(viewer).toHaveClass('max-w-5xl');
+    expect(viewer).toHaveClass('max-h-[85dvh]');
+    expect(viewer).toHaveClass('overflow-hidden');
+    expect(viewer).toHaveTextContent(defaultFiles[1].name);
+  });
+
+  it('triggers single-file delete for historical file', async () => {
+    const user = userEvent.setup();
+    mockIsTauri = true;
+
+    render(<LogsPage />);
+    await user.click(screen.getByRole('tab', { name: /Files/ }));
+
+    const rows = await screen.findAllByTestId('log-file-row');
+    const deleteBtn = within(rows[1]).getByTitle('Delete');
+    await user.click(deleteBtn);
+
+    await waitFor(() => {
+      expect(mockDeleteLogFile).toHaveBeenCalledWith(defaultFiles[1].name);
+      expect(toast.success).toHaveBeenCalledWith('Deleted 1 log file(s)');
+    });
+  });
+
+  it('shows explicit failure feedback when batch delete fails', async () => {
+    const user = userEvent.setup();
+    mockIsTauri = true;
+    mockDeleteLogFiles.mockResolvedValue({ ok: false, error: 'Delete failed' });
+
+    render(<LogsPage />);
+    await user.click(screen.getByRole('tab', { name: /Files/ }));
+
+    const checkboxes = await screen.findAllByRole('checkbox');
+    await user.click(checkboxes[0]);
+    await user.click(screen.getByRole('button', { name: /Delete Selected/i }));
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith('Delete failed');
+    });
   });
 });

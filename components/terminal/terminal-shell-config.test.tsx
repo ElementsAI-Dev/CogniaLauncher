@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { TerminalShellConfig } from './terminal-shell-config';
 import type { ShellInfo, ShellConfigEntries } from '@/types/tauri';
 
@@ -8,6 +9,41 @@ jest.mock('@/components/providers/locale-provider', () => ({
 
 jest.mock('sonner', () => ({
   toast: { success: jest.fn(), error: jest.fn() },
+}));
+
+const mockTerminalConfigEditor = jest.fn(
+  ({
+    language,
+    diagnostics,
+    baselineValue,
+    configPath,
+    shellType,
+  }: {
+    language: string;
+    diagnostics?: unknown[];
+    baselineValue?: string | null;
+    configPath?: string | null;
+    shellType?: string;
+  }) => (
+    <div data-testid="terminal-config-editor">
+      <span data-testid="terminal-config-editor-language">{language}</span>
+      <span data-testid="terminal-config-editor-diagnostics-count">{diagnostics?.length ?? 0}</span>
+      <span data-testid="terminal-config-editor-baseline">{baselineValue ?? ''}</span>
+      <span data-testid="terminal-config-editor-config-path">{configPath ?? ''}</span>
+      <span data-testid="terminal-config-editor-shell-type">{shellType ?? ''}</span>
+    </div>
+  ),
+);
+
+jest.mock('./terminal-config-editor', () => ({
+  TerminalConfigEditor: (props: {
+    language: string;
+    diagnostics?: unknown[];
+    baselineValue?: string | null;
+    configPath?: string | null;
+    shellType?: string;
+  }) =>
+    mockTerminalConfigEditor(props),
 }));
 
 const shells: ShellInfo[] = [
@@ -291,5 +327,195 @@ describe('TerminalShellConfig', () => {
 
     expect(screen.getByText('Write failed')).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: /terminal\.loadConfig/i }).length).toBeGreaterThan(0);
+  });
+
+  it('passes language and diagnostics to highlighted editor while editing', async () => {
+    const user = userEvent.setup();
+    const onReadConfig = jest.fn().mockResolvedValue('export TEST=1');
+    const onFetchConfigEntries = jest.fn().mockResolvedValue(mockEntries);
+    const onGetConfigEditorMetadata = jest.fn().mockResolvedValue({
+      path: '/home/user/.bashrc',
+      shellType: 'bash',
+      language: 'bash',
+      snapshotPath: '/home/user/.cognia/terminal-snapshots/.bashrc.latest',
+      fingerprint: 'abc123',
+    });
+
+    render(
+      <TerminalShellConfig
+        shells={shells}
+        onReadConfig={onReadConfig}
+        onFetchConfigEntries={onFetchConfigEntries}
+        onBackupConfig={jest.fn()}
+        onGetConfigEditorMetadata={onGetConfigEditorMetadata}
+        onWriteConfig={jest.fn().mockResolvedValue({
+          operation: 'write',
+          path: '/home/user/.bashrc',
+          backupPath: null,
+          bytesWritten: 12,
+          verified: false,
+          diagnostics: ['Unterminated quote'],
+          diagnosticDetails: [
+            {
+              category: 'validation',
+              stage: 'validation',
+              message: 'Unterminated quote',
+              location: { line: 1, column: 1, endLine: 1, endColumn: 20 },
+            },
+          ],
+          snapshotPath: null,
+          fingerprint: null,
+        })}
+        mutationStatus="error"
+        mutationMessage="Write failed"
+        mutationResult={{
+          operation: 'write',
+          path: '/home/user/.bashrc',
+          backupPath: null,
+          bytesWritten: 0,
+          verified: false,
+          diagnostics: ['Unterminated quote'],
+          diagnosticDetails: [
+            {
+              category: 'validation',
+              stage: 'validation',
+              message: 'Unterminated quote',
+              location: { line: 1, column: 1, endLine: 1, endColumn: 20 },
+            },
+          ],
+          snapshotPath: null,
+          fingerprint: null,
+        }}
+      />,
+    );
+
+    const [, configSelect] = screen.getAllByRole('combobox');
+    await user.click(configSelect);
+    await user.click(await screen.findByRole('option', { name: /\/home\/user\/\.bashrc/i }));
+
+    await user.click(screen.getAllByRole('button', { name: /terminal\.loadConfig/i })[0]);
+    await screen.findByRole('button', { name: /terminal\.editConfig/i });
+    await user.click(screen.getByRole('button', { name: /terminal\.editConfig/i }));
+
+    expect(screen.getByTestId('terminal-config-editor')).toBeInTheDocument();
+    expect(screen.getByTestId('terminal-config-editor-language')).toHaveTextContent('bash');
+    expect(screen.getByTestId('terminal-config-editor-diagnostics-count')).toHaveTextContent('1');
+    expect(screen.getByTestId('terminal-config-editor-baseline')).toHaveTextContent('export TEST=1');
+    expect(screen.getByTestId('terminal-config-editor-config-path')).toHaveTextContent('/home/user/.bashrc');
+    expect(screen.getByTestId('terminal-config-editor-shell-type')).toHaveTextContent('bash');
+  });
+
+  it('clears stale mutation state when loading a target or cancelling edit', async () => {
+    const user = userEvent.setup();
+    const onClearMutationState = jest.fn();
+    const onReadConfig = jest.fn().mockResolvedValue('export TEST=1');
+    const onFetchConfigEntries = jest.fn().mockResolvedValue(mockEntries);
+
+    render(
+      <TerminalShellConfig
+        shells={shells}
+        onReadConfig={onReadConfig}
+        onFetchConfigEntries={onFetchConfigEntries}
+        onBackupConfig={jest.fn()}
+        onWriteConfig={jest.fn()}
+        mutationStatus="error"
+        mutationMessage="Write failed"
+        onClearMutationState={onClearMutationState}
+      />,
+    );
+
+    const [, configSelect] = screen.getAllByRole('combobox');
+    await user.click(configSelect);
+    await user.click(await screen.findByRole('option', { name: /\/home\/user\/\.bashrc/i }));
+
+    await user.click(screen.getAllByRole('button', { name: /terminal\.loadConfig/i })[0]);
+    await screen.findByRole('button', { name: /terminal\.editConfig/i });
+    const clearsAfterLoad = onClearMutationState.mock.calls.length;
+    expect(clearsAfterLoad).toBeGreaterThanOrEqual(1);
+
+    await user.click(screen.getByRole('button', { name: /terminal\.editConfig/i }));
+    await user.click(screen.getByRole('button', { name: /terminal\.cancel/i }));
+
+    expect(onClearMutationState.mock.calls.length).toBeGreaterThan(clearsAfterLoad);
+    expect(screen.queryByTestId('terminal-config-editor')).not.toBeInTheDocument();
+  });
+
+  it('resets loaded editor state when selecting a different config target', async () => {
+    const user = userEvent.setup();
+    const onReadConfig = jest.fn().mockResolvedValue('export TEST=1');
+    const onFetchConfigEntries = jest.fn().mockResolvedValue(mockEntries);
+    const onClearMutationState = jest.fn();
+    const shellsWithTwoConfigs: ShellInfo[] = [
+      {
+        ...shells[0],
+        configFiles: [
+          { path: '/home/user/.bashrc', exists: true, sizeBytes: 1024 },
+          { path: '/home/user/.bash_profile', exists: true, sizeBytes: 512 },
+        ],
+      },
+    ];
+
+    render(
+      <TerminalShellConfig
+        shells={shellsWithTwoConfigs}
+        onReadConfig={onReadConfig}
+        onFetchConfigEntries={onFetchConfigEntries}
+        onBackupConfig={jest.fn()}
+        onWriteConfig={jest.fn()}
+        onClearMutationState={onClearMutationState}
+      />,
+    );
+
+    const [, configSelect] = screen.getAllByRole('combobox');
+    await user.click(configSelect);
+    await user.click(await screen.findByRole('option', { name: /\/home\/user\/\.bashrc/i }));
+
+    await user.click(screen.getByRole('button', { name: /terminal\.loadConfig/i }));
+    await screen.findByRole('button', { name: /terminal\.editConfig/i });
+    await user.click(screen.getByRole('button', { name: /terminal\.editConfig/i }));
+    expect(screen.getByTestId('terminal-config-editor')).toBeInTheDocument();
+
+    await user.click(screen.getAllByRole('combobox')[1]);
+    await user.click(await screen.findByRole('option', { name: /\/home\/user\/\.bash_profile/i }));
+
+    expect(onClearMutationState).toHaveBeenCalled();
+    expect(screen.queryByTestId('terminal-config-editor')).not.toBeInTheDocument();
+  });
+
+  it('invokes restore callback for current config and reloads baseline', async () => {
+    const user = userEvent.setup();
+    const onReadConfig = jest.fn().mockResolvedValue('export TEST=1');
+    const onFetchConfigEntries = jest.fn().mockResolvedValue(mockEntries);
+    const onRestoreConfigSnapshot = jest.fn().mockResolvedValue({
+      path: '/home/user/.bashrc',
+      snapshotPath: '/home/user/.cognia/terminal-snapshots/.bashrc.latest',
+      bytesWritten: 12,
+      verified: true,
+      diagnostics: ['restored'],
+      diagnosticDetails: [],
+      fingerprint: 'abc123',
+    });
+
+    render(
+      <TerminalShellConfig
+        shells={shells}
+        onReadConfig={onReadConfig}
+        onFetchConfigEntries={onFetchConfigEntries}
+        onBackupConfig={jest.fn()}
+        onRestoreConfigSnapshot={onRestoreConfigSnapshot}
+      />,
+    );
+
+    const [, configSelect] = screen.getAllByRole('combobox');
+    await user.click(configSelect);
+    await user.click(await screen.findByRole('option', { name: /\/home\/user\/\.bashrc/i }));
+
+    await user.click(screen.getByRole('button', { name: /terminal\.loadConfig/i }));
+    await screen.findByRole('button', { name: /Restore Snapshot/i });
+
+    await user.click(screen.getByRole('button', { name: /Restore Snapshot/i }));
+
+    expect(onRestoreConfigSnapshot).toHaveBeenCalledWith('/home/user/.bashrc');
+    expect(onReadConfig).toHaveBeenCalledTimes(2);
   });
 });

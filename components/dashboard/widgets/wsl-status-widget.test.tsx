@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { WslStatusWidget } from './wsl-status-widget';
+import { useWslStore } from '@/lib/stores/wsl';
 
 const mockUseWslStatus = jest.fn();
 
@@ -36,6 +37,9 @@ jest.mock('next/link', () => {
 describe('WslStatusWidget', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    useWslStore.setState({
+      overviewContext: { tab: 'installed', tag: null, origin: 'overview' },
+    });
     mockUseWslStatus.mockReturnValue({
       available: false,
       distros: [],
@@ -81,5 +85,21 @@ describe('WslStatusWidget', () => {
   it('renders card container', () => {
     const { container } = render(<WslStatusWidget />);
     expect(container.firstChild).toBeInTheDocument();
+  });
+
+  it('builds widget entry link with widget origin', () => {
+    mockUseWslStatus.mockReturnValue({
+      available: true,
+      distros: [],
+      status: { defaultVersion: 2, kernelVersion: '5.15.0', version: '2.2.4' },
+      runningCount: 0,
+    });
+
+    render(<WslStatusWidget />);
+
+    expect(screen.getByRole('link', { name: 'WSL Management' })).toHaveAttribute(
+      'href',
+      '/wsl?origin=widget'
+    );
   });
 });

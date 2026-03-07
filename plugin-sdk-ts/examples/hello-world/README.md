@@ -7,6 +7,25 @@ A minimal example plugin demonstrating the Cognia TypeScript Plugin SDK.
 - **hello** — Greets the user with platform info and i18n translation
 - **env-check** — Detects installed development environments (Node.js, Python, Rust)
 
+## Unified Contract Notes
+
+For strict-mode adoption, align plugin contract metadata and capability declarations:
+
+```toml
+[plugin]
+tool_contract_version = "1.0.0"
+compatible_cognia_versions = ">=0.1.0"
+
+[[tools]]
+ui_mode = "declarative"
+capabilities = ["environment.read", "process.exec"]
+```
+
+If created with scaffold template options, you also get contract and schema references in:
+- `contracts/unified-tool-contract.sample.json`
+- `schemas/*.json`
+- `docs/validation-guide.md`
+
 ## Build
 
 ```bash

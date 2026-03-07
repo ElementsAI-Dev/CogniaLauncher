@@ -102,6 +102,24 @@ describe("CollapsibleSection", () => {
     expect(onOpenChange).toHaveBeenCalledWith("general", false);
   });
 
+  it("supports controlled open state", () => {
+    const { rerender } = render(
+      <CollapsibleSection {...defaultProps} open={false} />,
+    );
+
+    const card = screen
+      .getByText("General Settings")
+      .closest('[id^="section-"]') as HTMLElement;
+    expect(card.parentElement).toHaveAttribute("data-state", "closed");
+
+    rerender(<CollapsibleSection {...defaultProps} open={true} />);
+
+    const rerenderedCard = screen
+      .getByText("General Settings")
+      .closest('[id^="section-"]') as HTMLElement;
+    expect(rerenderedCard.parentElement).toHaveAttribute("data-state", "open");
+  });
+
   it("renders with custom icon", () => {
     render(<CollapsibleSection {...defaultProps} icon="Network" />);
 

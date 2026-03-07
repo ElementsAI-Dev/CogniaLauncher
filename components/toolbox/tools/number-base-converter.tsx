@@ -8,13 +8,14 @@ import { Card, CardContent } from '@/components/ui/card';
 import { ToolActionRow, ToolValidationMessage } from '@/components/toolbox/tool-layout';
 import { useLocale } from '@/components/providers/locale-provider';
 import { useToolPreferences } from '@/hooks/use-tool-preferences';
+import { TOOLBOX_LIMITS } from '@/lib/constants/toolbox-limits';
 import type { ToolComponentProps } from '@/types/toolbox';
 
 const BASES = [
-  { label: 'Binary (2)', base: 2, prefix: '0b' },
-  { label: 'Octal (8)', base: 8, prefix: '0o' },
-  { label: 'Decimal (10)', base: 10, prefix: '' },
-  { label: 'Hexadecimal (16)', base: 16, prefix: '0x' },
+  { labelKey: 'toolbox.tools.numberBaseConverter.baseBinary', base: 2, prefix: '0b' },
+  { labelKey: 'toolbox.tools.numberBaseConverter.baseOctal', base: 8, prefix: '0o' },
+  { labelKey: 'toolbox.tools.numberBaseConverter.baseDecimal', base: 10, prefix: '' },
+  { labelKey: 'toolbox.tools.numberBaseConverter.baseHexadecimal', base: 16, prefix: '0x' },
 ] as const;
 
 const DEFAULT_PREFERENCES = {
@@ -35,9 +36,24 @@ export default function NumberBaseConverter({ className }: ToolComponentProps) {
       setError(null);
       return;
     }
-    const normalizedValue = base === 10 ? rawValue : rawValue.replace(/^0[bxo]/i, '');
+
+    if (rawValue.length > TOOLBOX_LIMITS.numberBaseChars) {
+      setError(
+        t('toolbox.tools.shared.inputTooLarge', {
+          limit: TOOLBOX_LIMITS.numberBaseChars.toLocaleString(),
+        }),
+      );
+      return;
+    }
+
+    const sign = rawValue.startsWith('-') ? '-' : rawValue.startsWith('+') ? '+' : '';
+    const unsignedValue = sign ? rawValue.slice(1) : rawValue;
+    const normalizedValue = base === 10 ? rawValue : unsignedValue.replace(/^0[bxo]/i, '');
     try {
-      const num = BigInt(base === 10 ? normalizedValue : `0${'box'[Math.log2(base) - 1] ?? ''}${normalizedValue}`);
+      const prefixed = base === 10
+        ? normalizedValue
+        : `${sign}${BASES.find((item) => item.base === base)?.prefix ?? ''}${normalizedValue}`;
+      const num = BigInt(prefixed);
       setValues({
         2: num.toString(2),
         8: num.toString(8),
@@ -78,10 +94,11 @@ export default function NumberBaseConverter({ className }: ToolComponentProps) {
         />
         <Card>
           <CardContent className="p-4 space-y-4">
-            {BASES.map(({ label, base, prefix }) => (
+            {BASES.map(({ labelKey, base, prefix }) => (
               <div key={base} className="space-y-1.5">
-                <Label className="text-sm">{label}</Label>
+                <Label htmlFor={`number-base-input-${base}`} className="text-sm">{t(labelKey)}</Label>
                 <Input
+                  id={`number-base-input-${base}`}
                   value={preferences.showPrefix && values[base] ? `${prefix}${values[base]}` : values[base]}
                   onChange={(e) => handleChange(base, e.target.value)}
                   placeholder="0"

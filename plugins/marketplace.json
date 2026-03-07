@@ -1,0 +1,189 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-03-06T12:00:00.000Z",
+  "listings": [
+    {
+      "id": "hello-world-rust",
+      "pluginId": "com.cognia.hello-world",
+      "name": "Hello World",
+      "description": "A minimal Rust plugin with greeting and environment inspection tools.",
+      "version": "0.1.0",
+      "category": "developer",
+      "featured": true,
+      "authors": ["CogniaLauncher Team"],
+      "updatedAt": "2026-03-05T10:00:00.000Z",
+      "installCount": 1200,
+      "publisher": {
+        "id": "cognia",
+        "name": "CogniaLauncher Team",
+        "verified": true,
+        "url": "https://example.invalid/publisher/cognia"
+      },
+      "support": {
+        "homepageUrl": "https://example.invalid/hello-world-rust",
+        "documentationUrl": "https://example.invalid/hello-world-rust/docs",
+        "issuesUrl": "https://example.invalid/hello-world-rust/issues"
+      },
+      "highlights": ["Fast setup", "Environment inspection"],
+      "gallery": [
+        {
+          "type": "image",
+          "url": "https://example.invalid/hello-world-rust/cover.png",
+          "alt": "Hello World Rust overview",
+          "caption": "Overview screenshot"
+        }
+      ],
+      "releaseNotes": "Adds richer environment inspection and onboarding hints.",
+      "minimumHostVersion": "0.1.0",
+      "toolContractVersion": "1.0.0",
+      "desktopOnly": true,
+      "source": {
+        "type": "store",
+        "storeId": "hello-world-rust",
+        "pluginDir": "marketplace/hello-world-rust",
+        "artifact": "plugin.wasm",
+        "checksumSha256": "8620482267e940e57518b36e95baf2505b678de935a987942979f935d4948ac5"
+      },
+      "permissions": ["config_read", "env_read", "pkg_search"],
+      "capabilities": ["settings.read", "environment.read", "packages.search"],
+      "tools": [
+        {
+          "toolId": "hello",
+          "name": "Hello World",
+          "description": "Greets the user with runtime information.",
+          "category": "developer",
+          "uiMode": "text"
+        },
+        {
+          "toolId": "env-check",
+          "name": "Environment Check",
+          "description": "Checks installed development environments.",
+          "category": "developer",
+          "uiMode": "text"
+        },
+        {
+          "toolId": "env-dashboard",
+          "name": "Environment Dashboard",
+          "description": "Declarative dashboard for environment information.",
+          "category": "developer",
+          "uiMode": "declarative"
+        }
+      ]
+    },
+    {
+      "id": "hello-world-ts",
+      "pluginId": "com.cognia.hello-world-ts",
+      "name": "Hello World (TypeScript)",
+      "description": "A TypeScript example plugin with declarative and custom UI tools.",
+      "version": "0.1.0",
+      "category": "developer",
+      "featured": true,
+      "authors": ["CogniaLauncher Team"],
+      "updatedAt": "2026-03-06T12:00:00.000Z",
+      "installCount": 860,
+      "publisher": {
+        "id": "cognia",
+        "name": "CogniaLauncher Team",
+        "verified": true,
+        "url": "https://example.invalid/publisher/cognia"
+      },
+      "support": {
+        "homepageUrl": "https://example.invalid/hello-world-ts",
+        "documentationUrl": "https://example.invalid/hello-world-ts/docs",
+        "issuesUrl": "https://example.invalid/hello-world-ts/issues"
+      },
+      "highlights": ["Declarative UI", "Custom iframe view"],
+      "gallery": [
+        {
+          "type": "image",
+          "url": "https://example.invalid/hello-world-ts/cover.png",
+          "alt": "Hello World TypeScript overview",
+          "caption": "Overview screenshot"
+        }
+      ],
+      "releaseNotes": "Adds a custom UI example and refreshed declarative dashboard experience.",
+      "minimumHostVersion": "0.1.0",
+      "toolContractVersion": "1.0.0",
+      "desktopOnly": true,
+      "source": {
+        "type": "store",
+        "storeId": "hello-world-ts",
+        "pluginDir": "marketplace/hello-world-ts",
+        "artifact": "plugin.wasm",
+        "checksumSha256": "a05ba838e79183f8fd68163ab6e7c56ecd2373de5265b8c07bb63ab704aa0005"
+      },
+      "permissions": ["config_read", "env_read", "pkg_search"],
+      "capabilities": ["settings.read", "environment.read", "packages.search"],
+      "tools": [
+        {
+          "toolId": "hello",
+          "name": "Hello World",
+          "description": "Greets the user with runtime information.",
+          "category": "developer",
+          "uiMode": "text"
+        },
+        {
+          "toolId": "env-dashboard",
+          "name": "Environment Dashboard",
+          "description": "Declarative environment dashboard.",
+          "category": "developer",
+          "uiMode": "declarative"
+        },
+        {
+          "toolId": "custom-view",
+          "name": "Custom UI View",
+          "description": "Iframe-based custom UI with postMessage bridge.",
+          "category": "developer",
+          "uiMode": "iframe"
+        }
+      ]
+    },
+    {
+      "id": "aab-to-apk-ts",
+      "pluginId": "com.cognia.aab-to-apk",
+      "name": "AAB to APK Converter",
+      "description": "Convert Android App Bundles (.aab) to universal APKs with preflight diagnostics.",
+      "version": "0.1.0",
+      "category": "mobile",
+      "featured": false,
+      "authors": ["CogniaLauncher Team"],
+      "updatedAt": "2026-03-04T09:00:00.000Z",
+      "installCount": 320,
+      "publisher": {
+        "id": "cognia",
+        "name": "CogniaLauncher Team",
+        "verified": true,
+        "url": "https://example.invalid/publisher/cognia"
+      },
+      "support": {
+        "homepageUrl": "https://example.invalid/aab-to-apk-ts",
+        "documentationUrl": "https://example.invalid/aab-to-apk-ts/docs",
+        "issuesUrl": "https://example.invalid/aab-to-apk-ts/issues"
+      },
+      "highlights": ["Preflight diagnostics", "Universal APK output"],
+      "gallery": [],
+      "releaseNotes": "Improves preflight diagnostics and conversion guidance.",
+      "minimumHostVersion": "0.1.0",
+      "toolContractVersion": "1.0.0",
+      "desktopOnly": true,
+      "source": {
+        "type": "store",
+        "storeId": "aab-to-apk-ts",
+        "pluginDir": "marketplace/aab-to-apk-ts",
+        "artifact": "plugin.wasm",
+        "checksumSha256": "a5d75656077d78d4201c3dc5bffaf1e9c410f892a1511ca948652f68992dd4f4"
+      },
+      "permissions": ["process_exec"],
+      "capabilities": ["process.exec"],
+      "tools": [
+        {
+          "toolId": "aab-to-apk",
+          "name": "AAB to APK",
+          "description": "Preflight and convert AAB into a universal APK.",
+          "category": "mobile",
+          "uiMode": "text"
+        }
+      ]
+    }
+  ]
+}

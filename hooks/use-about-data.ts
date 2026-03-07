@@ -1,16 +1,31 @@
-'use client';
+"use client";
 
-import { useEffect, useState, useCallback } from 'react';
-import * as tauri from '@/lib/tauri';
-import { isTauri } from '@/lib/platform';
-import { APP_VERSION } from '@/lib/app-version';
-import { toast } from 'sonner';
-import type { SystemInfo, UpdateStatus } from '@/types/about';
+import { useEffect, useState, useCallback } from "react";
+import * as tauri from "@/lib/tauri";
+import { isTauri } from "@/lib/platform";
+import { APP_VERSION } from "@/lib/app-version";
+import { toast } from "sonner";
+import type {
+  SystemInfo,
+  SystemSubsystem,
+  UpdateErrorCategory,
+  UpdateStatus,
+} from "@/types/about";
 import {
   ensureCacheInvalidationBridge,
   subscribeInvalidation,
   withThrottle,
-} from '@/lib/cache/invalidation';
+} from "@/lib/cache/invalidation";
+import {
+  categorizeUpdateError,
+  deriveStatusFromUpdateInfo,
+  mapProgressToUpdateStatus,
+  normalizeSelfUpdateInfo,
+} from "@/lib/update-lifecycle";
+import {
+  buildSystemSectionSummary,
+  buildWebDiagnosticsReport,
+} from "@/lib/about-diagnostics";
 
 export type { SystemInfo, UpdateStatus };
 
@@ -20,6 +35,8 @@ export interface UseAboutDataReturn {
   updating: boolean;
   updateProgress: number;
   updateStatus: UpdateStatus;
+  updateErrorCategory: UpdateErrorCategory | null;
+  updateErrorMessage: string | null;
   error: string | null;
   systemError: string | null;
   systemInfo: SystemInfo | null;
@@ -33,11 +50,18 @@ export interface UseAboutDataReturn {
 }
 
 export function useAboutData(locale: string): UseAboutDataReturn {
-  const [updateInfo, setUpdateInfo] = useState<tauri.SelfUpdateInfo | null>(null);
+  const [updateInfo, setUpdateInfo] = useState<tauri.SelfUpdateInfo | null>(
+    null,
+  );
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
   const [updateProgress, setUpdateProgress] = useState(0);
-  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>('idle');
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>("idle");
+  const [updateErrorCategory, setUpdateErrorCategory] =
+    useState<UpdateErrorCategory | null>(null);
+  const [updateErrorMessage, setUpdateErrorMessage] = useState<string | null>(
+    null,
+  );
   const [error, setError] = useState<string | null>(null);
   const [systemError, setSystemError] = useState<string | null>(null);
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
@@ -46,40 +70,57 @@ export function useAboutData(locale: string): UseAboutDataReturn {
 
   const checkForUpdate = useCallback(async () => {
     if (!tauri.isTauri()) {
+      const normalized = normalizeSelfUpdateInfo(
+        {
+          current_version: APP_VERSION,
+          latest_version: APP_VERSION,
+          update_available: false,
+          release_notes: null,
+        },
+        APP_VERSION,
+      );
       setUpdateInfo({
-        current_version: APP_VERSION,
-        latest_version: APP_VERSION,
-        update_available: false,
-        release_notes: null,
+        ...normalized,
       });
+      setUpdateStatus(deriveStatusFromUpdateInfo(normalized));
       setLoading(false);
       return;
     }
 
     setLoading(true);
     setError(null);
+    setUpdateErrorCategory(null);
+    setUpdateErrorMessage(null);
+    setUpdateStatus("checking");
     try {
-      const info = await tauri.selfCheckUpdate();
-      setUpdateInfo({
-        ...info,
-        current_version: info.current_version || APP_VERSION,
-        latest_version: info.latest_version || info.current_version || APP_VERSION,
-      });
+      const info = normalizeSelfUpdateInfo(
+        await tauri.selfCheckUpdate(),
+        APP_VERSION,
+      );
+      setUpdateInfo(info);
+      setUpdateStatus(deriveStatusFromUpdateInfo(info));
     } catch (err) {
-      const message = (err instanceof Error ? err.message : String(err)).toLowerCase();
-      if (message.includes('network') || message.includes('fetch') || message.includes('failed to fetch')) {
-        setError('network_error');
-      } else if (message.includes('timeout') || message.includes('timed out')) {
-        setError('timeout_error');
+      const category = categorizeUpdateError(err);
+      setUpdateErrorCategory(category);
+      setUpdateErrorMessage(err instanceof Error ? err.message : String(err));
+      if (category === "network_error") {
+        setError("network_error");
+      } else if (category === "timeout_error") {
+        setError("timeout_error");
       } else {
-        setError('update_check_failed');
+        setError("update_check_failed");
       }
-      setUpdateInfo({
-        current_version: APP_VERSION,
-        latest_version: APP_VERSION,
-        update_available: false,
-        release_notes: null,
-      });
+      setUpdateStatus("error");
+      const fallback = normalizeSelfUpdateInfo(
+        {
+          current_version: APP_VERSION,
+          latest_version: APP_VERSION,
+          update_available: false,
+          release_notes: null,
+        },
+        APP_VERSION,
+      );
+      setUpdateInfo(fallback);
     } finally {
       setLoading(false);
     }
@@ -89,17 +130,17 @@ export function useAboutData(locale: string): UseAboutDataReturn {
     setSystemError(null);
     if (!tauri.isTauri()) {
       setSystemInfo({
-        os: 'Web',
-        arch: 'Browser',
-        osVersion: '',
-        osLongVersion: '',
-        kernelVersion: '',
-        hostname: '',
-        osName: '',
-        distributionId: '',
-        cpuArch: '',
-        cpuModel: '',
-        cpuVendorId: '',
+        os: "Web",
+        arch: "Browser",
+        osVersion: "",
+        osLongVersion: "",
+        kernelVersion: "",
+        hostname: "",
+        osName: "",
+        distributionId: "",
+        cpuArch: "",
+        cpuModel: "",
+        cpuVendorId: "",
         cpuFrequency: 0,
         cpuCores: 0,
         physicalCoreCount: null,
@@ -114,15 +155,23 @@ export function useAboutData(locale: string): UseAboutDataReturn {
         loadAverage: [0, 0, 0],
         gpus: [],
         appVersion: APP_VERSION,
-        homeDir: '~/.cognia',
-        locale: locale === 'zh' ? 'zh-CN' : 'en-US',
-        cacheInternalSizeHuman: '0 B',
-        cacheExternalSizeHuman: '0 B',
-        cacheTotalSizeHuman: '0 B',
+        homeDir: "~/.cognia",
+        locale: locale === "zh" ? "zh-CN" : "en-US",
+        cacheInternalSizeHuman: "0 B",
+        cacheExternalSizeHuman: "0 B",
+        cacheTotalSizeHuman: "0 B",
         components: [],
         battery: null,
         disks: [],
         networks: [],
+        subsystemErrors: [],
+        sectionSummary: buildSystemSectionSummary({
+          components: [],
+          battery: null,
+          disks: [],
+          networks: [],
+          subsystemErrors: [],
+        }),
       });
       setSystemLoading(false);
       return;
@@ -130,7 +179,15 @@ export function useAboutData(locale: string): UseAboutDataReturn {
 
     setSystemLoading(true);
     try {
-      const [platformResult, cogniaDirResult, componentsResult, batteryResult, disksResult, networksResult, cacheStatsResult] = await Promise.allSettled([
+      const [
+        platformResult,
+        cogniaDirResult,
+        componentsResult,
+        batteryResult,
+        disksResult,
+        networksResult,
+        cacheStatsResult,
+      ] = await Promise.allSettled([
         tauri.getPlatformInfo(),
         tauri.getCogniaDir(),
         tauri.getComponentsInfo(),
@@ -140,16 +197,35 @@ export function useAboutData(locale: string): UseAboutDataReturn {
         tauri.getCombinedCacheStats(),
       ]);
 
-      const platformInfo = platformResult.status === 'fulfilled' ? platformResult.value : null;
-      const cogniaDir = cogniaDirResult.status === 'fulfilled' ? cogniaDirResult.value : '~/.cognia';
-      const components = componentsResult.status === 'fulfilled' ? componentsResult.value : [];
-      const battery = batteryResult.status === 'fulfilled' ? batteryResult.value : null;
-      const disks = disksResult.status === 'fulfilled' ? disksResult.value : [];
-      const networks = networksResult.status === 'fulfilled' ? networksResult.value : [];
-      const cacheStats = cacheStatsResult.status === 'fulfilled' ? cacheStatsResult.value : null;
+      const platformInfo =
+        platformResult.status === "fulfilled" ? platformResult.value : null;
+      const cogniaDir =
+        cogniaDirResult.status === "fulfilled"
+          ? cogniaDirResult.value
+          : "~/.cognia";
+      const components =
+        componentsResult.status === "fulfilled" ? componentsResult.value : [];
+      const battery =
+        batteryResult.status === "fulfilled" ? batteryResult.value : null;
+      const disks = disksResult.status === "fulfilled" ? disksResult.value : [];
+      const networks =
+        networksResult.status === "fulfilled" ? networksResult.value : [];
+      const cacheStats =
+        cacheStatsResult.status === "fulfilled" ? cacheStatsResult.value : null;
+      const subsystemErrors: SystemSubsystem[] = [];
+      if (componentsResult.status !== "fulfilled")
+        subsystemErrors.push("components");
+      if (batteryResult.status !== "fulfilled") subsystemErrors.push("battery");
+      if (disksResult.status !== "fulfilled") subsystemErrors.push("disks");
+      if (networksResult.status !== "fulfilled")
+        subsystemErrors.push("networks");
+      if (cacheStatsResult.status !== "fulfilled")
+        subsystemErrors.push("cache");
+      if (cogniaDirResult.status !== "fulfilled")
+        subsystemErrors.push("homeDir");
 
       if (!platformInfo) {
-        throw new Error('Failed to load platform info');
+        throw new Error("Failed to load platform info");
       }
 
       setSystemInfo({
@@ -179,30 +255,38 @@ export function useAboutData(locale: string): UseAboutDataReturn {
         gpus: platformInfo.gpus,
         appVersion: platformInfo.appVersion || APP_VERSION,
         homeDir: cogniaDir,
-        locale: locale === 'zh' ? 'zh-CN' : 'en-US',
-        cacheInternalSizeHuman: cacheStats?.internalSizeHuman || '0 B',
-        cacheExternalSizeHuman: cacheStats?.externalSizeHuman || '0 B',
-        cacheTotalSizeHuman: cacheStats?.totalSizeHuman || '0 B',
+        locale: locale === "zh" ? "zh-CN" : "en-US",
+        cacheInternalSizeHuman: cacheStats?.internalSizeHuman || "0 B",
+        cacheExternalSizeHuman: cacheStats?.externalSizeHuman || "0 B",
+        cacheTotalSizeHuman: cacheStats?.totalSizeHuman || "0 B",
         components,
         battery,
         disks,
         networks,
+        subsystemErrors,
+        sectionSummary: buildSystemSectionSummary({
+          components,
+          battery,
+          disks,
+          networks,
+          subsystemErrors,
+        }),
       });
     } catch (err) {
-      console.error('Failed to load system info:', err);
-      setSystemError('system_info_failed');
+      console.error("Failed to load system info:", err);
+      setSystemError("system_info_failed");
       setSystemInfo({
-        os: 'Unknown',
-        arch: 'Unknown',
-        osVersion: '',
-        osLongVersion: '',
-        kernelVersion: '',
-        hostname: '',
-        osName: '',
-        distributionId: '',
-        cpuArch: '',
-        cpuModel: '',
-        cpuVendorId: '',
+        os: "Unknown",
+        arch: "Unknown",
+        osVersion: "",
+        osLongVersion: "",
+        kernelVersion: "",
+        hostname: "",
+        osName: "",
+        distributionId: "",
+        cpuArch: "",
+        cpuModel: "",
+        cpuVendorId: "",
         cpuFrequency: 0,
         cpuCores: 0,
         physicalCoreCount: null,
@@ -217,15 +301,23 @@ export function useAboutData(locale: string): UseAboutDataReturn {
         loadAverage: [0, 0, 0],
         gpus: [],
         appVersion: APP_VERSION,
-        homeDir: '~/.cognia',
-        locale: locale === 'zh' ? 'zh-CN' : 'en-US',
-        cacheInternalSizeHuman: '0 B',
-        cacheExternalSizeHuman: '0 B',
-        cacheTotalSizeHuman: '0 B',
+        homeDir: "~/.cognia",
+        locale: locale === "zh" ? "zh-CN" : "en-US",
+        cacheInternalSizeHuman: "0 B",
+        cacheExternalSizeHuman: "0 B",
+        cacheTotalSizeHuman: "0 B",
         components: [],
         battery: null,
         disks: [],
         networks: [],
+        subsystemErrors: ["platform"],
+        sectionSummary: buildSystemSectionSummary({
+          components: [],
+          battery: null,
+          disks: [],
+          networks: [],
+          subsystemErrors: ["platform"],
+        }),
       });
     } finally {
       setSystemLoading(false);
@@ -247,7 +339,7 @@ export function useAboutData(locale: string): UseAboutDataReturn {
     if (!tauri.isTauri()) return;
     void ensureCacheInvalidationBridge();
     const dispose = subscribeInvalidation(
-      'about_cache_stats',
+      "about_cache_stats",
       withThrottle(() => {
         void loadSystemInfo();
       }, 500),
@@ -260,21 +352,34 @@ export function useAboutData(locale: string): UseAboutDataReturn {
 
   const handleUpdate = useCallback(async (t: (key: string) => string) => {
     if (!tauri.isTauri()) {
-      toast.error(t('about.updateDesktopOnly'));
+      setUpdateErrorCategory("unsupported_error");
+      setUpdateErrorMessage("Self-update is only supported in desktop mode.");
+      setUpdateStatus("error");
+      toast.error(t("about.updateDesktopOnly"));
       return;
     }
 
+    setError(null);
+    setUpdateErrorCategory(null);
+    setUpdateErrorMessage(null);
     setUpdating(true);
     setUpdateProgress(0);
-    setUpdateStatus('downloading');
+    setUpdateStatus("downloading");
     try {
       await tauri.selfUpdate();
-      setUpdateStatus('done');
-      toast.success(t('about.updateStarted') || 'Update started! The application will restart shortly.');
+      setUpdateStatus("installing");
+      toast.success(
+        t("about.updateStarted") ||
+          "Update started! The application will restart shortly.",
+      );
     } catch (err) {
-      setUpdateStatus('error');
-      toast.error(`${t('common.error')}: ${err}`);
-    } finally {
+      const category = categorizeUpdateError(err);
+      setUpdateErrorCategory(
+        category === "unknown_error" ? "update_install_failed" : category,
+      );
+      setUpdateErrorMessage(err instanceof Error ? err.message : String(err));
+      setUpdateStatus("error");
+      toast.error(`${t("common.error")}: ${err}`);
       setUpdating(false);
     }
   }, []);
@@ -286,17 +391,22 @@ export function useAboutData(locale: string): UseAboutDataReturn {
       if (!tauri.isTauri()) return;
       try {
         const handler = await tauri.listenSelfUpdateProgress((event) => {
-          setUpdateStatus(event.status);
-          if (typeof event.progress === 'number') {
+          setUpdateStatus(mapProgressToUpdateStatus(event.status));
+          if (typeof event.progress === "number") {
             setUpdateProgress(event.progress);
           }
-          if (event.status === 'done') {
+          if (event.status === "done") {
             setUpdateProgress(100);
+            setUpdating(false);
+          }
+          if (event.status === "error") {
+            setUpdating(false);
+            setUpdateErrorCategory("update_install_failed");
           }
         });
         unlisten = handler;
       } catch (err) {
-        console.error('Failed to listen for update progress:', err);
+        console.error("Failed to listen for update progress:", err);
       }
     };
 
@@ -311,121 +421,110 @@ export function useAboutData(locale: string): UseAboutDataReturn {
 
   const clearError = useCallback(() => {
     setError(null);
+    setUpdateErrorCategory(null);
+    setUpdateErrorMessage(null);
   }, []);
 
-  const exportDiagnostics = useCallback(async (t: (key: string) => string) => {
-    // Desktop mode: full ZIP bundle via Tauri backend
-    if (isTauri()) {
-      try {
-        let outputPath: string | undefined;
+  const exportDiagnostics = useCallback(
+    async (t: (key: string) => string) => {
+      // Desktop mode: full ZIP bundle via Tauri backend
+      if (isTauri()) {
         try {
-          const { save } = await import('@tauri-apps/plugin-dialog');
-          const defaultPath = await tauri.diagnosticGetDefaultExportPath();
-          const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-          const selected = await save({
-            title: t('diagnostic.selectExportPath'),
-            defaultPath: `${defaultPath}/cognia-diagnostic-${ts}.zip`,
-            filters: [{ name: 'ZIP', extensions: ['zip'] }],
+          let outputPath: string | undefined;
+          try {
+            const { save } = await import("@tauri-apps/plugin-dialog");
+            const defaultPath = await tauri.diagnosticGetDefaultExportPath();
+            const ts = new Date()
+              .toISOString()
+              .replace(/[:.]/g, "-")
+              .slice(0, 19);
+            const selected = await save({
+              title: t("diagnostic.selectExportPath"),
+              defaultPath: `${defaultPath}/cognia-diagnostic-${ts}.zip`,
+              filters: [{ name: "ZIP", extensions: ["zip"] }],
+            });
+            if (!selected) return; // user cancelled
+            outputPath = selected;
+          } catch {
+            // Dialog failed, let backend use default path
+          }
+
+          toast.info(t("diagnostic.generating"));
+
+          const result = await tauri.diagnosticExportBundle({
+            outputPath,
+            includeConfig: true,
           });
-          if (!selected) return; // user cancelled
-          outputPath = selected;
-        } catch {
-          // Dialog failed, let backend use default path
+
+          const sizeMb = (result.size / (1024 * 1024)).toFixed(1);
+          toast.success(t("diagnostic.exportSuccess"), {
+            description: `${result.path} (${sizeMb} MB, ${result.fileCount} files)`,
+            duration: 8000,
+            action: {
+              label: t("diagnostic.openFolder"),
+              onClick: async () => {
+                try {
+                  const { revealItemInDir } =
+                    await import("@tauri-apps/plugin-opener");
+                  await revealItemInDir(result.path);
+                } catch {
+                  // fallback: ignore
+                }
+              },
+            },
+          });
+        } catch (err) {
+          console.error("Failed to export diagnostics:", err);
+          toast.error(t("about.diagnosticsFailed"));
         }
+        return;
+      }
 
-        toast.info(t('diagnostic.generating'));
-
-        const result = await tauri.diagnosticExportBundle({
-          outputPath,
-          includeConfig: true,
-        });
-
-        const sizeMb = (result.size / (1024 * 1024)).toFixed(1);
-        toast.success(t('diagnostic.exportSuccess'), {
-          description: `${result.path} (${sizeMb} MB, ${result.fileCount} files)`,
-          duration: 8000,
-          action: {
-            label: t('diagnostic.openFolder'),
-            onClick: async () => {
-              try {
-                const { revealItemInDir } = await import('@tauri-apps/plugin-opener');
-                await revealItemInDir(result.path);
-              } catch {
-                // fallback: ignore
-              }
+      // Web mode: generate a client-side diagnostic JSON file download
+      try {
+        const report = buildWebDiagnosticsReport({
+          systemInfo,
+          updateInfo,
+          updateStatus,
+          updateErrorCategory,
+          updateErrorMessage,
+          runtime: {
+            navigator: {
+              userAgent: navigator.userAgent,
+              language: navigator.language,
+              languages: [...navigator.languages],
+              platform: navigator.platform,
+              cookieEnabled: navigator.cookieEnabled,
+              onLine: navigator.onLine,
+              hardwareConcurrency: navigator.hardwareConcurrency,
+              deviceMemory:
+                ((navigator as unknown as Record<string, unknown>)
+                  .deviceMemory as number | undefined) ?? null,
+              maxTouchPoints: navigator.maxTouchPoints,
+            },
+            screen: {
+              width: screen.width,
+              height: screen.height,
+              colorDepth: screen.colorDepth,
+              pixelRatio: window.devicePixelRatio,
+            },
+            performance: {
+              memory:
+                (performance as unknown as Record<string, unknown>).memory ??
+                null,
+              timing: performance.timing
+                ? {
+                    navigationStart: performance.timing.navigationStart,
+                    loadEventEnd: performance.timing.loadEventEnd,
+                    domContentLoadedEventEnd:
+                      performance.timing.domContentLoadedEventEnd,
+                  }
+                : null,
             },
           },
         });
-      } catch (err) {
-        console.error('Failed to export diagnostics:', err);
-        toast.error(t('about.diagnosticsFailed'));
-      }
-      return;
-    }
 
-    // Web mode: generate a client-side diagnostic JSON file download
-    try {
-      const formatMem = (bytes: number) =>
-        bytes > 0 ? `${Math.round(bytes / (1024 * 1024 * 1024))} GB` : 'N/A';
-
-      const report: Record<string, unknown> = {
-        generated: new Date().toISOString(),
-        mode: 'web',
-        appVersion: APP_VERSION,
-        system: {
-          os: systemInfo?.osLongVersion || systemInfo?.os || 'Web',
-          osName: systemInfo?.osName || navigator.platform || 'Unknown',
-          arch: systemInfo?.cpuArch || systemInfo?.arch || 'Unknown',
-          cpu: systemInfo?.cpuModel || 'Unknown',
-          cpuCores: systemInfo?.cpuCores || navigator.hardwareConcurrency || 0,
-          memoryTotal: systemInfo?.totalMemory
-            ? formatMem(systemInfo.totalMemory)
-            : 'Unknown',
-          memoryUsed: systemInfo?.usedMemory
-            ? formatMem(systemInfo.usedMemory)
-            : 'Unknown',
-          gpus: systemInfo?.gpus?.map((g) => ({
-            name: g.name,
-            vramMb: g.vramMb,
-          })) || [],
-        },
-        browser: {
-          userAgent: navigator.userAgent,
-          language: navigator.language,
-          languages: [...navigator.languages],
-          platform: navigator.platform,
-          cookieEnabled: navigator.cookieEnabled,
-          onLine: navigator.onLine,
-          hardwareConcurrency: navigator.hardwareConcurrency,
-          // deviceMemory may not be available in all browsers
-          deviceMemory: (navigator as unknown as Record<string, unknown>).deviceMemory ?? null,
-          maxTouchPoints: navigator.maxTouchPoints,
-        },
-        screen: {
-          width: screen.width,
-          height: screen.height,
-          colorDepth: screen.colorDepth,
-          pixelRatio: window.devicePixelRatio,
-        },
-        performance: {
-          memory: (performance as unknown as Record<string, unknown>).memory ?? null,
-          timing: performance.timing
-            ? {
-                navigationStart: performance.timing.navigationStart,
-                loadEventEnd: performance.timing.loadEventEnd,
-                domContentLoadedEventEnd:
-                  performance.timing.domContentLoadedEventEnd,
-              }
-            : null,
-        },
-        update: updateInfo
-          ? {
-              currentVersion: updateInfo.current_version,
-              latestVersion: updateInfo.latest_version,
-              updateAvailable: updateInfo.update_available,
-            }
-          : null,
-        localStorage: {
+        report.localStorage = {
           itemCount: localStorage.length,
           estimatedSizeKB: (() => {
             try {
@@ -433,7 +532,8 @@ export function useAboutData(locale: string): UseAboutDataReturn {
               for (let i = 0; i < localStorage.length; i++) {
                 const key = localStorage.key(i);
                 if (key) {
-                  total += key.length + (localStorage.getItem(key)?.length || 0);
+                  total +=
+                    key.length + (localStorage.getItem(key)?.length || 0);
                 }
               }
               return Math.round((total * 2) / 1024); // UTF-16 → bytes → KB
@@ -441,27 +541,34 @@ export function useAboutData(locale: string): UseAboutDataReturn {
               return null;
             }
           })(),
-        },
-      };
+        };
 
-      const json = JSON.stringify(report, null, 2);
-      const blob = new Blob([json], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `cognia-diagnostic-${ts}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+        const json = JSON.stringify(report, null, 2);
+        const blob = new Blob([json], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `cognia-diagnostic-${ts}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
 
-      toast.success(t('diagnostic.exportSuccessWeb'));
-    } catch (err) {
-      console.error('Failed to export web diagnostics:', err);
-      toast.error(t('about.diagnosticsFailed'));
-    }
-  }, [updateInfo, systemInfo]);
+        toast.success(t("diagnostic.exportSuccessWeb"));
+      } catch (err) {
+        console.error("Failed to export web diagnostics:", err);
+        toast.error(t("about.diagnosticsFailed"));
+      }
+    },
+    [
+      updateErrorCategory,
+      updateErrorMessage,
+      updateInfo,
+      updateStatus,
+      systemInfo,
+    ],
+  );
 
   return {
     updateInfo,
@@ -469,6 +576,8 @@ export function useAboutData(locale: string): UseAboutDataReturn {
     updating,
     updateProgress,
     updateStatus,
+    updateErrorCategory,
+    updateErrorMessage,
     error,
     systemError,
     systemInfo,

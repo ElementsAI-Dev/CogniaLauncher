@@ -6,6 +6,23 @@ const mockFetchProviders = jest.fn().mockResolvedValue(undefined);
 const mockDetectVersions = jest.fn().mockResolvedValue(undefined);
 const mockIsTauri = jest.fn(() => false);
 const mockGetProjectDetectedForEnv = jest.fn(() => null);
+const mockCloseVersionBrowser = jest.fn();
+const mockOpenVersionBrowser = jest.fn();
+const mockGetSelectedProvider = jest.fn((envType: string, fallbackProviderId?: string | null) =>
+  fallbackProviderId ?? envType,
+);
+const mockSetSelectedProvider = jest.fn();
+const mockSetWorkflowContext = jest.fn();
+const mockSetWorkflowAction = jest.fn();
+const mockEnvironmentStoreState = {
+  workflowContext: null as
+    | {
+        envType: string;
+        origin?: string;
+        returnHref?: string | null;
+      }
+    | null,
+};
 
 jest.mock("@/lib/tauri", () => ({
   isTauri: () => mockIsTauri(),
@@ -35,11 +52,20 @@ jest.mock("@/hooks/use-environment-detection", () => ({
 }));
 
 jest.mock("@/lib/stores/environment", () => ({
-  useEnvironmentStore: () => ({
-    versionBrowserOpen: false,
-    closeVersionBrowser: jest.fn(),
-    openVersionBrowser: jest.fn(),
-  }),
+  useEnvironmentStore: Object.assign(
+    () => ({
+      versionBrowserOpen: false,
+      closeVersionBrowser: mockCloseVersionBrowser,
+      openVersionBrowser: mockOpenVersionBrowser,
+      getSelectedProvider: mockGetSelectedProvider,
+      setSelectedProvider: mockSetSelectedProvider,
+      setWorkflowContext: mockSetWorkflowContext,
+      setWorkflowAction: mockSetWorkflowAction,
+    }),
+    {
+      getState: () => mockEnvironmentStoreState,
+    },
+  ),
   getLogicalEnvType: (value: string) => value,
 }));
 
@@ -65,6 +91,7 @@ describe("EnvDetailPageClient", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockIsTauri.mockReturnValue(false);
+    mockEnvironmentStoreState.workflowContext = null;
   });
 
   it("renders desktop-only fallback in web mode and skips fetching", () => {

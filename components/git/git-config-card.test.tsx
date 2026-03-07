@@ -1,8 +1,16 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { GitConfigCard } from './git-config-card';
 
+const mockToastError = jest.fn();
+
 jest.mock('@/components/providers/locale-provider', () => ({
   useLocale: () => ({ t: (key: string) => key }),
+}));
+
+jest.mock('sonner', () => ({
+  toast: {
+    error: (...args: unknown[]) => mockToastError(...args),
+  },
 }));
 
 describe('GitConfigCard', () => {
@@ -138,5 +146,33 @@ describe('GitConfigCard', () => {
   it('renders config title', () => {
     render(<GitConfigCard config={config} onSet={mockOnSet} onRemove={mockOnRemove} />);
     expect(screen.getByText('git.config.title')).toBeInTheDocument();
+  });
+
+  it('blocks invalid key/value before add', async () => {
+    render(<GitConfigCard config={config} onSet={mockOnSet} onRemove={mockOnRemove} />);
+    const inputs = screen.getAllByRole('textbox');
+    const keyInput = inputs.find(i => (i as HTMLInputElement).placeholder === 'git.config.keyPlaceholder')!;
+    const valueInput = inputs.find(i => (i as HTMLInputElement).placeholder === 'git.config.valuePlaceholder')!;
+    fireEvent.change(keyInput, { target: { value: 'user.email' } });
+    fireEvent.change(valueInput, { target: { value: 'invalid-email' } });
+    fireEvent.click(screen.getByText('git.config.add'));
+
+    await waitFor(() => {
+      expect(mockToastError).toHaveBeenCalledWith('git.settings.validation.invalidEmail');
+    });
+    expect(mockOnSet).not.toHaveBeenCalledWith('user.email', 'invalid-email');
+  });
+
+  it('renders open-location action when file path and callback are provided', () => {
+    render(
+      <GitConfigCard
+        config={config}
+        onSet={mockOnSet}
+        onRemove={mockOnRemove}
+        configFilePath="/home/user/.gitconfig"
+        onOpenFileLocation={jest.fn()}
+      />,
+    );
+    expect(screen.getByText('git.config.openLocation')).toBeInTheDocument();
   });
 });

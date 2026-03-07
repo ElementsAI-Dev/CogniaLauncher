@@ -55,6 +55,8 @@ import {
 } from "@/lib/sidebar/order";
 import { isTauri } from "@/lib/tauri";
 import { useWsl } from "@/hooks/use-wsl";
+import { useWslStore } from "@/lib/stores/wsl";
+import { buildWslDistroHref, buildWslOverviewHref } from "@/lib/wsl/workflow";
 
 type SidebarLinkItem = {
   href: string;
@@ -161,6 +163,7 @@ export function AppSidebar() {
   const isDesktop = isTauri();
   const sidebarItemOrder = useSettingsStore((s) => s.appSettings.sidebarItemOrder);
   const { distros, checkAvailability, refreshDistros } = useWsl();
+  const overviewContext = useWslStore((state) => state.overviewContext);
   const availableEnvTypesKey = useEnvironmentStore((s) =>
     s.environments
       .filter((env) => env.available)
@@ -334,7 +337,7 @@ export function AppSidebar() {
             <SidebarMenuSub>
               <SidebarMenuSubItem>
                 <SidebarMenuSubButton asChild isActive={pathname === "/wsl"}>
-                  <Link href="/wsl">{t("wsl.title")}</Link>
+                  <Link href={buildWslOverviewHref({ ...overviewContext, origin: "sidebar" })}>{t("wsl.title")}</Link>
                 </SidebarMenuSubButton>
               </SidebarMenuSubItem>
               {distros.map((distro) => (
@@ -346,7 +349,7 @@ export function AppSidebar() {
                     activeWslDistroName === distro.name
                   }
                 >
-                    <Link href={`/wsl/distro?name=${encodeURIComponent(distro.name)}`}>
+                    <Link href={buildWslDistroHref(distro.name, { ...overviewContext, origin: "sidebar" })}>
                       <span
                         className={`mr-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full ${
                           distro.state.toLowerCase() === "running"

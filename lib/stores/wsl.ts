@@ -1,6 +1,10 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { WslNetworkPreset } from '@/lib/constants/wsl';
+import {
+  DEFAULT_WSL_OVERVIEW_CONTEXT,
+  type WslOverviewContext,
+} from '@/lib/wsl/workflow';
 
 // ============================================================================
 // Saved Commands
@@ -43,6 +47,9 @@ interface WslStoreState {
   addCustomProfile: (profile: WslNetworkPreset) => void;
   removeCustomProfile: (id: string) => void;
   updateCustomProfile: (id: string, updates: Partial<WslNetworkPreset>) => void;
+
+  overviewContext: WslOverviewContext;
+  setOverviewContext: (context: Partial<WslOverviewContext>) => void;
 }
 
 export const useWslStore = create<WslStoreState>()(
@@ -107,6 +114,16 @@ export const useWslStore = create<WslStoreState>()(
           customProfiles: state.customProfiles.map((p) =>
             p.id === id ? { ...p, ...updates } : p
           ),
+        })),
+
+      overviewContext: DEFAULT_WSL_OVERVIEW_CONTEXT,
+      setOverviewContext: (context) =>
+        set((state) => ({
+          overviewContext: {
+            tab: context.tab ?? state.overviewContext.tab,
+            tag: context.tag ?? state.overviewContext.tag,
+            origin: context.origin ?? state.overviewContext.origin,
+          },
         })),
     }),
     {

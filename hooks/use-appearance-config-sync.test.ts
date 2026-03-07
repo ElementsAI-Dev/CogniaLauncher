@@ -46,27 +46,59 @@ jest.mock('sonner', () => ({
   toast: {
     success: jest.fn(),
     error: jest.fn(),
+    warning: jest.fn(),
   },
+}));
+
+const mockConfigSet = jest.fn();
+const mockIsTauri = jest.fn(() => false);
+jest.mock('@/lib/tauri', () => ({
+  configSet: (...args: unknown[]) => mockConfigSet(...args),
+  isTauri: () => mockIsTauri(),
+}));
+
+const mockParseAppearanceConfig = jest.fn((config: Record<string, string>) => ({
+  theme: config['appearance.theme'] || config.theme || 'system',
+  accentColor: config['appearance.accent_color'] || config.accentColor || 'blue',
+  chartColorTheme: config['appearance.chart_color_theme'] || config.chartColorTheme || 'default',
+  interfaceRadius: config['appearance.interface_radius'] ? parseFloat(config['appearance.interface_radius']) : 0.625,
+  interfaceDensity: config['appearance.interface_density'] || 'comfortable',
+  reducedMotion: config.reducedMotion === 'true',
+  windowEffect: config['appearance.window_effect'] || 'auto',
+  locale: config['appearance.language'] || 'en',
+  invalidKeys: [],
 }));
 
 // Mock parseAppearanceConfig
 jest.mock('@/lib/theme', () => ({
-  parseAppearanceConfig: (config: Record<string, string>) => ({
-    theme: config['appearance.theme'] || config.theme,
-    accentColor: config['appearance.accent_color'] || config.accentColor,
-    chartColorTheme: config['appearance.chart_color_theme'] || config.chartColorTheme,
-    interfaceRadius: config['appearance.interface_radius'] ? parseFloat(config['appearance.interface_radius']) : undefined,
-    interfaceDensity: config['appearance.interface_density'],
-    reducedMotion: config.reducedMotion === 'true',
-    windowEffect: config['appearance.window_effect'],
-    locale: config['appearance.language'],
-    invalidKeys: [],
-  }),
+  APPEARANCE_CONFIG_PATHS: {
+    theme: 'appearance.theme',
+    accentColor: 'appearance.accent_color',
+    chartColorTheme: 'appearance.chart_color_theme',
+    interfaceRadius: 'appearance.interface_radius',
+    interfaceDensity: 'appearance.interface_density',
+    reducedMotion: 'appearance.reduced_motion',
+    language: 'appearance.language',
+    windowEffect: 'appearance.window_effect',
+  },
+  parseAppearanceConfig: (config: Record<string, string>) => mockParseAppearanceConfig(config),
 }));
 
 describe('useAppearanceConfigSync', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockIsTauri.mockReturnValue(false);
+    mockParseAppearanceConfig.mockImplementation((config: Record<string, string>) => ({
+      theme: config['appearance.theme'] || config.theme || 'system',
+      accentColor: config['appearance.accent_color'] || config.accentColor || 'blue',
+      chartColorTheme: config['appearance.chart_color_theme'] || config.chartColorTheme || 'default',
+      interfaceRadius: config['appearance.interface_radius'] ? parseFloat(config['appearance.interface_radius']) : 0.625,
+      interfaceDensity: config['appearance.interface_density'] || 'comfortable',
+      reducedMotion: config.reducedMotion === 'true',
+      windowEffect: config['appearance.window_effect'] || 'auto',
+      locale: config['appearance.language'] || 'en',
+      invalidKeys: [],
+    }));
   });
 
   it('should not update when config is empty', () => {
@@ -158,5 +190,25 @@ describe('useAppearanceConfigSync', () => {
     renderHook(() => useAppearanceConfigSync(config));
 
     expect(mockSetWindowEffect).toHaveBeenCalledWith('mica');
+  });
+
+  it('writes canonical values back for invalid appearance config keys on desktop', async () => {
+    mockIsTauri.mockReturnValue(true);
+    mockParseAppearanceConfig.mockImplementation(() => ({
+      theme: 'system',
+      accentColor: 'blue',
+      chartColorTheme: 'default',
+      interfaceRadius: 0.625,
+      interfaceDensity: 'comfortable',
+      reducedMotion: false,
+      windowEffect: 'auto',
+      locale: 'en',
+      invalidKeys: ['theme'],
+    }));
+
+    renderHook(() => useAppearanceConfigSync({ 'appearance.theme': 'invalid' }));
+
+    await Promise.resolve();
+    expect(mockConfigSet).toHaveBeenCalledWith('appearance.theme', 'system');
   });
 });

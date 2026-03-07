@@ -6,7 +6,14 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import type { CompleteStepProps } from '@/types/onboarding';
 
-export function CompleteStep({ t, onStartTour, tourCompleted }: CompleteStepProps) {
+export function CompleteStep({
+  t,
+  onStartTour,
+  tourCompleted,
+  mode = 'quick',
+}: CompleteStepProps) {
+  const isDetailed = mode === 'detailed';
+
   return (
     <div className="flex flex-col items-center text-center space-y-6 py-4">
       <div className="relative">
@@ -36,7 +43,7 @@ export function CompleteStep({ t, onStartTour, tourCompleted }: CompleteStepProp
           {t('onboarding.completeTitle')}
         </h2>
         <p className="text-muted-foreground max-w-md">
-          {t('onboarding.completeDesc')}
+          {t(isDetailed ? 'onboarding.completeDetailedDesc' : 'onboarding.completeDesc')}
         </p>
       </div>
 
@@ -44,13 +51,18 @@ export function CompleteStep({ t, onStartTour, tourCompleted }: CompleteStepProp
         {!tourCompleted && (
           <Card className="py-0">
             <CardContent className="p-4">
+              {isDetailed && (
+                <p className="mb-3 text-sm text-muted-foreground">
+                  {t('onboarding.completeDetailedTourDesc')}
+                </p>
+              )}
               <Button
-                variant="outline"
+                variant={isDetailed ? 'default' : 'outline'}
                 className="gap-2 w-full"
                 onClick={onStartTour}
               >
                 <Map className="h-4 w-4" />
-                {t('onboarding.completeTakeTour')}
+                {t(isDetailed ? 'onboarding.completeDetailedTakeTour' : 'onboarding.completeTakeTour')}
               </Button>
             </CardContent>
           </Card>
@@ -58,7 +70,7 @@ export function CompleteStep({ t, onStartTour, tourCompleted }: CompleteStepProp
         <Alert>
           <ArrowRight className="h-4 w-4" />
           <AlertDescription className="text-sm">
-            {t('onboarding.completeHint')}
+            {t(isDetailed ? 'onboarding.completeDetailedHint' : 'onboarding.completeHint')}
           </AlertDescription>
         </Alert>
       </div>

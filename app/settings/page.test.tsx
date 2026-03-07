@@ -13,7 +13,12 @@ const mockFetchPlatformInfo = jest.fn();
 const mockSetAppSettings = jest.fn();
 const mockSetTheme = jest.fn();
 const mockSetAccentColor = jest.fn();
+const mockSetChartColorTheme = jest.fn();
+const mockSetInterfaceRadius = jest.fn();
+const mockSetInterfaceDensity = jest.fn();
 const mockSetReducedMotion = jest.fn();
+const mockSetWindowEffect = jest.fn();
+const mockResetAppearance = jest.fn();
 
 const baseConfig: Record<string, string> = {
   'general.parallel_downloads': '4',
@@ -21,6 +26,23 @@ const baseConfig: Record<string, string> = {
   'general.metadata_cache_ttl': '3600',
   'general.resolve_strategy': 'latest',
   'general.auto_update_metadata': 'true',
+  'updates.check_on_start': 'true',
+  'updates.auto_install': 'false',
+  'updates.notify': 'true',
+  'tray.minimize_to_tray': 'true',
+  'tray.start_minimized': 'false',
+  'tray.show_notifications': 'true',
+  'tray.notification_level': 'all',
+  'tray.click_behavior': 'toggle_window',
+  'backup.auto_backup_enabled': 'true',
+  'backup.auto_backup_interval_hours': '24',
+  'backup.max_backups': '10',
+  'backup.retention_days': '30',
+  'startup.scan_environments': 'true',
+  'startup.scan_packages': 'true',
+  'startup.max_concurrent_scans': '4',
+  'startup.startup_timeout_secs': '45',
+  'startup.integrity_check': 'true',
   'network.timeout': '30',
   'network.retries': '3',
   'network.proxy': '',
@@ -188,6 +210,27 @@ const mockMessages = {
       autoInstallUpdatesDesc: 'Automatically install updates when available',
       notifyOnUpdates: 'Notify on Updates',
       notifyOnUpdatesDesc: 'Show a notification when updates are available',
+      tray: 'Tray',
+      trayDesc: 'Configure tray behavior',
+      minimizeToTray: 'Minimize to Tray',
+      minimizeToTrayDesc: 'Minimize to tray instead of closing',
+      startMinimized: 'Start Minimized',
+      startMinimizedDesc: 'Launch minimized in tray',
+      autostart: 'Autostart',
+      autostartDesc: 'Run at login',
+      showNotifications: 'Show Notifications',
+      showNotificationsDesc: 'Show tray notifications',
+      trayNotificationLevel: 'Tray Notification Level',
+      trayNotificationLevelDesc: 'Notification level for tray',
+      trayNotificationLevelAll: 'All',
+      trayNotificationLevelImportantOnly: 'Important Only',
+      trayNotificationLevelNone: 'None',
+      trayClickBehavior: 'Tray Click Behavior',
+      trayClickBehaviorDesc: 'Action when tray icon is clicked',
+      trayClickToggle: 'Toggle Window',
+      trayClickMenu: 'Show Menu',
+      trayClickCheckUpdates: 'Check Updates',
+      trayClickNothing: 'Do Nothing',
       paths: 'Paths',
       pathsDesc: 'Override default storage locations',
       pathRoot: 'Root Directory',
@@ -222,6 +265,35 @@ const mockMessages = {
       shortcutsRecording: 'Press keys...',
       shortcutsReset: 'Reset to Default',
       shortcutsDesktopOnly: 'Global shortcuts are only available in the desktop app',
+      startup: 'Startup',
+      startupDesc: 'Startup checks and scans',
+      startupScanEnvironments: 'Scan Environments on Startup',
+      startupScanEnvironmentsDesc: 'Scan environments at startup',
+      startupScanPackages: 'Scan Packages on Startup',
+      startupScanPackagesDesc: 'Scan packages at startup',
+      startupMaxConcurrentScans: 'Max Concurrent Scans',
+      startupMaxConcurrentScansDesc: 'Maximum startup scans',
+      startupTimeoutSecs: 'Startup Timeout (sec)',
+      startupTimeoutSecsDesc: 'Timeout for startup scan process',
+      startupIntegrityCheck: 'Startup Integrity Check',
+      startupIntegrityCheckDesc: 'Validate startup state',
+      backupAutoBackupEnabled: 'Auto Backup Enabled',
+      backupAutoBackupEnabledDesc: 'Enable scheduled backups',
+      backupAutoBackupIntervalHours: 'Backup Interval (Hours)',
+      backupAutoBackupIntervalHoursDesc: 'How often to create backups',
+      backupMaxBackups: 'Max Backups',
+      backupMaxBackupsDesc: 'Maximum number of backups to keep',
+      backupRetentionDays: 'Retention Days',
+      backupRetentionDaysDesc: 'How many days backups are kept',
+      section: {
+        modified: 'Modified',
+        moreActions: 'More actions',
+        resetToDefaults: 'Reset to defaults',
+      },
+    },
+    backup: {
+      title: 'Backup',
+      description: 'Backup policy and operations',
     },
   },
   zh: {
@@ -266,6 +338,7 @@ function setupMocks(overrides?: Partial<{ config: Record<string, string>; appSet
     autostart: false,
     trayClickBehavior: 'toggle_window',
     showNotifications: true,
+    trayNotificationLevel: 'all',
     sidebarItemOrder: [...DEFAULT_SIDEBAR_ITEM_ORDER],
   };
 
@@ -290,9 +363,16 @@ function setupMocks(overrides?: Partial<{ config: Record<string, string>; appSet
     accentColor: 'blue',
     setAccentColor: mockSetAccentColor,
     chartColorTheme: 'default',
-    setChartColorTheme: jest.fn(),
+    setChartColorTheme: mockSetChartColorTheme,
+    interfaceRadius: 0.625,
+    setInterfaceRadius: mockSetInterfaceRadius,
+    interfaceDensity: 'comfortable',
+    setInterfaceDensity: mockSetInterfaceDensity,
     reducedMotion: false,
     setReducedMotion: mockSetReducedMotion,
+    windowEffect: 'auto',
+    setWindowEffect: mockSetWindowEffect,
+    reset: mockResetAppearance,
   });
 
   useTheme.mockReturnValue({
@@ -420,7 +500,7 @@ describe('SettingsPage', () => {
     expect(toast.success).toHaveBeenCalledWith('Settings imported successfully');
   });
 
-  it('updates app settings toggles', async () => {
+  it('persists config-backed update app settings through config writes', async () => {
     renderWithProviders(<SettingsPage />);
 
     await waitFor(() => {
@@ -431,6 +511,43 @@ describe('SettingsPage', () => {
     await userEvent.click(updateToggle);
 
     expect(mockSetAppSettings).toHaveBeenCalledWith({ checkUpdatesOnStart: false });
+    await waitFor(() => {
+      expect(mockUpdateConfigValue).toHaveBeenCalledWith('updates.check_on_start', 'false');
+    });
+  });
+
+  it('keeps minimize-to-tray on dedicated runtime path without duplicate config write', async () => {
+    renderWithProviders(<SettingsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('switch', { name: /minimize to tray/i })).toBeInTheDocument();
+    });
+
+    const minimizeToggle = screen.getByRole('switch', { name: /minimize to tray/i });
+    await userEvent.click(minimizeToggle);
+
+    expect(mockSetAppSettings).toHaveBeenCalledWith({ minimizeToTray: false });
+    expect(mockUpdateConfigValue).not.toHaveBeenCalledWith('tray.minimize_to_tray', 'false');
+  });
+
+  it('renders backup policy controls and reset actions for backup/startup sections', async () => {
+    renderWithProviders(<SettingsPage />);
+
+    await waitFor(() => {
+      expect(document.getElementById('section-backup')).toBeInTheDocument();
+    });
+
+    expect(screen.getByLabelText('Auto Backup Enabled')).toBeInTheDocument();
+
+    const backupSection = document.getElementById('section-backup');
+    const startupSection = document.getElementById('section-startup');
+
+    expect(backupSection).toBeTruthy();
+    expect(startupSection).toBeTruthy();
+
+    const moreActionsLabel = /more actions|settings\.section\.moreActions/i;
+    expect(within(backupSection as HTMLElement).getByLabelText(moreActionsLabel)).toBeInTheDocument();
+    expect(within(startupSection as HTMLElement).getByLabelText(moreActionsLabel)).toBeInTheDocument();
   });
 
   it('resets settings through the confirmation dialog', async () => {

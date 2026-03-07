@@ -1,6 +1,13 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import type { CacheInfo, CacheSettings, CacheVerificationResult, PlatformInfo, TrayClickBehavior } from '../tauri';
+import type {
+  CacheInfo,
+  CacheSettings,
+  CacheVerificationResult,
+  PlatformInfo,
+  TrayClickBehavior,
+  TrayNotificationLevel,
+} from '../tauri';
 import {
   DEFAULT_SIDEBAR_ITEM_ORDER,
   normalizeSidebarItemOrder,
@@ -16,6 +23,7 @@ export interface AppSettings {
   autostart: boolean;
   trayClickBehavior: TrayClickBehavior;
   showNotifications: boolean;
+  trayNotificationLevel: TrayNotificationLevel;
   sidebarItemOrder: SidebarItemId[];
 }
 
@@ -51,6 +59,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   autostart: false,
   trayClickBehavior: 'toggle_window',
   showNotifications: true,
+  trayNotificationLevel: 'all',
   sidebarItemOrder: [...DEFAULT_SIDEBAR_ITEM_ORDER],
 };
 
@@ -113,6 +122,8 @@ export const useSettingsStore = create<SettingsState>()(
             appSettings.trayClickBehavior ?? DEFAULT_APP_SETTINGS.trayClickBehavior,
           showNotifications:
             appSettings.showNotifications ?? DEFAULT_APP_SETTINGS.showNotifications,
+          trayNotificationLevel:
+            appSettings.trayNotificationLevel ?? DEFAULT_APP_SETTINGS.trayNotificationLevel,
           sidebarItemOrder: normalizeSidebarItemOrder(
             Array.isArray(rawSidebarItemOrder)
               ? (rawSidebarItemOrder as string[])

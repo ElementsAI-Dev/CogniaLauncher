@@ -65,12 +65,26 @@ import {
   HardDrive,
   Copy,
   Container,
+  Activity,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { WslDistroDetailPageProps } from '@/types/wsl';
 import type { WslDistroStatus } from '@/types/tauri';
+import type { WslAssistanceActionDescriptor, WslAssistanceSummary } from '@/types/wsl';
+import { buildWslOverviewHref } from '@/lib/wsl/workflow';
 
-export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
+interface DistroLifecycleFeedback {
+  status: 'running' | 'success' | 'failed';
+  title: string;
+  details?: string;
+}
+
+export function WslDistroDetailPage({
+  distroName,
+  returnTo,
+  origin,
+  continueAction,
+}: WslDistroDetailPageProps) {
   const { t } = useLocale();
   const router = useRouter();
   const isDesktop = isTauri();
@@ -106,6 +120,13 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
     openInTerminal,
     cloneDistro,
     unregisterDistro,
+    healthCheck,
+    listPortForwards,
+    addPortForward,
+    removePortForward,
+    getAssistanceActions,
+    executeAssistanceAction,
+    mapErrorToAssistance,
   } = useWsl();
 
   const initializedRef = useRef(false);
@@ -114,10 +135,22 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
   const [moveDialogOpen, setMoveDialogOpen] = useState(false);
   const [resizeDialogOpen, setResizeDialogOpen] = useState(false);
   const [cloneDialogOpen, setCloneDialogOpen] = useState(false);
+  const [healthRunning, setHealthRunning] = useState(false);
+  const [healthError, setHealthError] = useState<string | null>(null);
+  const [healthResult, setHealthResult] = useState<{
+    status: string;
+    issues: { severity: string; category: string; message: string }[];
+    checkedAt: string;
+  } | null>(null);
+  const [runningAssistanceId, setRunningAssistanceId] = useState<string | null>(null);
+  const [assistanceSummary, setAssistanceSummary] = useState<WslAssistanceSummary | null>(null);
+  const [assistanceOrigin, setAssistanceOrigin] = useState<'panel' | 'error' | null>(null);
+  const [lifecycleFeedback, setLifecycleFeedback] = useState<DistroLifecycleFeedback | null>(null);
   const [confirmAction, setConfirmAction] = useState<
     | { type: 'unregister' | 'terminate' }
     | { type: 'move'; location: string }
     | { type: 'resize'; size: string }
+    | { type: 'assistance'; actionId: string; origin: 'panel' | 'error' }
     | null
   >(null);
 
@@ -145,6 +178,23 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
   const isRunning = distro?.state.toLowerCase() === 'running';
   const wslVer = distro ? parseInt(distro.wslVersion, 10) : 2;
   const targetVersion = wslVer === 1 ? 2 : 1;
+  const returnHref = returnTo ?? buildWslOverviewHref({ origin: 'detail' });
+  const returnLabel =
+    origin === 'sidebar'
+      ? t('wsl.detail.returnToSidebar')
+      : origin === 'widget'
+        ? t('wsl.detail.returnToWidget')
+        : origin === 'assistance'
+          ? t('wsl.detail.returnToAssistance')
+          : t('wsl.detail.returnToOverview');
+  const distroAssistanceActions = getAssistanceActions('distro', distroName);
+  const assistanceActionById = distroAssistanceActions.reduce<Record<string, WslAssistanceActionDescriptor>>(
+    (acc, action) => {
+      acc[action.id] = action;
+      return acc;
+    },
+    {}
+  );
 
   const handleRefresh = useCallback(async () => {
     await refreshDistros();
@@ -152,20 +202,48 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
   }, [refreshDistros, refreshStatus]);
 
   const handleLaunch = useCallback(async () => {
+    setLifecycleFeedback({
+      status: 'running',
+      title: t('wsl.workflow.running').replace('{action}', t('wsl.launch')),
+    });
     try {
       await launch(distroName);
       toast.success(t('wsl.launchSuccess').replace('{name}', distroName));
+      setLifecycleFeedback({
+        status: 'success',
+        title: t('wsl.workflow.success').replace('{action}', t('wsl.launch')),
+        details: distroName,
+      });
     } catch (err) {
       toast.error(String(err));
+      setLifecycleFeedback({
+        status: 'failed',
+        title: t('wsl.workflow.failed').replace('{action}', t('wsl.launch')),
+        details: String(err),
+      });
     }
   }, [distroName, launch, t]);
 
   const handleTerminate = useCallback(async () => {
+    setLifecycleFeedback({
+      status: 'running',
+      title: t('wsl.workflow.running').replace('{action}', t('wsl.terminate')),
+    });
     try {
       await terminate(distroName);
       toast.success(t('wsl.terminateSuccess').replace('{name}', distroName));
+      setLifecycleFeedback({
+        status: 'success',
+        title: t('wsl.workflow.success').replace('{action}', t('wsl.terminate')),
+        details: distroName,
+      });
     } catch (err) {
       toast.error(String(err));
+      setLifecycleFeedback({
+        status: 'failed',
+        title: t('wsl.workflow.failed').replace('{action}', t('wsl.terminate')),
+        details: String(err),
+      });
     }
   }, [terminate, distroName, t]);
 
@@ -191,28 +269,55 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
     }
   }, [setVersion, distroName, targetVersion, t]);
 
+  const buildExportErrorMessage = useCallback((err: unknown) => {
+    const message = String(err);
+    const lower = message.toLowerCase();
+    if (lower.includes('access is denied') || lower.includes('permission denied')) {
+      return t('wsl.exportErrorPermission');
+    }
+    if (
+      lower.includes('unknown option')
+      || lower.includes('invalid option')
+      || lower.includes('not supported')
+      || lower.includes('未识别')
+      || lower.includes('不支持')
+    ) {
+      return t('wsl.exportErrorUnsupported');
+    }
+    return t('wsl.exportErrorGeneric').replace('{error}', message);
+  }, [t]);
+
   const handleExport = useCallback(
     async (name: string, filePath: string, asVhd: boolean) => {
       try {
         await exportDistro(name, filePath, asVhd);
         toast.success(t('wsl.exportSuccess').replace('{name}', name));
       } catch (err) {
-        toast.error(String(err));
+        toast.error(buildExportErrorMessage(err));
+        throw err;
       }
     },
-    [exportDistro, t]
+    [buildExportErrorMessage, exportDistro, t]
   );
 
   const handleUnregister = useCallback(async () => {
+    setLifecycleFeedback({
+      status: 'running',
+      title: t('wsl.workflow.running').replace('{action}', t('wsl.unregister')),
+    });
     try {
       await unregisterDistro(distroName);
       toast.success(t('wsl.unregisterSuccess').replace('{name}', distroName));
-      // Navigate back after unregister
-      router.push('/wsl');
+      router.push(returnHref);
     } catch (err) {
       toast.error(String(err));
+      setLifecycleFeedback({
+        status: 'failed',
+        title: t('wsl.workflow.failed').replace('{action}', t('wsl.unregister')),
+        details: String(err),
+      });
     }
-  }, [distroName, router, t, unregisterDistro]);
+  }, [distroName, returnHref, router, t, unregisterDistro]);
 
   const handleChangeDefaultUserConfirm = useCallback(async (distro: string, username: string) => {
     try {
@@ -267,6 +372,60 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
     }
   }, [cloneDistro, t]);
 
+  const handleRunHealthCheck = useCallback(async () => {
+    setHealthRunning(true);
+    setHealthError(null);
+    try {
+      const result = await healthCheck(distroName);
+      setHealthResult(result);
+    } catch (err) {
+      setHealthError(String(err));
+    } finally {
+      setHealthRunning(false);
+    }
+  }, [distroName, healthCheck]);
+
+  const runAssistanceAction = useCallback(async (actionId: string, origin: 'panel' | 'error') => {
+    setRunningAssistanceId(actionId);
+    setAssistanceOrigin(origin);
+    try {
+      const summary = await executeAssistanceAction(actionId, 'distro', distroName);
+      setAssistanceSummary(summary);
+      if (summary.status === 'success') {
+        toast.success(summary.title);
+        await handleRefresh();
+        setLifecycleFeedback({
+          status: 'success',
+          title: summary.title,
+          details: summary.details,
+        });
+      } else {
+        toast.error(summary.details ?? summary.title);
+        setLifecycleFeedback({
+          status: 'failed',
+          title: summary.title,
+          details: summary.details ?? summary.title,
+        });
+      }
+    } finally {
+      setRunningAssistanceId(null);
+    }
+  }, [distroName, executeAssistanceAction, handleRefresh]);
+
+  const handleAssistanceAction = useCallback((actionId: string, origin: 'panel' | 'error' = 'panel') => {
+    const action = assistanceActionById[actionId];
+    if (!action) return;
+    if (!action.supported) {
+      toast.error(action.blockedReason ?? t('wsl.assistance.blocked'));
+      return;
+    }
+    if (action.risk === 'high') {
+      setConfirmAction({ type: 'assistance', actionId, origin });
+      return;
+    }
+    void runAssistanceAction(actionId, origin);
+  }, [assistanceActionById, runAssistanceAction, t]);
+
   const handleMoveConfirm = useCallback((location: string) => {
     setConfirmAction({ type: 'move', location });
   }, []);
@@ -285,19 +444,41 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
       try {
         const result = await moveDistro(distroName, confirmAction.location);
         toast.success(t('wsl.moveSuccess').replace('{name}', distroName) + (result ? `\n${result}` : ''));
+        setLifecycleFeedback({
+          status: 'success',
+          title: t('wsl.workflow.success').replace('{action}', t('wsl.move')),
+          details: result,
+        });
       } catch (err) {
         toast.error(String(err));
+        setLifecycleFeedback({
+          status: 'failed',
+          title: t('wsl.workflow.failed').replace('{action}', t('wsl.move')),
+          details: String(err),
+        });
       }
     } else if (confirmAction.type === 'resize') {
       try {
         const result = await resizeDistro(distroName, confirmAction.size);
         toast.success(t('wsl.resizeSuccess').replace('{name}', distroName) + (result ? `\n${result}` : ''));
+        setLifecycleFeedback({
+          status: 'success',
+          title: t('wsl.workflow.success').replace('{action}', t('wsl.resize')),
+          details: result,
+        });
       } catch (err) {
         toast.error(String(err));
+        setLifecycleFeedback({
+          status: 'failed',
+          title: t('wsl.workflow.failed').replace('{action}', t('wsl.resize')),
+          details: String(err),
+        });
       }
+    } else if (confirmAction.type === 'assistance') {
+      await runAssistanceAction(confirmAction.actionId, confirmAction.origin);
     }
     setConfirmAction(null);
-  }, [confirmAction, distroName, handleTerminate, handleUnregister, moveDistro, resizeDistro, t]);
+  }, [confirmAction, distroName, handleTerminate, handleUnregister, moveDistro, resizeDistro, runAssistanceAction, t]);
 
   const moveUnsupported = capabilities?.move === false;
   const resizeUnsupported = capabilities?.resize === false;
@@ -317,6 +498,10 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
         .replace('{feature}', t('wsl.setSparse'))
         .replace('{version}', capabilities?.version ?? 'Unknown')
     : undefined;
+  const errorSuggestions = error
+    ? mapErrorToAssistance(error, 'distro', distroName)
+    : [];
+  const assistanceGroups: Array<'check' | 'repair' | 'maintenance'> = ['check', 'repair', 'maintenance'];
 
   // Non-Tauri fallback
   if (!isDesktop) {
@@ -343,7 +528,7 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
           <BreadcrumbList>
             <BreadcrumbItem>
               <BreadcrumbLink asChild>
-                <Link href="/wsl">{t('wsl.title')}</Link>
+                <Link href={returnHref}>{t('wsl.title')}</Link>
               </BreadcrumbLink>
             </BreadcrumbItem>
             <BreadcrumbSeparator />
@@ -356,6 +541,11 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>
             {t('wsl.detail.notFound').replace('{name}', distroName)}
+            <div className="mt-3">
+              <Button size="sm" variant="outline" asChild>
+                <Link href={returnHref}>{returnLabel}</Link>
+              </Button>
+            </div>
           </AlertDescription>
         </Alert>
       </div>
@@ -369,7 +559,7 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
         <BreadcrumbList>
           <BreadcrumbItem>
             <BreadcrumbLink asChild>
-              <Link href="/wsl">{t('wsl.title')}</Link>
+              <Link href={returnHref}>{t('wsl.title')}</Link>
             </BreadcrumbLink>
           </BreadcrumbItem>
           <BreadcrumbSeparator />
@@ -410,13 +600,16 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
           </div>
         }
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Button variant="ghost" size="sm" asChild>
+              <Link href={returnHref}>{returnLabel}</Link>
+            </Button>
             {isRunning ? (
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => setConfirmAction({ type: 'terminate' })}
-                className="gap-1.5"
+                className="gap-1.5 whitespace-nowrap"
               >
                 <Square className="h-3.5 w-3.5" />
                 {t('wsl.terminate')}
@@ -426,35 +619,35 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
                 variant="default"
                 size="sm"
                 onClick={handleLaunch}
-                className="gap-1.5"
+                className="gap-1.5 whitespace-nowrap"
               >
                 <Play className="h-3.5 w-3.5" />
                 {t('wsl.launch')}
               </Button>
             )}
             {!distro?.isDefault && (
-              <Button variant="outline" size="sm" onClick={handleSetDefault} className="gap-1.5">
+              <Button variant="outline" size="sm" onClick={handleSetDefault} className="gap-1.5 whitespace-nowrap">
                 <Star className="h-3.5 w-3.5" />
                 {t('wsl.setDefault')}
               </Button>
             )}
-            <Button variant="outline" size="sm" onClick={handleSetVersion} className="gap-1.5">
+            <Button variant="outline" size="sm" onClick={handleSetVersion} className="gap-1.5 whitespace-nowrap">
               <ArrowUpDown className="h-3.5 w-3.5" />
               WSL {targetVersion}
             </Button>
-            <Button variant="outline" size="sm" onClick={() => setChangeUserOpen(true)} className="gap-1.5">
+            <Button variant="outline" size="sm" onClick={() => setChangeUserOpen(true)} className="gap-1.5 whitespace-nowrap">
               <UserCog className="h-3.5 w-3.5" />
               {t('wsl.changeDefaultUser')}
             </Button>
-            <Button variant="outline" size="sm" onClick={() => setExportOpen(true)} className="gap-1.5">
+            <Button variant="outline" size="sm" onClick={() => setExportOpen(true)} className="gap-1.5 whitespace-nowrap">
               <Download className="h-3.5 w-3.5" />
               {t('wsl.export')}
             </Button>
-            <Button variant="outline" size="sm" onClick={handleOpenInExplorer} className="gap-1.5">
+            <Button variant="outline" size="sm" onClick={handleOpenInExplorer} className="gap-1.5 whitespace-nowrap">
               <FolderOpen className="h-3.5 w-3.5" />
               {t('wsl.openInExplorer')}
             </Button>
-            <Button variant="outline" size="sm" onClick={handleOpenInTerminal} className="gap-1.5">
+            <Button variant="outline" size="sm" onClick={handleOpenInTerminal} className="gap-1.5 whitespace-nowrap">
               <TerminalSquare className="h-3.5 w-3.5" />
               {t('wsl.openInTerminal')}
             </Button>
@@ -462,7 +655,7 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
               variant="outline"
               size="sm"
               onClick={() => setConfirmAction({ type: 'unregister' })}
-              className="gap-1.5 text-destructive hover:text-destructive"
+              className="gap-1.5 whitespace-nowrap text-destructive hover:text-destructive"
             >
               <Trash2 className="h-3.5 w-3.5" />
               {t('wsl.unregister')}
@@ -485,10 +678,58 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
         }
       />
 
+      {lifecycleFeedback && (
+        <Alert
+          data-testid="wsl-distro-lifecycle-feedback"
+          variant={lifecycleFeedback.status === 'failed' ? 'destructive' : 'default'}
+        >
+          <AlertDescription className="space-y-2">
+            <p className="font-medium">{lifecycleFeedback.title}</p>
+            {lifecycleFeedback.details && (
+              <p className="text-xs text-muted-foreground">{lifecycleFeedback.details}</p>
+            )}
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" variant="outline" onClick={handleRefresh}>
+                {t('common.refresh')}
+              </Button>
+              {continueAction && (
+                <Button size="sm" variant="ghost" asChild>
+                  <Link href={returnHref}>{t('wsl.workflow.continue')}</Link>
+                </Button>
+              )}
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
+
       {error && (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
-          <AlertDescription>{error}</AlertDescription>
+          <AlertDescription className="space-y-3">
+            <p>{error}</p>
+            {errorSuggestions.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-medium">{t('wsl.assistance.suggestedActions')}</p>
+                <div className="flex flex-wrap gap-2">
+                  {errorSuggestions.map((suggestion) => {
+                    const action = assistanceActionById[suggestion.actionId];
+                    if (!action || !action.supported) return null;
+                    return (
+                      <Button
+                        key={`${suggestion.actionId}-${suggestion.reason}`}
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs"
+                        onClick={() => handleAssistanceAction(suggestion.actionId, 'error')}
+                      >
+                        {t(action.labelKey)}
+                      </Button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </AlertDescription>
         </Alert>
       )}
 
@@ -497,7 +738,7 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
           <div className="text-sm font-semibold">{t('wsl.manageOps')}</div>
           <CardDescription>{t('wsl.manageOpsDesc')}</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-2">
+        <CardContent className="space-y-3">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             <Button
               variant="outline"
@@ -552,11 +793,151 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
               <Copy className="h-3.5 w-3.5" />
               {t('wsl.clone')}
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="justify-start gap-1.5"
+              onClick={handleRunHealthCheck}
+              disabled={healthRunning}
+            >
+              <Activity className={`h-3.5 w-3.5 ${healthRunning ? 'animate-pulse' : ''}`} />
+              {healthRunning ? t('wsl.detail.healthCheckRunning') : t('wsl.detail.healthCheckRun')}
+            </Button>
           </div>
           {(moveHint || resizeHint || sparseHint) && (
             <p className="text-xs text-muted-foreground">
               {moveHint ?? resizeHint ?? sparseHint}
             </p>
+          )}
+          <div data-testid="wsl-distro-assistance-section" className="space-y-2 rounded-md border p-3">
+            <div>
+              <p className="text-sm font-medium">{t('wsl.assistance.title')}</p>
+              <p className="text-xs text-muted-foreground">{t('wsl.assistance.distroDesc')}</p>
+            </div>
+            {assistanceSummary && (
+              <Alert
+                variant={assistanceSummary.status === 'success' ? 'default' : 'destructive'}
+                data-testid="wsl-distro-assistance-summary"
+              >
+                <AlertDescription className="space-y-2">
+                  <p className="font-medium">{assistanceSummary.title}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {new Date(assistanceSummary.timestamp).toLocaleString()}
+                  </p>
+                  {assistanceSummary.findings.length > 0 && (
+                    <div className="space-y-1">
+                      {assistanceSummary.findings.slice(0, 3).map((finding) => (
+                        <p key={finding} className="text-xs">{finding}</p>
+                      ))}
+                    </div>
+                  )}
+                  {assistanceSummary.details && (
+                    <p className="text-xs text-muted-foreground">{assistanceSummary.details}</p>
+                  )}
+                  <div className="flex flex-wrap gap-2">
+                    {assistanceSummary.retryable && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs"
+                        onClick={() => handleAssistanceAction(assistanceSummary.actionId, assistanceOrigin ?? 'panel')}
+                        disabled={runningAssistanceId === assistanceSummary.actionId}
+                      >
+                        {t('wsl.assistance.retry')}
+                      </Button>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 text-xs"
+                      onClick={() => {
+                        setAssistanceSummary(null);
+                        setAssistanceOrigin(null);
+                      }}
+                    >
+                      {assistanceOrigin === 'error'
+                        ? t('wsl.assistance.returnToError')
+                        : t('wsl.assistance.dismiss')}
+                    </Button>
+                  </div>
+                </AlertDescription>
+              </Alert>
+            )}
+            {assistanceGroups.map((group) => {
+              const actions = distroAssistanceActions.filter((action) => action.category === group);
+              if (actions.length === 0) return null;
+              return (
+                <div key={group} className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground">{t(`wsl.assistance.groups.${group}`)}</p>
+                  <div className="grid grid-cols-1 gap-1.5 md:grid-cols-2">
+                    {actions.map((action) => (
+                      <Button
+                        key={action.id}
+                        variant="outline"
+                        size="sm"
+                        className="h-auto flex-col items-start justify-start gap-0.5 py-2 text-left"
+                        disabled={!action.supported || runningAssistanceId === action.id}
+                        title={action.supported ? undefined : action.blockedReason}
+                        onClick={() => handleAssistanceAction(action.id)}
+                      >
+                        <span className="text-xs font-medium">{t(action.labelKey)}</span>
+                        <span className="text-[11px] font-normal text-muted-foreground">{t(action.descriptionKey)}</span>
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {healthError && (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription className="space-y-2">
+                <p>{t('wsl.detail.healthCheckFailed').replace('{error}', healthError)}</p>
+                <Button size="sm" variant="outline" onClick={handleRunHealthCheck}>
+                  {t('wsl.detail.healthCheckRetry')}
+                </Button>
+              </AlertDescription>
+            </Alert>
+          )}
+          {healthResult && (
+            <div className="rounded-md border p-3 space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge
+                  variant={
+                    healthResult.status === 'healthy'
+                      ? 'default'
+                      : healthResult.status === 'warning'
+                        ? 'secondary'
+                        : 'destructive'
+                  }
+                >
+                  {healthResult.status === 'healthy'
+                    ? t('wsl.detail.healthHealthy')
+                    : healthResult.status === 'warning'
+                      ? t('wsl.detail.healthWarning')
+                      : t('wsl.detail.healthError')}
+                </Badge>
+                <span className="text-xs text-muted-foreground">
+                  {t('wsl.detail.healthCheckedAt')}
+                  {' '}
+                  {new Date(healthResult.checkedAt).toLocaleString()}
+                </span>
+              </div>
+              {healthResult.issues.length === 0 ? (
+                <p className="text-sm text-muted-foreground">{t('wsl.detail.healthNoIssues')}</p>
+              ) : (
+                <div className="space-y-1">
+                  {healthResult.issues.map((issue, index) => (
+                    <div key={`${issue.category}-${index}`} className="text-sm">
+                      <span className="font-medium">{issue.category}</span>
+                      {': '}
+                      {issue.message}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
         </CardContent>
       </Card>
@@ -629,6 +1010,9 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
             isRunning={isRunning}
             getIpAddress={getIpAddress}
             onExec={execCommand}
+            listPortForwards={listPortForwards}
+            addPortForward={addPortForward}
+            removePortForward={removePortForward}
             t={t}
           />
         </TabsContent>
@@ -658,6 +1042,7 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
         distroName={distroName}
         onOpenChange={setExportOpen}
         onExport={handleExport}
+        capabilities={capabilities}
         t={t}
       />
 
@@ -675,6 +1060,8 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
                   ? t('wsl.move')
                   : confirmAction?.type === 'resize'
                     ? t('wsl.resize')
+                    : confirmAction?.type === 'assistance'
+                      ? t(assistanceActionById[confirmAction.actionId]?.labelKey ?? 'wsl.assistance.title')
                     : t('wsl.terminate')}
             </AlertDialogTitle>
             <AlertDialogDescription>
@@ -684,6 +1071,8 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
                   ? t('wsl.moveConfirm').replace('{name}', distroName)
                   : confirmAction?.type === 'resize'
                     ? t('wsl.resizeConfirm').replace('{name}', distroName)
+                    : confirmAction?.type === 'assistance'
+                      ? t(assistanceActionById[confirmAction.actionId]?.descriptionKey ?? 'wsl.assistance.desc')
                     : `${t('wsl.terminate')} ${distroName}?`}
               {confirmAction?.type === 'unregister' && (
                 <>
@@ -693,7 +1082,7 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
                   </span>
                 </>
               )}
-              {(confirmAction?.type === 'move' || confirmAction?.type === 'resize') && (
+              {(confirmAction?.type === 'move' || confirmAction?.type === 'resize' || confirmAction?.type === 'assistance') && (
                 <>
                   <br />
                   <span className="text-muted-foreground">
@@ -711,6 +1100,7 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
                 confirmAction?.type === 'unregister'
                   || confirmAction?.type === 'move'
                   || confirmAction?.type === 'resize'
+                  || confirmAction?.type === 'assistance'
                   ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
                   : ''
               }

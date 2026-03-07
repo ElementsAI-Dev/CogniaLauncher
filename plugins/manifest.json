@@ -1,0 +1,136 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-03-06T04:59:38.801Z",
+  "plugins": [
+    {
+      "id": "com.cognia.builtin.semver-inspector",
+      "name": "Semver Inspector",
+      "framework": "rust",
+      "version": "0.1.0",
+      "pluginDir": "rust/semver-inspector",
+      "artifact": "plugin.wasm",
+      "checksumSha256": "1e82ec1e8d613c751360cc831d8f22920ddc1ba2a446608df70c61ea521eb6d3",
+      "channel": "stable",
+      "minimumHostVersion": "0.1.0",
+      "rustCrate": "builtin_semver_inspector",
+      "onboarding": {
+        "profile": "builtin",
+        "catalogPath": "plugins/manifest.json",
+        "checksumCommand": "pnpm plugins:checksums",
+        "validationCommand": "pnpm plugins:validate"
+      }
+    },
+    {
+      "id": "com.cognia.builtin.aab-to-apk",
+      "name": "AAB to APK Converter",
+      "framework": "typescript",
+      "version": "0.1.0",
+      "pluginDir": "typescript/android-aab-to-apk",
+      "artifact": "plugin.wasm",
+      "checksumSha256": "3cd8297be1286eb917e40d0c00b26a5e8afd0cd76dcd4ad5336face54cca9489",
+      "channel": "stable",
+      "minimumHostVersion": "0.1.0",
+      "packageName": "cognia-builtin-aab-to-apk-plugin",
+      "testFile": "plugins/typescript/android-aab-to-apk/src/index.test.ts",
+      "onboarding": {
+        "profile": "builtin",
+        "catalogPath": "plugins/manifest.json",
+        "checksumCommand": "pnpm plugins:checksums",
+        "validationCommand": "pnpm plugins:validate"
+      }
+    },
+    {
+      "id": "com.cognia.builtin.port-inspector",
+      "name": "Port Inspector",
+      "framework": "typescript",
+      "version": "0.1.0",
+      "pluginDir": "typescript/port-inspector",
+      "artifact": "plugin.wasm",
+      "checksumSha256": "8a9aa8e7816fcc96bfd58b120d05a36056b8264ad13d1c42e5d7c689ef0ffd17",
+      "channel": "stable",
+      "minimumHostVersion": "0.1.0",
+      "packageName": "cognia-builtin-port-inspector-plugin",
+      "testFile": "plugins/typescript/port-inspector/src/index.test.ts",
+      "onboarding": {
+        "profile": "builtin",
+        "catalogPath": "plugins/manifest.json",
+        "checksumCommand": "pnpm plugins:checksums",
+        "validationCommand": "pnpm plugins:validate"
+      }
+    },
+    {
+      "id": "com.cognia.builtin.local-api-workbench",
+      "name": "Local API Workbench",
+      "framework": "typescript",
+      "version": "0.1.0",
+      "pluginDir": "typescript/local-api-workbench",
+      "artifact": "plugin.wasm",
+      "checksumSha256": "e3d35d9cd57738eb5f3d57e85d7b20f82834a2a73ccd5b7a1b84469a76cba70d",
+      "channel": "stable",
+      "minimumHostVersion": "0.1.0",
+      "packageName": "cognia-builtin-local-api-workbench-plugin",
+      "testFile": "plugins/typescript/local-api-workbench/src/index.test.ts",
+      "onboarding": {
+        "profile": "builtin",
+        "catalogPath": "plugins/manifest.json",
+        "checksumCommand": "pnpm plugins:checksums",
+        "validationCommand": "pnpm plugins:validate"
+      }
+    },
+    {
+      "id": "com.cognia.builtin.git-workspace-summary",
+      "name": "Git Workspace Summary",
+      "framework": "typescript",
+      "version": "0.1.0",
+      "pluginDir": "typescript/git-workspace-summary",
+      "artifact": "plugin.wasm",
+      "checksumSha256": "3fb08680cf4749524db3d4bbf461910e1819da3a0258ca03315cbbba1a3635d0",
+      "channel": "stable",
+      "minimumHostVersion": "0.1.0",
+      "packageName": "cognia-builtin-git-workspace-summary-plugin",
+      "testFile": "plugins/typescript/git-workspace-summary/src/index.test.ts",
+      "onboarding": {
+        "profile": "builtin",
+        "catalogPath": "plugins/manifest.json",
+        "checksumCommand": "pnpm plugins:checksums",
+        "validationCommand": "pnpm plugins:validate"
+      }
+    },
+    {
+      "id": "com.cognia.builtin.jwt-inspector",
+      "name": "JWT Inspector",
+      "framework": "rust",
+      "version": "0.1.0",
+      "pluginDir": "rust/jwt-inspector",
+      "artifact": "plugin.wasm",
+      "checksumSha256": "15f854d97f9ff60e1a370ae09b3a8af08214ac34b532cbbb70b5ecbc4f4186a1",
+      "channel": "stable",
+      "minimumHostVersion": "0.1.0",
+      "rustCrate": "builtin_jwt_inspector",
+      "onboarding": {
+        "profile": "builtin",
+        "catalogPath": "plugins/manifest.json",
+        "checksumCommand": "pnpm plugins:checksums",
+        "validationCommand": "pnpm plugins:validate"
+      }
+    },
+    {
+      "id": "com.cognia.builtin.json-workbench",
+      "name": "JSON Workbench",
+      "framework": "rust",
+      "version": "0.1.0",
+      "pluginDir": "rust/json-workbench",
+      "artifact": "plugin.wasm",
+      "checksumSha256": "ad869c6fc6cc03809ea809fbcc9c0266ab057b536cc1f1ceb04e21715f1f7753",
+      "channel": "stable",
+      "minimumHostVersion": "0.1.0",
+      "rustCrate": "builtin_json_workbench",
+      "onboarding": {
+        "profile": "builtin",
+        "catalogPath": "plugins/manifest.json",
+        "checksumCommand": "pnpm plugins:checksums",
+        "validationCommand": "pnpm plugins:validate"
+      }
+    }
+  ]
+}

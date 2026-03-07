@@ -1,5 +1,9 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { WslDistroDetailPage } from "./wsl-distro-detail-page";
+
+const mockRouterPush = jest.fn();
+const mockIsTauri = jest.fn(() => false);
 
 const mockUseWslData = {
   available: null as boolean | null,
@@ -34,6 +38,40 @@ const mockUseWslData = {
   openInTerminal: jest.fn().mockResolvedValue(undefined),
   cloneDistro: jest.fn().mockResolvedValue(""),
   unregisterDistro: jest.fn().mockResolvedValue(undefined),
+  healthCheck: jest.fn().mockResolvedValue({ status: "healthy", issues: [], checkedAt: "2026-03-05T00:00:00Z" }),
+  listPortForwards: jest.fn().mockResolvedValue([]),
+  addPortForward: jest.fn().mockResolvedValue(undefined),
+  removePortForward: jest.fn().mockResolvedValue(undefined),
+  getAssistanceActions: jest.fn().mockReturnValue([
+    {
+      id: "distro.preflight",
+      scope: "distro",
+      category: "check",
+      risk: "safe",
+      labelKey: "wsl.assistance.actions.distroPreflight.label",
+      descriptionKey: "wsl.assistance.actions.distroPreflight.desc",
+      supported: true,
+    },
+    {
+      id: "distro.relaunch",
+      scope: "distro",
+      category: "repair",
+      risk: "high",
+      labelKey: "wsl.assistance.actions.distroRelaunch.label",
+      descriptionKey: "wsl.assistance.actions.distroRelaunch.desc",
+      supported: true,
+    },
+  ]),
+  executeAssistanceAction: jest.fn().mockResolvedValue({
+    actionId: "distro.preflight",
+    status: "success",
+    timestamp: "2026-03-05T00:00:00Z",
+    title: "Preflight passed",
+    findings: ["Runtime Availability: WSL runtime is available."],
+    recommendations: [],
+    retryable: true,
+  }),
+  mapErrorToAssistance: jest.fn().mockReturnValue([]),
 };
 
 jest.mock("@/components/providers/locale-provider", () => ({
@@ -58,11 +96,40 @@ jest.mock("@/components/providers/locale-provider", () => ({
         "wsl.detail.tabFilesystem": "Filesystem",
         "wsl.detail.tabNetwork": "Network",
         "wsl.detail.tabServices": "Services",
+        "wsl.detail.healthCheckRun": "Run Check",
+        "wsl.detail.healthCheckRunning": "Checking...",
+        "wsl.detail.healthCheckedAt": "Checked at:",
+        "wsl.detail.healthNoIssues": "No issues detected.",
+        "wsl.detail.healthCheckFailed": "Health check failed: {error}",
+        "wsl.detail.healthCheckRetry": "Retry Check",
         "wsl.detail.notFound": "Distribution {name} not found",
         "wsl.manageOps": "Management Operations",
         "wsl.manageOpsDesc": "Advanced distro management",
+        "wsl.assistance.title": "Assistance",
+        "wsl.assistance.desc": "Guided checks, repairs, and maintenance",
+        "wsl.assistance.distroDesc": "Contextual assistance for this distro",
+        "wsl.assistance.blocked": "Assistance action blocked",
+        "wsl.assistance.retry": "Retry",
+        "wsl.assistance.dismiss": "Dismiss",
+        "wsl.assistance.returnToError": "Return to error context",
+        "wsl.assistance.suggestedActions": "Suggested recovery actions",
+        "wsl.assistance.groups.check": "Checks",
+        "wsl.assistance.groups.repair": "Repairs",
+        "wsl.assistance.groups.maintenance": "Maintenance",
+        "wsl.assistance.actions.distroPreflight.label": "Distro Preflight",
+        "wsl.assistance.actions.distroPreflight.desc": "Validate distro readiness",
+        "wsl.assistance.actions.distroRelaunch.label": "Relaunch Distro",
+        "wsl.assistance.actions.distroRelaunch.desc": "Restart distro runtime",
         "wsl.move": "Move",
         "wsl.resize": "Resize",
+        "wsl.workflow.running": "Running {action}",
+        "wsl.workflow.success": "{action} completed",
+        "wsl.workflow.failed": "{action} failed",
+        "wsl.workflow.continue": "Continue workflow",
+        "wsl.detail.returnToOverview": "Return to overview",
+        "wsl.detail.returnToSidebar": "Return to sidebar workflow",
+        "wsl.detail.returnToWidget": "Return to widget entry",
+        "wsl.detail.returnToAssistance": "Return to assistance flow",
         "wsl.setSparseEnable": "Enable Sparse",
         "wsl.setSparseDisable": "Disable Sparse",
         "common.refresh": "Refresh",
@@ -79,7 +146,13 @@ jest.mock("@/hooks/use-wsl", () => ({
 }));
 
 jest.mock("@/lib/tauri", () => ({
-  isTauri: () => false,
+  isTauri: () => mockIsTauri(),
+}));
+
+jest.mock("next/navigation", () => ({
+  useRouter: () => ({
+    push: mockRouterPush,
+  }),
 }));
 
 jest.mock("next/link", () => {
@@ -97,11 +170,33 @@ jest.mock("sonner", () => ({
 describe("WslDistroDetailPage", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockIsTauri.mockReturnValue(false);
     mockUseWslData.available = null;
     mockUseWslData.distros = [];
     mockUseWslData.capabilities = null;
     mockUseWslData.loading = false;
     mockUseWslData.error = null;
+    mockUseWslData.getAssistanceActions.mockReturnValue([
+      {
+        id: "distro.preflight",
+        scope: "distro",
+        category: "check",
+        risk: "safe",
+        labelKey: "wsl.assistance.actions.distroPreflight.label",
+        descriptionKey: "wsl.assistance.actions.distroPreflight.desc",
+        supported: true,
+      },
+      {
+        id: "distro.relaunch",
+        scope: "distro",
+        category: "repair",
+        risk: "high",
+        labelKey: "wsl.assistance.actions.distroRelaunch.label",
+        descriptionKey: "wsl.assistance.actions.distroRelaunch.desc",
+        supported: true,
+      },
+    ]);
+    mockUseWslData.mapErrorToAssistance.mockReturnValue([]);
   });
 
   it("renders non-Tauri fallback with alert", () => {
@@ -111,8 +206,7 @@ describe("WslDistroDetailPage", () => {
 
   describe("when in Tauri", () => {
     beforeEach(() => {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      jest.spyOn(require("@/lib/tauri"), "isTauri").mockReturnValue(true);
+      mockIsTauri.mockReturnValue(true);
     });
 
     it("shows loading skeleton when available is null", () => {
@@ -252,6 +346,79 @@ describe("WslDistroDetailPage", () => {
       render(<WslDistroDetailPage distroName="Ubuntu" />);
       expect(screen.getByText("Enable Sparse")).toBeInTheDocument();
       expect(screen.getByText("Disable Sparse")).toBeInTheDocument();
+    });
+
+    it("runs health check from management operations", async () => {
+      const user = userEvent.setup();
+      mockUseWslData.available = true;
+      mockUseWslData.distros = [
+        { name: "Ubuntu", state: "Running", wslVersion: "2", isDefault: false },
+      ];
+      render(<WslDistroDetailPage distroName="Ubuntu" />);
+      await user.click(screen.getByText("Run Check"));
+      expect(mockUseWslData.healthCheck).toHaveBeenCalledWith("Ubuntu");
+    });
+
+    it("renders distro assistance section and executes safe assistance action", async () => {
+      const user = userEvent.setup();
+      mockUseWslData.available = true;
+      mockUseWslData.distros = [
+        { name: "Ubuntu", state: "Running", wslVersion: "2", isDefault: false },
+      ];
+      render(<WslDistroDetailPage distroName="Ubuntu" />);
+      expect(screen.getByTestId("wsl-distro-assistance-section")).toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: /Distro Preflight/i }));
+      expect(mockUseWslData.executeAssistanceAction).toHaveBeenCalledWith("distro.preflight", "distro", "Ubuntu");
+    });
+
+    it("requires confirmation for high-risk assistance action", async () => {
+      const user = userEvent.setup();
+      mockUseWslData.available = true;
+      mockUseWslData.distros = [
+        { name: "Ubuntu", state: "Running", wslVersion: "2", isDefault: false },
+      ];
+      render(<WslDistroDetailPage distroName="Ubuntu" />);
+
+      await user.click(screen.getByRole("button", { name: /Relaunch Distro/i }));
+      expect(screen.getAllByText("Restart distro runtime").length).toBeGreaterThan(0);
+
+      await user.click(screen.getByRole("button", { name: "Confirm" }));
+      expect(mockUseWslData.executeAssistanceAction).toHaveBeenCalledWith("distro.relaunch", "distro", "Ubuntu");
+    });
+
+    it("renders return link with provided workflow context", () => {
+      mockUseWslData.available = true;
+      mockUseWslData.distros = [
+        { name: "Ubuntu", state: "Running", wslVersion: "2", isDefault: false },
+      ];
+
+      render(
+        <WslDistroDetailPage
+          distroName="Ubuntu"
+          returnTo="/wsl?tab=available"
+          origin="sidebar"
+        />
+      );
+
+      expect(screen.getByRole("link", { name: "Return to sidebar workflow" })).toHaveAttribute(
+        "href",
+        "/wsl?tab=available"
+      );
+    });
+
+    it("shows lifecycle feedback after launching distro", async () => {
+      const user = userEvent.setup();
+      mockUseWslData.available = true;
+      mockUseWslData.distros = [
+        { name: "Ubuntu", state: "Stopped", wslVersion: "2", isDefault: false },
+      ];
+
+      render(<WslDistroDetailPage distroName="Ubuntu" />);
+      await user.click(screen.getByRole("button", { name: "Launch" }));
+
+      expect(screen.getByTestId("wsl-distro-lifecycle-feedback")).toBeInTheDocument();
+      expect(screen.getByText("Launch completed")).toBeInTheDocument();
     });
   });
 });

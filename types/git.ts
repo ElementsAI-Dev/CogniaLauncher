@@ -4,6 +4,8 @@
  */
 
 import type {
+  EditorCapabilityProbeResult,
+  EditorOpenActionResult,
   GitBranchInfo,
   GitBisectState,
   GitBlameEntry,
@@ -110,13 +112,18 @@ export interface GitConfigCardProps {
   onSet: (key: string, value: string) => Promise<void>;
   onRemove: (key: string) => Promise<void>;
   configFilePath?: string | null;
-  onOpenInEditor?: () => Promise<string>;
+  editorCapability?: EditorCapabilityProbeResult | null;
+  onOpenInEditor?: () => Promise<EditorOpenActionResult>;
+  onOpenFileLocation?: () => Promise<void>;
 }
 
 export interface GitGlobalSettingsCardProps {
   onGetConfigValue: (key: string) => Promise<string | null>;
   onSetConfig: (key: string, value: string) => Promise<void>;
   onSetConfigIfUnset?: (key: string, value: string) => Promise<boolean>;
+  onApplyConfigPlan?: (
+    items: GitConfigApplyPlanItem[],
+  ) => Promise<GitConfigApplySummary>;
 }
 
 export interface GitAliasCardProps {
@@ -430,4 +437,54 @@ export interface GitPatchCardProps {
   onFormatPatch: (range: string, outputDir: string) => Promise<string[]>;
   onApplyPatch: (patchPath: string, checkOnly?: boolean) => Promise<string>;
   onApplyMailbox: (patchPath: string) => Promise<string>;
+}
+
+export type GitConfigApplyMode = 'set' | 'unset' | 'set_if_unset';
+
+export interface GitConfigTemplateItem {
+  key: string;
+  value: string | null;
+  mode: GitConfigApplyMode;
+}
+
+export interface GitConfigTemplateDefinition {
+  id: string;
+  labelKey: string;
+  descriptionKey: string;
+  items: GitConfigTemplateItem[];
+}
+
+export type GitConfigPreviewAction = 'add' | 'update' | 'remove' | 'unchanged';
+
+export interface GitConfigTemplatePreviewItem {
+  key: string;
+  mode: GitConfigApplyMode;
+  currentValue: string | null;
+  nextValue: string | null;
+  action: GitConfigPreviewAction;
+  selected: boolean;
+  validationMessageKey: string | null;
+}
+
+export interface GitConfigApplyPlanItem {
+  key: string;
+  mode: GitConfigApplyMode;
+  value: string | null;
+  selected: boolean;
+}
+
+export interface GitConfigApplyResultItem {
+  key: string;
+  mode: GitConfigApplyMode;
+  success: boolean;
+  applied: boolean;
+  message: string;
+}
+
+export interface GitConfigApplySummary {
+  total: number;
+  succeeded: number;
+  failed: number;
+  skipped: number;
+  results: GitConfigApplyResultItem[];
 }

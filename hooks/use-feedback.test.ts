@@ -29,6 +29,7 @@ jest.mock('@/lib/app-version', () => ({
 jest.mock('sonner', () => ({
   toast: {
     success: jest.fn(),
+    warning: jest.fn(),
     error: jest.fn(),
   },
 }));

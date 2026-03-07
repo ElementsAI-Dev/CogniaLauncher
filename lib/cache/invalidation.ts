@@ -38,6 +38,28 @@ const BACKEND_CACHE_DOMAINS: CacheInvalidationDomain[] = [
   'about_cache_stats',
 ];
 
+function isCacheInvalidationDomain(value: string): value is CacheInvalidationDomain {
+  return BACKEND_CACHE_DOMAINS.includes(value as CacheInvalidationDomain);
+}
+
+function resolveBackendDomains(payload: unknown): CacheInvalidationDomain[] {
+  if (!payload || typeof payload !== 'object' || !('domains' in payload)) {
+    return BACKEND_CACHE_DOMAINS;
+  }
+
+  const domains = (payload as { domains?: unknown }).domains;
+  if (!Array.isArray(domains)) {
+    return BACKEND_CACHE_DOMAINS;
+  }
+
+  const filtered = domains.filter(
+    (domain): domain is CacheInvalidationDomain =>
+      typeof domain === 'string' && isCacheInvalidationDomain(domain),
+  );
+
+  return filtered.length > 0 ? filtered : BACKEND_CACHE_DOMAINS;
+}
+
 export function emitInvalidation(
   domain: CacheInvalidationDomain,
   reason: string,
@@ -134,10 +156,10 @@ export async function ensureCacheInvalidationBridge(): Promise<void> {
 
       await Promise.all([
         listenChanged((event) => {
-          emitInvalidations(BACKEND_CACHE_DOMAINS, 'backend:cache-changed', 'backend', event);
+          emitInvalidations(resolveBackendDomains(event), 'backend:cache-changed', 'backend', event);
         }),
         listenAutoCleaned((event) => {
-          emitInvalidations(BACKEND_CACHE_DOMAINS, 'backend:auto-cleaned', 'backend', event);
+          emitInvalidations(resolveBackendDomains(event), 'backend:auto-cleaned', 'backend', event);
         }),
       ]);
 

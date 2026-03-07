@@ -1,9 +1,10 @@
 import { render, screen } from "@testing-library/react";
 import { AppSidebar } from "./app-sidebar";
 import { DEFAULT_SIDEBAR_ITEM_ORDER } from "@/lib/sidebar/order";
+import { useWslStore } from "@/lib/stores/wsl";
 
 const mockPathname = jest.fn(() => "/");
-const mockSearchParamGet = jest.fn((_key: string) => null as string | null);
+const mockSearchParamGet = jest.fn(() => null as string | null);
 
 jest.mock("next/navigation", () => ({
   usePathname: () => mockPathname(),
@@ -37,7 +38,10 @@ jest.mock("@/components/providers/locale-provider", () => ({
 }));
 
 jest.mock("@/components/ui/sidebar", () => ({
-  Sidebar: ({ children, ...props }: { children: React.ReactNode } & React.HTMLAttributes<HTMLElement>) => (
+  Sidebar: ({
+    children,
+    ...props
+  }: { children: React.ReactNode } & React.HTMLAttributes<HTMLElement>) => (
     <nav
       data-testid="sidebar"
       data-tour={(props as { "data-tour"?: string })["data-tour"]}
@@ -125,9 +129,30 @@ jest.mock("@/lib/tauri", () => ({
 }));
 
 const mockEnvironments = [
-  { env_type: "node", provider_id: "fnm", provider: "fnm", current_version: "20.0.0", installed_versions: [], available: true },
-  { env_type: "python", provider_id: "pyenv", provider: "pyenv", current_version: "3.12.0", installed_versions: [], available: true },
-  { env_type: "rust", provider_id: "rustup", provider: "rustup", current_version: null, installed_versions: [], available: false },
+  {
+    env_type: "node",
+    provider_id: "fnm",
+    provider: "fnm",
+    current_version: "20.0.0",
+    installed_versions: [],
+    available: true,
+  },
+  {
+    env_type: "python",
+    provider_id: "pyenv",
+    provider: "pyenv",
+    current_version: "3.12.0",
+    installed_versions: [],
+    available: true,
+  },
+  {
+    env_type: "rust",
+    provider_id: "rustup",
+    provider: "rustup",
+    current_version: null,
+    installed_versions: [],
+    available: false,
+  },
 ];
 
 let mockSidebarItemOrder = [...DEFAULT_SIDEBAR_ITEM_ORDER];
@@ -188,13 +213,15 @@ jest.mock("@/hooks/use-wsl", () => ({
   }),
 }));
 
-
 describe("AppSidebar", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockPathname.mockReturnValue("/");
     mockSearchParamGet.mockReturnValue(null);
     mockSidebarItemOrder = [...DEFAULT_SIDEBAR_ITEM_ORDER];
+    useWslStore.setState({
+      overviewContext: { tab: "installed", tag: null, origin: "overview" },
+    });
   });
 
   it("renders sidebar with app name", () => {
@@ -252,24 +279,47 @@ describe("AppSidebar", () => {
 
     const links = screen.getAllByRole("link");
     // node and python are available, so their detail pages should appear
-    expect(links.some((l) => l.getAttribute("href") === "/environments/node")).toBe(true);
-    expect(links.some((l) => l.getAttribute("href") === "/environments/python")).toBe(true);
+    expect(
+      links.some((l) => l.getAttribute("href") === "/environments/node"),
+    ).toBe(true);
+    expect(
+      links.some((l) => l.getAttribute("href") === "/environments/python"),
+    ).toBe(true);
     // rust is not available, should NOT appear
-    expect(links.some((l) => l.getAttribute("href") === "/environments/rust")).toBe(false);
+    expect(
+      links.some((l) => l.getAttribute("href") === "/environments/rust"),
+    ).toBe(false);
     // go is not in mock environments at all, should NOT appear
-    expect(links.some((l) => l.getAttribute("href") === "/environments/go")).toBe(false);
+    expect(
+      links.some((l) => l.getAttribute("href") === "/environments/go"),
+    ).toBe(false);
   });
 
   it("exposes required tour targets including nav-cache", () => {
     render(<AppSidebar />);
 
-    expect(screen.getByTestId("sidebar")).toHaveAttribute("data-tour", "sidebar");
-    expect(document.querySelector('[data-tour="nav-environments"]')).toBeInTheDocument();
-    expect(document.querySelector('[data-tour="nav-packages"]')).toBeInTheDocument();
-    expect(document.querySelector('[data-tour="nav-providers"]')).toBeInTheDocument();
-    expect(document.querySelector('[data-tour="nav-cache"]')).toBeInTheDocument();
-    expect(document.querySelector('[data-tour="nav-downloads"]')).toBeInTheDocument();
-    expect(document.querySelector('[data-tour="nav-settings"]')).toBeInTheDocument();
+    expect(screen.getByTestId("sidebar")).toHaveAttribute(
+      "data-tour",
+      "sidebar",
+    );
+    expect(
+      document.querySelector('[data-tour="nav-environments"]'),
+    ).toBeInTheDocument();
+    expect(
+      document.querySelector('[data-tour="nav-packages"]'),
+    ).toBeInTheDocument();
+    expect(
+      document.querySelector('[data-tour="nav-providers"]'),
+    ).toBeInTheDocument();
+    expect(
+      document.querySelector('[data-tour="nav-cache"]'),
+    ).toBeInTheDocument();
+    expect(
+      document.querySelector('[data-tour="nav-downloads"]'),
+    ).toBeInTheDocument();
+    expect(
+      document.querySelector('[data-tour="nav-settings"]'),
+    ).toBeInTheDocument();
   });
 
   it("renders primary items using customized persisted order", () => {
@@ -280,18 +330,50 @@ describe("AppSidebar", () => {
 
     render(<AppSidebar />);
 
-    const hrefs = screen.getAllByRole("link").map((link) => link.getAttribute("href"));
-    expect(hrefs.indexOf("/downloads")).toBeLessThan(hrefs.indexOf("/packages"));
+    const hrefs = screen
+      .getAllByRole("link")
+      .map((link) => link.getAttribute("href"));
+    expect(hrefs.indexOf("/downloads")).toBeLessThan(
+      hrefs.indexOf("/packages"),
+    );
   });
 
   it("normalizes invalid persisted sidebar order values", () => {
-    mockSidebarItemOrder = ["downloads", "invalid", "downloads"] as unknown as typeof mockSidebarItemOrder;
+    mockSidebarItemOrder = [
+      "downloads",
+      "invalid",
+      "downloads",
+    ] as unknown as typeof mockSidebarItemOrder;
 
     render(<AppSidebar />);
 
     const links = screen.getAllByRole("link");
-    expect(links.filter((link) => link.getAttribute("href") === "/downloads")).toHaveLength(1);
-    expect(links.some((link) => link.getAttribute("href") === "/packages")).toBe(true);
-    expect(links.some((link) => link.getAttribute("href") === "/settings")).toBe(true);
+    expect(
+      links.filter((link) => link.getAttribute("href") === "/downloads"),
+    ).toHaveLength(1);
+    expect(
+      links.some((link) => link.getAttribute("href") === "/packages"),
+    ).toBe(true);
+    expect(
+      links.some((link) => link.getAttribute("href") === "/settings"),
+    ).toBe(true);
+  });
+
+  it("builds WSL distro shortcuts with preserved return context", () => {
+    useWslStore.setState({
+      overviewContext: { tab: "available", tag: null, origin: "overview" },
+    });
+
+    render(<AppSidebar />);
+
+    const distroLink = screen
+      .getAllByRole("link")
+      .find((link) =>
+        link.getAttribute("href")?.includes("/wsl/distro?name=Ubuntu"),
+      );
+
+    expect(distroLink).toBeInTheDocument();
+    expect(distroLink?.getAttribute("href")).toContain("origin=sidebar");
+    expect(distroLink?.getAttribute("href")).toContain("returnTo=");
   });
 });

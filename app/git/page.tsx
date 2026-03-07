@@ -1,14 +1,15 @@
-'use client';
+"use client";
 
-import { useEffect, useRef, useState, useCallback } from 'react';
-import { PageHeader } from '@/components/layout/page-header';
-import { useGit } from '@/hooks/use-git';
-import { useGitAdvanced } from '@/hooks/use-git-advanced';
-import { useGitLfs } from '@/hooks/use-git-lfs';
-import { useLocale } from '@/components/providers/locale-provider';
-import { isTauri } from '@/lib/tauri';
-import { writeClipboard } from '@/lib/clipboard';
-import { useGitRepoStore } from '@/lib/stores/git';
+import { useEffect, useRef, useState, useCallback } from "react";
+import { PageHeader } from "@/components/layout/page-header";
+import { useGit } from "@/hooks/use-git";
+import { useGitAdvanced } from "@/hooks/use-git-advanced";
+import { useGitLfs } from "@/hooks/use-git-lfs";
+import { useLocale } from "@/components/providers/locale-provider";
+import { isTauri, revealPath } from "@/lib/tauri";
+import { writeClipboard } from "@/lib/clipboard";
+import { useGitRepoStore } from "@/lib/stores/git";
+import { runEditorActionFlow } from "@/lib/editor-action";
 import {
   GitStatusCard,
   GitConfigCard,
@@ -54,14 +55,45 @@ import {
   GitBisectCard,
   GitArchiveCard,
   GitPatchCard,
-} from '@/components/git';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { AlertCircle, FileText } from 'lucide-react';
-import { toast } from 'sonner';
-import type { GitCommitDetail as GitCommitDetailType, GitAheadBehind } from '@/types/tauri';
+} from "@/components/git";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { AlertCircle, FileText } from "lucide-react";
+import { toast } from "sonner";
+import type {
+  EditorCapabilityProbeResult,
+  EditorOpenActionResult,
+  GitCommitDetail as GitCommitDetailType,
+  GitAheadBehind,
+} from "@/types/tauri";
+import type {
+  GitConfigApplyPlanItem,
+  GitConfigApplySummary,
+} from "@/types/git";
+
+function normalizeEditorOpenReason(
+  reason: string,
+): EditorOpenActionResult["reason"] {
+  switch (reason) {
+    case "ok":
+    case "editor_not_found":
+    case "config_not_found":
+    case "editor_launch_failed":
+    case "fallback_failed":
+    case "runtime_error":
+      return reason;
+    default:
+      return "runtime_error";
+  }
+}
 
 export default function GitPage() {
   const { t } = useLocale();
@@ -75,6 +107,7 @@ export default function GitPage() {
     repoInfo,
     refreshAll,
     getConfigFilePath,
+    probeConfigEditor,
     setRepoPath,
     getAheadBehind,
     refreshRepoInfo,
@@ -105,18 +138,29 @@ export default function GitPage() {
   } = gitLfs;
 
   const initializedRef = useRef(false);
-  const [activeTab, setActiveTab] = useState<string>('overview');
-  const [selectedCommitHash, setSelectedCommitHash] = useState<string | null>(null);
-  const [commitDetail, setCommitDetail] = useState<GitCommitDetailType | null>(null);
+  const [activeTab, setActiveTab] = useState<string>("overview");
+  const [selectedCommitHash, setSelectedCommitHash] = useState<string | null>(
+    null,
+  );
+  const [commitDetail, setCommitDetail] = useState<GitCommitDetailType | null>(
+    null,
+  );
   const [detailLoading, setDetailLoading] = useState(false);
-  const [diffContent, setDiffContent] = useState<string>('');
+  const [diffContent, setDiffContent] = useState<string>("");
   const [diffLoading, setDiffLoading] = useState(false);
-  const [aheadBehind, setAheadBehind] = useState<GitAheadBehind>({ ahead: 0, behind: 0 });
-  const [compareFrom, setCompareFrom] = useState('');
-  const [compareTo, setCompareTo] = useState('');
-  const [contextLines, setContextLines] = useState<number | undefined>(undefined);
+  const [aheadBehind, setAheadBehind] = useState<GitAheadBehind>({
+    ahead: 0,
+    behind: 0,
+  });
+  const [compareFrom, setCompareFrom] = useState("");
+  const [compareTo, setCompareTo] = useState("");
+  const [contextLines, setContextLines] = useState<number | undefined>(
+    undefined,
+  );
   const [configFilePath, setConfigFilePath] = useState<string | null>(null);
   const [graphRefreshKey, setGraphRefreshKey] = useState(0);
+  const [configEditorCapability, setConfigEditorCapability] =
+    useState<EditorCapabilityProbeResult | null>(null);
 
   const runAction = useCallback(
     async <T,>(
@@ -131,7 +175,7 @@ export default function GitPage() {
         const result = await action();
         if (options?.successKey) {
           const description =
-            options.successDescription && typeof result === 'string'
+            options.successDescription && typeof result === "string"
               ? { description: result }
               : undefined;
           toast.success(t(options.successKey), description);
@@ -179,23 +223,22 @@ export default function GitPage() {
       refreshTrackedPatterns(),
       refreshLfsFiles(),
     ]);
-  }, [
-    repoPath,
-    checkLfsAvailability,
-    refreshTrackedPatterns,
-    refreshLfsFiles,
-  ]);
+  }, [repoPath, checkLfsAvailability, refreshTrackedPatterns, refreshLfsFiles]);
 
   const refreshAheadBehind = useCallback(async () => {
     if (repoInfo?.currentBranch && repoPath) {
       try {
         const next = await getAheadBehind(repoInfo.currentBranch);
         setAheadBehind((prev) =>
-          prev.ahead === next.ahead && prev.behind === next.behind ? prev : next,
+          prev.ahead === next.ahead && prev.behind === next.behind
+            ? prev
+            : next,
         );
       } catch {
         setAheadBehind((prev) =>
-          prev.ahead === 0 && prev.behind === 0 ? prev : { ahead: 0, behind: 0 },
+          prev.ahead === 0 && prev.behind === 0
+            ? prev
+            : { ahead: 0, behind: 0 },
         );
       }
       return;
@@ -253,13 +296,25 @@ export default function GitPage() {
     if (!initializedRef.current && isDesktop) {
       initializedRef.current = true;
       refreshAll().then(() => {
-        getConfigFilePath().then(setConfigFilePath).catch(() => {});
+        getConfigFilePath()
+          .then(setConfigFilePath)
+          .catch(() => {});
+        probeConfigEditor()
+          .then(setConfigEditorCapability)
+          .catch(() => {});
         if (repoStore.lastRepoPath) {
           setRepoPath(repoStore.lastRepoPath).catch(() => {});
         }
       });
     }
-  }, [getConfigFilePath, isDesktop, refreshAll, repoStore.lastRepoPath, setRepoPath]);
+  }, [
+    getConfigFilePath,
+    isDesktop,
+    probeConfigEditor,
+    refreshAll,
+    repoStore.lastRepoPath,
+    setRepoPath,
+  ]);
 
   // Fetch ahead/behind when repo info changes
   useEffect(() => {
@@ -290,21 +345,24 @@ export default function GitPage() {
     refreshLfsData,
   ]);
 
-  const handleSelectCommit = useCallback(async (hash: string) => {
-    setSelectedCommitHash(hash);
-    setDetailLoading(true);
-    try {
-      const detail = await getCommitDetail(hash);
-      setCommitDetail(detail);
-    } finally {
-      setDetailLoading(false);
-    }
-  }, [getCommitDetail]);
+  const handleSelectCommit = useCallback(
+    async (hash: string) => {
+      setSelectedCommitHash(hash);
+      setDetailLoading(true);
+      try {
+        const detail = await getCommitDetail(hash);
+        setCommitDetail(detail);
+      } finally {
+        setDetailLoading(false);
+      }
+    },
+    [getCommitDetail],
+  );
 
   if (!isDesktop) {
     return (
       <div className="flex flex-col gap-6 p-6">
-        <PageHeader title={t('git.title')} description={t('git.description')} />
+        <PageHeader title={t("git.title")} description={t("git.description")} />
         <GitNotAvailable />
       </div>
     );
@@ -314,10 +372,10 @@ export default function GitPage() {
 
   const handleInstall = async () => {
     try {
-      await runAction(
-        () => git.installGit(),
-        { successKey: 'git.status.installSuccess', successDescription: true },
-      );
+      await runAction(() => git.installGit(), {
+        successKey: "git.status.installSuccess",
+        successDescription: true,
+      });
     } catch {
       // Error is already handled by runAction.
     }
@@ -325,10 +383,10 @@ export default function GitPage() {
 
   const handleUpdate = async () => {
     try {
-      await runAction(
-        () => git.updateGit(),
-        { successKey: 'git.status.updateSuccess', successDescription: true },
-      );
+      await runAction(() => git.updateGit(), {
+        successKey: "git.status.updateSuccess",
+        successDescription: true,
+      });
     } catch {
       // Error is already handled by runAction.
     }
@@ -336,16 +394,13 @@ export default function GitPage() {
 
   const handleSelectRepo = async (path: string) => {
     try {
-      await runAction(
-        () => git.setRepoPath(path),
-        {
-          onSuccess: async () => {
-            repoStore.addRecentRepo(path);
-            await refreshAdvancedData();
-            await refreshLfsData();
-          },
+      await runAction(() => git.setRepoPath(path), {
+        onSuccess: async () => {
+          repoStore.addRecentRepo(path);
+          await refreshAdvancedData();
+          await refreshLfsData();
         },
-      );
+      });
     } catch {
       // Error is already handled by runAction.
     }
@@ -353,10 +408,9 @@ export default function GitPage() {
 
   const handleSetConfig = async (key: string, value: string) => {
     try {
-      await runAction(
-        () => git.setConfigValue(key, value),
-        { successKey: 'git.config.saved' },
-      );
+      await runAction(() => git.setConfigValue(key, value), {
+        successKey: "git.config.saved",
+      });
     } catch {
       // Error is already handled by runAction.
     }
@@ -364,10 +418,9 @@ export default function GitPage() {
 
   const handleRemoveConfig = async (key: string) => {
     try {
-      await runAction(
-        () => git.removeConfigKey(key),
-        { successKey: 'git.config.removed' },
-      );
+      await runAction(() => git.removeConfigKey(key), {
+        successKey: "git.config.removed",
+      });
     } catch {
       // Error is already handled by runAction.
     }
@@ -375,10 +428,9 @@ export default function GitPage() {
 
   const handleSetAlias = async (name: string, command: string) => {
     try {
-      await runAction(
-        () => git.setConfigValue(`alias.${name}`, command),
-        { successKey: 'git.alias.saved' },
-      );
+      await runAction(() => git.setConfigValue(`alias.${name}`, command), {
+        successKey: "git.alias.saved",
+      });
     } catch {
       // Error is already handled by runAction.
     }
@@ -386,21 +438,98 @@ export default function GitPage() {
 
   const handleRemoveAlias = async (name: string) => {
     try {
-      await runAction(
-        () => git.removeConfigKey(`alias.${name}`),
-        { successKey: 'git.alias.removed' },
-      );
+      await runAction(() => git.removeConfigKey(`alias.${name}`), {
+        successKey: "git.alias.removed",
+      });
     } catch {
       // Error is already handled by runAction.
     }
   };
 
-  const handleOpenInEditor = async (): Promise<string> => {
+  const handleOpenInEditor = async (): Promise<EditorOpenActionResult> => {
     try {
-      return await runAction(() => git.openConfigInEditor());
-    } catch {
-      return '';
+      const flow = await runEditorActionFlow({
+        probe: async () => {
+          const result = await probeConfigEditor();
+          setConfigEditorCapability(result);
+          return {
+            available: result.available,
+            reason: result.reason,
+            fallbackPath: result.configPath,
+          };
+        },
+        open: async () => {
+          const result = await git.openConfigInEditor();
+          return {
+            ...result,
+            fallbackPath: result.fallbackPath ?? configFilePath,
+          };
+        },
+        fallbackOpen: async (path: string) => {
+          await revealPath(path);
+        },
+        unavailableMessage: t("git.config.editorUnavailable"),
+      });
+
+      if (flow.status === "opened") {
+        toast.success(flow.message);
+      } else if (flow.status === "fallback_opened") {
+        toast.info(t("git.config.openedFallback"));
+      } else if (flow.status === "unavailable") {
+        toast.error(t("git.config.editorUnavailable"));
+      } else {
+        toast.error(flow.message);
+      }
+
+      return (
+        flow.openResult ?? {
+          success: flow.status === "fallback_opened",
+          kind:
+            flow.status === "fallback_opened"
+              ? "fallback_opened"
+              : "unavailable",
+          reason: normalizeEditorOpenReason(flow.probe.reason),
+          message: flow.message,
+          openedWith: flow.status === "fallback_opened" ? "default" : null,
+          fallbackUsed: flow.status === "fallback_opened",
+          fallbackPath: flow.probe.fallbackPath ?? null,
+        }
+      );
+    } catch (e) {
+      const message = String(e);
+      toast.error(message);
+      return {
+        success: false,
+        kind: "error",
+        reason: "runtime_error",
+        message,
+        openedWith: null,
+        fallbackUsed: false,
+        fallbackPath: configFilePath,
+      };
     }
+  };
+
+  const handleOpenConfigLocation = async (): Promise<void> => {
+    if (!configFilePath) return;
+    try {
+      await revealPath(configFilePath);
+      toast.success(t("git.config.openedFallback"));
+    } catch (e) {
+      toast.error(String(e));
+    }
+  };
+
+  const handleApplyConfigPlan = async (
+    items: GitConfigApplyPlanItem[],
+  ): Promise<GitConfigApplySummary> => {
+    return await runAction(() => git.applyConfigPlan(items), {
+      onSuccess: async () => {
+        await git.refreshConfig();
+        const capability = await probeConfigEditor();
+        setConfigEditorCapability(capability);
+      },
+    });
   };
 
   const handleViewDiff = async (file: string, staged?: boolean) => {
@@ -408,8 +537,8 @@ export default function GitPage() {
     try {
       const d = await git.getDiff(staged, file);
       setDiffContent(d);
-      if (activeTab !== 'changes') {
-        setActiveTab('changes');
+      if (activeTab !== "changes") {
+        setActiveTab("changes");
       }
     } catch (e) {
       toast.error(String(e));
@@ -420,42 +549,40 @@ export default function GitPage() {
 
   const handleShowStashDiff = async (stashId?: string) => {
     try {
-      const diff = await runAction(
-        () => git.stashShowDiff(stashId),
-        {
-          onSuccess: async (diff) => {
-            setDiffContent(diff);
-            setActiveTab('changes');
-          },
+      const diff = await runAction(() => git.stashShowDiff(stashId), {
+        onSuccess: async (diff) => {
+          setDiffContent(diff);
+          setActiveTab("changes");
         },
-      );
+      });
       return diff;
     } catch {
       // Error is already handled by runAction.
-      return '';
+      return "";
     }
   };
 
   const handleAbortOperation = async () => {
     const state = gitAdvanced.mergeRebaseState.state;
-    if (state === 'merging') return await gitAdvanced.mergeAbort();
-    if (state === 'rebasing') return await gitAdvanced.rebaseAbort();
-    if (state === 'cherry_picking') return await gitAdvanced.cherryPickAbort();
-    if (state === 'reverting') return await gitAdvanced.revertAbort();
-    return '';
+    if (state === "merging") return await gitAdvanced.mergeAbort();
+    if (state === "rebasing") return await gitAdvanced.rebaseAbort();
+    if (state === "cherry_picking") return await gitAdvanced.cherryPickAbort();
+    if (state === "reverting") return await gitAdvanced.revertAbort();
+    return "";
   };
 
   const handleContinueOperation = async () => {
     const state = gitAdvanced.mergeRebaseState.state;
-    if (state === 'merging') return await gitAdvanced.mergeContinue();
-    if (state === 'rebasing') return await gitAdvanced.rebaseContinue();
-    if (state === 'cherry_picking') return await gitAdvanced.cherryPickContinue();
-    return '';
+    if (state === "merging") return await gitAdvanced.mergeContinue();
+    if (state === "rebasing") return await gitAdvanced.rebaseContinue();
+    if (state === "cherry_picking")
+      return await gitAdvanced.cherryPickContinue();
+    return "";
   };
 
   return (
     <div className="flex flex-col gap-6 p-6">
-      <PageHeader title={t('git.title')} description={t('git.description')} />
+      <PageHeader title={t("git.title")} description={t("git.description")} />
 
       {git.error && (
         <Alert variant="destructive">
@@ -466,27 +593,39 @@ export default function GitPage() {
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
-          <TabsTrigger value="overview">{t('git.tabs.overview')}</TabsTrigger>
+          <TabsTrigger value="overview">{t("git.tabs.overview")}</TabsTrigger>
           <TabsTrigger value="repository" disabled={!git.available}>
-            {t('git.tabs.repository')}
+            {t("git.tabs.repository")}
           </TabsTrigger>
           <TabsTrigger value="graph" disabled={!git.available || !git.repoPath}>
-            {t('git.tabs.graph')}
+            {t("git.tabs.graph")}
           </TabsTrigger>
-          <TabsTrigger value="history" disabled={!git.available || !git.repoPath}>
-            {t('git.tabs.history')}
+          <TabsTrigger
+            value="history"
+            disabled={!git.available || !git.repoPath}
+          >
+            {t("git.tabs.history")}
           </TabsTrigger>
-          <TabsTrigger value="changes" disabled={!git.available || !git.repoPath}>
-            {t('git.tabs.changes')}
+          <TabsTrigger
+            value="changes"
+            disabled={!git.available || !git.repoPath}
+          >
+            {t("git.tabs.changes")}
           </TabsTrigger>
           <TabsTrigger value="tools" disabled={!git.available || !git.repoPath}>
-            {t('git.tabs.tools')}
+            {t("git.tabs.tools")}
           </TabsTrigger>
-          <TabsTrigger value="advanced" disabled={!git.available || !git.repoPath}>
-            {t('git.tabs.advanced')}
+          <TabsTrigger
+            value="advanced"
+            disabled={!git.available || !git.repoPath}
+          >
+            {t("git.tabs.advanced")}
           </TabsTrigger>
-          <TabsTrigger value="operations" disabled={!git.available || !git.repoPath}>
-            {t('git.tabs.operations')}
+          <TabsTrigger
+            value="operations"
+            disabled={!git.available || !git.repoPath}
+          >
+            {t("git.tabs.operations")}
           </TabsTrigger>
         </TabsList>
 
@@ -507,6 +646,7 @@ export default function GitPage() {
                 onGetConfigValue={git.getConfigValue}
                 onSetConfig={handleSetConfig}
                 onSetConfigIfUnset={git.setConfigIfUnset}
+                onApplyConfigPlan={handleApplyConfigPlan}
               />
               <GitAliasCard
                 onListAliases={git.listAliases}
@@ -518,7 +658,9 @@ export default function GitPage() {
                 onSet={handleSetConfig}
                 onRemove={handleRemoveConfig}
                 configFilePath={configFilePath}
+                editorCapability={configEditorCapability}
                 onOpenInEditor={handleOpenInEditor}
+                onOpenFileLocation={handleOpenConfigLocation}
               />
             </>
           )}
@@ -643,7 +785,9 @@ export default function GitPage() {
           ) : (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <FileText className="h-10 w-10 text-muted-foreground/40 mb-3" />
-              <p className="text-sm text-muted-foreground">{t('git.repo.noRepo')}</p>
+              <p className="text-sm text-muted-foreground">
+                {t("git.repo.noRepo")}
+              </p>
             </div>
           )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -651,11 +795,24 @@ export default function GitPage() {
               onClone={async (url, destPath, options) => {
                 try {
                   const msg = await git.cloneRepo(url, destPath, options);
-                  toast.success(t('git.cloneAction.success'), { description: msg });
-                  repoStore.addCloneHistory({ url, destPath, timestamp: Date.now(), status: 'success' });
+                  toast.success(t("git.cloneAction.success"), {
+                    description: msg,
+                  });
+                  repoStore.addCloneHistory({
+                    url,
+                    destPath,
+                    timestamp: Date.now(),
+                    status: "success",
+                  });
                   return msg;
                 } catch (e) {
-                  repoStore.addCloneHistory({ url, destPath, timestamp: Date.now(), status: 'failed', errorMessage: String(e) });
+                  repoStore.addCloneHistory({
+                    url,
+                    destPath,
+                    timestamp: Date.now(),
+                    status: "failed",
+                    errorMessage: String(e),
+                  });
                   throw e;
                 }
               }}
@@ -672,17 +829,14 @@ export default function GitPage() {
                 currentBranch={git.repoInfo.currentBranch}
                 onMerge={async (branch, noFf) => {
                   try {
-                    return await runAction(
-                      () => git.merge(branch, noFf),
-                      {
-                        successKey: 'git.mergeAction.success',
-                        successDescription: true,
-                        onSuccess: refreshAfterGraphWrite,
-                      },
-                    );
+                    return await runAction(() => git.merge(branch, noFf), {
+                      successKey: "git.mergeAction.success",
+                      successDescription: true,
+                      onSuccess: refreshAfterGraphWrite,
+                    });
                   } catch {
                     // Error is already handled by runAction.
-                    return '';
+                    return "";
                   }
                 }}
               />
@@ -702,78 +856,63 @@ export default function GitPage() {
                 refreshKey={graphRefreshKey}
                 onCopyHash={async (hash) => {
                   await writeClipboard(hash);
-                  toast.success(t('git.graph.copyHash'));
+                  toast.success(t("git.graph.copyHash"));
                 }}
                 onCreateBranch={async (hash) => {
-                  const name = prompt(t('git.graph.createBranch'));
+                  const name = prompt(t("git.graph.createBranch"));
                   if (!name?.trim()) return;
                   try {
-                    await runAction(
-                      () => git.createBranch(name.trim(), hash),
-                      {
-                        successKey: 'git.branch.createSuccess',
-                        successDescription: true,
-                        onSuccess: refreshAfterGraphWrite,
-                      },
-                    );
+                    await runAction(() => git.createBranch(name.trim(), hash), {
+                      successKey: "git.branch.createSuccess",
+                      successDescription: true,
+                      onSuccess: refreshAfterGraphWrite,
+                    });
                   } catch {
                     // Error is already handled by runAction.
                   }
                 }}
                 onCreateTag={async (hash) => {
-                  const name = prompt(t('git.graph.createTag'));
+                  const name = prompt(t("git.graph.createTag"));
                   if (!name?.trim()) return;
                   try {
-                    await runAction(
-                      () => git.createTag(name.trim(), hash),
-                      {
-                        successKey: 'git.tag.createSuccess',
-                        successDescription: true,
-                        onSuccess: refreshAfterGraphWrite,
-                      },
-                    );
+                    await runAction(() => git.createTag(name.trim(), hash), {
+                      successKey: "git.tag.createSuccess",
+                      successDescription: true,
+                      onSuccess: refreshAfterGraphWrite,
+                    });
                   } catch {
                     // Error is already handled by runAction.
                   }
                 }}
                 onCherryPick={async (hash) => {
                   try {
-                    await runAction(
-                      () => git.cherryPick(hash),
-                      {
-                        successKey: 'git.cherryPickAction.success',
-                        successDescription: true,
-                        onSuccess: refreshAfterGraphWrite,
-                      },
-                    );
+                    await runAction(() => git.cherryPick(hash), {
+                      successKey: "git.cherryPickAction.success",
+                      successDescription: true,
+                      onSuccess: refreshAfterGraphWrite,
+                    });
                   } catch {
                     // Error is already handled by runAction.
                   }
                 }}
                 onRevert={async (hash) => {
                   try {
-                    await runAction(
-                      () => git.revertCommit(hash),
-                      {
-                        successKey: 'git.revertAction.success',
-                        successDescription: true,
-                        onSuccess: refreshAfterGraphWrite,
-                      },
-                    );
+                    await runAction(() => git.revertCommit(hash), {
+                      successKey: "git.revertAction.success",
+                      successDescription: true,
+                      onSuccess: refreshAfterGraphWrite,
+                    });
                   } catch {
                     // Error is already handled by runAction.
                   }
                 }}
                 onResetTo={async (hash) => {
                   try {
-                    await runAction(
-                      () => git.resetHead('mixed', hash),
-                      {
-                        successKey: 'git.resetAction.success',
-                        successDescription: true,
-                        onSuccess: refreshAfterGraphWrite,
-                      },
-                    );
+                    await runAction(() => git.resetHead("mixed", hash), {
+                      successKey: "git.resetAction.success",
+                      successDescription: true,
+                      onSuccess: refreshAfterGraphWrite,
+                    });
                   } catch {
                     // Error is already handled by runAction.
                   }
@@ -844,25 +983,19 @@ export default function GitPage() {
             onGetHistory={git.getFileHistory}
             onGetCommitDiff={git.getCommitDiff}
           />
-          <GitBlameView
-            repoPath={git.repoPath}
-            onGetBlame={git.getBlame}
-          />
+          <GitBlameView repoPath={git.repoPath} onGetBlame={git.getBlame} />
           <GitReflogCard
             onGetReflog={git.getReflog}
             onResetTo={async (hash, mode) => {
               try {
-                return await runAction(
-                  () => git.resetHead(mode, hash),
-                  {
-                    successKey: 'git.resetAction.success',
-                    successDescription: true,
-                    onSuccess: refreshAfterGraphWrite,
-                  },
-                );
+                return await runAction(() => git.resetHead(mode, hash), {
+                  successKey: "git.resetAction.success",
+                  successDescription: true,
+                  onSuccess: refreshAfterGraphWrite,
+                });
               } catch {
                 // Error is already handled by runAction.
-                return '';
+                return "";
               }
             }}
           />
@@ -882,20 +1015,31 @@ export default function GitPage() {
               onViewDiff={handleViewDiff}
             />
             <GitCommitDialog
-              stagedCount={git.statusFiles.filter((f) => f.indexStatus !== " " && f.indexStatus !== "?").length}
-              onCommit={async (message, amend, allowEmpty, signoff, noVerify) => {
+              stagedCount={
+                git.statusFiles.filter(
+                  (f) => f.indexStatus !== " " && f.indexStatus !== "?",
+                ).length
+              }
+              onCommit={async (
+                message,
+                amend,
+                allowEmpty,
+                signoff,
+                noVerify,
+              ) => {
                 try {
                   return await runAction(
-                    () => git.commit(message, amend, allowEmpty, signoff, noVerify),
+                    () =>
+                      git.commit(message, amend, allowEmpty, signoff, noVerify),
                     {
-                      successKey: 'git.commit.success',
+                      successKey: "git.commit.success",
                       successDescription: true,
                       onSuccess: refreshAfterGraphWrite,
                     },
                   );
                 } catch {
                   // Error is already handled by runAction.
-                  return '';
+                  return "";
                 }
               }}
             />
@@ -915,7 +1059,7 @@ export default function GitPage() {
               }}
               disabled={!git.repoPath}
             >
-              {t('git.diffView.unstaged')}
+              {t("git.diffView.unstaged")}
             </Button>
             <Button
               variant="outline"
@@ -931,20 +1075,22 @@ export default function GitPage() {
               }}
               disabled={!git.repoPath}
             >
-              {t('git.diffView.staged')}
+              {t("git.diffView.staged")}
             </Button>
             <span className="w-px h-6 bg-border self-center mx-1" />
             <input
               type="text"
-              placeholder={t('git.diffView.fromCommit')}
+              placeholder={t("git.diffView.fromCommit")}
               value={compareFrom}
               onChange={(e) => setCompareFrom(e.target.value)}
               className="h-8 w-28 rounded-md border border-input bg-background px-2 text-xs font-mono placeholder:text-muted-foreground"
             />
-            <span className="self-center text-xs text-muted-foreground">..</span>
+            <span className="self-center text-xs text-muted-foreground">
+              ..
+            </span>
             <input
               type="text"
-              placeholder={t('git.diffView.toCommit')}
+              placeholder={t("git.diffView.toCommit")}
               value={compareTo}
               onChange={(e) => setCompareTo(e.target.value)}
               className="h-8 w-28 rounded-md border border-input bg-background px-2 text-xs font-mono placeholder:text-muted-foreground"
@@ -952,11 +1098,21 @@ export default function GitPage() {
             <Button
               variant="outline"
               size="sm"
-              disabled={!git.repoPath || !compareFrom.trim() || !compareTo.trim() || diffLoading}
+              disabled={
+                !git.repoPath ||
+                !compareFrom.trim() ||
+                !compareTo.trim() ||
+                diffLoading
+              }
               onClick={async () => {
                 setDiffLoading(true);
                 try {
-                  const d = await git.getDiffBetween(compareFrom.trim(), compareTo.trim(), undefined, contextLines);
+                  const d = await git.getDiffBetween(
+                    compareFrom.trim(),
+                    compareTo.trim(),
+                    undefined,
+                    contextLines,
+                  );
                   setDiffContent(d);
                 } catch (e) {
                   toast.error(String(e));
@@ -965,29 +1121,40 @@ export default function GitPage() {
                 }
               }}
             >
-              {t('git.diffView.compare')}
+              {t("git.diffView.compare")}
             </Button>
             <span className="w-px h-6 bg-border self-center mx-1" />
             <Select
-              value={contextLines === undefined ? 'default' : String(contextLines)}
-              onValueChange={(v) => setContextLines(v === 'default' ? undefined : Number(v))}
+              value={
+                contextLines === undefined ? "default" : String(contextLines)
+              }
+              onValueChange={(v) =>
+                setContextLines(v === "default" ? undefined : Number(v))
+              }
             >
               <SelectTrigger className="h-8 w-[100px] text-xs">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="default">{t('git.diffView.contextDefault')}</SelectItem>
-                <SelectItem value="5">5 {t('git.diffView.contextLines')}</SelectItem>
-                <SelectItem value="10">10 {t('git.diffView.contextLines')}</SelectItem>
-                <SelectItem value="20">20 {t('git.diffView.contextLines')}</SelectItem>
-                <SelectItem value="50">{t('git.diffView.contextAll')}</SelectItem>
+                <SelectItem value="default">
+                  {t("git.diffView.contextDefault")}
+                </SelectItem>
+                <SelectItem value="5">
+                  5 {t("git.diffView.contextLines")}
+                </SelectItem>
+                <SelectItem value="10">
+                  10 {t("git.diffView.contextLines")}
+                </SelectItem>
+                <SelectItem value="20">
+                  20 {t("git.diffView.contextLines")}
+                </SelectItem>
+                <SelectItem value="50">
+                  {t("git.diffView.contextAll")}
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>
-          <GitDiffViewer
-            diff={diffContent}
-            loading={diffLoading}
-          />
+          <GitDiffViewer diff={diffContent} loading={diffLoading} />
         </TabsContent>
 
         {/* Tools Tab */}

@@ -10,6 +10,9 @@ const mockTerminalDetectFramework = jest.fn();
 const mockTerminalReadConfig = jest.fn();
 const mockTerminalParseConfigContent = jest.fn();
 const mockTerminalGetConfigEntries = jest.fn();
+const mockTerminalValidateConfigContent = jest.fn();
+const mockTerminalGetConfigEditorMetadata = jest.fn();
+const mockTerminalRestoreConfigSnapshot = jest.fn();
 const mockTerminalWriteConfigVerified = jest.fn();
 const mockTerminalBackupConfigVerified = jest.fn();
 const mockTerminalGetFrameworkCacheStats = jest.fn();
@@ -38,6 +41,9 @@ jest.mock('@/lib/tauri', () => ({
   terminalAppendToConfigVerified: jest.fn(),
   terminalGetConfigEntries: (...args: unknown[]) => mockTerminalGetConfigEntries(...args),
   terminalParseConfigContent: (...args: unknown[]) => mockTerminalParseConfigContent(...args),
+  terminalValidateConfigContent: (...args: unknown[]) => mockTerminalValidateConfigContent(...args),
+  terminalGetConfigEditorMetadata: (...args: unknown[]) => mockTerminalGetConfigEditorMetadata(...args),
+  terminalRestoreConfigSnapshot: (...args: unknown[]) => mockTerminalRestoreConfigSnapshot(...args),
   terminalPsListProfiles: jest.fn(),
   terminalPsReadProfile: jest.fn(),
   terminalPsWriteProfile: jest.fn(),
@@ -83,6 +89,23 @@ describe('useTerminal', () => {
     mockTerminalReadConfig.mockResolvedValue('');
     mockTerminalParseConfigContent.mockResolvedValue({ aliases: [], exports: [], sources: [] });
     mockTerminalGetConfigEntries.mockResolvedValue({ aliases: [], exports: [], sources: [] });
+    mockTerminalValidateConfigContent.mockResolvedValue([]);
+    mockTerminalGetConfigEditorMetadata.mockResolvedValue({
+      path: '/tmp/.bashrc',
+      shellType: 'bash',
+      language: 'bash',
+      snapshotPath: '/tmp/.cognia/terminal-snapshots/.bashrc.latest',
+      fingerprint: 'abc123',
+    });
+    mockTerminalRestoreConfigSnapshot.mockResolvedValue({
+      path: '/tmp/.bashrc',
+      snapshotPath: '/tmp/.cognia/terminal-snapshots/.bashrc.latest',
+      bytesWritten: 12,
+      verified: true,
+      diagnostics: ['restored'],
+      diagnosticDetails: [],
+      fingerprint: 'abc123',
+    });
     mockTerminalWriteConfigVerified.mockResolvedValue({
       operation: 'write',
       path: '/tmp/.bashrc',
@@ -466,7 +489,7 @@ describe('useTerminal', () => {
     await waitFor(() => expect(mockTerminalDetectShells).toHaveBeenCalledTimes(1));
 
     act(() => {
-      void result.current.writeShellConfig('/tmp/.bashrc', 'export A=1');
+      void result.current.writeShellConfig('/tmp/.bashrc', 'export A=1', 'bash');
     });
 
     await waitFor(() => expect(result.current.configMutationState.status).toBe('loading'));
@@ -484,6 +507,7 @@ describe('useTerminal', () => {
 
     await waitFor(() => expect(result.current.configMutationState.status).toBe('success'));
     expect(result.current.configMutationState.result?.operation).toBe('write');
+    expect(mockTerminalValidateConfigContent).toHaveBeenCalledWith('export A=1', 'bash');
   });
 
   it('writeShellConfig stores error state on failure', async () => {
@@ -493,12 +517,97 @@ describe('useTerminal', () => {
     await waitFor(() => expect(mockTerminalDetectShells).toHaveBeenCalledTimes(1));
 
     await act(async () => {
-      await result.current.writeShellConfig('/tmp/.bashrc', 'export A=1');
+      await result.current.writeShellConfig('/tmp/.bashrc', 'export A=1', 'bash');
     });
 
     expect(result.current.configMutationState.status).toBe('error');
     expect(result.current.configMutationState.message).toBe('terminal.toastSaveConfigFailed');
     expect(toast.error).toHaveBeenCalledWith('terminal.toastSaveConfigFailed');
+  });
+
+  it('writeShellConfig rejects invalid content before persistence and stores diagnostics', async () => {
+    mockTerminalValidateConfigContent.mockResolvedValue([
+      {
+        category: 'validation',
+        stage: 'validation',
+        message: 'Unterminated double quote',
+        location: { line: 1, column: 1, endLine: 1, endColumn: 20 },
+      },
+    ]);
+
+    const { result } = renderHook(() => useTerminal({ t: mockT }));
+    await waitFor(() => expect(mockTerminalDetectShells).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      await result.current.writeShellConfig('/tmp/.bashrc', 'export A="oops', 'bash');
+    });
+
+    expect(mockTerminalWriteConfigVerified).not.toHaveBeenCalled();
+    expect(result.current.configMutationState.status).toBe('error');
+    expect(result.current.configMutationState.result?.verified).toBe(false);
+    expect(result.current.configMutationState.result?.diagnosticDetails?.[0]?.message).toBe(
+      'Unterminated double quote',
+    );
+  });
+
+  it('clearConfigMutationState resets stale config mutation feedback', async () => {
+    mockTerminalValidateConfigContent.mockResolvedValue([
+      {
+        category: 'validation',
+        stage: 'validation',
+        message: 'Unterminated double quote',
+        location: { line: 1, column: 1, endLine: 1, endColumn: 20 },
+      },
+    ]);
+
+    const { result } = renderHook(() => useTerminal({ t: mockT }));
+    await waitFor(() => expect(mockTerminalDetectShells).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      await result.current.writeShellConfig('/tmp/.bashrc', 'export A="oops', 'bash');
+    });
+
+    expect(result.current.configMutationState.status).toBe('error');
+
+    act(() => {
+      result.current.clearConfigMutationState();
+    });
+
+    expect(result.current.configMutationState.status).toBe('idle');
+    expect(result.current.configMutationState.message).toBeNull();
+    expect(result.current.configMutationState.result).toBeNull();
+  });
+
+  it('getConfigEditorMetadata returns shell-aware metadata', async () => {
+    const { result } = renderHook(() => useTerminal({ t: mockT }));
+    await waitFor(() => expect(mockTerminalDetectShells).toHaveBeenCalledTimes(1));
+
+    let metadata = null;
+    await act(async () => {
+      metadata = await result.current.getConfigEditorMetadata('/tmp/.bashrc', 'bash');
+    });
+
+    expect(mockTerminalGetConfigEditorMetadata).toHaveBeenCalledWith('/tmp/.bashrc', 'bash');
+    expect(metadata).toEqual({
+      path: '/tmp/.bashrc',
+      shellType: 'bash',
+      language: 'bash',
+      snapshotPath: '/tmp/.cognia/terminal-snapshots/.bashrc.latest',
+      fingerprint: 'abc123',
+    });
+  });
+
+  it('restoreConfigSnapshot updates mutation lifecycle on success', async () => {
+    const { result } = renderHook(() => useTerminal({ t: mockT }));
+    await waitFor(() => expect(mockTerminalDetectShells).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      await result.current.restoreConfigSnapshot('/tmp/.bashrc');
+    });
+
+    expect(mockTerminalRestoreConfigSnapshot).toHaveBeenCalledWith('/tmp/.bashrc');
+    expect(result.current.configMutationState.status).toBe('success');
+    expect(result.current.configMutationState.message).toBe('terminal.toastConfigUpdated');
   });
 
   it('updateProxyMode reloads canonical proxy state and marks sync success', async () => {

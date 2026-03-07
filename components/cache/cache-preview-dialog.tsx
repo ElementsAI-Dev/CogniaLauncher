@@ -43,6 +43,13 @@ export function CachePreviewDialog({
   handleEnhancedClean,
 }: CachePreviewDialogProps) {
   const { t } = useLocale();
+  const previewTypeLabel = previewType === 'downloads'
+    ? t('cache.typeDownload')
+    : previewType === 'metadata'
+      ? t('cache.typeMetadata')
+      : previewType === 'expired'
+        ? t('cache.typeExpired')
+        : t('cache.allTypes');
 
   return (
     <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
@@ -53,7 +60,7 @@ export function CachePreviewDialog({
             {t('cache.previewTitle')}
           </DialogTitle>
           <DialogDescription>
-            {t('cache.previewDesc', { type: previewType })}
+            {t('cache.previewDesc', { type: previewTypeLabel })}
           </DialogDescription>
         </DialogHeader>
 

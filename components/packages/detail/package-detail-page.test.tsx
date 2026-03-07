@@ -10,6 +10,7 @@ const mockPinPackage = jest.fn();
 const mockUnpinPackage = jest.fn();
 const mockRollbackPackage = jest.fn();
 const mockResolveDependencies = jest.fn();
+const mockFetchPinnedPackages = jest.fn();
 const mockGetPackageHistory = jest.fn();
 const mockRefresh = jest.fn();
 const mockToggleBookmark = jest.fn();
@@ -47,6 +48,7 @@ jest.mock("@/hooks/use-packages", () => ({
     uninstallPackages: mockUninstallPackages,
     pinPackage: mockPinPackage,
     unpinPackage: mockUnpinPackage,
+    fetchPinnedPackages: mockFetchPinnedPackages,
     rollbackPackage: mockRollbackPackage,
     resolveDependencies: mockResolveDependencies,
     getPackageHistory: mockGetPackageHistory,

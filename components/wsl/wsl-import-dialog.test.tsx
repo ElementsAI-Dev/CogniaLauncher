@@ -13,6 +13,7 @@ const mockT = (key: string) => {
     'wsl.wslVersion1': 'WSL 1',
     'wsl.wslVersion2': 'WSL 2',
     'wsl.importAsVhd': 'Import as VHD',
+    'wsl.capabilityUnsupported': "Feature '{feature}' is unavailable on this system (WSL {version}).",
     'common.browse': 'Browse',
     'common.cancel': 'Cancel',
   };
@@ -24,6 +25,7 @@ describe('WslImportDialog', () => {
     open: true,
     onOpenChange: jest.fn(),
     onImport: jest.fn().mockResolvedValue(undefined),
+    capabilities: { exportFormat: true, version: '2.4.0' },
     t: mockT,
   };
 
@@ -54,6 +56,18 @@ describe('WslImportDialog', () => {
 
     const browseButtons = screen.getAllByText('Browse');
     expect(browseButtons).toHaveLength(2); // file + location
+  });
+
+  it('disables VHD switch when capability is unavailable', () => {
+    render(
+      <WslImportDialog
+        {...defaultProps}
+        capabilities={{ exportFormat: false, version: '2.0.0' }}
+      />,
+    );
+
+    expect(screen.getByRole('switch')).toBeDisabled();
+    expect(screen.getByText(/Feature 'Import as VHD' is unavailable/)).toBeInTheDocument();
   });
 
   it('disables import button when fields are empty', () => {

@@ -33,8 +33,12 @@ pub struct DiagnosticExportOptions {
 pub struct DiagnosticCaptureFrontendCrashOptions {
     /// Whether to include the sanitised config snapshot.
     pub include_config: Option<bool>,
+    /// Optional crash source identifier from frontend runtime.
+    pub source: Option<String>,
     /// Error context captured from frontend runtime.
     pub error_context: ErrorContext,
+    /// Optional bounded runtime breadcrumbs from frontend.
+    pub runtime_breadcrumbs: Option<Vec<RuntimeBreadcrumb>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -58,12 +62,50 @@ pub struct DiagnosticExportResult {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CrashInfo {
+    pub id: String,
+    pub source: String,
     pub report_path: String,
     pub timestamp: String,
     pub message: Option<String>,
 }
 
 const CRASH_REPORTS_KEEP_COUNT: usize = 20;
+const RUNTIME_BREADCRUMB_MAX_ENTRIES: usize = 100;
+const RUNTIME_BREADCRUMB_MAX_MESSAGE_LEN: usize = 4096;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeBreadcrumb {
+    pub timestamp: String,
+    pub level: String,
+    pub target: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PendingCrashRecord {
+    id: String,
+    source: String,
+    timestamp: String,
+    message: Option<String>,
+    report_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CrashManifest {
+    schema_version: u8,
+    crash_id: String,
+    source: String,
+    captured_at: String,
+    app_version: String,
+    report_file: String,
+    message: Option<String>,
+    includes_config: bool,
+    includes_error_context: bool,
+    includes_runtime_breadcrumbs: bool,
+}
 
 // ---------------------------------------------------------------------------
 // Tauri commands
@@ -108,6 +150,8 @@ pub async fn diagnostic_export_bundle(
             log_dir.as_deref(),
             config_toml.as_deref(),
             options.error_context.as_ref(),
+            None,
+            None,
         )
     })
     .await
@@ -131,45 +175,35 @@ pub fn diagnostic_get_default_export_path() -> Result<String, String> {
 /// Check if there is a crash report from a previous session.
 #[tauri::command]
 pub fn diagnostic_check_last_crash() -> Result<Option<CrashInfo>, String> {
-    let marker = get_crash_marker_path();
-    if !marker.exists() {
-        return Ok(None);
+    migrate_legacy_marker_into_pending()?;
+    let mut pending = read_pending_crashes()?;
+    let changed = prune_pending_crashes_in_place(&mut pending);
+    if changed {
+        write_pending_crashes(&pending)?;
     }
 
-    let content =
-        fs::read_to_string(&marker).map_err(|e| format!("Failed to read crash marker: {e}"))?;
-
-    // Format: line 1 = report path, line 2 = timestamp, line 3+ = message
-    let mut lines = content.lines();
-    let report_path = lines.next().unwrap_or("").to_string();
-    let timestamp = lines.next().unwrap_or("").to_string();
-    let message: String = lines.collect::<Vec<_>>().join("\n");
-    let message = if message.is_empty() {
-        None
-    } else {
-        Some(message)
-    };
-
-    // Only return info if the report file actually exists
-    if !report_path.is_empty() && Path::new(&report_path).exists() {
-        Ok(Some(CrashInfo {
-            report_path,
-            timestamp,
-            message,
-        }))
-    } else {
-        // Stale marker, clean it up
-        let _ = fs::remove_file(&marker);
-        Ok(None)
-    }
+    Ok(pending.last().cloned().map(|record| CrashInfo {
+        id: record.id,
+        source: record.source,
+        report_path: record.report_path,
+        timestamp: record.timestamp,
+        message: record.message,
+    }))
 }
 
 /// Dismiss the crash notification (deletes the marker file).
 #[tauri::command]
 pub fn diagnostic_dismiss_crash() -> Result<(), String> {
-    let marker = get_crash_marker_path();
-    if marker.exists() {
-        fs::remove_file(&marker).map_err(|e| format!("Failed to dismiss crash marker: {e}"))?;
+    migrate_legacy_marker_into_pending()?;
+    let mut pending = read_pending_crashes()?;
+    let changed = prune_pending_crashes_in_place(&mut pending);
+    if !pending.is_empty() {
+        pending.pop();
+        write_pending_crashes(&pending)?;
+        return Ok(());
+    }
+    if changed {
+        write_pending_crashes(&pending)?;
     }
     Ok(())
 }
@@ -181,12 +215,19 @@ pub async fn diagnostic_capture_frontend_crash(
     options: DiagnosticCaptureFrontendCrashOptions,
     settings: State<'_, SharedSettings>,
 ) -> Result<CrashInfo, String> {
+    let source = options
+        .source
+        .as_deref()
+        .filter(|v| !v.trim().is_empty())
+        .unwrap_or("frontend-runtime")
+        .to_string();
     let file_timestamp = Local::now().format("%Y-%m-%dT%H-%M-%S").to_string();
     let marker_timestamp = options
         .error_context
         .timestamp
         .clone()
         .unwrap_or_else(|| Local::now().to_rfc3339());
+    let crash_id = generate_crash_id(&source, &marker_timestamp);
     let marker_message = options
         .error_context
         .message
@@ -207,8 +248,35 @@ pub async fn diagnostic_capture_frontend_crash(
         None
     };
 
+    let runtime_breadcrumbs = normalize_runtime_breadcrumbs(
+        options
+            .runtime_breadcrumbs
+            .as_deref()
+            .unwrap_or(&[])
+            .to_vec(),
+    );
+
+    let manifest = CrashManifest {
+        schema_version: 1,
+        crash_id: crash_id.clone(),
+        source: source.clone(),
+        captured_at: marker_timestamp.clone(),
+        app_version: env!("CARGO_PKG_VERSION").to_string(),
+        report_file: output_path
+            .file_name()
+            .and_then(|v| v.to_str())
+            .unwrap_or_default()
+            .to_string(),
+        message: Some(marker_message.clone()),
+        includes_config: config_toml.is_some(),
+        includes_error_context: true,
+        includes_runtime_breadcrumbs: !runtime_breadcrumbs.is_empty(),
+    };
+
     let error_ctx = options.error_context;
     let output_path_for_task = output_path.clone();
+    let runtime_breadcrumbs_for_task = runtime_breadcrumbs.clone();
+    let manifest_for_task = manifest.clone();
 
     tokio::task::spawn_blocking(move || {
         build_zip_bundle(
@@ -216,15 +284,31 @@ pub async fn diagnostic_capture_frontend_crash(
             log_dir.as_deref(),
             config_toml.as_deref(),
             Some(&error_ctx),
+            Some(&manifest_for_task),
+            if runtime_breadcrumbs_for_task.is_empty() {
+                None
+            } else {
+                Some(runtime_breadcrumbs_for_task.as_slice())
+            },
         )
     })
     .await
     .map_err(|e| format!("Crash zip task panicked: {e}"))?
     .map_err(|e| format!("Failed to create frontend crash bundle: {e}"))?;
 
-    write_crash_marker(&output_path, &marker_timestamp, &marker_message)?;
+    append_pending_crash(PendingCrashRecord {
+        id: crash_id.clone(),
+        source: source.clone(),
+        timestamp: marker_timestamp.clone(),
+        message: Some(marker_message.clone()),
+        report_path: output_path.to_string_lossy().to_string(),
+    })?;
+
     if let Err(e) = cleanup_old_crash_reports(CRASH_REPORTS_KEEP_COUNT) {
         warn!("Failed to cleanup old crash reports: {e}");
+    }
+    if let Err(e) = synchronize_pending_crashes_with_reports() {
+        warn!("Failed to synchronize pending crash records: {e}");
     }
 
     info!(
@@ -233,6 +317,8 @@ pub async fn diagnostic_capture_frontend_crash(
     );
 
     Ok(CrashInfo {
+        id: crash_id,
+        source,
         report_path: output_path.to_string_lossy().to_string(),
         timestamp: marker_timestamp,
         message: Some(marker_message),
@@ -266,6 +352,8 @@ pub fn install_panic_hook() {
         let backtrace = std::backtrace::Backtrace::force_capture().to_string();
 
         let timestamp = Local::now().format("%Y-%m-%dT%H-%M-%S").to_string();
+        let source = "rust-panic-hook";
+        let crash_id = generate_crash_id(source, &timestamp);
 
         eprintln!("=== CogniaLauncher PANIC ===");
         eprintln!("Message: {message}");
@@ -282,13 +370,21 @@ pub fn install_panic_hook() {
         };
 
         // Generate crash report synchronously (tokio may be dead)
-        match generate_crash_report_sync(&error_ctx, &timestamp) {
+        match generate_crash_report_sync(&error_ctx, &timestamp, source, &crash_id) {
             Ok(report_path) => {
                 eprintln!("Crash report saved to: {}", report_path.display());
 
-                // Write marker file so next launch can detect the crash
-                if let Err(e) = write_crash_marker(&report_path, &timestamp, &message) {
-                    eprintln!("Failed to write crash marker: {e}");
+                if let Err(e) = append_pending_crash(PendingCrashRecord {
+                    id: crash_id.clone(),
+                    source: source.to_string(),
+                    timestamp: timestamp.clone(),
+                    message: Some(message.clone()),
+                    report_path: report_path.to_string_lossy().to_string(),
+                }) {
+                    eprintln!("Failed to persist pending crash record: {e}");
+                }
+                if let Err(e) = synchronize_pending_crashes_with_reports() {
+                    eprintln!("Failed to synchronize pending crash records: {e}");
                 }
             }
             Err(e) => {
@@ -333,12 +429,156 @@ fn get_crash_marker_path() -> PathBuf {
         .join("last-crash.txt")
 }
 
+fn get_pending_crashes_path() -> PathBuf {
+    platform_fs::get_cognia_dir()
+        .unwrap_or_else(|| PathBuf::from(".CogniaLauncher"))
+        .join("pending-crashes.json")
+}
+
+fn generate_crash_id(source: &str, timestamp: &str) -> String {
+    let source = source
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>();
+    let timestamp = timestamp
+        .chars()
+        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '-' })
+        .collect::<String>();
+    format!("{source}-{timestamp}")
+}
+
+fn read_pending_crashes() -> Result<Vec<PendingCrashRecord>, String> {
+    let pending_path = get_pending_crashes_path();
+    if !pending_path.exists() {
+        return Ok(Vec::new());
+    }
+
+    let content = fs::read_to_string(&pending_path)
+        .map_err(|e| format!("Failed to read pending crashes file: {e}"))?;
+    if content.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+
+    serde_json::from_str::<Vec<PendingCrashRecord>>(&content)
+        .map_err(|e| format!("Failed to parse pending crashes file: {e}"))
+}
+
+fn write_pending_crashes(records: &[PendingCrashRecord]) -> Result<(), String> {
+    let pending_path = get_pending_crashes_path();
+    if let Some(parent) = pending_path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create pending crashes directory: {e}"))?;
+    }
+    let json = serde_json::to_string_pretty(records)
+        .map_err(|e| format!("Failed to serialize pending crashes: {e}"))?;
+    fs::write(&pending_path, json).map_err(|e| format!("Failed to write pending crashes: {e}"))
+}
+
+fn append_pending_crash(record: PendingCrashRecord) -> Result<(), String> {
+    let mut records = read_pending_crashes()?;
+    records.push(record);
+    write_pending_crashes(&records)
+}
+
+fn parse_legacy_crash_marker(content: &str) -> Option<PendingCrashRecord> {
+    let mut lines = content.lines();
+    let report_path = lines.next().unwrap_or("").trim().to_string();
+    let timestamp = lines.next().unwrap_or("").trim().to_string();
+    let message = lines.collect::<Vec<_>>().join("\n");
+    let message = if message.trim().is_empty() {
+        None
+    } else {
+        Some(message)
+    };
+
+    if report_path.is_empty() || !Path::new(&report_path).exists() {
+        return None;
+    }
+
+    let normalized_timestamp = if timestamp.is_empty() {
+        Local::now().to_rfc3339()
+    } else {
+        timestamp
+    };
+
+    Some(PendingCrashRecord {
+        id: generate_crash_id("legacy-marker", &normalized_timestamp),
+        source: "legacy-marker".to_string(),
+        timestamp: normalized_timestamp,
+        message,
+        report_path,
+    })
+}
+
+fn migrate_legacy_marker_into_pending() -> Result<(), String> {
+    let marker = get_crash_marker_path();
+    if !marker.exists() {
+        return Ok(());
+    }
+
+    let content =
+        fs::read_to_string(&marker).map_err(|e| format!("Failed to read crash marker: {e}"))?;
+    let mut pending = read_pending_crashes()?;
+    if let Some(record) = parse_legacy_crash_marker(&content) {
+        let duplicate = pending
+            .iter()
+            .any(|item| item.report_path == record.report_path && item.timestamp == record.timestamp);
+        if !duplicate {
+            pending.push(record);
+            write_pending_crashes(&pending)?;
+        }
+    }
+
+    fs::remove_file(&marker).map_err(|e| format!("Failed to remove legacy crash marker: {e}"))?;
+    Ok(())
+}
+
+fn prune_pending_crashes_in_place(records: &mut Vec<PendingCrashRecord>) -> bool {
+    let before = records.len();
+    records.retain(|record| Path::new(&record.report_path).exists());
+    before != records.len()
+}
+
+fn synchronize_pending_crashes_with_reports() -> Result<(), String> {
+    let mut records = read_pending_crashes()?;
+    if prune_pending_crashes_in_place(&mut records) {
+        write_pending_crashes(&records)?;
+    }
+    Ok(())
+}
+
+fn normalize_runtime_breadcrumbs(entries: Vec<RuntimeBreadcrumb>) -> Vec<RuntimeBreadcrumb> {
+    let mut bounded = if entries.len() > RUNTIME_BREADCRUMB_MAX_ENTRIES {
+        entries[entries.len() - RUNTIME_BREADCRUMB_MAX_ENTRIES..].to_vec()
+    } else {
+        entries
+    };
+    for entry in &mut bounded {
+        if entry.message.chars().count() > RUNTIME_BREADCRUMB_MAX_MESSAGE_LEN {
+            entry.message = entry
+                .message
+                .chars()
+                .take(RUNTIME_BREADCRUMB_MAX_MESSAGE_LEN)
+                .collect::<String>();
+        }
+    }
+    bounded
+}
+
 /// Build the diagnostic ZIP bundle (runs on a blocking thread).
 fn build_zip_bundle(
     output_path: &Path,
     log_dir: Option<&Path>,
     config_toml: Option<&str>,
     error_context: Option<&ErrorContext>,
+    crash_manifest: Option<&CrashManifest>,
+    runtime_breadcrumbs: Option<&[RuntimeBreadcrumb]>,
 ) -> Result<DiagnosticExportResult, String> {
     let file =
         fs::File::create(output_path).map_err(|e| format!("Failed to create zip file: {e}"))?;
@@ -410,6 +650,29 @@ fn build_zip_bundle(
         }
     }
 
+    // 6. runtime-breadcrumbs.json
+    if let Some(breadcrumbs) = runtime_breadcrumbs {
+        if !breadcrumbs.is_empty() {
+            let json =
+                serde_json::to_string_pretty(breadcrumbs).unwrap_or_else(|_| "[]".to_string());
+            zip.start_file("runtime-breadcrumbs.json", options)
+                .map_err(|e| format!("zip error: {e}"))?;
+            zip.write_all(json.as_bytes())
+                .map_err(|e| format!("zip write error: {e}"))?;
+            file_count += 1;
+        }
+    }
+
+    // 7. crash-manifest.json
+    if let Some(manifest) = crash_manifest {
+        let json = serde_json::to_string_pretty(manifest).unwrap_or_else(|_| "{}".to_string());
+        zip.start_file("crash-manifest.json", options)
+            .map_err(|e| format!("zip error: {e}"))?;
+        zip.write_all(json.as_bytes())
+            .map_err(|e| format!("zip write error: {e}"))?;
+        file_count += 1;
+    }
+
     zip.finish().map_err(|e| format!("zip finish error: {e}"))?;
 
     let metadata = fs::metadata(output_path).map_err(|e| format!("Failed to stat output: {e}"))?;
@@ -425,6 +688,8 @@ fn build_zip_bundle(
 fn generate_crash_report_sync(
     error_ctx: &ErrorContext,
     timestamp: &str,
+    source: &str,
+    crash_id: &str,
 ) -> Result<PathBuf, String> {
     let crash_dir = get_crash_reports_dir();
     fs::create_dir_all(&crash_dir)
@@ -436,15 +701,36 @@ fn generate_crash_report_sync(
     let log_dir = find_log_dir_sync();
 
     // We cannot read Settings from Tauri state in a panic hook, so skip config
+    let manifest = CrashManifest {
+        schema_version: 1,
+        crash_id: crash_id.to_string(),
+        source: source.to_string(),
+        captured_at: timestamp.to_string(),
+        app_version: env!("CARGO_PKG_VERSION").to_string(),
+        report_file: output_path
+            .file_name()
+            .and_then(|v| v.to_str())
+            .unwrap_or_default()
+            .to_string(),
+        message: error_ctx.message.clone(),
+        includes_config: false,
+        includes_error_context: true,
+        includes_runtime_breadcrumbs: false,
+    };
     build_zip_bundle(
         &output_path,
         log_dir.as_deref(),
         None, // no config in crash reports
         Some(error_ctx),
+        Some(&manifest),
+        None,
     )?;
 
     if let Err(e) = cleanup_old_crash_reports(CRASH_REPORTS_KEEP_COUNT) {
         eprintln!("Failed to cleanup old crash reports: {e}");
+    }
+    if let Err(e) = synchronize_pending_crashes_with_reports() {
+        eprintln!("Failed to synchronize pending crash records: {e}");
     }
 
     Ok(output_path)
@@ -508,23 +794,14 @@ fn dedup_paths_preserve_order(candidates: Vec<PathBuf>) -> Vec<PathBuf> {
     deduped
 }
 
-fn write_crash_marker(report_path: &Path, timestamp: &str, message: &str) -> Result<(), String> {
-    let marker_path = get_crash_marker_path();
-    if let Some(parent) = marker_path.parent() {
-        fs::create_dir_all(parent).map_err(|e| format!("mkdir: {e}"))?;
-    }
-    let content = format!("{}\n{}\n{}", report_path.display(), timestamp, message);
-    fs::write(&marker_path, content).map_err(|e| format!("write: {e}"))?;
-    Ok(())
-}
-
 fn cleanup_old_crash_reports(keep_count: usize) -> Result<(), String> {
-    cleanup_old_crash_reports_in_dir(&get_crash_reports_dir(), keep_count)
+    let _ = cleanup_old_crash_reports_in_dir(&get_crash_reports_dir(), keep_count)?;
+    synchronize_pending_crashes_with_reports()
 }
 
-fn cleanup_old_crash_reports_in_dir(dir: &Path, keep_count: usize) -> Result<(), String> {
+fn cleanup_old_crash_reports_in_dir(dir: &Path, keep_count: usize) -> Result<Vec<PathBuf>, String> {
     if keep_count == 0 || !dir.exists() {
-        return Ok(());
+        return Ok(Vec::new());
     }
 
     let mut reports: Vec<(PathBuf, SystemTime, String)> = Vec::new();
@@ -556,12 +833,13 @@ fn cleanup_old_crash_reports_in_dir(dir: &Path, keep_count: usize) -> Result<(),
     }
 
     if reports.len() <= keep_count {
-        return Ok(());
+        return Ok(Vec::new());
     }
 
     // Newest first by modified time, then by filename for deterministic ordering.
     reports.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| b.2.cmp(&a.2)));
 
+    let mut deleted = Vec::new();
     for (path, _, _) in reports.into_iter().skip(keep_count) {
         if let Err(e) = fs::remove_file(&path) {
             return Err(format!(
@@ -569,9 +847,10 @@ fn cleanup_old_crash_reports_in_dir(dir: &Path, keep_count: usize) -> Result<(),
                 path.display()
             ));
         }
+        deleted.push(path);
     }
 
-    Ok(())
+    Ok(deleted)
 }
 
 /// Collect system information as a pretty-printed JSON string.
@@ -731,6 +1010,7 @@ mod tests {
     use super::*;
     use std::collections::HashSet;
     use tempfile::tempdir;
+    use zip::ZipArchive;
 
     #[test]
     fn test_collect_system_info_json() {
@@ -753,7 +1033,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let output = dir.path().join("test-diag.zip");
 
-        let result = build_zip_bundle(&output, None, None, None).unwrap();
+        let result = build_zip_bundle(&output, None, None, None, None, None).unwrap();
         assert_eq!(result.file_count, 2); // system-info.json + environment.json
         assert!(result.size > 0);
         assert!(Path::new(&result.path).exists());
@@ -779,7 +1059,8 @@ mod tests {
             extra: None,
         };
 
-        let result = build_zip_bundle(&output, Some(&log_dir), Some(config), Some(&ctx)).unwrap();
+        let result = build_zip_bundle(&output, Some(&log_dir), Some(config), Some(&ctx), None, None)
+            .unwrap();
 
         // system-info + config + error-context + environment + 2 logs = 6
         assert_eq!(result.file_count, 6);
@@ -796,21 +1077,17 @@ mod tests {
     }
 
     #[test]
-    fn test_crash_marker_roundtrip() {
+    fn test_parse_legacy_crash_marker_roundtrip() {
         let dir = tempdir().unwrap();
-        let marker = dir.path().join("test-marker.txt");
         let report = dir.path().join("crash-report.zip");
+        fs::write(&report, "dummy").unwrap();
 
-        // Write marker manually
         let content = format!("{}\n2026-02-25\ntest panic", report.display());
-        fs::write(&marker, content).unwrap();
-
-        // Read it back
-        let raw = fs::read_to_string(&marker).unwrap();
-        let mut lines = raw.lines();
-        assert_eq!(lines.next().unwrap(), report.to_string_lossy());
-        assert_eq!(lines.next().unwrap(), "2026-02-25");
-        assert_eq!(lines.next().unwrap(), "test panic");
+        let parsed = parse_legacy_crash_marker(&content).unwrap();
+        assert_eq!(parsed.source, "legacy-marker");
+        assert_eq!(parsed.timestamp, "2026-02-25");
+        assert_eq!(parsed.message.as_deref(), Some("test panic"));
+        assert_eq!(parsed.report_path, report.to_string_lossy());
     }
 
     #[test]
@@ -839,7 +1116,8 @@ mod tests {
         }
         fs::write(dir.path().join("note.txt"), "keep me").unwrap();
 
-        cleanup_old_crash_reports_in_dir(dir.path(), 20).unwrap();
+        let deleted = cleanup_old_crash_reports_in_dir(dir.path(), 20).unwrap();
+        assert_eq!(deleted.len(), 5);
 
         let mut zip_names: Vec<String> = fs::read_dir(dir.path())
             .unwrap()
@@ -860,6 +1138,96 @@ mod tests {
         assert!(zip_names.contains(&"crash-2026-02-25T00-00-24.zip".to_string()));
         assert!(!zip_names.contains(&"crash-2026-02-25T00-00-00.zip".to_string()));
         assert!(dir.path().join("note.txt").exists());
+    }
+
+    #[test]
+    fn test_build_zip_bundle_writes_manifest_and_breadcrumbs() {
+        let dir = tempdir().unwrap();
+        let output = dir.path().join("test-crash.zip");
+
+        let manifest = CrashManifest {
+            schema_version: 1,
+            crash_id: "id-1".into(),
+            source: "frontend-runtime".into(),
+            captured_at: "2026-02-25T00:00:00Z".into(),
+            app_version: "0.1.0".into(),
+            report_file: "test-crash.zip".into(),
+            message: Some("boom".into()),
+            includes_config: false,
+            includes_error_context: true,
+            includes_runtime_breadcrumbs: true,
+        };
+        let breadcrumbs = vec![RuntimeBreadcrumb {
+            timestamp: "2026-02-25T00:00:00Z".into(),
+            level: "error".into(),
+            target: "runtime".into(),
+            message: "Unhandled runtime error".into(),
+        }];
+
+        let _ = build_zip_bundle(
+            &output,
+            None,
+            None,
+            None,
+            Some(&manifest),
+            Some(&breadcrumbs),
+        )
+        .unwrap();
+
+        let file = fs::File::open(&output).unwrap();
+        let mut archive = ZipArchive::new(file).unwrap();
+        assert!(archive.by_name("crash-manifest.json").is_ok());
+        assert!(archive.by_name("runtime-breadcrumbs.json").is_ok());
+    }
+
+    #[test]
+    fn test_normalize_runtime_breadcrumbs_is_bounded() {
+        let mut input = Vec::new();
+        for i in 0..120 {
+            input.push(RuntimeBreadcrumb {
+                timestamp: format!("2026-02-25T00:00:{i:02}Z"),
+                level: "info".into(),
+                target: "runtime".into(),
+                message: if i == 119 { "x".repeat(5000) } else { format!("m-{i}") },
+            });
+        }
+
+        let normalized = normalize_runtime_breadcrumbs(input);
+        assert_eq!(normalized.len(), 100);
+        assert_eq!(normalized.first().unwrap().message, "m-20");
+        assert_eq!(
+            normalized.last().unwrap().message.chars().count(),
+            RUNTIME_BREADCRUMB_MAX_MESSAGE_LEN
+        );
+    }
+
+    #[test]
+    fn test_prune_pending_crashes_removes_missing_reports() {
+        let dir = tempdir().unwrap();
+        let existing = dir.path().join("existing.zip");
+        fs::write(&existing, "x").unwrap();
+
+        let mut records = vec![
+            PendingCrashRecord {
+                id: "1".into(),
+                source: "frontend-runtime".into(),
+                timestamp: "2026-02-25T00:00:00Z".into(),
+                message: Some("ok".into()),
+                report_path: existing.to_string_lossy().to_string(),
+            },
+            PendingCrashRecord {
+                id: "2".into(),
+                source: "frontend-runtime".into(),
+                timestamp: "2026-02-25T00:01:00Z".into(),
+                message: Some("missing".into()),
+                report_path: dir.path().join("missing.zip").to_string_lossy().to_string(),
+            },
+        ];
+
+        let changed = prune_pending_crashes_in_place(&mut records);
+        assert!(changed);
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].id, "1");
     }
 
     #[test]

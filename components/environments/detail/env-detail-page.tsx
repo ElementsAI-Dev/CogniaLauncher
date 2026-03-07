@@ -13,6 +13,7 @@ import {
 } from '@/components/environments/detail';
 import { VersionBrowserPanel } from '@/components/environments/version-browser-panel';
 import { InstallationProgressDialog } from '@/components/environments/installation-progress-dialog';
+import { EnvironmentWorkflowBanner } from '@/components/environments/environment-workflow-banner';
 import { useEnvironments } from '@/hooks/use-environments';
 import { useEnvironmentDetection } from '@/hooks/use-environment-detection';
 import { useEnvironmentStore, getLogicalEnvType } from '@/lib/stores/environment';
@@ -55,9 +56,11 @@ export function EnvDetailPageClient({ envType }: EnvDetailPageClientProps) {
     versionBrowserOpen,
     closeVersionBrowser,
     openVersionBrowser,
+    getSelectedProvider,
+    setSelectedProvider,
+    setWorkflowContext,
+    setWorkflowAction,
   } = useEnvironmentStore();
-
-  const [selectedProviderId, setSelectedProviderId] = useState<string | undefined>();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const { getProjectDetectedForEnv } = useEnvironmentDetection({
     detectedVersions,
@@ -104,18 +107,67 @@ export function EnvDetailPageClient({ envType }: EnvDetailPageClientProps) {
       .map((p) => ({ id: p.id, name: p.display_name }));
   }, [availableProviders, envType, getEnvKey]);
 
-  const currentProviderId = selectedProviderId || env?.provider_id || envType;
+  const currentProviderId = getSelectedProvider(envType, env?.provider_id || envType);
+
+  useEffect(() => {
+    setWorkflowContext({
+      envType,
+      origin: useEnvironmentStore.getState().workflowContext?.envType === envType
+        ? useEnvironmentStore.getState().workflowContext?.origin ?? 'direct'
+        : 'direct',
+      returnHref: useEnvironmentStore.getState().workflowContext?.envType === envType
+        ? useEnvironmentStore.getState().workflowContext?.returnHref ?? '/environments'
+        : '/environments',
+      projectPath: projectPath || null,
+      providerId: currentProviderId,
+      updatedAt: Date.now(),
+    });
+  }, [currentProviderId, envType, projectPath, setWorkflowContext]);
 
   // Handlers
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
+    setWorkflowAction({
+      envType,
+      action: 'refresh',
+      status: 'running',
+      providerId: currentProviderId,
+      projectPath: projectPath || null,
+      updatedAt: Date.now(),
+    });
     try {
-      await fetchEnvironments();
-      await detectVersions(projectPath || '.');
+      await fetchEnvironments(true);
+      await detectVersions(projectPath || '.', { force: true });
+      setWorkflowAction({
+        envType,
+        action: 'refresh',
+        status: 'success',
+        providerId: currentProviderId,
+        projectPath: projectPath || null,
+        updatedAt: Date.now(),
+      });
+    } catch (error) {
+      setWorkflowAction({
+        envType,
+        action: 'refresh',
+        status: 'error',
+        providerId: currentProviderId,
+        projectPath: projectPath || null,
+        error: error instanceof Error ? error.message : String(error),
+        retryable: true,
+        updatedAt: Date.now(),
+      });
     } finally {
       setIsRefreshing(false);
     }
-  }, [fetchEnvironments, detectVersions, projectPath]);
+  }, [
+    currentProviderId,
+    detectVersions,
+    envType,
+    fetchEnvironments,
+    projectPath,
+    setWorkflowAction,
+  ]);
 
   const handleInstallVersion = useCallback(
     async (version: string, providerId?: string) => {
@@ -177,6 +229,13 @@ export function EnvDetailPageClient({ envType }: EnvDetailPageClientProps) {
         onOpenVersionBrowser={handleOpenVersionBrowser}
         t={t}
       />
+      <EnvironmentWorkflowBanner
+        envType={envType}
+        projectPath={projectPath}
+        providerLabel={env?.provider || currentProviderId}
+        onRefresh={handleRefresh}
+        t={t}
+      />
 
       <Tabs defaultValue="overview" className="space-y-4">
         <TabsList>
@@ -225,7 +284,7 @@ export function EnvDetailPageClient({ envType }: EnvDetailPageClientProps) {
             onOpenVersionBrowser={handleOpenVersionBrowser}
             availableProviders={envProviders()}
             selectedProviderId={currentProviderId}
-            onProviderChange={setSelectedProviderId}
+            onProviderChange={(providerId) => setSelectedProvider(envType, providerId)}
             loading={loading}
             onCleanup={(versions) => cleanupVersions(envType, versions)}
             t={t}

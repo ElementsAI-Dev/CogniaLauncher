@@ -24,6 +24,7 @@ describe('useSettingsStore', () => {
     autostart: false,
     trayClickBehavior: 'toggle_window',
     showNotifications: true,
+    trayNotificationLevel: 'all',
     sidebarItemOrder: [...DEFAULT_SIDEBAR_ITEM_ORDER],
   };
 
@@ -65,6 +66,7 @@ describe('useSettingsStore', () => {
       expect(appSettings.autostart).toBe(false);
       expect(appSettings.trayClickBehavior).toBe('toggle_window');
       expect(appSettings.showNotifications).toBe(true);
+      expect(appSettings.trayNotificationLevel).toBe('all');
       expect(appSettings.sidebarItemOrder).toEqual(DEFAULT_SIDEBAR_ITEM_ORDER);
     });
   });
@@ -272,6 +274,11 @@ describe('useSettingsStore', () => {
         expect(useSettingsStore.getState().appSettings.showNotifications).toBe(false);
       });
 
+      it('should update trayNotificationLevel', () => {
+        useSettingsStore.getState().setAppSettings({ trayNotificationLevel: 'important_only' });
+        expect(useSettingsStore.getState().appSettings.trayNotificationLevel).toBe('important_only');
+      });
+
       it('should update sidebarItemOrder', () => {
         useSettingsStore.getState().setAppSettings({
           sidebarItemOrder: ['packages', ...DEFAULT_SIDEBAR_ITEM_ORDER.filter((id) => id !== 'packages')],
@@ -298,10 +305,12 @@ describe('useSettingsStore', () => {
       it('should preserve existing settings when updating partial', () => {
         useSettingsStore.getState().setAppSettings({ autostart: true });
         useSettingsStore.getState().setAppSettings({ showNotifications: false });
+        useSettingsStore.getState().setAppSettings({ trayNotificationLevel: 'none' });
 
         const { appSettings } = useSettingsStore.getState();
         expect(appSettings.autostart).toBe(true);
         expect(appSettings.showNotifications).toBe(false);
+        expect(appSettings.trayNotificationLevel).toBe('none');
       });
     });
   });

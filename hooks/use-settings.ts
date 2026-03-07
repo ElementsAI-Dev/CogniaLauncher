@@ -3,13 +3,20 @@
 import { useCallback } from 'react';
 import { useSettingsStore } from '@/lib/stores/settings';
 import * as tauri from '@/lib/tauri';
-import type { CacheSettings } from '@/lib/tauri';
+import type { CacheCommandScope, CacheSettings } from '@/lib/tauri';
+import {
+  APPEARANCE_CONFIG_PATHS,
+  normalizeAppearanceConfigValue,
+  type AppearanceConfigPath,
+} from '@/lib/theme';
 import {
   DESKTOP_APP_SETTINGS_MIGRATION_FLAG,
   configToAppSettings,
   readLegacyAppSettingsFromStorage,
   toConfigEntriesFromAppSettings,
 } from '@/lib/settings/app-settings-mapping';
+
+const APPEARANCE_CONFIG_PATH_SET = new Set<string>(Object.values(APPEARANCE_CONFIG_PATHS));
 
 export function useSettings() {
   const store = useSettingsStore();
@@ -112,13 +119,17 @@ export function useSettings() {
   const updateConfigValue = useCallback(async (key: string, value: string) => {
     store.setError(null);
     try {
-      await tauri.configSet(key, value);
-      store.updateConfig(key, value);
+      const normalizedValue = APPEARANCE_CONFIG_PATH_SET.has(key)
+        ? normalizeAppearanceConfigValue(key as AppearanceConfigPath, value)
+        : value;
+
+      await tauri.configSet(key, normalizedValue);
+      store.updateConfig(key, normalizedValue);
       if (tauri.isTauri()) {
         const current = useSettingsStore.getState();
-        applyAppSettingsFromConfig({ ...current.config, [key]: value });
+        applyAppSettingsFromConfig({ ...current.config, [key]: normalizedValue });
       }
-      await syncDownloadRuntimeConfig(key, value);
+      await syncDownloadRuntimeConfig(key, normalizedValue);
     } catch (err) {
       store.setError(err instanceof Error ? err.message : String(err));
       throw err;
@@ -212,11 +223,11 @@ export function useSettings() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const verifyCacheIntegrity = useCallback(async () => {
+  const verifyCacheIntegrity = useCallback(async (scope: CacheCommandScope = 'all') => {
     store.setLoading(true);
     store.setError(null);
     try {
-      const result = await tauri.cacheVerify();
+      const result = await tauri.cacheVerify(scope);
       store.setCacheVerification(result);
       return result;
     } catch (err) {
@@ -228,11 +239,11 @@ export function useSettings() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const repairCache = useCallback(async () => {
+  const repairCache = useCallback(async (scope: CacheCommandScope = 'all') => {
     store.setLoading(true);
     store.setError(null);
     try {
-      const result = await tauri.cacheRepair();
+      const result = await tauri.cacheRepair(scope);
       store.setCacheVerification(null);
       await fetchCacheInfo();
       return result;

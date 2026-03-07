@@ -15,10 +15,29 @@ export function parsePackageSpec(pkg: string) {
 }
 
 /**
+ * Generate a canonical package key from explicit name/provider parts.
+ */
+export function getPackageKeyFromParts(name: string, provider?: string | null): string {
+  return provider ? `${provider}:${name}` : name;
+}
+
+/**
  * Generate a unique key for a package, combining provider and name.
  */
 export function getPackageKey(pkg: PackageSummary | InstalledPackage): string {
-  return pkg.provider ? `${pkg.provider}:${pkg.name}` : pkg.name;
+  return getPackageKeyFromParts(pkg.name, pkg.provider);
+}
+
+/**
+ * Determine whether a package is pinned, supporting legacy unscoped keys.
+ */
+export function isPackagePinned(
+  pinnedPackages: string[],
+  name: string,
+  provider?: string | null,
+): boolean {
+  const scopedKey = getPackageKeyFromParts(name, provider);
+  return pinnedPackages.includes(scopedKey) || pinnedPackages.includes(name);
 }
 
 /**

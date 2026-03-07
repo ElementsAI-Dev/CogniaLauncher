@@ -36,9 +36,9 @@ function rgbToHsl(r: number, g: number, b: number): { h: number; s: number; l: n
   return { h: Math.round(h * 360), s: Math.round(s * 100), l: Math.round(l * 100) };
 }
 
-function getContrastRatio(hex: string): string {
+function getContrastRatio(hex: string): { white: number; black: number } | null {
   const rgb = hexToRgb(hex);
-  if (!rgb) return '-';
+  if (!rgb) return null;
   const lum = [rgb.r, rgb.g, rgb.b].map((v) => {
     v /= 255;
     return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
@@ -46,7 +46,7 @@ function getContrastRatio(hex: string): string {
   const l = 0.2126 * lum[0] + 0.7152 * lum[1] + 0.0722 * lum[2];
   const white = (1.05) / (l + 0.05);
   const black = (l + 0.05) / 0.05;
-  return `W:${white.toFixed(2)} B:${black.toFixed(2)}`;
+  return { white, black };
 }
 
 const DEFAULT_PREFERENCES = {
@@ -64,6 +64,12 @@ export default function ColorPicker({ className }: ToolComponentProps) {
   const hsl = rgb ? rgbToHsl(rgb.r, rgb.g, rgb.b) : null;
   const contrast = getContrastRatio(hex);
   const hasError = hex.length > 0 && !rgb && !/^#[a-fA-F\d]{6}$/.test(hex);
+  const contrastText = contrast
+    ? t('toolbox.tools.colorPicker.contrastValue', {
+      white: contrast.white.toFixed(2),
+      black: contrast.black.toFixed(2),
+    })
+    : '-';
 
   const handleColorInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setHex(e.target.value);
@@ -91,10 +97,10 @@ export default function ColorPicker({ className }: ToolComponentProps) {
   }, [copy]);
 
   const formats = [
-    { key: 'hex', label: 'HEX', value: hex.toUpperCase() },
-    { key: 'rgb', label: 'RGB', value: rgb ? `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})` : '-' },
-    { key: 'hsl', label: 'HSL', value: hsl ? `hsl(${hsl.h}, ${hsl.s}%, ${hsl.l}%)` : '-' },
-    { key: 'contrast', label: t('toolbox.tools.colorPicker.contrast'), value: contrast },
+    { key: 'hex', label: t('toolbox.tools.colorPicker.formatHex'), value: hex.toUpperCase() },
+    { key: 'rgb', label: t('toolbox.tools.colorPicker.formatRgb'), value: rgb ? `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})` : '-' },
+    { key: 'hsl', label: t('toolbox.tools.colorPicker.formatHsl'), value: hsl ? `hsl(${hsl.h}, ${hsl.s}%, ${hsl.l}%)` : '-' },
+    { key: 'contrast', label: t('toolbox.tools.colorPicker.contrast'), value: contrastText },
   ];
 
   return (
@@ -111,7 +117,7 @@ export default function ColorPicker({ className }: ToolComponentProps) {
             />
           </div>
           <div className="flex-1 space-y-2">
-            <Label>HEX</Label>
+            <Label>{t('toolbox.tools.colorPicker.formatHex')}</Label>
             <Input value={hex} onChange={handleHexInput} className="font-mono" placeholder="#3b82f6" />
             {rgb && (
               <div className="grid grid-cols-3 gap-2">

@@ -1,38 +1,34 @@
+'use client';
+
 import { useEffect, useCallback } from 'react';
-import { useOnboardingStore, ONBOARDING_STEPS, type OnboardingStepId } from '@/lib/stores/onboarding';
+import {
+  useOnboardingStore,
+  getOnboardingSteps,
+  type OnboardingStepId,
+  type OnboardingMode,
+} from '@/lib/stores/onboarding';
 import { useOnboardingHydration } from './use-onboarding-hydration';
 
 export interface UseOnboardingReturn {
-  /** Whether onboarding state has been hydrated from persisted storage */
   isHydrated: boolean;
-  /** Whether the wizard should be shown (first run or manually opened) */
   shouldShowWizard: boolean;
-  /** Whether onboarding has been completed */
+  mode: OnboardingMode | null;
   isCompleted: boolean;
-  /** Whether onboarding was skipped */
   isSkipped: boolean;
-  /** Current step index */
   currentStep: number;
-  /** Current step ID */
   currentStepId: OnboardingStepId;
-  /** Total number of steps */
+  stepIds: OnboardingStepId[];
   totalSteps: number;
-  /** Progress percentage (0-100) */
   progress: number;
-  /** Whether we're on the first step */
   isFirstStep: boolean;
-  /** Whether we're on the last step */
   isLastStep: boolean;
-  /** Whether wizard dialog is open */
   wizardOpen: boolean;
-  /** Guided tour state */
   tourActive: boolean;
   tourCompleted: boolean;
   tourStep: number;
-
-  // Actions
   openWizard: () => void;
   closeWizard: () => void;
+  selectMode: (mode: OnboardingMode) => void;
   next: () => void;
   prev: () => void;
   goTo: (step: number) => void;
@@ -49,6 +45,7 @@ export interface UseOnboardingReturn {
 export function useOnboarding(): UseOnboardingReturn {
   const isHydrated = useOnboardingHydration();
   const {
+    mode,
     completed,
     skipped,
     currentStep,
@@ -57,6 +54,7 @@ export function useOnboarding(): UseOnboardingReturn {
     tourActive,
     tourStep,
     setWizardOpen,
+    selectMode: selectModeAction,
     nextStep,
     prevStep,
     goToStep,
@@ -70,7 +68,6 @@ export function useOnboarding(): UseOnboardingReturn {
     stopTour: stopTourAction,
   } = useOnboardingStore();
 
-  // Auto-open wizard on first run, only after persist hydration has completed.
   useEffect(() => {
     if (!isHydrated) return;
     if (!completed && !skipped && !wizardOpen && !tourActive) {
@@ -78,11 +75,15 @@ export function useOnboarding(): UseOnboardingReturn {
     }
   }, [isHydrated, completed, skipped, wizardOpen, tourActive, setWizardOpen]);
 
-  const currentStepId = ONBOARDING_STEPS[currentStep] ?? 'welcome';
-  const totalSteps = ONBOARDING_STEPS.length;
-  const progress = Math.round((currentStep / (totalSteps - 1)) * 100);
-  const isFirstStep = currentStep === 0;
-  const isLastStep = currentStep === totalSteps - 1;
+  const stepIds = getOnboardingSteps(mode);
+  const totalSteps = stepIds.length;
+  const normalizedCurrentStep = Math.min(currentStep, Math.max(totalSteps - 1, 0));
+  const currentStepId = stepIds[normalizedCurrentStep] ?? 'mode-selection';
+  const progress = mode && totalSteps > 1
+    ? Math.round((normalizedCurrentStep / (totalSteps - 1)) * 100)
+    : 0;
+  const isFirstStep = normalizedCurrentStep === 0;
+  const isLastStep = mode !== null && normalizedCurrentStep === totalSteps - 1;
 
   const openWizard = useCallback(() => setWizardOpen(true), [setWizardOpen]);
   const closeWizard = useCallback(() => skipOnboarding(), [skipOnboarding]);
@@ -92,10 +93,12 @@ export function useOnboarding(): UseOnboardingReturn {
   return {
     isHydrated,
     shouldShowWizard,
+    mode,
     isCompleted: completed,
     isSkipped: skipped,
-    currentStep,
+    currentStep: normalizedCurrentStep,
     currentStepId,
+    stepIds,
     totalSteps,
     progress,
     isFirstStep,
@@ -104,9 +107,9 @@ export function useOnboarding(): UseOnboardingReturn {
     tourActive,
     tourCompleted,
     tourStep,
-
     openWizard,
     closeWizard,
+    selectMode: selectModeAction,
     next: nextStep,
     prev: prevStep,
     goTo: goToStep,

@@ -80,6 +80,12 @@ const config: Config = {
       lines: 70,
       statements: 70,
     },
+    './lib/': {
+      branches: 90,
+      functions: 90,
+      lines: 90,
+      statements: 90,
+    },
   },
 
   // An object that configures minimum threshold enforcement for coverage results

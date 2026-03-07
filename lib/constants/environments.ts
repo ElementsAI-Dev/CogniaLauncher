@@ -205,7 +205,7 @@ export const DEFAULT_DETECTION_FILES: Record<string, string[]> = {
   erlang: ['.erlang-version', 'rebar.config (minimum_otp_vsn)', '.tool-versions', 'mise.toml'],
   lua: ['.lua-version', '.tool-versions', 'mise.toml'],
   swift: ['.swift-version', 'Package.swift (swift-tools-version)', '.tool-versions', 'mise.toml'],
-  zig: ['.zig-version', 'build.zig.zon (minimum_zig_version)', '.tool-versions', 'mise.toml'],
+  zig: ['.zig-version', '.tool-versions', 'mise.toml', 'build.zig.zon (minimum_zig_version)'],
   dart: ['pubspec.yaml (environment.sdk)', '.fvmrc', '.dart-version', '.tool-versions', 'mise.toml'],
   julia: ['.julia-version', 'Project.toml (compat.julia)', '.tool-versions', 'mise.toml'],
   perl: ['.perl-version', 'cpanfile (perl)', '.tool-versions', 'mise.toml'],

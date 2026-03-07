@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SearchBar } from "./search-bar";
 
@@ -16,11 +16,17 @@ jest.mock("@/components/providers/locale-provider", () => ({
         "packages.installedOnly": "Installed Only",
         "packages.notInstalledFilter": "Not Installed",
         "packages.hasUpdatesFilter": "Has Updates",
+        "packages.licenseFilter": "License",
+        "packages.minVersionFilter": "Min Version",
+        "packages.maxVersionFilter": "Max Version",
         "packages.sortRelevance": "Relevance",
         "packages.sortName": "Name",
         "packages.sortProvider": "Provider",
+        "packages.sortOrderAsc": "Ascending",
+        "packages.sortOrderDesc": "Descending",
         "packages.activeFilters": "Active filters",
         "packages.clearAllFilters": "Clear all",
+        "packages.submitSearch": "Search",
         "common.clear": "Clear",
       };
       return translations[key] || key;
@@ -137,6 +143,7 @@ describe("SearchBar", () => {
     render(<SearchBar {...props} />);
 
     const input = screen.getByPlaceholderText("Search packages...");
+    await user.click(input);
     await user.type(input, "nu");
 
     await waitFor(() => {
@@ -189,6 +196,7 @@ describe("SearchBar", () => {
     const user = userEvent.setup();
     render(<SearchBar {...props} />);
     const input = screen.getByPlaceholderText("Search packages...");
+    await user.click(input);
     await user.type(input, "nu");
     await waitFor(() => {
       expect(screen.getByText("numpy")).toBeInTheDocument();
@@ -235,5 +243,30 @@ describe("SearchBar", () => {
     const clearLinks = screen.getAllByText("Clear");
     await user.click(clearLinks[clearLinks.length - 1]);
     expect(localStorage.getItem("cognia-search-history")).toBeNull();
+  });
+
+  it("passes supported advanced filters and sort order to onSearch", async () => {
+    const user = userEvent.setup();
+    render(<SearchBar {...defaultProps} />);
+
+    const input = screen.getByPlaceholderText("Search packages...");
+    await user.type(input, "react");
+
+    await user.click(screen.getByRole("button", { name: /filters/i }));
+    await user.type(screen.getByPlaceholderText("License"), "MIT");
+    await user.type(screen.getByPlaceholderText("Min Version"), "1.0.0");
+    await user.type(screen.getByPlaceholderText("Max Version"), "2.0.0");
+
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(defaultProps.onSearch).toHaveBeenCalledWith(
+      "react",
+      expect.objectContaining({
+        license: ["MIT"],
+        minVersion: "1.0.0",
+        maxVersion: "2.0.0",
+        sortOrder: "desc",
+      }),
+    );
   });
 });

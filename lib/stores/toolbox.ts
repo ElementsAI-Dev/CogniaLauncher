@@ -1,9 +1,11 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { ToolCategoryFilter } from '@/types/toolbox';
+import type { ToolLifecyclePhase, ToolLifecycleSnapshot } from '@/types/tool-contract';
+import type { ToolboxContinuationHint } from '@/types/toolbox-marketplace';
 
 const MAX_RECENT_TOOLS = 10;
-const TOOLBOX_STORE_VERSION = 3;
+const TOOLBOX_STORE_VERSION = 4;
 
 type ToolPreferencePrimitive = string | number | boolean | null;
 export type ToolPreferenceRecord = Record<string, ToolPreferencePrimitive>;
@@ -65,6 +67,8 @@ interface ToolboxState {
   toolUseCounts: Record<string, number>;
   toolPreferences: Record<string, ToolPreferenceRecord>;
   viewMode: 'grid' | 'list';
+  toolLifecycles: Record<string, ToolLifecycleSnapshot>;
+  continuationHint: ToolboxContinuationHint | null;
 
   selectedCategory: ToolCategoryFilter;
   searchQuery: string;
@@ -78,6 +82,10 @@ interface ToolboxState {
   setActiveToolId: (id: string | null) => void;
   setToolPreferences: (toolId: string, patch: ToolPreferenceRecord) => void;
   getToolPreferences: <T extends ToolPreferenceRecord>(toolId: string, defaults: T) => ToolPreferenceShape<T>;
+  setToolLifecycle: (toolId: string, phase: ToolLifecyclePhase, message?: string) => void;
+  clearToolLifecycle: (toolId: string) => void;
+  setContinuationHint: (hint: ToolboxContinuationHint) => void;
+  clearContinuationHint: () => void;
 }
 
 export const useToolboxStore = create<ToolboxState>()(
@@ -88,6 +96,8 @@ export const useToolboxStore = create<ToolboxState>()(
       toolUseCounts: {},
       toolPreferences: {},
       viewMode: 'grid',
+      toolLifecycles: {},
+      continuationHint: null,
 
       selectedCategory: 'all',
       searchQuery: '',
@@ -140,6 +150,26 @@ export const useToolboxStore = create<ToolboxState>()(
         }
         return merged as ToolPreferenceShape<T>;
       },
+      setToolLifecycle: (toolId, phase, message) =>
+        set((state) => ({
+          toolLifecycles: {
+            ...state.toolLifecycles,
+            [toolId]: {
+              phase,
+              updatedAt: Date.now(),
+              ...(message ? { message } : {}),
+            },
+          },
+        })),
+      clearToolLifecycle: (toolId) =>
+        set((state) => {
+          if (!(toolId in state.toolLifecycles)) return state;
+          const next = { ...state.toolLifecycles };
+          delete next[toolId];
+          return { toolLifecycles: next };
+        }),
+      setContinuationHint: (continuationHint) => set({ continuationHint }),
+      clearContinuationHint: () => set({ continuationHint: null }),
     }),
     {
       name: 'cognia-toolbox',
@@ -153,6 +183,8 @@ export const useToolboxStore = create<ToolboxState>()(
           toolUseCounts: sanitizeToolUseCounts(state.toolUseCounts),
           toolPreferences: sanitizeToolPreferencesMap(state.toolPreferences),
           viewMode: state.viewMode === 'list' ? 'list' : 'grid',
+          toolLifecycles: {},
+          continuationHint: state.continuationHint ?? null,
         } as ToolboxState;
       },
       partialize: (state) => ({
@@ -161,6 +193,7 @@ export const useToolboxStore = create<ToolboxState>()(
         toolUseCounts: state.toolUseCounts,
         toolPreferences: state.toolPreferences,
         viewMode: state.viewMode,
+        continuationHint: state.continuationHint,
       }),
     },
   ),

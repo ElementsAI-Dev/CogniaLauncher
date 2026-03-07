@@ -100,9 +100,19 @@ export interface FileExistsResult {
 // HTTP
 // ============================================================================
 
+export interface HttpRequest {
+  url: string;
+  method?: string;
+  headers?: Record<string, string>;
+  body?: string;
+  contentType?: string;
+  timeoutMs?: number;
+}
+
 export interface HttpResponse {
   status: number;
   body: string;
+  headers?: Record<string, string>;
 }
 
 // ============================================================================

@@ -1,18 +1,34 @@
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { GitGlobalSettingsCard } from './git-global-settings-card';
 
+const mockToastSuccess = jest.fn();
+const mockToastError = jest.fn();
+
 jest.mock('@/components/providers/locale-provider', () => ({
-  useLocale: () => ({ t: (key: string) => key }),
+  useLocale: () => ({ t: (key: string, params?: Record<string, string>) => {
+    if (!params) return key;
+    return Object.entries(params).reduce((acc, [k, v]) => acc.replace(`{${k}}`, v), key);
+  } }),
 }));
 
 jest.mock('sonner', () => ({
-  toast: { success: jest.fn(), error: jest.fn() },
+  toast: {
+    success: (...args: unknown[]) => mockToastSuccess(...args),
+    error: (...args: unknown[]) => mockToastError(...args),
+  },
 }));
 
 describe('GitGlobalSettingsCard', () => {
   const mockGetConfigValue = jest.fn().mockResolvedValue(null);
   const mockSetConfig = jest.fn().mockResolvedValue(undefined);
   const mockSetConfigIfUnset = jest.fn().mockResolvedValue(false);
+  const mockApplyConfigPlan = jest.fn().mockResolvedValue({
+    total: 4,
+    succeeded: 4,
+    failed: 0,
+    skipped: 0,
+    results: [],
+  });
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -22,25 +38,12 @@ describe('GitGlobalSettingsCard', () => {
         'user.email': 'john@example.com',
         'core.autocrlf': 'true',
         'commit.gpgsign': 'true',
-        'init.defaultBranch': 'main',
-        'pull.rebase': 'true',
       };
       return Promise.resolve(values[key] ?? null);
     });
   });
 
-  it('renders loading state initially', () => {
-    mockGetConfigValue.mockImplementation(() => new Promise(() => {}));
-    render(
-      <GitGlobalSettingsCard
-        onGetConfigValue={mockGetConfigValue}
-        onSetConfig={mockSetConfig}
-      />,
-    );
-    expect(screen.getByText('git.settings.title')).toBeInTheDocument();
-  });
-
-  it('renders settings title after loading', async () => {
+  it('loads settings on mount', async () => {
     await act(async () => {
       render(
         <GitGlobalSettingsCard
@@ -49,20 +52,7 @@ describe('GitGlobalSettingsCard', () => {
         />,
       );
     });
-    await waitFor(() => {
-      expect(screen.getAllByText('git.settings.title').length).toBeGreaterThanOrEqual(1);
-    });
-  });
 
-  it('loads all settings on mount', async () => {
-    await act(async () => {
-      render(
-        <GitGlobalSettingsCard
-          onGetConfigValue={mockGetConfigValue}
-          onSetConfig={mockSetConfig}
-        />,
-      );
-    });
     await waitFor(() => {
       expect(mockGetConfigValue).toHaveBeenCalledWith('user.name');
       expect(mockGetConfigValue).toHaveBeenCalledWith('user.email');
@@ -70,55 +60,7 @@ describe('GitGlobalSettingsCard', () => {
     });
   });
 
-  it('renders accordion section headers', async () => {
-    await act(async () => {
-      render(
-        <GitGlobalSettingsCard
-          onGetConfigValue={mockGetConfigValue}
-          onSetConfig={mockSetConfig}
-        />,
-      );
-    });
-    await waitFor(() => {
-      expect(screen.getByText('git.settings.group.identity')).toBeInTheDocument();
-      expect(screen.getByText('git.settings.group.commit')).toBeInTheDocument();
-      expect(screen.getByText('git.settings.group.core')).toBeInTheDocument();
-    });
-  });
-
-  it('renders all group sections', async () => {
-    await act(async () => {
-      render(
-        <GitGlobalSettingsCard
-          onGetConfigValue={mockGetConfigValue}
-          onSetConfig={mockSetConfig}
-        />,
-      );
-    });
-    await waitFor(() => {
-      expect(screen.getByText('git.settings.group.pullPush')).toBeInTheDocument();
-      expect(screen.getByText('git.settings.group.diffMerge')).toBeInTheDocument();
-      expect(screen.getByText('git.settings.group.credential')).toBeInTheDocument();
-      expect(screen.getByText('git.settings.group.colorGpg')).toBeInTheDocument();
-    });
-  });
-
-  it('renders setting labels', async () => {
-    await act(async () => {
-      render(
-        <GitGlobalSettingsCard
-          onGetConfigValue={mockGetConfigValue}
-          onSetConfig={mockSetConfig}
-        />,
-      );
-    });
-    await waitFor(() => {
-      expect(screen.getByText('git.settings.user_name')).toBeInTheDocument();
-      expect(screen.getByText('git.settings.user_email')).toBeInTheDocument();
-    });
-  });
-
-  it('displays loaded config values in text inputs', async () => {
+  it('renders template selector and preview actions', async () => {
     await act(async () => {
       render(
         <GitGlobalSettingsCard
@@ -129,21 +71,42 @@ describe('GitGlobalSettingsCard', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText('git.settings.user_name')).toBeInTheDocument();
+      expect(screen.getByText('git.settings.templateTitle')).toBeInTheDocument();
+      expect(screen.getByText('git.settings.templateApply')).toBeInTheDocument();
+      expect(
+        screen.getAllByText((content) => content.includes('git.settings.templateAction.add')).length,
+      ).toBeGreaterThan(0);
     });
-
-    const inputs = screen.getAllByRole('textbox');
-    const nameInput = inputs.find(
-      (i) => (i as HTMLInputElement).value === 'John Doe',
-    );
-    expect(nameInput).toBeInTheDocument();
-    const emailInput = inputs.find(
-      (i) => (i as HTMLInputElement).value === 'john@example.com',
-    );
-    expect(emailInput).toBeInTheDocument();
   });
 
-  it('calls onSetConfig on toggle change', async () => {
+  it('applies selected template keys via onApplyConfigPlan', async () => {
+    await act(async () => {
+      render(
+        <GitGlobalSettingsCard
+          onGetConfigValue={mockGetConfigValue}
+          onSetConfig={mockSetConfig}
+          onSetConfigIfUnset={mockSetConfigIfUnset}
+          onApplyConfigPlan={mockApplyConfigPlan}
+        />,
+      );
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'git.settings.templateApply' })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'git.settings.templateApply' }));
+
+    await waitFor(() => {
+      expect(mockApplyConfigPlan).toHaveBeenCalledTimes(1);
+      const firstArg = mockApplyConfigPlan.mock.calls[0][0] as Array<{ key: string; selected: boolean }>;
+      expect(firstArg.some((item) => item.selected)).toBe(true);
+      expect(mockToastSuccess).toHaveBeenCalledWith('git.settings.templateApplied');
+      expect(screen.getByText('git.settings.templateSummary')).toBeInTheDocument();
+    });
+  });
+
+  it('shows validation error and blocks save for invalid email', async () => {
     await act(async () => {
       render(
         <GitGlobalSettingsCard
@@ -154,38 +117,49 @@ describe('GitGlobalSettingsCard', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText('git.settings.commit_gpgsign')).toBeInTheDocument();
+      expect(screen.getByDisplayValue('john@example.com')).toBeInTheDocument();
     });
 
-    const switches = screen.getAllByRole('switch');
-    if (switches.length > 0) {
-      fireEvent.click(switches[0]);
-      await waitFor(() => {
-        expect(mockSetConfig).toHaveBeenCalled();
-      });
-    }
+    const emailInput = screen.getByDisplayValue('john@example.com');
+    fireEvent.change(emailInput, { target: { value: 'invalid-email' } });
+    fireEvent.blur(emailInput);
+
+    await waitFor(() => {
+      expect(mockToastError).toHaveBeenCalledWith('git.settings.validation.invalidEmail');
+    });
+    expect(mockSetConfig).not.toHaveBeenCalledWith('user.email', 'invalid-email');
   });
 
-  it('applies safe defaults through setConfigIfUnset', async () => {
-    render(
-      <GitGlobalSettingsCard
-        onGetConfigValue={mockGetConfigValue}
-        onSetConfig={mockSetConfig}
-        onSetConfigIfUnset={mockSetConfigIfUnset}
-      />,
-    );
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'git.settings.applySafeDefaults' })).toBeInTheDocument();
+  it('renders failed-key diagnostics when template apply is partially failed', async () => {
+    mockApplyConfigPlan.mockResolvedValueOnce({
+      total: 2,
+      succeeded: 1,
+      failed: 1,
+      skipped: 0,
+      results: [
+        { key: 'pull.rebase', mode: 'set', success: true, applied: true, message: 'Applied' },
+        { key: 'pull.ff', mode: 'set', success: false, applied: false, message: 'Permission denied' },
+      ],
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'git.settings.applySafeDefaults' }));
+    await act(async () => {
+      render(
+        <GitGlobalSettingsCard
+          onGetConfigValue={mockGetConfigValue}
+          onSetConfig={mockSetConfig}
+          onApplyConfigPlan={mockApplyConfigPlan}
+        />,
+      );
+    });
 
     await waitFor(() => {
-      expect(mockSetConfigIfUnset).toHaveBeenCalledWith('init.defaultBranch', 'main');
-      expect(mockSetConfigIfUnset).toHaveBeenCalledWith('push.default', 'simple');
-      expect(mockSetConfigIfUnset).toHaveBeenCalledWith('push.autoSetupRemote', 'true');
-      expect(mockSetConfigIfUnset).toHaveBeenCalledWith('fetch.prune', 'true');
+      expect(screen.getByRole('button', { name: 'git.settings.templateApply' })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'git.settings.templateApply' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('pull.ff: Permission denied')).toBeInTheDocument();
     });
   });
 });

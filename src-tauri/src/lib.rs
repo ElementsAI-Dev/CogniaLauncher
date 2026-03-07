@@ -11,7 +11,7 @@ pub mod provider;
 pub mod resolver;
 pub mod tray;
 
-use cache::{DownloadCache, DownloadResumer, MetadataCache};
+use cache::{CleanupHistory, CleanupRecordBuilder, DownloadCache, DownloadResumer, MetadataCache};
 use commands::custom_detection::SharedCustomDetectionManager;
 use commands::download::{setup_download_manager, SharedDownloadManager};
 use commands::plugin::SharedPluginManager;
@@ -174,6 +174,8 @@ pub fn run() {
                     tray_guard.click_behavior = settings_guard.tray.click_behavior;
                     tray_guard.minimize_to_tray = settings_guard.tray.minimize_to_tray;
                     tray_guard.start_minimized = settings_guard.tray.start_minimized;
+                    tray_guard.show_notifications = settings_guard.tray.show_notifications;
+                    tray_guard.notification_level = settings_guard.tray.notification_level;
                     tray_guard.menu_config.items = settings_guard.tray.menu_items.clone();
                     tray_guard.language = if settings_guard.appearance.language == "zh" {
                         TrayLanguage::Zh
@@ -487,6 +489,7 @@ pub fn run() {
             commands::environment::env_current_version,
             // Detection source commands
             commands::environment::env_get_detection_sources,
+            commands::environment::env_get_default_detection_sources,
             commands::environment::env_get_all_detection_sources,
             // EOL commands
             commands::environment::env_get_eol_info,
@@ -623,6 +626,7 @@ pub fn run() {
             // Health check commands
             commands::health_check::health_check_all,
             commands::health_check::health_check_environment,
+            commands::health_check::health_check_fix,
             commands::health_check::health_check_package_manager,
             commands::health_check::health_check_package_managers,
             // Profile commands
@@ -690,6 +694,7 @@ pub fn run() {
             commands::log::log_export,
             commands::log::log_get_total_size,
             commands::log::log_cleanup,
+            commands::log::log_cleanup_preview,
             commands::log::log_delete_file,
             commands::log::log_delete_batch,
             // Diagnostic commands
@@ -787,8 +792,11 @@ pub fn run() {
             tray::tray_update_tooltip,
             tray::tray_set_active_downloads,
             tray::tray_set_has_update,
+            tray::tray_set_has_error,
             tray::tray_set_language,
             tray::tray_set_click_behavior,
+            tray::tray_set_show_notifications,
+            tray::tray_set_notification_level,
             tray::tray_get_state,
             tray::tray_is_autostart_enabled,
             tray::tray_enable_autostart,
@@ -986,6 +994,7 @@ pub fn run() {
             commands::git::git_get_config_file_path,
             commands::git::git_list_aliases,
             commands::git::git_set_config_if_unset,
+            commands::git::git_probe_editor_capability,
             commands::git::git_open_config_in_editor,
             commands::git::git_get_repo_info,
             commands::git::git_get_log,
@@ -1161,6 +1170,9 @@ pub fn run() {
             commands::terminal::terminal_append_to_config_verified,
             commands::terminal::terminal_get_config_entries,
             commands::terminal::terminal_parse_config_content,
+            commands::terminal::terminal_validate_config_content,
+            commands::terminal::terminal_get_config_editor_metadata,
+            commands::terminal::terminal_restore_config_snapshot,
             commands::terminal::terminal_ps_list_profiles,
             commands::terminal::terminal_ps_read_profile,
             commands::terminal::terminal_ps_write_profile,
@@ -1196,12 +1208,14 @@ pub fn run() {
             commands::plugin::plugin_get_tools,
             commands::plugin::plugin_import_local,
             commands::plugin::plugin_install,
+            commands::plugin::plugin_install_marketplace,
             commands::plugin::plugin_uninstall,
             commands::plugin::plugin_enable,
             commands::plugin::plugin_disable,
             commands::plugin::plugin_reload,
             commands::plugin::plugin_call_tool,
             commands::plugin::plugin_get_permissions,
+            commands::plugin::plugin_get_permission_mode,
             commands::plugin::plugin_grant_permission,
             commands::plugin::plugin_revoke_permission,
             commands::plugin::plugin_get_data_dir,
@@ -1216,6 +1230,7 @@ pub fn run() {
             commands::plugin::plugin_get_ui_asset,
             commands::plugin::plugin_get_health,
             commands::plugin::plugin_get_all_health,
+            commands::plugin::plugin_get_capability_audit,
             commands::plugin::plugin_reset_health,
             commands::plugin::plugin_dispatch_event,
             commands::plugin::plugin_export_data,
@@ -1301,6 +1316,9 @@ fn emit_init_progress(
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct CacheAutoCleanedEvent {
+    action: String,
+    scope: String,
+    domains: Vec<String>,
     expired_metadata_removed: usize,
     expired_downloads_freed: u64,
     evicted_count: usize,
@@ -1399,17 +1417,21 @@ async fn cache_cleanup_task(settings: SharedSettings, app: tauri::AppHandle) {
         let mut expired_downloads_freed: u64 = 0;
         let mut evicted_count: usize = 0;
         let mut stale_partials_removed: usize = 0;
+        let mut cleanup_record = CleanupRecordBuilder::new("auto_clean", false);
 
         // Clean expired metadata entries
         if let Ok(mut metadata_cache) =
             MetadataCache::open_with_ttl(&cache_dir, metadata_cache_ttl).await
         {
-            // Measure expired metadata size before cleaning
-            let expired_size: u64 = metadata_cache
-                .preview_expired()
-                .await
-                .map(|entries| entries.iter().map(|e| e.size).sum())
-                .unwrap_or(0);
+            let expired_entries = metadata_cache.preview_expired().await.unwrap_or_default();
+            let expired_size: u64 = expired_entries.iter().map(|e| e.size).sum();
+            for entry in &expired_entries {
+                cleanup_record.add_file(
+                    entry.file_path.display().to_string(),
+                    entry.size,
+                    "metadata",
+                );
+            }
 
             match metadata_cache.clean_expired().await {
                 Ok(count) if count > 0 => {
@@ -1430,6 +1452,14 @@ async fn cache_cleanup_task(settings: SharedSettings, app: tauri::AppHandle) {
         // Clean download cache if over size limit
         if let Ok(mut download_cache) = DownloadCache::open(&cache_dir).await {
             let max_age = Duration::from_secs(max_age_days as u64 * 86400);
+            let expired_download_entries = download_cache.preview_expired(max_age).await.unwrap_or_default();
+            for entry in &expired_download_entries {
+                cleanup_record.add_file(
+                    entry.file_path.display().to_string(),
+                    entry.size,
+                    "download",
+                );
+            }
             match download_cache.clean_expired(max_age).await {
                 Ok(freed) if freed > 0 => {
                     debug!("Auto-cleanup: removed {} bytes of expired downloads", freed);
@@ -1467,6 +1497,11 @@ async fn cache_cleanup_task(settings: SharedSettings, app: tauri::AppHandle) {
                                     count, stats.total_size, evict_target
                                 );
                                 evicted_count = count;
+                                cleanup_record.add_file(
+                                    format!("cache://download-eviction/{}", count),
+                                    stats.total_size.saturating_sub(evict_target),
+                                    "download",
+                                );
                             }
                             Err(e) => {
                                 info!("Auto-cleanup download error: {}", e);
@@ -1483,6 +1518,17 @@ async fn cache_cleanup_task(settings: SharedSettings, app: tauri::AppHandle) {
 
         if let Ok(mut resumer) = DownloadResumer::new(&cache_dir.join("downloads")).await {
             let max_age = Duration::from_secs(max_age_days as u64 * 86400);
+            let stale_partials: Vec<_> = resumer.get_stale(max_age).into_iter().cloned().collect();
+            for partial in &stale_partials {
+                let size = if platform::fs::exists(&partial.file_path).await {
+                    platform::fs::file_size(&partial.file_path)
+                        .await
+                        .unwrap_or(partial.downloaded_size)
+                } else {
+                    0
+                };
+                cleanup_record.add_file(partial.file_path.display().to_string(), size, "partial");
+            }
             match resumer.clean_stale(max_age).await {
                 Ok(count) if count > 0 => {
                     debug!("Auto-cleanup: removed {} stale partial downloads", count);
@@ -1502,9 +1548,25 @@ async fn cache_cleanup_task(settings: SharedSettings, app: tauri::AppHandle) {
             || stale_partials_removed > 0
         {
             let total_freed = expired_downloads_freed + expired_metadata_freed;
+            let record = cleanup_record.build();
+            if record.file_count > 0 {
+                if let Ok(mut history) = CleanupHistory::open(&cache_dir).await {
+                    let _ = history.add(record).await;
+                }
+            }
+            if let Err(e) = commands::cache::record_cache_snapshot(&cache_dir, metadata_cache_ttl).await {
+                debug!("Failed to record auto-clean cache snapshot: {}", e);
+            }
             let _ = app.emit(
                 "cache-auto-cleaned",
                 CacheAutoCleanedEvent {
+                    action: "auto_clean".to_string(),
+                    scope: "all".to_string(),
+                    domains: vec![
+                        "cache_overview".to_string(),
+                        "cache_entries".to_string(),
+                        "about_cache_stats".to_string(),
+                    ],
                     expired_metadata_removed,
                     expired_downloads_freed,
                     evicted_count,

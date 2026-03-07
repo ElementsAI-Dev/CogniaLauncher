@@ -5,15 +5,20 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "node scripts/run-next-build.mjs",
     "start": "next start",
     "lint": "eslint",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
+    "test:lib": "jest lib --runInBand",
+    "test:lib:coverage": "jest lib --coverage --runInBand --collectCoverageFrom=\"lib/**/*.{js,jsx,ts,tsx}\" --collectCoverageFrom=\"!lib/**/*.d.ts\" --collectCoverageFrom=\"!lib/**/index.ts\" --collectCoverageFrom=\"!lib/**/*.test.{js,jsx,ts,tsx}\" --collectCoverageFrom=\"!lib/**/*.spec.{js,jsx,ts,tsx}\" --collectCoverageFrom=\"!lib/tauri.ts\"",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "test:e2e:headed": "playwright test --headed"
+    "test:e2e:headed": "playwright test --headed",
+    "plugins:build": "node scripts/plugins/build-builtins.mjs",
+    "plugins:checksums": "node scripts/plugins/update-checksums.mjs",
+    "plugins:validate": "node scripts/plugins/validate-suite.mjs --skip-build"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -84,6 +89,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@types/testing-library__jest-dom": "^6.0.0",
+    "baseline-browser-mapping": "^2.10.0",
     "eslint": "^9.39.3",
     "eslint-config-next": "16.0.0",
     "jest": "^30.2.0",
@@ -98,6 +104,7 @@
   },
   "workspaces": [
     "plugin-sdk-ts",
-    "plugin-sdk-ts/examples/*"
+    "plugin-sdk-ts/examples/*",
+    "plugins/typescript/*"
   ]
 }

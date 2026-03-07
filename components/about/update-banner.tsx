@@ -9,6 +9,7 @@ import { Download } from "lucide-react";
 import { MarkdownRenderer } from "@/components/docs/markdown-renderer";
 import type { SelfUpdateInfo } from "@/lib/tauri";
 import type { UpdateStatus } from "@/types/about";
+import { getStatusLabelKey } from "@/lib/update-lifecycle";
 
 interface UpdateBannerProps {
   updateInfo: SelfUpdateInfo | null;
@@ -29,9 +30,25 @@ export function UpdateBanner({
   onUpdate,
   t,
 }: UpdateBannerProps) {
-  if (!updateInfo?.update_available) {
+  const shouldRender =
+    !!updateInfo?.update_available ||
+    updating ||
+    updateStatus === "downloading" ||
+    updateStatus === "installing" ||
+    updateStatus === "done" ||
+    updateStatus === "error";
+
+  if (!shouldRender) {
     return null;
   }
+
+  const statusLabelKey = getStatusLabelKey(updateStatus);
+  const isActiveProgress =
+    updating || updateStatus === "downloading" || updateStatus === "installing";
+  const description =
+    updateStatus === "idle" || updateStatus === "update_available"
+      ? t("about.updateBannerDesc")
+      : t(statusLabelKey);
 
   return (
     <Card
@@ -46,19 +63,21 @@ export function UpdateBanner({
             aria-hidden="true"
           />
           <span className="text-blue-900 dark:text-blue-100">
-            {t("about.updateAvailable")}
+            {updateStatus === "error"
+              ? t("about.errorTitle")
+              : t("about.updateAvailable")}
           </span>
           <Badge variant="secondary" className="bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 border-transparent">
-            v{updateInfo.latest_version}
+            v{updateInfo?.latest_version || updateInfo?.current_version}
           </Badge>
         </CardTitle>
         <CardDescription className="text-blue-700 dark:text-blue-300">
-          {t("about.updateBannerDesc")}
+          {description}
         </CardDescription>
       </CardHeader>
 
       <CardContent className="space-y-4">
-        {updateInfo.release_notes && (
+        {updateInfo?.release_notes && (
           <ScrollArea className="max-h-48" aria-label={t("about.releaseNotes")}>
             <div className="text-sm text-blue-800 dark:text-blue-200 bg-white/50 dark:bg-black/20 p-3 rounded-lg border border-blue-200 dark:border-blue-700">
               <MarkdownRenderer content={updateInfo.release_notes} className="prose-sm" />
@@ -66,7 +85,7 @@ export function UpdateBanner({
           </ScrollArea>
         )}
 
-        {updating && (
+        {isActiveProgress && (
           <div className="space-y-2">
             <Progress
               value={updateProgress}
@@ -74,9 +93,7 @@ export function UpdateBanner({
               aria-label={t("about.downloadProgress")}
             />
             <span className="text-xs text-blue-700 dark:text-blue-300">
-              {updateStatus === "installing"
-                ? t("about.installing")
-                : t("about.downloading")}{" "}
+              {t(statusLabelKey)}{" "}
               {updateProgress > 0 ? `${updateProgress}%` : "..."}
             </span>
           </div>
@@ -85,17 +102,22 @@ export function UpdateBanner({
         <Button
           variant="default"
           onClick={onUpdate}
-          disabled={updating || !isDesktop}
+          disabled={isActiveProgress || !isDesktop}
           aria-describedby="update-description"
         >
           <Download className="h-4 w-4 mr-2" aria-hidden="true" />
-          {updating ? t("about.downloading") : t("common.update")}
+          {isActiveProgress ? t("about.downloading") : t("common.update")}
         </Button>
         <span id="update-description" className="sr-only">
           {isDesktop
             ? t("about.updateDescription")
             : t("about.updateDesktopOnly")}
         </span>
+        {!isDesktop ? (
+          <p className="text-xs text-muted-foreground">
+            {t("about.updateDesktopOnly")}
+          </p>
+        ) : null}
       </CardContent>
     </Card>
   );

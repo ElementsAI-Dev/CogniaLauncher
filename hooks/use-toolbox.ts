@@ -2,10 +2,22 @@ import { useMemo } from 'react';
 import { useToolboxStore } from '@/lib/stores/toolbox';
 import { usePluginStore } from '@/lib/stores/plugin';
 import { TOOL_REGISTRY, TOOL_CATEGORIES } from '@/lib/constants/toolbox';
+import {
+  buildBuiltInCompatibility,
+  buildBuiltInToolContractMetadata,
+  buildPluginCompatibility,
+  buildPluginToolContractMetadata,
+} from '@/lib/toolbox/tool-contract-adapters';
+import {
+  evaluatePluginHealthStatus,
+  getDiscoverabilityDiagnostic,
+  type PluginHealthStatus,
+} from '@/lib/plugin-governance';
 import { useLocale } from '@/components/providers/locale-provider';
 import { isTauri } from '@/lib/tauri';
+import type { ToolCompatibility, ToolContractMetadata } from '@/types/tool-contract';
 import type { ToolCategory, ToolCategoryMeta, ToolDefinitionWithMeta } from '@/types/toolbox';
-import type { PluginToolInfo } from '@/types/plugin';
+import type { PluginDeprecationNotice, PluginToolInfo } from '@/types/plugin';
 
 /** Unified tool item that can be either a built-in tool or a plugin tool */
 export interface UnifiedTool {
@@ -18,10 +30,21 @@ export interface UnifiedTool {
   isBuiltIn: boolean;
   isNew: boolean;
   isBeta: boolean;
+  contractMetadata?: ToolContractMetadata;
+  compatibility?: ToolCompatibility;
+  pluginHealthStatus?: PluginHealthStatus;
+  deprecationWarnings?: PluginDeprecationNotice[];
   /** Only for built-in tools */
   builtInDef?: ToolDefinitionWithMeta;
   /** Only for plugin tools */
   pluginTool?: PluginToolInfo;
+}
+
+export interface ExcludedToolDiagnostic {
+  toolId: string;
+  pluginId: string;
+  name: string;
+  reason: string;
 }
 
 function builtInToUnified(tool: ToolDefinitionWithMeta, t: (key: string) => string): UnifiedTool {
@@ -35,11 +58,20 @@ function builtInToUnified(tool: ToolDefinitionWithMeta, t: (key: string) => stri
     isBuiltIn: true,
     isNew: tool.isNew,
     isBeta: tool.isBeta ?? false,
+    contractMetadata: buildBuiltInToolContractMetadata(tool),
+    compatibility: buildBuiltInCompatibility(),
     builtInDef: tool,
   };
 }
 
-function pluginToolToUnified(tool: PluginToolInfo, locale: string): UnifiedTool {
+function pluginToolToUnified(
+  tool: PluginToolInfo,
+  locale: string,
+  options?: {
+    pluginHealthStatus?: PluginHealthStatus;
+    deprecationWarnings?: PluginDeprecationNotice[];
+  },
+): UnifiedTool {
   return {
     id: `plugin:${tool.pluginId}:${tool.toolId}`,
     name: locale === 'zh' && tool.nameZh ? tool.nameZh : tool.nameEn,
@@ -50,6 +82,10 @@ function pluginToolToUnified(tool: PluginToolInfo, locale: string): UnifiedTool 
     isBuiltIn: false,
     isNew: false,
     isBeta: false,
+    contractMetadata: buildPluginToolContractMetadata(tool),
+    compatibility: buildPluginCompatibility(tool),
+    pluginHealthStatus: options?.pluginHealthStatus,
+    deprecationWarnings: options?.deprecationWarnings,
     pluginTool: tool,
   };
 }
@@ -60,18 +96,66 @@ export function useToolbox() {
   const { t, locale } = useLocale();
   const isDesktop = isTauri();
 
-  // Merge built-in tools + plugin tools into unified list
-  const allTools = useMemo(() => {
+  // Merge built-in tools + plugin tools into unified list and capture exclusions.
+  const { allTools, excludedTools } = useMemo(() => {
     const builtIn: UnifiedTool[] = TOOL_REGISTRY
       .filter((tool) => isDesktop || !tool.requiresTauri)
       .map((tool) => builtInToUnified(tool, t));
 
-    const plugins: UnifiedTool[] = pluginStore.pluginTools
-      .map((tool) => pluginToolToUnified(tool, locale))
-      .sort((a, b) => a.name.localeCompare(b.name));
+    const pluginById = new Map(pluginStore.installedPlugins.map((plugin) => [plugin.id, plugin]));
+    const discoverablePlugins: UnifiedTool[] = [];
+    const excluded: ExcludedToolDiagnostic[] = [];
+    for (const tool of pluginStore.pluginTools) {
+      const plugin = pluginById.get(tool.pluginId);
+      const health = pluginStore.healthMap[tool.pluginId];
+      const permissionState = pluginStore.permissionStates[tool.pluginId];
+      const discoverability = getDiscoverabilityDiagnostic(tool, health, {
+        pluginEnabled: plugin?.enabled ?? true,
+        permissionMode: pluginStore.permissionMode,
+        grantedPermissions: permissionState ? [...permissionState.granted] : [],
+      });
+      const displayName = locale === 'zh' && tool.nameZh ? tool.nameZh : tool.nameEn;
+      const deprecationWarnings = dedupeDeprecationWarnings([
+        ...(plugin?.deprecationWarnings ?? []),
+        ...(tool.deprecationWarnings ?? []),
+      ]);
+      const pluginHealthStatus = evaluatePluginHealthStatus(health, plugin?.enabled ?? true);
 
-    return [...builtIn, ...plugins];
-  }, [isDesktop, t, locale, pluginStore.pluginTools]);
+      if (!discoverability.discoverable) {
+        excluded.push({
+          toolId: `plugin:${tool.pluginId}:${tool.toolId}`,
+          pluginId: tool.pluginId,
+          name: displayName,
+          reason: discoverability.reason ?? 'Excluded by governance policy.',
+        });
+        continue;
+      }
+
+      discoverablePlugins.push(
+        pluginToolToUnified(tool, locale, {
+          pluginHealthStatus,
+          deprecationWarnings: deprecationWarnings.length > 0 ? deprecationWarnings : undefined,
+        }),
+      );
+    }
+
+    discoverablePlugins.sort((a, b) => a.name.localeCompare(b.name));
+    excluded.sort((a, b) => a.name.localeCompare(b.name));
+
+    return {
+      allTools: [...builtIn, ...discoverablePlugins],
+      excludedTools: excluded,
+    };
+  }, [
+    isDesktop,
+    t,
+    locale,
+    pluginStore.healthMap,
+    pluginStore.installedPlugins,
+    pluginStore.permissionMode,
+    pluginStore.permissionStates,
+    pluginStore.pluginTools,
+  ]);
 
   const filteredTools = useMemo(() => {
     let tools = allTools;
@@ -151,6 +235,7 @@ export function useToolbox() {
   return {
     filteredTools,
     allTools,
+    excludedTools,
     categoryToolCounts,
     totalToolCount,
     dynamicCategories,
@@ -163,11 +248,28 @@ export function useToolbox() {
     selectedCategory: store.selectedCategory,
     searchQuery: store.searchQuery,
     activeToolId: store.activeToolId,
+    toolLifecycles: store.toolLifecycles,
     toggleFavorite: store.toggleFavorite,
     addRecent: store.addRecent,
     setViewMode: store.setViewMode,
     setCategory: store.setCategory,
     setSearchQuery: store.setSearchQuery,
     setActiveToolId: store.setActiveToolId,
+    setToolLifecycle: store.setToolLifecycle,
+    clearToolLifecycle: store.clearToolLifecycle,
   };
+}
+
+function dedupeDeprecationWarnings(
+  warnings: PluginDeprecationNotice[],
+): PluginDeprecationNotice[] {
+  const seen = new Set<string>();
+  const deduped: PluginDeprecationNotice[] = [];
+  for (const warning of warnings) {
+    const key = `${warning.code}:${warning.message}:${warning.guidance}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(warning);
+  }
+  return deduped;
 }

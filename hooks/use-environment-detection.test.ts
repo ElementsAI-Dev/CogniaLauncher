@@ -85,6 +85,18 @@ describe('useEnvironmentDetection', () => {
     expect(result.current.matchSystemByEnvType('node')).toEqual(systemDetected[0]);
   });
 
+  it('surfaces system detection errors to the caller', async () => {
+    mockEnvDetectSystemAll.mockRejectedValue(new Error('Permission denied'));
+    const { result } = renderHook(() => useEnvironmentDetection());
+
+    await act(async () => {
+      await expect(result.current.detectSystemEnvironments()).rejects.toThrow('Permission denied');
+    });
+
+    expect(result.current.systemDetections).toEqual([]);
+    expect(result.current.systemDetectError).toBe('Permission denied');
+  });
+
   it('builds onboarding detections by merging managed and system results', () => {
     const { result } = renderHook(() => useEnvironmentDetection());
 

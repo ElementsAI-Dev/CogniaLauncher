@@ -28,6 +28,8 @@ export function TraySettings({
     handleStartMinimizedChange,
     handleAutostartChange,
     handleClickBehaviorChange,
+    handleShowNotificationsChange,
+    handleNotificationLevelChange,
   } = useTrayAutostart({ appSettings, onValueChange });
 
   return (
@@ -62,9 +64,22 @@ export function TraySettings({
           label={t("settings.showNotifications")}
           description={t("settings.showNotificationsDesc")}
           checked={appSettings.showNotifications}
-          onCheckedChange={(checked) =>
-            onValueChange("showNotifications", checked)
-          }
+          onCheckedChange={handleShowNotificationsChange}
+        />
+        <Separator />
+        <SelectSettingItem
+          id="tray-notification-level"
+          label={t("settings.trayNotificationLevel")}
+          description={t("settings.trayNotificationLevelDesc")}
+          value={appSettings.trayNotificationLevel}
+          onValueChange={handleNotificationLevelChange}
+          options={[
+            { value: "all", label: t("settings.trayNotificationLevelAll") },
+            { value: "important_only", label: t("settings.trayNotificationLevelImportantOnly") },
+            { value: "none", label: t("settings.trayNotificationLevelNone") },
+          ]}
+          disabled={!isTauri() || !appSettings.showNotifications}
+          triggerClassName="w-[200px]"
         />
         <Separator />
         <SelectSettingItem
@@ -76,6 +91,7 @@ export function TraySettings({
           options={[
             { value: "toggle_window", label: t("settings.trayClickToggle") },
             { value: "show_menu", label: t("settings.trayClickMenu") },
+            { value: "check_updates", label: t("settings.trayClickCheckUpdates") },
             { value: "do_nothing", label: t("settings.trayClickNothing") },
           ]}
           disabled={!isTauri()}

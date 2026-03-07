@@ -73,6 +73,60 @@ export interface ServiceInfo {
 }
 
 // ============================================================================
+// WSL assistance workflow types
+// ============================================================================
+
+export type WslAssistanceScope = 'runtime' | 'distro';
+export type WslAssistanceCategory = 'check' | 'repair' | 'maintenance';
+export type WslAssistanceRisk = 'safe' | 'high';
+export type WslAssistanceStatus = 'healthy' | 'warning' | 'error';
+export type WslAssistanceActionResult = 'success' | 'failed' | 'blocked';
+
+export interface WslAssistanceActionDescriptor {
+  id: string;
+  scope: WslAssistanceScope;
+  category: WslAssistanceCategory;
+  risk: WslAssistanceRisk;
+  labelKey: string;
+  descriptionKey: string;
+  supported: boolean;
+  blockedReason?: string;
+  requiresAdmin?: boolean;
+  distroName?: string;
+}
+
+export interface WslAssistancePreflightCheck {
+  id: string;
+  label: string;
+  status: WslAssistanceStatus;
+  detail: string;
+  recommendation?: string;
+}
+
+export interface WslAssistancePreflightResult {
+  status: WslAssistanceStatus;
+  timestamp: string;
+  checks: WslAssistancePreflightCheck[];
+  recommendations: string[];
+}
+
+export interface WslAssistanceSummary {
+  actionId: string;
+  status: WslAssistanceActionResult;
+  timestamp: string;
+  title: string;
+  findings: string[];
+  recommendations: string[];
+  retryable: boolean;
+  details?: string;
+}
+
+export interface WslAssistanceSuggestion {
+  actionId: string;
+  reason: string;
+}
+
+// ============================================================================
 // WSL config setting definitions
 // ============================================================================
 
@@ -109,6 +163,7 @@ export interface QuickSetting {
 
 export interface WslDistroCardProps {
   distro: WslDistroStatus;
+  detailHref?: string;
   onLaunch: (name: string) => void;
   onTerminate: (name: string) => void;
   onSetDefault: (name: string) => void;
@@ -168,6 +223,7 @@ export interface WslExportDialogProps {
   distroName: string;
   onOpenChange: (open: boolean) => void;
   onExport: (name: string, filePath: string, asVhd: boolean) => Promise<void>;
+  capabilities?: WslCapabilities | null;
   t: (key: string, params?: Record<string, string | number>) => string;
 }
 
@@ -175,6 +231,7 @@ export interface WslImportDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onImport: (options: WslImportOptions) => Promise<void>;
+  capabilities?: WslCapabilities | null;
   t: (key: string, params?: Record<string, string | number>) => string;
 }
 
@@ -245,6 +302,9 @@ export interface WslNotAvailableProps {
 
 export interface WslDistroDetailPageProps {
   distroName: string;
+  returnTo?: string;
+  origin?: string;
+  continueAction?: string;
 }
 
 export interface WslDistroOverviewProps {
@@ -279,6 +339,14 @@ export interface WslDistroNetworkProps {
   isRunning: boolean;
   getIpAddress: (distro?: string) => Promise<string>;
   onExec: (distro: string, command: string, user?: string) => Promise<WslExecResult>;
+  listPortForwards: () => Promise<{
+    listenAddress: string;
+    listenPort: string;
+    connectAddress: string;
+    connectPort: string;
+  }[]>;
+  addPortForward: (listenPort: number, connectPort: number, connectAddress: string) => Promise<void>;
+  removePortForward: (listenPort: number) => Promise<void>;
   t: (key: string, params?: Record<string, string | number>) => string;
 }
 

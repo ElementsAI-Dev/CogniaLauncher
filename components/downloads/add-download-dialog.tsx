@@ -75,6 +75,11 @@ export function AddDownloadDialog({
 
     setIsSubmitting(true);
     try {
+      const tags = form.tags
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter((tag) => tag.length > 0);
+
       await onSubmit({
         url: form.url.trim(),
         destination: form.destination.trim(),
@@ -84,6 +89,9 @@ export function AddDownloadDialog({
         provider: form.provider.trim() || undefined,
         autoExtract: form.autoExtract || undefined,
         extractDest: form.extractDest.trim() || undefined,
+        deleteAfterExtract: form.deleteAfterExtract || undefined,
+        autoRename: form.autoRename || undefined,
+        tags: tags.length > 0 ? tags : undefined,
         segments: form.segments !== "1" ? Number(form.segments) : undefined,
         mirrorUrls: form.mirrorUrls.length > 0 ? form.mirrorUrls : undefined,
         postAction: form.postAction !== "none" ? form.postAction as DownloadRequest['postAction'] : undefined,
@@ -262,6 +270,33 @@ export function AddDownloadDialog({
                   {t("downloads.settings.autoExtract")}
                 </Label>
               </div>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="auto-rename"
+                  checked={form.autoRename}
+                  onCheckedChange={(checked) =>
+                    setForm((prev) => ({ ...prev, autoRename: checked === true }))
+                  }
+                />
+                <Label htmlFor="auto-rename" className="text-sm font-normal">
+                  {t("downloads.settings.autoRename")}
+                </Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="delete-after-extract"
+                  checked={form.deleteAfterExtract}
+                  onCheckedChange={(checked) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      deleteAfterExtract: checked === true,
+                    }))
+                  }
+                />
+                <Label htmlFor="delete-after-extract" className="text-sm font-normal">
+                  {t("downloads.settings.deleteAfterExtract")}
+                </Label>
+              </div>
               {form.autoExtract && (
                 <DestinationPicker
                   value={form.extractDest}
@@ -322,6 +357,18 @@ export function AddDownloadDialog({
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="download-tags">{t("downloads.tags")}</Label>
+            <Input
+              id="download-tags"
+              value={form.tags}
+              onChange={(event) =>
+                setForm((prev) => ({ ...prev, tags: event.target.value }))
+              }
+              placeholder={t("downloads.tagsPlaceholder")}
+            />
           </div>
         </div>
 

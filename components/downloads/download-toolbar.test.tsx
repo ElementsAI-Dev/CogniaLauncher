@@ -27,6 +27,8 @@ const mockT = (key: string) => {
     "downloads.toolbar.filterPaused": "Paused",
     "downloads.toolbar.filterCompleted": "Completed",
     "downloads.toolbar.filterFailed": "Failed",
+    "downloads.toolbar.filterCancelled": "Cancelled",
+    "downloads.toolbar.filterExtracting": "Extracting",
     "downloads.actions.pauseAll": "Pause All",
     "downloads.actions.resumeAll": "Resume All",
     "downloads.actions.cancelAll": "Cancel All",
@@ -59,6 +61,7 @@ describe("DownloadToolbar", () => {
     onCancelAll: jest.fn(),
     onClearFinished: jest.fn(),
     onRetryFailed: jest.fn(),
+    extractingCount: 0,
     stats: mockStats,
     isLoading: false,
     t: mockT,
@@ -85,6 +88,12 @@ describe("DownloadToolbar", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByRole("tab", { name: /paused/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("tab", { name: /cancelled/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("tab", { name: /extracting/i }),
     ).toBeInTheDocument();
     // Counts are now in Badge components
     expect(screen.getByText("5")).toBeInTheDocument();

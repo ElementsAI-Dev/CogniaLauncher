@@ -15,6 +15,8 @@ const mockT = (key: string) => {
     "onboarding.mirrorPresetDesc_aliyun": "Aliyun mirrors",
     "onboarding.mirrorPresetDesc_ustc": "USTC mirrors",
     "onboarding.mirrorsHint": "You can change this later",
+    "onboarding.mirrorsDetailedRecommendation": "Pick a nearby preset first.",
+    "onboarding.mirrorsDetailedSafety": "You can switch back later.",
   };
   return translations[key] || key;
 };
@@ -75,5 +77,11 @@ describe("MirrorsStep", () => {
   it("renders description text", () => {
     render(<MirrorsStep t={mockT} onApplyPreset={mockApplyPreset} />);
     expect(screen.getByText("Choose download mirrors")).toBeInTheDocument();
+  });
+
+  it("shows extra guidance in detailed mode", () => {
+    render(<MirrorsStep t={mockT} onApplyPreset={mockApplyPreset} mode="detailed" />);
+    expect(screen.getByText("Pick a nearby preset first.")).toBeInTheDocument();
+    expect(screen.getByText("You can switch back later.")).toBeInTheDocument();
   });
 });

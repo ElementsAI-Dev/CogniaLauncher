@@ -472,6 +472,27 @@ describe('useDownloads', () => {
     expect(mockDownloadStats).toHaveBeenCalled();
   });
 
+  it('should clear history with retention days', async () => {
+    mockDownloadHistoryClear.mockResolvedValue(2);
+    mockDownloadHistoryList.mockResolvedValue([]);
+    mockDownloadHistoryStats.mockResolvedValue(null);
+    mockDownloadStats.mockResolvedValue(null);
+    const { result } = renderHook(() => useDownloads());
+    mockDownloadHistoryList.mockClear();
+    mockDownloadHistoryStats.mockClear();
+    mockDownloadStats.mockClear();
+
+    await act(async () => {
+      await result.current.clearHistory(30);
+    });
+
+    expect(mockDownloadHistoryClear).toHaveBeenCalledWith(30);
+    expect(mockClearHistory).toHaveBeenCalled();
+    expect(mockDownloadHistoryList).toHaveBeenCalled();
+    expect(mockDownloadHistoryStats).toHaveBeenCalled();
+    expect(mockDownloadStats).toHaveBeenCalled();
+  });
+
   it('should set speed limit', async () => {
     mockDownloadSetSpeedLimit.mockResolvedValue(undefined);
     const { result } = renderHook(() => useDownloads());

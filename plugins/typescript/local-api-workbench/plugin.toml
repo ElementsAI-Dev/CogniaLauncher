@@ -1,0 +1,32 @@
+[plugin]
+id = "com.cognia.builtin.local-api-workbench"
+name = "Local API Workbench"
+version = "0.1.0"
+description = "Send richer local-development HTTP diagnostics with method, header, timeout, and bounded response controls."
+authors = ["CogniaLauncher Team"]
+tool_contract_version = "1.0.0"
+compatible_cognia_versions = ">=0.1.0"
+
+[[tools]]
+id = "local-api-workbench"
+name_en = "Local API Workbench"
+name_zh = "本地 API 工作台"
+description_en = "Send richer local API diagnostics with configurable methods, headers, and bounded response previews."
+description_zh = "以可配置方法、请求头与受限响应预览执行更丰富的本地 API 诊断。"
+category = "developer"
+keywords = ["api", "http", "localhost", "headers", "timeout", "debug", "json"]
+icon = "Globe"
+entry = "local_api_workbench"
+
+[permissions]
+http = ["localhost", "127.0.0.1", "::1", "*.local", "*.localhost", "host.docker.internal", "gateway.docker.internal", "kubernetes.docker.internal"]
+
+[locales.en]
+success = "HTTP request completed."
+invalidInput = "Input must be empty, a URL string, or a JSON object with method/url/headers options."
+invalidTarget = "Only localhost-style development endpoints are allowed."
+
+[locales.zh]
+success = "HTTP 请求完成。"
+invalidInput = "输入必须为空、URL 字符串，或包含 method/url/headers 选项的 JSON 对象。"
+invalidTarget = "仅允许访问 localhost 风格的开发地址。"

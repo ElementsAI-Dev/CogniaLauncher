@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -9,6 +10,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { SearchBar } from '@/components/packages/search-bar';
 import { PackageList } from '@/components/packages/package-list';
 import { PackageDetailsDialog } from '@/components/packages/package-details-dialog';
@@ -29,8 +32,10 @@ import { toast } from 'sonner';
 import type { PackageSummary, InstalledPackage, ResolutionResult, BatchResult } from '@/lib/tauri';
 import type { ExportedPackageList } from '@/hooks/use-package-export';
 import type { DependencyLookupContext, DependencyResolveRequest } from '@/types/packages';
+import { getPackageKeyFromParts, isPackagePinned } from '@/lib/packages';
 
 export default function PackagesPage() {
+  const router = useRouter();
   const {
     searchResults,
     installedPackages,
@@ -55,6 +60,7 @@ export default function PackagesPage() {
     pinPackage,
     unpinPackage,
     rollbackPackage,
+    fetchPinnedPackages,
     getInstallHistory,
     clearInstallHistory,
   } = usePackages();
@@ -71,6 +77,7 @@ export default function PackagesPage() {
     updateCheckProviderOutcomes,
     updateCheckCoverage,
     lastUpdateCheck,
+    searchMeta,
   } = usePackageStore();
   
   const { t } = useLocale();
@@ -100,6 +107,31 @@ export default function PackagesPage() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [clearingHistory, setClearingHistory] = useState(false);
+  const [historyFilters, setHistoryFilters] = useState<{
+    name: string;
+    provider: string;
+    action: string;
+    success: 'all' | 'success' | 'failed';
+  }>({
+    name: '',
+    provider: 'all',
+    action: 'all',
+    success: 'all',
+  });
+  const [searchRequest, setSearchRequest] = useState<{
+    query: string;
+    providers?: string[];
+    installedOnly?: boolean;
+    notInstalled?: boolean;
+    hasUpdates?: boolean;
+    license?: string[];
+    minVersion?: string;
+    maxVersion?: string;
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
+    limit?: number;
+    offset?: number;
+  } | null>(null);
   const historyDirtyRef = useRef(true);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -127,11 +159,21 @@ export default function PackagesPage() {
     ],
   });
 
-  const loadInstallHistory = useCallback(async () => {
+  const loadInstallHistory = useCallback(async (filtersOverride?: Partial<typeof historyFilters>) => {
+    const effectiveFilters = { ...historyFilters, ...(filtersOverride ?? {}) };
     setHistoryLoading(true);
     setHistoryError(null);
     try {
-      const entries = await getInstallHistory({ limit: 200 });
+      const entries = await getInstallHistory({
+        limit: 200,
+        name: effectiveFilters.name.trim() || undefined,
+        provider: effectiveFilters.provider !== 'all' ? effectiveFilters.provider : undefined,
+        action: effectiveFilters.action !== 'all' ? effectiveFilters.action : undefined,
+        success:
+          effectiveFilters.success === 'all'
+            ? undefined
+            : effectiveFilters.success === 'success',
+      });
       setInstallHistory(entries);
       historyDirtyRef.current = false;
     } catch (err) {
@@ -140,12 +182,13 @@ export default function PackagesPage() {
     } finally {
       setHistoryLoading(false);
     }
-  }, [getInstallHistory]);
+  }, [getInstallHistory, historyFilters]);
 
   useEffect(() => {
     fetchProviders();
     fetchInstalledPackages();
-  }, [fetchProviders, fetchInstalledPackages]);
+    fetchPinnedPackages();
+  }, [fetchPinnedPackages, fetchProviders, fetchInstalledPackages]);
 
   useEffect(() => {
     if (activeTab === 'history' && historyDirtyRef.current) {
@@ -154,12 +197,12 @@ export default function PackagesPage() {
   }, [activeTab, loadInstallHistory]);
 
   const availableUpdates = useMemo(() => 
-    updates.filter(u => !pinnedPackages.includes(u.name)),
+    updates.filter((u) => !isPackagePinned(pinnedPackages, u.name, u.provider)),
     [updates, pinnedPackages]
   );
 
   const pinnedUpdates = useMemo(() =>
-    updates.filter(u => pinnedPackages.includes(u.name)),
+    updates.filter((u) => isPackagePinned(pinnedPackages, u.name, u.provider)),
     [updates, pinnedPackages]
   );
 
@@ -200,18 +243,22 @@ export default function PackagesPage() {
     }
   };
 
-  const handlePinPackage = async (name: string) => {
+  const handlePinPackage = async (name: string, version?: string, provider?: string) => {
+    const fallbackVersion = installedPackages.find(
+      (pkg) => pkg.name === name && (!provider || pkg.provider === provider),
+    )?.version;
+    const pinVersion = version ?? fallbackVersion;
     try {
-      await pinPackage(name);
+      await pinPackage(getPackageKeyFromParts(name, provider), pinVersion);
       toast.success(t('packages.pinned', { name }));
     } catch (err) {
       toast.error(t('packages.pinFailed', { name, error: String(err) }));
     }
   };
 
-  const handleUnpinPackage = async (name: string) => {
+  const handleUnpinPackage = async (name: string, provider?: string) => {
     try {
-      await unpinPackage(name);
+      await unpinPackage(getPackageKeyFromParts(name, provider));
       toast.success(t('packages.unpinned', { name }));
     } catch (err) {
       toast.error(t('packages.unpinFailed', { name, error: String(err) }));
@@ -285,22 +332,62 @@ export default function PackagesPage() {
 
   const handleAdvancedSearch = useCallback(async (
     query: string, 
-    options: { providers?: string[]; installedOnly?: boolean; notInstalled?: boolean; hasUpdates?: boolean; sortBy?: string }
+    options: {
+      providers?: string[];
+      installedOnly?: boolean;
+      notInstalled?: boolean;
+      hasUpdates?: boolean;
+      license?: string[];
+      minVersion?: string;
+      maxVersion?: string;
+      sortBy?: string;
+      sortOrder?: 'asc' | 'desc';
+      limit?: number;
+      offset?: number;
+    }
   ) => {
+    const nextRequest = {
+      query,
+      ...options,
+      limit: options.limit ?? searchMeta?.pageSize ?? 20,
+      offset: options.offset ?? 0,
+    };
     await advancedSearch(query, {
-      providers: options.providers,
-      sortBy: options.sortBy,
+      providers: nextRequest.providers,
+      limit: nextRequest.limit,
+      offset: nextRequest.offset,
+      sortBy: nextRequest.sortBy,
+      sortOrder: nextRequest.sortOrder,
       filters: {
-        installedOnly: options.installedOnly,
-        notInstalled: options.notInstalled,
-        hasUpdates: options.hasUpdates,
+        installedOnly: nextRequest.installedOnly,
+        notInstalled: nextRequest.notInstalled,
+        hasUpdates: nextRequest.hasUpdates,
+        license: nextRequest.license,
+        minVersion: nextRequest.minVersion,
+        maxVersion: nextRequest.maxVersion,
       },
     });
+    setSearchRequest(nextRequest);
     setActiveTab('search');
-  }, [advancedSearch]);
+  }, [advancedSearch, searchMeta?.pageSize]);
 
-  const handleBatchInstall = useCallback(async (packages: string[], options?: { dryRun?: boolean; force?: boolean }): Promise<BatchResult> => {
-    const result = await batchInstall(packages, options?.dryRun, options?.force);
+  const handleSearchPageChange = useCallback(async (nextPage: number) => {
+    if (!searchRequest || !searchMeta) return;
+
+    const nextOffset = nextPage * searchMeta.pageSize;
+    await handleAdvancedSearch(searchRequest.query, {
+      ...searchRequest,
+      offset: nextOffset,
+      limit: searchMeta.pageSize,
+    });
+  }, [handleAdvancedSearch, searchMeta, searchRequest]);
+
+  const handleBatchInstall = useCallback(
+    async (
+      packages: string[],
+      options?: { dryRun?: boolean; force?: boolean; parallel?: boolean; global?: boolean },
+    ): Promise<BatchResult> => {
+    const result = await batchInstall(packages, options);
     if (result.successful.length > 0) {
       toast.success(t('packages.batchInstallSuccess', { count: result.successful.length }));
       await refreshHistoryIfVisible();
@@ -441,10 +528,16 @@ export default function PackagesPage() {
       return p.name;
     });
 
+    data.bookmarks.forEach((bookmark) => {
+      if (!bookmarkedPackages.includes(bookmark)) {
+        toggleBookmark(bookmark);
+      }
+    });
+
     if (packageIds.length > 0) {
       await handleBatchInstall(packageIds);
     }
-  }, [handleBatchInstall]);
+  }, [bookmarkedPackages, handleBatchInstall, toggleBookmark]);
 
   const handleBookmarkToggle = useCallback((name: string) => {
     toggleBookmark(name);
@@ -465,7 +558,9 @@ export default function PackagesPage() {
           <div className="flex items-center gap-2">
             <ProviderStatusBadge
               providers={providers}
-              onRefresh={fetchProviders}
+              onRefresh={() => {
+                void fetchProviders(true);
+              }}
             />
             <ExportImportDialog onImport={handleImportPackages} />
             {selectedPackages.length >= 2 && (
@@ -500,6 +595,7 @@ export default function PackagesPage() {
       <div data-hint="packages-search">
         <SearchBar
           providers={providers}
+          inputRef={searchInputRef}
           onSearch={handleAdvancedSearch}
           onGetSuggestions={getSuggestions}
           loading={loading}
@@ -757,7 +853,7 @@ export default function PackagesPage() {
                                 size="icon"
                                 variant="ghost"
                                 className="h-8 w-8"
-                                onClick={() => handlePinPackage(update.name)}
+                                onClick={() => handlePinPackage(update.name, update.current_version, update.provider)}
                                 title={t('packages.pinVersion')}
                               >
                                 <Pin className="h-4 w-4 text-muted-foreground" />
@@ -807,7 +903,7 @@ export default function PackagesPage() {
                                 size="sm"
                                 variant="outline"
                                 className="shrink-0 self-start sm:self-center"
-                                onClick={() => handleUnpinPackage(update.name)}
+                                onClick={() => handleUnpinPackage(update.name, update.provider)}
                               >
                                 {t('packages.unpin')}
                               </Button>
@@ -824,24 +920,91 @@ export default function PackagesPage() {
         </TabsContent>
 
         <TabsContent value="search" className="mt-4 flex min-h-0 flex-col">
-          {loading ? (
-            <div className="space-y-2">
-              {[1, 2, 3].map((i) => (
-                <Skeleton key={i} className="h-16 w-full" />
-              ))}
-            </div>
-          ) : (
-            <PackageList
-              packages={searchResults}
-              type="search"
-              installing={installing}
-              resolvingDependencyKey={resolvingDependencyKey}
-              onInstall={handleInstall}
-              onSelect={handleSelectPackage}
-              onResolveDependencies={handleResolveFromPackageList}
-              showSelectAll={false}
-            />
-          )}
+          <div className="flex min-h-0 flex-1 flex-col gap-4">
+            {searchMeta && searchMeta.total > 0 ? (
+              <Card>
+                <CardContent className="flex flex-col gap-4 py-4">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="text-sm text-muted-foreground">
+                      {t('packages.searchSummary', {
+                        from: searchMeta.page * searchMeta.pageSize + 1,
+                        to: Math.min(
+                          searchMeta.total,
+                          searchMeta.page * searchMeta.pageSize + searchResults.length,
+                        ),
+                        total: searchMeta.total,
+                      })}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void handleSearchPageChange(Math.max(0, searchMeta.page - 1))}
+                        disabled={loading || searchMeta.page <= 0}
+                      >
+                        {t('packages.searchPrevPage')}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void handleSearchPageChange(searchMeta.page + 1)}
+                        disabled={
+                          loading ||
+                          (searchMeta.page + 1) * searchMeta.pageSize >= searchMeta.total
+                        }
+                      >
+                        {t('packages.searchNextPage')}
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="grid gap-3 lg:grid-cols-2">
+                    <div className="space-y-2">
+                      <div className="text-xs font-medium text-muted-foreground">
+                        {t('packages.searchFacetProviders')}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {Object.entries(searchMeta.facets.providers).map(([provider, count]) => (
+                          <Badge key={provider} variant="secondary">
+                            {provider} ({count})
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="text-xs font-medium text-muted-foreground">
+                        {t('packages.searchFacetLicenses')}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {Object.entries(searchMeta.facets.licenses).map(([license, count]) => (
+                          <Badge key={license} variant="secondary">
+                            {license} ({count})
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : null}
+            {loading ? (
+              <div className="space-y-2">
+                {[1, 2, 3].map((i) => (
+                  <Skeleton key={i} className="h-16 w-full" />
+                ))}
+              </div>
+            ) : (
+              <PackageList
+                packages={searchResults}
+                type="search"
+                installing={installing}
+                resolvingDependencyKey={resolvingDependencyKey}
+                onInstall={handleInstall}
+                onSelect={handleSelectPackage}
+                onResolveDependencies={handleResolveFromPackageList}
+                showSelectAll={false}
+              />
+            )}
+          </div>
         </TabsContent>
 
         <TabsContent value="dependencies" className="mt-4">
@@ -860,39 +1023,128 @@ export default function PackagesPage() {
         </TabsContent>
 
         <TabsContent value="history" className="mt-4 flex min-h-0 flex-col">
-          <Card className="flex min-h-0 flex-1 flex-col">
+            <Card className="flex min-h-0 flex-1 flex-col">
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="flex items-center gap-2">
-                    <History className="h-5 w-5" />
-                    {t('packages.installHistory')}
-                  </CardTitle>
-                  <CardDescription>
-                    {t('packages.installHistoryDesc')}
-                  </CardDescription>
+              <div className="flex flex-col gap-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <History className="h-5 w-5" />
+                      {t('packages.installHistory')}
+                    </CardTitle>
+                    <CardDescription>
+                      {t('packages.installHistoryDesc')}
+                    </CardDescription>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        historyDirtyRef.current = true;
+                        void loadInstallHistory();
+                      }}
+                      disabled={historyLoading || clearingHistory}
+                    >
+                      <RefreshCw className={`h-4 w-4 mr-2 ${historyLoading ? 'animate-spin' : ''}`} />
+                      {t('providers.refresh')}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void handleClearHistory()}
+                      disabled={historyLoading || clearingHistory || installHistory.length === 0}
+                    >
+                      {t('packages.clearHistory')}
+                    </Button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      historyDirtyRef.current = true;
-                      void loadInstallHistory();
-                    }}
-                    disabled={historyLoading || clearingHistory}
-                  >
-                    <RefreshCw className={`h-4 w-4 mr-2 ${historyLoading ? 'animate-spin' : ''}`} />
-                    {t('providers.refresh')}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => void handleClearHistory()}
-                    disabled={historyLoading || clearingHistory || installHistory.length === 0}
-                  >
-                    {t('packages.clearHistory')}
-                  </Button>
+                <div>
+                  <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_180px_180px_auto_auto]">
+                    <Input
+                      placeholder={t('packages.historyNameFilter')}
+                      value={historyFilters.name}
+                      onChange={(event) =>
+                        setHistoryFilters((current) => ({ ...current, name: event.target.value }))
+                      }
+                    />
+                    <Select
+                      value={historyFilters.provider}
+                      onValueChange={(value) =>
+                        setHistoryFilters((current) => ({ ...current, provider: value }))
+                      }
+                    >
+                      <SelectTrigger aria-label={t('packages.providers')}>
+                        <SelectValue placeholder={t('packages.providers')} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">{t('packages.allProviders')}</SelectItem>
+                        {providers.map((provider) => (
+                          <SelectItem key={provider.id} value={provider.id}>
+                            {provider.display_name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Select
+                      value={historyFilters.action}
+                      onValueChange={(value) =>
+                        setHistoryFilters((current) => ({ ...current, action: value }))
+                      }
+                    >
+                      <SelectTrigger aria-label={t('packages.historyActionFilter')}>
+                        <SelectValue placeholder={t('packages.historyActionFilter')} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">{t('packages.historyActionFilter')}</SelectItem>
+                        {['install', 'uninstall', 'update', 'rollback'].map((action) => (
+                          <SelectItem key={action} value={action}>
+                            {action}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Select
+                      value={historyFilters.success}
+                      onValueChange={(value: 'all' | 'success' | 'failed') =>
+                        setHistoryFilters((current) => ({ ...current, success: value }))
+                      }
+                    >
+                      <SelectTrigger aria-label={t('packages.historyStatusFilter')}>
+                        <SelectValue placeholder={t('packages.historyStatusFilter')} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">{t('packages.historyStatusAll')}</SelectItem>
+                        <SelectItem value="success">{t('packages.historyStatusSuccess')}</SelectItem>
+                        <SelectItem value="failed">{t('packages.historyStatusFailed')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        historyDirtyRef.current = true;
+                        void loadInstallHistory();
+                      }}
+                    >
+                      {t('packages.historyApplyFilters')}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      onClick={() => {
+                        const nextFilters = {
+                          name: '',
+                          provider: 'all',
+                          action: 'all',
+                          success: 'all' as const,
+                        };
+                        setHistoryFilters(nextFilters);
+                        historyDirtyRef.current = true;
+                        void loadInstallHistory(nextFilters);
+                      }}
+                    >
+                      {t('packages.historyResetFilters')}
+                    </Button>
+                  </div>
                 </div>
               </div>
             </CardHeader>
@@ -950,8 +1202,21 @@ export default function PackagesPage() {
                             )}
                           </div>
                         </div>
-                        <div className="text-xs text-muted-foreground shrink-0 sm:text-right">
-                          {new Date(entry.timestamp).toLocaleString()}
+                        <div className="flex items-center gap-3 shrink-0 sm:text-right">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() =>
+                              router.push(
+                                `/packages/detail?name=${encodeURIComponent(entry.name)}&provider=${encodeURIComponent(entry.provider)}`,
+                              )
+                            }
+                          >
+                            {t('packages.historyOpenDetails')}
+                          </Button>
+                          <div className="text-xs text-muted-foreground">
+                            {new Date(entry.timestamp).toLocaleString()}
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -993,19 +1258,27 @@ export default function PackagesPage() {
         }}
         onRollback={async (name, version) => {
           try {
-            await rollbackPackage(name, version);
+            await rollbackPackage(getPackageKeyFromParts(name, selectedPackage?.provider), version);
             toast.success(t('packages.rollbackSuccess', { name, version }));
             await refreshHistoryIfVisible();
           } catch (err) {
             toast.error(t('packages.rollbackFailed', { error: String(err) }));
           }
         }}
-        onPin={async (name) => {
-          await handlePinPackage(name);
+        onPin={async (name, version) => {
+          await handlePinPackage(name, version, selectedPackage?.provider);
         }}
         fetchPackageInfo={fetchPackageInfo}
-        isInstalled={installedPackages.some(p => p.name === selectedPackage?.name)}
-        currentVersion={installedPackages.find(p => p.name === selectedPackage?.name)?.version}
+        isInstalled={installedPackages.some(
+          (p) =>
+            p.name === selectedPackage?.name &&
+            (!selectedPackage?.provider || p.provider === selectedPackage.provider),
+        )}
+        currentVersion={installedPackages.find(
+          (p) =>
+            p.name === selectedPackage?.name &&
+            (!selectedPackage?.provider || p.provider === selectedPackage.provider),
+        )?.version}
       />
     </div>
   );

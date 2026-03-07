@@ -1,0 +1,31 @@
+[plugin]
+id = "com.cognia.builtin.semver-inspector"
+name = "Semver Inspector"
+version = "0.1.0"
+description = "Validate semantic versions, explain candidate impact, and summarize requirement-fit decisions."
+authors = ["CogniaLauncher Team"]
+
+[[tools]]
+id = "semver-inspect"
+name_en = "Semver Inspect"
+name_zh = "语义版本检查"
+description_en = "Validate version strings, classify candidate impact, and explain requirement fit."
+description_zh = "校验版本字符串、分类候选版本影响，并解释其是否满足给定约束。"
+category = "developer"
+keywords = ["semver", "version", "constraint", "release", "dependency"]
+icon = "GitBranch"
+entry = "semver_inspect"
+
+[permissions]
+
+[locales.en]
+invalidInput = "Input must be a JSON object with currentVersion and requirement fields."
+invalidVersion = "currentVersion is not a valid semantic version."
+invalidRequirement = "requirement is not a valid semantic version constraint."
+success = "Semver inspection completed."
+
+[locales.zh]
+invalidInput = "输入必须是包含 currentVersion 和 requirement 字段的 JSON 对象。"
+invalidVersion = "currentVersion 不是合法的语义版本。"
+invalidRequirement = "requirement 不是合法的语义版本约束。"
+success = "语义版本检查完成。"

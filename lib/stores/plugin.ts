@@ -1,6 +1,18 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import type { PluginInfo, PluginToolInfo, PluginHealth, PluginUpdateInfo } from '@/types/plugin';
+import type {
+  PluginInfo,
+  PluginToolInfo,
+  PluginHealth,
+  PluginPermissionMode,
+  PluginPermissionState,
+  PluginUpdateInfo,
+} from '@/types/plugin';
+import type {
+  ToolboxMarketplaceCatalog,
+  ToolboxMarketplaceCatalogSource,
+  ToolboxMarketplaceSyncState,
+} from '@/types/toolbox-marketplace';
 
 interface PluginState {
   installedPlugins: PluginInfo[];
@@ -8,7 +20,14 @@ interface PluginState {
   loading: boolean;
   error: string | null;
   healthMap: Record<string, PluginHealth>;
+  permissionMode: PluginPermissionMode;
+  permissionStates: Record<string, PluginPermissionState>;
   pendingUpdates: PluginUpdateInfo[];
+  marketplaceCatalog: ToolboxMarketplaceCatalog | null;
+  marketplaceCatalogSource: ToolboxMarketplaceCatalogSource | null;
+  marketplaceSyncState: ToolboxMarketplaceSyncState;
+  marketplaceLastSyncedAt: string | null;
+  marketplaceLastError: string | null;
 
   setInstalledPlugins: (plugins: PluginInfo[]) => void;
   setPluginTools: (tools: PluginToolInfo[]) => void;
@@ -19,7 +38,15 @@ interface PluginState {
   addPlugin: (plugin: PluginInfo) => void;
   setHealthMap: (healthMap: Record<string, PluginHealth>) => void;
   setPluginHealth: (pluginId: string, health: PluginHealth) => void;
+  setPermissionMode: (mode: PluginPermissionMode) => void;
+  setPermissionStates: (states: Record<string, PluginPermissionState>) => void;
+  setPluginPermissionState: (pluginId: string, state: PluginPermissionState) => void;
   setPendingUpdates: (updates: PluginUpdateInfo[]) => void;
+  setMarketplaceCatalog: (catalog: ToolboxMarketplaceCatalog | null) => void;
+  setMarketplaceCatalogSource: (source: ToolboxMarketplaceCatalogSource | null) => void;
+  setMarketplaceSyncState: (state: ToolboxMarketplaceSyncState) => void;
+  setMarketplaceLastSyncedAt: (timestamp: string | null) => void;
+  setMarketplaceLastError: (error: string | null) => void;
 }
 
 export const usePluginStore = create<PluginState>()(
@@ -30,7 +57,14 @@ export const usePluginStore = create<PluginState>()(
       loading: false,
       error: null,
       healthMap: {},
+      permissionMode: 'compat',
+      permissionStates: {},
       pendingUpdates: [],
+      marketplaceCatalog: null,
+      marketplaceCatalogSource: null,
+      marketplaceSyncState: 'idle',
+      marketplaceLastSyncedAt: null,
+      marketplaceLastError: null,
 
       setInstalledPlugins: (installedPlugins) => set({ installedPlugins }),
       setPluginTools: (pluginTools) => set({ pluginTools }),
@@ -48,6 +82,12 @@ export const usePluginStore = create<PluginState>()(
         set((state) => ({
           installedPlugins: state.installedPlugins.filter((p) => p.id !== pluginId),
           pluginTools: state.pluginTools.filter((t) => t.pluginId !== pluginId),
+          permissionStates: Object.fromEntries(
+            Object.entries(state.permissionStates).filter(([id]) => id !== pluginId),
+          ),
+          healthMap: Object.fromEntries(
+            Object.entries(state.healthMap).filter(([id]) => id !== pluginId),
+          ),
         })),
 
       addPlugin: (plugin) =>
@@ -60,16 +100,50 @@ export const usePluginStore = create<PluginState>()(
         set((state) => ({
           healthMap: { ...state.healthMap, [pluginId]: health },
         })),
+      setPermissionMode: (permissionMode) => set({ permissionMode }),
+      setPermissionStates: (permissionStates) => set({ permissionStates }),
+      setPluginPermissionState: (pluginId, permissionState) =>
+        set((state) => ({
+          permissionStates: { ...state.permissionStates, [pluginId]: permissionState },
+        })),
       setPendingUpdates: (pendingUpdates) => set({ pendingUpdates }),
+      setMarketplaceCatalog: (marketplaceCatalog) => set({ marketplaceCatalog }),
+      setMarketplaceCatalogSource: (marketplaceCatalogSource) => set({ marketplaceCatalogSource }),
+      setMarketplaceSyncState: (marketplaceSyncState) => set({ marketplaceSyncState }),
+      setMarketplaceLastSyncedAt: (marketplaceLastSyncedAt) => set({ marketplaceLastSyncedAt }),
+      setMarketplaceLastError: (marketplaceLastError) => set({ marketplaceLastError }),
     }),
     {
       name: 'cognia-plugins',
       storage: createJSONStorage(() => localStorage),
-      version: 2,
-      migrate: (persisted) => persisted as PluginState,
+      version: 3,
+      migrate: (persisted) => {
+        const state = (persisted ?? {}) as Partial<PluginState>;
+        return {
+          installedPlugins: state.installedPlugins ?? [],
+          pluginTools: state.pluginTools ?? [],
+          loading: false,
+          error: null,
+          healthMap: {},
+          permissionMode: state.permissionMode ?? 'compat',
+          permissionStates: state.permissionStates ?? {},
+          pendingUpdates: state.pendingUpdates ?? [],
+          marketplaceCatalog: state.marketplaceCatalog ?? null,
+          marketplaceCatalogSource: state.marketplaceCatalogSource ?? null,
+          marketplaceSyncState: state.marketplaceSyncState ?? 'idle',
+          marketplaceLastSyncedAt: state.marketplaceLastSyncedAt ?? null,
+          marketplaceLastError: state.marketplaceLastError ?? null,
+        } as PluginState;
+      },
       partialize: (state) => ({
         installedPlugins: state.installedPlugins,
         pluginTools: state.pluginTools,
+        pendingUpdates: state.pendingUpdates,
+        marketplaceCatalog: state.marketplaceCatalog,
+        marketplaceCatalogSource: state.marketplaceCatalogSource,
+        marketplaceSyncState: state.marketplaceSyncState,
+        marketplaceLastSyncedAt: state.marketplaceLastSyncedAt,
+        marketplaceLastError: state.marketplaceLastError,
       }),
     },
   ),

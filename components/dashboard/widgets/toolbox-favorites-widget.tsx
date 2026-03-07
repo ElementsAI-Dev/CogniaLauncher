@@ -9,6 +9,7 @@ import { Wrench, ArrowRight } from 'lucide-react';
 import { getCategoryMeta } from '@/lib/constants/toolbox';
 import { cn } from '@/lib/utils';
 import type { ToolCategory } from '@/types/toolbox';
+import { getToolboxDetailPath } from '@/lib/toolbox-route';
 
 export function ToolboxFavoritesWidget() {
   const { t } = useLocale();
@@ -51,7 +52,7 @@ export function ToolboxFavoritesWidget() {
               <button
                 key={tool.id}
                 className="flex flex-col items-center gap-1.5 rounded-lg border p-2.5 text-center transition-colors hover:bg-accent/50 cursor-pointer"
-                onClick={() => router.push(`/toolbox/tool?id=${encodeURIComponent(tool.id)}`)}
+                onClick={() => router.push(getToolboxDetailPath(tool.id))}
               >
                 <div className={cn('flex h-8 w-8 items-center justify-center rounded-md', cat?.color)}>
                   <DynamicIcon name={tool.icon} className="h-4 w-4" />
@@ -71,7 +72,7 @@ export function ToolboxFavoritesWidget() {
               <button
                 key={tool.id}
                 className="flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent/50 cursor-pointer"
-                onClick={() => router.push(`/toolbox/tool?id=${encodeURIComponent(tool.id)}`)}
+                onClick={() => router.push(getToolboxDetailPath(tool.id))}
               >
                 <DynamicIcon name={tool.icon} className="h-3.5 w-3.5 text-muted-foreground" />
                 <span className="text-xs truncate">{tool.name}</span>

@@ -7,6 +7,8 @@ const mockT = (key: string) => {
     'wsl.export': 'Export',
     'wsl.exportDesc': 'Export this distribution as a backup file.',
     'wsl.exportAsVhd': 'Export as VHD',
+    'wsl.exportFormat': 'Export Format',
+    'wsl.capabilityUnsupported': "Feature '{feature}' is unavailable on this system (WSL {version}).",
     'common.save': 'Save',
     'common.path': 'Path',
     'common.browse': 'Browse',
@@ -21,6 +23,7 @@ describe('WslExportDialog', () => {
     distroName: 'Ubuntu',
     onOpenChange: jest.fn(),
     onExport: jest.fn().mockResolvedValue(undefined),
+    capabilities: { exportFormat: true, version: '2.4.0' },
     t: mockT,
   };
 
@@ -30,63 +33,68 @@ describe('WslExportDialog', () => {
 
   it('renders dialog title with distro name', () => {
     render(<WslExportDialog {...defaultProps} />);
-
-    // Title contains "Export — Ubuntu"
     expect(screen.getByText(/Export — Ubuntu/)).toBeInTheDocument();
   });
 
   it('renders export description', () => {
     render(<WslExportDialog {...defaultProps} />);
-
     expect(screen.getByText('Export this distribution as a backup file.')).toBeInTheDocument();
-  });
-
-  it('renders Browse button with i18n key (not hardcoded)', () => {
-    render(<WslExportDialog {...defaultProps} />);
-
-    expect(screen.getByText('Browse')).toBeInTheDocument();
-  });
-
-  it('renders VHD toggle switch', () => {
-    render(<WslExportDialog {...defaultProps} />);
-
-    expect(screen.getByText('Export as VHD')).toBeInTheDocument();
-    expect(screen.getByRole('switch')).toBeInTheDocument();
   });
 
   it('disables export button when path is empty', () => {
     render(<WslExportDialog {...defaultProps} />);
-
-    const exportButtons = screen.getAllByText('Export');
-    const submitButton = exportButtons.find((el) => el.closest('button[disabled]'));
-    expect(submitButton).toBeTruthy();
+    const exportButtons = screen.getAllByRole('button').filter((btn) => btn.textContent === 'Export');
+    const submitBtn = exportButtons[exportButtons.length - 1];
+    expect(submitBtn).toBeDisabled();
   });
 
   it('enables export button when path is provided', async () => {
     render(<WslExportDialog {...defaultProps} />);
-
     const input = screen.getByPlaceholderText(/Backup/);
-    await userEvent.type(input, 'C:\\backup\\ubuntu.tar');
+    await userEvent.type(input, 'C:\\backup\\ubuntu');
 
-    const exportButtons = screen.getAllByRole('button').filter(
-      (btn) => btn.textContent === 'Export',
-    );
+    const exportButtons = screen.getAllByRole('button').filter((btn) => btn.textContent === 'Export');
     const submitBtn = exportButtons[exportButtons.length - 1];
     expect(submitBtn).not.toBeDisabled();
   });
 
-  it('calls onExport with correct params on submit', async () => {
+  it('normalizes tar output path on submit', async () => {
     render(<WslExportDialog {...defaultProps} />);
-
     const input = screen.getByPlaceholderText(/Backup/);
-    await userEvent.type(input, 'C:\\backup\\ubuntu.tar');
+    await userEvent.type(input, 'C:\\backup\\ubuntu');
 
-    const exportButtons = screen.getAllByRole('button').filter(
-      (btn) => btn.textContent === 'Export',
-    );
+    const exportButtons = screen.getAllByRole('button').filter((btn) => btn.textContent === 'Export');
     await userEvent.click(exportButtons[exportButtons.length - 1]);
 
     expect(defaultProps.onExport).toHaveBeenCalledWith('Ubuntu', 'C:\\backup\\ubuntu.tar', false);
+  });
+
+  it('supports vhd export format when capability exists', async () => {
+    render(<WslExportDialog {...defaultProps} />);
+
+    await userEvent.click(screen.getByRole('combobox'));
+    await userEvent.click(screen.getByText('VHD (.vhdx)'));
+
+    const input = screen.getByPlaceholderText(/vhdx/);
+    await userEvent.type(input, 'C:\\backup\\ubuntu.tar');
+
+    const exportButtons = screen.getAllByRole('button').filter((btn) => btn.textContent === 'Export');
+    await userEvent.click(exportButtons[exportButtons.length - 1]);
+
+    expect(defaultProps.onExport).toHaveBeenCalledWith('Ubuntu', 'C:\\backup\\ubuntu.vhdx', true);
+  });
+
+  it('hides vhd option when capability is unavailable', async () => {
+    render(
+      <WslExportDialog
+        {...defaultProps}
+        capabilities={{ exportFormat: false, version: '2.0.0' }}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole('combobox'));
+    expect(screen.queryByText('VHD (.vhdx)')).not.toBeInTheDocument();
+    expect(screen.getByText(/Feature 'Export as VHD' is unavailable/)).toBeInTheDocument();
   });
 
   it('calls onOpenChange when cancel clicked', async () => {

@@ -9,38 +9,61 @@ import { Card, CardContent } from '@/components/ui/card';
 import { ToolActionRow, ToolValidationMessage } from '@/components/toolbox/tool-layout';
 import { useLocale } from '@/components/providers/locale-provider';
 import { useToolPreferences } from '@/hooks/use-tool-preferences';
+import { TOOLBOX_LIMITS } from '@/lib/constants/toolbox-limits';
 import type { ToolComponentProps } from '@/types/toolbox';
 
-const FIELD_NAMES = ['minute', 'hour', 'dayOfMonth', 'month', 'dayOfWeek'] as const;
+type TranslateFn = (key: string, params?: Record<string, string | number>) => string;
+
+const CRON_FIELDS = [
+  { id: 'minute', labelKey: 'toolbox.tools.cronParser.fields.minute' },
+  { id: 'hour', labelKey: 'toolbox.tools.cronParser.fields.hour' },
+  { id: 'dayOfMonth', labelKey: 'toolbox.tools.cronParser.fields.dayOfMonth' },
+  { id: 'month', labelKey: 'toolbox.tools.cronParser.fields.month' },
+  { id: 'dayOfWeek', labelKey: 'toolbox.tools.cronParser.fields.dayOfWeek' },
+] as const;
 
 const PRESETS = [
-  { label: 'Every minute', cron: '* * * * *' },
-  { label: 'Every hour', cron: '0 * * * *' },
-  { label: 'Every day at midnight', cron: '0 0 * * *' },
-  { label: 'Every Monday at 9am', cron: '0 9 * * 1' },
-  { label: 'Every 5 minutes', cron: '*/5 * * * *' },
-  { label: 'Every day at noon', cron: '0 12 * * *' },
-  { label: 'First day of month', cron: '0 0 1 * *' },
-  { label: 'Weekdays at 8am', cron: '0 8 * * 1-5' },
+  { labelKey: 'toolbox.tools.cronParser.presets.everyMinute', cron: '* * * * *' },
+  { labelKey: 'toolbox.tools.cronParser.presets.everyHour', cron: '0 * * * *' },
+  { labelKey: 'toolbox.tools.cronParser.presets.everyDayMidnight', cron: '0 0 * * *' },
+  { labelKey: 'toolbox.tools.cronParser.presets.everyMondayNine', cron: '0 9 * * 1' },
+  { labelKey: 'toolbox.tools.cronParser.presets.everyFiveMinutes', cron: '*/5 * * * *' },
+  { labelKey: 'toolbox.tools.cronParser.presets.everyDayNoon', cron: '0 12 * * *' },
+  { labelKey: 'toolbox.tools.cronParser.presets.firstDayOfMonth', cron: '0 0 1 * *' },
+  { labelKey: 'toolbox.tools.cronParser.presets.weekdaysEight', cron: '0 8 * * 1-5' },
 ];
 
-function describeCronField(value: string, fieldName: string): string {
-  if (value === '*') return `every ${fieldName}`;
-  if (value.startsWith('*/')) return `every ${value.slice(2)} ${fieldName}s`;
-  if (value.includes(',')) return `${fieldName} ${value}`;
-  if (value.includes('-')) return `${fieldName} ${value}`;
-  return `${fieldName} ${value}`;
+function describeCronField(value: string, fieldLabel: string, t: TranslateFn): string {
+  if (value === '*') {
+    return t('toolbox.tools.cronParser.describe.everyField', { field: fieldLabel });
+  }
+  if (value.startsWith('*/')) {
+    return t('toolbox.tools.cronParser.describe.everyStepField', {
+      step: value.slice(2),
+      field: fieldLabel,
+    });
+  }
+  return t('toolbox.tools.cronParser.describe.fieldValue', {
+    field: fieldLabel,
+    value,
+  });
 }
 
-function describeCron(expression: string): string {
+function describeCron(expression: string, t: TranslateFn): string {
   const parts = expression.trim().split(/\s+/);
-  if (parts.length < 5) return 'Invalid cron expression';
-  return FIELD_NAMES.map((name, i) => describeCronField(parts[i], name)).join(', ');
+  if (parts.length < 5) return t('toolbox.tools.cronParser.invalidDescription');
+  return CRON_FIELDS.map((field, index) => (
+    describeCronField(parts[index] ?? '*', t(field.labelKey), t)
+  )).join(', ');
 }
 
-function getNextRuns(expression: string, count: number): Date[] {
+function getNextRuns(
+  expression: string,
+  count: number,
+  maxIterations: number,
+): { runs: Date[]; exhausted: boolean } {
   const parts = expression.trim().split(/\s+/);
-  if (parts.length < 5) return [];
+  if (parts.length < 5) return { runs: [], exhausted: false };
 
   const results: Date[] = [];
   const now = new Date();
@@ -48,7 +71,6 @@ function getNextRuns(expression: string, count: number): Date[] {
   check.setSeconds(0, 0);
   check.setMinutes(check.getMinutes() + 1);
 
-  const maxIterations = 525600; // 1 year of minutes
   let iterations = 0;
 
   while (results.length < count && iterations < maxIterations) {
@@ -58,7 +80,10 @@ function getNextRuns(expression: string, count: number): Date[] {
     check.setMinutes(check.getMinutes() + 1);
     iterations++;
   }
-  return results;
+  return {
+    runs: results,
+    exhausted: results.length < count && iterations >= maxIterations,
+  };
 }
 
 function matchesCron(date: Date, parts: string[]): boolean {
@@ -74,7 +99,7 @@ function matchesCron(date: Date, parts: string[]): boolean {
 function matchesField(value: number, pattern: string): boolean {
   if (pattern === '*') return true;
   if (pattern.startsWith('*/')) {
-    const step = parseInt(pattern.slice(2));
+    const step = parseInt(pattern.slice(2), 10);
     return !isNaN(step) && step > 0 && value % step === 0;
   }
   return pattern.split(',').some((part) => {
@@ -97,19 +122,40 @@ export default function CronParser({ className }: ToolComponentProps) {
   const [expression, setExpression] = useState(preferences.expression);
   const [nextRuns, setNextRuns] = useState<Date[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const previewCount = Math.max(1, Math.min(20, Number(preferences.previewCount) || 5));
+  const [guardrailMessage, setGuardrailMessage] = useState<string | null>(null);
+  const previewCount = Math.max(
+    1,
+    Math.min(TOOLBOX_LIMITS.cronPreviewCount, Number(preferences.previewCount) || 5),
+  );
 
-  const description = useMemo(() => describeCron(expression), [expression]);
+  const description = useMemo(() => describeCron(expression, t), [expression, t]);
 
   const handleParse = useCallback(() => {
+    if (expression.length > TOOLBOX_LIMITS.cronExpressionChars) {
+      setError(
+        t('toolbox.tools.shared.inputTooLarge', {
+          limit: TOOLBOX_LIMITS.cronExpressionChars.toLocaleString(),
+        }),
+      );
+      setNextRuns([]);
+      return;
+    }
+
     const parts = expression.trim().split(/\s+/);
     if (parts.length !== 5) {
       setError(t('toolbox.tools.cronParser.invalidExpression'));
       setNextRuns([]);
       return;
     }
+
     setError(null);
-    setNextRuns(getNextRuns(expression, previewCount));
+    const result = getNextRuns(expression, previewCount, 525600);
+    setNextRuns(result.runs);
+    setGuardrailMessage(
+      result.exhausted
+        ? t('toolbox.tools.cronParser.previewSearchBounded', { limit: (525600).toLocaleString() })
+        : null,
+    );
     setPreferences({ expression });
   }, [expression, previewCount, setPreferences, t]);
 
@@ -124,6 +170,7 @@ export default function CronParser({ className }: ToolComponentProps) {
               onChange={(e) => {
                 setExpression(e.target.value);
                 setError(null);
+                setGuardrailMessage(null);
               }}
               placeholder="* * * * *"
               className="font-mono flex-1"
@@ -142,9 +189,25 @@ export default function CronParser({ className }: ToolComponentProps) {
                 id="cron-preview-count"
                 type="number"
                 min={1}
-                max={20}
+                max={TOOLBOX_LIMITS.cronPreviewCount}
                 value={previewCount}
-                onChange={(e) => setPreferences({ previewCount: Math.max(1, Number(e.target.value) || 1) })}
+                onChange={(e) => {
+                  const rawValue = Number(e.target.value);
+                  const boundedValue = Math.max(
+                    1,
+                    Math.min(TOOLBOX_LIMITS.cronPreviewCount, Number.isFinite(rawValue) ? rawValue : 1),
+                  );
+                  setPreferences({ previewCount: boundedValue });
+                  if (rawValue > TOOLBOX_LIMITS.cronPreviewCount || rawValue < 1) {
+                    setGuardrailMessage(
+                      t('toolbox.tools.cronParser.previewCountBounded', {
+                        limit: TOOLBOX_LIMITS.cronPreviewCount,
+                      }),
+                    );
+                  } else {
+                    setGuardrailMessage(null);
+                  }
+                }}
                 className="h-7 w-16"
               />
             </div>
@@ -152,6 +215,7 @@ export default function CronParser({ className }: ToolComponentProps) {
         />
 
         {error && <ToolValidationMessage message={error} />}
+        {guardrailMessage && <ToolValidationMessage message={guardrailMessage} />}
 
         <div className="flex flex-wrap gap-1">
           {PRESETS.map((preset) => (
@@ -159,9 +223,9 @@ export default function CronParser({ className }: ToolComponentProps) {
               key={preset.cron}
               variant="outline"
               className="cursor-pointer hover:bg-accent text-xs"
-              onClick={() => { setExpression(preset.cron); setNextRuns([]); }}
+              onClick={() => { setExpression(preset.cron); setNextRuns([]); setGuardrailMessage(null); }}
             >
-              {preset.label}
+              {t(preset.labelKey)}
             </Badge>
           ))}
         </div>
@@ -174,10 +238,10 @@ export default function CronParser({ className }: ToolComponentProps) {
             </div>
 
             <div className="grid grid-cols-5 gap-2 text-center text-xs">
-              {FIELD_NAMES.map((name, i) => (
-                <div key={name}>
-                  <Badge variant="secondary" className="text-[10px] w-full justify-center">{name}</Badge>
-                  <code className="block mt-1 font-mono">{expression.trim().split(/\s+/)[i] ?? '*'}</code>
+              {CRON_FIELDS.map((field, index) => (
+                <div key={field.id}>
+                  <Badge variant="secondary" className="text-[10px] w-full justify-center">{t(field.labelKey)}</Badge>
+                  <code className="block mt-1 font-mono">{expression.trim().split(/\s+/)[index] ?? '*'}</code>
                 </div>
               ))}
             </div>

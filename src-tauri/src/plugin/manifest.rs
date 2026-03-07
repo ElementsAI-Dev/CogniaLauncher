@@ -1,4 +1,5 @@
 use crate::error::{CogniaError, CogniaResult};
+use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -92,6 +93,12 @@ pub struct PluginMeta {
     pub homepage: Option<String>,
     #[serde(alias = "min_cognia_version")]
     pub min_cognia_version: Option<String>,
+    /// Optional semver tool contract version (defaults to host-supported contract)
+    #[serde(default, alias = "tool_contract_version")]
+    pub tool_contract_version: Option<String>,
+    /// Optional semver range for host compatibility (e.g. ">=0.1.0, <1.0.0")
+    #[serde(default, alias = "compatible_cognia_versions")]
+    pub compatible_cognia_versions: Option<String>,
     pub icon: Option<PluginIcon>,
     /// URL to check for updates (returns JSON with latest version + download URL)
     #[serde(alias = "update_url")]
@@ -125,6 +132,9 @@ pub struct ToolDeclaration {
     pub keywords: Vec<String>,
     #[serde(default = "default_icon")]
     pub icon: String,
+    /// Optional capability declarations used by unified toolbox contract
+    #[serde(default)]
+    pub capabilities: Vec<String>,
     pub entry: String,
     /// UI rendering mode: text (default), declarative (JSON UI blocks), or iframe (custom HTML)
     #[serde(default, alias = "ui_mode")]
@@ -233,6 +243,40 @@ impl PluginManifest {
         if self.plugin.version.is_empty() {
             return Err(CogniaError::Plugin("Plugin version is required".into()));
         }
+        if let Some(min_version) = &self.plugin.min_cognia_version {
+            Version::parse(min_version).map_err(|e| {
+                CogniaError::Plugin(format!(
+                    "Invalid min_cognia_version '{}': {}",
+                    min_version, e
+                ))
+            })?;
+        }
+        if let Some(contract_version) = &self.plugin.tool_contract_version {
+            if contract_version.trim().is_empty() {
+                return Err(CogniaError::Plugin(
+                    "tool_contract_version must not be empty".into(),
+                ));
+            }
+            Version::parse(contract_version).map_err(|e| {
+                CogniaError::Plugin(format!(
+                    "Invalid tool_contract_version '{}': {}",
+                    contract_version, e
+                ))
+            })?;
+        }
+        if let Some(host_range) = &self.plugin.compatible_cognia_versions {
+            if host_range.trim().is_empty() {
+                return Err(CogniaError::Plugin(
+                    "compatible_cognia_versions must not be empty".into(),
+                ));
+            }
+            VersionReq::parse(host_range).map_err(|e| {
+                CogniaError::Plugin(format!(
+                    "Invalid compatible_cognia_versions '{}': {}",
+                    host_range, e
+                ))
+            })?;
+        }
         // Validate plugin id format (reverse domain notation)
         if !self
             .plugin
@@ -258,6 +302,12 @@ impl PluginManifest {
             if tool.entry.is_empty() {
                 return Err(CogniaError::Plugin(format!(
                     "Tool '{}' in plugin '{}' has empty entry function",
+                    tool.id, self.plugin.id
+                )));
+            }
+            if tool.capabilities.iter().any(|cap| cap.trim().is_empty()) {
+                return Err(CogniaError::Plugin(format!(
+                    "Tool '{}' in plugin '{}' declares an empty capability",
                     tool.id, self.plugin.id
                 )));
             }
@@ -641,5 +691,47 @@ entry = "ui/index.html"
             serde_json::from_str::<UiMode>("\"iframe\"").unwrap(),
             UiMode::Iframe
         );
+    }
+
+    #[test]
+    fn test_validate_compatible_cognia_versions() {
+        let toml = r#"
+[plugin]
+id = "com.example.compat"
+name = "Compat"
+version = "1.0.0"
+compatible_cognia_versions = ">=0.1.0, <1.0.0"
+"#;
+        let manifest = PluginManifest::from_str(toml).unwrap();
+        assert_eq!(
+            manifest.plugin.compatible_cognia_versions.as_deref(),
+            Some(">=0.1.0, <1.0.0")
+        );
+    }
+
+    #[test]
+    fn test_reject_invalid_compatible_cognia_versions() {
+        let toml = r#"
+[plugin]
+id = "com.example.compat"
+name = "Compat"
+version = "1.0.0"
+compatible_cognia_versions = "not-a-range"
+"#;
+        let err = PluginManifest::from_str(toml).unwrap_err().to_string();
+        assert!(err.contains("Invalid compatible_cognia_versions"));
+    }
+
+    #[test]
+    fn test_reject_invalid_tool_contract_version() {
+        let toml = r#"
+[plugin]
+id = "com.example.contract"
+name = "Contract"
+version = "1.0.0"
+tool_contract_version = "v1"
+"#;
+        let err = PluginManifest::from_str(toml).unwrap_err().to_string();
+        assert!(err.contains("Invalid tool_contract_version"));
     }
 }

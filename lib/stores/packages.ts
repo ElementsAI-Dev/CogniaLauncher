@@ -54,6 +54,7 @@ interface PackageState {
   removeInstalling: (name: string) => void;
   setError: (error: string | null) => void;
   setAvailableUpdates: (updates: UpdateInfo[]) => void;
+  setPinnedPackages: (names: string[]) => void;
   addPinnedPackage: (name: string) => void;
   removePinnedPackage: (name: string) => void;
   togglePackageSelection: (name: string) => void;
@@ -107,6 +108,7 @@ export const usePackageStore = create<PackageState>()(
       removeInstalling: (name) => set((state) => ({ installing: state.installing.filter((n) => n !== name) })),
       setError: (error) => set({ error }),
       setAvailableUpdates: (availableUpdates) => set({ availableUpdates }),
+      setPinnedPackages: (pinnedPackages) => set({ pinnedPackages }),
       addPinnedPackage: (name) => set((state) => ({ 
         pinnedPackages: state.pinnedPackages.includes(name) 
           ? state.pinnedPackages 
@@ -143,10 +145,12 @@ export const usePackageStore = create<PackageState>()(
     }),
     {
       name: 'cognia-packages',
-      version: 1,
-      migrate: (persisted) => persisted as PackageState,
+      version: 2,
+      migrate: (persisted) => ({
+        ...(persisted as PackageState),
+        pinnedPackages: [],
+      }),
       partialize: (state) => ({
-        pinnedPackages: state.pinnedPackages,
         selectedProvider: state.selectedProvider,
         searchQuery: state.searchQuery,
         bookmarkedPackages: state.bookmarkedPackages,

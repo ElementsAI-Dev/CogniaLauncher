@@ -1,6 +1,7 @@
-use crate::plugin::manager::{PluginHealth, PluginManager, PluginUpdateInfo};
+use crate::plugin::manager::{CapabilityAuditRecord, PluginHealth, PluginManager, PluginUpdateInfo};
 use crate::plugin::manifest::PluginManifest;
 use crate::plugin::permissions::PluginPermissionState;
+use crate::plugin::permissions::PermissionEnforcementMode;
 use crate::plugin::registry::{PluginInfo, PluginToolInfo};
 use crate::plugin::scaffold::{ScaffoldConfig, ScaffoldResult, ValidationResult};
 use serde::Serialize;
@@ -86,6 +87,17 @@ pub async fn plugin_install(
     }
 }
 
+#[tauri::command]
+pub async fn plugin_install_marketplace(
+    store_id: String,
+    manager: State<'_, SharedPluginManager>,
+) -> Result<String, String> {
+    let mut mgr = manager.write().await;
+    mgr.install_from_marketplace(&store_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Uninstall a plugin
 #[tauri::command]
 pub async fn plugin_uninstall(
@@ -150,6 +162,20 @@ pub async fn plugin_get_permissions(
     mgr.get_permissions(&plugin_id)
         .await
         .map_err(|e| e.to_string())
+}
+
+/// Get global plugin permission enforcement mode (`compat` | `strict`)
+#[tauri::command]
+pub async fn plugin_get_permission_mode(
+    manager: State<'_, SharedPluginManager>,
+) -> Result<String, String> {
+    let mgr = manager.read().await;
+    let mode = mgr.get_permission_mode().await;
+    let value = match mode {
+        PermissionEnforcementMode::Compat => "compat",
+        PermissionEnforcementMode::Strict => "strict",
+    };
+    Ok(value.to_string())
 }
 
 /// Grant a permission to a plugin
@@ -376,6 +402,16 @@ pub async fn plugin_get_all_health(
 ) -> Result<HashMap<String, PluginHealth>, String> {
     let mgr = manager.read().await;
     Ok(mgr.get_all_health())
+}
+
+/// Get capability audit records (optionally scoped by plugin ID)
+#[tauri::command]
+pub async fn plugin_get_capability_audit(
+    plugin_id: Option<String>,
+    manager: State<'_, SharedPluginManager>,
+) -> Result<Vec<CapabilityAuditRecord>, String> {
+    let mgr = manager.read().await;
+    Ok(mgr.get_capability_audit(plugin_id.as_deref()))
 }
 
 /// Reset the auto-disabled state for a plugin

@@ -57,6 +57,7 @@ describe("crash-reporter", () => {
     expect(mockDiagnosticCaptureFrontendCrash).toHaveBeenCalledWith(
       expect.objectContaining({
         includeConfig: true,
+        source: "window.error",
         errorContext: expect.objectContaining({
           message: "boom",
           component: "frontend:window.error",
@@ -126,5 +127,34 @@ describe("crash-reporter", () => {
         source: "window.unhandledrejection",
       }),
     );
+  });
+
+  it("bounds runtime breadcrumbs before sending capture payload", async () => {
+    mockIsTauri.mockReturnValue(true);
+    mockDiagnosticCaptureFrontendCrash.mockResolvedValue({
+      reportPath: "report.zip",
+      timestamp: "2026-02-25T00:00:00Z",
+      message: "ok",
+    });
+
+    const longMessage = "x".repeat(5000);
+    const breadcrumbs = Array.from({ length: 120 }, (_, index) => ({
+      timestamp: `2026-02-25T00:00:${String(index).padStart(2, "0")}Z`,
+      level: "info",
+      target: "runtime",
+      message: index === 119 ? longMessage : `entry-${index}`,
+    }));
+
+    await captureFrontendCrash({
+      source: "window.error",
+      error: new Error("boom"),
+      runtimeBreadcrumbs: breadcrumbs,
+    });
+
+    expect(mockDiagnosticCaptureFrontendCrash).toHaveBeenCalledTimes(1);
+    const payload = mockDiagnosticCaptureFrontendCrash.mock.calls[0][0];
+    expect(payload.runtimeBreadcrumbs).toHaveLength(100);
+    expect(payload.runtimeBreadcrumbs?.[0].message).toBe("entry-20");
+    expect(payload.runtimeBreadcrumbs?.[99].message.length).toBe(4096);
   });
 });

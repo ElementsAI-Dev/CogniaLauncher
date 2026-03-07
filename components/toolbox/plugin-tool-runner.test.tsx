@@ -142,6 +142,34 @@ describe('PluginToolRunner', () => {
     expect(payload.version).toBe(2);
     expect(payload.sourceType).toBe('declarative');
     expect(payload.sourceId).toBe(baseTool.toolId);
+    expect(payload.correlationId).toEqual(expect.any(String));
+    expect(payload.runtimeContext).toEqual(
+      expect.objectContaining({
+        toolId: baseTool.toolId,
+        pluginId: baseTool.pluginId,
+        uiMode: 'declarative',
+      }),
+    );
+  });
+
+  it('merges multi-channel declarative output into renderer blocks', async () => {
+    mockCallTool.mockResolvedValueOnce(
+      JSON.stringify({
+        ui: [{ type: 'text', content: 'base' }],
+        outputChannels: {
+          structured: [{ type: 'result', message: 'ok', status: 'success' }],
+          stream: [{ level: 'info', message: 'working' }],
+          artifacts: [{ id: 'report', label: 'Report', href: 'https://example.com' }],
+        },
+      }),
+    );
+
+    const tool = { ...baseTool, uiMode: 'declarative' };
+    render(<PluginToolRunner tool={tool} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('plugin-ui-renderer')).toHaveTextContent('blocks: 4');
+    });
   });
 
   it('shows declarative action error and keeps panel responsive', async () => {

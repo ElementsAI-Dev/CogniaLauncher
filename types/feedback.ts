@@ -18,6 +18,7 @@ export interface FeedbackItem {
   screenshot?: string;
   includeDiagnostics: boolean;
   diagnosticPath?: string;
+  diagnosticError?: string;
   appVersion: string;
   os: string;
   arch: string;
@@ -50,6 +51,7 @@ export interface FeedbackSaveResult {
   id: string;
   path: string;
   diagnosticPath?: string;
+  diagnosticError?: string;
 }
 
 export interface FeedbackListResult {

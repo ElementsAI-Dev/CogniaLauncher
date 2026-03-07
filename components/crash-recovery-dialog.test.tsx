@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { CrashRecoveryDialog } from "./crash-recovery-dialog";
+import { toast } from "sonner";
 
 // Mock platform
 jest.mock("@/lib/platform", () => ({
@@ -21,6 +22,13 @@ jest.mock("@tauri-apps/plugin-opener", () => ({
   revealItemInDir: jest.fn(),
 }));
 
+jest.mock("sonner", () => ({
+  toast: {
+    success: jest.fn(),
+    error: jest.fn(),
+  },
+}));
+
 const mockOpenDialog = jest.fn();
 jest.mock("@/lib/stores/feedback", () => ({
   useFeedbackStore: () => ({ openDialog: mockOpenDialog }),
@@ -31,6 +39,13 @@ const mockT = (key: string) => {
     "diagnostic.crashDetected": "Application Crash Detected",
     "diagnostic.crashDescription": "CogniaLauncher crashed during the last session.",
     "diagnostic.crashReportSaved": "Report saved to",
+    "diagnostic.crashSource": "Source",
+    "diagnostic.crashTimestamp": "Captured At",
+    "diagnostic.crashId": "Crash ID",
+    "diagnostic.crashMessage": "Message",
+    "diagnostic.copySummary": "Copy Summary",
+    "diagnostic.copySummarySuccess": "Crash summary copied",
+    "diagnostic.copySummaryFailed": "Failed to copy crash summary",
     "diagnostic.dismiss": "Dismiss",
     "diagnostic.openFolder": "Open Folder",
     "feedback.reportCrash": "Report Crash",
@@ -65,6 +80,8 @@ describe("CrashRecoveryDialog", () => {
 
   it("shows dialog when crash is detected", async () => {
     mockCheckLastCrash.mockResolvedValue({
+      id: "frontend-runtime-1",
+      source: "frontend-runtime",
       reportPath: "C:\\Users\\test\\.CogniaLauncher\\crash-reports\\crash-2026.zip",
       timestamp: "2026-02-25T19:00:00",
       message: "test panic message",
@@ -79,6 +96,8 @@ describe("CrashRecoveryDialog", () => {
     });
 
     expect(screen.getByText("test panic message")).toBeInTheDocument();
+    expect(screen.getByText("Source: frontend-runtime")).toBeInTheDocument();
+    expect(screen.getByText("Captured At: 2026-02-25T19:00:00")).toBeInTheDocument();
     expect(screen.getByText("Dismiss")).toBeInTheDocument();
     expect(screen.getByText("Open Folder")).toBeInTheDocument();
   });
@@ -121,5 +140,37 @@ describe("CrashRecoveryDialog", () => {
 
     // Restore
     platform.isTauri.mockReturnValue(true);
+  });
+
+  it("copies crash summary and shows success feedback", async () => {
+    mockCheckLastCrash.mockResolvedValue({
+      id: "frontend-runtime-2",
+      source: "frontend-runtime",
+      reportPath: "/tmp/crash.zip",
+      timestamp: "2026-02-25T20:00:00Z",
+      message: "boom",
+    });
+    const writeText = jest.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    render(<CrashRecoveryDialog t={mockT} />);
+    jest.advanceTimersByTime(2000);
+
+    await waitFor(() => {
+      expect(screen.getByText("Copy Summary")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByText("Copy Summary"));
+
+    await waitFor(() => {
+      expect(
+        (toast.success as jest.Mock).mock.calls.length +
+          (toast.error as jest.Mock).mock.calls.length,
+      ).toBeGreaterThan(0);
+    });
   });
 });

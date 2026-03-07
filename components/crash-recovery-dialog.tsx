@@ -14,8 +14,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { AlertTriangle, FolderOpen, Bug } from "lucide-react";
+import { AlertTriangle, FolderOpen, Bug, Copy } from "lucide-react";
 import { useFeedbackStore } from "@/lib/stores/feedback";
+import { toast } from "sonner";
 
 interface CrashRecoveryDialogProps {
   t: (key: string) => string;
@@ -66,6 +67,24 @@ export function CrashRecoveryDialog({ t }: CrashRecoveryDialogProps) {
     handleDismiss();
   }, [crashInfo, handleDismiss]);
 
+  const handleCopySummary = useCallback(async () => {
+    if (!crashInfo) return;
+    const summary = [
+      `${t("diagnostic.crashSource")}: ${crashInfo.source ?? "unknown"}`,
+      `${t("diagnostic.crashTimestamp")}: ${crashInfo.timestamp}`,
+      `${t("diagnostic.crashId")}: ${crashInfo.id ?? "unknown"}`,
+      `${t("diagnostic.crashReportSaved")}: ${crashInfo.reportPath}`,
+      `${t("diagnostic.crashMessage")}: ${crashInfo.message ?? "-"}`,
+    ].join("\n");
+
+    try {
+      await navigator.clipboard.writeText(summary);
+      toast.success(t("diagnostic.copySummarySuccess"));
+    } catch {
+      toast.error(t("diagnostic.copySummaryFailed"));
+    }
+  }, [crashInfo, t]);
+
   if (!crashInfo) return null;
 
   return (
@@ -79,6 +98,12 @@ export function CrashRecoveryDialog({ t }: CrashRecoveryDialogProps) {
           <AlertDialogDescription className="space-y-2">
             <span className="block">
               {t("diagnostic.crashDescription")}
+            </span>
+            <span className="block text-xs text-muted-foreground">
+              {t("diagnostic.crashSource")}: {crashInfo.source ?? "unknown"}
+            </span>
+            <span className="block text-xs text-muted-foreground">
+              {t("diagnostic.crashTimestamp")}: {crashInfo.timestamp}
             </span>
             {crashInfo.message && (
               <span className="block rounded-md bg-muted p-2 font-mono text-xs text-muted-foreground break-all max-h-24 overflow-auto">
@@ -111,6 +136,16 @@ export function CrashRecoveryDialog({ t }: CrashRecoveryDialogProps) {
           >
             <Bug className="h-4 w-4" />
             {t("feedback.reportCrash")}
+          </AlertDialogAction>
+          <AlertDialogAction
+            onClick={(event) => {
+              event.preventDefault();
+              void handleCopySummary();
+            }}
+            className="gap-2"
+          >
+            <Copy className="h-4 w-4" />
+            {t("diagnostic.copySummary")}
           </AlertDialogAction>
           <AlertDialogAction onClick={handleOpenFolder} className="gap-2">
             <FolderOpen className="h-4 w-4" />

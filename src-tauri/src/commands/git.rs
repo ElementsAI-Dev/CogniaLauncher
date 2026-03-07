@@ -1,6 +1,7 @@
 use crate::provider::git::{self, GitProvider};
 use crate::provider::traits::Provider;
 use serde::{Deserialize, Serialize};
+use std::process::Command;
 use std::sync::OnceLock;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{watch, Mutex};
@@ -31,6 +32,47 @@ pub struct GitDiffStats {
     pub insertions: u32,
     pub deletions: u32,
     pub files: Vec<GitDiffFile>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EditorCapabilityProbeResult {
+    pub available: bool,
+    pub reason: String,
+    pub preferred_editor: Option<String>,
+    pub config_path: Option<String>,
+    pub fallback_available: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EditorOpenActionResult {
+    pub success: bool,
+    pub kind: String,
+    pub reason: String,
+    pub message: String,
+    pub opened_with: Option<String>,
+    pub fallback_used: bool,
+    pub fallback_path: Option<String>,
+}
+
+fn command_exists(command: &str) -> bool {
+    let mut probe = if cfg!(target_os = "windows") {
+        let mut cmd = Command::new("cmd");
+        cmd.args(["/C", "where", command]);
+        cmd
+    } else {
+        let mut cmd = Command::new("sh");
+        cmd.args(["-c", &format!("command -v {} >/dev/null 2>&1", command)]);
+        cmd
+    };
+
+    probe.status().map(|status| status.success()).unwrap_or(false)
+}
+
+fn open_with_command(path: &str, command: Option<&str>) -> Result<(), String> {
+    tauri_plugin_opener::open_path(path, command)
+        .map_err(|e| format!("Failed to open '{}': {}", path, e))
 }
 
 fn get_provider() -> GitProvider {
@@ -136,13 +178,104 @@ pub async fn git_set_config_if_unset(key: String, value: String) -> Result<bool,
         .map_err(|e| e.to_string())
 }
 
-/// Open the global git config file in the default editor
+/// Probe preferred-editor capability for global git config
 #[tauri::command]
-pub async fn git_open_config_in_editor() -> Result<String, String> {
-    get_provider()
-        .open_config_in_editor()
+pub async fn git_probe_editor_capability() -> Result<EditorCapabilityProbeResult, String> {
+    let provider = get_provider();
+    let config_path = provider
+        .get_config_file_path()
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    let Some(path) = config_path else {
+        return Ok(EditorCapabilityProbeResult {
+            available: false,
+            reason: "config_not_found".to_string(),
+            preferred_editor: None,
+            config_path: None,
+            fallback_available: false,
+        });
+    };
+
+    if command_exists("code") {
+        return Ok(EditorCapabilityProbeResult {
+            available: true,
+            reason: "ok".to_string(),
+            preferred_editor: Some("code".to_string()),
+            config_path: Some(path),
+            fallback_available: true,
+        });
+    }
+
+    Ok(EditorCapabilityProbeResult {
+        available: false,
+        reason: "editor_not_found".to_string(),
+        preferred_editor: None,
+        config_path: Some(path),
+        fallback_available: true,
+    })
+}
+
+/// Open the global git config file with normalized editor/fallback result
+#[tauri::command]
+pub async fn git_open_config_in_editor() -> Result<EditorOpenActionResult, String> {
+    let probe = git_probe_editor_capability().await?;
+    let fallback_path = probe.config_path.clone();
+    let Some(path) = fallback_path.clone() else {
+        return Ok(EditorOpenActionResult {
+            success: false,
+            kind: "unavailable".to_string(),
+            reason: "config_not_found".to_string(),
+            message: "Global git config file was not found".to_string(),
+            opened_with: None,
+            fallback_used: false,
+            fallback_path: None,
+        });
+    };
+
+    if probe.available {
+        if open_with_command(&path, probe.preferred_editor.as_deref()).is_ok() {
+            let opened_with = probe.preferred_editor.clone();
+            return Ok(EditorOpenActionResult {
+                success: true,
+                kind: "opened_editor".to_string(),
+                reason: "ok".to_string(),
+                message: format!(
+                    "Opened in {}: {}",
+                    opened_with.clone().unwrap_or_default(),
+                    path
+                ),
+                opened_with,
+                fallback_used: false,
+                fallback_path: Some(path),
+            });
+        }
+    }
+
+    match open_with_command(&path, None::<&str>) {
+        Ok(()) => Ok(EditorOpenActionResult {
+            success: true,
+            kind: "fallback_opened".to_string(),
+            reason: if probe.available {
+                "editor_launch_failed".to_string()
+            } else {
+                "editor_not_found".to_string()
+            },
+            message: format!("Opened fallback path: {}", path),
+            opened_with: Some("default".to_string()),
+            fallback_used: true,
+            fallback_path: Some(path),
+        }),
+        Err(err) => Ok(EditorOpenActionResult {
+            success: false,
+            kind: "error".to_string(),
+            reason: "fallback_failed".to_string(),
+            message: err,
+            opened_with: None,
+            fallback_used: false,
+            fallback_path: Some(path),
+        }),
+    }
 }
 
 /// Get repository information for a given path

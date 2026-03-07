@@ -162,6 +162,22 @@ pub enum UiBlock {
         #[serde(skip_serializing_if = "Option::is_none")]
         status: Option<String>,
     },
+    #[serde(rename = "conditional-group")]
+    ConditionalGroup {
+        when: ConditionalWhen,
+        children: Vec<UiBlock>,
+    },
+    #[serde(rename = "stepper")]
+    Stepper {
+        id: String,
+        steps: Vec<StepItem>,
+        #[serde(skip_serializing_if = "Option::is_none", rename = "defaultStepId")]
+        default_step_id: Option<String>,
+    },
+    #[serde(rename = "log-stream")]
+    LogStream { entries: Vec<LogEntry> },
+    #[serde(rename = "artifact-actions")]
+    ArtifactActions { artifacts: Vec<ArtifactAction> },
     #[serde(rename = "group")]
     Group {
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -193,6 +209,46 @@ pub struct StatCard {
     pub help_text: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConditionalWhen {
+    pub path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub equals: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "notEquals")]
+    pub not_equals: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exists: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StepItem {
+    pub id: String,
+    pub label: String,
+    pub children: Vec<UiBlock>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LogEntry {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub level: Option<String>,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timestamp: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArtifactAction {
+    pub id: String,
+    pub label: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub href: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -312,6 +368,21 @@ pub enum FormField {
         #[serde(skip_serializing_if = "Option::is_none", rename = "defaultValue")]
         default_value: Option<f64>,
     },
+    #[serde(rename = "array")]
+    Array {
+        id: String,
+        label: String,
+        #[serde(skip_serializing_if = "Option::is_none", rename = "itemLabel")]
+        item_label: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        placeholder: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none", rename = "defaultValues")]
+        default_values: Option<Vec<String>>,
+        #[serde(skip_serializing_if = "Option::is_none", rename = "minItems")]
+        min_items: Option<u32>,
+        #[serde(skip_serializing_if = "Option::is_none", rename = "maxItems")]
+        max_items: Option<u32>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -357,6 +428,30 @@ pub struct UiSelectedFile {
     pub last_modified: Option<u64>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct UiOutputChannels {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub structured: Option<Vec<UiBlock>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stream: Option<Vec<LogEntry>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub artifacts: Option<Vec<ArtifactAction>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct UiResponseEnvelope {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ui: Option<Vec<UiBlock>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub state: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_channels: Option<UiOutputChannels>,
+}
+
 // ============================================================================
 // Action Payload (deserialized from input when user interacts)
 // ============================================================================
@@ -371,6 +466,10 @@ pub struct UiAction {
     pub source_type: Option<String>,
     #[serde(default)]
     pub source_id: Option<String>,
+    #[serde(default)]
+    pub correlation_id: Option<String>,
+    #[serde(default)]
+    pub runtime_context: Option<HashMap<String, serde_json::Value>>,
     #[serde(default)]
     pub button_id: Option<String>,
     #[serde(default)]
@@ -647,6 +746,26 @@ pub fn slider_field(
     }
 }
 
+pub fn array_field(
+    id: &str,
+    label: &str,
+    item_label: Option<&str>,
+    placeholder: Option<&str>,
+    default_values: Option<Vec<String>>,
+    min_items: Option<u32>,
+    max_items: Option<u32>,
+) -> FormField {
+    FormField::Array {
+        id: id.to_string(),
+        label: label.to_string(),
+        item_label: item_label.map(|v| v.to_string()),
+        placeholder: placeholder.map(|v| v.to_string()),
+        default_values,
+        min_items,
+        max_items,
+    }
+}
+
 pub fn actions(buttons: &[ActionButton]) -> UiBlock {
     UiBlock::Actions {
         buttons: buttons.to_vec(),
@@ -774,16 +893,105 @@ pub fn result(
     }
 }
 
+pub fn conditional_when(
+    path: &str,
+    equals: Option<serde_json::Value>,
+    not_equals: Option<serde_json::Value>,
+    exists: Option<bool>,
+) -> ConditionalWhen {
+    ConditionalWhen {
+        path: path.to_string(),
+        equals,
+        not_equals,
+        exists,
+    }
+}
+
+pub fn conditional_group(when: ConditionalWhen, children: Vec<UiBlock>) -> UiBlock {
+    UiBlock::ConditionalGroup { when, children }
+}
+
+pub fn step_item(id: &str, label: &str, children: Vec<UiBlock>) -> StepItem {
+    StepItem {
+        id: id.to_string(),
+        label: label.to_string(),
+        children,
+    }
+}
+
+pub fn stepper(id: &str, steps: Vec<StepItem>, default_step_id: Option<&str>) -> UiBlock {
+    UiBlock::Stepper {
+        id: id.to_string(),
+        steps,
+        default_step_id: default_step_id.map(|v| v.to_string()),
+    }
+}
+
+pub fn log_entry(level: Option<&str>, message: &str, timestamp: Option<&str>) -> LogEntry {
+    LogEntry {
+        level: level.map(|v| v.to_string()),
+        message: message.to_string(),
+        timestamp: timestamp.map(|v| v.to_string()),
+    }
+}
+
+pub fn log_stream(entries: Vec<LogEntry>) -> UiBlock {
+    UiBlock::LogStream { entries }
+}
+
+pub fn artifact_action(
+    id: &str,
+    label: &str,
+    href: Option<&str>,
+    content: Option<&str>,
+    action: Option<&str>,
+) -> ArtifactAction {
+    ArtifactAction {
+        id: id.to_string(),
+        label: label.to_string(),
+        href: href.map(|v| v.to_string()),
+        content: content.map(|v| v.to_string()),
+        action: action.map(|v| v.to_string()),
+    }
+}
+
+pub fn artifact_actions(artifacts: Vec<ArtifactAction>) -> UiBlock {
+    UiBlock::ArtifactActions { artifacts }
+}
+
 // ============================================================================
 // Render Functions
 // ============================================================================
 
 pub fn render(blocks: &[UiBlock]) -> String {
-    serde_json::json!({ "ui": blocks }).to_string()
+    let payload = UiResponseEnvelope {
+        ui: Some(blocks.to_vec()),
+        state: None,
+        output_channels: None,
+    };
+    serde_json::to_string(&payload).unwrap_or_else(|_| "{\"ui\":[]}".to_string())
 }
 
 pub fn render_with_state(blocks: &[UiBlock], state: &serde_json::Value) -> String {
-    serde_json::json!({ "ui": blocks, "state": state }).to_string()
+    let payload = UiResponseEnvelope {
+        ui: Some(blocks.to_vec()),
+        state: Some(state.clone()),
+        output_channels: None,
+    };
+    serde_json::to_string(&payload).unwrap_or_else(|_| "{\"ui\":[]}".to_string())
+}
+
+pub fn render_with_channels(
+    blocks: &[UiBlock],
+    output_channels: UiOutputChannels,
+    state: Option<&serde_json::Value>,
+) -> String {
+    let payload = UiResponseEnvelope {
+        ui: Some(blocks.to_vec()),
+        state: state.cloned(),
+        output_channels: Some(output_channels),
+    };
+    serde_json::to_string(&payload).unwrap_or_else(|_| "{\"ui\":[]}".to_string())
 }
 
 pub fn parse_action(input: &str) -> Option<UiAction> {
@@ -862,11 +1070,19 @@ mod tests {
 
     #[test]
     fn test_parse_action_with_v2_metadata() {
-        let input = r#"{"action":"form_submit","version":2,"sourceType":"form","sourceId":"dashboard-controls","formDataTypes":{"retryCount":"number"}}"#;
+        let input = r#"{"action":"form_submit","version":2,"sourceType":"form","sourceId":"dashboard-controls","correlationId":"corr-123","runtimeContext":{"toolId":"demo.tool"},"formDataTypes":{"retryCount":"number"}}"#;
         let action = parse_action(input).unwrap();
         assert_eq!(action.version, Some(2));
         assert_eq!(action.source_type.as_deref(), Some("form"));
         assert_eq!(action.source_id.as_deref(), Some("dashboard-controls"));
+        assert_eq!(action.correlation_id.as_deref(), Some("corr-123"));
+        let runtime_context = action.runtime_context.unwrap();
+        assert_eq!(
+            runtime_context
+                .get("toolId")
+                .and_then(serde_json::Value::as_str),
+            Some("demo.tool")
+        );
         let form_types = action.form_data_types.unwrap();
         assert_eq!(
             form_types.get("retryCount").map(String::as_str),
@@ -970,6 +1186,15 @@ mod tests {
                 Some(vec!["node".into()]),
                 Some(true),
             ),
+            array_field(
+                "hosts",
+                "Hosts",
+                Some("Host"),
+                Some("localhost"),
+                Some(vec!["127.0.0.1".into()]),
+                Some(1),
+                Some(3),
+            ),
         ];
         let block = form("dashboard-controls", fields, Some("Apply"));
         let json = serde_json::to_string(&block).unwrap();
@@ -980,6 +1205,7 @@ mod tests {
         assert!(json.contains("\"type\":\"switch\""));
         assert!(json.contains("\"type\":\"date-time\""));
         assert!(json.contains("\"type\":\"multi-select\""));
+        assert!(json.contains("\"type\":\"array\""));
     }
 
     #[test]
@@ -1004,5 +1230,51 @@ mod tests {
         assert!(json.contains("\"type\":\"json-view\""));
         assert!(json.contains("\"type\":\"description-list\""));
         assert!(json.contains("\"type\":\"stat-cards\""));
+    }
+
+    #[test]
+    fn test_dynamic_blocks() {
+        let block = conditional_group(
+            conditional_when(
+                "state.mode",
+                Some(serde_json::json!("advanced")),
+                None,
+                Some(true),
+            ),
+            vec![text("Advanced settings", None)],
+        );
+        let flow = stepper(
+            "wizard",
+            vec![
+                step_item("step-1", "Step 1", vec![text("one", None)]),
+                step_item("step-2", "Step 2", vec![text("two", None)]),
+            ],
+            Some("step-1"),
+        );
+        let json = serde_json::to_string(&vec![block, flow]).unwrap();
+        assert!(json.contains("\"type\":\"conditional-group\""));
+        assert!(json.contains("\"type\":\"stepper\""));
+    }
+
+    #[test]
+    fn test_render_with_channels() {
+        let blocks = vec![heading("Summary", 2)];
+        let channels = UiOutputChannels {
+            structured: Some(vec![result("done", Some("success"), None, None)]),
+            stream: Some(vec![log_entry(Some("info"), "running", Some("t0"))]),
+            artifacts: Some(vec![artifact_action(
+                "report",
+                "Report",
+                Some("https://example.com"),
+                None,
+                Some("open"),
+            )]),
+            summary: Some(serde_json::json!({"message":"ok","status":"success"})),
+        };
+        let output = render_with_channels(&blocks, channels, None);
+        let parsed: serde_json::Value = serde_json::from_str(&output).unwrap();
+        assert!(parsed["outputChannels"]["structured"].is_array());
+        assert!(parsed["outputChannels"]["stream"].is_array());
+        assert!(parsed["outputChannels"]["artifacts"].is_array());
     }
 }

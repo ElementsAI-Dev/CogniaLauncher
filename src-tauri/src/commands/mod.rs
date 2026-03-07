@@ -136,7 +136,8 @@ pub use git::{
     git_lfs_install, git_lfs_is_available, git_lfs_ls_files, git_lfs_track,
     git_lfs_tracked_patterns, git_lfs_untrack, git_list_aliases, git_list_hooks,
     git_list_submodules, git_list_worktrees, git_merge, git_merge_abort, git_merge_continue,
-    git_open_config_in_editor, git_prune_worktrees, git_pull, git_push, git_push_tags, git_rebase,
+    git_open_config_in_editor, git_probe_editor_capability, git_prune_worktrees, git_pull,
+    git_push, git_push_tags, git_rebase,
     git_rebase_abort, git_rebase_continue, git_rebase_skip, git_remote_add, git_remote_prune,
     git_remote_remove, git_remote_rename, git_remote_set_url, git_remove_config,
     git_remove_local_config, git_remove_submodule, git_remove_worktree, git_reset,
@@ -167,15 +168,15 @@ pub use gitlab::{
 };
 pub use health_check::{
     health_check_all, health_check_environment, health_check_package_manager,
-    health_check_package_managers,
+    health_check_package_managers, health_check_fix,
 };
 pub use launch::{
     env_activate, env_get_info, exec_shell_with_env, launch_with_env, launch_with_streaming,
     which_program,
 };
 pub use log::{
-    log_cleanup, log_clear, log_delete_batch, log_delete_file, log_export, log_get_dir,
-    log_get_total_size, log_list_files, log_query,
+    log_cleanup, log_cleanup_preview, log_clear, log_delete_batch, log_delete_file, log_export,
+    log_get_dir, log_get_total_size, log_list_files, log_query,
 };
 pub use macports::{
     macports_clean_all, macports_list_select_groups, macports_list_variants, macports_port_clean,
@@ -198,7 +199,8 @@ pub use plugin::{
     plugin_get_health, plugin_get_info, plugin_get_locales, plugin_get_permissions,
     plugin_open_scaffold_folder, plugin_open_scaffold_in_vscode,
     plugin_get_settings_schema, plugin_get_settings_values, plugin_get_tools, plugin_get_ui_asset,
-    plugin_get_ui_entry, plugin_grant_permission, plugin_import_local, plugin_install, plugin_list,
+    plugin_get_ui_entry, plugin_grant_permission, plugin_import_local, plugin_install,
+    plugin_install_marketplace, plugin_list,
     plugin_list_all_tools, plugin_reload, plugin_reset_health, plugin_revoke_permission,
     plugin_scaffold, plugin_set_setting, plugin_uninstall, plugin_update_all, plugin_validate,
     SharedPluginManager,
@@ -223,8 +225,9 @@ pub use terminal::{
     terminal_create_profile_from_template, terminal_delete_custom_template,
     terminal_delete_profile, terminal_detect_framework, terminal_detect_shells,
     terminal_duplicate_profile, terminal_export_profiles, terminal_get_config_entries,
-    terminal_get_default_profile, terminal_get_framework_cache_stats, terminal_get_profile,
-    terminal_get_proxy_env_vars, terminal_get_shell_env_vars, terminal_get_shell_info,
+    terminal_get_config_editor_metadata, terminal_get_default_profile,
+    terminal_get_framework_cache_stats, terminal_get_profile, terminal_get_proxy_env_vars,
+    terminal_get_shell_env_vars, terminal_get_shell_info,
     terminal_get_single_framework_cache_info, terminal_import_profiles, terminal_launch_profile,
     terminal_launch_profile_detailed, terminal_list_plugins, terminal_list_profiles,
     terminal_list_templates, terminal_measure_startup, terminal_parse_config_content,
@@ -232,8 +235,9 @@ pub use terminal::{
     terminal_ps_install_module, terminal_ps_list_all_modules, terminal_ps_list_installed_scripts,
     terminal_ps_list_profiles, terminal_ps_read_profile, terminal_ps_set_execution_policy,
     terminal_ps_uninstall_module, terminal_ps_update_module, terminal_ps_write_profile,
-    terminal_read_config, terminal_save_profile_as_template, terminal_set_default_profile,
-    terminal_update_profile, terminal_write_config, terminal_write_config_verified,
+    terminal_read_config, terminal_restore_config_snapshot, terminal_save_profile_as_template,
+    terminal_set_default_profile, terminal_update_profile, terminal_validate_config_content,
+    terminal_write_config, terminal_write_config_verified,
     SharedTerminalProfileManager,
 };
 pub use updater::{self_check_update, self_update};

@@ -14,8 +14,8 @@ import {
   setLocaleCookie,
 } from "@/lib/i18n";
 
-type MessageValue = string | Record<string, string | Record<string, string>>;
-type Messages = Record<string, Record<string, MessageValue>>;
+type MessageValue = string | { [key: string]: MessageValue };
+type Messages = { [key: string]: MessageValue };
 
 interface LocaleContextType {
   locale: Locale;
@@ -37,10 +37,7 @@ export function useLocale() {
 interface LocaleProviderProps {
   children: ReactNode;
   initialLocale?: Locale;
-  messages: {
-    en: Messages;
-    zh: Messages;
-  };
+  messages: Record<Locale, Messages>;
 }
 
 // Cookie store for useSyncExternalStore

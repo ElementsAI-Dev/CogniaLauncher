@@ -1,0 +1,35 @@
+[plugin]
+id = "com.cognia.builtin.jwt-inspector"
+name = "JWT Inspector"
+version = "0.1.0"
+description = "Decode JWT content, inspect time-based claims, and optionally verify shared-secret signatures offline."
+authors = ["CogniaLauncher Team"]
+tool_contract_version = "1.0.0"
+compatible_cognia_versions = ">=0.1.0"
+
+[[tools]]
+id = "jwt-inspect"
+name_en = "JWT Inspect"
+name_zh = "JWT 检查"
+description_en = "Decode a JWT, inspect claims, and optionally verify HS* signatures with a local shared secret."
+description_zh = "解码 JWT、检查声明，并可使用本地 shared secret 对 HS* 签名做离线校验。"
+category = "developer"
+keywords = ["jwt", "token", "auth", "claims", "expiry", "verify", "hmac", "debug"]
+icon = "KeyRound"
+entry = "jwt_inspect"
+
+[permissions]
+
+[locales.en]
+success = "JWT inspection completed."
+invalidInput = "Input must be JSON with a token field."
+invalidToken = "Token must contain header.payload.signature segments."
+invalidBase64 = "JWT segment is not valid base64url."
+invalidJson = "Decoded JWT segment is not valid JSON."
+
+[locales.zh]
+success = "JWT 检查完成。"
+invalidInput = "输入必须是包含 token 字段的 JSON。"
+invalidToken = "Token 必须包含 header.payload.signature 三段。"
+invalidBase64 = "JWT 段不是合法的 base64url。"
+invalidJson = "解码后的 JWT 段不是合法 JSON。"

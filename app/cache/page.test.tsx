@@ -1,48 +1,137 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import CachePage from './page';
-import { LocaleProvider } from '@/components/providers/locale-provider';
+import type { ReactElement, ReactNode } from "react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import CachePage from "./page";
+import { LocaleProvider } from "@/components/providers/locale-provider";
 
 const mockEnsureCacheInvalidationBridge = jest.fn(() => Promise.resolve());
 const mockSubscribeInvalidation = jest.fn(() => () => {});
 
+jest.mock("@/components/ui/select", () => {
+  const React = jest.requireActual<typeof import("react")>("react");
+
+  const SelectItem = ({
+    value,
+    children,
+  }: {
+    value: string;
+    children: ReactNode;
+  }) => <option value={value}>{children}</option>;
+
+  const collectOptions = (nodes: ReactNode): ReactElement[] => {
+    const options: ReactElement[] = [];
+    React.Children.forEach(nodes, (child) => {
+      if (!React.isValidElement(child)) {
+        return;
+      }
+
+      if (child.type === SelectItem) {
+        options.push(child as ReactElement);
+        return;
+      }
+
+      if ("children" in child.props) {
+        options.push(...collectOptions(child.props.children));
+      }
+    });
+    return options;
+  };
+
+  const Select = ({
+    value,
+    onValueChange,
+    children,
+  }: {
+    value?: string;
+    onValueChange?: (next: string) => void;
+    children: ReactNode;
+  }) => {
+    const options = collectOptions(children);
+    return (
+      <select
+        role="combobox"
+        value={value}
+        onChange={(event) => onValueChange?.(event.target.value)}
+      >
+        {options}
+      </select>
+    );
+  };
+
+  const passthrough = ({ children }: { children?: ReactNode }) => (
+    <>{children}</>
+  );
+
+  return {
+    Select,
+    SelectContent: passthrough,
+    SelectGroup: passthrough,
+    SelectItem,
+    SelectLabel: passthrough,
+    SelectScrollDownButton: passthrough,
+    SelectScrollUpButton: passthrough,
+    SelectSeparator: passthrough,
+    SelectTrigger: passthrough,
+    SelectValue: passthrough,
+  };
+});
+
 // Mock the Tauri API
-jest.mock('@/lib/tauri', () => ({
+jest.mock("@/lib/tauri", () => ({
   isTauri: jest.fn().mockReturnValue(true),
   cacheCleanPreview: jest.fn().mockResolvedValue({
     total_count: 5,
     total_size: 1024000,
-    total_size_human: '1 MB',
+    total_size_human: "1 MB",
     files: [
-      { path: '/cache/file1.tar.gz', size: 512000, size_human: '500 KB', entry_type: 'download', created_at: '2024-01-15T10:00:00Z' },
-      { path: '/cache/file2.tar.gz', size: 512000, size_human: '500 KB', entry_type: 'download', created_at: '2024-01-15T10:00:00Z' },
+      {
+        path: "/cache/file1.tar.gz",
+        size: 512000,
+        size_human: "500 KB",
+        entry_type: "download",
+        created_at: "2024-01-15T10:00:00Z",
+      },
+      {
+        path: "/cache/file2.tar.gz",
+        size: 512000,
+        size_human: "500 KB",
+        entry_type: "download",
+        created_at: "2024-01-15T10:00:00Z",
+      },
     ],
   }),
   cacheCleanEnhanced: jest.fn().mockResolvedValue({
     freed_bytes: 1024000,
-    freed_human: '1 MB',
+    freed_human: "1 MB",
     deleted_count: 5,
     use_trash: true,
-    history_id: 'history-1',
+    history_id: "history-1",
   }),
   getCleanupHistory: jest.fn().mockResolvedValue([
     {
-      id: '1',
-      timestamp: '2024-01-15T10:00:00Z',
-      clean_type: 'downloads',
+      id: "1",
+      timestamp: "2024-01-15T10:00:00Z",
+      clean_type: "downloads",
       file_count: 10,
       freed_bytes: 5242880,
-      freed_human: '5 MB',
+      freed_human: "5 MB",
       use_trash: true,
       files: [],
       files_truncated: false,
     },
     {
-      id: '2',
-      timestamp: '2024-01-14T09:00:00Z',
-      clean_type: 'metadata',
+      id: "2",
+      timestamp: "2024-01-14T09:00:00Z",
+      clean_type: "metadata",
       file_count: 20,
       freed_bytes: 1048576,
-      freed_human: '1 MB',
+      freed_human: "1 MB",
       use_trash: false,
       files: [],
       files_truncated: false,
@@ -51,7 +140,7 @@ jest.mock('@/lib/tauri', () => ({
   getCleanupSummary: jest.fn().mockResolvedValue({
     total_cleanups: 2,
     total_freed_bytes: 6291456,
-    total_freed_human: '6 MB',
+    total_freed_human: "6 MB",
     total_files_cleaned: 30,
     trash_cleanups: 1,
     permanent_cleanups: 1,
@@ -65,9 +154,68 @@ jest.mock('@/lib/tauri', () => ({
     last_reset: null,
   }),
   resetCacheAccessStats: jest.fn().mockResolvedValue(undefined),
-  getTopAccessedEntries: jest.fn().mockResolvedValue([
-    { key: 'hot-file-1', entry_type: 'download', size: 1024, size_human: '1 KB', hit_count: 50 },
-  ]),
+  getTopAccessedEntries: jest
+    .fn()
+    .mockResolvedValue([
+      {
+        key: "hot-file-1",
+        entry_type: "download",
+        size: 1024,
+        size_human: "1 KB",
+        hit_count: 50,
+      },
+    ]),
+  cacheSizeMonitor: jest.fn().mockResolvedValue({
+    internalSize: 6291456,
+    internalSizeHuman: "6 MB",
+    externalSize: 0,
+    externalSizeHuman: "0 B",
+    totalSize: 6291456,
+    totalSizeHuman: "6 MB",
+    maxSize: 10737418240,
+    maxSizeHuman: "10 GB",
+    usagePercent: 1,
+    threshold: 80,
+    exceedsThreshold: false,
+    diskTotal: 0,
+    diskAvailable: 0,
+    diskAvailableHuman: "0 B",
+    externalCaches: [],
+  }),
+  getCachePathInfo: jest.fn().mockResolvedValue({
+    currentPath: "/home/user/.cognia/cache",
+    defaultPath: "/home/user/.cognia/cache",
+    isCustom: false,
+    isSymlink: false,
+    symlinkTarget: null,
+    exists: true,
+    writable: true,
+    diskTotal: 0,
+    diskAvailable: 0,
+    diskAvailableHuman: "0 B",
+  }),
+  discoverExternalCachesFast: jest.fn().mockResolvedValue([]),
+  calculateExternalCacheSize: jest.fn().mockResolvedValue(0),
+  getExternalCachePaths: jest.fn().mockResolvedValue([]),
+  cleanExternalCache: jest
+    .fn()
+    .mockResolvedValue({
+      success: true,
+      provider: "npm",
+      displayName: "npm",
+      freedBytes: 0,
+      freedHuman: "0 B",
+    }),
+  cleanAllExternalCaches: jest.fn().mockResolvedValue([]),
+  cacheForceCleanExternal: jest
+    .fn()
+    .mockResolvedValue({
+      success: true,
+      provider: "npm",
+      displayName: "npm",
+      freedBytes: 0,
+      freedHuman: "0 B",
+    }),
   listCacheEntries: jest.fn().mockResolvedValue({
     entries: [],
     total_count: 0,
@@ -75,17 +223,17 @@ jest.mock('@/lib/tauri', () => ({
   deleteCacheEntries: jest.fn().mockResolvedValue(0),
   cacheOptimize: jest.fn().mockResolvedValue({
     sizeBefore: 1048576,
-    sizeBeforeHuman: '1 MB',
+    sizeBeforeHuman: "1 MB",
     sizeAfter: 524288,
-    sizeAfterHuman: '512 KB',
+    sizeAfterHuman: "512 KB",
     sizeSaved: 524288,
-    sizeSavedHuman: '512 KB',
+    sizeSavedHuman: "512 KB",
   }),
   dbGetInfo: jest.fn().mockResolvedValue({
     dbSize: 1048576,
-    dbSizeHuman: '1 MB',
+    dbSizeHuman: "1 MB",
     walSize: 4096,
-    walSizeHuman: '4 KB',
+    walSizeHuman: "4 KB",
     pageCount: 256,
     pageSize: 4096,
     freelistCount: 0,
@@ -94,23 +242,35 @@ jest.mock('@/lib/tauri', () => ({
   getCacheSizeHistory: jest.fn().mockResolvedValue([]),
 }));
 
-jest.mock('@/lib/cache/invalidation', () => ({
+jest.mock("@/lib/cache/invalidation", () => ({
   emitInvalidations: jest.fn(),
-  ensureCacheInvalidationBridge: (...args: Parameters<typeof mockEnsureCacheInvalidationBridge>) =>
-    mockEnsureCacheInvalidationBridge(...args),
-  subscribeInvalidation: (...args: Parameters<typeof mockSubscribeInvalidation>) =>
-    mockSubscribeInvalidation(...args),
+  ensureCacheInvalidationBridge: (
+    ...args: Parameters<typeof mockEnsureCacheInvalidationBridge>
+  ) => mockEnsureCacheInvalidationBridge(...args),
+  subscribeInvalidation: (
+    ...args: Parameters<typeof mockSubscribeInvalidation>
+  ) => mockSubscribeInvalidation(...args),
   withThrottle: <T extends (...args: unknown[]) => unknown>(fn: T) => fn,
 }));
 
 // Mock useSettings hook
-jest.mock('@/hooks/use-settings', () => ({
+jest.mock("@/hooks/use-settings", () => ({
   useSettings: jest.fn().mockReturnValue({
     cacheInfo: {
-      download_cache: { entry_count: 10, size: 5242880, size_human: '5 MB', location: '/cache/downloads' },
-      metadata_cache: { entry_count: 5, size: 1048576, size_human: '1 MB', location: '/cache/metadata' },
+      download_cache: {
+        entry_count: 10,
+        size: 5242880,
+        size_human: "5 MB",
+        location: "/cache/downloads",
+      },
+      metadata_cache: {
+        entry_count: 5,
+        size: 1048576,
+        size_human: "1 MB",
+        location: "/cache/metadata",
+      },
       total_size: 6291456,
-      total_size_human: '6 MB',
+      total_size_human: "6 MB",
     },
     cacheSettings: {
       max_size: 10737418240,
@@ -121,19 +281,27 @@ jest.mock('@/hooks/use-settings', () => ({
     cacheVerification: null,
     loading: false,
     error: null,
-    cogniaDir: '/home/user/.cognia',
+    cogniaDir: "/home/user/.cognia",
     fetchCacheInfo: jest.fn(),
     fetchPlatformInfo: jest.fn(),
     fetchCacheSettings: jest.fn(),
-    cleanCache: jest.fn().mockResolvedValue({ freed_bytes: 1024, freed_human: '1 KB' }),
+    cleanCache: jest
+      .fn()
+      .mockResolvedValue({ freed_bytes: 1024, freed_human: "1 KB" }),
     verifyCacheIntegrity: jest.fn().mockResolvedValue({ is_healthy: true }),
-    repairCache: jest.fn().mockResolvedValue({ removed_entries: 0, recovered_entries: 0, freed_human: '0 B' }),
+    repairCache: jest
+      .fn()
+      .mockResolvedValue({
+        removed_entries: 0,
+        recovered_entries: 0,
+        freed_human: "0 B",
+      }),
     updateCacheSettings: jest.fn(),
   }),
 }));
 
 // Mock sonner toast
-jest.mock('sonner', () => ({
+jest.mock("sonner", () => ({
   toast: {
     success: jest.fn(),
     error: jest.fn(),
@@ -145,188 +313,191 @@ jest.mock('sonner', () => ({
 const mockMessages = {
   en: {
     common: {
-      loading: 'Loading...',
-      cancel: 'Cancel',
-      save: 'Save',
-      refresh: 'Refresh',
+      loading: "Loading...",
+      cancel: "Cancel",
+      save: "Save",
+      refresh: "Refresh",
     },
     cache: {
-      title: 'Cache',
-      description: 'Manage download and metadata caches',
-      totalSize: 'Total Size',
-      location: 'Cache Location',
-      locationDesc: 'Cache files are stored here',
-      downloadCache: 'Download Cache',
-      downloadCacheDesc: 'Cached package downloads',
-      metadataCache: 'Metadata Cache',
-      metadataCacheDesc: 'Cached package metadata',
-      entries: '{count} entries',
-      clearAll: 'Clear All',
-      clearCache: 'Clear',
-      clearing: 'Clearing...',
-      clearConfirmTitle: 'Clear Cache',
-      clearAllConfirmDesc: 'This will delete all cached files. This action cannot be undone.',
-      clearDownload: 'Clear Download Cache',
-      clearDownloadConfirmDesc: 'This will delete all downloaded package files.',
-      clearMetadata: 'Clear Metadata Cache',
-      clearMetadataConfirmDesc: 'This will delete all cached metadata.',
-      freed: 'Freed {size}',
-      cacheHealth: 'Cache Health',
-      cacheHealthDesc: 'Verify cache integrity and repair issues',
-      healthy: 'Healthy',
-      unhealthy: 'Issues Found',
-      verify: 'Verify',
-      verifying: 'Verifying...',
-      verifySuccess: 'Cache is healthy',
-      verifyIssues: '{count} issues found',
-      repair: 'Repair',
-      repairing: 'Repairing...',
-      repairSuccess: 'Repaired {count} issues, freed {size}',
-      repairFailed: 'Repair failed',
-      validEntries: 'Valid Entries',
-      missingFiles: 'Missing Files',
-      corruptedFiles: 'Corrupted Files',
-      sizeMismatches: 'Size Mismatches',
-      issueDetails: 'Issue Details',
-      noIssues: 'Run verification to check cache health',
-      settings: 'Settings',
-      settingsDesc: 'Configure cache behavior',
-      maxSize: 'Maximum Size',
-      maxSizeDesc: 'Maximum cache size in MB',
-      maxAge: 'Maximum Age',
-      maxAgeDesc: 'Maximum age of cache entries in days',
-      metadataCacheTtl: 'Metadata Cache TTL',
-      metadataCacheTtlDesc: 'Seconds before metadata cache expires',
-      ttlSeconds: 'seconds',
-      autoClean: 'Auto Clean',
-      autoCleanDesc: 'Automatically clean old entries',
-      settingsSaved: 'Cache settings saved',
-      settingsFailed: 'Failed to save cache settings',
-      refreshSuccess: 'Cache info refreshed',
-      refreshFailed: 'Failed to refresh cache info',
+      title: "Cache",
+      description: "Manage download and metadata caches",
+      totalSize: "Total Size",
+      location: "Cache Location",
+      locationDesc: "Cache files are stored here",
+      downloadCache: "Download Cache",
+      downloadCacheDesc: "Cached package downloads",
+      metadataCache: "Metadata Cache",
+      metadataCacheDesc: "Cached package metadata",
+      entries: "{count} entries",
+      clearAll: "Clear All",
+      clearCache: "Clear",
+      clearing: "Clearing...",
+      clearConfirmTitle: "Clear Cache",
+      clearAllConfirmDesc:
+        "This will delete all cached files. This action cannot be undone.",
+      clearDownload: "Clear Download Cache",
+      clearDownloadConfirmDesc:
+        "This will delete all downloaded package files.",
+      clearMetadata: "Clear Metadata Cache",
+      clearMetadataConfirmDesc: "This will delete all cached metadata.",
+      freed: "Freed {size}",
+      cacheHealth: "Cache Health",
+      cacheHealthDesc: "Verify cache integrity and repair issues",
+      healthy: "Healthy",
+      unhealthy: "Issues Found",
+      verify: "Verify",
+      verifying: "Verifying...",
+      verifySuccess: "Cache is healthy",
+      verifyIssues: "{count} issues found",
+      repair: "Repair",
+      repairing: "Repairing...",
+      repairSuccess: "Repaired {count} issues, freed {size}",
+      repairFailed: "Repair failed",
+      validEntries: "Valid Entries",
+      missingFiles: "Missing Files",
+      corruptedFiles: "Corrupted Files",
+      sizeMismatches: "Size Mismatches",
+      issueDetails: "Issue Details",
+      noIssues: "Run verification to check cache health",
+      settings: "Settings",
+      settingsDesc: "Configure cache behavior",
+      maxSize: "Maximum Size",
+      maxSizeDesc: "Maximum cache size in MB",
+      maxAge: "Maximum Age",
+      maxAgeDesc: "Maximum age of cache entries in days",
+      metadataCacheTtl: "Metadata Cache TTL",
+      metadataCacheTtlDesc: "Seconds before metadata cache expires",
+      ttlSeconds: "seconds",
+      autoClean: "Auto Clean",
+      autoCleanDesc: "Automatically clean old entries",
+      settingsSaved: "Cache settings saved",
+      settingsFailed: "Failed to save cache settings",
+      refreshSuccess: "Cache info refreshed",
+      refreshFailed: "Failed to refresh cache info",
       // Database maintenance keys
-      optimize: 'Optimize Database',
-      optimizeDesc: 'Run VACUUM and ANALYZE to reclaim unused space and improve performance',
-      optimizing: 'Optimizing...',
-      optimizeSuccess: 'Database optimized, saved {size}',
-      optimizeFailed: 'Database optimization failed',
-      optimizeNoChange: 'Database is already optimized',
-      dbInfo: 'Database Info',
-      dbSize: 'Database Size',
-      walSize: 'WAL Size',
-      pageCount: 'Page Count',
-      freePages: 'Free Pages',
-      sizeBefore: 'Size Before',
-      sizeAfter: 'Size After',
-      sizeSaved: 'Space Saved',
-      autoCleanEvent: 'Auto-cleanup freed {size}',
-      forceClean: 'Force Clean',
-      forceCleanConfirmTitle: 'Force Clean All',
-      forceCleanConfirmDesc: 'This will force-clean all internal caches.',
-      forceCleanSuccess: 'Force cleaned {count} entries, freed {size}',
-      forceCleanFailed: 'Force clean failed',
-      hitRate: 'Hit Rate',
-      hitRateDesc: 'Cache hit/miss statistics',
-      hits: 'Hits',
-      misses: 'Misses',
-      totalRequests: 'Total Requests',
-      resetStats: 'Reset',
-      statsReset: 'Stats reset',
-      statsResetFailed: 'Failed to reset stats',
-      hotFiles: 'Hot Files',
-      hotFilesDesc: 'Most frequently accessed cache entries',
-      noHotFiles: 'No hot files yet',
-      accesses: 'accesses',
-      browseEntries: 'Browse Entries',
-      warningCritical: 'Critical: Cache usage at {percent}%',
-      warningHigh: 'Warning: Cache usage at {percent}%',
+      optimize: "Optimize Database",
+      optimizeDesc:
+        "Run VACUUM and ANALYZE to reclaim unused space and improve performance",
+      optimizing: "Optimizing...",
+      optimizeSuccess: "Database optimized, saved {size}",
+      optimizeFailed: "Database optimization failed",
+      optimizeNoChange: "Database is already optimized",
+      dbInfo: "Database Info",
+      dbSize: "Database Size",
+      walSize: "WAL Size",
+      pageCount: "Page Count",
+      freePages: "Free Pages",
+      sizeBefore: "Size Before",
+      sizeAfter: "Size After",
+      sizeSaved: "Space Saved",
+      autoCleanEvent: "Auto-cleanup freed {size}",
+      forceClean: "Force Clean",
+      forceCleanConfirmTitle: "Force Clean All",
+      forceCleanConfirmDesc: "This will force-clean all internal caches.",
+      forceCleanSuccess: "Force cleaned {count} entries, freed {size}",
+      forceCleanFailed: "Force clean failed",
+      hitRate: "Hit Rate",
+      hitRateDesc: "Cache hit/miss statistics",
+      hits: "Hits",
+      misses: "Misses",
+      totalRequests: "Total Requests",
+      resetStats: "Reset",
+      statsReset: "Stats reset",
+      statsResetFailed: "Failed to reset stats",
+      hotFiles: "Hot Files",
+      hotFilesDesc: "Most frequently accessed cache entries",
+      noHotFiles: "No hot files yet",
+      accesses: "accesses",
+      browseEntries: "Browse Entries",
+      warningCritical: "Critical: Cache usage at {percent}%",
+      warningHigh: "Warning: Cache usage at {percent}%",
       // New translation keys
-      preview: 'Preview',
-      previewTitle: 'Clean Preview',
-      previewDesc: 'The following {type} files will be cleaned',
-      previewFailed: 'Failed to get preview',
-      filesToClean: 'Files to Clean',
-      spaceToFree: 'Space to Free',
-      andMore: 'and {count} more files',
-      useTrash: 'Move to Trash',
-      useTrashDesc: 'Files will be moved to system trash and can be recovered later',
-      permanentDeleteDesc: 'Files will be permanently deleted and cannot be recovered',
-      movedToTrash: 'moved to trash',
-      permanentlyDeleted: 'permanently deleted',
-      confirmClean: 'Confirm Clean',
-      cleanupHistory: 'Cleanup History',
-      cleanupHistoryDesc: 'View past cache cleanup operations',
-      cleanups: 'cleanups',
-      totalCleanups: 'Total Cleanups',
-      totalFreed: 'Total Freed',
-      trashCleanups: 'Trash Cleanups',
-      permanentCleanups: 'Permanent Deletes',
-      date: 'Date',
-      type: 'Type',
-      filesCount: 'Files',
-      freedSize: 'Freed',
-      method: 'Method',
-      trash: 'Trash',
-      permanent: 'Permanent',
-      clearHistory: 'Clear History',
-      noHistory: 'No cleanup history yet',
-      historyCleared: 'Cleared {count} history records',
-      historyClearFailed: 'Failed to clear history',
+      preview: "Preview",
+      previewTitle: "Clean Preview",
+      previewDesc: "The following {type} files will be cleaned",
+      previewFailed: "Failed to get preview",
+      filesToClean: "Files to Clean",
+      spaceToFree: "Space to Free",
+      andMore: "and {count} more files",
+      useTrash: "Move to Trash",
+      useTrashDesc:
+        "Files will be moved to system trash and can be recovered later",
+      permanentDeleteDesc:
+        "Files will be permanently deleted and cannot be recovered",
+      movedToTrash: "moved to trash",
+      permanentlyDeleted: "permanently deleted",
+      confirmClean: "Confirm Clean",
+      cleanupHistory: "Cleanup History",
+      cleanupHistoryDesc: "View past cache cleanup operations",
+      cleanups: "cleanups",
+      totalCleanups: "Total Cleanups",
+      totalFreed: "Total Freed",
+      trashCleanups: "Trash Cleanups",
+      permanentCleanups: "Permanent Deletes",
+      date: "Date",
+      type: "Type",
+      filesCount: "Files",
+      freedSize: "Freed",
+      method: "Method",
+      trash: "Trash",
+      permanent: "Permanent",
+      clearHistory: "Clear History",
+      noHistory: "No cleanup history yet",
+      historyCleared: "Cleared {count} history records",
+      historyClearFailed: "Failed to clear history",
     },
   },
   zh: {
     common: {
-      loading: '加载中...',
-      cancel: '取消',
-      save: '保存',
-      refresh: '刷新',
+      loading: "加载中...",
+      cancel: "取消",
+      save: "保存",
+      refresh: "刷新",
     },
     cache: {
-      title: '缓存',
-      description: '管理下载和元数据缓存',
-      preview: '预览',
-      previewTitle: '清理预览',
-      previewDesc: '以下 {type} 类型的文件将被清理',
-      previewFailed: '获取预览失败',
-      filesToClean: '将清理的文件',
-      spaceToFree: '将释放的空间',
-      andMore: '还有 {count} 个文件',
-      useTrash: '移动到回收站',
-      useTrashDesc: '文件将移动到系统回收站，可以稍后恢复',
-      permanentDeleteDesc: '文件将被永久删除，无法恢复',
-      movedToTrash: '已移动到回收站',
-      permanentlyDeleted: '已永久删除',
-      confirmClean: '确认清理',
-      cleanupHistory: '清理历史',
-      cleanupHistoryDesc: '查看过去的缓存清理操作记录',
-      cleanups: '次清理',
-      totalCleanups: '总清理次数',
-      totalFreed: '总释放空间',
-      trashCleanups: '回收站清理',
-      permanentCleanups: '永久删除',
-      date: '日期',
-      type: '类型',
-      filesCount: '文件数',
-      freedSize: '释放大小',
-      method: '方式',
-      trash: '回收站',
-      permanent: '永久删除',
-      clearHistory: '清除历史',
-      noHistory: '暂无清理历史记录',
-      historyCleared: '已清除 {count} 条历史记录',
-      historyClearFailed: '清除历史记录失败',
-      metadataCacheTtl: '元数据缓存 TTL',
-      metadataCacheTtlDesc: '元数据缓存过期时间（秒）',
-      ttlSeconds: '秒',
+      title: "缓存",
+      description: "管理下载和元数据缓存",
+      preview: "预览",
+      previewTitle: "清理预览",
+      previewDesc: "以下 {type} 类型的文件将被清理",
+      previewFailed: "获取预览失败",
+      filesToClean: "将清理的文件",
+      spaceToFree: "将释放的空间",
+      andMore: "还有 {count} 个文件",
+      useTrash: "移动到回收站",
+      useTrashDesc: "文件将移动到系统回收站，可以稍后恢复",
+      permanentDeleteDesc: "文件将被永久删除，无法恢复",
+      movedToTrash: "已移动到回收站",
+      permanentlyDeleted: "已永久删除",
+      confirmClean: "确认清理",
+      cleanupHistory: "清理历史",
+      cleanupHistoryDesc: "查看过去的缓存清理操作记录",
+      cleanups: "次清理",
+      totalCleanups: "总清理次数",
+      totalFreed: "总释放空间",
+      trashCleanups: "回收站清理",
+      permanentCleanups: "永久删除",
+      date: "日期",
+      type: "类型",
+      filesCount: "文件数",
+      freedSize: "释放大小",
+      method: "方式",
+      trash: "回收站",
+      permanent: "永久删除",
+      clearHistory: "清除历史",
+      noHistory: "暂无清理历史记录",
+      historyCleared: "已清除 {count} 条历史记录",
+      historyClearFailed: "清除历史记录失败",
+      metadataCacheTtl: "元数据缓存 TTL",
+      metadataCacheTtlDesc: "元数据缓存过期时间（秒）",
+      ttlSeconds: "秒",
     },
   },
 };
 
 function TestWrapper({ children }: { children: React.ReactNode }) {
   return (
-    <LocaleProvider messages={mockMessages as never}>
-      {children}
-    </LocaleProvider>
+    <LocaleProvider messages={mockMessages as never}>{children}</LocaleProvider>
   );
 }
 
@@ -334,288 +505,320 @@ function renderWithProviders(ui: React.ReactElement) {
   return render(ui, { wrapper: TestWrapper });
 }
 
-describe('CachePage', () => {
+describe("CachePage", () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  describe('Basic Rendering', () => {
-    it('renders the cache page title', async () => {
+  describe("Basic Rendering", () => {
+    it("renders the cache page title", async () => {
       renderWithProviders(<CachePage />);
-      
+
       await waitFor(() => {
-        expect(screen.getByRole('heading', { name: /cache/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole("heading", { name: /cache/i }),
+        ).toBeInTheDocument();
       });
     });
 
-    it('renders cache size information', async () => {
+    it("renders cache size information", async () => {
       renderWithProviders(<CachePage />);
-      
+
       await waitFor(() => {
-        expect(screen.getByText('6 MB')).toBeInTheDocument();
+        expect(screen.getByText("6 MB")).toBeInTheDocument();
       });
     });
 
-    it('renders download and metadata cache cards', async () => {
+    it("renders download and metadata cache cards", async () => {
       renderWithProviders(<CachePage />);
-      
+
       await waitFor(() => {
-        expect(screen.getByText('Download Cache')).toBeInTheDocument();
-        expect(screen.getByText('Metadata Cache')).toBeInTheDocument();
+        expect(screen.getByText("Download Cache")).toBeInTheDocument();
+        expect(screen.getByText("Metadata Cache")).toBeInTheDocument();
       });
     });
   });
 
-  describe('Preview Feature', () => {
-    it('renders preview buttons for download and metadata caches', async () => {
+  describe("Preview Feature", () => {
+    it("renders preview buttons for download and metadata caches", async () => {
       renderWithProviders(<CachePage />);
-      
+
       await waitFor(() => {
-        const previewButtons = screen.getAllByRole('button', { name: /preview/i });
+        const previewButtons = screen.getAllByRole("button", {
+          name: /preview/i,
+        });
         expect(previewButtons.length).toBeGreaterThanOrEqual(2);
       });
     });
 
-    it('opens preview dialog when preview button is clicked', async () => {
+    it("opens preview dialog when preview button is clicked", async () => {
       renderWithProviders(<CachePage />);
-      
+
       await waitFor(() => {
-        expect(screen.getByText('Download Cache')).toBeInTheDocument();
+        expect(screen.getByText("Download Cache")).toBeInTheDocument();
       });
 
-      const previewButtons = screen.getAllByRole('button', { name: /preview/i });
+      const previewButtons = screen.getAllByRole("button", {
+        name: /preview/i,
+      });
       fireEvent.click(previewButtons[0]);
 
       await waitFor(() => {
-        expect(screen.getByText('Clean Preview')).toBeInTheDocument();
+        expect(screen.getByText("Clean Preview")).toBeInTheDocument();
       });
     });
 
-    it('displays files to clean and space to free in preview', async () => {
+    it("displays files to clean and space to free in preview", async () => {
       renderWithProviders(<CachePage />);
-      
+
       await waitFor(() => {
-        expect(screen.getByText('Download Cache')).toBeInTheDocument();
+        expect(screen.getByText("Download Cache")).toBeInTheDocument();
       });
 
-      const previewButtons = screen.getAllByRole('button', { name: /preview/i });
+      const previewButtons = screen.getAllByRole("button", {
+        name: /preview/i,
+      });
       fireEvent.click(previewButtons[0]);
 
       await waitFor(() => {
-        expect(screen.getByText('Files to Clean')).toBeInTheDocument();
-        expect(screen.getByText('Space to Free')).toBeInTheDocument();
+        expect(screen.getByText("Files to Clean")).toBeInTheDocument();
+        expect(screen.getByText("Space to Free")).toBeInTheDocument();
       });
     });
 
-    it('displays use trash toggle in preview dialog', async () => {
+    it("displays use trash toggle in preview dialog", async () => {
       renderWithProviders(<CachePage />);
-      
+
       await waitFor(() => {
-        expect(screen.getByText('Download Cache')).toBeInTheDocument();
+        expect(screen.getByText("Download Cache")).toBeInTheDocument();
       });
 
-      const previewButtons = screen.getAllByRole('button', { name: /preview/i });
+      const previewButtons = screen.getAllByRole("button", {
+        name: /preview/i,
+      });
       fireEvent.click(previewButtons[0]);
 
       await waitFor(() => {
-        expect(screen.getByText('Move to Trash')).toBeInTheDocument();
+        expect(screen.getByText("Move to Trash")).toBeInTheDocument();
       });
     });
 
-    it('shows confirm clean button in preview dialog', async () => {
+    it("shows confirm clean button in preview dialog", async () => {
       renderWithProviders(<CachePage />);
-      
+
       await waitFor(() => {
-        expect(screen.getByText('Download Cache')).toBeInTheDocument();
+        expect(screen.getByText("Download Cache")).toBeInTheDocument();
       });
 
-      const previewButtons = screen.getAllByRole('button', { name: /preview/i });
+      const previewButtons = screen.getAllByRole("button", {
+        name: /preview/i,
+      });
       fireEvent.click(previewButtons[0]);
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /confirm clean/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole("button", { name: /confirm clean/i }),
+        ).toBeInTheDocument();
       });
     });
   });
 
-  describe('Cleanup History Feature', () => {
-    it('renders cleanup history section', async () => {
+  describe("Cleanup History Feature", () => {
+    it("renders cleanup history section", async () => {
       renderWithProviders(<CachePage />);
-      
+
       await waitFor(() => {
-        expect(screen.getByText('Cleanup History')).toBeInTheDocument();
+        expect(screen.getByText("Cleanup History")).toBeInTheDocument();
       });
     });
 
-    it('shows cleanup history description', async () => {
+    it("shows cleanup history description", async () => {
       renderWithProviders(<CachePage />);
-      
+
       await waitFor(() => {
-        expect(screen.getByText('View past cache cleanup operations')).toBeInTheDocument();
+        expect(
+          screen.getByText("View past cache cleanup operations"),
+        ).toBeInTheDocument();
       });
     });
 
-    it('expands cleanup history when clicked', async () => {
+    it("expands cleanup history when clicked", async () => {
       renderWithProviders(<CachePage />);
-      
+
       await waitFor(() => {
-        expect(screen.getByText('Cleanup History')).toBeInTheDocument();
+        expect(screen.getByText("Cleanup History")).toBeInTheDocument();
       });
 
       // Click to expand the cleanup history section
-      fireEvent.click(screen.getByText('Cleanup History'));
+      fireEvent.click(screen.getByText("Cleanup History"));
 
       await waitFor(() => {
         // Should show table headers
-        expect(screen.getByText('Date')).toBeInTheDocument();
-        expect(screen.getByText('Type')).toBeInTheDocument();
-        expect(screen.getByText('Files')).toBeInTheDocument();
-        expect(screen.getByText('Freed')).toBeInTheDocument();
-        expect(screen.getByText('Method')).toBeInTheDocument();
+        expect(screen.getByText("Date")).toBeInTheDocument();
+        expect(screen.getByText("Type")).toBeInTheDocument();
+        expect(screen.getByText("Files")).toBeInTheDocument();
+        expect(screen.getByText("Freed")).toBeInTheDocument();
+        expect(screen.getByText("Method")).toBeInTheDocument();
       });
     });
 
-    it('shows summary statistics when history is loaded', async () => {
+    it("shows summary statistics when history is loaded", async () => {
       renderWithProviders(<CachePage />);
-      
+
       await waitFor(() => {
-        expect(screen.getByText('Cleanup History')).toBeInTheDocument();
+        expect(screen.getByText("Cleanup History")).toBeInTheDocument();
       });
 
-      fireEvent.click(screen.getByText('Cleanup History'));
+      fireEvent.click(screen.getByText("Cleanup History"));
 
       await waitFor(() => {
-        expect(screen.getByText('Total Cleanups')).toBeInTheDocument();
-        expect(screen.getByText('Total Freed')).toBeInTheDocument();
-        expect(screen.getByText('Trash Cleanups')).toBeInTheDocument();
-        expect(screen.getByText('Permanent Deletes')).toBeInTheDocument();
+        expect(screen.getByText("Total Cleanups")).toBeInTheDocument();
+        expect(screen.getByText("Total Freed")).toBeInTheDocument();
+        expect(screen.getByText("Trash Cleanups")).toBeInTheDocument();
+        expect(screen.getByText("Permanent Deletes")).toBeInTheDocument();
       });
     });
 
-    it('shows clear history button', async () => {
+    it("shows clear history button", async () => {
       renderWithProviders(<CachePage />);
-      
+
       await waitFor(() => {
-        expect(screen.getByText('Cleanup History')).toBeInTheDocument();
+        expect(screen.getByText("Cleanup History")).toBeInTheDocument();
       });
 
-      fireEvent.click(screen.getByText('Cleanup History'));
+      fireEvent.click(screen.getByText("Cleanup History"));
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /clear history/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole("button", { name: /clear history/i }),
+        ).toBeInTheDocument();
       });
     });
   });
 
-  describe('Trash/Permanent Delete', () => {
-    it('toggles trash description when switch is changed', async () => {
+  describe("Trash/Permanent Delete", () => {
+    it("toggles trash description when switch is changed", async () => {
       renderWithProviders(<CachePage />);
-      
+
       await waitFor(() => {
-        expect(screen.getByText('Download Cache')).toBeInTheDocument();
+        expect(screen.getByText("Download Cache")).toBeInTheDocument();
       });
 
-      const previewButtons = screen.getAllByRole('button', { name: /preview/i });
+      const previewButtons = screen.getAllByRole("button", {
+        name: /preview/i,
+      });
       fireEvent.click(previewButtons[0]);
 
       await waitFor(() => {
-        expect(screen.getByText('Move to Trash')).toBeInTheDocument();
+        expect(screen.getByText("Move to Trash")).toBeInTheDocument();
         // Default is useTrash = true
-        expect(screen.getByText(/files will be moved to system trash/i)).toBeInTheDocument();
+        expect(
+          screen.getByText(/files will be moved to system trash/i),
+        ).toBeInTheDocument();
       });
     });
   });
 
-  describe('Cache Health', () => {
-    it('renders cache health section', async () => {
+  describe("Cache Health", () => {
+    it("renders cache health section", async () => {
       renderWithProviders(<CachePage />);
-      
+
       await waitFor(() => {
-        expect(screen.getByText('Cache Health')).toBeInTheDocument();
+        expect(screen.getByText("Cache Health")).toBeInTheDocument();
       });
     });
 
-    it('renders verify button', async () => {
+    it("renders verify button", async () => {
       renderWithProviders(<CachePage />);
-      
+
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /verify/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole("button", { name: /verify/i }),
+        ).toBeInTheDocument();
       });
     });
   });
 
-  describe('Database Maintenance', () => {
-    it('renders optimize database section', async () => {
+  describe("Database Maintenance", () => {
+    it("renders optimize database section", async () => {
       renderWithProviders(<CachePage />);
 
       await waitFor(() => {
-        const elements = screen.getAllByText('Optimize Database');
+        const elements = screen.getAllByText("Optimize Database");
         expect(elements.length).toBeGreaterThanOrEqual(1);
       });
     });
 
-    it('renders optimize description', async () => {
+    it("renders optimize description", async () => {
       renderWithProviders(<CachePage />);
 
       await waitFor(() => {
-        expect(screen.getByText('Run VACUUM and ANALYZE to reclaim unused space and improve performance')).toBeInTheDocument();
+        expect(
+          screen.getByText(
+            "Run VACUUM and ANALYZE to reclaim unused space and improve performance",
+          ),
+        ).toBeInTheDocument();
       });
     });
 
-    it('renders optimize button', async () => {
+    it("renders optimize button", async () => {
       renderWithProviders(<CachePage />);
 
       await waitFor(() => {
-        const buttons = screen.getAllByRole('button', { name: /optimize database/i });
+        const buttons = screen.getAllByRole("button", {
+          name: /optimize database/i,
+        });
         expect(buttons.length).toBeGreaterThanOrEqual(1);
       });
     });
 
-    it('renders DB info button', async () => {
+    it("renders DB info button", async () => {
       renderWithProviders(<CachePage />);
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /database info/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole("button", { name: /database info/i }),
+        ).toBeInTheDocument();
       });
     });
   });
 
-  describe('Cache Settings', () => {
-    it('renders settings section', async () => {
+  describe("Cache Settings", () => {
+    it("renders settings section", async () => {
       renderWithProviders(<CachePage />);
-      
+
       await waitFor(() => {
-        expect(screen.getByText('Settings')).toBeInTheDocument();
+        expect(screen.getByText("Settings")).toBeInTheDocument();
       });
     });
 
-    it('renders metadata cache TTL setting', async () => {
+    it("renders metadata cache TTL setting", async () => {
       renderWithProviders(<CachePage />);
 
       await waitFor(() => {
-        expect(screen.getByText('Settings')).toBeInTheDocument();
+        expect(screen.getByText("Settings")).toBeInTheDocument();
       });
 
-      fireEvent.click(screen.getByText('Settings'));
+      fireEvent.click(screen.getByText("Settings"));
 
       await waitFor(() => {
-        expect(screen.getByLabelText('Metadata Cache TTL')).toBeInTheDocument();
+        expect(screen.getByLabelText("Metadata Cache TTL")).toBeInTheDocument();
       });
     });
   });
 
-  describe('Browser Auto Refresh', () => {
-    it('debounces search and resets browser query from first page', async () => {
-      const tauri = jest.requireMock('@/lib/tauri') as {
+  describe("Browser Auto Refresh", () => {
+    it("debounces search and resets browser query from first page", async () => {
+      const tauri = jest.requireMock("@/lib/tauri") as {
         listCacheEntries: jest.Mock;
       };
 
       tauri.listCacheEntries.mockResolvedValue({
         entries: [
           {
-            key: 'entry-1',
-            entry_type: 'download',
-            size_human: '1 KB',
+            key: "entry-1",
+            entry_type: "download",
+            size_human: "1 KB",
             hit_count: 1,
           },
         ],
@@ -624,28 +827,34 @@ describe('CachePage', () => {
 
       renderWithProviders(<CachePage />);
 
-      const openBrowserBtn = await screen.findByRole('button', { name: /browse entries/i });
+      const openBrowserBtn = await screen.findByRole("button", {
+        name: /browse entries/i,
+      });
       fireEvent.click(openBrowserBtn);
 
       await waitFor(() => {
         expect(tauri.listCacheEntries).toHaveBeenCalled();
       });
 
-      const nextBtn = screen.getByRole('button', { name: /common\.next/i });
+      const nextBtn = screen.getByRole("button", { name: /common\.next/i });
       fireEvent.click(nextBtn);
 
       await waitFor(() => {
-        expect(tauri.listCacheEntries).toHaveBeenCalledWith(expect.objectContaining({
-          offset: 20,
-        }));
+        expect(tauri.listCacheEntries).toHaveBeenCalledWith(
+          expect.objectContaining({
+            offset: 20,
+          }),
+        );
       });
 
       tauri.listCacheEntries.mockClear();
 
       jest.useFakeTimers();
       try {
-        const searchInput = screen.getByPlaceholderText('cache.searchPlaceholder');
-        fireEvent.change(searchInput, { target: { value: 'react' } });
+        const searchInput = screen.getByPlaceholderText(
+          "cache.searchPlaceholder",
+        );
+        fireEvent.change(searchInput, { target: { value: "react" } });
 
         act(() => {
           jest.advanceTimersByTime(299);
@@ -657,18 +866,20 @@ describe('CachePage', () => {
         });
 
         await waitFor(() => {
-          expect(tauri.listCacheEntries).toHaveBeenCalledWith(expect.objectContaining({
-            search: 'react',
-            offset: 0,
-          }));
+          expect(tauri.listCacheEntries).toHaveBeenCalledWith(
+            expect.objectContaining({
+              search: "react",
+              offset: 0,
+            }),
+          );
         });
       } finally {
         jest.useRealTimers();
       }
     });
 
-    it('auto-refreshes browser entries immediately for type/sort changes and resets to first page', async () => {
-      const tauri = jest.requireMock('@/lib/tauri') as {
+    it("auto-refreshes browser entries immediately for type/sort changes and resets to first page", async () => {
+      const tauri = jest.requireMock("@/lib/tauri") as {
         listCacheEntries: jest.Mock;
       };
 
@@ -679,47 +890,57 @@ describe('CachePage', () => {
 
       renderWithProviders(<CachePage />);
 
-      const openBrowserBtn = await screen.findByRole('button', { name: /browse entries/i });
+      const openBrowserBtn = await screen.findByRole("button", {
+        name: /browse entries/i,
+      });
       fireEvent.click(openBrowserBtn);
 
       await waitFor(() => {
         expect(tauri.listCacheEntries).toHaveBeenCalled();
       });
 
-      const nextBtn = screen.getByRole('button', { name: /common\.next/i });
+      const nextBtn = screen.getByRole("button", { name: /common\.next/i });
       fireEvent.click(nextBtn);
 
       await waitFor(() => {
-        expect(tauri.listCacheEntries).toHaveBeenCalledWith(expect.objectContaining({
-          offset: 20,
-        }));
+        expect(tauri.listCacheEntries).toHaveBeenCalledWith(
+          expect.objectContaining({
+            offset: 20,
+          }),
+        );
       });
 
-      const [typeSelect, sortSelect] = screen.getAllByRole('combobox');
+      const browserDialog = screen.getByRole("dialog");
+      const [typeSelect, sortSelect] =
+        within(browserDialog).getAllByRole("combobox");
 
       tauri.listCacheEntries.mockClear();
-      fireEvent.change(typeSelect, { target: { value: 'metadata' } });
+      fireEvent.change(typeSelect, { target: { value: "metadata" } });
 
       await waitFor(() => {
-        expect(tauri.listCacheEntries).toHaveBeenCalledWith(expect.objectContaining({
-          entryType: 'metadata',
-          offset: 0,
-        }));
+        expect(tauri.listCacheEntries).toHaveBeenCalledWith(
+          expect.objectContaining({
+            entryType: "metadata",
+            offset: 0,
+          }),
+        );
       });
 
       tauri.listCacheEntries.mockClear();
-      fireEvent.change(sortSelect, { target: { value: 'size_asc' } });
+      fireEvent.change(sortSelect, { target: { value: "size_asc" } });
 
       await waitFor(() => {
-        expect(tauri.listCacheEntries).toHaveBeenCalledWith(expect.objectContaining({
-          sortBy: 'size_asc',
-          offset: 0,
-        }));
+        expect(tauri.listCacheEntries).toHaveBeenCalledWith(
+          expect.objectContaining({
+            sortBy: "size_asc",
+            offset: 0,
+          }),
+        );
       });
     });
 
-    it('auto-refreshes browser entries on cache invalidation while dialog is open', async () => {
-      const tauri = jest.requireMock('@/lib/tauri') as {
+    it("auto-refreshes browser entries on cache invalidation while dialog is open", async () => {
+      const tauri = jest.requireMock("@/lib/tauri") as {
         listCacheEntries: jest.Mock;
       };
 
@@ -733,8 +954,8 @@ describe('CachePage', () => {
         const domains = args[0];
         const handler = args[1] as (() => void) | undefined;
         const matchesCacheEntries =
-          (Array.isArray(domains) && domains.includes('cache_entries')) ||
-          domains === 'cache_entries';
+          (Array.isArray(domains) && domains.includes("cache_entries")) ||
+          domains === "cache_entries";
         if (matchesCacheEntries) {
           invalidationHandler = handler;
         }
@@ -743,7 +964,9 @@ describe('CachePage', () => {
 
       renderWithProviders(<CachePage />);
 
-      const openBrowserBtn = await screen.findByRole('button', { name: /browse entries/i });
+      const openBrowserBtn = await screen.findByRole("button", {
+        name: /browse entries/i,
+      });
       fireEvent.click(openBrowserBtn);
 
       await waitFor(() => {

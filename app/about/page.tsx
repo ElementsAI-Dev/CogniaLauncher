@@ -132,6 +132,7 @@ export default function AboutPage() {
       <ChangelogDialog
         open={changelogOpen}
         onOpenChange={setChangelogOpen}
+        locale={locale}
         entries={changelog.entries}
         loading={changelog.loading}
         error={changelog.error}
@@ -150,6 +151,7 @@ export default function AboutPage() {
           }
         }}
         entries={whatsNewEntries}
+        locale={locale}
         loading={changelog.loading}
         onDismiss={() => dismissWhatsNew(APP_VERSION)}
         onShowFullChangelog={() => {

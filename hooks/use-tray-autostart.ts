@@ -2,13 +2,15 @@
 
 import { useEffect, useState, useCallback } from "react";
 import type { AppSettings } from "@/lib/stores/settings";
-import type { TrayClickBehavior } from "@/lib/tauri";
+import type { TrayClickBehavior, TrayNotificationLevel } from "@/lib/tauri";
 import {
   isTauri,
   trayIsAutostartEnabled,
   trayEnableAutostart,
   trayDisableAutostart,
   traySetClickBehavior,
+  traySetShowNotifications,
+  traySetNotificationLevel,
   traySetMinimizeToTray,
   traySetStartMinimized,
 } from "@/lib/tauri";
@@ -28,6 +30,8 @@ export interface UseTrayAutostartReturn {
   handleStartMinimizedChange: (checked: boolean) => Promise<void>;
   handleAutostartChange: (checked: boolean) => Promise<void>;
   handleClickBehaviorChange: (value: string) => Promise<void>;
+  handleShowNotificationsChange: (checked: boolean) => Promise<void>;
+  handleNotificationLevelChange: (value: string) => Promise<void>;
 }
 
 /**
@@ -103,6 +107,34 @@ export function useTrayAutostart({
     [onValueChange],
   );
 
+  const handleShowNotificationsChange = useCallback(
+    async (checked: boolean) => {
+      onValueChange("showNotifications", checked);
+      if (!isTauri()) return;
+
+      try {
+        await traySetShowNotifications(checked);
+      } catch (error) {
+        console.error("Failed to set tray notifications visibility:", error);
+      }
+    },
+    [onValueChange],
+  );
+
+  const handleNotificationLevelChange = useCallback(
+    async (value: string) => {
+      if (!isTauri()) return;
+
+      try {
+        await traySetNotificationLevel(value as TrayNotificationLevel);
+        onValueChange("trayNotificationLevel", value as TrayNotificationLevel);
+      } catch (error) {
+        console.error("Failed to set tray notification level:", error);
+      }
+    },
+    [onValueChange],
+  );
+
   return {
     autostartEnabled,
     autostartLoading,
@@ -110,5 +142,7 @@ export function useTrayAutostart({
     handleStartMinimizedChange,
     handleAutostartChange,
     handleClickBehaviorChange,
+    handleShowNotificationsChange,
+    handleNotificationLevelChange,
   };
 }

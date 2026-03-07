@@ -14,7 +14,10 @@ jest.mock("@/lib/clipboard", () => ({
   writeClipboard: jest.fn().mockResolvedValue(undefined),
 }));
 
-const mockT = (key: string) => {
+const mockT = (
+  key: string,
+  params?: Record<string, string | number>,
+) => {
   const translations: Record<string, string> = {
     "about.systemInfo": "System Information",
     "about.systemInfoDesc": "Device, hardware, and runtime details",
@@ -36,6 +39,8 @@ const mockT = (key: string) => {
     "about.cores": "cores",
     "about.memory": "Memory",
     "about.totalMemory": "Total Memory",
+    "about.availableMemory": "Available Memory",
+    "about.usedMemory": "Used Memory",
     "about.swap": "Swap",
     "about.gpu": "GPU",
     "about.gpuInfo": "Graphics",
@@ -60,6 +65,11 @@ const mockT = (key: string) => {
     "about.bootTime": "Boot Time",
     "about.loadAverage": "Load Average",
     "about.cpuUsage": "CPU Usage",
+    "about.showMore": `Show ${params?.count ?? 0} more`,
+    "about.showLess": "Show less",
+    "about.totalItems": `Total: ${params?.count ?? 0}`,
+    "about.noIpAddress": "No IP address",
+    "about.subsystemWarnings": "Subsystem warnings",
     "common.unknown": "Unknown",
     "common.retry": "Retry",
   };
@@ -126,7 +136,7 @@ describe("SystemInfoCard", () => {
 
   it("renders architecture", () => {
     render(<SystemInfoCard {...defaultProps} />);
-    expect(screen.getByText("x86_64")).toBeInTheDocument();
+    expect(screen.getAllByText("x86_64").length).toBeGreaterThanOrEqual(1);
   });
 
   it("renders CPU info", () => {
@@ -193,6 +203,30 @@ describe("SystemInfoCard", () => {
     expect(screen.getByText("Temperature")).toBeInTheDocument();
     expect(screen.getByText("CPU Package")).toBeInTheDocument();
     expect(screen.getByText("65.5°C / 100°C")).toBeInTheDocument();
+  });
+
+  it("supports progressive disclosure for long component list", async () => {
+    const manyComponents = {
+      ...systemInfo,
+      components: [
+        { label: "CPU Package", temperature: 65.5, max: 80.0, critical: 100.0 },
+        { label: "GPU Core", temperature: 55.0, max: null, critical: null },
+        { label: "SSD", temperature: 43.2, max: null, critical: null },
+        { label: "VRM", temperature: 68.4, max: null, critical: null },
+        { label: "Case", temperature: 40.1, max: null, critical: null },
+        { label: "RAM", temperature: 50.1, max: null, critical: null },
+        { label: "Chipset", temperature: 58.9, max: null, critical: null },
+      ],
+    };
+    render(<SystemInfoCard {...defaultProps} systemInfo={manyComponents} />);
+
+    expect(screen.getByText("Total: 7")).toBeInTheDocument();
+    expect(screen.getByText("Show 1 more")).toBeInTheDocument();
+    expect(screen.queryByText("Chipset")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByText("Show 1 more"));
+    expect(screen.getByText("Chipset")).toBeInTheDocument();
+    expect(screen.getByText("Show less")).toBeInTheDocument();
   });
 
   it("does not render temperature section when components are empty", () => {

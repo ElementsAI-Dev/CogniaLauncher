@@ -13,7 +13,7 @@ import { isTauri } from '@/lib/tauri';
 import { SHELL_OPTIONS } from '@/lib/constants/onboarding';
 import type { ShellInitStepProps, ShellType } from '@/types/onboarding';
 
-export function ShellInitStep({ t }: ShellInitStepProps) {
+export function ShellInitStep({ t, mode = 'quick' }: ShellInitStepProps) {
   const [selectedShell, setSelectedShell] = useState<ShellType>(isWindowsOS() ? 'powershell' : 'bash');
   const [copied, setCopied] = useState(false);
   const [pathConfigured, setPathConfigured] = useState<boolean | null>(null);
@@ -153,6 +153,27 @@ export function ShellInitStep({ t }: ShellInitStepProps) {
           {t('onboarding.shellHint')}
         </AlertDescription>
       </Alert>
+
+      {mode === 'detailed' && (
+        <div className="grid w-full max-w-md gap-3 text-left md:grid-cols-2">
+          <Card className="py-0">
+            <CardHeader className="pb-2">
+              <div className="text-sm font-semibold">{t('onboarding.shellDetailedWhereTitle')}</div>
+            </CardHeader>
+            <CardContent className="pt-0 text-sm text-muted-foreground">
+              {t('onboarding.shellDetailedWhereDesc')}
+            </CardContent>
+          </Card>
+          <Card className="py-0">
+            <CardHeader className="pb-2">
+              <div className="text-sm font-semibold">{t('onboarding.shellDetailedVerifyTitle')}</div>
+            </CardHeader>
+            <CardContent className="pt-0 text-sm text-muted-foreground">
+              {t('onboarding.shellDetailedVerifyDesc')}
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

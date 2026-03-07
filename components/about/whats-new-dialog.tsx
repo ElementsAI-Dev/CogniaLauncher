@@ -23,21 +23,24 @@ import {
 import { MarkdownRenderer } from "@/components/docs/markdown-renderer";
 import { getTypeColor, getTypeLabel } from "@/lib/constants/changelog-utils";
 import type { ChangelogEntry } from "@/lib/constants/about";
+import { formatLocalizedRelativeDate } from "@/lib/utils/date";
 
 interface WhatsNewDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   entries: ChangelogEntry[];
+  locale: string;
   loading?: boolean;
   onDismiss: () => void;
   onShowFullChangelog: () => void;
-  t: (key: string) => string;
+  t: (key: string, params?: Record<string, string | number>) => string;
 }
 
 export function WhatsNewDialog({
   open,
   onOpenChange,
   entries,
+  locale,
   loading = false,
   onDismiss,
   onShowFullChangelog,
@@ -89,14 +92,27 @@ export function WhatsNewDialog({
                         {t("about.changelogPrerelease")}
                       </Badge>
                     )}
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5">
+                      {entry.source === "remote"
+                        ? t("about.changelogRemote")
+                        : t("about.changelogLocal")}
+                    </Badge>
                     <div className="flex items-center gap-1 text-xs text-muted-foreground ml-auto">
                       <Calendar className="h-3 w-3" aria-hidden="true" />
                       <time dateTime={entry.date}>{entry.date}</time>
+                      <span className="text-muted-foreground/60">
+                        (
+                        {formatLocalizedRelativeDate(entry.date, locale, t)}
+                        )
+                      </span>
                     </div>
                   </header>
 
                   {entry.markdownBody && (
                     <div className="rounded-md border bg-muted/30 p-3 text-sm">
+                      <p className="mb-2 text-xs font-medium text-muted-foreground">
+                        {t("about.changelogReleaseNotes")}
+                      </p>
                       <MarkdownRenderer
                         content={entry.markdownBody}
                         className="prose-sm"

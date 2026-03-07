@@ -6,11 +6,13 @@ import type { SystemHealthResult } from '@/types/tauri';
 // Mock Tauri APIs
 const mockHealthCheckAll = jest.fn();
 const mockHealthCheckEnvironment = jest.fn();
+const mockHealthCheckFix = jest.fn();
 
 jest.mock('@/lib/tauri', () => ({
   isTauri: jest.fn(() => true),
   healthCheckAll: (...args: unknown[]) => mockHealthCheckAll(...args),
   healthCheckEnvironment: (...args: unknown[]) => mockHealthCheckEnvironment(...args),
+  healthCheckFix: (...args: unknown[]) => mockHealthCheckFix(...args),
 }));
 
 const tauri = jest.requireMock('@/lib/tauri') as {
@@ -39,6 +41,8 @@ describe('useHealthCheck', () => {
       error: null,
       progress: null,
       lastCheckedAt: null,
+      activeRemediationId: null,
+      lastRemediationResult: null,
     });
   });
 
@@ -303,5 +307,30 @@ describe('useHealthCheck', () => {
     await waitFor(() => {
       expect(result.current.error).toBeNull();
     });
+  });
+
+  it('should preview remediation and persist the last result', async () => {
+    mockHealthCheckFix.mockResolvedValue({
+      remediation_id: 'install-provider:fnm',
+      supported: true,
+      dry_run: true,
+      executed: false,
+      success: true,
+      manual_only: false,
+      command: 'winget install Schniz.fnm',
+      description: 'Install fnm',
+      message: 'Preview install command for fnm',
+      stdout: null,
+      stderr: null,
+    });
+
+    const { result } = renderHook(() => useHealthCheck());
+
+    await act(async () => {
+      await result.current.previewRemediation({ remediation_id: 'install-provider:fnm' });
+    });
+
+    expect(mockHealthCheckFix).toHaveBeenCalledWith('install-provider:fnm', true);
+    expect(result.current.lastRemediationResult?.remediation_id).toBe('install-provider:fnm');
   });
 });

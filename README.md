@@ -184,6 +184,11 @@ Top-level commands:
 - `cache`
 - `doctor`
 - `providers`
+- `backup`
+- `profiles`
+- `envvar`
+- `log`
+- `download`
 
 Environment subcommands:
 
@@ -202,6 +207,87 @@ Config subcommands:
 - `config reset`
 - `config export <file>`
 - `config import <file>`
+
+Backup subcommands (P0):
+
+- `backup list`
+- `backup create [--contents <type>...] [--note <text>]`
+- `backup restore <path> [--contents <type>...]`
+- `backup delete <path>`
+
+Profiles subcommands (P0):
+
+- `profiles list`
+- `profiles get <id>`
+- `profiles apply <id>`
+- `profiles export <id> [--out <file>]`
+- `profiles import <file>`
+- `profiles create-from-current <name>`
+
+Environment variable subcommands (P0):
+
+- `envvar list`
+- `envvar get <key> [--scope process|user|system]`
+- `envvar set <key> <value> [--scope process|user|system]`
+- `envvar remove <key> [--scope process|user|system]`
+- `envvar list-persistent [--scope user|system]`
+- `envvar set-persistent <key> <value> [--scope user|system]`
+- `envvar remove-persistent <key> [--scope user|system]`
+- `envvar export <file> [--scope ...] [--format dotenv|shell|fish|powershell|nushell]`
+- `envvar import <file> [--scope process|user|system]`
+
+Log/diagnostic subcommands (P0):
+
+- `log list`
+- `log export [--file <name>] [--out <file>] [--format txt|json] [--search <text>] [--regex]`
+- `log clear [--file <name>]`
+- `log size`
+- `log cleanup`
+
+Download subcommands (P0):
+
+- `download history-list [--limit <n>]`
+- `download history-stats`
+- `download history-clear [--days <n>]`
+- `download history-remove <id>`
+- `download queue-list`
+- `download queue-stats`
+- `download queue-pause <id>`
+- `download queue-resume <id>`
+- `download queue-cancel <id>`
+
+CLI JSON contract (`--json`) example:
+
+```json
+{
+  "ok": true,
+  "command": "download.history-stats",
+  "data": {
+    "total_count": 12,
+    "completed_count": 10
+  }
+}
+```
+
+CLI error contract example:
+
+```json
+{
+  "ok": false,
+  "command": "backup.restore",
+  "error": {
+    "kind": "usage",
+    "message": "backup path is required"
+  }
+}
+```
+
+CLI staged rollout notes:
+
+- P0 (completed): `backup`, `profiles`, `envvar`, `log`, `download`
+- P1 (planned): high-frequency `plugin` and `git` automation commands
+- P2 (planned): low-frequency or platform-sensitive advanced commands
+- Compatibility contract: existing commands remain backward-compatible; standardized exit codes are `0` (success), `2` (usage failure), and `1` (runtime failure)
 
 ### Adding UI Components (shadcn/ui)
 

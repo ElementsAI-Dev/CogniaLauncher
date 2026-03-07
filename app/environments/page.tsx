@@ -73,9 +73,12 @@ export default function EnvironmentsPage() {
     setViewMode,
     clearFilters,
     updateCheckResults,
+    getSelectedProvider: getSelectedProviderFromStore,
+    setSelectedProvider,
+    setWorkflowContext,
+    setWorkflowAction,
   } = useEnvironmentStore();
   const { t } = useLocale();
-  const [selectedProviders, setSelectedProviders] = useState<Record<string, string>>({});
   const [profileManagerOpen, setProfileManagerOpen] = useState(false);
   const { getProjectDetectedForEnv } = useEnvironmentDetection({
     detectedVersions,
@@ -135,25 +138,68 @@ export default function EnvironmentsPage() {
   }, [availableProviders, getEnvKey]);
 
   const getSelectedProvider = useCallback((envType: string) => {
-    const envKey = getEnvKey(envType);
-    return selectedProviders[envKey] || envType;
-  }, [getEnvKey, selectedProviders]);
+    return getSelectedProviderFromStore(envType, envType);
+  }, [getSelectedProviderFromStore]);
+
+  const focusWorkflow = useCallback((
+    envType: string,
+    providerId?: string | null,
+  ) => {
+    setWorkflowContext({
+      envType: getEnvKey(envType),
+      origin: 'overview',
+      returnHref: '/environments',
+      projectPath: projectPath || null,
+      providerId: providerId ?? getSelectedProviderFromStore(envType, envType),
+      updatedAt: Date.now(),
+    });
+  }, [getEnvKey, getSelectedProviderFromStore, projectPath, setWorkflowContext]);
 
   const handleProviderChange = useCallback((envType: string, providerId: string) => {
-    const envKey = getEnvKey(envType);
-    setSelectedProviders((prev) => ({
-      ...prev,
-      [envKey]: providerId,
-    }));
-  }, [getEnvKey]);
+    setSelectedProvider(envType, providerId);
+    focusWorkflow(envType, providerId);
+  }, [focusWorkflow, setSelectedProvider]);
 
   const currentBrowserEnv = getEnvByType(versionBrowserEnvType);
   const currentDetailsEnv = getEnvByType(detailsPanelEnvType);
 
   const handleRefresh = useCallback(async () => {
+    const currentEnvType = currentDetailsEnv?.env_type ?? versionBrowserEnvType ?? detailsPanelEnvType;
+    if (currentEnvType) {
+      focusWorkflow(currentEnvType, getSelectedProvider(currentEnvType));
+      setWorkflowAction({
+        envType: getEnvKey(currentEnvType),
+        action: 'refresh',
+        status: 'running',
+        providerId: getSelectedProvider(currentEnvType),
+        projectPath: projectPath || null,
+        updatedAt: Date.now(),
+      });
+    }
     await fetchEnvironments(true);
-    await detectVersions(projectPath || '.');
-  }, [fetchEnvironments, detectVersions, projectPath]);
+    await detectVersions(projectPath || '.', { force: true });
+    if (currentEnvType) {
+      setWorkflowAction({
+        envType: getEnvKey(currentEnvType),
+        action: 'refresh',
+        status: 'success',
+        providerId: getSelectedProvider(currentEnvType),
+        projectPath: projectPath || null,
+        updatedAt: Date.now(),
+      });
+    }
+  }, [
+    currentDetailsEnv?.env_type,
+    detailsPanelEnvType,
+    detectVersions,
+    fetchEnvironments,
+    focusWorkflow,
+    getEnvKey,
+    getSelectedProvider,
+    projectPath,
+    setWorkflowAction,
+    versionBrowserEnvType,
+  ]);
 
   // Filter and sort environments
   const filteredEnvironments = useMemo(() => {
@@ -187,6 +233,7 @@ export default function EnvironmentsPage() {
   }, [environments, searchQuery, statusFilter, sortBy]);
 
   const handleAddEnvironment = useCallback(async (language: string, provider: string, version: string, options: AddEnvironmentOptions) => {
+    focusWorkflow(language, provider);
     await installVersion(provider, version, provider);
 
     // Persist auto-switch preference through the backend-backed settings path
@@ -220,8 +267,9 @@ export default function EnvironmentsPage() {
       }
     }
 
-    await detectVersions(projectPath || '.');
+    await detectVersions(projectPath || '.', { force: true });
   }, [
+    focusWorkflow,
     detectVersions,
     installVersion,
     loadEnvSettings,
@@ -232,21 +280,25 @@ export default function EnvironmentsPage() {
 
   // Memoized handlers to prevent unnecessary re-renders
   const handleInstallVersion = useCallback(async (envType: string, version: string, providerId?: string) => {
+    focusWorkflow(envType, providerId ?? getSelectedProvider(envType));
     const targetEnvType = providerId ?? envType;
     await installVersion(targetEnvType, version, providerId);
-  }, [installVersion]);
+  }, [focusWorkflow, getSelectedProvider, installVersion]);
 
   const handleUninstallVersion = useCallback(async (envType: string, version: string) => {
+    focusWorkflow(envType, getSelectedProvider(envType));
     await uninstallVersion(envType, version);
-  }, [uninstallVersion]);
+  }, [focusWorkflow, getSelectedProvider, uninstallVersion]);
 
   const handleSetGlobalVersion = useCallback(async (envType: string, version: string) => {
+    focusWorkflow(envType, getSelectedProvider(envType));
     await setGlobalVersion(envType, version);
-  }, [setGlobalVersion]);
+  }, [focusWorkflow, getSelectedProvider, setGlobalVersion]);
 
   const handleSetLocalVersion = useCallback(async (envType: string, version: string, projectPath: string) => {
+    focusWorkflow(envType, getSelectedProvider(envType));
     await setLocalVersion(envType, version, projectPath);
-  }, [setLocalVersion]);
+  }, [focusWorkflow, getSelectedProvider, setLocalVersion]);
 
   const handleBatchInstall = useCallback(async (versions: { envType: string; version: string }[]) => {
     for (const v of versions) {
@@ -416,6 +468,7 @@ export default function EnvironmentsPage() {
                 availableProviders={getProvidersForEnv(env.env_type)}
                 onProviderChange={(providerId) => handleProviderChange(env.env_type, providerId)}
                 selectedProviderId={getSelectedProvider(env.env_type)}
+                projectPath={projectPath}
               />
             </EnvironmentCardErrorBoundary>
           ))}

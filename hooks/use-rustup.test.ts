@@ -55,6 +55,7 @@ describe('useRustup', () => {
     expect(result.current.profile).toBeNull();
     expect(result.current.loading).toBe(false);
     expect(result.current.error).toBeNull();
+    expect(result.current.lastOperationError).toBeNull();
   });
 
   // ── Component management ──
@@ -64,7 +65,13 @@ describe('useRustup', () => {
       { name: 'rustfmt', installed: true },
       { name: 'clippy', installed: true },
     ];
-    mockRustupListComponents.mockResolvedValue(comps);
+    mockRustupListComponents.mockResolvedValue({
+      operation: 'rustup.list_components',
+      toolchain: 'stable',
+      success: true,
+      items: comps,
+      error: null,
+    });
 
     const { result } = renderHook(() => useRustup());
 
@@ -79,7 +86,13 @@ describe('useRustup', () => {
   });
 
   it('should add component', async () => {
-    mockRustupAddComponent.mockResolvedValue(undefined);
+    mockRustupAddComponent.mockResolvedValue({
+      operation: 'rustup.add_component',
+      toolchain: 'nightly',
+      subject: 'clippy',
+      success: true,
+      error: null,
+    });
 
     const { result } = renderHook(() => useRustup());
 
@@ -91,7 +104,13 @@ describe('useRustup', () => {
   });
 
   it('should remove component', async () => {
-    mockRustupRemoveComponent.mockResolvedValue(undefined);
+    mockRustupRemoveComponent.mockResolvedValue({
+      operation: 'rustup.remove_component',
+      toolchain: null,
+      subject: 'clippy',
+      success: true,
+      error: null,
+    });
 
     const { result } = renderHook(() => useRustup());
 
@@ -109,7 +128,13 @@ describe('useRustup', () => {
       { name: 'x86_64-unknown-linux-gnu', installed: true },
       { name: 'wasm32-unknown-unknown', installed: false },
     ];
-    mockRustupListTargets.mockResolvedValue(targets);
+    mockRustupListTargets.mockResolvedValue({
+      operation: 'rustup.list_targets',
+      toolchain: null,
+      success: true,
+      items: targets,
+      error: null,
+    });
 
     const { result } = renderHook(() => useRustup());
 
@@ -123,7 +148,13 @@ describe('useRustup', () => {
   });
 
   it('should add target', async () => {
-    mockRustupAddTarget.mockResolvedValue(undefined);
+    mockRustupAddTarget.mockResolvedValue({
+      operation: 'rustup.add_target',
+      toolchain: 'stable',
+      subject: 'wasm32-unknown-unknown',
+      success: true,
+      error: null,
+    });
 
     const { result } = renderHook(() => useRustup());
 
@@ -135,7 +166,13 @@ describe('useRustup', () => {
   });
 
   it('should remove target', async () => {
-    mockRustupRemoveTarget.mockResolvedValue(undefined);
+    mockRustupRemoveTarget.mockResolvedValue({
+      operation: 'rustup.remove_target',
+      toolchain: null,
+      subject: 'wasm32-unknown-unknown',
+      success: true,
+      error: null,
+    });
 
     const { result } = renderHook(() => useRustup());
 
@@ -149,7 +186,13 @@ describe('useRustup', () => {
   // ── Override management ──
 
   it('should set override', async () => {
-    mockRustupOverrideSet.mockResolvedValue(undefined);
+    mockRustupOverrideSet.mockResolvedValue({
+      operation: 'rustup.override_set',
+      toolchain: 'nightly',
+      subject: '/project',
+      success: true,
+      error: null,
+    });
 
     const { result } = renderHook(() => useRustup());
 
@@ -161,7 +204,13 @@ describe('useRustup', () => {
   });
 
   it('should unset override', async () => {
-    mockRustupOverrideUnset.mockResolvedValue(undefined);
+    mockRustupOverrideUnset.mockResolvedValue({
+      operation: 'rustup.override_unset',
+      toolchain: null,
+      subject: '/project',
+      success: true,
+      error: null,
+    });
 
     const { result } = renderHook(() => useRustup());
 
@@ -174,7 +223,13 @@ describe('useRustup', () => {
 
   it('should list overrides', async () => {
     const overrides = [{ path: '/project', toolchain: 'nightly' }];
-    mockRustupOverrideList.mockResolvedValue(overrides);
+    mockRustupOverrideList.mockResolvedValue({
+      operation: 'rustup.override_list',
+      toolchain: null,
+      success: true,
+      items: overrides,
+      error: null,
+    });
 
     const { result } = renderHook(() => useRustup());
 
@@ -261,7 +316,12 @@ describe('useRustup', () => {
   // ── Profile ──
 
   it('should get profile', async () => {
-    mockRustupGetProfile.mockResolvedValue('default');
+    mockRustupGetProfile.mockResolvedValue({
+      operation: 'rustup.get_profile',
+      profile: 'default',
+      success: true,
+      error: null,
+    });
 
     const { result } = renderHook(() => useRustup());
 
@@ -275,7 +335,13 @@ describe('useRustup', () => {
   });
 
   it('should set profile', async () => {
-    mockRustupSetProfile.mockResolvedValue(undefined);
+    mockRustupSetProfile.mockResolvedValue({
+      operation: 'rustup.set_profile',
+      toolchain: null,
+      subject: 'minimal',
+      success: true,
+      error: null,
+    });
 
     const { result } = renderHook(() => useRustup());
 
@@ -308,6 +374,35 @@ describe('useRustup', () => {
     expect(result.current.loading).toBe(false);
   });
 
+  it('should expose normalized rustup failure details', async () => {
+    mockRustupAddTarget.mockResolvedValue({
+      operation: 'rustup.add_target',
+      toolchain: 'stable',
+      subject: 'wasm32-unknown-unknown',
+      success: false,
+      error: {
+        class: 'target_install_failed',
+        message: 'target install failed',
+        retryable: true,
+      },
+    });
+
+    const { result } = renderHook(() => useRustup());
+
+    let caughtMsg = '';
+    await act(async () => {
+      try {
+        await result.current.addTarget('wasm32-unknown-unknown', 'stable');
+      } catch (e) {
+        caughtMsg = e instanceof Error ? e.message : String(e);
+      }
+    });
+
+    expect(caughtMsg).toContain('target_install_failed');
+    expect(result.current.lastOperationError?.class).toBe('target_install_failed');
+    expect(result.current.lastOperationError?.retryable).toBe(true);
+  });
+
   // ── refreshAll ──
 
   it('should refresh all state', async () => {
@@ -317,11 +412,34 @@ describe('useRustup', () => {
     const info = { activeToolchain: 'stable' };
     const profile = 'default';
 
-    mockRustupListComponents.mockResolvedValue(comps);
-    mockRustupListTargets.mockResolvedValue(targets);
-    mockRustupOverrideList.mockResolvedValue(overrides);
+    mockRustupListComponents.mockResolvedValue({
+      operation: 'rustup.list_components',
+      toolchain: null,
+      success: true,
+      items: comps,
+      error: null,
+    });
+    mockRustupListTargets.mockResolvedValue({
+      operation: 'rustup.list_targets',
+      toolchain: null,
+      success: true,
+      items: targets,
+      error: null,
+    });
+    mockRustupOverrideList.mockResolvedValue({
+      operation: 'rustup.override_list',
+      toolchain: null,
+      success: true,
+      items: overrides,
+      error: null,
+    });
     mockRustupShow.mockResolvedValue(info);
-    mockRustupGetProfile.mockResolvedValue(profile);
+    mockRustupGetProfile.mockResolvedValue({
+      operation: 'rustup.get_profile',
+      profile,
+      success: true,
+      error: null,
+    });
 
     const { result } = renderHook(() => useRustup());
 
@@ -339,10 +457,31 @@ describe('useRustup', () => {
 
   it('should handle partial failures in refreshAll', async () => {
     mockRustupListComponents.mockRejectedValue(new Error('fail'));
-    mockRustupListTargets.mockResolvedValue([]);
-    mockRustupOverrideList.mockResolvedValue([]);
+    mockRustupListTargets.mockResolvedValue({
+      operation: 'rustup.list_targets',
+      toolchain: null,
+      success: true,
+      items: [],
+      error: null,
+    });
+    mockRustupOverrideList.mockResolvedValue({
+      operation: 'rustup.override_list',
+      toolchain: null,
+      success: true,
+      items: [],
+      error: null,
+    });
     mockRustupShow.mockResolvedValue(null);
-    mockRustupGetProfile.mockResolvedValue(null);
+    mockRustupGetProfile.mockResolvedValue({
+      operation: 'rustup.get_profile',
+      profile: null,
+      success: false,
+      error: {
+        class: 'provider_unavailable',
+        message: 'provider unavailable',
+        retryable: false,
+      },
+    });
 
     const { result } = renderHook(() => useRustup());
 

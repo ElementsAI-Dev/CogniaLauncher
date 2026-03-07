@@ -1,0 +1,57 @@
+[plugin]
+id = "com.cognia.hello-world"
+name = "Hello World"
+version = "0.1.0"
+description = "A minimal example plugin demonstrating the Cognia Plugin SDK"
+authors = ["CogniaLauncher Team"]
+
+[[tools]]
+id = "hello"
+name_en = "Hello World"
+name_zh = "你好世界"
+description_en = "Greets the user with platform and environment info"
+description_zh = "使用平台和环境信息向用户问好"
+category = "developer"
+keywords = ["hello", "demo", "example"]
+icon = "Hand"
+entry = "hello"
+
+[[tools]]
+id = "env-check"
+name_en = "Environment Check"
+name_zh = "环境检查"
+description_en = "Check installed development environments"
+description_zh = "检查已安装的开发环境"
+category = "developer"
+keywords = ["env", "check", "detect"]
+icon = "Search"
+entry = "env_check"
+
+[[tools]]
+id = "env-dashboard"
+name_en = "Environment Dashboard"
+name_zh = "环境仪表盘"
+description_en = "Rich UI dashboard showing development environments"
+description_zh = "展示开发环境信息的富界面仪表盘"
+category = "developer"
+keywords = ["env", "dashboard", "ui"]
+icon = "LayoutDashboard"
+entry = "env_dashboard"
+ui_mode = "declarative"
+
+[permissions]
+config_read = true
+env_read = true
+pkg_search = true
+
+[locales.en]
+greeting = "Hello, {name}! Welcome to CogniaLauncher plugins."
+envAvailable = "{env} is available (v{version})"
+envNotAvailable = "{env} is not installed"
+noInput = "No input provided"
+
+[locales.zh]
+greeting = "你好，{name}！欢迎使用 CogniaLauncher 插件。"
+envAvailable = "{env} 可用（v{version}）"
+envNotAvailable = "{env} 未安装"
+noInput = "未提供输入"

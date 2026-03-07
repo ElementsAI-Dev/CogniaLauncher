@@ -1,6 +1,7 @@
 import { renderHook, act } from '@testing-library/react';
 import { usePlugins } from '@/hooks/use-plugins';
 import { usePluginStore } from '@/lib/stores/plugin';
+import { useToolboxStore } from '@/lib/stores/toolbox';
 
 jest.mock('@/lib/tauri', () => ({
   isTauri: jest.fn(() => false),
@@ -14,10 +15,13 @@ jest.mock('@/lib/tauri', () => ({
   pluginReload: jest.fn(),
   pluginCallTool: jest.fn(),
   pluginGetPermissions: jest.fn(),
+  pluginGetPermissionMode: jest.fn(),
   pluginGrantPermission: jest.fn(),
   pluginRevokePermission: jest.fn(),
   pluginGetLocales: jest.fn(),
   pluginScaffold: jest.fn(),
+  pluginOpenScaffoldFolder: jest.fn(),
+  pluginOpenScaffoldInVscode: jest.fn(),
   pluginValidate: jest.fn(),
   pluginCheckUpdate: jest.fn(),
   pluginUpdate: jest.fn(),
@@ -49,7 +53,13 @@ describe('usePlugins', () => {
       loading: false,
       error: null,
       healthMap: {},
+      permissionMode: 'compat',
+      permissionStates: {},
       pendingUpdates: [],
+    });
+    useToolboxStore.setState({
+      ...useToolboxStore.getState(),
+      continuationHint: null,
     });
   });
 
@@ -77,6 +87,8 @@ describe('usePlugins', () => {
     expect(typeof result.current.getLocales).toBe('function');
     expect(typeof result.current.translatePluginKey).toBe('function');
     expect(typeof result.current.scaffoldPlugin).toBe('function');
+    expect(typeof result.current.openScaffoldFolder).toBe('function');
+    expect(typeof result.current.openScaffoldInVscode).toBe('function');
     expect(typeof result.current.validatePlugin).toBe('function');
     expect(typeof result.current.checkUpdate).toBe('function');
     expect(typeof result.current.updatePlugin).toBe('function');
@@ -97,6 +109,8 @@ describe('usePlugins', () => {
     const { result } = renderHook(() => usePlugins());
     expect(result.current.healthMap).toEqual({});
     expect(result.current.pendingUpdates).toEqual([]);
+    expect(result.current.permissionMode).toBe('compat');
+    expect(result.current.permissionStates).toEqual({});
   });
 
   it('should skip fetch when not Tauri', async () => {
@@ -115,6 +129,48 @@ describe('usePlugins', () => {
       await result.current.installPlugin('https://example.com/plugin.zip');
     });
     expect(tauri.pluginInstall).not.toHaveBeenCalled();
+  });
+
+  it('clears marketplace continuation after uninstalling a store plugin', async () => {
+    tauri.isTauri.mockReturnValue(true);
+    tauri.pluginUninstall.mockResolvedValue(undefined);
+
+    usePluginStore.setState({
+      ...usePluginStore.getState(),
+      installedPlugins: [
+        {
+          id: 'com.example.store',
+          name: 'Store Plugin',
+          version: '1.0.0',
+          description: 'Store plugin',
+          authors: [],
+          toolCount: 1,
+          enabled: true,
+          installedAt: '2026-03-06T00:00:00.000Z',
+          updatedAt: null,
+          updateUrl: null,
+          source: { type: 'store', storeId: 'store-plugin' },
+          builtinCandidate: false,
+          builtinSyncStatus: null,
+          builtinSyncMessage: null,
+        },
+      ],
+    });
+    useToolboxStore.getState().setContinuationHint({
+      kind: 'marketplace-install',
+      listingId: 'store-plugin',
+      pluginId: 'com.example.store',
+      toolId: 'plugin:com.example.store:demo',
+      timestamp: Date.now(),
+    });
+
+    const { result } = renderHook(() => usePlugins());
+
+    await act(async () => {
+      await result.current.uninstallPlugin('com.example.store');
+    });
+
+    expect(useToolboxStore.getState().continuationHint).toBeNull();
   });
 
   it('should keep fetchPlugins callback stable across store updates', () => {
@@ -156,13 +212,194 @@ describe('usePlugins', () => {
 
     expect(firstPromise).toBe(secondPromise);
     expect(tauri.pluginList).toHaveBeenCalledTimes(1);
-    expect(tauri.pluginListAllTools).toHaveBeenCalledTimes(1);
+    expect(tauri.pluginListAllTools).not.toHaveBeenCalled();
 
     await act(async () => {
       resolvePlugins([]);
+      await Promise.resolve();
+    });
+
+    expect(tauri.pluginListAllTools).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
       resolveTools([]);
       await firstPromise;
     });
+  });
+
+  it('should normalize plugin metadata and derive bounded preview metadata during fetch', async () => {
+    tauri.isTauri.mockReturnValue(true);
+    tauri.pluginList.mockResolvedValue([
+      {
+        id: 'com.example.preview',
+        name: 'Preview Plugin',
+        version: '1.0.0',
+        description: '   ',
+        authors: ['Example'],
+        toolCount: 4,
+        enabled: true,
+        installedAt: '2026-03-01T00:00:00.000Z',
+        updatedAt: null,
+        updateUrl: null,
+        source: { type: 'local', path: 'C:/plugins/preview' },
+        builtinCandidate: false,
+        builtinSyncStatus: null,
+        builtinSyncMessage: null,
+      },
+    ]);
+    tauri.pluginListAllTools.mockResolvedValue([
+      {
+        pluginId: 'com.example.preview',
+        pluginName: 'Preview Plugin',
+        toolId: 't3',
+        nameEn: 'Zulu',
+        nameZh: null,
+        descriptionEn: 'Zulu tool',
+        descriptionZh: null,
+        category: 'developer',
+        keywords: [],
+        icon: 'Tool',
+        entry: 'zulu',
+        uiMode: 'text',
+      },
+      {
+        pluginId: 'com.example.preview',
+        pluginName: 'Preview Plugin',
+        toolId: 't2',
+        nameEn: 'alpha',
+        nameZh: null,
+        descriptionEn: 'Alpha tool',
+        descriptionZh: null,
+        category: 'developer',
+        keywords: [],
+        icon: 'Tool',
+        entry: 'alpha',
+        uiMode: 'text',
+      },
+      {
+        pluginId: 'com.example.preview',
+        pluginName: 'Preview Plugin',
+        toolId: 't1',
+        nameEn: 'Beta',
+        nameZh: null,
+        descriptionEn: 'Beta tool',
+        descriptionZh: null,
+        category: 'developer',
+        keywords: [],
+        icon: 'Tool',
+        entry: 'beta',
+        uiMode: 'text',
+      },
+      {
+        pluginId: 'com.example.preview',
+        pluginName: 'Preview Plugin',
+        toolId: 't0',
+        nameEn: '  ',
+        nameZh: null,
+        descriptionEn: '  ',
+        descriptionZh: null,
+        category: 'developer',
+        keywords: [],
+        icon: 'Tool',
+        entry: 'zero',
+        uiMode: 'text',
+      },
+    ]);
+    tauri.pluginGetPermissionMode.mockResolvedValue('strict');
+    tauri.pluginGetPermissions.mockResolvedValue({
+      declared: {
+        fsRead: [],
+        fsWrite: [],
+        http: [],
+        configRead: false,
+        configWrite: false,
+        envRead: false,
+        pkgSearch: false,
+        pkgInstall: false,
+        clipboard: false,
+        notification: false,
+        processExec: false,
+      },
+      granted: [],
+      denied: [],
+    });
+
+    const { result } = renderHook(() => usePlugins());
+    await act(async () => {
+      await result.current.fetchPlugins();
+    });
+
+    const state = usePluginStore.getState();
+    expect(state.permissionMode).toBe('strict');
+    expect(state.installedPlugins).toHaveLength(1);
+    expect(state.pluginTools).toHaveLength(4);
+
+    const plugin = state.installedPlugins[0];
+    expect(plugin.description).toBe('');
+    expect(plugin.descriptionFallbackNeeded).toBe(true);
+    expect(plugin.toolPreviewLoading).toBe(false);
+    expect(plugin.toolPreviewCount).toBe(4);
+    expect(plugin.toolPreviews).toHaveLength(3);
+    expect(plugin.hasMoreToolPreviews).toBe(true);
+    expect(plugin.toolPreviews?.map((tool) => tool.toolId)).toEqual(['t2', 't1', 't0']);
+
+    const normalizedTool = state.pluginTools.find((tool) => tool.toolId === 't0');
+    expect(normalizedTool?.nameEn).toBe('t0');
+    expect(normalizedTool?.descriptionEn).toBe('');
+    expect(normalizedTool?.descriptionFallbackNeeded).toBe(true);
+  });
+
+  it('should expose explicit empty preview state after hydration when plugin has no tools', async () => {
+    tauri.isTauri.mockReturnValue(true);
+    tauri.pluginList.mockResolvedValue([
+      {
+        id: 'com.example.empty',
+        name: 'Empty Plugin',
+        version: '1.0.0',
+        description: 'Plugin without tools',
+        authors: [],
+        toolCount: 0,
+        enabled: true,
+        installedAt: '2026-03-01T00:00:00.000Z',
+        updatedAt: null,
+        updateUrl: null,
+        source: { type: 'local', path: 'C:/plugins/empty' },
+        builtinCandidate: false,
+        builtinSyncStatus: null,
+        builtinSyncMessage: null,
+      },
+    ]);
+    tauri.pluginListAllTools.mockResolvedValue([]);
+    tauri.pluginGetPermissionMode.mockResolvedValue('compat');
+    tauri.pluginGetPermissions.mockResolvedValue({
+      declared: {
+        fsRead: [],
+        fsWrite: [],
+        http: [],
+        configRead: false,
+        configWrite: false,
+        envRead: false,
+        pkgSearch: false,
+        pkgInstall: false,
+        clipboard: false,
+        notification: false,
+        processExec: false,
+      },
+      granted: [],
+      denied: [],
+    });
+
+    const { result } = renderHook(() => usePlugins());
+    await act(async () => {
+      await result.current.fetchPlugins();
+    });
+
+    const plugin = usePluginStore.getState().installedPlugins[0];
+    expect(plugin.descriptionFallbackNeeded).toBe(false);
+    expect(plugin.toolPreviews).toEqual([]);
+    expect(plugin.toolPreviewCount).toBe(0);
+    expect(plugin.hasMoreToolPreviews).toBe(false);
+    expect(plugin.toolPreviewLoading).toBe(false);
   });
 
   it('should skip scaffold when not Tauri', async () => {

@@ -23,7 +23,7 @@ interface HealthCheckWidgetProps {
 
 export function HealthCheckWidget({ className }: HealthCheckWidgetProps) {
   const { t } = useLocale();
-  const { systemHealth, loading, checkAll } = useHealthCheck();
+  const { systemHealth, loading, summary: hookSummary, checkAll } = useHealthCheck();
   const hasAutoCheckedRef = useRef(false);
 
   useEffect(() => {
@@ -35,12 +35,24 @@ export function HealthCheckWidget({ className }: HealthCheckWidgetProps) {
   const overallStatus: HealthStatus = systemHealth?.overall_status ?? 'unknown';
   const config = HEALTH_STATUS_CONFIG[overallStatus];
   const StatusIcon = config.icon;
+  const summary = hookSummary ?? {
+    environmentCount: systemHealth?.environments.length ?? 0,
+    healthyCount: systemHealth?.environments.filter((e) => e.status === 'healthy').length ?? 0,
+    warningCount: systemHealth?.environments.filter((e) => e.status === 'warning').length ?? 0,
+    errorCount: systemHealth?.environments.filter((e) => e.status === 'error').length ?? 0,
+    unavailableCount: systemHealth?.environments.filter((e) => e.status === 'unknown').length ?? 0,
+    packageManagerCount: (systemHealth?.package_managers ?? []).length,
+    unavailablePackageManagerCount: (systemHealth?.package_managers ?? []).filter((p) => p.status === 'unknown').length,
+    issueCount: systemHealth?.system_issues.length ?? 0,
+    actionableIssueCount: 0,
+  };
 
-  const envCount = systemHealth?.environments.length ?? 0;
-  const healthyCount = systemHealth?.environments.filter((e) => e.status === 'healthy').length ?? 0;
-  const warningCount = systemHealth?.environments.filter((e) => e.status === 'warning').length ?? 0;
-  const errorCount = systemHealth?.environments.filter((e) => e.status === 'error').length ?? 0;
-  const issueCount = systemHealth?.system_issues.length ?? 0;
+  const envCount = summary.environmentCount;
+  const healthyCount = summary.healthyCount;
+  const warningCount = summary.warningCount;
+  const errorCount = summary.errorCount;
+  const unavailableCount = summary.unavailableCount;
+  const issueCount = summary.issueCount;
 
   return (
     <Card className={className}>
@@ -86,7 +98,7 @@ export function HealthCheckWidget({ className }: HealthCheckWidgetProps) {
 
         {/* Environment Breakdown */}
         {envCount > 0 && (
-          <div className="grid grid-cols-3 gap-2 mb-3">
+          <div className="grid grid-cols-2 gap-2 mb-3 md:grid-cols-4">
             <div className="text-center rounded-md border p-2">
               <div className="text-lg font-bold text-green-600">{healthyCount}</div>
               <div className="text-[10px] text-muted-foreground">{t('dashboard.widgets.healthHealthy')}</div>
@@ -98,6 +110,10 @@ export function HealthCheckWidget({ className }: HealthCheckWidgetProps) {
             <div className="text-center rounded-md border p-2">
               <div className="text-lg font-bold text-red-600">{errorCount}</div>
               <div className="text-[10px] text-muted-foreground">{t('dashboard.widgets.healthErrors')}</div>
+            </div>
+            <div className="text-center rounded-md border p-2">
+              <div className="text-lg font-bold text-slate-600">{unavailableCount}</div>
+              <div className="text-[10px] text-muted-foreground">{t('dashboard.widgets.healthUnavailable')}</div>
             </div>
           </div>
         )}

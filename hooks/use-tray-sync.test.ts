@@ -6,8 +6,10 @@ const mockTraySetLanguage = jest.fn();
 const mockTrayRebuild = jest.fn();
 const mockListenNavigate = jest.fn();
 const mockListenCheckUpdates = jest.fn();
+const mockListenTrayShowNotificationsChanged = jest.fn();
 const mockTraySetActiveDownloads = jest.fn();
 const mockTraySetHasUpdate = jest.fn();
+const mockSetAppSettings = jest.fn();
 
 jest.mock('@/lib/tauri', () => ({
   isTauri: jest.fn(() => true),
@@ -21,6 +23,8 @@ jest.mock('@/lib/tauri', () => ({
   },
   listenNavigate: (...args: unknown[]) => mockListenNavigate(...args),
   listenCheckUpdates: (...args: unknown[]) => mockListenCheckUpdates(...args),
+  listenTrayShowNotificationsChanged: (...args: unknown[]) =>
+    mockListenTrayShowNotificationsChanged(...args),
   listenDownloadPauseAll: jest.fn().mockResolvedValue(() => {}),
   listenDownloadResumeAll: jest.fn().mockResolvedValue(() => {}),
   listenToggleAlwaysOnTop: jest.fn().mockResolvedValue(() => {}),
@@ -32,6 +36,11 @@ jest.mock('@/lib/tauri', () => ({
     mockTraySetHasUpdate(...args);
     return Promise.resolve();
   },
+}));
+
+jest.mock('@/lib/stores/settings', () => ({
+  useSettingsStore: (selector: (state: { setAppSettings: typeof mockSetAppSettings }) => unknown) =>
+    selector({ setAppSettings: mockSetAppSettings }),
 }));
 
 // Mock next/navigation
@@ -54,6 +63,7 @@ describe('useTraySync', () => {
     jest.clearAllMocks();
     mockListenNavigate.mockResolvedValue(() => {});
     mockListenCheckUpdates.mockResolvedValue(() => {});
+    mockListenTrayShowNotificationsChanged.mockResolvedValue(() => {});
   });
 
   it('should setup tray sync on mount', async () => {
@@ -76,6 +86,12 @@ describe('useTraySync', () => {
     renderHook(() => useTraySync());
 
     expect(mockListenCheckUpdates).toHaveBeenCalled();
+  });
+
+  it('should setup tray notification visibility listener', () => {
+    renderHook(() => useTraySync());
+
+    expect(mockListenTrayShowNotificationsChanged).toHaveBeenCalled();
   });
 
   it('should cleanup listeners on unmount', async () => {

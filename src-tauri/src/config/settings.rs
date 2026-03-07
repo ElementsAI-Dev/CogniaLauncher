@@ -1,6 +1,6 @@
 use crate::error::{CogniaError, CogniaResult};
 use crate::platform::fs;
-use crate::tray::{TrayClickBehavior, TrayMenuItemId};
+use crate::tray::{TrayClickBehavior, TrayMenuItemId, TrayNotificationLevel};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -57,6 +57,8 @@ pub struct TraySettings {
     pub start_minimized: bool,
     /// Show desktop notifications from tray actions
     pub show_notifications: bool,
+    /// Notification visibility policy
+    pub notification_level: TrayNotificationLevel,
     /// Left-click behavior for tray icon
     pub click_behavior: TrayClickBehavior,
     /// Ordered list of tray menu items
@@ -69,6 +71,7 @@ impl Default for TraySettings {
             minimize_to_tray: true,
             start_minimized: false,
             show_notifications: true,
+            notification_level: TrayNotificationLevel::All,
             click_behavior: TrayClickBehavior::ToggleWindow,
             menu_items: vec![
                 TrayMenuItemId::ShowHide,
@@ -76,6 +79,7 @@ impl Default for TraySettings {
                 TrayMenuItemId::Downloads,
                 TrayMenuItemId::Settings,
                 TrayMenuItemId::CheckUpdates,
+                TrayMenuItemId::ToggleNotifications,
                 TrayMenuItemId::OpenLogs,
                 TrayMenuItemId::AlwaysOnTop,
                 TrayMenuItemId::Autostart,
@@ -508,21 +512,19 @@ impl Settings {
     }
 
     fn parse_tray_menu_items(value: &str) -> CogniaResult<Vec<TrayMenuItemId>> {
-        fn parse_item(item: &str) -> CogniaResult<TrayMenuItemId> {
+        fn parse_item(item: &str) -> Option<TrayMenuItemId> {
             match item {
-                "show_hide" => Ok(TrayMenuItemId::ShowHide),
-                "quick_nav" => Ok(TrayMenuItemId::QuickNav),
-                "downloads" => Ok(TrayMenuItemId::Downloads),
-                "settings" => Ok(TrayMenuItemId::Settings),
-                "check_updates" => Ok(TrayMenuItemId::CheckUpdates),
-                "open_logs" => Ok(TrayMenuItemId::OpenLogs),
-                "always_on_top" => Ok(TrayMenuItemId::AlwaysOnTop),
-                "autostart" => Ok(TrayMenuItemId::Autostart),
-                "quit" => Ok(TrayMenuItemId::Quit),
-                _ => Err(CogniaError::Config(format!(
-                    "Invalid tray menu item id: {}",
-                    item
-                ))),
+                "show_hide" => Some(TrayMenuItemId::ShowHide),
+                "quick_nav" => Some(TrayMenuItemId::QuickNav),
+                "downloads" => Some(TrayMenuItemId::Downloads),
+                "settings" => Some(TrayMenuItemId::Settings),
+                "check_updates" => Some(TrayMenuItemId::CheckUpdates),
+                "toggle_notifications" => Some(TrayMenuItemId::ToggleNotifications),
+                "open_logs" => Some(TrayMenuItemId::OpenLogs),
+                "always_on_top" => Some(TrayMenuItemId::AlwaysOnTop),
+                "autostart" => Some(TrayMenuItemId::Autostart),
+                "quit" => Some(TrayMenuItemId::Quit),
+                _ => None,
             }
         }
 
@@ -531,7 +533,9 @@ impl Settings {
                 .map_err(|_| CogniaError::Config("Invalid tray menu_items JSON array".into()))?;
             let mut parsed = Vec::with_capacity(raw.len());
             for item in raw {
-                parsed.push(parse_item(item.trim())?);
+                if let Some(parsed_item) = parse_item(item.trim()) {
+                    parsed.push(parsed_item);
+                }
             }
             parsed
         } else {
@@ -545,11 +549,21 @@ impl Settings {
                     .map(|s| s.trim())
                     .filter(|s| !s.is_empty())
                 {
-                    parsed.push(parse_item(item)?);
+                    if let Some(parsed_item) = parse_item(item) {
+                        parsed.push(parsed_item);
+                    }
                 }
                 parsed
             }
         };
+
+        let mut deduped = Vec::with_capacity(items.len());
+        for item in items {
+            if !deduped.contains(&item) {
+                deduped.push(item);
+            }
+        }
+        items = deduped;
 
         if !items.contains(&TrayMenuItemId::Quit) {
             items.push(TrayMenuItemId::Quit);
@@ -694,10 +708,19 @@ impl Settings {
             ["tray", "minimize_to_tray"] => Some(self.tray.minimize_to_tray.to_string()),
             ["tray", "start_minimized"] => Some(self.tray.start_minimized.to_string()),
             ["tray", "show_notifications"] => Some(self.tray.show_notifications.to_string()),
+            ["tray", "notification_level"] => Some(
+                match self.tray.notification_level {
+                    TrayNotificationLevel::All => "all",
+                    TrayNotificationLevel::ImportantOnly => "important_only",
+                    TrayNotificationLevel::None => "none",
+                }
+                .to_string(),
+            ),
             ["tray", "click_behavior"] => Some(
                 match self.tray.click_behavior {
                     TrayClickBehavior::ToggleWindow => "toggle_window",
                     TrayClickBehavior::ShowMenu => "show_menu",
+                    TrayClickBehavior::CheckUpdates => "check_updates",
                     TrayClickBehavior::DoNothing => "do_nothing",
                 }
                 .to_string(),
@@ -1070,10 +1093,23 @@ impl Settings {
                     .parse()
                     .map_err(|_| CogniaError::Config("Invalid boolean value".into()))?;
             }
+            ["tray", "notification_level"] => {
+                self.tray.notification_level = match value {
+                    "all" => TrayNotificationLevel::All,
+                    "important_only" => TrayNotificationLevel::ImportantOnly,
+                    "none" => TrayNotificationLevel::None,
+                    _ => {
+                        return Err(CogniaError::Config(
+                            "Invalid tray notification level value".into(),
+                        ))
+                    }
+                };
+            }
             ["tray", "click_behavior"] => {
                 self.tray.click_behavior = match value {
                     "toggle_window" => TrayClickBehavior::ToggleWindow,
                     "show_menu" => TrayClickBehavior::ShowMenu,
+                    "check_updates" => TrayClickBehavior::CheckUpdates,
                     "do_nothing" => TrayClickBehavior::DoNothing,
                     _ => {
                         return Err(CogniaError::Config(
@@ -2576,7 +2612,9 @@ mod tests {
         assert!(t.minimize_to_tray);
         assert!(!t.start_minimized);
         assert!(t.show_notifications);
+        assert_eq!(t.notification_level, TrayNotificationLevel::All);
         assert_eq!(t.click_behavior, TrayClickBehavior::ToggleWindow);
+        assert!(t.menu_items.contains(&TrayMenuItemId::ToggleNotifications));
         assert!(t.menu_items.contains(&TrayMenuItemId::Quit));
     }
 
@@ -2586,6 +2624,7 @@ mod tests {
         assert_eq!(s.get_value("tray.minimize_to_tray"), Some("true".into()));
         assert_eq!(s.get_value("tray.start_minimized"), Some("false".into()));
         assert_eq!(s.get_value("tray.show_notifications"), Some("true".into()));
+        assert_eq!(s.get_value("tray.notification_level"), Some("all".into()));
         assert_eq!(
             s.get_value("tray.click_behavior"),
             Some("toggle_window".into())
@@ -2594,12 +2633,19 @@ mod tests {
         s.set_value("tray.minimize_to_tray", "false").unwrap();
         s.set_value("tray.start_minimized", "true").unwrap();
         s.set_value("tray.show_notifications", "false").unwrap();
-        s.set_value("tray.click_behavior", "show_menu").unwrap();
+        s.set_value("tray.notification_level", "important_only")
+            .unwrap();
+        s.set_value("tray.click_behavior", "check_updates")
+            .unwrap();
 
         assert!(!s.tray.minimize_to_tray);
         assert!(s.tray.start_minimized);
         assert!(!s.tray.show_notifications);
-        assert_eq!(s.tray.click_behavior, TrayClickBehavior::ShowMenu);
+        assert_eq!(
+            s.tray.notification_level,
+            TrayNotificationLevel::ImportantOnly
+        );
+        assert_eq!(s.tray.click_behavior, TrayClickBehavior::CheckUpdates);
     }
 
     #[test]
@@ -2607,7 +2653,7 @@ mod tests {
         let mut s = Settings::default();
         s.set_value(
             "tray.menu_items",
-            r#"["show_hide","downloads","settings","quit"]"#,
+            r#"["show_hide","downloads","toggle_notifications","settings","quit"]"#,
         )
         .unwrap();
         assert_eq!(
@@ -2615,6 +2661,7 @@ mod tests {
             vec![
                 TrayMenuItemId::ShowHide,
                 TrayMenuItemId::Downloads,
+                TrayMenuItemId::ToggleNotifications,
                 TrayMenuItemId::Settings,
                 TrayMenuItemId::Quit,
             ]
@@ -2630,11 +2677,30 @@ mod tests {
     }
 
     #[test]
+    fn test_set_tray_menu_items_ignores_unknown_and_dedupes() {
+        let mut s = Settings::default();
+        s.set_value(
+            "tray.menu_items",
+            r#"["show_hide","unknown","show_hide","quit"]"#,
+        )
+        .unwrap();
+        assert_eq!(
+            s.tray.menu_items,
+            vec![TrayMenuItemId::ShowHide, TrayMenuItemId::Quit]
+        );
+    }
+
+    #[test]
     fn test_set_invalid_updates_or_tray_values() {
         let mut s = Settings::default();
         assert!(s.set_value("updates.check_on_start", "yes").is_err());
         assert!(s.set_value("tray.click_behavior", "invalid").is_err());
-        assert!(s.set_value("tray.menu_items", r#"["unknown"]"#).is_err());
+        assert!(s
+            .set_value("tray.notification_level", "sometimes")
+            .is_err());
+        // unknown items are ignored and default mandatory items are restored
+        assert!(s.set_value("tray.menu_items", r#"["unknown"]"#).is_ok());
+        assert_eq!(s.tray.menu_items, vec![TrayMenuItemId::Quit]);
     }
 
     // ===== PluginSettings =====

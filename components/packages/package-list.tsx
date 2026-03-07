@@ -49,7 +49,7 @@ import {
 } from "@/components/ui/empty";
 import { usePackageStore } from "@/lib/stores/packages";
 import { useLocale } from "@/components/providers/locale-provider";
-import { getPackageKey } from "@/lib/packages";
+import { getPackageKey, isPackagePinned } from "@/lib/packages";
 import { writeClipboard } from "@/lib/clipboard";
 import { toast } from "sonner";
 import type { InstalledPackage, PackageSummary } from "@/lib/tauri";
@@ -161,9 +161,13 @@ export function PackageList({
               typeof version === "string" && version.trim().length > 0
                 ? version.trim()
                 : "-";
+            const pinVersion =
+              typeof version === "string" && version.trim().length > 0
+                ? version.trim()
+                : undefined;
             const isSelected = selectedPackages.includes(packageKey);
 
-            const isPinned = pinnedPackages.includes(pkg.name);
+            const isPinned = isPackagePinned(pinnedPackages, pkg.name, pkg.provider);
 
             return (
               <ContextMenu key={uniqueKey}>
@@ -279,9 +283,9 @@ export function PackageList({
                           onClick={(e) => {
                             e.stopPropagation();
                             if (isPinned) {
-                              onUnpin(pkg.name);
+                              onUnpin(pkg.name, pkg.provider);
                             } else {
-                              onPin(pkg.name);
+                              onPin(pkg.name, pinVersion, pkg.provider);
                             }
                           }}
                         >
@@ -460,7 +464,7 @@ export function PackageList({
                   )}
                   {isInstalled && onPin && onUnpin && (
                     <ContextMenuItem
-                      onClick={() => isPinned ? onUnpin(pkg.name) : onPin(pkg.name)}
+                      onClick={() => isPinned ? onUnpin(pkg.name, pkg.provider) : onPin(pkg.name, pinVersion, pkg.provider)}
                     >
                       <Pin className="h-4 w-4" />
                       {isPinned ? t("packages.unpinVersion") : t("packages.pinVersion")}

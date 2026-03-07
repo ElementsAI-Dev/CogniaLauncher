@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::RwLock;
 
 // ============================================================================
@@ -202,6 +203,102 @@ fn check_http_access(
     perms
         .check_http_access(plugin_id, url)
         .map_err(|e| log_boundary_error(Some(plugin_id), "permission", e.to_string()))
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HttpRequestInput {
+    url: String,
+    #[serde(default = "default_http_method")]
+    method: String,
+    #[serde(default)]
+    headers: HashMap<String, String>,
+    #[serde(default)]
+    body: Option<String>,
+    #[serde(default)]
+    content_type: Option<String>,
+    #[serde(default)]
+    timeout_ms: Option<u64>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HttpResponseOutput {
+    status: u16,
+    body: String,
+    headers: HashMap<String, String>,
+}
+
+fn default_http_method() -> String {
+    "GET".to_string()
+}
+
+async fn perform_http_request(
+    ctx: HostContext,
+    req: HttpRequestInput,
+) -> Result<String, ExtismError> {
+    let plugin_id = require_current_plugin_id(&ctx).await?;
+    let perms = ctx.permissions.read().await;
+    check_http_access(&perms, &plugin_id, &req.url)?;
+    drop(perms);
+
+    let method = reqwest::Method::from_bytes(req.method.trim().to_uppercase().as_bytes())
+        .map_err(|e| ExtismError::msg(format!("Unsupported HTTP method '{}': {}", req.method, e)))?;
+
+    let client = reqwest::Client::new();
+    let mut request = client
+        .request(method, &req.url)
+        .header("User-Agent", "CogniaLauncher-Plugin/0.1.0");
+
+    for (key, value) in &req.headers {
+        request = request.header(key, value);
+    }
+
+    let has_content_type_header = req
+        .headers
+        .keys()
+        .any(|key| key.eq_ignore_ascii_case("content-type"));
+    if !has_content_type_header {
+        if let Some(content_type) = &req.content_type {
+            request = request.header("Content-Type", content_type);
+        }
+    }
+
+    if let Some(timeout_ms) = req.timeout_ms {
+        request = request.timeout(Duration::from_millis(timeout_ms));
+    }
+
+    if let Some(body) = req.body {
+        request = request.body(body);
+    }
+
+    let response = request
+        .send()
+        .await
+        .map_err(|e| ExtismError::msg(format!("HTTP request failed: {}", e)))?;
+
+    let status = response.status().as_u16();
+    let headers = response
+        .headers()
+        .iter()
+        .filter_map(|(name, value)| {
+            value
+                .to_str()
+                .ok()
+                .map(|text| (name.as_str().to_string(), text.to_string()))
+        })
+        .collect::<HashMap<_, _>>();
+    let body = response
+        .text()
+        .await
+        .map_err(|e| ExtismError::msg(format!("Failed to read response: {}", e)))?;
+
+    serde_json::to_string(&HttpResponseOutput {
+        status,
+        body,
+        headers,
+    })
+    .map_err(|e| ExtismError::msg(format!("Failed to serialize response: {}", e)))
 }
 
 // ============================================================================
@@ -492,26 +589,17 @@ host_fn!(pub cognia_http_get(user_data: HostContext; input: String) -> String {
     let rt = HostRuntimeBridge::capture()?;
 
     let result = rt.block_on(async {
-        let plugin_id = require_current_plugin_id(&ctx).await?;
-        let perms = ctx.permissions.read().await;
-        check_http_access(&perms, &plugin_id, &http_input.url)?;
-        drop(perms);
-
-        let client = reqwest::Client::new();
-        let response = client.get(&http_input.url)
-            .header("User-Agent", "CogniaLauncher-Plugin/0.1.0")
-            .send()
-            .await
-            .map_err(|e| ExtismError::msg(format!("HTTP request failed: {}", e)))?;
-
-        let status = response.status().as_u16();
-        let body = response.text().await
-            .map_err(|e| ExtismError::msg(format!("Failed to read response: {}", e)))?;
-
-        Ok::<_, ExtismError>(serde_json::json!({
-            "status": status,
-            "body": body
-        }).to_string())
+        perform_http_request(
+            ctx.clone(),
+            HttpRequestInput {
+                url: http_input.url,
+                method: "GET".to_string(),
+                headers: HashMap::new(),
+                body: None,
+                content_type: None,
+                timeout_ms: None,
+            },
+        ).await
     })?;
 
     Ok(result)
@@ -1410,29 +1498,38 @@ host_fn!(pub cognia_http_post(user_data: HostContext; input: String) -> String {
     let rt = HostRuntimeBridge::capture()?;
 
     let result = rt.block_on(async {
-        let plugin_id = require_current_plugin_id(&ctx).await?;
-        let perms = ctx.permissions.read().await;
-        check_http_access(&perms, &plugin_id, &req.url)?;
-        drop(perms);
-
-        let client = reqwest::Client::new();
-        let response = client.post(&req.url)
-            .header("User-Agent", "CogniaLauncher-Plugin/0.1.0")
-            .header("Content-Type", &req.content_type)
-            .body(req.body.clone())
-            .send()
-            .await
-            .map_err(|e| ExtismError::msg(format!("HTTP POST failed: {}", e)))?;
-
-        let status = response.status().as_u16();
-        let body = response.text().await
-            .map_err(|e| ExtismError::msg(format!("Failed to read response: {}", e)))?;
-
-        Ok::<_, ExtismError>(serde_json::json!({
-            "status": status,
-            "body": body
-        }).to_string())
+        perform_http_request(
+            ctx.clone(),
+            HttpRequestInput {
+                url: req.url,
+                method: "POST".to_string(),
+                headers: HashMap::new(),
+                body: Some(req.body),
+                content_type: Some(req.content_type),
+                timeout_ms: None,
+            },
+        ).await
     })?;
+
+    Ok(result)
+});
+
+// Make a generic HTTP request. Requires: http permission + URL in allowed domains.
+// Input: JSON { "url": "...", "method": "PATCH", "headers": { ... }, "body": "...", "contentType": "application/json", "timeoutMs": 3000 }
+// Output: JSON { "status": 200, "body": "...", "headers": { ... } }
+host_fn!(pub cognia_http_request(user_data: HostContext; input: String) -> String {
+    let ctx = user_data.get()?;
+    let ctx = ctx
+        .lock()
+        .map_err(|_| log_boundary_error(None, "context", "failed to acquire host context lock"))?
+        .clone();
+
+    let req: HttpRequestInput = serde_json::from_str(&input)
+        .map_err(|e| ExtismError::msg(format!("Invalid input: {}", e)))?;
+
+    let rt = HostRuntimeBridge::capture()?;
+
+    let result = rt.block_on(async { perform_http_request(ctx.clone(), req).await })?;
 
     Ok(result)
 });
@@ -1829,6 +1926,13 @@ pub fn build_host_functions(user_data: UserData<HostContext>) -> Vec<extism::Fun
             [ValType::I64],
             user_data.clone(),
             cognia_http_get,
+        ),
+        extism::Function::new(
+            "cognia_http_request",
+            [ValType::I64],
+            [ValType::I64],
+            user_data.clone(),
+            cognia_http_request,
         ),
         extism::Function::new(
             "cognia_get_locale",

@@ -164,6 +164,10 @@ impl DownloadCache {
             .map(|entry| entry.file_path.clone()))
     }
 
+    pub async fn get_entry(&self, key: &str) -> CogniaResult<Option<CacheEntry>> {
+        self.db.get(key).await
+    }
+
     pub async fn download<F>(
         &mut self,
         url: &str,

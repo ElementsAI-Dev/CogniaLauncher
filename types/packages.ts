@@ -23,7 +23,12 @@ export interface BatchOperationsProps {
   selectedPackages: string[];
   onBatchInstall: (
     packages: string[],
-    options?: { dryRun?: boolean; force?: boolean },
+    options?: {
+      dryRun?: boolean;
+      force?: boolean;
+      parallel?: boolean;
+      global?: boolean;
+    },
   ) => Promise<BatchResult>;
   onBatchUninstall: (
     packages: string[],
@@ -143,8 +148,8 @@ export interface PackageListProps {
     pkg: PackageSummary | InstalledPackage,
     source: 'search' | 'installed',
   ) => void;
-  onPin?: (name: string) => void;
-  onUnpin?: (name: string) => void;
+  onPin?: (name: string, version?: string, provider?: string) => void;
+  onUnpin?: (name: string, provider?: string) => void;
   onBookmark?: (name: string) => void;
   selectable?: boolean;
   showSelectAll?: boolean;
@@ -166,6 +171,7 @@ export interface ProviderStatusBadgeProps {
 
 export interface SearchBarProps {
   providers: ProviderInfo[];
+  inputRef?: React.RefObject<HTMLInputElement | null>;
   onSearch: (
     query: string,
     options: {
@@ -173,7 +179,13 @@ export interface SearchBarProps {
       installedOnly?: boolean;
       notInstalled?: boolean;
       hasUpdates?: boolean;
+      license?: string[];
+      minVersion?: string;
+      maxVersion?: string;
       sortBy?: string;
+      sortOrder?: 'asc' | 'desc';
+      limit?: number;
+      offset?: number;
     },
   ) => void;
   onGetSuggestions: (query: string) => Promise<SearchSuggestion[]>;
@@ -223,7 +235,10 @@ export interface UpdateManagerProps {
   onCheckUpdates: () => Promise<void>;
   onUpdateSelected: (packageIds: string[]) => Promise<BatchResult>;
   onUpdateAll: () => Promise<BatchResult>;
-  onPinPackage: (packageId: string) => Promise<void>;
+  onPinPackage: (
+    packageId: string,
+    options?: { version?: string; provider?: string },
+  ) => Promise<void>;
   onUnpinPackage: (packageId: string) => Promise<void>;
 }
 

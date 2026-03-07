@@ -48,6 +48,7 @@ export interface ToolDefinition {
   icon: string;
   category: ToolCategory;
   keywords: string[];
+  capabilityDeclarations?: string[];
   component: () => Promise<{ default: React.ComponentType<ToolComponentProps> }>;
   createdAt?: Date;
   author?: string;

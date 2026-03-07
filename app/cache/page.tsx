@@ -154,6 +154,15 @@ export default function CachePage() {
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handlePreview('expired')}
+              disabled={isLoading || previewLoading}
+            >
+              <Eye className="h-4 w-4 mr-2" />
+              {isCleaning && cleaningType === 'expired' ? t('cache.clearing') : t('cache.clearExpired')}
+            </Button>
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="outline" size="sm" disabled={isLoading || forceCleanLoading}>

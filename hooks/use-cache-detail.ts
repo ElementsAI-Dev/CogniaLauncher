@@ -194,12 +194,15 @@ export function useCacheDetail({ cacheType, t }: UseCacheDetailOptions) {
     setVerifying(true);
     try {
       const { cacheVerify } = await import('@/lib/tauri');
-      const result = await cacheVerify();
+      const result = await cacheVerify(cacheType);
+      const scopeLabel = cacheType === 'download'
+        ? t('cache.detail.downloadTitle')
+        : t('cache.detail.metadataTitle');
       if (result.is_healthy) {
-        toast.success(t('cache.verifySuccess'));
+        toast.success(`${scopeLabel}: ${t('cache.verifySuccess')}`);
       } else {
         const issueCount = result.missing_files + result.corrupted_files + result.size_mismatches;
-        toast.warning(t('cache.verifyIssues', { count: issueCount }));
+        toast.warning(`${scopeLabel}: ${t('cache.verifyIssues', { count: issueCount })}`);
       }
     } catch (err) {
       toast.error(`Verification failed: ${err}`);

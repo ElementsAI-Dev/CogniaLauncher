@@ -303,7 +303,7 @@ Notable options:
 
 | 模块 | 命令数 | 命令前缀 | 描述 |
 |------|--------|----------|------|
-| Health Check | 4 | `health_check_*` | 环境和系统健康检查 |
+| Health Check | 5 | `health_check_*` | Environment, provider, and remediation health workflows |
 | Profiles | 9 | `profile_*` | 配置快照管理 |
 | Launch | 6 | `launch_with_env`, `env_activate`, `exec_shell_with_env`, `which_program` | 程序启动和环境激活 |
 | Shim/PATH | 10 | `shim_*`, `path_*` | Shim 创建和 PATH 管理 |

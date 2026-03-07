@@ -18,6 +18,7 @@ jest.mock("@/components/providers/locale-provider", () => ({
         "logs.export": "Export logs",
         "logs.exportTxt": "Export TXT",
         "logs.exportJson": "Export JSON",
+        "logs.exportCsv": "Export CSV",
         "logs.timeRange": "Time range",
         "logs.timeRangeAll": "All time",
         "logs.timeRangeLastHour": "Last hour",
@@ -66,6 +67,7 @@ describe("LogToolbar", () => {
       drawerOpen: false,
       logFiles: [],
       selectedLogFile: null,
+      filterPresets: [],
       showBookmarksOnly: false,
     });
   });
@@ -99,6 +101,7 @@ describe("LogToolbar", () => {
 
     expect(screen.getByText("Export TXT")).toBeInTheDocument();
     expect(screen.getByText("Export JSON")).toBeInTheDocument();
+    expect(screen.getByText("Export CSV")).toBeInTheDocument();
   });
 
   it("renders clear button", () => {
@@ -288,6 +291,17 @@ describe("LogToolbar", () => {
 
       expect(onExport).toHaveBeenCalledWith("json");
     });
+
+    it("calls custom onExport callback for csv", async () => {
+      const user = userEvent.setup();
+      const onExport = jest.fn();
+      render(<LogToolbar onExport={onExport} />);
+
+      await user.click(screen.getByRole("button", { name: /export/i }));
+      await user.click(screen.getByText("Export CSV"));
+
+      expect(onExport).toHaveBeenCalledWith("csv");
+    });
   });
 
   describe("default export (blob download)", () => {
@@ -468,6 +482,44 @@ describe("LogToolbar", () => {
       render(<LogToolbar showQueryScanLimit />);
       const advancedButton = screen.getByRole("button", { name: /advanced/i });
       expect(advancedButton).toHaveTextContent("1");
+    });
+
+    it("supports controlled historical filter state without touching store", async () => {
+      const user = userEvent.setup();
+      const onSearchChange = jest.fn();
+      const onFilterChange = jest.fn();
+
+      render(
+        <LogToolbar
+          showRealtimeControls={false}
+          showMaxLogs={false}
+          showQueryScanLimit
+          showBookmarksToggle={false}
+          filterState={{
+            levels: ["info", "warn", "error"],
+            search: "",
+            useRegex: false,
+            target: undefined,
+            maxScanLines: null,
+            startTime: null,
+            endTime: null,
+          }}
+          onSearchChange={onSearchChange}
+          onFilterChange={onFilterChange}
+          onToggleLevel={jest.fn()}
+          onTimeRangeChange={jest.fn()}
+        />,
+      );
+
+      await user.type(screen.getByPlaceholderText("Search logs..."), "history");
+      await waitFor(() => {
+        expect(onSearchChange).toHaveBeenCalledWith("history");
+      });
+
+      await user.click(screen.getByText("Advanced"));
+      await user.click(screen.getByLabelText("Regex"));
+      expect(onFilterChange).toHaveBeenCalledWith({ useRegex: true });
+      expect(screen.queryByLabelText(/bookmarks only/i)).not.toBeInTheDocument();
     });
   });
 

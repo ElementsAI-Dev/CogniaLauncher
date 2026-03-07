@@ -225,6 +225,8 @@ export function AppShell({ children }: AppShellProps) {
             <OnboardingWizard
               open={onboarding.shouldShowWizard}
               currentStep={onboarding.currentStep}
+              stepIds={onboarding.stepIds}
+              mode={onboarding.mode}
               totalSteps={onboarding.totalSteps}
               progress={onboarding.progress}
               isFirstStep={onboarding.isFirstStep}
@@ -233,6 +235,7 @@ export function AppShell({ children }: AppShellProps) {
               onNext={onboarding.next}
               onPrev={onboarding.prev}
               onGoTo={onboarding.goTo}
+              onSelectMode={onboarding.selectMode}
               onComplete={onboarding.complete}
               onSkip={onboarding.skip}
               onStartTour={onboarding.startTour}

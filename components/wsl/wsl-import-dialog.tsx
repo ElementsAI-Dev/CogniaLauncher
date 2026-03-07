@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -27,6 +27,7 @@ export function WslImportDialog({
   open,
   onOpenChange,
   onImport,
+  capabilities,
   t,
 }: WslImportDialogProps) {
   const [name, setName] = useState('');
@@ -35,6 +36,13 @@ export function WslImportDialog({
   const [wslVersion, setWslVersion] = useState<string>('2');
   const [asVhd, setAsVhd] = useState(false);
   const [importing, setImporting] = useState(false);
+  const supportsVhd = capabilities?.exportFormat !== false;
+
+  useEffect(() => {
+    if (!supportsVhd && asVhd) {
+      setAsVhd(false);
+    }
+  }, [asVhd, supportsVhd]);
 
   const handleBrowseFile = async () => {
     try {
@@ -42,7 +50,7 @@ export function WslImportDialog({
       const selected = await openDialog({
         multiple: false,
         filters: [
-          { name: 'Archive', extensions: ['tar', 'tar.gz', 'vhdx'] },
+          { name: 'Archive', extensions: supportsVhd ? ['tar', 'vhdx'] : ['tar'] },
           { name: 'All Files', extensions: ['*'] },
         ],
       });
@@ -168,8 +176,15 @@ export function WslImportDialog({
 
             <div className="space-y-2">
               <Label>{t('wsl.importAsVhd')}</Label>
-              <div className="flex items-center h-10">
-                <Switch checked={asVhd} onCheckedChange={setAsVhd} />
+              <div className="flex items-center h-10 gap-2">
+                <Switch checked={asVhd} onCheckedChange={setAsVhd} disabled={!supportsVhd} />
+                {!supportsVhd && (
+                  <span className="text-xs text-muted-foreground">
+                    {t('wsl.capabilityUnsupported')
+                      .replace('{feature}', t('wsl.importAsVhd'))
+                      .replace('{version}', capabilities?.version ?? 'Unknown')}
+                  </span>
+                )}
               </div>
             </div>
           </div>

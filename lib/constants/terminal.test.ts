@@ -1,4 +1,11 @@
-import { categorizeVar, ENV_VAR_CATEGORY_KEYS, PS_VALID_POLICIES, PS_ALLOWED_SCOPES } from './terminal';
+import {
+  categorizeVar,
+  ENV_VAR_CATEGORY_KEYS,
+  PS_VALID_POLICIES,
+  PS_ALLOWED_SCOPES,
+  TERMINAL_EDITOR_LANGUAGE_BY_SHELL,
+  getTerminalEditorLanguage,
+} from './terminal';
 
 describe('categorizeVar', () => {
   describe('path category', () => {
@@ -58,5 +65,22 @@ describe('PS constants', () => {
   it('PS_ALLOWED_SCOPES includes CurrentUser and Process', () => {
     expect(PS_ALLOWED_SCOPES).toContain('CurrentUser');
     expect(PS_ALLOWED_SCOPES).toContain('Process');
+  });
+});
+
+describe('editor language mapping', () => {
+  it('maps shell types to deterministic editor languages', () => {
+    expect(TERMINAL_EDITOR_LANGUAGE_BY_SHELL.bash).toBe('bash');
+    expect(TERMINAL_EDITOR_LANGUAGE_BY_SHELL.zsh).toBe('bash');
+    expect(TERMINAL_EDITOR_LANGUAGE_BY_SHELL.fish).toBe('bash');
+    expect(TERMINAL_EDITOR_LANGUAGE_BY_SHELL.nushell).toBe('bash');
+    expect(TERMINAL_EDITOR_LANGUAGE_BY_SHELL.powershell).toBe('powershell');
+    expect(TERMINAL_EDITOR_LANGUAGE_BY_SHELL.cmd).toBe('dos');
+  });
+
+  it('getTerminalEditorLanguage resolves known shell types', () => {
+    expect(getTerminalEditorLanguage('bash')).toBe('bash');
+    expect(getTerminalEditorLanguage('powershell')).toBe('powershell');
+    expect(getTerminalEditorLanguage('cmd')).toBe('dos');
   });
 });

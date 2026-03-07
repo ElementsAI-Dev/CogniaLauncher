@@ -11,9 +11,12 @@ export const DEFAULT_DOWNLOAD_FORM = {
   priority: "",
   provider: "",
   autoExtract: false,
+  autoRename: false,
+  deleteAfterExtract: false,
   extractDest: "",
   segments: "1",
   mirrorUrls: [] as string[],
+  tags: "",
   postAction: "none",
 };
 

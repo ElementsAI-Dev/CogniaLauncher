@@ -1,14 +1,24 @@
-'use client';
+"use client";
 
-import { useState, useCallback, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle, CardAction } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Skeleton } from '@/components/ui/skeleton';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { useState, useCallback, useEffect } from "react";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardAction,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,18 +28,26 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Archive, RefreshCw, Plus, Trash2, RotateCw, Loader2, FolderOpen } from 'lucide-react';
-import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from '@/components/ui/empty';
-import { toast } from 'sonner';
-import { formatBytes } from '@/lib/utils';
+} from "@/components/ui/alert-dialog";
 import {
-  isTauri,
-  wslBackupDistro,
-  wslListBackups,
-  wslRestoreBackup,
-  wslDeleteBackup,
-} from '@/lib/tauri';
+  Archive,
+  RefreshCw,
+  Plus,
+  Trash2,
+  RotateCw,
+  Loader2,
+  FolderOpen,
+} from "lucide-react";
+import {
+  Empty,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+  EmptyDescription,
+} from "@/components/ui/empty";
+import { toast } from "sonner";
+import { formatBytes } from "@/lib/utils";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 interface BackupEntry {
   fileName: string;
@@ -41,22 +59,42 @@ interface BackupEntry {
 
 interface WslBackupCardProps {
   distroNames: string[];
+  backupDistro: (name: string, destDir: string) => Promise<BackupEntry>;
+  listBackups: (backupDir: string) => Promise<BackupEntry[]>;
+  restoreBackup: (
+    backupPath: string,
+    name: string,
+    installLocation: string,
+  ) => Promise<void>;
+  deleteBackup: (backupPath: string) => Promise<void>;
+  onRestoreSuccess?: () => Promise<void> | void;
+  onMutationSuccess?: () => Promise<void> | void;
   t: (key: string, params?: Record<string, string | number>) => string;
 }
 
-const DEFAULT_BACKUP_DIR = '%USERPROFILE%\\WSL-Backups';
+const DEFAULT_BACKUP_DIR = "%USERPROFILE%\\WSL-Backups";
 
 function resolveBackupDir(dir: string): string {
-  const userProfile = typeof window !== 'undefined'
-    ? (window as Record<string, unknown>).__USERPROFILE__ as string | undefined
-    : undefined;
+  const userProfile =
+    typeof window !== "undefined"
+      ? (window as unknown as { __USERPROFILE__?: string }).__USERPROFILE__
+      : undefined;
   if (dir === DEFAULT_BACKUP_DIR && userProfile) {
     return `${userProfile}\\WSL-Backups`;
   }
   return dir;
 }
 
-export function WslBackupCard({ distroNames, t }: WslBackupCardProps) {
+export function WslBackupCard({
+  distroNames,
+  backupDistro,
+  listBackups,
+  restoreBackup,
+  deleteBackup,
+  onRestoreSuccess,
+  onMutationSuccess,
+  t,
+}: WslBackupCardProps) {
   const [backups, setBackups] = useState<BackupEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -64,23 +102,27 @@ export function WslBackupCard({ distroNames, t }: WslBackupCardProps) {
   const [backupDir, setBackupDir] = useState(DEFAULT_BACKUP_DIR);
   const [deleteTarget, setDeleteTarget] = useState<BackupEntry | null>(null);
   const [restoreTarget, setRestoreTarget] = useState<BackupEntry | null>(null);
-  const [restoreName, setRestoreName] = useState('');
-  const [restoreLocation, setRestoreLocation] = useState('');
-  const [selectedDistro, setSelectedDistro] = useState('');
+  const [restoreName, setRestoreName] = useState("");
+  const [restoreLocation, setRestoreLocation] = useState("");
+  const [selectedDistro, setSelectedDistro] = useState("");
+  const [lifecycleState, setLifecycleState] = useState<{
+    status: "success" | "failed";
+    title: string;
+    details?: string;
+  } | null>(null);
 
   const refresh = useCallback(async () => {
-    if (!isTauri()) return;
     setLoading(true);
     try {
       const resolved = resolveBackupDir(backupDir);
-      const result = await wslListBackups(resolved);
+      const result = await listBackups(resolved);
       setBackups(result);
     } catch {
       setBackups([]);
     } finally {
       setLoading(false);
     }
-  }, [backupDir]);
+  }, [backupDir, listBackups]);
 
   useEffect(() => {
     refresh();
@@ -93,47 +135,104 @@ export function WslBackupCard({ distroNames, t }: WslBackupCardProps) {
   }, [distroNames, selectedDistro]);
 
   const handleCreate = useCallback(async () => {
-    if (!selectedDistro || !isTauri()) return;
+    if (!selectedDistro) return;
     setCreating(true);
     try {
       const resolved = resolveBackupDir(backupDir);
-      await wslBackupDistro(selectedDistro, resolved);
-      toast.success(t('wsl.backupMgmt.created'));
+      const backup = await backupDistro(selectedDistro, resolved);
+      toast.success(t("wsl.backupMgmt.created"));
       await refresh();
+      await onMutationSuccess?.();
+      setLifecycleState({
+        status: "success",
+        title: t("wsl.backupMgmt.created"),
+        details: backup.fileName,
+      });
     } catch (err) {
       toast.error(String(err));
+      setLifecycleState({
+        status: "failed",
+        title: t("wsl.workflow.failed").replace(
+          "{action}",
+          t("wsl.backupMgmt.create"),
+        ),
+        details: String(err),
+      });
     } finally {
       setCreating(false);
     }
-  }, [selectedDistro, backupDir, refresh, t]);
+  }, [backupDistro, selectedDistro, backupDir, onMutationSuccess, refresh, t]);
 
   const handleRestore = useCallback(async () => {
-    if (!restoreTarget || !restoreName.trim() || !restoreLocation.trim()) return;
+    if (!restoreTarget || !restoreName.trim() || !restoreLocation.trim())
+      return;
     setRestoring(true);
     try {
-      await wslRestoreBackup(restoreTarget.filePath, restoreName.trim(), restoreLocation.trim());
-      toast.success(t('wsl.backupMgmt.restored'));
+      await restoreBackup(
+        restoreTarget.filePath,
+        restoreName.trim(),
+        restoreLocation.trim(),
+      );
+      toast.success(t("wsl.backupMgmt.restored"));
       setRestoreTarget(null);
-      setRestoreName('');
-      setRestoreLocation('');
+      setRestoreName("");
+      setRestoreLocation("");
+      await refresh();
+      await onRestoreSuccess?.();
+      await onMutationSuccess?.();
+      setLifecycleState({
+        status: "success",
+        title: t("wsl.backupMgmt.restored"),
+        details: restoreTarget.fileName,
+      });
     } catch (err) {
       toast.error(String(err));
+      setLifecycleState({
+        status: "failed",
+        title: t("wsl.workflow.failed").replace(
+          "{action}",
+          t("wsl.backupMgmt.restore"),
+        ),
+        details: String(err),
+      });
     } finally {
       setRestoring(false);
     }
-  }, [restoreTarget, restoreName, restoreLocation, t]);
+  }, [
+    onMutationSuccess,
+    onRestoreSuccess,
+    refresh,
+    restoreBackup,
+    restoreTarget,
+    restoreName,
+    restoreLocation,
+    t,
+  ]);
 
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
     try {
-      await wslDeleteBackup(deleteTarget.filePath);
-      toast.success(t('wsl.backupMgmt.deleted'));
+      await deleteBackup(deleteTarget.filePath);
+      toast.success(t("wsl.backupMgmt.deleted"));
       setDeleteTarget(null);
       await refresh();
+      await onMutationSuccess?.();
+      setLifecycleState({
+        status: "success",
+        title: t("wsl.backupMgmt.deleted"),
+      });
     } catch (err) {
       toast.error(String(err));
+      setLifecycleState({
+        status: "failed",
+        title: t("wsl.workflow.failed").replace(
+          "{action}",
+          t("wsl.backupMgmt.delete"),
+        ),
+        details: String(err),
+      });
     }
-  }, [deleteTarget, refresh, t]);
+  }, [deleteBackup, deleteTarget, onMutationSuccess, refresh, t]);
 
   return (
     <>
@@ -141,26 +240,53 @@ export function WslBackupCard({ distroNames, t }: WslBackupCardProps) {
         <CardHeader>
           <CardTitle className="text-base font-semibold flex items-center gap-2">
             <Archive className="h-4 w-4 text-muted-foreground" />
-            {t('wsl.backupMgmt.title')}
+            {t("wsl.backupMgmt.title")}
             {backups.length > 0 && (
-              <Badge variant="secondary" className="text-xs">{backups.length}</Badge>
+              <Badge variant="secondary" className="text-xs">
+                {backups.length}
+              </Badge>
             )}
           </CardTitle>
           <CardAction>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={refresh} disabled={loading}>
-                  <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={refresh}
+                  disabled={loading}
+                >
+                  <RefreshCw
+                    className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
+                  />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>{t('common.refresh')}</TooltipContent>
+              <TooltipContent>{t("common.refresh")}</TooltipContent>
             </Tooltip>
           </CardAction>
         </CardHeader>
         <CardContent className="space-y-3">
+          {lifecycleState && (
+            <Alert
+              data-testid="wsl-backup-lifecycle-feedback"
+              variant={
+                lifecycleState.status === "failed" ? "destructive" : "default"
+              }
+            >
+              <AlertDescription className="space-y-1">
+                <p className="font-medium">{lifecycleState.title}</p>
+                {lifecycleState.details && (
+                  <p className="text-xs text-muted-foreground">
+                    {lifecycleState.details}
+                  </p>
+                )}
+              </AlertDescription>
+            </Alert>
+          )}
           <div className="flex items-end gap-2">
             <div className="flex-1 space-y-1">
-              <Label className="text-xs">{t('wsl.backupMgmt.backupDir')}</Label>
+              <Label className="text-xs">{t("wsl.backupMgmt.backupDir")}</Label>
               <div className="flex gap-1">
                 <Input
                   className="h-7 text-xs flex-1"
@@ -174,10 +300,13 @@ export function WslBackupCard({ distroNames, t }: WslBackupCardProps) {
                   className="h-7 w-7 shrink-0"
                   onClick={async () => {
                     try {
-                      const { open } = await import('@tauri-apps/plugin-dialog');
+                      const { open } =
+                        await import("@tauri-apps/plugin-dialog");
                       const selected = await open({ directory: true });
                       if (selected) setBackupDir(String(selected));
-                    } catch { /* not in Tauri */ }
+                    } catch {
+                      /* not in Tauri */
+                    }
                   }}
                 >
                   <FolderOpen className="h-3 w-3" />
@@ -194,12 +323,14 @@ export function WslBackupCard({ distroNames, t }: WslBackupCardProps) {
                 onChange={(e) => setSelectedDistro(e.target.value)}
               >
                 {distroNames.map((name) => (
-                  <option key={name} value={name}>{name}</option>
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
                 ))}
               </select>
             ) : (
               <span className="text-xs text-muted-foreground flex-1 truncate">
-                {selectedDistro || '—'}
+                {selectedDistro || "—"}
               </span>
             )}
             <Button
@@ -209,24 +340,32 @@ export function WslBackupCard({ distroNames, t }: WslBackupCardProps) {
               disabled={creating || !selectedDistro}
               onClick={handleCreate}
             >
-              {creating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
-              {t('wsl.backupMgmt.create')}
+              {creating ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Plus className="h-3 w-3" />
+              )}
+              {t("wsl.backupMgmt.create")}
             </Button>
           </div>
 
           {loading ? (
             <div className="space-y-2">
-              {[1, 2].map((i) => <Skeleton key={i} className="h-10 w-full" />)}
+              {[1, 2].map((i) => (
+                <Skeleton key={i} className="h-10 w-full" />
+              ))}
             </div>
           ) : backups.length === 0 ? (
             <Empty className="border-none py-4">
               <EmptyHeader>
-                <EmptyMedia variant="icon"><Archive /></EmptyMedia>
+                <EmptyMedia variant="icon">
+                  <Archive />
+                </EmptyMedia>
                 <EmptyTitle className="text-sm font-normal text-muted-foreground">
-                  {t('wsl.backupMgmt.noBackups')}
+                  {t("wsl.backupMgmt.noBackups")}
                 </EmptyTitle>
                 <EmptyDescription className="text-xs">
-                  {t('wsl.backupMgmt.noBackupsDesc')}
+                  {t("wsl.backupMgmt.noBackupsDesc")}
                 </EmptyDescription>
               </EmptyHeader>
             </Empty>
@@ -239,7 +378,9 @@ export function WslBackupCard({ distroNames, t }: WslBackupCardProps) {
                     className="flex items-center justify-between rounded-md border px-3 py-2 group"
                   >
                     <div className="min-w-0">
-                      <p className="text-xs font-medium truncate">{b.fileName}</p>
+                      <p className="text-xs font-medium truncate">
+                        {b.fileName}
+                      </p>
                       <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
                         <span>{b.distroName}</span>
                         <span>{formatBytes(b.sizeBytes)}</span>
@@ -255,13 +396,15 @@ export function WslBackupCard({ distroNames, t }: WslBackupCardProps) {
                             className="h-6 w-6"
                             onClick={() => {
                               setRestoreTarget(b);
-                              setRestoreName(b.distroName + '-restored');
+                              setRestoreName(b.distroName + "-restored");
                             }}
                           >
                             <RotateCw className="h-3 w-3" />
                           </Button>
                         </TooltipTrigger>
-                        <TooltipContent>{t('wsl.backupMgmt.restore')}</TooltipContent>
+                        <TooltipContent>
+                          {t("wsl.backupMgmt.restore")}
+                        </TooltipContent>
                       </Tooltip>
                       <Tooltip>
                         <TooltipTrigger asChild>
@@ -274,7 +417,9 @@ export function WslBackupCard({ distroNames, t }: WslBackupCardProps) {
                             <Trash2 className="h-3 w-3" />
                           </Button>
                         </TooltipTrigger>
-                        <TooltipContent>{t('wsl.backupMgmt.delete')}</TooltipContent>
+                        <TooltipContent>
+                          {t("wsl.backupMgmt.delete")}
+                        </TooltipContent>
                       </Tooltip>
                     </div>
                   </div>
@@ -286,17 +431,22 @@ export function WslBackupCard({ distroNames, t }: WslBackupCardProps) {
       </Card>
 
       {/* Restore Dialog */}
-      <AlertDialog open={!!restoreTarget} onOpenChange={(open) => !open && setRestoreTarget(null)}>
+      <AlertDialog
+        open={!!restoreTarget}
+        onOpenChange={(open) => !open && setRestoreTarget(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{t('wsl.backupMgmt.restore')}</AlertDialogTitle>
+            <AlertDialogTitle>{t("wsl.backupMgmt.restore")}</AlertDialogTitle>
             <AlertDialogDescription>
               {restoreTarget?.fileName}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="space-y-3 py-2">
             <div className="space-y-1">
-              <Label className="text-xs">{t('wsl.backupMgmt.distroName')}</Label>
+              <Label className="text-xs">
+                {t("wsl.backupMgmt.distroName")}
+              </Label>
               <Input
                 className="h-8 text-xs"
                 value={restoreName}
@@ -305,46 +455,55 @@ export function WslBackupCard({ distroNames, t }: WslBackupCardProps) {
               />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">{t('wsl.backupMgmt.installLocation')}</Label>
+              <Label className="text-xs">
+                {t("wsl.backupMgmt.installLocation")}
+              </Label>
               <Input
                 className="h-8 text-xs"
                 value={restoreLocation}
                 onChange={(e) => setRestoreLocation(e.target.value)}
-                placeholder="C:\WSL\restored"
+                placeholder="C:\\WSL\\restored"
               />
             </div>
           </div>
           <AlertDialogFooter>
-            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
             <AlertDialogAction
-              disabled={restoring || !restoreName.trim() || !restoreLocation.trim()}
+              disabled={
+                restoring || !restoreName.trim() || !restoreLocation.trim()
+              }
               onClick={handleRestore}
             >
               {restoring && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-              {t('wsl.backupMgmt.restore')}
+              {t("wsl.backupMgmt.restore")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
       {/* Delete Confirm */}
-      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+      <AlertDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{t('wsl.backupMgmt.delete')}</AlertDialogTitle>
+            <AlertDialogTitle>{t("wsl.backupMgmt.delete")}</AlertDialogTitle>
             <AlertDialogDescription>
-              {t('wsl.backupMgmt.deleteConfirm')}
+              {t("wsl.backupMgmt.deleteConfirm")}
               <br />
-              <span className="font-mono text-xs">{deleteTarget?.fileName}</span>
+              <span className="font-mono text-xs">
+                {deleteTarget?.fileName}
+              </span>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDelete}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {t('wsl.backupMgmt.delete')}
+              {t("wsl.backupMgmt.delete")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

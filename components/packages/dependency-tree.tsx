@@ -47,17 +47,20 @@ import type { DependencyResolveRequest, DependencyTreeProps } from "@/types/pack
 
 function DependencyNodeItem({
   node,
-  isExpanded,
-  onToggle,
+  nodeId,
+  expandedNodes,
+  onToggleNode,
   searchTerm,
 }: {
   node: DependencyNode;
-  isExpanded: boolean;
-  onToggle: () => void;
+  nodeId: string;
+  expandedNodes: Set<string>;
+  onToggleNode: (nodeId: string) => void;
   searchTerm: string;
 }) {
   const { t } = useLocale();
   const hasChildren = node.dependencies.length > 0;
+  const isExpanded = expandedNodes.has(nodeId);
   const isMatch =
     searchTerm && node.name.toLowerCase().includes(searchTerm.toLowerCase());
 
@@ -71,7 +74,12 @@ function DependencyNodeItem({
       `}
       style={{ marginLeft: node.depth > 0 ? "1rem" : 0 }}
     >
-      <Collapsible open={isExpanded} onOpenChange={onToggle}>
+      <Collapsible
+        open={isExpanded}
+        onOpenChange={() => {
+          onToggleNode(nodeId);
+        }}
+      >
         <div className="flex min-w-0 flex-wrap items-center gap-2 py-1.5">
           {hasChildren ? (
             <CollapsibleTrigger asChild>
@@ -141,10 +149,11 @@ function DependencyNodeItem({
         <CollapsibleContent>
           {node.dependencies.map((child, i) => (
             <DependencyNodeItem
-              key={`${child.name}-${i}`}
+              key={`${nodeId}/${i}:${child.provider ?? "unknown"}:${child.name}:${child.version}`}
               node={child}
-              isExpanded={false}
-              onToggle={() => {}}
+              nodeId={`${nodeId}/${i}:${child.provider ?? "unknown"}:${child.name}:${child.version}`}
+              expandedNodes={expandedNodes}
+              onToggleNode={onToggleNode}
               searchTerm={searchTerm}
             />
           ))}
@@ -200,13 +209,14 @@ export function DependencyTree({
   const expandAll = useCallback(() => {
     if (!resolution) return;
     const allNodes = new Set<string>();
-    const collectNodes = (nodes: DependencyNode[]) => {
-      nodes.forEach((node) => {
-        allNodes.add(node.name);
-        collectNodes(node.dependencies);
+    const collectNodes = (nodes: DependencyNode[], parentPath: string) => {
+      nodes.forEach((node, index) => {
+        const nodeId = `${parentPath}/${index}:${node.provider ?? "unknown"}:${node.name}:${node.version}`;
+        allNodes.add(nodeId);
+        collectNodes(node.dependencies, nodeId);
       });
     };
-    collectNodes(resolution.tree);
+    collectNodes(resolution.tree, "root");
     setExpandedNodes(allNodes);
   }, [resolution]);
 
@@ -486,10 +496,11 @@ export function DependencyTree({
                 <div className="space-y-1">
                   {resolution.tree.map((node, i) => (
                     <DependencyNodeItem
-                      key={`${node.name}-${i}`}
+                      key={`root/${i}:${node.provider ?? "unknown"}:${node.name}:${node.version}`}
                       node={node}
-                      isExpanded={expandedNodes.has(node.name)}
-                      onToggle={() => toggleNode(node.name)}
+                      nodeId={`root/${i}:${node.provider ?? "unknown"}:${node.name}:${node.version}`}
+                      expandedNodes={expandedNodes}
+                      onToggleNode={toggleNode}
                       searchTerm={searchTerm}
                     />
                   ))}

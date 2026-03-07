@@ -89,6 +89,7 @@ export default function DownloadsPage() {
     revealFile,
     retryTask,
     setPriority,
+    setTaskSpeedLimit,
     calculateChecksum,
     refreshTasks,
     refreshStats,
@@ -109,6 +110,10 @@ export default function DownloadsPage() {
   } = useDownloads({ enableRuntime: false });
 
   const queueStats = stats ?? EMPTY_QUEUE_STATS;
+  const extractingCount = useMemo(
+    () => tasks.filter((task) => task.state === 'extracting').length,
+    [tasks]
+  );
 
   useEffect(() => {
     // Auto-select best unit when syncing from backend
@@ -479,6 +484,7 @@ export default function DownloadsPage() {
             onCancelAll={handleCancelAll}
             onClearFinished={handleClearFinished}
             onRetryFailed={handleRetryFailed}
+            extractingCount={extractingCount}
             stats={queueStats}
             isLoading={isLoading}
             t={t}
@@ -590,7 +596,7 @@ export default function DownloadsPage() {
             historyStats={historyStats}
             historyQuery={historyQuery}
             onHistoryQueryChange={setHistoryQuery}
-            onClearHistory={async () => void clearHistory()}
+            onClearHistory={async (days) => void clearHistory(days)}
             onRemoveRecord={async (id) => void removeHistoryRecord(id)}
             t={t}
           />
@@ -638,6 +644,7 @@ export default function DownloadsPage() {
         onCalculateChecksum={calculateChecksum}
         onVerifyFile={verifyFile}
         onExtractArchive={extractArchive}
+        onSetTaskSpeedLimit={setTaskSpeedLimit}
       />
 
       <BatchImportDialog

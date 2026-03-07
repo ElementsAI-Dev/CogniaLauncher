@@ -232,7 +232,7 @@ describe("CacheDetailPage", () => {
     await act(async () => {
       render(<CacheDetailPageClient cacheType="download" />);
     });
-    const refreshBtns = screen.getAllByText(/cache\.refreshSuccess/);
+    const refreshBtns = screen.getAllByText(/common\.refresh/);
     const refreshBtn = refreshBtns[0].closest("button");
     if (refreshBtn) {
       await act(async () => {
@@ -360,8 +360,27 @@ describe("CacheDetailPage", () => {
       verifyBtn.click();
     });
     await act(async () => {});
-    expect(mockCacheVerify).toHaveBeenCalled();
+    expect(mockCacheVerify).toHaveBeenCalledWith("download");
     expect(toast.success).toHaveBeenCalled();
+  });
+
+  it("passes metadata scope when verifying metadata detail cache", async () => {
+    mockIsTauri = true;
+    mockCacheVerify.mockResolvedValue({
+      is_healthy: true,
+      missing_files: 0,
+      corrupted_files: 0,
+      size_mismatches: 0,
+    });
+    await act(async () => {
+      render(<CacheDetailPageClient cacheType="metadata" />);
+    });
+    const verifyBtn = screen.getByText("cache.detail.verifyThisCache").closest("button")!;
+    await act(async () => {
+      verifyBtn.click();
+    });
+    await act(async () => {});
+    expect(mockCacheVerify).toHaveBeenCalledWith("metadata");
   });
 
   it("shows warning toast when verify finds issues", async () => {

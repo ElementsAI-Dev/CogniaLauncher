@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -9,6 +9,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
@@ -40,8 +41,13 @@ import {
 } from "lucide-react";
 import type { DownloadTask, VerifyResult } from "@/types/tauri";
 import { formatEta } from "@/lib/utils";
-import { getStateBadgeVariant, findClosestPriority } from "@/lib/downloads";
+import {
+  getStateBadgeVariant,
+  findClosestPriority,
+  normalizeDownloadFailure,
+} from "@/lib/downloads";
 import { PRIORITY_OPTIONS } from "@/lib/constants/downloads";
+import { useDownloadStore } from "@/lib/stores/download";
 
 interface DownloadDetailDialogProps {
   task: DownloadTask | null;
@@ -52,8 +58,18 @@ interface DownloadDetailDialogProps {
   onOpenFile?: (path: string) => Promise<void>;
   onRevealFile?: (path: string) => Promise<void>;
   onCalculateChecksum?: (path: string) => Promise<string>;
-  onVerifyFile?: (path: string, expectedChecksum: string) => Promise<VerifyResult>;
-  onExtractArchive?: (archivePath: string, destPath: string) => Promise<string[]>;
+  onVerifyFile?: (
+    path: string,
+    expectedChecksum: string,
+  ) => Promise<VerifyResult>;
+  onExtractArchive?: (
+    archivePath: string,
+    destPath: string,
+  ) => Promise<string[]>;
+  onSetTaskSpeedLimit?: (
+    taskId: string,
+    bytesPerSecond: number,
+  ) => Promise<void>;
 }
 
 function getStateIcon(state: DownloadTask["state"]) {
@@ -73,7 +89,6 @@ function getStateIcon(state: DownloadTask["state"]) {
   }
 }
 
-
 export function DownloadDetailDialog({
   task,
   open,
@@ -85,75 +100,114 @@ export function DownloadDetailDialog({
   onCalculateChecksum,
   onVerifyFile,
   onExtractArchive,
+  onSetTaskSpeedLimit,
 }: DownloadDetailDialogProps) {
   const { t } = useLocale();
+  const liveTask = useDownloadStore((state) =>
+    task ? (state.tasks.find((item) => item.id === task.id) ?? null) : null,
+  );
+  const liveProgress = useDownloadStore((state) =>
+    task ? state.progressMap[task.id] : undefined,
+  );
+  const resolvedTask = liveTask ?? task;
   const [checksumResult, setChecksumResult] = useState<string | null>(null);
   const [isCalculating, setIsCalculating] = useState(false);
   const [verifyResult, setVerifyResult] = useState<VerifyResult | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
   const [isExtracting, setIsExtracting] = useState(false);
   const [extractedFiles, setExtractedFiles] = useState<string[] | null>(null);
+  const [taskSpeedLimitInput, setTaskSpeedLimitInput] = useState("");
+  const [isApplyingTaskSpeedLimit, setIsApplyingTaskSpeedLimit] =
+    useState(false);
+
+  useEffect(() => {
+    if (!resolvedTask) {
+      setTaskSpeedLimitInput("");
+      return;
+    }
+    const speedLimit = resolvedTask.speedLimit ?? 0;
+    setTaskSpeedLimitInput(String(speedLimit));
+  }, [resolvedTask]);
 
   const isTerminal =
-    task?.state === "failed" ||
-    task?.state === "cancelled" ||
-    task?.state === "completed";
+    resolvedTask?.state === "failed" ||
+    resolvedTask?.state === "cancelled" ||
+    resolvedTask?.state === "completed";
+
+  const progress = liveProgress ?? resolvedTask?.progress;
+
+  const failureInfo = resolvedTask
+    ? normalizeDownloadFailure({
+        state: resolvedTask.state,
+        error: resolvedTask.error,
+        recoverable: resolvedTask.recoverable,
+      })
+    : null;
+
+  const canRetry =
+    !!resolvedTask &&
+    ((resolvedTask.state === "failed" && !!failureInfo?.retryable) ||
+      resolvedTask.state === "cancelled");
 
   const handleCopyUrl = useCallback(async () => {
-    if (!task) return;
-    await writeClipboard(task.url);
+    if (!resolvedTask) return;
+    await writeClipboard(resolvedTask.url);
     toast.success(t("downloads.detail.urlCopied"));
-  }, [task, t]);
+  }, [resolvedTask, t]);
 
   const handleCopyDestination = useCallback(async () => {
-    if (!task) return;
-    await writeClipboard(task.destination);
+    if (!resolvedTask) return;
+    await writeClipboard(resolvedTask.destination);
     toast.success(t("downloads.detail.urlCopied"));
-  }, [task, t]);
+  }, [resolvedTask, t]);
 
   const handleRetry = useCallback(async () => {
-    if (!task || !onRetry) return;
+    if (!resolvedTask || !onRetry || !canRetry) return;
     try {
-      await onRetry(task.id);
+      await onRetry(resolvedTask.id);
       toast.success(t("downloads.toast.started"));
     } catch (err) {
       toast.error(String(err));
     }
-  }, [task, onRetry, t]);
+  }, [resolvedTask, onRetry, t, canRetry]);
 
   const handlePriorityChange = useCallback(
     async (value: string) => {
-      if (!task || !onSetPriority) return;
+      if (!resolvedTask || !onSetPriority) return;
       try {
-        await onSetPriority(task.id, Number(value));
+        await onSetPriority(resolvedTask.id, Number(value));
         toast.success(t("downloads.actions.setPriority"));
       } catch (err) {
         toast.error(String(err));
       }
     },
-    [task, onSetPriority, t]
+    [resolvedTask, onSetPriority, t],
   );
 
   const handleCalculateChecksum = useCallback(async () => {
-    if (!task || !onCalculateChecksum) return;
+    if (!resolvedTask || !onCalculateChecksum) return;
     setIsCalculating(true);
     setChecksumResult(null);
     try {
-      const checksum = await onCalculateChecksum(task.destination);
+      const checksum = await onCalculateChecksum(resolvedTask.destination);
       setChecksumResult(checksum);
     } catch (err) {
       toast.error(String(err));
     } finally {
       setIsCalculating(false);
     }
-  }, [task, onCalculateChecksum]);
+  }, [resolvedTask, onCalculateChecksum]);
 
   const handleVerifyFile = useCallback(async () => {
-    if (!task || !onVerifyFile || !task.expectedChecksum) return;
+    if (!resolvedTask || !onVerifyFile || !resolvedTask.expectedChecksum)
+      return;
     setIsVerifying(true);
     setVerifyResult(null);
     try {
-      const result = await onVerifyFile(task.destination, task.expectedChecksum);
+      const result = await onVerifyFile(
+        resolvedTask.destination,
+        resolvedTask.expectedChecksum,
+      );
       setVerifyResult(result);
       if (result.valid) {
         toast.success(t("downloads.detail.verifySuccess"));
@@ -165,48 +219,68 @@ export function DownloadDetailDialog({
     } finally {
       setIsVerifying(false);
     }
-  }, [task, onVerifyFile, t]);
+  }, [resolvedTask, onVerifyFile, t]);
 
   const handleExtractArchive = useCallback(async () => {
-    if (!task || !onExtractArchive) return;
+    if (!resolvedTask || !onExtractArchive) return;
     setIsExtracting(true);
     setExtractedFiles(null);
     try {
       const destinationDir =
-        task.destination.replace(/[\\/][^\\/]+$/, "") || task.destination;
-      const files = await onExtractArchive(task.destination, destinationDir);
+        resolvedTask.destination.replace(/[\\/][^\\/]+$/, "") ||
+        resolvedTask.destination;
+      const files = await onExtractArchive(
+        resolvedTask.destination,
+        destinationDir,
+      );
       setExtractedFiles(files);
       toast.success(t("downloads.toast.extracted"));
     } catch (err) {
       toast.error(
         t("downloads.errors.extractFailed", {
           error: err instanceof Error ? err.message : String(err),
-        })
+        }),
       );
     } finally {
       setIsExtracting(false);
     }
-  }, [task, onExtractArchive, t]);
+  }, [resolvedTask, onExtractArchive, t]);
 
-  if (!task) return null;
+  const handleApplyTaskSpeedLimit = useCallback(async () => {
+    if (!resolvedTask || !onSetTaskSpeedLimit) return;
+    const parsed = Number(taskSpeedLimitInput);
+    if (!Number.isFinite(parsed) || parsed < 0) return;
 
-  const metadataEntries = Object.entries(task.metadata ?? {});
+    setIsApplyingTaskSpeedLimit(true);
+    try {
+      await onSetTaskSpeedLimit(resolvedTask.id, Math.floor(parsed));
+      toast.success(t("downloads.detail.taskSpeedLimitSaved"));
+    } catch (err) {
+      toast.error(String(err));
+    } finally {
+      setIsApplyingTaskSpeedLimit(false);
+    }
+  }, [resolvedTask, onSetTaskSpeedLimit, taskSpeedLimitInput, t]);
+
+  if (!resolvedTask || !progress) return null;
+
+  const metadataEntries = Object.entries(resolvedTask.metadata ?? {});
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            {getStateIcon(task.state)}
-            <span className="truncate">{task.name}</span>
+            {getStateIcon(resolvedTask.state)}
+            <span className="truncate">{resolvedTask.name}</span>
           </DialogTitle>
           <DialogDescription className="flex items-center gap-2">
-            <Badge variant={getStateBadgeVariant(task.state)}>
-              {t(`downloads.state.${task.state}`)}
+            <Badge variant={getStateBadgeVariant(resolvedTask.state)}>
+              {t(`downloads.state.${resolvedTask.state}`)}
             </Badge>
-            {task.provider && (
+            {resolvedTask.provider && (
               <Badge variant="outline" className="font-normal">
-                {task.provider}
+                {resolvedTask.provider}
               </Badge>
             )}
           </DialogDescription>
@@ -214,24 +288,36 @@ export function DownloadDetailDialog({
 
         <div className="space-y-4">
           {/* Progress */}
-          {(task.state === "downloading" || task.state === "queued") && (
+          {(resolvedTask.state === "downloading" ||
+            resolvedTask.state === "queued" ||
+            resolvedTask.state === "extracting") && (
             <div className="space-y-2">
-              <Progress value={task.progress.percent} className="h-2" />
+              <Progress value={progress.percent} className="h-2" />
               <div className="flex justify-between text-xs text-muted-foreground">
                 <span>
-                  {task.progress.downloadedHuman} / {task.progress.totalHuman ?? "—"}
+                  {progress.downloadedHuman} / {progress.totalHuman ?? "—"}
                 </span>
                 <span>
-                  {task.progress.speedHuman} · {formatEta(task.progress.etaHuman)}
+                  {progress.speedHuman} · {formatEta(progress.etaHuman)}
                 </span>
               </div>
             </div>
           )}
 
           {/* Error */}
-          {task.error && (
+          {resolvedTask.error && (
             <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-              {task.error}
+              <div className="font-medium">
+                {t(
+                  `downloads.failureClass.${failureInfo?.failureClass ?? "network_error"}`,
+                )}
+              </div>
+              <div className="text-xs mt-1">
+                {failureInfo?.retryable
+                  ? t("downloads.failureGuidance.retryable")
+                  : t("downloads.failureGuidance.notRetryable")}
+              </div>
+              <div className="text-xs mt-2">{resolvedTask.error}</div>
             </div>
           )}
 
@@ -241,8 +327,11 @@ export function DownloadDetailDialog({
           <div className="grid gap-3 text-sm">
             <InfoRow label={t("downloads.detail.url")}>
               <div className="flex items-center gap-1 min-w-0">
-                <span className="truncate font-mono text-xs" title={task.url}>
-                  {task.url}
+                <span
+                  className="truncate font-mono text-xs"
+                  title={resolvedTask.url}
+                >
+                  {resolvedTask.url}
                 </span>
                 <Button
                   variant="ghost"
@@ -257,8 +346,11 @@ export function DownloadDetailDialog({
 
             <InfoRow label={t("downloads.detail.destination")}>
               <div className="flex items-center gap-1 min-w-0">
-                <span className="truncate font-mono text-xs" title={task.destination}>
-                  {task.destination}
+                <span
+                  className="truncate font-mono text-xs"
+                  title={resolvedTask.destination}
+                >
+                  {resolvedTask.destination}
                 </span>
                 <Button
                   variant="ghost"
@@ -274,7 +366,7 @@ export function DownloadDetailDialog({
             <InfoRow label={t("downloads.detail.priority")}>
               <div className="flex items-center gap-2">
                 <Select
-                  value={findClosestPriority(task.priority)}
+                  value={findClosestPriority(resolvedTask.priority)}
                   onValueChange={handlePriorityChange}
                   disabled={!onSetPriority}
                 >
@@ -284,7 +376,9 @@ export function DownloadDetailDialog({
                   <SelectContent>
                     {PRIORITY_OPTIONS.map((opt) => (
                       <SelectItem key={opt.value} value={opt.value}>
-                        {t(`downloads.priority${opt.label.charAt(0).toUpperCase()}${opt.label.slice(1)}`)}
+                        {t(
+                          `downloads.priority${opt.label.charAt(0).toUpperCase()}${opt.label.slice(1)}`,
+                        )}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -294,23 +388,28 @@ export function DownloadDetailDialog({
             </InfoRow>
 
             <InfoRow label={t("downloads.detail.retries")}>
-              {task.retries}
+              {resolvedTask.retries}
             </InfoRow>
 
-            {task.expectedChecksum && (
+            {resolvedTask.expectedChecksum && (
               <InfoRow label={t("downloads.detail.checksum")}>
                 <div className="flex items-center gap-1 min-w-0">
-                  <span className="font-mono text-xs truncate" title={task.expectedChecksum}>
-                    {task.expectedChecksum}
+                  <span
+                    className="font-mono text-xs truncate"
+                    title={resolvedTask.expectedChecksum}
+                  >
+                    {resolvedTask.expectedChecksum}
                   </span>
                   <Button
                     variant="ghost"
                     size="icon"
                     className="h-6 w-6 flex-shrink-0"
                     onClick={() => {
-                      writeClipboard(task.expectedChecksum!).then(() => {
-                        toast.success(t("downloads.detail.checksumCopied"));
-                      });
+                      writeClipboard(resolvedTask.expectedChecksum!).then(
+                        () => {
+                          toast.success(t("downloads.detail.checksumCopied"));
+                        },
+                      );
                     }}
                   >
                     <Copy className="h-3 w-3" />
@@ -319,31 +418,67 @@ export function DownloadDetailDialog({
               </InfoRow>
             )}
 
-            {task.serverFilename && (
+            {resolvedTask.serverFilename && (
               <InfoRow label={t("downloads.detail.serverFilename")}>
-                <span className="text-xs" title={task.serverFilename}>
-                  {task.serverFilename}
+                <span className="text-xs" title={resolvedTask.serverFilename}>
+                  {resolvedTask.serverFilename}
                 </span>
               </InfoRow>
             )}
 
             <InfoRow label={t("downloads.detail.supportsResume")}>
-              <Badge variant={task.supportsResume ? "default" : "secondary"} className="text-xs">
-                {task.supportsResume ? t("common.yes") : t("common.no")}
+              <Badge
+                variant={resolvedTask.supportsResume ? "default" : "secondary"}
+                className="text-xs"
+              >
+                {resolvedTask.supportsResume ? t("common.yes") : t("common.no")}
               </Badge>
             </InfoRow>
+
+            {onSetTaskSpeedLimit && (
+              <InfoRow label={t("downloads.detail.taskSpeedLimit")}>
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={taskSpeedLimitInput}
+                    onChange={(event) =>
+                      setTaskSpeedLimitInput(event.target.value)
+                    }
+                    className="h-7 w-32 text-xs"
+                    inputMode="numeric"
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 px-2 text-xs"
+                    onClick={handleApplyTaskSpeedLimit}
+                    disabled={isApplyingTaskSpeedLimit}
+                  >
+                    {t("common.save")}
+                  </Button>
+                </div>
+              </InfoRow>
+            )}
 
             <Separator />
 
             {/* Timestamps */}
             <InfoRow label={t("downloads.detail.timestamps")}>
               <div className="space-y-1 text-xs text-muted-foreground">
-                <div>{t("common.created")}: {new Date(task.createdAt).toLocaleString()}</div>
-                {task.startedAt && (
-                  <div>{t("common.started")}: {new Date(task.startedAt).toLocaleString()}</div>
+                <div>
+                  {t("common.created")}:{" "}
+                  {new Date(resolvedTask.createdAt).toLocaleString()}
+                </div>
+                {resolvedTask.startedAt && (
+                  <div>
+                    {t("common.started")}:{" "}
+                    {new Date(resolvedTask.startedAt).toLocaleString()}
+                  </div>
                 )}
-                {task.completedAt && (
-                  <div>{t("common.completed")}: {new Date(task.completedAt).toLocaleString()}</div>
+                {resolvedTask.completedAt && (
+                  <div>
+                    {t("common.completed")}:{" "}
+                    {new Date(resolvedTask.completedAt).toLocaleString()}
+                  </div>
                 )}
               </div>
             </InfoRow>
@@ -354,14 +489,18 @@ export function DownloadDetailDialog({
             <>
               <Separator />
               <div className="space-y-2">
-                <p className="text-sm font-medium">{t("downloads.detail.metadata")}</p>
+                <p className="text-sm font-medium">
+                  {t("downloads.detail.metadata")}
+                </p>
                 <div className="grid gap-1 text-xs">
                   {metadataEntries.map(([key, value]) => (
                     <div key={key} className="flex items-center gap-2">
                       <Badge variant="outline" className="font-mono text-xs">
                         {key}
                       </Badge>
-                      <span className="text-muted-foreground truncate">{value}</span>
+                      <span className="text-muted-foreground truncate">
+                        {value}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -373,36 +512,39 @@ export function DownloadDetailDialog({
 
           {/* Actions */}
           <div className="flex flex-wrap items-center gap-2">
-            {isTerminal && task.state !== "completed" && onRetry && (
-              <Button size="sm" onClick={handleRetry}>
-                <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
-                {t("downloads.actions.retryTask")}
-              </Button>
-            )}
+            {isTerminal &&
+              resolvedTask.state !== "completed" &&
+              onRetry &&
+              canRetry && (
+                <Button size="sm" onClick={handleRetry}>
+                  <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                  {t("downloads.actions.retryTask")}
+                </Button>
+              )}
 
-            {task.state === "completed" && onOpenFile && (
+            {resolvedTask.state === "completed" && onOpenFile && (
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => onOpenFile(task.destination)}
+                onClick={() => onOpenFile(resolvedTask.destination)}
               >
                 <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
                 {t("downloads.actions.open")}
               </Button>
             )}
 
-            {task.state === "completed" && onRevealFile && (
+            {resolvedTask.state === "completed" && onRevealFile && (
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => onRevealFile(task.destination)}
+                onClick={() => onRevealFile(resolvedTask.destination)}
               >
                 <FolderOpen className="h-3.5 w-3.5 mr-1.5" />
                 {t("downloads.actions.reveal")}
               </Button>
             )}
 
-            {task.state === "completed" && onCalculateChecksum && (
+            {resolvedTask.state === "completed" && onCalculateChecksum && (
               <Button
                 size="sm"
                 variant="outline"
@@ -418,23 +560,25 @@ export function DownloadDetailDialog({
               </Button>
             )}
 
-            {task.state === "completed" && onVerifyFile && task.expectedChecksum && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleVerifyFile}
-                disabled={isVerifying}
-              >
-                {isVerifying ? (
-                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                ) : (
-                  <Shield className="h-3.5 w-3.5 mr-1.5" />
-                )}
-                {t("downloads.detail.verifyFile")}
-              </Button>
-            )}
+            {resolvedTask.state === "completed" &&
+              onVerifyFile &&
+              resolvedTask.expectedChecksum && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleVerifyFile}
+                  disabled={isVerifying}
+                >
+                  {isVerifying ? (
+                    <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                  ) : (
+                    <Shield className="h-3.5 w-3.5 mr-1.5" />
+                  )}
+                  {t("downloads.detail.verifyFile")}
+                </Button>
+              )}
 
-            {task.state === "completed" && onExtractArchive && (
+            {resolvedTask.state === "completed" && onExtractArchive && (
               <Button
                 size="sm"
                 variant="outline"
@@ -455,25 +599,35 @@ export function DownloadDetailDialog({
           {checksumResult && (
             <div className="rounded-md bg-muted p-3">
               <p className="text-xs text-muted-foreground mb-1">SHA256</p>
-              <p className="font-mono text-xs break-all select-all">{checksumResult}</p>
+              <p className="font-mono text-xs break-all select-all">
+                {checksumResult}
+              </p>
             </div>
           )}
 
           {verifyResult && (
             <div className="rounded-md bg-muted p-3 space-y-1">
-              <p className="text-xs text-muted-foreground">{t("downloads.detail.verifyResult")}</p>
+              <p className="text-xs text-muted-foreground">
+                {t("downloads.detail.verifyResult")}
+              </p>
               <p className="text-xs">
                 {t("downloads.detail.verifyValid")}:{" "}
-                <span className={verifyResult.valid ? "text-green-600" : "text-destructive"}>
+                <span
+                  className={
+                    verifyResult.valid ? "text-green-600" : "text-destructive"
+                  }
+                >
                   {verifyResult.valid ? t("common.yes") : t("common.no")}
                 </span>
               </p>
               <p className="text-xs break-all">
-                {t("downloads.detail.checksum")}: {verifyResult.expectedChecksum}
+                {t("downloads.detail.checksum")}:{" "}
+                {verifyResult.expectedChecksum}
               </p>
               {verifyResult.actualChecksum && (
                 <p className="text-xs break-all">
-                  {t("downloads.detail.actualChecksum")}: {verifyResult.actualChecksum}
+                  {t("downloads.detail.actualChecksum")}:{" "}
+                  {verifyResult.actualChecksum}
                 </p>
               )}
               {verifyResult.error && (
@@ -484,9 +638,13 @@ export function DownloadDetailDialog({
 
           {extractedFiles && (
             <div className="rounded-md bg-muted p-3 space-y-1">
-              <p className="text-xs text-muted-foreground">{t("downloads.actions.extract")}</p>
+              <p className="text-xs text-muted-foreground">
+                {t("downloads.actions.extract")}
+              </p>
               <p className="text-xs">
-                {t("downloads.detail.extractedFiles", { count: extractedFiles.length })}
+                {t("downloads.detail.extractedFiles", {
+                  count: extractedFiles.length,
+                })}
               </p>
             </div>
           )}

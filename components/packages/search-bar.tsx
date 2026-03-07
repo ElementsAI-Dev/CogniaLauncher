@@ -55,6 +55,7 @@ import {
 
 export function SearchBar({
   providers,
+  inputRef: externalInputRef,
   onSearch,
   onGetSuggestions,
   loading,
@@ -66,8 +67,10 @@ export function SearchBar({
   const [suggestions, setSuggestions] = useState<SearchSuggestion[]>([]);
   const [filters, setFilters] = useState<SearchFilters>({});
   const [sortBy, setSortBy] = useState<string>("relevance");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [isPending, startTransition] = useTransition();
-  const inputRef = useRef<HTMLInputElement>(null);
+  const internalInputRef = useRef<HTMLInputElement>(null);
+  const inputRef = externalInputRef ?? internalInputRef;
   const { t } = useLocale();
 
   const debouncedQuery = useDebounce(query, 300);
@@ -96,21 +99,26 @@ export function SearchBar({
     return undefined;
   }, [debouncedQuery, onGetSuggestions]);
 
+  const getSearchOptions = useCallback(() => ({
+    providers: selectedProviders.length > 0 ? selectedProviders : undefined,
+    installedOnly: filters.installedOnly,
+    notInstalled: filters.notInstalled,
+    hasUpdates: filters.hasUpdates,
+    license: filters.license?.length ? filters.license : undefined,
+    minVersion: filters.minVersion?.trim() || undefined,
+    maxVersion: filters.maxVersion?.trim() || undefined,
+    sortBy: sortBy !== "relevance" ? sortBy : undefined,
+    sortOrder,
+  }), [filters, selectedProviders, sortBy, sortOrder]);
 
   const handleSearch = useCallback(() => {
     const trimmed = query.trim();
     if (trimmed) {
       saveToHistory(trimmed);
-      onSearch(trimmed, {
-        providers: selectedProviders.length > 0 ? selectedProviders : undefined,
-        installedOnly: filters.installedOnly,
-        notInstalled: filters.notInstalled,
-        hasUpdates: filters.hasUpdates,
-        sortBy: sortBy !== "relevance" ? sortBy : undefined,
-      });
+      onSearch(trimmed, getSearchOptions());
       setShowDropdown(false);
     }
-  }, [query, selectedProviders, filters, sortBy, onSearch, saveToHistory]);
+  }, [getSearchOptions, onSearch, query, saveToHistory]);
 
   const handleSuggestionClick = useCallback(
     (suggestion: SearchSuggestion) => {
@@ -124,21 +132,20 @@ export function SearchBar({
 
       // Trigger search
       onSearch(suggestion.text, {
-        providers: suggestion.provider ? [suggestion.provider] : undefined,
+        ...getSearchOptions(),
+        providers: suggestion.provider ? [suggestion.provider] : getSearchOptions().providers,
       });
     },
-    [onSearch],
+    [getSearchOptions, onSearch],
   );
 
   const handleHistoryClick = useCallback(
     (historyQuery: string) => {
       setQuery(historyQuery);
       setShowDropdown(false);
-      onSearch(historyQuery, {
-        providers: selectedProviders.length > 0 ? selectedProviders : undefined,
-      });
+      onSearch(historyQuery, getSearchOptions());
     },
-    [selectedProviders, onSearch],
+    [getSearchOptions, onSearch],
   );
 
   const toggleProvider = useCallback((providerId: string) => {
@@ -159,8 +166,23 @@ export function SearchBar({
     [],
   );
 
+  const setFilterValue = useCallback(
+    (key: keyof SearchFilters, value: string | string[] | undefined) => {
+      setFilters((prev) => ({
+        ...prev,
+        [key]: value && (Array.isArray(value) ? value.length > 0 : value.trim().length > 0)
+          ? value
+          : undefined,
+      }));
+    },
+    [],
+  );
+
   const activeFilterCount =
-    Object.values(filters).filter(Boolean).length +
+    Object.values(filters).filter((value) => {
+      if (Array.isArray(value)) return value.length > 0;
+      return Boolean(value);
+    }).length +
     (selectedProviders.length > 0 ? 1 : 0);
 
   return (
@@ -175,7 +197,10 @@ export function SearchBar({
                 ref={inputRef}
                 placeholder={t("packages.searchPlaceholder")}
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                  setShowDropdown(true);
+                }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
                     handleSearch();
@@ -326,7 +351,7 @@ export function SearchBar({
         {/* Filters */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" className="h-10 gap-2 shrink-0">
+            <Button variant="outline" className="h-10 gap-2 shrink-0" aria-label={t("packages.filters")}>
               <Filter className="h-4 w-4 text-muted-foreground" />
               {activeFilterCount > 0 && (
                 <Badge variant="secondary" className="text-xs">
@@ -335,7 +360,7 @@ export function SearchBar({
               )}
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56">
+          <DropdownMenuContent align="end" className="w-72">
             <DropdownMenuLabel>{t("packages.filters")}</DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuCheckboxItem
@@ -360,12 +385,43 @@ export function SearchBar({
             >
               {t("packages.hasUpdatesFilter")}
             </DropdownMenuCheckboxItem>
+            <DropdownMenuSeparator />
+            <div className="space-y-3 p-2">
+              <Input
+                value={filters.license?.join(", ") ?? ""}
+                onChange={(event) =>
+                  setFilterValue(
+                    "license",
+                    event.target.value
+                      .split(",")
+                      .map((item) => item.trim())
+                      .filter(Boolean),
+                  )
+                }
+                placeholder={t("packages.licenseFilter")}
+                className="h-9"
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <Input
+                  value={filters.minVersion ?? ""}
+                  onChange={(event) => setFilterValue("minVersion", event.target.value)}
+                  placeholder={t("packages.minVersionFilter")}
+                  className="h-9"
+                />
+                <Input
+                  value={filters.maxVersion ?? ""}
+                  onChange={(event) => setFilterValue("maxVersion", event.target.value)}
+                  placeholder={t("packages.maxVersionFilter")}
+                  className="h-9"
+                />
+              </div>
+            </div>
           </DropdownMenuContent>
         </DropdownMenu>
 
         {/* Sort */}
         <Select value={sortBy} onValueChange={setSortBy}>
-          <SelectTrigger className="h-10 w-[140px] shrink-0">
+          <SelectTrigger className="h-10 w-[140px] shrink-0" aria-label={t(`packages.sort${sortBy[0]?.toUpperCase() ?? ""}${sortBy.slice(1)}`)}>
             <ArrowUpDown className="h-4 w-4 mr-2 text-muted-foreground" />
             <SelectValue />
           </SelectTrigger>
@@ -380,11 +436,27 @@ export function SearchBar({
           </SelectContent>
         </Select>
 
+        <Select value={sortOrder} onValueChange={(value) => setSortOrder(value as "asc" | "desc")}>
+          <SelectTrigger
+            className="h-10 w-[140px] shrink-0"
+            aria-label={sortOrder === "asc" ? t("packages.sortOrderAsc") : t("packages.sortOrderDesc")}
+          >
+            <SelectValue>
+              {sortOrder === "asc" ? t("packages.sortOrderAsc") : t("packages.sortOrderDesc")}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="asc">{t("packages.sortOrderAsc")}</SelectItem>
+            <SelectItem value="desc">{t("packages.sortOrderDesc")}</SelectItem>
+          </SelectContent>
+        </Select>
+
         {/* Search Button */}
         <Button
           onClick={handleSearch}
           disabled={loading || !query.trim()}
           className="h-10 w-10 p-0 shrink-0"
+          aria-label={t("packages.submitSearch")}
         >
           {loading ? (
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -439,6 +511,33 @@ export function SearchBar({
               onClick={() => toggleFilter("hasUpdates", false)}
             >
               {t("packages.hasUpdatesFilter")} <X className="h-3 w-3" />
+            </Badge>
+          )}
+          {filters.license?.length ? (
+            <Badge
+              variant="secondary"
+              className="cursor-pointer gap-1"
+              onClick={() => setFilterValue("license", undefined)}
+            >
+              {t("packages.licenseFilter")}: {filters.license.join(", ")} <X className="h-3 w-3" />
+            </Badge>
+          ) : null}
+          {filters.minVersion && (
+            <Badge
+              variant="secondary"
+              className="cursor-pointer gap-1"
+              onClick={() => setFilterValue("minVersion", undefined)}
+            >
+              {t("packages.minVersionFilter")}: {filters.minVersion} <X className="h-3 w-3" />
+            </Badge>
+          )}
+          {filters.maxVersion && (
+            <Badge
+              variant="secondary"
+              className="cursor-pointer gap-1"
+              onClick={() => setFilterValue("maxVersion", undefined)}
+            >
+              {t("packages.maxVersionFilter")}: {filters.maxVersion} <X className="h-3 w-3" />
             </Badge>
           )}
           <Button

@@ -1,13 +1,15 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { SearchX } from 'lucide-react';
 
 interface ToolEmptyStateProps {
   type: 'no-results' | 'no-favorites' | 'no-recent';
+  actions?: ReactNode;
 }
 
-export function ToolEmptyState({ type }: ToolEmptyStateProps) {
+export function ToolEmptyState({ type, actions }: ToolEmptyStateProps) {
   const { t } = useLocale();
 
   const config = {
@@ -33,6 +35,7 @@ export function ToolEmptyState({ type }: ToolEmptyStateProps) {
       <SearchX className="h-12 w-12 text-muted-foreground/40 mb-4" />
       <h3 className="text-lg font-medium text-muted-foreground">{t(config.titleKey)}</h3>
       <p className="text-sm text-muted-foreground/70 mt-1 max-w-sm">{t(config.descKey)}</p>
+      {actions ? <div className="mt-4 flex flex-wrap justify-center gap-2">{actions}</div> : null}
     </div>
   );
 }

@@ -510,6 +510,31 @@ mod tests {
             Some(EnvInstallFailureClass::Cancelled)
         );
     }
+
+    #[test]
+    fn sanitize_detection_sources_falls_back_to_all_backend_defaults() {
+        let sanitized = sanitize_detection_sources(
+            "node",
+            &[
+                DetectionFileConfig {
+                    file_name: "unknown-source".to_string(),
+                    enabled: true,
+                },
+                DetectionFileConfig {
+                    file_name: ".nvmrc".to_string(),
+                    enabled: false,
+                },
+            ],
+        );
+
+        assert_eq!(
+            sanitized,
+            crate::core::project_env_detect::default_detection_sources("node")
+                .iter()
+                .map(|source| (*source).to_string())
+                .collect::<Vec<_>>()
+        );
+    }
 }
 
 #[tauri::command]
@@ -1952,6 +1977,15 @@ pub async fn env_get_detection_sources(env_type: String) -> Result<Vec<String>, 
     Ok(sources.iter().map(|s| s.to_string()).collect())
 }
 
+/// Get the backend-authoritative default-enabled detection file sources for a given environment type.
+#[tauri::command]
+pub async fn env_get_default_detection_sources(env_type: String) -> Result<Vec<String>, String> {
+    let logical = EnvironmentManager::logical_env_type(&env_type);
+    Ok(crate::core::project_env_detect::default_enabled_detection_sources(
+        &logical,
+    ))
+}
+
 /// Get detection sources for all known environment types at once.
 #[tauri::command]
 pub async fn env_get_all_detection_sources(
@@ -2486,27 +2520,305 @@ async fn install_go_global_package(
 // Rustup-specific commands: components, targets, show
 // ──────────────────────────────────────────────────────
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RustupFailureClass {
+    ProviderUnavailable,
+    ToolchainNotInstalled,
+    ComponentMissing,
+    TargetInstallFailed,
+    MetadataCorrupt,
+    CommandTimeout,
+    InvalidProfile,
+    UnknownError,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RustupOperationError {
+    pub class: RustupFailureClass,
+    pub message: String,
+    pub raw_error: Option<String>,
+    pub retryable: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RustupOperationResult {
+    pub operation: String,
+    pub toolchain: Option<String>,
+    pub subject: Option<String>,
+    pub success: bool,
+    pub error: Option<RustupOperationError>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RustupScopedListResult<T> {
+    pub operation: String,
+    pub toolchain: Option<String>,
+    pub success: bool,
+    pub items: Vec<T>,
+    pub error: Option<RustupOperationError>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RustupProfileResult {
+    pub operation: String,
+    pub profile: Option<String>,
+    pub success: bool,
+    pub error: Option<RustupOperationError>,
+}
+
+impl RustupOperationResult {
+    fn success(operation: &str, toolchain: Option<String>, subject: Option<String>) -> Self {
+        Self {
+            operation: operation.to_string(),
+            toolchain,
+            subject,
+            success: true,
+            error: None,
+        }
+    }
+
+    fn failure(
+        operation: &str,
+        toolchain: Option<String>,
+        subject: Option<String>,
+        error: RustupOperationError,
+    ) -> Self {
+        Self {
+            operation: operation.to_string(),
+            toolchain,
+            subject,
+            success: false,
+            error: Some(error),
+        }
+    }
+}
+
+impl<T> RustupScopedListResult<T> {
+    fn success(operation: &str, toolchain: Option<String>, items: Vec<T>) -> Self {
+        Self {
+            operation: operation.to_string(),
+            toolchain,
+            success: true,
+            items,
+            error: None,
+        }
+    }
+
+    fn failure(operation: &str, toolchain: Option<String>, error: RustupOperationError) -> Self {
+        Self {
+            operation: operation.to_string(),
+            toolchain,
+            success: false,
+            items: Vec::new(),
+            error: Some(error),
+        }
+    }
+}
+
+impl RustupProfileResult {
+    fn success(operation: &str, profile: Option<String>) -> Self {
+        Self {
+            operation: operation.to_string(),
+            profile,
+            success: true,
+            error: None,
+        }
+    }
+
+    fn failure(operation: &str, error: RustupOperationError) -> Self {
+        Self {
+            operation: operation.to_string(),
+            profile: None,
+            success: false,
+            error: Some(error),
+        }
+    }
+}
+
+fn rustup_failure_retryable(class: RustupFailureClass) -> bool {
+    matches!(
+        class,
+        RustupFailureClass::CommandTimeout | RustupFailureClass::TargetInstallFailed
+    )
+}
+
+fn classify_rustup_failure(raw: &str) -> RustupFailureClass {
+    let msg = raw.to_ascii_lowercase();
+
+    if msg.contains("provider not found") || msg.contains("failed to get rustupprovider") {
+        return RustupFailureClass::ProviderUnavailable;
+    }
+    if msg.contains("invalid rustup profile") || msg.contains("profile must be") {
+        return RustupFailureClass::InvalidProfile;
+    }
+    if msg.contains("timeout") || msg.contains("timed out") {
+        return RustupFailureClass::CommandTimeout;
+    }
+    if msg.contains("toolchain")
+        && (msg.contains("not installed")
+            || msg.contains("is not installed")
+            || msg.contains("does not exist"))
+    {
+        return RustupFailureClass::ToolchainNotInstalled;
+    }
+    if msg.contains("component")
+        && (msg.contains("unknown")
+            || msg.contains("not available")
+            || msg.contains("not installed"))
+    {
+        return RustupFailureClass::ComponentMissing;
+    }
+    if msg.contains("target") && (msg.contains("failed") || msg.contains("not installed")) {
+        return RustupFailureClass::TargetInstallFailed;
+    }
+    if msg.contains("corrupt")
+        || msg.contains("metadata")
+        || msg.contains("checksum")
+        || msg.contains("hash mismatch")
+    {
+        return RustupFailureClass::MetadataCorrupt;
+    }
+
+    RustupFailureClass::UnknownError
+}
+
+fn rustup_operation_error(raw: String) -> RustupOperationError {
+    let class = classify_rustup_failure(&raw);
+    RustupOperationError {
+        class,
+        message: raw.trim().to_string(),
+        raw_error: Some(raw),
+        retryable: rustup_failure_retryable(class),
+    }
+}
+
+fn normalize_rustup_profile(profile: &str) -> Option<&'static str> {
+    match profile.trim().to_ascii_lowercase().as_str() {
+        "minimal" => Some("minimal"),
+        "default" => Some("default"),
+        "complete" => Some("complete"),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod rustup_contract_tests {
+    use super::*;
+
+    #[test]
+    fn classify_timeout_as_retryable_timeout() {
+        let err = rustup_operation_error("operation timed out after 120s".to_string());
+        assert_eq!(err.class, RustupFailureClass::CommandTimeout);
+        assert!(err.retryable);
+    }
+
+    #[test]
+    fn classify_unknown_component_error() {
+        let err = rustup_operation_error("unknown component 'rust-docs'".to_string());
+        assert_eq!(err.class, RustupFailureClass::ComponentMissing);
+        assert!(!err.retryable);
+    }
+
+    #[test]
+    fn classify_unrecognized_error_as_unknown() {
+        let err = rustup_operation_error("some unexpected rustup failure text".to_string());
+        assert_eq!(err.class, RustupFailureClass::UnknownError);
+        assert!(!err.retryable);
+        assert!(err.raw_error.is_some());
+    }
+
+    #[test]
+    fn normalize_profile_is_case_insensitive() {
+        assert_eq!(normalize_rustup_profile(" DEFAULT "), Some("default"));
+        assert_eq!(normalize_rustup_profile("minimal"), Some("minimal"));
+        assert_eq!(normalize_rustup_profile("invalid"), None);
+    }
+
+    #[test]
+    fn component_and_target_contracts_preserve_toolchain_scope() {
+        let list = RustupScopedListResult::success(
+            "rustup.list_components",
+            Some("nightly".to_string()),
+            vec![crate::provider::rustup::RustComponent {
+                name: "clippy".to_string(),
+                installed: true,
+                default: false,
+            }],
+        );
+        assert_eq!(list.operation, "rustup.list_components");
+        assert_eq!(list.toolchain.as_deref(), Some("nightly"));
+        assert!(list.success);
+        assert_eq!(list.items.len(), 1);
+
+        let op = RustupOperationResult::success(
+            "rustup.add_target",
+            Some("stable".to_string()),
+            Some("wasm32-unknown-unknown".to_string()),
+        );
+        assert_eq!(op.operation, "rustup.add_target");
+        assert_eq!(op.toolchain.as_deref(), Some("stable"));
+        assert_eq!(op.subject.as_deref(), Some("wasm32-unknown-unknown"));
+        assert!(op.success);
+    }
+
+    #[test]
+    fn override_and_profile_contracts_preserve_subject_and_validation() {
+        let unset = RustupOperationResult::success(
+            "rustup.override_unset",
+            None,
+            Some("/tmp/project".to_string()),
+        );
+        assert_eq!(unset.operation, "rustup.override_unset");
+        assert_eq!(unset.subject.as_deref(), Some("/tmp/project"));
+        assert!(unset.success);
+
+        let invalid = normalize_rustup_profile("bad-profile");
+        assert_eq!(invalid, None);
+    }
+}
+
 /// List components for a Rust toolchain
 #[tauri::command]
 pub async fn rustup_list_components(
     toolchain: Option<String>,
     registry: State<'_, SharedRegistry>,
-) -> Result<Vec<crate::provider::rustup::RustComponent>, String> {
+) -> Result<RustupScopedListResult<crate::provider::rustup::RustComponent>, String> {
+    let op = "rustup.list_components";
+    let toolchain_scope = toolchain.clone();
     let registry_guard = registry.read().await;
-    let provider = registry_guard
-        .get_environment_provider("rustup")
-        .ok_or("Rustup provider not found")?;
+    let Some(provider) = registry_guard.get_environment_provider("rustup") else {
+        return Ok(RustupScopedListResult::failure(
+            op,
+            toolchain_scope,
+            rustup_operation_error("Rustup provider not found".to_string()),
+        ));
+    };
 
     // Downcast to RustupProvider to access component methods
-    let rustup = provider
+    let Some(rustup) = provider
         .as_any()
         .downcast_ref::<crate::provider::rustup::RustupProvider>()
-        .ok_or("Failed to get RustupProvider")?;
+    else {
+        return Ok(RustupScopedListResult::failure(
+            op,
+            toolchain_scope,
+            rustup_operation_error("Failed to get RustupProvider".to_string()),
+        ));
+    };
 
-    rustup
-        .list_components(toolchain.as_deref())
-        .await
-        .map_err(|e| e.to_string())
+    match rustup.list_components(toolchain.as_deref()).await {
+        Ok(items) => Ok(RustupScopedListResult::success(op, toolchain_scope, items)),
+        Err(e) => Ok(RustupScopedListResult::failure(
+            op,
+            toolchain_scope,
+            rustup_operation_error(e.to_string()),
+        )),
+    }
 }
 
 /// Add a component to a Rust toolchain
@@ -2515,21 +2827,41 @@ pub async fn rustup_add_component(
     component: String,
     toolchain: Option<String>,
     registry: State<'_, SharedRegistry>,
-) -> Result<(), String> {
+) -> Result<RustupOperationResult, String> {
+    let op = "rustup.add_component";
+    let toolchain_scope = toolchain.clone();
+    let subject = Some(component.clone());
     let registry_guard = registry.read().await;
-    let provider = registry_guard
-        .get_environment_provider("rustup")
-        .ok_or("Rustup provider not found")?;
+    let Some(provider) = registry_guard.get_environment_provider("rustup") else {
+        return Ok(RustupOperationResult::failure(
+            op,
+            toolchain_scope,
+            subject,
+            rustup_operation_error("Rustup provider not found".to_string()),
+        ));
+    };
 
-    let rustup = provider
+    let Some(rustup) = provider
         .as_any()
         .downcast_ref::<crate::provider::rustup::RustupProvider>()
-        .ok_or("Failed to get RustupProvider")?;
+    else {
+        return Ok(RustupOperationResult::failure(
+            op,
+            toolchain_scope,
+            subject,
+            rustup_operation_error("Failed to get RustupProvider".to_string()),
+        ));
+    };
 
-    rustup
-        .add_component(&component, toolchain.as_deref())
-        .await
-        .map_err(|e| e.to_string())
+    match rustup.add_component(&component, toolchain.as_deref()).await {
+        Ok(()) => Ok(RustupOperationResult::success(op, toolchain_scope, subject)),
+        Err(e) => Ok(RustupOperationResult::failure(
+            op,
+            toolchain_scope,
+            subject,
+            rustup_operation_error(e.to_string()),
+        )),
+    }
 }
 
 /// Remove a component from a Rust toolchain
@@ -2538,21 +2870,41 @@ pub async fn rustup_remove_component(
     component: String,
     toolchain: Option<String>,
     registry: State<'_, SharedRegistry>,
-) -> Result<(), String> {
+) -> Result<RustupOperationResult, String> {
+    let op = "rustup.remove_component";
+    let toolchain_scope = toolchain.clone();
+    let subject = Some(component.clone());
     let registry_guard = registry.read().await;
-    let provider = registry_guard
-        .get_environment_provider("rustup")
-        .ok_or("Rustup provider not found")?;
+    let Some(provider) = registry_guard.get_environment_provider("rustup") else {
+        return Ok(RustupOperationResult::failure(
+            op,
+            toolchain_scope,
+            subject,
+            rustup_operation_error("Rustup provider not found".to_string()),
+        ));
+    };
 
-    let rustup = provider
+    let Some(rustup) = provider
         .as_any()
         .downcast_ref::<crate::provider::rustup::RustupProvider>()
-        .ok_or("Failed to get RustupProvider")?;
+    else {
+        return Ok(RustupOperationResult::failure(
+            op,
+            toolchain_scope,
+            subject,
+            rustup_operation_error("Failed to get RustupProvider".to_string()),
+        ));
+    };
 
-    rustup
-        .remove_component(&component, toolchain.as_deref())
-        .await
-        .map_err(|e| e.to_string())
+    match rustup.remove_component(&component, toolchain.as_deref()).await {
+        Ok(()) => Ok(RustupOperationResult::success(op, toolchain_scope, subject)),
+        Err(e) => Ok(RustupOperationResult::failure(
+            op,
+            toolchain_scope,
+            subject,
+            rustup_operation_error(e.to_string()),
+        )),
+    }
 }
 
 /// List targets for a Rust toolchain
@@ -2560,21 +2912,37 @@ pub async fn rustup_remove_component(
 pub async fn rustup_list_targets(
     toolchain: Option<String>,
     registry: State<'_, SharedRegistry>,
-) -> Result<Vec<crate::provider::rustup::RustTarget>, String> {
+) -> Result<RustupScopedListResult<crate::provider::rustup::RustTarget>, String> {
+    let op = "rustup.list_targets";
+    let toolchain_scope = toolchain.clone();
     let registry_guard = registry.read().await;
-    let provider = registry_guard
-        .get_environment_provider("rustup")
-        .ok_or("Rustup provider not found")?;
+    let Some(provider) = registry_guard.get_environment_provider("rustup") else {
+        return Ok(RustupScopedListResult::failure(
+            op,
+            toolchain_scope,
+            rustup_operation_error("Rustup provider not found".to_string()),
+        ));
+    };
 
-    let rustup = provider
+    let Some(rustup) = provider
         .as_any()
         .downcast_ref::<crate::provider::rustup::RustupProvider>()
-        .ok_or("Failed to get RustupProvider")?;
+    else {
+        return Ok(RustupScopedListResult::failure(
+            op,
+            toolchain_scope,
+            rustup_operation_error("Failed to get RustupProvider".to_string()),
+        ));
+    };
 
-    rustup
-        .list_targets(toolchain.as_deref())
-        .await
-        .map_err(|e| e.to_string())
+    match rustup.list_targets(toolchain.as_deref()).await {
+        Ok(items) => Ok(RustupScopedListResult::success(op, toolchain_scope, items)),
+        Err(e) => Ok(RustupScopedListResult::failure(
+            op,
+            toolchain_scope,
+            rustup_operation_error(e.to_string()),
+        )),
+    }
 }
 
 /// Add a cross-compilation target
@@ -2583,21 +2951,41 @@ pub async fn rustup_add_target(
     target: String,
     toolchain: Option<String>,
     registry: State<'_, SharedRegistry>,
-) -> Result<(), String> {
+) -> Result<RustupOperationResult, String> {
+    let op = "rustup.add_target";
+    let toolchain_scope = toolchain.clone();
+    let subject = Some(target.clone());
     let registry_guard = registry.read().await;
-    let provider = registry_guard
-        .get_environment_provider("rustup")
-        .ok_or("Rustup provider not found")?;
+    let Some(provider) = registry_guard.get_environment_provider("rustup") else {
+        return Ok(RustupOperationResult::failure(
+            op,
+            toolchain_scope,
+            subject,
+            rustup_operation_error("Rustup provider not found".to_string()),
+        ));
+    };
 
-    let rustup = provider
+    let Some(rustup) = provider
         .as_any()
         .downcast_ref::<crate::provider::rustup::RustupProvider>()
-        .ok_or("Failed to get RustupProvider")?;
+    else {
+        return Ok(RustupOperationResult::failure(
+            op,
+            toolchain_scope,
+            subject,
+            rustup_operation_error("Failed to get RustupProvider".to_string()),
+        ));
+    };
 
-    rustup
-        .add_target(&target, toolchain.as_deref())
-        .await
-        .map_err(|e| e.to_string())
+    match rustup.add_target(&target, toolchain.as_deref()).await {
+        Ok(()) => Ok(RustupOperationResult::success(op, toolchain_scope, subject)),
+        Err(e) => Ok(RustupOperationResult::failure(
+            op,
+            toolchain_scope,
+            subject,
+            rustup_operation_error(e.to_string()),
+        )),
+    }
 }
 
 /// Remove a cross-compilation target
@@ -2606,21 +2994,41 @@ pub async fn rustup_remove_target(
     target: String,
     toolchain: Option<String>,
     registry: State<'_, SharedRegistry>,
-) -> Result<(), String> {
+) -> Result<RustupOperationResult, String> {
+    let op = "rustup.remove_target";
+    let toolchain_scope = toolchain.clone();
+    let subject = Some(target.clone());
     let registry_guard = registry.read().await;
-    let provider = registry_guard
-        .get_environment_provider("rustup")
-        .ok_or("Rustup provider not found")?;
+    let Some(provider) = registry_guard.get_environment_provider("rustup") else {
+        return Ok(RustupOperationResult::failure(
+            op,
+            toolchain_scope,
+            subject,
+            rustup_operation_error("Rustup provider not found".to_string()),
+        ));
+    };
 
-    let rustup = provider
+    let Some(rustup) = provider
         .as_any()
         .downcast_ref::<crate::provider::rustup::RustupProvider>()
-        .ok_or("Failed to get RustupProvider")?;
+    else {
+        return Ok(RustupOperationResult::failure(
+            op,
+            toolchain_scope,
+            subject,
+            rustup_operation_error("Failed to get RustupProvider".to_string()),
+        ));
+    };
 
-    rustup
-        .remove_target(&target, toolchain.as_deref())
-        .await
-        .map_err(|e| e.to_string())
+    match rustup.remove_target(&target, toolchain.as_deref()).await {
+        Ok(()) => Ok(RustupOperationResult::success(op, toolchain_scope, subject)),
+        Err(e) => Ok(RustupOperationResult::failure(
+            op,
+            toolchain_scope,
+            subject,
+            rustup_operation_error(e.to_string()),
+        )),
+    }
 }
 
 /// Get detailed rustup show info
@@ -2679,22 +3087,41 @@ pub async fn rustup_override_set(
     toolchain: String,
     path: Option<String>,
     registry: State<'_, SharedRegistry>,
-) -> Result<(), String> {
+) -> Result<RustupOperationResult, String> {
+    let op = "rustup.override_set";
+    let subject = path.clone();
     let registry_guard = registry.read().await;
-    let provider = registry_guard
-        .get_environment_provider("rustup")
-        .ok_or("Rustup provider not found")?;
+    let Some(provider) = registry_guard.get_environment_provider("rustup") else {
+        return Ok(RustupOperationResult::failure(
+            op,
+            Some(toolchain.clone()),
+            subject,
+            rustup_operation_error("Rustup provider not found".to_string()),
+        ));
+    };
 
-    let rustup = provider
+    let Some(rustup) = provider
         .as_any()
         .downcast_ref::<crate::provider::rustup::RustupProvider>()
-        .ok_or("Failed to get RustupProvider")?;
+    else {
+        return Ok(RustupOperationResult::failure(
+            op,
+            Some(toolchain.clone()),
+            subject,
+            rustup_operation_error("Failed to get RustupProvider".to_string()),
+        ));
+    };
 
     let path_buf = path.map(std::path::PathBuf::from);
-    rustup
-        .override_set(&toolchain, path_buf.as_deref())
-        .await
-        .map_err(|e| e.to_string())
+    match rustup.override_set(&toolchain, path_buf.as_deref()).await {
+        Ok(()) => Ok(RustupOperationResult::success(op, Some(toolchain), subject)),
+        Err(e) => Ok(RustupOperationResult::failure(
+            op,
+            Some(toolchain),
+            subject,
+            rustup_operation_error(e.to_string()),
+        )),
+    }
 }
 
 /// Remove a directory override
@@ -2702,40 +3129,77 @@ pub async fn rustup_override_set(
 pub async fn rustup_override_unset(
     path: Option<String>,
     registry: State<'_, SharedRegistry>,
-) -> Result<(), String> {
+) -> Result<RustupOperationResult, String> {
+    let op = "rustup.override_unset";
+    let subject = path.clone();
     let registry_guard = registry.read().await;
-    let provider = registry_guard
-        .get_environment_provider("rustup")
-        .ok_or("Rustup provider not found")?;
+    let Some(provider) = registry_guard.get_environment_provider("rustup") else {
+        return Ok(RustupOperationResult::failure(
+            op,
+            None,
+            subject,
+            rustup_operation_error("Rustup provider not found".to_string()),
+        ));
+    };
 
-    let rustup = provider
+    let Some(rustup) = provider
         .as_any()
         .downcast_ref::<crate::provider::rustup::RustupProvider>()
-        .ok_or("Failed to get RustupProvider")?;
+    else {
+        return Ok(RustupOperationResult::failure(
+            op,
+            None,
+            subject,
+            rustup_operation_error("Failed to get RustupProvider".to_string()),
+        ));
+    };
 
     let path_buf = path.map(std::path::PathBuf::from);
-    rustup
-        .override_unset(path_buf.as_deref())
-        .await
-        .map_err(|e| e.to_string())
+    match rustup.override_unset(path_buf.as_deref()).await {
+        Ok(()) => Ok(RustupOperationResult::success(op, None, subject)),
+        Err(e) => Ok(RustupOperationResult::failure(
+            op,
+            None,
+            subject,
+            rustup_operation_error(e.to_string()),
+        )),
+    }
 }
 
 /// List all directory overrides
 #[tauri::command]
 pub async fn rustup_override_list(
     registry: State<'_, SharedRegistry>,
-) -> Result<Vec<crate::provider::rustup::RustupOverride>, String> {
+) -> Result<RustupScopedListResult<crate::provider::rustup::RustupOverride>, String> {
+    let op = "rustup.override_list";
     let registry_guard = registry.read().await;
-    let provider = registry_guard
-        .get_environment_provider("rustup")
-        .ok_or("Rustup provider not found")?;
+    let Some(provider) = registry_guard.get_environment_provider("rustup") else {
+        return Ok(RustupScopedListResult::failure(
+            op,
+            None,
+            rustup_operation_error("Rustup provider not found".to_string()),
+        ));
+    };
 
-    let rustup = provider
+    let Some(rustup) = provider
         .as_any()
         .downcast_ref::<crate::provider::rustup::RustupProvider>()
-        .ok_or("Failed to get RustupProvider")?;
+    else {
+        return Ok(RustupScopedListResult::failure(
+            op,
+            None,
+            rustup_operation_error("Failed to get RustupProvider".to_string()),
+        ));
+    };
 
-    rustup.override_list().await.map_err(|e| e.to_string())
+    match rustup.override_list().await {
+        Ok(items) => Ok(RustupScopedListResult::success(op, None, items)),
+        Err(e) => Ok(RustupScopedListResult::failure(
+            op,
+            None,
+            rustup_operation_error(e.to_string()),
+        )),
+    }
 }
 
 /// Run a command with a specific toolchain
@@ -2792,18 +3256,35 @@ pub async fn rustup_which(
 
 /// Get the current rustup profile
 #[tauri::command]
-pub async fn rustup_get_profile(registry: State<'_, SharedRegistry>) -> Result<String, String> {
+pub async fn rustup_get_profile(
+    registry: State<'_, SharedRegistry>,
+) -> Result<RustupProfileResult, String> {
+    let op = "rustup.get_profile";
     let registry_guard = registry.read().await;
-    let provider = registry_guard
-        .get_environment_provider("rustup")
-        .ok_or("Rustup provider not found")?;
+    let Some(provider) = registry_guard.get_environment_provider("rustup") else {
+        return Ok(RustupProfileResult::failure(
+            op,
+            rustup_operation_error("Rustup provider not found".to_string()),
+        ));
+    };
 
-    let rustup = provider
+    let Some(rustup) = provider
         .as_any()
         .downcast_ref::<crate::provider::rustup::RustupProvider>()
-        .ok_or("Failed to get RustupProvider")?;
+    else {
+        return Ok(RustupProfileResult::failure(
+            op,
+            rustup_operation_error("Failed to get RustupProvider".to_string()),
+        ));
+    };
 
-    rustup.get_profile().await.map_err(|e| e.to_string())
+    match rustup.get_profile().await {
+        Ok(profile) => Ok(RustupProfileResult::success(op, Some(profile))),
+        Err(e) => Ok(RustupProfileResult::failure(
+            op,
+            rustup_operation_error(e.to_string()),
+        )),
+    }
 }
 
 /// Set the rustup profile (minimal, default, complete)
@@ -2811,21 +3292,67 @@ pub async fn rustup_get_profile(registry: State<'_, SharedRegistry>) -> Result<S
 pub async fn rustup_set_profile(
     profile: String,
     registry: State<'_, SharedRegistry>,
-) -> Result<(), String> {
-    let registry_guard = registry.read().await;
-    let provider = registry_guard
-        .get_environment_provider("rustup")
-        .ok_or("Rustup provider not found")?;
+) -> Result<RustupOperationResult, String> {
+    let op = "rustup.set_profile";
+    let normalized = match normalize_rustup_profile(&profile) {
+        Some(value) => value.to_string(),
+        None => {
+            return Ok(RustupOperationResult::failure(
+                op,
+                None,
+                Some(profile),
+                RustupOperationError {
+                    class: RustupFailureClass::InvalidProfile,
+                    message: "Invalid rustup profile; expected one of: minimal, default, complete"
+                        .to_string(),
+                    raw_error: None,
+                    retryable: false,
+                },
+            ))
+        }
+    };
 
-    let rustup = provider
+    let registry_guard = registry.read().await;
+    let Some(provider) = registry_guard.get_environment_provider("rustup") else {
+        return Ok(RustupOperationResult::failure(
+            op,
+            None,
+            Some(normalized),
+            rustup_operation_error("Rustup provider not found".to_string()),
+        ));
+    };
+
+    let Some(rustup) = provider
         .as_any()
         .downcast_ref::<crate::provider::rustup::RustupProvider>()
-        .ok_or("Failed to get RustupProvider")?;
+    else {
+        return Ok(RustupOperationResult::failure(
+            op,
+            None,
+            Some(normalized),
+            rustup_operation_error("Failed to get RustupProvider".to_string()),
+        ));
+    };
 
-    rustup
-        .set_profile(&profile)
-        .await
-        .map_err(|e| e.to_string())
+    if let Ok(current) = rustup.get_profile().await {
+        if normalize_rustup_profile(&current) == Some(normalized.as_str()) {
+            return Ok(RustupOperationResult::success(
+                op,
+                None,
+                Some(normalized),
+            ));
+        }
+    }
+
+    match rustup.set_profile(&normalized).await {
+        Ok(()) => Ok(RustupOperationResult::success(op, None, Some(normalized))),
+        Err(e) => Ok(RustupOperationResult::failure(
+            op,
+            None,
+            Some(normalized),
+            rustup_operation_error(e.to_string()),
+        )),
+    }
 }
 
 // ──────────────────────────────────────────────────────

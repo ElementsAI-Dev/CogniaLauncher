@@ -602,114 +602,29 @@ impl EnvironmentProvider for RustupProvider {
     }
 
     async fn detect_version(&self, start_path: &Path) -> CogniaResult<Option<VersionDetection>> {
-        let mut current = start_path.to_path_buf();
+        let sources: Vec<String> = crate::core::project_env_detect::default_detection_sources("rust")
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect();
 
-        loop {
-            // 1. Check rust-toolchain.toml (TOML format, highest priority)
-            let toolchain_toml = current.join("rust-toolchain.toml");
-            if toolchain_toml.exists() {
-                if let Ok(content) = crate::platform::fs::read_file_string(&toolchain_toml).await {
-                    // Parse [toolchain] section, looking for channel = "..."
-                    // Handle both inline and multi-line TOML
-                    let mut in_toolchain_section = false;
-                    for line in content.lines() {
-                        let line = line.trim();
-                        // Skip comments
-                        if line.starts_with('#') {
-                            continue;
-                        }
-                        // Detect section headers
-                        if line.starts_with('[') {
-                            in_toolchain_section = line.contains("[toolchain]");
-                            continue;
-                        }
-                        // Look for channel in [toolchain] section or at top level
-                        if (in_toolchain_section || !content.contains('['))
-                            && line.starts_with("channel")
-                        {
-                            if let Some(value) = line.split('=').nth(1) {
-                                let version = value
-                                    .trim()
-                                    .trim_matches('"')
-                                    .trim_matches('\'')
-                                    .split('#') // Remove inline comments
-                                    .next()
-                                    .unwrap_or("")
-                                    .trim();
-                                if !version.is_empty() {
-                                    return Ok(Some(VersionDetection {
-                                        version: version.to_string(),
-                                        source: VersionSource::LocalFile,
-                                        source_path: Some(toolchain_toml),
-                                    }));
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+        if let Some(detected) =
+            crate::core::project_env_detect::detect_env_version("rust", start_path, &sources)
+                .await?
+        {
+            let source = match detected.source_type.as_str() {
+                "manifest" => VersionSource::Manifest,
+                "global" => VersionSource::GlobalFile,
+                _ => VersionSource::LocalFile,
+            };
 
-            // 2. Check rust-toolchain (plain text format)
-            let toolchain_plain = current.join("rust-toolchain");
-            if toolchain_plain.exists() {
-                if let Ok(content) = crate::platform::fs::read_file_string(&toolchain_plain).await {
-                    // Plain format: just the channel name on a line
-                    let version = content
-                        .lines()
-                        .find(|line| !line.starts_with('#') && !line.trim().is_empty())
-                        .unwrap_or("")
-                        .trim();
-
-                    if !version.is_empty() {
-                        return Ok(Some(VersionDetection {
-                            version: version.to_string(),
-                            source: VersionSource::LocalFile,
-                            source_path: Some(toolchain_plain),
-                        }));
-                    }
-                }
-            }
-
-            // 3. Check .tool-versions file (asdf-style)
-            let tool_versions = current.join(".tool-versions");
-            if tool_versions.exists() {
-                if let Ok(content) = crate::platform::fs::read_file_string(&tool_versions).await {
-                    for line in content.lines() {
-                        let line = line.trim();
-                        if line.starts_with("rust ") {
-                            let version = line.strip_prefix("rust ").unwrap_or("").trim();
-                            if !version.is_empty() {
-                                return Ok(Some(VersionDetection {
-                                    version: version.to_string(),
-                                    source: VersionSource::LocalFile,
-                                    source_path: Some(tool_versions),
-                                }));
-                            }
-                        }
-                    }
-                }
-            }
-
-            // 4. Check Cargo.toml for rust-version (MSRV) field
-            let cargo_toml = current.join("Cargo.toml");
-            if cargo_toml.exists() {
-                if let Ok(content) = crate::platform::fs::read_file_string(&cargo_toml).await {
-                    if let Some(version) = parse_cargo_toml_rust_version(&content) {
-                        return Ok(Some(VersionDetection {
-                            version,
-                            source: VersionSource::Manifest,
-                            source_path: Some(cargo_toml),
-                        }));
-                    }
-                }
-            }
-
-            if !current.pop() {
-                break;
-            }
+            return Ok(Some(VersionDetection {
+                version: detected.version,
+                source,
+                source_path: detected.source_path.map(PathBuf::from),
+            }));
         }
 
-        // 5. Fall back to current rustup default
+        // Fall back to current rustup default when no project-local or manifest source is found.
         if let Some(version) = self.get_current_version().await? {
             return Ok(Some(VersionDetection {
                 version,
@@ -723,19 +638,17 @@ impl EnvironmentProvider for RustupProvider {
 
     fn get_env_modifications(&self, version: &str) -> CogniaResult<EnvModifications> {
         let rustup_home = self.rustup_home()?;
+        let cargo_home = self.cargo_home()?;
         let toolchain_path = rustup_home.join("toolchains").join(version).join("bin");
+        let cargo_bin = cargo_home.join("bin");
 
-        let mut mods = EnvModifications::new()
+        // Deterministic PATH ordering: cargo bin first, then selected toolchain bin.
+        let mods = EnvModifications::new()
+            .prepend_path(cargo_bin)
             .prepend_path(toolchain_path)
-            .set_var("RUSTUP_TOOLCHAIN", version.to_string());
-
-        if let Some(cargo_home) = &self.cargo_home {
-            mods = mods
-                .prepend_path(cargo_home.join("bin"))
-                .set_var("CARGO_HOME", cargo_home.to_string_lossy().to_string());
-        }
-
-        mods = mods.set_var("RUSTUP_HOME", rustup_home.to_string_lossy().to_string());
+            .set_var("RUSTUP_TOOLCHAIN", version.to_string())
+            .set_var("CARGO_HOME", cargo_home.to_string_lossy().to_string())
+            .set_var("RUSTUP_HOME", rustup_home.to_string_lossy().to_string());
 
         Ok(mods)
     }
@@ -1138,5 +1051,98 @@ rust-version = "1.72"
             parse_cargo_toml_rust_version(content),
             Some("1.72".to_string())
         );
+    }
+
+    #[tokio::test]
+    async fn detect_version_prefers_rust_toolchain_file_over_toml() {
+        let tmp = tempfile::tempdir().unwrap();
+        crate::platform::fs::write_file_string(tmp.path().join("rust-toolchain"), "nightly")
+            .await
+            .unwrap();
+        crate::platform::fs::write_file_string(
+            tmp.path().join("rust-toolchain.toml"),
+            r#"[toolchain]
+channel = "stable"
+"#,
+        )
+        .await
+        .unwrap();
+
+        let provider = RustupProvider::new();
+        let detection = provider.detect_version(tmp.path()).await.unwrap().unwrap();
+        assert_eq!(detection.version, "nightly");
+        assert!(matches!(detection.source, VersionSource::LocalFile));
+        assert!(
+            detection
+                .source_path
+                .as_ref()
+                .is_some_and(|p| p.ends_with("rust-toolchain"))
+        );
+    }
+
+    #[tokio::test]
+    async fn detect_version_falls_through_invalid_nearest_source() {
+        let tmp = tempfile::tempdir().unwrap();
+        crate::platform::fs::write_file_string(tmp.path().join("rust-toolchain"), "# invalid")
+            .await
+            .unwrap();
+        crate::platform::fs::write_file_string(tmp.path().join(".tool-versions"), "rust 1.76.0")
+            .await
+            .unwrap();
+
+        let provider = RustupProvider::new();
+        let detection = provider.detect_version(tmp.path()).await.unwrap().unwrap();
+        assert_eq!(detection.version, "1.76.0");
+        assert!(matches!(detection.source, VersionSource::LocalFile));
+        assert!(
+            detection
+                .source_path
+                .as_ref()
+                .is_some_and(|p| p.ends_with(".tool-versions"))
+        );
+    }
+
+    #[test]
+    fn get_env_modifications_includes_required_vars_with_stable_path_order() {
+        let old_rustup_home = std::env::var("RUSTUP_HOME").ok();
+        let old_cargo_home = std::env::var("CARGO_HOME").ok();
+        let tmp = tempfile::tempdir().unwrap();
+
+        let rustup_home = tmp.path().join("rustup-home");
+        let cargo_home = tmp.path().join("cargo-home");
+        std::env::set_var("RUSTUP_HOME", &rustup_home);
+        std::env::set_var("CARGO_HOME", &cargo_home);
+
+        let provider = RustupProvider::new();
+        let mods = provider.get_env_modifications("stable").unwrap();
+
+        assert_eq!(
+            mods.set_variables.get("RUSTUP_TOOLCHAIN"),
+            Some(&"stable".to_string())
+        );
+        assert_eq!(
+            mods.set_variables.get("RUSTUP_HOME"),
+            Some(&rustup_home.to_string_lossy().to_string())
+        );
+        assert_eq!(
+            mods.set_variables.get("CARGO_HOME"),
+            Some(&cargo_home.to_string_lossy().to_string())
+        );
+
+        assert_eq!(mods.path_prepend.len(), 2);
+        assert_eq!(mods.path_prepend[0], cargo_home.join("bin"));
+        assert_eq!(
+            mods.path_prepend[1],
+            rustup_home.join("toolchains").join("stable").join("bin")
+        );
+
+        match old_rustup_home {
+            Some(v) => std::env::set_var("RUSTUP_HOME", v),
+            None => std::env::remove_var("RUSTUP_HOME"),
+        }
+        match old_cargo_home {
+            Some(v) => std::env::set_var("CARGO_HOME", v),
+            None => std::env::remove_var("CARGO_HOME"),
+        }
     }
 }

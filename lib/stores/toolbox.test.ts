@@ -10,6 +10,8 @@ describe('useToolboxStore', () => {
       toolUseCounts: {},
       toolPreferences: {},
       viewMode: 'grid',
+      toolLifecycles: {},
+      continuationHint: null,
       selectedCategory: 'all',
       searchQuery: '',
       activeToolId: null,
@@ -219,6 +221,71 @@ describe('useToolboxStore', () => {
 
       expect(preferences.indent).toBe('2');
       expect(preferences.sortKeys).toBe(false);
+    });
+  });
+
+  describe('tool lifecycle', () => {
+    it('sets tool lifecycle phase', () => {
+      const { result } = renderHook(() => useToolboxStore());
+      act(() => {
+        result.current.setToolLifecycle('plugin:test:tool', 'execute');
+      });
+      expect(result.current.toolLifecycles['plugin:test:tool']?.phase).toBe('execute');
+    });
+
+    it('clears tool lifecycle phase', () => {
+      const { result } = renderHook(() => useToolboxStore());
+      act(() => {
+        result.current.setToolLifecycle('plugin:test:tool', 'failure', 'boom');
+      });
+      act(() => {
+        result.current.clearToolLifecycle('plugin:test:tool');
+      });
+      expect(result.current.toolLifecycles['plugin:test:tool']).toBeUndefined();
+    });
+  });
+
+  describe('continuation hint', () => {
+    it('stores latest marketplace continuation hint', () => {
+      const { result } = renderHook(() => useToolboxStore());
+
+      act(() => {
+        result.current.setContinuationHint({
+          kind: 'marketplace-install',
+          listingId: 'hello-world-rust',
+          pluginId: 'com.cognia.hello-world',
+          toolId: 'plugin:com.cognia.hello-world:hello',
+          timestamp: 1234,
+        });
+      });
+
+      expect(result.current.continuationHint).toEqual({
+        kind: 'marketplace-install',
+        listingId: 'hello-world-rust',
+        pluginId: 'com.cognia.hello-world',
+        toolId: 'plugin:com.cognia.hello-world:hello',
+        timestamp: 1234,
+      });
+    });
+
+    it('clears continuation hint', () => {
+      const { result } = renderHook(() => useToolboxStore());
+
+      act(() => {
+        result.current.setContinuationHint({
+          kind: 'marketplace-update',
+          listingId: 'hello-world-rust',
+          pluginId: 'com.cognia.hello-world',
+          toolId: null,
+          timestamp: 5678,
+        });
+      });
+
+      act(() => {
+        result.current.clearContinuationHint();
+      });
+
+      expect(result.current.continuationHint).toBeNull();
     });
   });
 

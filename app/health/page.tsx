@@ -60,10 +60,29 @@ export default function HealthPage() {
     loading,
     error,
     progress,
+    summary: hookSummary,
+    activeRemediationId,
     checkAll,
     checkEnvironment,
+    previewRemediation,
+    applyRemediation,
     clearResults,
   } = useHealthCheck();
+
+  const summary = hookSummary ?? {
+    environmentCount: systemHealth?.environments.length ?? 0,
+    healthyCount: systemHealth?.environments.filter((e) => e.status === 'healthy').length ?? 0,
+    warningCount: systemHealth?.environments.filter((e) => e.status === 'warning').length ?? 0,
+    errorCount: systemHealth?.environments.filter((e) => e.status === 'error').length ?? 0,
+    unavailableCount: systemHealth?.environments.filter((e) => e.status === 'unknown').length ?? 0,
+    packageManagerCount: systemHealth?.package_managers.length ?? 0,
+    unavailablePackageManagerCount: systemHealth?.package_managers.filter((p) => p.status === 'unknown').length ?? 0,
+    issueCount:
+      (systemHealth?.system_issues.length ?? 0) +
+      (systemHealth?.environments.reduce((sum, env) => sum + env.issues.length, 0) ?? 0) +
+      (systemHealth?.package_managers.reduce((sum, pm) => sum + pm.issues.length, 0) ?? 0),
+    actionableIssueCount: 0,
+  };
 
   const [expandedEnvs, setExpandedEnvs] = useState<Set<string>>(new Set());
   const hasAutoCheckedRef = useRef(false);
@@ -124,10 +143,11 @@ export default function HealthPage() {
   }, [systemHealth]);
 
   // Stats
-  const envCount = systemHealth?.environments.length ?? 0;
-  const healthyCount = systemHealth?.environments.filter((e) => e.status === 'healthy').length ?? 0;
-  const warningCount = systemHealth?.environments.filter((e) => e.status === 'warning').length ?? 0;
-  const errorCount = systemHealth?.environments.filter((e) => e.status === 'error').length ?? 0;
+  const envCount = summary.environmentCount;
+  const healthyCount = summary.healthyCount;
+  const warningCount = summary.warningCount;
+  const errorCount = summary.errorCount;
+  const unavailableCount = summary.unavailableCount;
   const overallStatus: HealthStatus = systemHealth?.overall_status ?? 'unknown';
   const overallConfig = HEALTH_STATUS_CONFIG[overallStatus];
   const OverallIcon = overallConfig.icon;
@@ -298,7 +318,7 @@ export default function HealthPage() {
 
             {/* Stats Grid */}
             {envCount > 0 && (
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
                 <Card>
                   <CardContent className="pt-6 text-center">
                     <div className="text-3xl font-bold text-green-600">{healthyCount}</div>
@@ -323,6 +343,14 @@ export default function HealthPage() {
                     </div>
                   </CardContent>
                 </Card>
+                <Card>
+                  <CardContent className="pt-6 text-center">
+                    <div className="text-3xl font-bold text-slate-600">{unavailableCount}</div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      {t('status.unknown')}
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
             )}
 
@@ -338,6 +366,9 @@ export default function HealthPage() {
                       key={idx}
                       issue={issue}
                       onCopy={copyToClipboard}
+                      onPreviewRemediation={previewRemediation}
+                      onApplyRemediation={applyRemediation}
+                      activeRemediationId={activeRemediationId}
                       t={t}
                     />
                   ))}
@@ -408,9 +439,9 @@ export default function HealthPage() {
                               variant={
                                 env.status === 'healthy'
                                   ? 'default'
-                                  : env.status === 'warning'
-                                    ? 'secondary'
-                                    : 'destructive'
+                                  : env.status === 'error'
+                                    ? 'destructive'
+                                    : 'secondary'
                               }
                             >
                               {env.issues.filter((i) => i.severity !== 'info').length} {t('issues')}
@@ -448,6 +479,9 @@ export default function HealthPage() {
                                   key={idx}
                                   issue={issue}
                                   onCopy={copyToClipboard}
+                                  onPreviewRemediation={previewRemediation}
+                                  onApplyRemediation={applyRemediation}
+                                  activeRemediationId={activeRemediationId}
                                   t={t}
                                 />
                               ))}
@@ -512,9 +546,9 @@ export default function HealthPage() {
                               variant={
                                 pm.status === 'healthy'
                                   ? 'default'
-                                  : pm.status === 'warning'
-                                    ? 'secondary'
-                                    : 'destructive'
+                                  : pm.status === 'error'
+                                    ? 'destructive'
+                                    : 'secondary'
                               }
                             >
                               {pm.issues.filter((i) => i.severity !== 'info').length} {t('issues')}
@@ -556,6 +590,9 @@ export default function HealthPage() {
                                   key={idx}
                                   issue={issue}
                                   onCopy={copyToClipboard}
+                                  onPreviewRemediation={previewRemediation}
+                                  onApplyRemediation={applyRemediation}
+                                  activeRemediationId={activeRemediationId}
                                   t={t}
                                 />
                               ))}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -53,9 +53,9 @@ interface DownloadHistoryPanelProps {
   historyStats: HistoryStats | null;
   historyQuery: string;
   onHistoryQueryChange: (query: string) => void;
-  onClearHistory: () => void | Promise<void>;
+  onClearHistory: (days?: number) => void | Promise<void>;
   onRemoveRecord: (id: string) => void | Promise<void>;
-  t: (key: string) => string;
+  t: (key: string, params?: Record<string, string | number>) => string;
 }
 
 export function DownloadHistoryPanel({
@@ -67,6 +67,8 @@ export function DownloadHistoryPanel({
   onRemoveRecord,
   t,
 }: DownloadHistoryPanelProps) {
+  const [retentionDays, setRetentionDays] = useState("");
+
   const historyStatsCards = useMemo(() => {
     if (!historyStats) return null;
     return [
@@ -93,6 +95,17 @@ export function DownloadHistoryPanel({
     ];
   }, [historyStats, t]);
 
+  const parsedRetentionDays = Number(retentionDays);
+  const retentionDaysValid =
+    retentionDays.trim().length > 0 &&
+    Number.isFinite(parsedRetentionDays) &&
+    parsedRetentionDays > 0;
+  const clearOlderLabel = retentionDaysValid
+    ? t("downloads.historyPanel.clearOlder", {
+        days: Math.floor(parsedRetentionDays),
+      })
+    : t("downloads.historyPanel.clearOlder", { days: "…" });
+
   return (
     <Card>
       <CardHeader>
@@ -110,6 +123,24 @@ export function DownloadHistoryPanel({
               placeholder={t("downloads.historyPanel.search")}
               className="w-56"
             />
+            <Input
+              value={retentionDays}
+              onChange={(event) => setRetentionDays(event.target.value)}
+              placeholder={t("downloads.historyPanel.retentionDays")}
+              className="w-40"
+              inputMode="numeric"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={history.length === 0 || !retentionDaysValid}
+              onClick={() => {
+                if (!retentionDaysValid) return;
+                void onClearHistory(Math.floor(parsedRetentionDays));
+              }}
+            >
+              {clearOlderLabel}
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -151,7 +182,9 @@ export function DownloadHistoryPanel({
                 <AlertDialogFooter>
                   <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
                   <AlertDialogAction
-                    onClick={onClearHistory}
+                    onClick={() => {
+                      void onClearHistory(undefined);
+                    }}
                     className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                   >
                     {t("downloads.historyPanel.clear")}

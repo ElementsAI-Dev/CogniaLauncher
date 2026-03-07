@@ -126,7 +126,7 @@ describe("CacheMonitorCard", () => {
     await act(async () => {
       render(<CacheMonitorCard />);
     });
-    expect(screen.getByText("Threshold: 80%")).toBeInTheDocument();
+    expect(screen.getByText("cache.threshold")).toBeInTheDocument();
   });
 
   it("shows internal/max size ratio", async () => {
@@ -152,8 +152,20 @@ describe("CacheMonitorCard", () => {
     mockIsTauri = true;
     mockCacheSizeMonitor.mockResolvedValue(monitorData);
     mockGetCacheSizeHistory.mockResolvedValue([
-      { timestamp: "2025-01-01T00:00:00Z", internalSize: 1000, internalSizeHuman: "1 KB", downloadCount: 5, metadataCount: 3 },
-      { timestamp: "2025-01-02T00:00:00Z", internalSize: 2000, internalSizeHuman: "2 KB", downloadCount: 10, metadataCount: 6 },
+      {
+        timestamp: "2025-01-01T00:00:00Z",
+        internalSize: 1000,
+        internalSizeHuman: "1 KB",
+        downloadCount: 5,
+        metadataCount: 3,
+      },
+      {
+        timestamp: "2025-01-02T00:00:00Z",
+        internalSize: 2000,
+        internalSizeHuman: "2 KB",
+        downloadCount: 10,
+        metadataCount: 6,
+      },
     ]);
     await act(async () => {
       render(<CacheMonitorCard />);

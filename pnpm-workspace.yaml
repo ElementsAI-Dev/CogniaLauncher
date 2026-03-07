@@ -1,3 +1,4 @@
 packages:
   - plugin-sdk-ts
   - plugin-sdk-ts/examples/*
+  - plugins/typescript/*

@@ -5,6 +5,7 @@ export interface DocSearchResult {
   title: string;
   titleEn?: string;
   slug: string;
+  anchorId?: string;
   /** Matched text snippet */
   snippet: string;
   /** Match score (higher = better) */
@@ -22,54 +23,56 @@ export function searchDocs(query: string, locale: string, searchIndex?: DocSearc
   const terms = normalizedQuery.split(/\s+/);
   const flat = flattenNav();
   const results: DocSearchResult[] = [];
-  const seen = new Set<string>();
-
-  // Build a map from slug to search entry for quick lookup
-  const indexMap = new Map<string, DocSearchEntry>();
-  if (searchIndex) {
-    for (const entry of searchIndex) {
-      indexMap.set(entry.slug, entry);
-    }
-  }
+  const navMap = new Map<string, DocNavItem>();
 
   for (const item of flat) {
     if (!item.slug) continue;
+    navMap.set(item.slug, item);
     const navScore = scoreNavItem(item, terms, locale);
-    const entry = indexMap.get(item.slug);
-    const contentScore = entry ? scoreContentEntry(entry, terms, locale) : 0;
-    const totalScore = navScore + contentScore;
-
-    if (totalScore > 0) {
+    if (navScore > 0) {
       const title = locale === 'en' ? (item.titleEn ?? item.title) : item.title;
-      const snippet = entry ? getBestSnippet(entry, terms, locale, title) : title;
       results.push({
         title: item.title,
         titleEn: item.titleEn,
         slug: item.slug,
-        snippet,
-        score: totalScore,
+        snippet: title,
+        score: navScore,
       });
-      seen.add(item.slug);
     }
   }
 
-  // Also check index entries that may not be in nav (unlikely but safe)
   if (searchIndex) {
     for (const entry of searchIndex) {
-      if (seen.has(entry.slug)) continue;
-      const score = scoreContentEntry(entry, terms, locale);
+      if (entry.locale !== locale) continue;
+      const score = scoreSectionEntry(entry, terms);
       if (score > 0) {
+        const navItem = navMap.get(entry.pageSlug);
+        const fallbackTitle = entry.pageSlug;
+        const displayTitle = navItem
+          ? (locale === 'en' ? (navItem.titleEn ?? navItem.title) : navItem.title)
+          : fallbackTitle;
         results.push({
-          title: entry.slug,
-          slug: entry.slug,
-          snippet: getBestSnippet(entry, terms, locale, entry.slug),
-          score,
+          title: navItem?.title ?? fallbackTitle,
+          titleEn: navItem?.titleEn,
+          slug: entry.pageSlug,
+          anchorId: entry.anchorId || undefined,
+          snippet: getBestSnippet(entry, terms, displayTitle),
+          score: score + (navItem ? 1 : 0),
         });
       }
     }
   }
 
-  return results.sort((a, b) => b.score - a.score).slice(0, 15);
+  const deduped = new Map<string, DocSearchResult>();
+  for (const result of results) {
+    const key = `${result.slug}#${result.anchorId ?? ''}`;
+    const existing = deduped.get(key);
+    if (!existing || existing.score < result.score) {
+      deduped.set(key, result);
+    }
+  }
+
+  return [...deduped.values()].sort((a, b) => b.score - a.score).slice(0, 15);
 }
 
 function scoreNavItem(item: DocNavItem, terms: string[], locale: string): number {
@@ -92,17 +95,14 @@ function scoreNavItem(item: DocNavItem, terms: string[], locale: string): number
   return score;
 }
 
-function scoreContentEntry(entry: DocSearchEntry, terms: string[], locale: string): number {
-  const headings = (locale === 'en' ? entry.headingsEn : entry.headingsZh).map(h => h.toLowerCase());
-  const excerpt = (locale === 'en' ? entry.excerptEn : entry.excerptZh).toLowerCase();
+function scoreSectionEntry(entry: DocSearchEntry, terms: string[]): number {
+  const section = entry.sectionTitle.toLowerCase();
+  const excerpt = entry.excerpt.toLowerCase();
   let score = 0;
 
   for (const term of terms) {
-    for (const heading of headings) {
-      if (heading.includes(term)) {
-        score += heading === term ? 8 : 4;
-        break;
-      }
+    if (section.includes(term)) {
+      score += section === term ? 8 : 5;
     }
     if (excerpt.includes(term)) {
       score += 2;
@@ -112,19 +112,15 @@ function scoreContentEntry(entry: DocSearchEntry, terms: string[], locale: strin
   return score;
 }
 
-function getBestSnippet(entry: DocSearchEntry, terms: string[], locale: string, fallback: string): string {
-  const headings = locale === 'en' ? entry.headingsEn : entry.headingsZh;
-  const excerpt = locale === 'en' ? entry.excerptEn : entry.excerptZh;
+function getBestSnippet(entry: DocSearchEntry, terms: string[], fallback: string): string {
+  const section = entry.sectionTitle;
+  const lowerSection = section.toLowerCase();
+  const excerpt = entry.excerpt;
 
-  // Find matching heading
-  for (const heading of headings) {
-    const lower = heading.toLowerCase();
-    if (terms.some(t => lower.includes(t))) {
-      return heading;
-    }
+  if (terms.some((term) => lowerSection.includes(term))) {
+    return section;
   }
 
-  // Find matching excerpt fragment
   if (excerpt) {
     const lower = excerpt.toLowerCase();
     for (const term of terms) {

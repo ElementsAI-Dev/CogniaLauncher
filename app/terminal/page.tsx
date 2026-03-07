@@ -253,8 +253,11 @@ export default function TerminalPage() {
             onParseConfigContent={terminal.parseConfigContent}
             onBackupConfig={terminal.backupShellConfig}
             onWriteConfig={terminal.writeShellConfig}
+            onGetConfigEditorMetadata={terminal.getConfigEditorMetadata}
+            onRestoreConfigSnapshot={terminal.restoreConfigSnapshot}
             mutationStatus={terminal.configMutationState.status}
             mutationMessage={terminal.configMutationState.message}
+            mutationResult={terminal.configMutationState.result}
             onClearMutationState={terminal.clearConfigMutationState}
           />
         </TabsContent>

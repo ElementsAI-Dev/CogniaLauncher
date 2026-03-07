@@ -14,10 +14,12 @@ import {
   listenDownloadPauseAll,
   listenDownloadResumeAll,
   listenToggleAlwaysOnTop,
+  listenTrayShowNotificationsChanged,
   type TrayLanguage,
 } from '@/lib/tauri';
 import { useRouter } from 'next/navigation';
 import { useDownloadStore } from '@/lib/stores/download';
+import { useSettingsStore } from '@/lib/stores/settings';
 
 /**
  * Hook to sync tray state with app state.
@@ -27,11 +29,13 @@ import { useDownloadStore } from '@/lib/stores/download';
  * - Auto-syncs active download count to tray
  * - Listens for download pause/resume all from tray
  * - Listens for always-on-top toggle from tray
+ * - Syncs frontend notification toggle when tray menu changes it
  */
 export function useTraySync() {
   const { locale } = useLocale();
   const router = useRouter();
   const prevDownloadCountRef = useRef<number>(-1);
+  const setAppSettings = useSettingsStore((s) => s.setAppSettings);
 
   // Auto-sync active download count to tray
   const activeCount = useDownloadStore((s) =>
@@ -147,6 +151,23 @@ export function useTraySync() {
       unlisten?.();
     };
   }, []);
+
+  // Keep frontend settings state in sync when tray toggles notification visibility.
+  useEffect(() => {
+    if (!isTauri()) return;
+
+    let unlisten: (() => void) | undefined;
+
+    listenTrayShowNotificationsChanged((enabled) => {
+      setAppSettings({ showNotifications: enabled });
+    }).then((fn) => {
+      unlisten = fn;
+    });
+
+    return () => {
+      unlisten?.();
+    };
+  }, [setAppSettings]);
 }
 
 /**

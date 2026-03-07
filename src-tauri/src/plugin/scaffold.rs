@@ -1,4 +1,5 @@
 use crate::error::{CogniaError, CogniaResult};
+use crate::plugin::contract::TOOL_CONTRACT_VERSION;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -17,6 +18,8 @@ pub struct ScaffoldConfig {
     pub repository: Option<String>,
     #[serde(default)]
     pub homepage: Option<String>,
+    #[serde(default = "default_lifecycle_profile")]
+    pub lifecycle_profile: ScaffoldLifecycleProfile,
     #[serde(default = "default_language")]
     pub language: PluginLanguage,
     #[serde(default)]
@@ -27,6 +30,8 @@ pub struct ScaffoldConfig {
     pub include_vscode: bool,
     #[serde(default)]
     pub additional_keywords: Vec<String>,
+    #[serde(default)]
+    pub template_options: ScaffoldTemplateOptions,
 }
 
 fn default_language() -> PluginLanguage {
@@ -35,6 +40,73 @@ fn default_language() -> PluginLanguage {
 
 fn default_include_vscode() -> bool {
     true
+}
+
+fn default_include_unified_contract_samples() -> bool {
+    true
+}
+
+fn default_include_validation_guidance() -> bool {
+    true
+}
+
+fn default_lifecycle_profile() -> ScaffoldLifecycleProfile {
+    ScaffoldLifecycleProfile::External
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum ScaffoldLifecycleProfile {
+    External,
+    BuiltIn,
+}
+
+impl Default for ScaffoldLifecycleProfile {
+    fn default() -> Self {
+        Self::External
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ScaffoldContractTemplate {
+    Minimal,
+    Advanced,
+}
+
+impl Default for ScaffoldContractTemplate {
+    fn default() -> Self {
+        Self::Minimal
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ScaffoldSchemaPreset {
+    BasicForm,
+    MultiStepFlow,
+    RepeatableCollection,
+}
+
+impl Default for ScaffoldSchemaPreset {
+    fn default() -> Self {
+        Self::BasicForm
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ScaffoldTemplateOptions {
+    #[serde(default = "default_include_unified_contract_samples")]
+    pub include_unified_contract_samples: bool,
+    #[serde(default)]
+    pub contract_template: ScaffoldContractTemplate,
+    #[serde(default)]
+    pub schema_preset: ScaffoldSchemaPreset,
+    #[serde(default = "default_include_validation_guidance")]
+    pub include_validation_guidance: bool,
+    #[serde(default)]
+    pub include_starter_tests: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -60,7 +132,7 @@ pub struct ScaffoldPermissions {
     pub process_exec: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PluginLanguage {
     Rust,
@@ -74,12 +146,33 @@ impl Default for PluginLanguage {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScaffoldHandoff {
+    pub profile: ScaffoldLifecycleProfile,
+    pub artifact_path: String,
+    pub build_commands: Vec<String>,
+    pub next_steps: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub import_path: Option<String>,
+    pub import_requires_build: bool,
+    pub lifecycle_manifest_path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub builtin_catalog_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub builtin_checksum_command: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub builtin_validation_command: Option<String>,
+}
+
 /// Result of scaffold operation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScaffoldResult {
     pub plugin_dir: String,
     pub files_created: Vec<String>,
+    pub lifecycle_profile: ScaffoldLifecycleProfile,
+    pub handoff: ScaffoldHandoff,
 }
 
 /// Result of plugin validation
@@ -87,6 +180,12 @@ pub struct ScaffoldResult {
 #[serde(rename_all = "camelCase")]
 pub struct ValidationResult {
     pub valid: bool,
+    #[serde(default)]
+    pub can_import: bool,
+    #[serde(default)]
+    pub build_required: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub missing_artifact_path: Option<String>,
     pub errors: Vec<String>,
     pub warnings: Vec<String>,
 }
@@ -96,7 +195,7 @@ pub async fn scaffold_plugin(config: &ScaffoldConfig) -> CogniaResult<ScaffoldRe
     validate_scaffold_config(config)?;
 
     let output = PathBuf::from(config.output_dir.trim());
-    let plugin_dir = output.join(config.id.trim());
+    let plugin_dir = resolve_scaffold_plugin_dir(config, &output);
 
     if plugin_dir.exists() {
         return Err(CogniaError::Plugin(format!(
@@ -223,8 +322,44 @@ pub async fn scaffold_plugin(config: &ScaffoldConfig) -> CogniaResult<ScaffoldRe
         }
     }
 
+    if config.template_options.include_unified_contract_samples {
+        let extra = generate_unified_contract_artifacts(config, &plugin_dir).await?;
+        files_created.extend(extra);
+    }
+
+    if config.template_options.include_starter_tests {
+        let extra = generate_contract_starter_tests(config, &plugin_dir).await?;
+        files_created.extend(extra);
+    }
+
+    let mut handoff = build_scaffold_handoff(config, &plugin_dir);
+    let lifecycle_manifest = generate_lifecycle_manifest(config, &handoff);
+    tokio::fs::write(plugin_dir.join("cognia.scaffold.json"), lifecycle_manifest)
+        .await
+        .map_err(|e| {
+            CogniaError::Plugin(format!("Failed to write cognia.scaffold.json: {}", e))
+        })?;
+    files_created.push("cognia.scaffold.json".to_string());
+
+    if matches!(config.lifecycle_profile, ScaffoldLifecycleProfile::BuiltIn) {
+        let catalog_sample = generate_builtin_catalog_entry_sample(config, &plugin_dir);
+        tokio::fs::write(
+            plugin_dir.join("catalog-entry.sample.json"),
+            serde_json::to_string_pretty(&catalog_sample).unwrap(),
+        )
+        .await
+        .map_err(|e| {
+            CogniaError::Plugin(format!("Failed to write catalog-entry.sample.json: {}", e))
+        })?;
+        files_created.push("catalog-entry.sample.json".to_string());
+    }
+
     // Generate README.md
-    let readme = generate_readme(config);
+    handoff.lifecycle_manifest_path = plugin_dir
+        .join("cognia.scaffold.json")
+        .display()
+        .to_string();
+    let readme = generate_readme(config, &handoff);
     tokio::fs::write(plugin_dir.join("README.md"), &readme)
         .await
         .map_err(|e| CogniaError::Plugin(format!("Failed to write README.md: {}", e)))?;
@@ -233,6 +368,8 @@ pub async fn scaffold_plugin(config: &ScaffoldConfig) -> CogniaResult<ScaffoldRe
     Ok(ScaffoldResult {
         plugin_dir: plugin_dir.display().to_string(),
         files_created,
+        lifecycle_profile: config.lifecycle_profile.clone(),
+        handoff,
     })
 }
 
@@ -247,6 +384,9 @@ pub async fn validate_plugin(path: &Path) -> CogniaResult<ValidationResult> {
         errors.push("Missing plugin.toml manifest file".to_string());
         return Ok(ValidationResult {
             valid: false,
+            can_import: false,
+            build_required: false,
+            missing_artifact_path: None,
             errors,
             warnings,
         });
@@ -329,8 +469,19 @@ pub async fn validate_plugin(path: &Path) -> CogniaResult<ValidationResult> {
         }
     }
 
+    let missing_artifact_path = path
+        .join("plugin.wasm")
+        .display()
+        .to_string();
+    let build_required = warnings
+        .iter()
+        .any(|warning| warning.contains("No plugin.wasm found"));
+
     Ok(ValidationResult {
         valid: errors.is_empty(),
+        can_import: errors.is_empty() && !build_required,
+        build_required,
+        missing_artifact_path: build_required.then_some(missing_artifact_path),
         errors,
         warnings,
     })
@@ -381,7 +532,183 @@ fn validate_scaffold_config(config: &ScaffoldConfig) -> CogniaResult<()> {
     validate_optional_url("repository", config.repository.as_deref())?;
     validate_optional_url("homepage", config.homepage.as_deref())?;
 
+    if matches!(config.lifecycle_profile, ScaffoldLifecycleProfile::BuiltIn)
+        && matches!(config.language, PluginLanguage::JavaScript)
+    {
+        return Err(CogniaError::Plugin(
+            "Built-in plugin scaffolds currently support Rust or TypeScript only".to_string(),
+        ));
+    }
+
+    if matches!(config.lifecycle_profile, ScaffoldLifecycleProfile::BuiltIn) {
+        let output_dir = config.output_dir.trim().replace('\\', "/");
+        if output_dir.ends_with("/rust") || output_dir.ends_with("/typescript") {
+            return Err(CogniaError::Plugin(
+                "Built-in scaffold output_dir must point to the plugins workspace root, not a framework subdirectory"
+                    .to_string(),
+            ));
+        }
+    }
+
     Ok(())
+}
+
+fn resolve_scaffold_plugin_dir(config: &ScaffoldConfig, output: &Path) -> PathBuf {
+    match config.lifecycle_profile {
+        ScaffoldLifecycleProfile::External => output.join(config.id.trim()),
+        ScaffoldLifecycleProfile::BuiltIn => output
+            .join(builtin_framework_dir(&config.language))
+            .join(scaffold_project_slug(config)),
+    }
+}
+
+fn scaffold_project_slug(config: &ScaffoldConfig) -> String {
+    config
+        .id
+        .split('.')
+        .last()
+        .unwrap_or(&config.id)
+        .trim()
+        .to_string()
+}
+
+fn builtin_framework_dir(language: &PluginLanguage) -> &'static str {
+    match language {
+        PluginLanguage::Rust => "rust",
+        PluginLanguage::TypeScript => "typescript",
+        PluginLanguage::JavaScript => "javascript",
+    }
+}
+
+fn build_scaffold_handoff(config: &ScaffoldConfig, plugin_dir: &Path) -> ScaffoldHandoff {
+    let artifact_path = plugin_dir.join("plugin.wasm").display().to_string();
+    let lifecycle_manifest_path = plugin_dir.join("cognia.scaffold.json").display().to_string();
+    match config.lifecycle_profile {
+        ScaffoldLifecycleProfile::External => ScaffoldHandoff {
+            profile: ScaffoldLifecycleProfile::External,
+            artifact_path,
+            build_commands: build_commands_for_language(&config.language),
+            next_steps: vec![
+                "Build plugin.wasm using the generated build entrypoint.".to_string(),
+                "Validate the plugin directory in Toolbox > Plugins > Install > Local.".to_string(),
+                "Import the same plugin directory after the build succeeds.".to_string(),
+            ],
+            import_path: Some(plugin_dir.display().to_string()),
+            import_requires_build: true,
+            lifecycle_manifest_path,
+            builtin_catalog_path: None,
+            builtin_checksum_command: None,
+            builtin_validation_command: None,
+        },
+        ScaffoldLifecycleProfile::BuiltIn => ScaffoldHandoff {
+            profile: ScaffoldLifecycleProfile::BuiltIn,
+            artifact_path,
+            build_commands: build_commands_for_language(&config.language),
+            next_steps: vec![
+                "Add the generated sample entry to plugins/manifest.json.".to_string(),
+                "Run pnpm plugins:checksums to capture the built artifact checksum.".to_string(),
+                "Run pnpm plugins:validate before treating the plugin as built-in ready.".to_string(),
+            ],
+            import_path: None,
+            import_requires_build: true,
+            lifecycle_manifest_path,
+            builtin_catalog_path: Some("plugins/manifest.json".to_string()),
+            builtin_checksum_command: Some("pnpm plugins:checksums".to_string()),
+            builtin_validation_command: Some("pnpm plugins:validate".to_string()),
+        },
+    }
+}
+
+fn build_commands_for_language(language: &PluginLanguage) -> Vec<String> {
+    match language {
+        PluginLanguage::Rust => vec![
+            "rustup target add wasm32-unknown-unknown".to_string(),
+            "cargo build --release".to_string(),
+            "copy target/wasm32-unknown-unknown/release/*.wasm plugin.wasm".to_string(),
+        ],
+        PluginLanguage::JavaScript | PluginLanguage::TypeScript => vec![
+            "pnpm install".to_string(),
+            "pnpm setup:toolchain".to_string(),
+            "pnpm build".to_string(),
+        ],
+    }
+}
+
+fn generate_lifecycle_manifest(config: &ScaffoldConfig, handoff: &ScaffoldHandoff) -> String {
+    serde_json::to_string_pretty(&serde_json::json!({
+        "schemaVersion": 1,
+        "pluginId": config.id.clone(),
+        "language": config.language,
+        "profile": handoff.profile,
+        "artifactPath": "plugin.wasm",
+        "buildCommands": handoff.build_commands.clone(),
+        "nextSteps": handoff.next_steps.clone(),
+        "importPath": handoff.import_path.clone(),
+        "importRequiresBuild": handoff.import_requires_build,
+        "builtinCatalogPath": handoff.builtin_catalog_path.clone(),
+        "builtinChecksumCommand": handoff.builtin_checksum_command.clone(),
+        "builtinValidationCommand": handoff.builtin_validation_command.clone(),
+    }))
+    .unwrap()
+}
+
+fn builtin_catalog_package_name(config: &ScaffoldConfig) -> String {
+    config.id.clone()
+}
+
+fn builtin_catalog_rust_crate(config: &ScaffoldConfig) -> String {
+    config.id.replace(['.', '-'], "_")
+}
+
+fn generate_builtin_catalog_entry_sample(
+    config: &ScaffoldConfig,
+    plugin_dir: &Path,
+) -> serde_json::Value {
+    let fallback_slug = scaffold_project_slug(config);
+    let plugin_dir_name = plugin_dir
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or(fallback_slug.as_str());
+    let plugin_dir_relative = format!(
+        "{}/{}",
+        builtin_framework_dir(&config.language),
+        plugin_dir_name
+    );
+
+    let mut entry = serde_json::json!({
+        "id": config.id.clone(),
+        "name": config.name.clone(),
+        "framework": match config.language {
+            PluginLanguage::Rust => "rust",
+            PluginLanguage::TypeScript => "typescript",
+            PluginLanguage::JavaScript => "javascript",
+        },
+        "version": "0.1.0",
+        "pluginDir": plugin_dir_relative,
+        "artifact": "plugin.wasm",
+        "checksumSha256": "<run-pnpm-plugins:checksums>",
+        "channel": "stable",
+        "minimumHostVersion": "0.1.0",
+        "onboarding": {
+            "profile": "builtin",
+            "catalogPath": "plugins/manifest.json",
+            "checksumCommand": "pnpm plugins:checksums",
+            "validationCommand": "pnpm plugins:validate"
+        }
+    });
+
+    match config.language {
+        PluginLanguage::Rust => {
+            entry["rustCrate"] = serde_json::Value::String(builtin_catalog_rust_crate(config));
+        }
+        PluginLanguage::TypeScript => {
+            entry["packageName"] =
+                serde_json::Value::String(builtin_catalog_package_name(config));
+        }
+        PluginLanguage::JavaScript => {}
+    }
+
+    entry
 }
 
 fn validate_optional_url(field: &str, value: Option<&str>) -> CogniaResult<()> {
@@ -440,6 +767,9 @@ fn generate_manifest(config: &ScaffoldConfig) -> String {
     let tool_id = config.id.split('.').last().unwrap_or(&config.id).to_string();
     let keywords = build_keywords(&tool_id, &config.additional_keywords);
     let metadata = build_optional_plugin_metadata(config);
+    let unified_contract_metadata = build_unified_contract_metadata(config);
+    let ui_mode_line = build_ui_mode_line(config);
+    let capabilities_line = build_tool_capabilities_line(config);
 
     format!(
         r#"[plugin]
@@ -448,7 +778,7 @@ name = "{name}"
 version = "0.1.0"
 description = "{desc}"
 authors = ["{author}"]
-{metadata}
+{metadata}{unified_contract_metadata}
 
 [[tools]]
 id = "{tool_id}"
@@ -460,6 +790,7 @@ category = "developer"
 keywords = [{keywords}]
 icon = "Wrench"
 entry = "{entry}"
+{ui_mode_line}{capabilities_line}
 
 [permissions]
 {perms}
@@ -469,9 +800,12 @@ entry = "{entry}"
         desc = escape_toml_string(&config.description),
         author = escape_toml_string(&config.author),
         metadata = metadata,
+        unified_contract_metadata = unified_contract_metadata,
         tool_id = escape_toml_string(&tool_id),
         keywords = keywords,
         entry = entry_fn,
+        ui_mode_line = ui_mode_line,
+        capabilities_line = capabilities_line,
         perms = perms.join("\n"),
     )
 }
@@ -506,6 +840,81 @@ fn build_optional_plugin_metadata(config: &ScaffoldConfig) -> String {
     } else {
         format!("{}\n", lines.join("\n"))
     }
+}
+
+fn build_unified_contract_metadata(config: &ScaffoldConfig) -> String {
+    if !config.template_options.include_unified_contract_samples {
+        return String::new();
+    }
+
+    let mut lines = vec![format!(
+        "tool_contract_version = \"{}\"",
+        TOOL_CONTRACT_VERSION
+    )];
+    lines.push("compatible_cognia_versions = \">=0.1.0\"".to_string());
+    format!("{}\n", lines.join("\n"))
+}
+
+fn infer_capability_declarations(config: &ScaffoldConfig) -> Vec<String> {
+    let mut caps = Vec::new();
+    if config.permissions.config_read {
+        caps.push("settings.read".to_string());
+    }
+    if config.permissions.env_read {
+        caps.push("environment.read".to_string());
+    }
+    if config.permissions.pkg_search {
+        caps.push("packages.search".to_string());
+    }
+    if config.permissions.clipboard {
+        caps.push("clipboard.readwrite".to_string());
+    }
+    if config.permissions.notification {
+        caps.push("notification.send".to_string());
+    }
+    if config.permissions.fs_read {
+        caps.push("fs.read".to_string());
+    }
+    if config.permissions.fs_write {
+        caps.push("fs.write".to_string());
+    }
+    if config.permissions.process_exec {
+        caps.push("process.exec".to_string());
+    }
+    if !config.permissions.http.is_empty() {
+        caps.push("http.request".to_string());
+    }
+    caps
+}
+
+fn build_ui_mode_line(config: &ScaffoldConfig) -> String {
+    if !config.template_options.include_unified_contract_samples {
+        return String::new();
+    }
+
+    let mode = match config.template_options.contract_template {
+        ScaffoldContractTemplate::Minimal => "text",
+        ScaffoldContractTemplate::Advanced => "declarative",
+    };
+    format!("ui_mode = \"{}\"\n", mode)
+}
+
+fn build_tool_capabilities_line(config: &ScaffoldConfig) -> String {
+    if !config.template_options.include_unified_contract_samples {
+        return String::new();
+    }
+
+    let caps = infer_capability_declarations(config);
+    if caps.is_empty() {
+        return String::new();
+    }
+
+    let serialized = caps
+        .into_iter()
+        .map(|cap| format!("\"{}\"", escape_toml_string(&cap)))
+        .collect::<Vec<String>>()
+        .join(", ");
+    format!("capabilities = [{}]\n", serialized)
 }
 
 fn build_keywords(base_tool_id: &str, extras: &[String]) -> String {
@@ -606,6 +1015,441 @@ jobs:
     )
 }
 
+async fn generate_unified_contract_artifacts(
+    config: &ScaffoldConfig,
+    plugin_dir: &Path,
+) -> CogniaResult<Vec<String>> {
+    let mut files = Vec::new();
+
+    let contracts_dir = plugin_dir.join("contracts");
+    tokio::fs::create_dir_all(&contracts_dir)
+        .await
+        .map_err(|e| CogniaError::Plugin(format!("Failed to create contracts dir: {}", e)))?;
+    let unified_contract = generate_unified_contract_sample(config);
+    tokio::fs::write(
+        contracts_dir.join("unified-tool-contract.sample.json"),
+        serde_json::to_string_pretty(&unified_contract).unwrap(),
+    )
+    .await
+    .map_err(|e| {
+        CogniaError::Plugin(format!(
+            "Failed to write contracts/unified-tool-contract.sample.json: {}",
+            e
+        ))
+    })?;
+    files.push("contracts/unified-tool-contract.sample.json".to_string());
+
+    let schemas_dir = plugin_dir.join("schemas");
+    tokio::fs::create_dir_all(&schemas_dir)
+        .await
+        .map_err(|e| CogniaError::Plugin(format!("Failed to create schemas dir: {}", e)))?;
+
+    let input_schema = generate_input_schema_stub(config);
+    tokio::fs::write(
+        schemas_dir.join("input.schema.json"),
+        serde_json::to_string_pretty(&input_schema).unwrap(),
+    )
+    .await
+    .map_err(|e| CogniaError::Plugin(format!("Failed to write schemas/input.schema.json: {}", e)))?;
+    files.push("schemas/input.schema.json".to_string());
+
+    let output_schema = generate_output_schema_stub();
+    tokio::fs::write(
+        schemas_dir.join("output.schema.json"),
+        serde_json::to_string_pretty(&output_schema).unwrap(),
+    )
+    .await
+    .map_err(|e| CogniaError::Plugin(format!("Failed to write schemas/output.schema.json: {}", e)))?;
+    files.push("schemas/output.schema.json".to_string());
+
+    let action_envelope_schema = generate_action_envelope_schema();
+    tokio::fs::write(
+        schemas_dir.join("action-envelope.schema.json"),
+        serde_json::to_string_pretty(&action_envelope_schema).unwrap(),
+    )
+    .await
+    .map_err(|e| {
+        CogniaError::Plugin(format!(
+            "Failed to write schemas/action-envelope.schema.json: {}",
+            e
+        ))
+    })?;
+    files.push("schemas/action-envelope.schema.json".to_string());
+
+    if config.template_options.include_validation_guidance {
+        let docs_dir = plugin_dir.join("docs");
+        tokio::fs::create_dir_all(&docs_dir)
+            .await
+            .map_err(|e| CogniaError::Plugin(format!("Failed to create docs dir: {}", e)))?;
+        let guide = generate_validation_guide(config);
+        tokio::fs::write(docs_dir.join("validation-guide.md"), guide)
+            .await
+            .map_err(|e| {
+                CogniaError::Plugin(format!("Failed to write docs/validation-guide.md: {}", e))
+            })?;
+        files.push("docs/validation-guide.md".to_string());
+    }
+
+    Ok(files)
+}
+
+fn generate_unified_contract_sample(config: &ScaffoldConfig) -> serde_json::Value {
+    let entry_fn = config.id.replace(['.', '-'], "_");
+    let tool_id = config.id.split('.').last().unwrap_or(&config.id).to_string();
+    let capabilities = infer_capability_declarations(config);
+    let ui_mode = match config.template_options.contract_template {
+        ScaffoldContractTemplate::Minimal => "text",
+        ScaffoldContractTemplate::Advanced => "declarative",
+    };
+
+    serde_json::json!({
+        "contractVersion": TOOL_CONTRACT_VERSION,
+        "origin": "plugin",
+        "plugin": {
+            "id": config.id,
+            "name": config.name,
+            "version": "0.1.0",
+            "compatibleCogniaVersions": ">=0.1.0"
+        },
+        "tool": {
+            "toolId": format!("plugin:{}:{}", config.id, tool_id),
+            "entry": entry_fn,
+            "category": "developer",
+            "uiMode": ui_mode,
+            "capabilityDeclarations": capabilities,
+            "inputSchema": "schemas/input.schema.json",
+            "outputSchema": "schemas/output.schema.json",
+            "actionEnvelopeSchema": "schemas/action-envelope.schema.json"
+        }
+    })
+}
+
+fn generate_input_schema_stub(config: &ScaffoldConfig) -> serde_json::Value {
+    match config.template_options.schema_preset {
+        ScaffoldSchemaPreset::BasicForm => serde_json::json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "title": "ToolInput",
+            "type": "object",
+            "properties": {
+                "query": { "type": "string", "title": "Query" },
+                "includeLogs": { "type": "boolean", "default": false }
+            },
+            "required": ["query"],
+            "x-cognia-ui": {
+                "preset": "basic-form",
+                "blocks": [
+                    { "type": "input", "id": "query", "label": "Query", "required": true },
+                    { "type": "switch", "id": "includeLogs", "label": "Include logs", "defaultChecked": false }
+                ]
+            }
+        }),
+        ScaffoldSchemaPreset::MultiStepFlow => serde_json::json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "title": "ToolInput",
+            "type": "object",
+            "properties": {
+                "target": { "type": "string" },
+                "mode": { "type": "string", "enum": ["safe", "force"] },
+                "confirm": { "type": "boolean" }
+            },
+            "required": ["target", "mode"],
+            "x-cognia-ui": {
+                "preset": "multi-step-flow",
+                "blocks": [
+                    {
+                        "type": "stepper",
+                        "id": "wizard",
+                        "steps": [
+                            {
+                                "id": "target",
+                                "label": "Target",
+                                "children": [
+                                    { "type": "input", "id": "target", "label": "Target path", "required": true }
+                                ]
+                            },
+                            {
+                                "id": "strategy",
+                                "label": "Strategy",
+                                "children": [
+                                    {
+                                        "type": "radio-group",
+                                        "id": "mode",
+                                        "label": "Mode",
+                                        "options": [
+                                            { "label": "Safe", "value": "safe" },
+                                            { "label": "Force", "value": "force" }
+                                        ],
+                                        "required": true
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+        }),
+        ScaffoldSchemaPreset::RepeatableCollection => serde_json::json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "title": "ToolInput",
+            "type": "object",
+            "properties": {
+                "hosts": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": { "type": "string" },
+                            "port": { "type": "integer", "minimum": 1, "maximum": 65535 }
+                        },
+                        "required": ["name"]
+                    },
+                    "minItems": 1
+                }
+            },
+            "required": ["hosts"],
+            "x-cognia-ui": {
+                "preset": "repeatable-collection",
+                "blocks": [
+                    {
+                        "type": "array",
+                        "id": "hosts",
+                        "label": "Hosts",
+                        "itemLabel": "Host",
+                        "placeholder": "localhost"
+                    }
+                ]
+            }
+        }),
+    }
+}
+
+fn generate_output_schema_stub() -> serde_json::Value {
+    serde_json::json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "ToolOutputChannels",
+        "type": "object",
+        "properties": {
+            "outputChannels": {
+                "type": "object",
+                "properties": {
+                    "structured": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": ["type"]
+                        }
+                    },
+                    "stream": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": ["message"]
+                        }
+                    },
+                    "artifacts": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": ["id", "label"]
+                        }
+                    },
+                    "summary": {
+                        "type": ["string", "object"]
+                    }
+                },
+                "additionalProperties": false
+            }
+        },
+        "required": ["outputChannels"]
+    })
+}
+
+fn generate_action_envelope_schema() -> serde_json::Value {
+    serde_json::json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "ActionEnvelopeV2",
+        "type": "object",
+        "properties": {
+            "action": { "type": "string" },
+            "version": { "type": "integer", "enum": [1, 2] },
+            "sourceType": { "type": "string" },
+            "sourceId": { "type": "string" },
+            "correlationId": { "type": "string" },
+            "runtimeContext": { "type": "object" },
+            "formData": { "type": "object" },
+            "formDataTypes": { "type": "object" }
+        },
+        "required": ["action"],
+        "additionalProperties": true
+    })
+}
+
+fn generate_validation_guide(config: &ScaffoldConfig) -> String {
+    let schema_preset = match config.template_options.schema_preset {
+        ScaffoldSchemaPreset::BasicForm => "basic-form",
+        ScaffoldSchemaPreset::MultiStepFlow => "multi-step-flow",
+        ScaffoldSchemaPreset::RepeatableCollection => "repeatable-collection",
+    };
+
+    format!(
+        r#"# Validation And Migration Guide
+
+This project was scaffolded with unified contract templates.
+
+## Generated Artifacts
+
+- `contracts/unified-tool-contract.sample.json`
+- `schemas/input.schema.json`
+- `schemas/output.schema.json`
+- `schemas/action-envelope.schema.json`
+
+Schema preset: `{schema_preset}`
+
+## Recommended Checks
+
+1. Keep `plugin.toml` contract fields in sync with `contracts/unified-tool-contract.sample.json`.
+2. Validate input/output schema JSON before shipping.
+3. Verify action payloads include deterministic metadata (`sourceId`, `correlationId`) for interactive flows.
+
+## Strict Mode Migration Caveats
+
+1. Every granted permission in strict mode must map to a declared capability in each tool.
+2. Keep `tool_contract_version` aligned with host support and review compatibility ranges before release.
+3. If a capability or contract field is deprecated, migrate to the suggested replacement before strict rollout.
+4. Validate filesystem/http permission scopes carefully; strict mode enforces declared ranges.
+"#
+    )
+}
+
+async fn generate_contract_starter_tests(
+    config: &ScaffoldConfig,
+    plugin_dir: &Path,
+) -> CogniaResult<Vec<String>> {
+    let mut files = Vec::new();
+    let tests_dir = plugin_dir.join("tests");
+    tokio::fs::create_dir_all(&tests_dir)
+        .await
+        .map_err(|e| CogniaError::Plugin(format!("Failed to create tests dir: {}", e)))?;
+
+    match config.language {
+        PluginLanguage::Rust => {
+            let content = generate_rust_contract_test_template();
+            tokio::fs::write(tests_dir.join("contract_validation.rs"), content)
+                .await
+                .map_err(|e| {
+                    CogniaError::Plugin(format!("Failed to write tests/contract_validation.rs: {}", e))
+                })?;
+            files.push("tests/contract_validation.rs".to_string());
+        }
+        PluginLanguage::JavaScript | PluginLanguage::TypeScript => {
+            let content = generate_js_contract_test_template();
+            tokio::fs::write(tests_dir.join("contract-validation.test.js"), content)
+                .await
+                .map_err(|e| {
+                    CogniaError::Plugin(format!(
+                        "Failed to write tests/contract-validation.test.js: {}",
+                        e
+                    ))
+                })?;
+            files.push("tests/contract-validation.test.js".to_string());
+        }
+    }
+
+    Ok(files)
+}
+
+fn generate_rust_contract_test_template() -> &'static str {
+    r#"use std::fs;
+use std::path::Path;
+
+#[test]
+fn manifest_declares_unified_contract_defaults() {
+    let manifest = fs::read_to_string("plugin.toml").expect("plugin.toml should exist");
+    assert!(manifest.contains("tool_contract_version"));
+    assert!(manifest.contains("compatible_cognia_versions"));
+}
+
+#[test]
+fn generated_schema_files_are_valid_json() {
+    for relative in [
+        "contracts/unified-tool-contract.sample.json",
+        "schemas/input.schema.json",
+        "schemas/output.schema.json",
+        "schemas/action-envelope.schema.json",
+    ] {
+        let content = fs::read_to_string(relative).unwrap_or_else(|_| panic!("missing {}", relative));
+        let _: serde_json::Value = serde_json::from_str(&content)
+            .unwrap_or_else(|_| panic!("invalid JSON in {}", relative));
+    }
+}
+
+#[test]
+fn action_envelope_schema_has_correlation_metadata() {
+    let content = fs::read_to_string("schemas/action-envelope.schema.json")
+        .expect("action-envelope schema should exist");
+    let parsed: serde_json::Value = serde_json::from_str(&content).expect("schema should parse");
+    let props = parsed
+        .get("properties")
+        .and_then(serde_json::Value::as_object)
+        .expect("schema should include properties");
+    assert!(props.contains_key("sourceId"));
+    assert!(props.contains_key("correlationId"));
+}
+
+#[test]
+fn validation_guide_exists_when_enabled() {
+    if Path::new("docs/validation-guide.md").exists() {
+        let guide = fs::read_to_string("docs/validation-guide.md").expect("guide should be readable");
+        assert!(guide.contains("Strict Mode Migration Caveats"));
+    }
+}
+"#
+}
+
+fn generate_js_contract_test_template() -> &'static str {
+    r#"import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+
+const readJson = (relativePath) => {
+  const content = readFileSync(join(process.cwd(), relativePath), 'utf8');
+  return JSON.parse(content);
+};
+
+test('manifest declares unified contract defaults', () => {
+  const manifest = readFileSync(join(process.cwd(), 'plugin.toml'), 'utf8');
+  assert.match(manifest, /tool_contract_version\s*=/);
+  assert.match(manifest, /compatible_cognia_versions\s*=/);
+});
+
+test('generated schema files are valid JSON', () => {
+  const files = [
+    'contracts/unified-tool-contract.sample.json',
+    'schemas/input.schema.json',
+    'schemas/output.schema.json',
+    'schemas/action-envelope.schema.json',
+  ];
+  for (const file of files) {
+    assert.doesNotThrow(() => readJson(file));
+  }
+});
+
+test('action envelope schema keeps correlation metadata fields', () => {
+  const schema = readJson('schemas/action-envelope.schema.json');
+  assert.ok(schema.properties.sourceId);
+  assert.ok(schema.properties.correlationId);
+});
+
+test('validation guide includes strict migration caveats when present', () => {
+  const path = join(process.cwd(), 'docs/validation-guide.md');
+  if (!existsSync(path)) return;
+  const guide = readFileSync(path, 'utf8');
+  assert.match(guide, /Strict Mode Migration Caveats/);
+});
+"#
+}
+
 async fn generate_rust_project(
     config: &ScaffoldConfig,
     plugin_dir: &Path,
@@ -692,15 +1536,29 @@ async fn generate_js_project(
     let mut files = Vec::new();
 
     // package.json
+    let mut scripts = serde_json::Map::from_iter([
+        (
+            "build".to_string(),
+            serde_json::Value::String("node scripts/build.mjs".to_string()),
+        ),
+        (
+            "setup:toolchain".to_string(),
+            serde_json::Value::String("node scripts/build.mjs --setup-only".to_string()),
+        ),
+    ]);
+    if config.template_options.include_starter_tests {
+        scripts.insert(
+            "test:contract".to_string(),
+            serde_json::Value::String("node --test tests/contract-validation.test.js".to_string()),
+        );
+    }
+
     let package_json = serde_json::json!({
         "name": config.id,
         "version": "0.1.0",
         "description": config.description,
         "author": config.author,
-        "scripts": {
-            "build": "node scripts/build.mjs",
-            "setup:toolchain": "node scripts/build.mjs --setup-only"
-        },
+        "scripts": serde_json::Value::Object(scripts),
         "devDependencies": {
             "@extism/js-pdk": "^1.1.1"
         }
@@ -775,16 +1633,33 @@ async fn generate_ts_project(
     let mut files = Vec::new();
 
     // package.json
+    let mut scripts = serde_json::Map::from_iter([
+        (
+            "build".to_string(),
+            serde_json::Value::String("node scripts/build.mjs".to_string()),
+        ),
+        (
+            "bundle".to_string(),
+            serde_json::Value::String("node esbuild.config.mjs".to_string()),
+        ),
+        (
+            "setup:toolchain".to_string(),
+            serde_json::Value::String("node scripts/build.mjs --setup-only".to_string()),
+        ),
+    ]);
+    if config.template_options.include_starter_tests {
+        scripts.insert(
+            "test:contract".to_string(),
+            serde_json::Value::String("node --test tests/contract-validation.test.js".to_string()),
+        );
+    }
+
     let package_json = serde_json::json!({
         "name": config.id,
         "version": "0.1.0",
         "description": config.description,
         "author": config.author,
-        "scripts": {
-            "build": "node scripts/build.mjs",
-            "bundle": "node esbuild.config.mjs",
-            "setup:toolchain": "node scripts/build.mjs --setup-only"
-        },
+        "scripts": serde_json::Value::Object(scripts),
         "dependencies": {
             "@cognia/plugin-sdk": "workspace:*"
         },
@@ -961,7 +1836,7 @@ fn generate_wasm_build_script(with_bundle: bool, with_interface: bool) -> String
         )
 }
 
-fn generate_readme(config: &ScaffoldConfig) -> String {
+fn generate_readme(config: &ScaffoldConfig, handoff: &ScaffoldHandoff) -> String {
     let build_instructions = match config.language {
         PluginLanguage::Rust => r#"## Build
 
@@ -1041,12 +1916,49 @@ EXTISM_JS_PATH=/path/to/extism-js BINARYEN_BIN=/path/to/binaryen/bin pnpm build
         format!("\n## Project Links\n\n{}", project_links)
     };
 
+    let schema_preset = match config.template_options.schema_preset {
+        ScaffoldSchemaPreset::BasicForm => "basic-form",
+        ScaffoldSchemaPreset::MultiStepFlow => "multi-step-flow",
+        ScaffoldSchemaPreset::RepeatableCollection => "repeatable-collection",
+    };
+    let contract_template = match config.template_options.contract_template {
+        ScaffoldContractTemplate::Minimal => "minimal",
+        ScaffoldContractTemplate::Advanced => "advanced",
+    };
+    let starter_test_command = if config.template_options.include_starter_tests {
+        match config.language {
+            PluginLanguage::Rust => "cargo test",
+            PluginLanguage::JavaScript | PluginLanguage::TypeScript => "pnpm run test:contract",
+        }
+    } else {
+        "(not generated)"
+    };
+    let contract_section = if config.template_options.include_unified_contract_samples {
+        format!(
+            r#"
+## Unified Contract Artifacts
+
+- `contracts/unified-tool-contract.sample.json`
+- `schemas/input.schema.json` (preset: `{schema_preset}`)
+- `schemas/output.schema.json`
+- `schemas/action-envelope.schema.json`
+- Contract template: `{contract_template}`
+"#
+        )
+    } else {
+        String::new()
+    };
+
     let development_section = format!(
         r#"
 ## Development Extras
 
 - VSCode defaults: {}
 - CI workflow scaffold: {}
+- Unified contract samples: {}
+- Validation guide: {}
+- Starter contract tests: {}
+- Contract test command: {}
 "#,
         if config.include_vscode {
             "included (`.vscode/`)"
@@ -1057,7 +1969,87 @@ EXTISM_JS_PATH=/path/to/extism-js BINARYEN_BIN=/path/to/binaryen/bin pnpm build
             "included (`.github/workflows/ci.yml`)"
         } else {
             "not included"
-        }
+        },
+        if config.template_options.include_unified_contract_samples {
+            "included"
+        } else {
+            "not included"
+        },
+        if config.template_options.include_validation_guidance
+            && config.template_options.include_unified_contract_samples
+        {
+            "included (`docs/validation-guide.md`)"
+        } else {
+            "not included"
+        },
+        if config.template_options.include_starter_tests {
+            "included (`tests/`)"
+        } else {
+            "not included"
+        },
+        starter_test_command,
+    );
+
+    let lifecycle_title = match handoff.profile {
+        ScaffoldLifecycleProfile::External => "## Lifecycle Handoff",
+        ScaffoldLifecycleProfile::BuiltIn => "## Built-in Onboarding",
+    };
+    let lifecycle_steps = handoff
+        .next_steps
+        .iter()
+        .map(|step| format!("- {}", step))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let lifecycle_commands = handoff
+        .build_commands
+        .iter()
+        .map(|command| format!("- `{}`", command))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let lifecycle_import = handoff
+        .import_path
+        .as_ref()
+        .map(|path| format!("- Import path: `{}`\n", path))
+        .unwrap_or_default();
+    let builtin_onboarding = match handoff.profile {
+        ScaffoldLifecycleProfile::External => String::new(),
+        ScaffoldLifecycleProfile::BuiltIn => format!(
+            "- Catalog handoff sample: `catalog-entry.sample.json`\n- Catalog path: `{}`\n- Checksum command: `{}`\n- Validation command: `{}`\n",
+            handoff
+                .builtin_catalog_path
+                .as_deref()
+                .unwrap_or("plugins/manifest.json"),
+            handoff
+                .builtin_checksum_command
+                .as_deref()
+                .unwrap_or("pnpm plugins:checksums"),
+            handoff
+                .builtin_validation_command
+                .as_deref()
+                .unwrap_or("pnpm plugins:validate"),
+        ),
+    };
+    let lifecycle_section = format!(
+        r#"
+{lifecycle_title}
+
+- Lifecycle metadata: `cognia.scaffold.json`
+- Expected artifact: `{artifact_path}`
+{lifecycle_import}{builtin_onboarding}
+### Recommended Commands
+
+{lifecycle_commands}
+
+### Next Steps
+
+{lifecycle_steps}
+"#,
+        lifecycle_title = lifecycle_title,
+        artifact_path = handoff.artifact_path,
+        lifecycle_import = lifecycle_import,
+        builtin_onboarding = builtin_onboarding,
+        lifecycle_commands = lifecycle_commands,
+        lifecycle_steps = lifecycle_steps,
     );
 
     format!(
@@ -1082,12 +2074,16 @@ This plugin uses the following permissions (declared in `plugin.toml`):
 Translation files are in the `locales/` directory:
 - `locales/en.json` — English
 - `locales/zh.json` — Chinese
+{contract_section}
+{lifecycle_section}
 {project_links_section}
 {development_section}
 "#,
         name = config.name,
         desc = config.description,
         build = build_instructions,
+        contract_section = contract_section,
+        lifecycle_section = lifecycle_section,
         project_links_section = project_links_section,
         development_section = development_section,
     )
@@ -1108,6 +2104,7 @@ mod tests {
             license: Some("MIT".to_string()),
             repository: Some("https://github.com/example/test-plugin".to_string()),
             homepage: Some("https://example.com/test-plugin".to_string()),
+            lifecycle_profile: ScaffoldLifecycleProfile::External,
             language: PluginLanguage::Rust,
             permissions: ScaffoldPermissions {
                 config_read: true,
@@ -1117,6 +2114,7 @@ mod tests {
             include_ci: true,
             include_vscode: true,
             additional_keywords: vec!["utility".to_string(), "rust".to_string()],
+            template_options: ScaffoldTemplateOptions::default(),
         };
         let manifest = generate_manifest(&config);
         assert!(manifest.contains("id = \"com.example.test\""));
@@ -1127,6 +2125,10 @@ mod tests {
         assert!(manifest.contains("repository = \"https://github.com/example/test-plugin\""));
         assert!(manifest.contains("homepage = \"https://example.com/test-plugin\""));
         assert!(manifest.contains("keywords = [\"test\", \"utility\", \"rust\"]"));
+        assert!(manifest.contains("tool_contract_version = \"1.0.0\""));
+        assert!(manifest.contains("compatible_cognia_versions = \">=0.1.0\""));
+        assert!(manifest.contains("ui_mode = \"text\""));
+        assert!(manifest.contains("capabilities = [\"settings.read\", \"environment.read\"]"));
     }
 
     #[test]
@@ -1134,9 +2136,24 @@ mod tests {
         let json = r#"{"name":"T","id":"t","description":"d","author":"a","outputDir":"/tmp"}"#;
         let config: ScaffoldConfig = serde_json::from_str(json).unwrap();
         assert!(matches!(config.language, PluginLanguage::Rust));
+        assert!(matches!(
+            config.lifecycle_profile,
+            ScaffoldLifecycleProfile::External
+        ));
         assert!(config.include_vscode);
         assert!(!config.include_ci);
         assert!(config.additional_keywords.is_empty());
+        assert!(config.template_options.include_unified_contract_samples);
+        assert!(matches!(
+            config.template_options.contract_template,
+            ScaffoldContractTemplate::Minimal
+        ));
+        assert!(matches!(
+            config.template_options.schema_preset,
+            ScaffoldSchemaPreset::BasicForm
+        ));
+        assert!(config.template_options.include_validation_guidance);
+        assert!(!config.template_options.include_starter_tests);
     }
 
     #[test]
@@ -1150,13 +2167,17 @@ mod tests {
             license: None,
             repository: None,
             homepage: None,
+            lifecycle_profile: ScaffoldLifecycleProfile::External,
             language: PluginLanguage::Rust,
             permissions: ScaffoldPermissions::default(),
             include_ci: false,
             include_vscode: true,
             additional_keywords: Vec::new(),
+            template_options: ScaffoldTemplateOptions::default(),
         };
-        let readme = generate_readme(&config);
+        let plugin_dir = PathBuf::from("/tmp/com.example.my");
+        let handoff = build_scaffold_handoff(&config, &plugin_dir);
+        let readme = generate_readme(&config, &handoff);
         assert!(readme.contains("# My Plugin"));
         assert!(readme.contains("cargo build"));
     }
@@ -1165,7 +2186,7 @@ mod tests {
     fn test_scaffold_config_typescript_language() {
         let json = r#"{"name":"T","id":"t","description":"d","author":"a","outputDir":"/tmp","language":"typescript"}"#;
         let config: ScaffoldConfig = serde_json::from_str(json).unwrap();
-        matches!(config.language, PluginLanguage::TypeScript);
+        assert!(matches!(config.language, PluginLanguage::TypeScript));
     }
 
     #[test]
@@ -1179,15 +2200,46 @@ mod tests {
             license: None,
             repository: None,
             homepage: None,
+            lifecycle_profile: ScaffoldLifecycleProfile::External,
             language: PluginLanguage::TypeScript,
             permissions: ScaffoldPermissions::default(),
             include_ci: false,
             include_vscode: true,
             additional_keywords: Vec::new(),
+            template_options: ScaffoldTemplateOptions::default(),
         };
-        let readme = generate_readme(&config);
+        let plugin_dir = PathBuf::from("/tmp/com.example.ts");
+        let handoff = build_scaffold_handoff(&config, &plugin_dir);
+        let readme = generate_readme(&config, &handoff);
         assert!(readme.contains("pnpm build"));
         assert!(readme.contains("TypeScript"));
+    }
+
+    #[test]
+    fn test_generate_readme_builtin_mentions_onboarding_flow() {
+        let config = ScaffoldConfig {
+            name: "Built-in Plugin".to_string(),
+            id: "com.cognia.builtin.sample".to_string(),
+            description: "desc".to_string(),
+            author: "auth".to_string(),
+            output_dir: "/repo/plugins".to_string(),
+            license: None,
+            repository: None,
+            homepage: None,
+            lifecycle_profile: ScaffoldLifecycleProfile::BuiltIn,
+            language: PluginLanguage::TypeScript,
+            permissions: ScaffoldPermissions::default(),
+            include_ci: false,
+            include_vscode: true,
+            additional_keywords: Vec::new(),
+            template_options: ScaffoldTemplateOptions::default(),
+        };
+        let plugin_dir = PathBuf::from("/repo/plugins/typescript/sample");
+        let handoff = build_scaffold_handoff(&config, &plugin_dir);
+        let readme = generate_readme(&config, &handoff);
+        assert!(readme.contains("pnpm plugins:validate"));
+        assert!(readme.contains("plugins/manifest.json"));
+        assert!(readme.contains("catalog-entry.sample.json"));
     }
 
     #[test]
@@ -1201,13 +2253,17 @@ mod tests {
             license: None,
             repository: None,
             homepage: None,
+            lifecycle_profile: ScaffoldLifecycleProfile::External,
             language: PluginLanguage::JavaScript,
             permissions: ScaffoldPermissions::default(),
             include_ci: false,
             include_vscode: true,
             additional_keywords: Vec::new(),
+            template_options: ScaffoldTemplateOptions::default(),
         };
-        let readme = generate_readme(&config);
+        let plugin_dir = PathBuf::from("/tmp/com.example.js");
+        let handoff = build_scaffold_handoff(&config, &plugin_dir);
+        let readme = generate_readme(&config, &handoff);
         assert!(readme.contains("pnpm build"));
     }
 
@@ -1236,6 +2292,67 @@ mod tests {
         assert!(config.include_ci);
         assert!(!config.include_vscode);
         assert_eq!(config.additional_keywords, vec!["foo", "bar"]);
+        assert!(config.template_options.include_unified_contract_samples);
+        assert!(matches!(
+            config.template_options.schema_preset,
+            ScaffoldSchemaPreset::BasicForm
+        ));
+    }
+
+    #[test]
+    fn test_scaffold_config_template_options_deserialize() {
+        let json = r#"{
+          "name":"Plugin",
+          "id":"com.example.plugin",
+          "description":"desc",
+          "author":"author",
+          "outputDir":"/tmp",
+          "templateOptions":{
+            "includeUnifiedContractSamples":true,
+            "contractTemplate":"advanced",
+            "schemaPreset":"multi-step-flow",
+            "includeValidationGuidance":true,
+            "includeStarterTests":true
+          }
+        }"#;
+        let config: ScaffoldConfig = serde_json::from_str(json).unwrap();
+        assert!(matches!(
+            config.template_options.contract_template,
+            ScaffoldContractTemplate::Advanced
+        ));
+        assert!(matches!(
+            config.template_options.schema_preset,
+            ScaffoldSchemaPreset::MultiStepFlow
+        ));
+        assert!(config.template_options.include_starter_tests);
+    }
+
+    #[test]
+    fn test_generate_input_schema_stub_respects_schema_preset() {
+        let mut config: ScaffoldConfig = serde_json::from_str(
+            r#"{"name":"Plugin","id":"com.example.plugin","description":"desc","author":"author","outputDir":"/tmp"}"#,
+        )
+        .unwrap();
+
+        config.template_options.schema_preset = ScaffoldSchemaPreset::RepeatableCollection;
+        let schema = generate_input_schema_stub(&config);
+        assert_eq!(schema["x-cognia-ui"]["preset"], "repeatable-collection");
+
+        config.template_options.schema_preset = ScaffoldSchemaPreset::MultiStepFlow;
+        let schema = generate_input_schema_stub(&config);
+        assert_eq!(schema["x-cognia-ui"]["preset"], "multi-step-flow");
+    }
+
+    #[test]
+    fn test_generate_validation_guide_contains_strict_mode_caveats() {
+        let config: ScaffoldConfig = serde_json::from_str(
+            r#"{"name":"Plugin","id":"com.example.plugin","description":"desc","author":"author","outputDir":"/tmp"}"#,
+        )
+        .unwrap();
+        let guide = generate_validation_guide(&config);
+        assert!(guide.contains("Strict Mode Migration Caveats"));
+        assert!(guide.contains("tool_contract_version"));
+        assert!(guide.contains("correlationId"));
     }
 
     #[test]
@@ -1249,14 +2366,105 @@ mod tests {
             license: None,
             repository: Some("github.com/example".to_string()),
             homepage: None,
+            lifecycle_profile: ScaffoldLifecycleProfile::External,
             language: PluginLanguage::Rust,
             permissions: ScaffoldPermissions::default(),
             include_ci: false,
             include_vscode: true,
             additional_keywords: Vec::new(),
+            template_options: ScaffoldTemplateOptions::default(),
         };
         let result = validate_scaffold_config(&config);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_scaffold_config_rejects_builtin_javascript_profile() {
+        let config = ScaffoldConfig {
+            name: "Built-in JS".to_string(),
+            id: "com.cognia.builtin.js".to_string(),
+            description: "desc".to_string(),
+            author: "auth".to_string(),
+            output_dir: "/repo/plugins".to_string(),
+            license: None,
+            repository: None,
+            homepage: None,
+            lifecycle_profile: ScaffoldLifecycleProfile::BuiltIn,
+            language: PluginLanguage::JavaScript,
+            permissions: ScaffoldPermissions::default(),
+            include_ci: false,
+            include_vscode: true,
+            additional_keywords: Vec::new(),
+            template_options: ScaffoldTemplateOptions::default(),
+        };
+        let result = validate_scaffold_config(&config);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_build_scaffold_handoff_external_includes_import_path() {
+        let config = ScaffoldConfig {
+            name: "External".to_string(),
+            id: "com.example.external".to_string(),
+            description: "desc".to_string(),
+            author: "auth".to_string(),
+            output_dir: "/tmp".to_string(),
+            license: None,
+            repository: None,
+            homepage: None,
+            lifecycle_profile: ScaffoldLifecycleProfile::External,
+            language: PluginLanguage::TypeScript,
+            permissions: ScaffoldPermissions::default(),
+            include_ci: false,
+            include_vscode: true,
+            additional_keywords: Vec::new(),
+            template_options: ScaffoldTemplateOptions::default(),
+        };
+
+        let plugin_dir = PathBuf::from("/tmp/com.example.external");
+        let handoff = build_scaffold_handoff(&config, &plugin_dir);
+        assert!(matches!(handoff.profile, ScaffoldLifecycleProfile::External));
+        assert_eq!(
+            handoff.import_path.as_deref(),
+            Some("/tmp/com.example.external")
+        );
+        assert!(handoff.import_requires_build);
+        assert!(handoff.build_commands.iter().any(|cmd| cmd.contains("pnpm build")));
+    }
+
+    #[test]
+    fn test_build_scaffold_handoff_builtin_includes_onboarding_metadata() {
+        let config = ScaffoldConfig {
+            name: "Built-in".to_string(),
+            id: "com.cognia.builtin.sample".to_string(),
+            description: "desc".to_string(),
+            author: "auth".to_string(),
+            output_dir: "/repo/plugins".to_string(),
+            license: None,
+            repository: None,
+            homepage: None,
+            lifecycle_profile: ScaffoldLifecycleProfile::BuiltIn,
+            language: PluginLanguage::Rust,
+            permissions: ScaffoldPermissions::default(),
+            include_ci: false,
+            include_vscode: true,
+            additional_keywords: Vec::new(),
+            template_options: ScaffoldTemplateOptions::default(),
+        };
+
+        let plugin_dir = PathBuf::from("/repo/plugins/rust/sample");
+        let handoff = build_scaffold_handoff(&config, &plugin_dir);
+        assert!(matches!(handoff.profile, ScaffoldLifecycleProfile::BuiltIn));
+        assert!(handoff.import_path.is_none());
+        assert_eq!(
+            handoff.builtin_catalog_path.as_deref(),
+            Some("plugins/manifest.json")
+        );
+        assert_eq!(
+            handoff.builtin_validation_command.as_deref(),
+            Some("pnpm plugins:validate")
+        );
+        assert!(handoff.next_steps.iter().any(|step| step.contains("pnpm plugins:checksums")));
     }
 
     #[test]

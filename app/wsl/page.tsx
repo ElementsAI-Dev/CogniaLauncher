@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { usePathname, useSearchParams } from 'next/navigation';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { PageHeader } from '@/components/layout/page-header';
 import { useWsl } from '@/hooks/use-wsl';
 import { useLocale } from '@/components/providers/locale-provider';
@@ -33,6 +34,13 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -53,10 +61,26 @@ import {
 import { toast } from 'sonner';
 import { formatBytes } from '@/lib/utils';
 import type { WslImportOptions, WslMountOptions, WslTotalDiskUsage, WslVersionInfo } from '@/types/tauri';
+import type { WslAssistanceActionDescriptor, WslAssistanceSummary } from '@/types/wsl';
+import {
+  buildWslDistroHref,
+  buildWslOverviewHref,
+  normalizeSelectedDistros,
+  readWslOverviewContext,
+  summarizeBatchResults,
+} from '@/lib/wsl/workflow';
+
+interface WslLifecycleFeedback {
+  status: 'running' | 'success' | 'failed';
+  title: string;
+  details?: string;
+}
 
 export default function WslPage() {
   const { t } = useLocale();
   const isDesktop = isTauri();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const {
     available,
     distros,
@@ -103,10 +127,28 @@ export default function WslPage() {
     cloneDistro,
     batchLaunch,
     batchTerminate,
+    backupDistro,
+    listBackups,
+    restoreBackup,
+    deleteBackup,
+    getAssistanceActions,
+    executeAssistanceAction,
+    mapErrorToAssistance,
   } = useWsl();
 
   const initializedRef = useRef(false);
-  const [activeTab, setActiveTab] = useState<'installed' | 'available'>('installed');
+  const retryActionRef = useRef<(() => void) | null>(null);
+  const {
+    distroTags,
+    availableTags,
+    overviewContext,
+    setOverviewContext,
+  } = useWslStore();
+  const initialOverviewContext = useMemo(
+    () => readWslOverviewContext(searchParams, overviewContext),
+    [overviewContext, searchParams]
+  );
+  const [activeTab, setActiveTab] = useState<'installed' | 'available'>(initialOverviewContext.tab);
   const [importOpen, setImportOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [exportDistroName, setExportDistroName] = useState('');
@@ -115,6 +157,7 @@ export default function WslPage() {
     | { type: 'shutdown' }
     | { type: 'mount'; options: WslMountOptions }
     | { type: 'unmount'; diskPath?: string }
+    | { type: 'assistance'; actionId: string; origin: 'panel' | 'error' }
     | null
   >(null);
   const [selectedDistroForConfig, setSelectedDistroForConfig] = useState<string | null>(null);
@@ -128,14 +171,27 @@ export default function WslPage() {
   const [cloneSourceDistro, setCloneSourceDistro] = useState('');
   const [versionInfo, setVersionInfo] = useState<WslVersionInfo | null>(null);
   const [totalDiskUsage, setTotalDiskUsage] = useState<WslTotalDiskUsage | null>(null);
+  const [showAllDiskUsage, setShowAllDiskUsage] = useState(false);
   const [sidebarMetaLoading, setSidebarMetaLoading] = useState(false);
-  const [activeTagFilter, setActiveTagFilter] = useState<string | null>(null);
+  const [activeTagFilter, setActiveTagFilter] = useState<string | null>(initialOverviewContext.tag);
   const [selectedDistros, setSelectedDistros] = useState<Set<string>>(new Set());
-  const { distroTags, availableTags } = useWslStore();
+  const [runningAssistanceId, setRunningAssistanceId] = useState<string | null>(null);
+  const [assistanceSummary, setAssistanceSummary] = useState<WslAssistanceSummary | null>(null);
+  const [assistanceOrigin, setAssistanceOrigin] = useState<'panel' | 'error' | null>(null);
+  const [lifecycleFeedback, setLifecycleFeedback] = useState<WslLifecycleFeedback | null>(null);
 
   const filteredDistros = activeTagFilter
     ? distros.filter((d) => (distroTags[d.name] ?? []).includes(activeTagFilter))
     : distros;
+  const runtimeAssistanceActions = getAssistanceActions('runtime');
+
+  const assistanceActionById = runtimeAssistanceActions.reduce<Record<string, WslAssistanceActionDescriptor>>(
+    (acc, action) => {
+      acc[action.id] = action;
+      return acc;
+    },
+    {}
+  );
 
   const refreshSidebarMeta = useCallback(async () => {
     if (!isDesktop) return;
@@ -152,14 +208,71 @@ export default function WslPage() {
     }
   }, [getTotalDiskUsage, getVersionInfo, isDesktop]);
 
-  // Auto-select first distro for per-distro config when distros change
+  const syncOverviewContext = useCallback((nextTab: 'installed' | 'available', nextTag: string | null) => {
+    const href = buildWslOverviewHref({ tab: nextTab, tag: nextTag, origin: 'overview' });
+    setOverviewContext({ tab: nextTab, tag: nextTag, origin: 'overview' });
+    if (typeof window !== 'undefined' && pathname === '/wsl') {
+      window.history.replaceState(null, '', href);
+    }
+    return href;
+  }, [pathname, setOverviewContext]);
+
+  // Keep selected per-distro config target valid when distros change
   useEffect(() => {
-    if (distros.length > 0 && !selectedDistroForConfig) {
-      setSelectedDistroForConfig(distros[0].name);
-    } else if (distros.length === 0) {
+    if (distros.length === 0) {
       setSelectedDistroForConfig(null);
+      return;
+    }
+
+    const selectedIsValid = selectedDistroForConfig
+      ? distros.some((d) => d.name === selectedDistroForConfig)
+      : false;
+
+    if (!selectedIsValid) {
+      setSelectedDistroForConfig(distros[0].name);
     }
   }, [distros, selectedDistroForConfig]);
+
+  useEffect(() => {
+    if (!totalDiskUsage) {
+      setShowAllDiskUsage(false);
+      return;
+    }
+    if (totalDiskUsage.perDistro.length <= 3 && showAllDiskUsage) {
+      setShowAllDiskUsage(false);
+    }
+  }, [showAllDiskUsage, totalDiskUsage]);
+
+  useEffect(() => {
+    const nextContext = readWslOverviewContext(searchParams, overviewContext);
+    if (nextContext.tab !== activeTab) {
+      setActiveTab(nextContext.tab);
+    }
+    if (nextContext.tag !== activeTagFilter) {
+      setActiveTagFilter(nextContext.tag);
+    }
+  }, [activeTab, activeTagFilter, overviewContext, searchParams]);
+
+  useEffect(() => {
+    if (activeTagFilter && !availableTags.includes(activeTagFilter)) {
+      setActiveTagFilter(null);
+      syncOverviewContext(activeTab, null);
+    }
+  }, [activeTab, activeTagFilter, availableTags, syncOverviewContext]);
+
+  useEffect(() => {
+    setSelectedDistros((prev) => normalizeSelectedDistros(prev, filteredDistros));
+  }, [filteredDistros]);
+
+  useEffect(() => {
+    if (activeTab !== 'installed' && selectedDistros.size > 0) {
+      setSelectedDistros(new Set());
+    }
+  }, [activeTab, selectedDistros]);
+
+  useEffect(() => {
+    setOverviewContext({ tab: activeTab, tag: activeTagFilter, origin: 'overview' });
+  }, [activeTab, activeTagFilter, setOverviewContext]);
 
   // Initialize on mount
   useEffect(() => {
@@ -183,15 +296,48 @@ export default function WslPage() {
     }
   }, [activeTab, refreshDistros, refreshStatus, refreshOnlineDistros, refreshSidebarMeta]);
 
+  const setRunningFeedback = useCallback((action: string, retry?: () => void) => {
+    retryActionRef.current = retry ?? null;
+    setLifecycleFeedback({
+      status: 'running',
+      title: t('wsl.workflow.running').replace('{action}', action),
+    });
+  }, [t]);
+
+  const setSuccessFeedback = useCallback((action: string, details?: string) => {
+    retryActionRef.current = null;
+    setLifecycleFeedback({
+      status: 'success',
+      title: t('wsl.workflow.success').replace('{action}', action),
+      details,
+    });
+  }, [t]);
+
+  const setFailedFeedback = useCallback((action: string, errorMessage: string, retry?: () => void) => {
+    retryActionRef.current = retry ?? null;
+    setLifecycleFeedback({
+      status: 'failed',
+      title: t('wsl.workflow.failed').replace('{action}', action),
+      details: errorMessage,
+    });
+  }, [t]);
+
   const handleInstallOnline = useCallback(async (name: string) => {
+    setRunningFeedback(t('wsl.install').replace('{name}', name), () => {
+      void handleInstallOnline(name);
+    });
     try {
       await installOnlineDistro(name);
       toast.success(t('wsl.installSuccess').replace('{name}', name));
       await refreshSidebarMeta();
+      setSuccessFeedback(t('wsl.install').replace('{name}', name), name);
     } catch (err) {
       toast.error(String(err));
+      setFailedFeedback(t('wsl.install').replace('{name}', name), String(err), () => {
+        void handleInstallOnline(name);
+      });
     }
-  }, [installOnlineDistro, refreshSidebarMeta, t]);
+  }, [installOnlineDistro, refreshSidebarMeta, setFailedFeedback, setRunningFeedback, setSuccessFeedback, t]);
 
   const handleOpenInstallWithLocation = useCallback((name: string) => {
     setInstallLocationDistroName(name);
@@ -199,41 +345,69 @@ export default function WslPage() {
   }, []);
 
   const handleInstallWithLocation = useCallback(async (name: string, location: string) => {
+    setRunningFeedback(t('wsl.installWithLocation'), () => {
+      void handleInstallWithLocation(name, location);
+    });
     try {
       await installWithLocation(name, location);
       toast.success(t('wsl.installWithLocationSuccess').replace('{name}', name));
       await refreshSidebarMeta();
+      setSuccessFeedback(t('wsl.installWithLocation'), location);
     } catch (err) {
       toast.error(String(err));
+      setFailedFeedback(t('wsl.installWithLocation'), String(err), () => {
+        void handleInstallWithLocation(name, location);
+      });
     }
-  }, [installWithLocation, refreshSidebarMeta, t]);
+  }, [installWithLocation, refreshSidebarMeta, setFailedFeedback, setRunningFeedback, setSuccessFeedback, t]);
 
   const handleLaunch = useCallback(async (name: string) => {
+    setRunningFeedback(t('wsl.launch').replace('{name}', name), () => {
+      void handleLaunch(name);
+    });
     try {
       await launch(name);
       toast.success(t('wsl.launchSuccess').replace('{name}', name));
+      setSuccessFeedback(t('wsl.launch').replace('{name}', name), name);
     } catch (err) {
       toast.error(String(err));
+      setFailedFeedback(t('wsl.launch').replace('{name}', name), String(err), () => {
+        void handleLaunch(name);
+      });
     }
-  }, [launch, t]);
+  }, [launch, setFailedFeedback, setRunningFeedback, setSuccessFeedback, t]);
 
   const handleTerminate = useCallback(async (name: string) => {
+    setRunningFeedback(t('wsl.terminate').replace('{name}', name), () => {
+      void handleTerminate(name);
+    });
     try {
       await terminate(name);
       toast.success(t('wsl.terminateSuccess').replace('{name}', name));
+      setSuccessFeedback(t('wsl.terminate').replace('{name}', name), name);
     } catch (err) {
       toast.error(String(err));
+      setFailedFeedback(t('wsl.terminate').replace('{name}', name), String(err), () => {
+        void handleTerminate(name);
+      });
     }
-  }, [terminate, t]);
+  }, [setFailedFeedback, setRunningFeedback, setSuccessFeedback, t, terminate]);
 
   const handleShutdown = useCallback(async () => {
+    setRunningFeedback(t('wsl.shutdown'), () => {
+      void handleShutdown();
+    });
     try {
       await shutdown();
       toast.success(t('wsl.shutdownSuccess'));
+      setSuccessFeedback(t('wsl.shutdown'));
     } catch (err) {
       toast.error(String(err));
+      setFailedFeedback(t('wsl.shutdown'), String(err), () => {
+        void handleShutdown();
+      });
     }
-  }, [shutdown, t]);
+  }, [setFailedFeedback, setRunningFeedback, setSuccessFeedback, shutdown, t]);
 
   const handleSetDefault = useCallback(async (name: string) => {
     try {
@@ -262,33 +436,61 @@ export default function WslPage() {
     setExportOpen(true);
   }, []);
 
+  const buildExportErrorMessage = useCallback((err: unknown) => {
+    const message = String(err);
+    const lower = message.toLowerCase();
+    if (lower.includes('access is denied') || lower.includes('permission denied')) {
+      return t('wsl.exportErrorPermission');
+    }
+    if (
+      lower.includes('unknown option')
+      || lower.includes('invalid option')
+      || lower.includes('not supported')
+      || lower.includes('未识别')
+      || lower.includes('不支持')
+    ) {
+      return t('wsl.exportErrorUnsupported');
+    }
+    return t('wsl.exportErrorGeneric').replace('{error}', message);
+  }, [t]);
+
   const handleExport = useCallback(async (name: string, filePath: string, asVhd: boolean) => {
     try {
       await exportDistro(name, filePath, asVhd);
       toast.success(t('wsl.exportSuccess').replace('{name}', name));
     } catch (err) {
-      toast.error(String(err));
+      toast.error(buildExportErrorMessage(err));
+      throw err;
     }
-  }, [exportDistro, t]);
+  }, [buildExportErrorMessage, exportDistro, t]);
 
   const handleImport = useCallback(async (options: WslImportOptions) => {
+    setRunningFeedback(t('wsl.import').replace('{name}', options.name), () => {
+      void handleImport(options);
+    });
     try {
       await importDistro(options);
       toast.success(t('wsl.importSuccess').replace('{name}', options.name));
       await refreshSidebarMeta();
+      setSuccessFeedback(t('wsl.import').replace('{name}', options.name), options.name);
     } catch (err) {
       toast.error(String(err));
+      setFailedFeedback(t('wsl.import').replace('{name}', options.name), String(err), () => {
+        void handleImport(options);
+      });
     }
-  }, [importDistro, refreshSidebarMeta, t]);
+  }, [importDistro, refreshSidebarMeta, setFailedFeedback, setRunningFeedback, setSuccessFeedback, t]);
 
   const handleInstallWslOnly = useCallback(async () => {
+    setRunningFeedback(t('wsl.installWslOnly'));
     const result = await installWslOnly();
     const nowAvailable = await checkAvailability();
     if (nowAvailable) {
       await Promise.all([refreshAll(), refreshSidebarMeta()]);
     }
+    setSuccessFeedback(t('wsl.installWslOnly'), result);
     return result;
-  }, [checkAvailability, installWslOnly, refreshAll, refreshSidebarMeta]);
+  }, [checkAvailability, installWslOnly, refreshAll, refreshSidebarMeta, setRunningFeedback, setSuccessFeedback, t]);
 
   const handleSetDefaultVersion = useCallback(async (version: number) => {
     try {
@@ -300,32 +502,45 @@ export default function WslPage() {
   }, [setDefaultVersion, t]);
 
   const handleImportInPlaceConfirm = useCallback(async (name: string, vhdxPath: string) => {
+    setRunningFeedback(t('wsl.importInPlace').replace('{name}', name), () => {
+      void handleImportInPlaceConfirm(name, vhdxPath);
+    });
     try {
       await importInPlace(name, vhdxPath);
       toast.success(t('wsl.importInPlaceSuccess').replace('{name}', name));
       await refreshSidebarMeta();
+      setSuccessFeedback(t('wsl.importInPlace').replace('{name}', name), vhdxPath);
     } catch (err) {
       toast.error(String(err));
+      setFailedFeedback(t('wsl.importInPlace').replace('{name}', name), String(err), () => {
+        void handleImportInPlaceConfirm(name, vhdxPath);
+      });
     }
-  }, [importInPlace, refreshSidebarMeta, t]);
+  }, [importInPlace, refreshSidebarMeta, setFailedFeedback, setRunningFeedback, setSuccessFeedback, t]);
 
   const handleMount = useCallback(async (options: WslMountOptions) => {
+    setRunningFeedback(t('wsl.mount'));
     try {
       const result = await mountDisk(options);
       toast.success(t('wsl.mountSuccess') + (result ? `\n${result}` : ''));
+      setSuccessFeedback(t('wsl.mount'), result);
     } catch (err) {
       toast.error(String(err));
+      setFailedFeedback(t('wsl.mount'), String(err));
     }
-  }, [mountDisk, t]);
+  }, [mountDisk, setFailedFeedback, setRunningFeedback, setSuccessFeedback, t]);
 
   const handleUnmount = useCallback(async (diskPath?: string) => {
+    setRunningFeedback(t('wsl.unmount'));
     try {
       await unmountDisk(diskPath);
       toast.success(t('wsl.unmountSuccess'));
+      setSuccessFeedback(t('wsl.unmount'), diskPath);
     } catch (err) {
       toast.error(String(err));
+      setFailedFeedback(t('wsl.unmount'), String(err));
     }
-  }, [t, unmountDisk]);
+  }, [setFailedFeedback, setRunningFeedback, setSuccessFeedback, t, unmountDisk]);
 
   const handleMountConfirm = useCallback(async (options: WslMountOptions) => {
     setConfirmAction({ type: 'mount', options });
@@ -338,14 +553,21 @@ export default function WslPage() {
   }, []);
 
   const handleUnregister = useCallback(async (name: string) => {
+    setRunningFeedback(t('wsl.unregister').replace('{name}', name), () => {
+      void handleUnregister(name);
+    });
     try {
       await unregisterDistro(name);
       toast.success(t('wsl.unregisterSuccess').replace('{name}', name));
       await refreshSidebarMeta();
+      setSuccessFeedback(t('wsl.unregister').replace('{name}', name), name);
     } catch (err) {
       toast.error(String(err));
+      setFailedFeedback(t('wsl.unregister').replace('{name}', name), String(err), () => {
+        void handleUnregister(name);
+      });
     }
-  }, [refreshSidebarMeta, t, unregisterDistro]);
+  }, [refreshSidebarMeta, setFailedFeedback, setRunningFeedback, setSuccessFeedback, t, unregisterDistro]);
 
   const handleChangeDefaultUserOpen = useCallback((name: string) => {
     setChangeUserDistro(name);
@@ -366,14 +588,21 @@ export default function WslPage() {
   }, [changeDefaultUser, t]);
 
   const handleUpdate = useCallback(async () => {
+    setRunningFeedback(t('wsl.update'), () => {
+      void handleUpdate();
+    });
     try {
       const result = await updateWsl();
       toast.success(t('wsl.updateSuccess') + (result ? `\n${result}` : ''));
       await refreshSidebarMeta();
+      setSuccessFeedback(t('wsl.update'), result);
     } catch (err) {
       toast.error(String(err));
+      setFailedFeedback(t('wsl.update'), String(err), () => {
+        void handleUpdate();
+      });
     }
-  }, [refreshSidebarMeta, updateWsl, t]);
+  }, [refreshSidebarMeta, setFailedFeedback, setRunningFeedback, setSuccessFeedback, t, updateWsl]);
 
   const handleOpenInExplorer = useCallback(async (name: string) => {
     try {
@@ -399,19 +628,61 @@ export default function WslPage() {
   }, []);
 
   const handleCloneConfirm = useCallback(async (name: string, newName: string, location: string) => {
+    setRunningFeedback(t('wsl.clone').replace('{name}', newName), () => {
+      void handleCloneConfirm(name, newName, location);
+    });
     try {
       const result = await cloneDistro(name, newName, location);
       toast.success(t('wsl.cloneSuccess').replace('{name}', newName) + (result ? `\n${result}` : ''));
       await refreshSidebarMeta();
+      setSuccessFeedback(t('wsl.clone').replace('{name}', newName), result);
     } catch (err) {
       toast.error(String(err));
+      setFailedFeedback(t('wsl.clone').replace('{name}', newName), String(err), () => {
+        void handleCloneConfirm(name, newName, location);
+      });
     }
-  }, [cloneDistro, refreshSidebarMeta, t]);
+  }, [cloneDistro, refreshSidebarMeta, setFailedFeedback, setRunningFeedback, setSuccessFeedback, t]);
+
+  const runAssistanceAction = useCallback(async (actionId: string, origin: 'panel' | 'error') => {
+    setRunningAssistanceId(actionId);
+    setAssistanceOrigin(origin);
+    try {
+      const summary = await executeAssistanceAction(actionId, 'runtime');
+      setAssistanceSummary(summary);
+      if (summary.status === 'success') {
+        toast.success(summary.title);
+        await refreshSidebarMeta();
+        setSuccessFeedback(summary.title, summary.details);
+      } else {
+        toast.error(summary.details ?? summary.title);
+        setFailedFeedback(summary.title, summary.details ?? summary.title);
+      }
+    } finally {
+      setRunningAssistanceId(null);
+    }
+  }, [executeAssistanceAction, refreshSidebarMeta, setFailedFeedback, setSuccessFeedback]);
+
+  const handleAssistanceAction = useCallback((actionId: string, origin: 'panel' | 'error' = 'panel') => {
+    const action = assistanceActionById[actionId];
+    if (!action) return;
+    if (!action.supported) {
+      toast.error(action.blockedReason ?? t('wsl.assistance.blocked'));
+      return;
+    }
+    if (action.risk === 'high') {
+      setConfirmAction({ type: 'assistance', actionId, origin });
+      return;
+    }
+    void runAssistanceAction(actionId, origin);
+  }, [assistanceActionById, runAssistanceAction, t]);
 
   const handleBatchLaunch = useCallback(async () => {
     if (selectedDistros.size === 0) return;
+    setRunningFeedback(t('wsl.batch.launch'));
     try {
       const results = await batchLaunch(Array.from(selectedDistros));
+      const summary = summarizeBatchResults(results);
       const failed = results.filter(([, ok]) => !ok);
       if (failed.length === 0) {
         toast.success(t('wsl.batch.launchSuccess').replace('{count}', String(results.length)));
@@ -419,15 +690,21 @@ export default function WslPage() {
         toast.warning(t('wsl.batch.partialFail').replace('{failed}', String(failed.length)).replace('{total}', String(results.length)));
       }
       setSelectedDistros(new Set());
+      setSuccessFeedback(t('wsl.batch.launch'), summary.details.join('\n'));
     } catch (err) {
       toast.error(String(err));
+      setFailedFeedback(t('wsl.batch.launch'), String(err), () => {
+        void handleBatchLaunch();
+      });
     }
-  }, [batchLaunch, selectedDistros, t]);
+  }, [batchLaunch, selectedDistros, setFailedFeedback, setRunningFeedback, setSuccessFeedback, t]);
 
   const handleBatchTerminate = useCallback(async () => {
     if (selectedDistros.size === 0) return;
+    setRunningFeedback(t('wsl.batch.terminate'));
     try {
       const results = await batchTerminate(Array.from(selectedDistros));
+      const summary = summarizeBatchResults(results);
       const failed = results.filter(([, ok]) => !ok);
       if (failed.length === 0) {
         toast.success(t('wsl.batch.terminateSuccess').replace('{count}', String(results.length)));
@@ -435,10 +712,14 @@ export default function WslPage() {
         toast.warning(t('wsl.batch.partialFail').replace('{failed}', String(failed.length)).replace('{total}', String(results.length)));
       }
       setSelectedDistros(new Set());
+      setSuccessFeedback(t('wsl.batch.terminate'), summary.details.join('\n'));
     } catch (err) {
       toast.error(String(err));
+      setFailedFeedback(t('wsl.batch.terminate'), String(err), () => {
+        void handleBatchTerminate();
+      });
     }
-  }, [batchTerminate, selectedDistros, t]);
+  }, [batchTerminate, selectedDistros, setFailedFeedback, setRunningFeedback, setSuccessFeedback, t]);
 
   const toggleSelectDistro = useCallback((name: string) => {
     setSelectedDistros((prev) => {
@@ -466,9 +747,11 @@ export default function WslPage() {
       await handleMount(confirmAction.options);
     } else if (confirmAction.type === 'unmount') {
       await handleUnmount(confirmAction.diskPath);
+    } else if (confirmAction.type === 'assistance') {
+      await runAssistanceAction(confirmAction.actionId, confirmAction.origin);
     }
     setConfirmAction(null);
-  }, [confirmAction, handleMount, handleShutdown, handleUnmount, handleUnregister]);
+  }, [confirmAction, handleMount, handleShutdown, handleUnmount, handleUnregister, runAssistanceAction]);
 
   const importInPlaceUnsupported = capabilities?.importInPlace === false;
   const importInPlaceHint = importInPlaceUnsupported
@@ -476,6 +759,10 @@ export default function WslPage() {
         .replace('{feature}', t('wsl.importInPlace'))
         .replace('{version}', capabilities?.version ?? 'Unknown')
     : null;
+  const runtimeErrorSuggestions = error
+    ? mapErrorToAssistance(error, 'runtime')
+    : [];
+  const assistanceGroups: Array<'check' | 'repair' | 'maintenance'> = ['check', 'repair', 'maintenance'];
   const desktopLayoutClass =
     'grid gap-6 xl:gap-8 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,1fr)] 2xl:grid-cols-[minmax(0,1.55fr)_minmax(340px,1fr)]';
 
@@ -531,7 +818,31 @@ export default function WslPage() {
       {error && (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
-          <AlertDescription>{error}</AlertDescription>
+          <AlertDescription className="space-y-3">
+            <p>{error}</p>
+            {runtimeErrorSuggestions.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-medium">{t('wsl.assistance.suggestedActions')}</p>
+                <div className="flex flex-wrap gap-2">
+                  {runtimeErrorSuggestions.map((suggestion) => {
+                    const action = assistanceActionById[suggestion.actionId];
+                    if (!action || !action.supported) return null;
+                    return (
+                      <Button
+                        key={`${suggestion.actionId}-${suggestion.reason}`}
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs"
+                        onClick={() => handleAssistanceAction(suggestion.actionId, 'error')}
+                      >
+                        {t(action.labelKey)}
+                      </Button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </AlertDescription>
         </Alert>
       )}
 
@@ -580,7 +891,15 @@ export default function WslPage() {
                 data-testid="wsl-distro-workflow-section"
                 className="rounded-xl border border-border/60 bg-card/40 p-3 sm:p-4"
               >
-                <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'installed' | 'available')}>
+                <Tabs
+                  value={activeTab}
+                  onValueChange={(v) => {
+                    const nextTab = v as 'installed' | 'available';
+                    setActiveTab(nextTab);
+                    setSelectedDistros(new Set());
+                    syncOverviewContext(nextTab, activeTagFilter);
+                  }}
+                >
                   <TabsList>
                     <TabsTrigger value="installed">
                       {t('wsl.installed')} ({distros.length})
@@ -595,7 +914,10 @@ export default function WslPage() {
                       <Badge
                         variant={activeTagFilter === null ? 'default' : 'outline'}
                         className="cursor-pointer text-xs"
-                        onClick={() => setActiveTagFilter(null)}
+                        onClick={() => {
+                          setActiveTagFilter(null);
+                          syncOverviewContext(activeTab, null);
+                        }}
                       >
                         {t('wsl.tags.all')}
                       </Badge>
@@ -604,7 +926,11 @@ export default function WslPage() {
                           key={tag}
                           variant={activeTagFilter === tag ? 'default' : 'outline'}
                           className="cursor-pointer text-xs"
-                          onClick={() => setActiveTagFilter(activeTagFilter === tag ? null : tag)}
+                          onClick={() => {
+                            const nextTag = activeTagFilter === tag ? null : tag;
+                            setActiveTagFilter(nextTag);
+                            syncOverviewContext(activeTab, nextTag);
+                          }}
                         >
                           {tag}
                         </Badge>
@@ -668,6 +994,11 @@ export default function WslPage() {
                             <div className="min-w-0 flex-1">
                               <WslDistroCard
                                 distro={distro}
+                                detailHref={buildWslDistroHref(distro.name, {
+                                  tab: activeTab,
+                                  tag: activeTagFilter,
+                                  origin: 'overview',
+                                })}
                                 onLaunch={handleLaunch}
                                 onTerminate={handleTerminate}
                                 onSetDefault={handleSetDefault}
@@ -719,6 +1050,36 @@ export default function WslPage() {
 
             {/* Supporting region */}
             <aside data-testid="wsl-supporting-region" className="space-y-5">
+              {lifecycleFeedback && (
+                <Alert
+                  data-testid="wsl-lifecycle-feedback"
+                  variant={lifecycleFeedback.status === 'failed' ? 'destructive' : 'default'}
+                >
+                  <AlertDescription className="space-y-2">
+                    <p className="font-medium">{lifecycleFeedback.title}</p>
+                    {lifecycleFeedback.details && (
+                      <p className="text-xs whitespace-pre-wrap text-muted-foreground">{lifecycleFeedback.details}</p>
+                    )}
+                    <div className="flex flex-wrap gap-2">
+                      {lifecycleFeedback.status === 'failed' && retryActionRef.current && (
+                        <Button size="sm" variant="outline" onClick={() => retryActionRef.current?.()}>
+                          {t('wsl.assistance.retry')}
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          retryActionRef.current = null;
+                          setLifecycleFeedback(null);
+                        }}
+                      >
+                        {t('wsl.assistance.dismiss')}
+                      </Button>
+                    </div>
+                  </AlertDescription>
+                </Alert>
+              )}
               <section data-testid="wsl-runtime-support-section" className="space-y-4">
                 <WslStatusCard
                   status={status}
@@ -761,12 +1122,27 @@ export default function WslPage() {
                     </div>
                     {totalDiskUsage && totalDiskUsage.perDistro.length > 0 && (
                       <div className="space-y-1">
-                        {totalDiskUsage.perDistro.slice(0, 3).map(([name, bytes]) => (
+                        {(showAllDiskUsage
+                          ? totalDiskUsage.perDistro
+                          : totalDiskUsage.perDistro.slice(0, 3)).map(([name, bytes]) => (
                           <div key={name} className="flex items-center justify-between text-xs">
                             <span className="truncate text-muted-foreground">{name}</span>
                             <span className="font-mono">{formatBytes(bytes)}</span>
                           </div>
                         ))}
+                        {totalDiskUsage.perDistro.length > 3 && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-full justify-center text-xs"
+                            onClick={() => setShowAllDiskUsage((prev) => !prev)}
+                          >
+                            {showAllDiskUsage
+                              ? t('wsl.showLess')
+                              : t('wsl.viewAllDistros')
+                                  .replace('{count}', String(totalDiskUsage.perDistro.length))}
+                          </Button>
+                        )}
                       </div>
                     )}
                     {sidebarMetaLoading && (
@@ -777,6 +1153,92 @@ export default function WslPage() {
               </section>
 
               <section data-testid="wsl-operations-support-section" className="space-y-4">
+                <Card data-testid="wsl-assistance-support-section">
+                  <CardHeader className="pb-3">
+                    <h3 className="text-sm font-semibold">{t('wsl.assistance.title')}</h3>
+                    <p className="text-xs text-muted-foreground">{t('wsl.assistance.desc')}</p>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {assistanceSummary && (
+                      <Alert
+                        variant={assistanceSummary.status === 'success' ? 'default' : 'destructive'}
+                        data-testid="wsl-assistance-summary"
+                      >
+                        <AlertDescription className="space-y-2">
+                          <p className="font-medium">{assistanceSummary.title}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(assistanceSummary.timestamp).toLocaleString()}
+                          </p>
+                          {assistanceSummary.findings.length > 0 && (
+                            <div className="space-y-1">
+                              {assistanceSummary.findings.slice(0, 3).map((finding) => (
+                                <p key={finding} className="text-xs">{finding}</p>
+                              ))}
+                            </div>
+                          )}
+                          {assistanceSummary.details && (
+                            <p className="text-xs text-muted-foreground">{assistanceSummary.details}</p>
+                          )}
+                          <div className="flex flex-wrap gap-2">
+                            {assistanceSummary.retryable && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-xs"
+                                onClick={() => handleAssistanceAction(assistanceSummary.actionId, assistanceOrigin ?? 'panel')}
+                                disabled={runningAssistanceId === assistanceSummary.actionId}
+                              >
+                                {t('wsl.assistance.retry')}
+                              </Button>
+                            )}
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 text-xs"
+                              onClick={() => {
+                                setAssistanceSummary(null);
+                                setAssistanceOrigin(null);
+                              }}
+                            >
+                              {assistanceOrigin === 'error'
+                                ? t('wsl.assistance.returnToError')
+                                : t('wsl.assistance.dismiss')}
+                            </Button>
+                          </div>
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                    {assistanceGroups.map((group) => {
+                      const groupActions = runtimeAssistanceActions.filter((action) => action.category === group);
+                      if (groupActions.length === 0) return null;
+                      return (
+                        <div key={group} className="space-y-1.5">
+                          <p className="text-xs font-medium text-muted-foreground">
+                            {t(`wsl.assistance.groups.${group}`)}
+                          </p>
+                          <div className="space-y-1.5">
+                            {groupActions.map((action) => (
+                              <Button
+                                key={action.id}
+                                variant="outline"
+                                size="sm"
+                                className="h-auto w-full flex-col items-start justify-start gap-0.5 py-2 text-left"
+                                disabled={!action.supported || runningAssistanceId === action.id}
+                                title={action.supported ? undefined : action.blockedReason}
+                                onClick={() => handleAssistanceAction(action.id)}
+                              >
+                                <span className="text-xs font-medium">{t(action.labelKey)}</span>
+                                <span className="text-[11px] font-normal text-muted-foreground">
+                                  {t(action.descriptionKey)}
+                                </span>
+                              </Button>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </CardContent>
+                </Card>
                 <Card>
                   <CardHeader className="pb-3">
                     <h3 className="text-sm font-semibold">{t('wsl.advancedOps')}</h3>
@@ -839,6 +1301,12 @@ export default function WslPage() {
                 </Card>
                 <WslBackupCard
                   distroNames={distros.map((d) => d.name)}
+                  backupDistro={backupDistro}
+                  listBackups={listBackups}
+                  restoreBackup={restoreBackup}
+                  deleteBackup={deleteBackup}
+                  onRestoreSuccess={refreshSidebarMeta}
+                  onMutationSuccess={refreshSidebarMeta}
                   t={t}
                 />
               </section>
@@ -851,6 +1319,28 @@ export default function WslPage() {
                   onSetConfig={setConfigValue}
                   t={t}
                 />
+                {distros.length > 1 && (
+                  <div className="space-y-2 rounded-lg border border-border/60 bg-card/40 p-3">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      {t('wsl.distroConfig.targetLabel')}
+                    </p>
+                    <Select
+                      value={selectedDistroForConfig ?? ''}
+                      onValueChange={(value) => setSelectedDistroForConfig(value)}
+                    >
+                      <SelectTrigger className="h-8">
+                        <SelectValue placeholder={t('wsl.distroConfig.targetPlaceholder')} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {distros.map((distro) => (
+                          <SelectItem key={distro.name} value={distro.name}>
+                            {distro.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
                 {selectedDistroForConfig && (
                   <WslDistroConfigCard
                     distroName={selectedDistroForConfig}
@@ -870,6 +1360,7 @@ export default function WslPage() {
         open={importOpen}
         onOpenChange={setImportOpen}
         onImport={handleImport}
+        capabilities={capabilities}
         t={t}
       />
 
@@ -879,6 +1370,7 @@ export default function WslPage() {
         distroName={exportDistroName}
         onOpenChange={setExportOpen}
         onExport={handleExport}
+        capabilities={capabilities}
         t={t}
       />
 
@@ -941,7 +1433,9 @@ export default function WslPage() {
                     ? t('wsl.mount')
                     : confirmAction?.type === 'unmount'
                       ? t('wsl.unmount')
-                      : t('wsl.shutdown')}
+                      : confirmAction?.type === 'assistance'
+                        ? t(assistanceActionById[confirmAction.actionId]?.labelKey ?? 'wsl.assistance.title')
+                        : t('wsl.shutdown')}
               </AlertDialogTitle>
               <AlertDialogDescription>
                 {confirmAction?.type === 'unregister'
@@ -951,10 +1445,12 @@ export default function WslPage() {
                     )
                   : confirmAction?.type === 'mount'
                     ? t('wsl.mountConfirm')
-                    : confirmAction?.type === 'unmount'
+                  : confirmAction?.type === 'unmount'
                       ? confirmAction.diskPath
                         ? t('wsl.unmountConfirm').replace('{path}', confirmAction.diskPath)
                         : t('wsl.unmountAllConfirm')
+                      : confirmAction?.type === 'assistance'
+                        ? t(assistanceActionById[confirmAction.actionId]?.descriptionKey ?? 'wsl.assistance.desc')
                       : t('wsl.shutdownConfirm')}
                 {confirmAction?.type === 'unregister' && (
                   <>
@@ -966,6 +1462,7 @@ export default function WslPage() {
                 )}
                 {(confirmAction?.type === 'mount'
                   || confirmAction?.type === 'unmount'
+                  || confirmAction?.type === 'assistance'
                   || confirmAction?.type === 'shutdown') && (
                   <>
                     <br />

@@ -42,6 +42,16 @@ pub enum IssueCategory {
     Other,
 }
 
+/// Availability/scope state for a health target
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum HealthScopeState {
+    Available,
+    Unavailable,
+    Timeout,
+    Unsupported,
+}
+
 /// A single health issue
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HealthIssue {
@@ -51,6 +61,7 @@ pub struct HealthIssue {
     pub details: Option<String>,
     pub fix_command: Option<String>,
     pub fix_description: Option<String>,
+    pub remediation_id: Option<String>,
 }
 
 impl HealthIssue {
@@ -62,6 +73,7 @@ impl HealthIssue {
             details: None,
             fix_command: None,
             fix_description: None,
+            remediation_id: None,
         }
     }
 
@@ -75,6 +87,18 @@ impl HealthIssue {
         self.fix_description = Some(description.into());
         self
     }
+
+    pub fn with_remediation(
+        mut self,
+        remediation_id: impl Into<String>,
+        command: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Self {
+        self.remediation_id = Some(remediation_id.into());
+        self.fix_command = Some(command.into());
+        self.fix_description = Some(description.into());
+        self
+    }
 }
 
 /// Result of a health check for a single environment
@@ -83,6 +107,8 @@ pub struct EnvironmentHealthResult {
     pub env_type: String,
     pub provider_id: Option<String>,
     pub status: HealthStatus,
+    pub scope_state: HealthScopeState,
+    pub scope_reason: Option<String>,
     pub issues: Vec<HealthIssue>,
     pub suggestions: Vec<String>,
     pub current_version: Option<String>,
@@ -96,6 +122,8 @@ impl EnvironmentHealthResult {
             env_type: env_type.into(),
             provider_id: None,
             status: HealthStatus::Unknown,
+            scope_state: HealthScopeState::Available,
+            scope_reason: None,
             issues: Vec::new(),
             suggestions: Vec::new(),
             current_version: None,
@@ -129,11 +157,24 @@ impl EnvironmentHealthResult {
         self.suggestions.push(suggestion.into());
     }
 
+    pub fn set_scope_state(
+        &mut self,
+        scope_state: HealthScopeState,
+        reason: impl Into<String>,
+    ) {
+        self.scope_state = scope_state;
+        self.scope_reason = Some(reason.into());
+    }
+
     pub fn finalize(&mut self) {
         // If no Warning/Error/Critical issues were added, status is still Unknown —
-        // treat that as Healthy (Info-only issues don't degrade health)
+        // treat that as Healthy only when the target is actually available.
         if self.status == HealthStatus::Unknown {
-            self.status = HealthStatus::Healthy;
+            self.status = if self.scope_state == HealthScopeState::Available {
+                HealthStatus::Healthy
+            } else {
+                HealthStatus::Unknown
+            };
         }
     }
 }
@@ -144,6 +185,8 @@ pub struct PackageManagerHealthResult {
     pub provider_id: String,
     pub display_name: String,
     pub status: HealthStatus,
+    pub scope_state: HealthScopeState,
+    pub scope_reason: Option<String>,
     pub version: Option<String>,
     pub executable_path: Option<PathBuf>,
     pub issues: Vec<HealthIssue>,
@@ -157,6 +200,8 @@ impl PackageManagerHealthResult {
             provider_id: provider_id.into(),
             display_name: display_name.into(),
             status: HealthStatus::Unknown,
+            scope_state: HealthScopeState::Available,
+            scope_reason: None,
             version: None,
             executable_path: None,
             issues: Vec::new(),
@@ -180,9 +225,22 @@ impl PackageManagerHealthResult {
         self.issues.push(issue);
     }
 
+    pub fn set_scope_state(
+        &mut self,
+        scope_state: HealthScopeState,
+        reason: impl Into<String>,
+    ) {
+        self.scope_state = scope_state;
+        self.scope_reason = Some(reason.into());
+    }
+
     pub fn finalize(&mut self) {
         if self.status == HealthStatus::Unknown {
-            self.status = HealthStatus::Healthy;
+            self.status = if self.scope_state == HealthScopeState::Available {
+                HealthStatus::Healthy
+            } else {
+                HealthStatus::Unknown
+            };
         }
     }
 }
@@ -274,6 +332,21 @@ pub struct HealthCheckProgress {
     pub phase: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HealthRemediationResult {
+    pub remediation_id: String,
+    pub supported: bool,
+    pub dry_run: bool,
+    pub executed: bool,
+    pub success: bool,
+    pub manual_only: bool,
+    pub command: Option<String>,
+    pub description: Option<String>,
+    pub message: String,
+    pub stdout: Option<String>,
+    pub stderr: Option<String>,
+}
+
 /// Health check manager
 pub struct HealthCheckManager {
     registry: Arc<RwLock<ProviderRegistry>>,
@@ -282,6 +355,73 @@ pub struct HealthCheckManager {
 impl HealthCheckManager {
     pub fn new(registry: Arc<RwLock<ProviderRegistry>>) -> Self {
         Self { registry }
+    }
+
+    fn canonical_environment_types() -> &'static [&'static str] {
+        &[
+            "node", "python", "go", "rust", "ruby", "java", "kotlin", "scala", "groovy",
+            "gradle", "maven", "php", "dotnet", "deno", "zig", "dart", "bun", "lua",
+            "elixir", "erlang", "swift", "julia", "perl", "r", "haskell", "clojure",
+            "crystal", "nim", "ocaml", "fortran", "c", "cpp",
+        ]
+    }
+
+    fn remediation_id(kind: &str, target: &str) -> String {
+        format!("{}:{}", kind, target)
+    }
+
+    fn build_install_issue(
+        &self,
+        provider_id: &str,
+        display_name: &str,
+        details: impl Into<String>,
+        description: impl Into<String>,
+    ) -> HealthIssue {
+        HealthIssue::new(
+            Severity::Info,
+            IssueCategory::ProviderNotFound,
+            format!("{} is not installed", display_name),
+        )
+        .with_details(details)
+        .with_remediation(
+            Self::remediation_id("install-provider", provider_id),
+            self.get_install_command(provider_id),
+            description,
+        )
+    }
+
+    fn create_environment_timeout_result(&self, env_type: &str) -> EnvironmentHealthResult {
+        let mut result = EnvironmentHealthResult::new(env_type);
+        result.set_scope_state(HealthScopeState::Timeout, "health_check_timeout");
+        result.add_issue(
+            HealthIssue::new(
+                Severity::Warning,
+                IssueCategory::Other,
+                format!("{} health check timed out", env_type),
+            )
+            .with_details("The environment health check did not finish within the configured timeout."),
+        );
+        result.finalize();
+        result
+    }
+
+    fn create_package_manager_timeout_result(
+        &self,
+        provider_id: &str,
+        display_name: &str,
+    ) -> PackageManagerHealthResult {
+        let mut result = PackageManagerHealthResult::new(provider_id, display_name);
+        result.set_scope_state(HealthScopeState::Timeout, "health_check_timeout");
+        result.add_issue(
+            HealthIssue::new(
+                Severity::Warning,
+                IssueCategory::Other,
+                format!("{} health check timed out", display_name),
+            )
+            .with_details("The provider health check did not finish within the configured timeout."),
+        );
+        result.finalize();
+        result
     }
 
     /// Run health check for all environments (parallel with timeout and progress)
@@ -298,80 +438,8 @@ impl HealthCheckManager {
         F: FnMut(HealthCheckProgress),
     {
         let mut result = SystemHealthResult::new();
+        let env_types = Self::canonical_environment_types();
 
-        // Phase 1: System-level checks (fast, no parallelism needed)
-        on_progress(HealthCheckProgress {
-            completed: 0,
-            total: 1,
-            current_provider: "system".into(),
-            phase: "system".into(),
-        });
-        self.check_system_health(&mut result).await;
-
-        // Phase 2: Environment providers — pre-filter by availability, then parallel health check
-        let all_env_entries: Vec<(String, Arc<dyn EnvironmentProvider>)> = {
-            let registry = self.registry.read().await;
-            registry
-                .list_environment_providers()
-                .iter()
-                .filter_map(|id| {
-                    registry
-                        .get_environment_provider(id)
-                        .map(|p| (id.to_string(), p))
-                })
-                .collect()
-        };
-
-        // Pre-filter: only check providers that are actually installed
-        let mut env_entries = Vec::new();
-        for (id, provider) in all_env_entries {
-            if provider.is_available().await {
-                env_entries.push((id, provider));
-            } else {
-                result.skipped_providers.push(id);
-            }
-        }
-
-        let total_env = env_entries.len();
-        let mut env_futures = Vec::with_capacity(total_env);
-        let env_ids: Vec<String> = env_entries.iter().map(|(id, _)| id.clone()).collect();
-
-        for (_id, provider) in env_entries {
-            let registry = self.registry.clone();
-            env_futures.push(tokio::spawn(async move {
-                let mgr = HealthCheckManager::new(registry);
-                tokio::time::timeout(
-                    Duration::from_secs(15),
-                    mgr.check_environment_health(&*provider),
-                )
-                .await
-                .unwrap_or_else(|_| {
-                    let mut r = EnvironmentHealthResult::new(provider.id());
-                    r.add_issue(HealthIssue::new(
-                        Severity::Warning,
-                        IssueCategory::Other,
-                        format!("{} health check timed out", provider.display_name()),
-                    ));
-                    r.finalize();
-                    r
-                })
-            }));
-        }
-
-        let env_results = futures::future::join_all(env_futures).await;
-        for (i, join_result) in env_results.into_iter().enumerate() {
-            if let Ok(env_result) = join_result {
-                result.add_environment(env_result);
-            }
-            on_progress(HealthCheckProgress {
-                completed: i + 1,
-                total: total_env,
-                current_provider: env_ids.get(i).cloned().unwrap_or_default(),
-                phase: "environment".into(),
-            });
-        }
-
-        // Phase 3: Package managers — pre-filter by availability, then parallel health check
         let all_pm_entries: Vec<(String, Arc<dyn Provider>)> = {
             let registry = self.registry.read().await;
             let mut provider_ids = registry.list_system_package_provider_ids();
@@ -385,22 +453,62 @@ impl HealthCheckManager {
                 .collect()
         };
 
-        // Pre-filter: only check providers that are actually available
-        // (github/gitlab are API providers and always "available" for checking)
-        let mut pm_entries = Vec::new();
-        for (id, provider) in all_pm_entries {
-            if id == "github" || id == "gitlab" || provider.is_available().await {
-                pm_entries.push((id, provider));
-            } else {
-                result.skipped_providers.push(id);
-            }
+        let total = 1 + env_types.len() + all_pm_entries.len();
+
+        // Phase 1: System-level checks
+        on_progress(HealthCheckProgress {
+            completed: 0,
+            total,
+            current_provider: "system".into(),
+            phase: "system".into(),
+        });
+        self.check_system_health(&mut result).await;
+        on_progress(HealthCheckProgress {
+            completed: 1,
+            total,
+            current_provider: "system".into(),
+            phase: "system".into(),
+        });
+
+        // Phase 2: canonical logical environment checks
+        let mut env_futures = Vec::with_capacity(env_types.len());
+        for env_type in env_types {
+            let registry = self.registry.clone();
+            let env_type = (*env_type).to_string();
+            env_futures.push(tokio::spawn(async move {
+                let mgr = HealthCheckManager::new(registry);
+                tokio::time::timeout(
+                    Duration::from_secs(15),
+                    mgr.check_environment(&env_type),
+                )
+                .await
+                .unwrap_or_else(|_| Ok(mgr.create_environment_timeout_result(&env_type)))
+            }));
         }
 
-        let total_pm = pm_entries.len();
-        let mut pm_futures = Vec::with_capacity(total_pm);
-        let pm_ids: Vec<String> = pm_entries.iter().map(|(id, _)| id.clone()).collect();
+        let env_results = futures::future::join_all(env_futures).await;
+        for (i, join_result) in env_results.into_iter().enumerate() {
+            if let Ok(Ok(env_result)) = join_result {
+                if env_result.scope_state != HealthScopeState::Available {
+                    if let Some(provider_id) = &env_result.provider_id {
+                        result.skipped_providers.push(provider_id.clone());
+                    }
+                }
+                result.add_environment(env_result);
+            }
+            on_progress(HealthCheckProgress {
+                completed: 1 + i + 1,
+                total,
+                current_provider: env_types.get(i).copied().unwrap_or_default().to_string(),
+                phase: "environment".into(),
+            });
+        }
 
-        for (_id, provider) in pm_entries {
+        // Phase 3: package manager/provider checks including unavailable providers
+        let mut pm_futures = Vec::with_capacity(all_pm_entries.len());
+        let pm_ids: Vec<String> = all_pm_entries.iter().map(|(id, _)| id.clone()).collect();
+
+        for (_id, provider) in all_pm_entries {
             let registry = self.registry.clone();
             pm_futures.push(tokio::spawn(async move {
                 let mgr = HealthCheckManager::new(registry);
@@ -410,15 +518,7 @@ impl HealthCheckManager {
                 )
                 .await
                 .unwrap_or_else(|_| {
-                    let mut r =
-                        PackageManagerHealthResult::new(provider.id(), provider.display_name());
-                    r.add_issue(HealthIssue::new(
-                        Severity::Warning,
-                        IssueCategory::Other,
-                        format!("{} health check timed out", provider.display_name()),
-                    ));
-                    r.finalize();
-                    r
+                    mgr.create_package_manager_timeout_result(provider.id(), provider.display_name())
                 })
             }));
         }
@@ -426,16 +526,21 @@ impl HealthCheckManager {
         let pm_results = futures::future::join_all(pm_futures).await;
         for (i, join_result) in pm_results.into_iter().enumerate() {
             if let Ok(pm_result) = join_result {
+                if pm_result.scope_state != HealthScopeState::Available {
+                    result.skipped_providers.push(pm_result.provider_id.clone());
+                }
                 result.add_package_manager(pm_result);
             }
             on_progress(HealthCheckProgress {
-                completed: i + 1,
-                total: total_pm,
+                completed: 1 + env_types.len() + i + 1,
+                total,
                 current_provider: pm_ids.get(i).cloned().unwrap_or_default(),
                 phase: "package_manager".into(),
             });
         }
 
+        result.skipped_providers.sort();
+        result.skipped_providers.dedup();
         Ok(result)
     }
 
@@ -445,32 +550,60 @@ impl HealthCheckManager {
 
         // Dynamic provider resolution via candidate_provider_ids (same as EnvironmentManager)
         let candidates = crate::core::environment::candidate_provider_ids(env_type);
-
-        // Find first registered provider from priority-ordered candidates
-        let provider = candidates
+        let providers: Vec<(String, Arc<dyn EnvironmentProvider>)> = candidates
             .iter()
-            .filter_map(|id| registry.get_environment_provider(id))
-            .next();
+            .filter_map(|id| {
+                registry
+                    .get_environment_provider(id)
+                    .map(|provider| ((*id).to_string(), provider))
+            })
+            .collect();
+        drop(registry);
 
-        match provider {
-            Some(p) => Ok(self.check_environment_health(&*p).await),
-            None => {
-                let mut result = EnvironmentHealthResult::new(env_type);
-                result.add_issue(
-                    HealthIssue::new(
-                        Severity::Info,
-                        IssueCategory::ProviderNotFound,
-                        format!("No {} version manager installed", env_type),
-                    )
-                    .with_details(format!(
-                        "Install a version manager for {} to enable environment management",
-                        env_type
-                    )),
-                );
-                result.finalize();
-                Ok(result)
+        if providers.is_empty() {
+            let default_provider = crate::core::environment::env_type_to_default_provider(env_type);
+            let mut result = EnvironmentHealthResult::new(env_type).with_provider(default_provider.clone());
+            result.set_scope_state(HealthScopeState::Unsupported, "no_registered_provider");
+            result.add_issue(
+                self.build_install_issue(
+                    &default_provider,
+                    &format!("{} manager", env_type),
+                    format!("Install a version manager for {} to enable environment management", env_type),
+                    format!("Install {} to enable {} version management", default_provider, env_type),
+                ),
+            );
+            result.finalize();
+            return Ok(result);
+        }
+
+        let mut first_registered: Option<(String, Arc<dyn EnvironmentProvider>)> = None;
+        let mut selected: Option<(String, Arc<dyn EnvironmentProvider>)> = None;
+        let mut available_candidates = Vec::new();
+
+        for (provider_id, provider) in &providers {
+            if first_registered.is_none() {
+                first_registered = Some((provider_id.clone(), provider.clone()));
+            }
+            if provider.is_available().await {
+                available_candidates.push(provider_id.clone());
+                if selected.is_none() {
+                    selected = Some((provider_id.clone(), provider.clone()));
+                }
             }
         }
+
+        let (provider_id, provider) = selected.or(first_registered).expect("providers checked above");
+        let mut result = self.check_environment_health(&*provider).await;
+        result.env_type = env_type.to_string();
+        result.provider_id = Some(provider_id.clone());
+        if available_candidates.len() > 1 {
+            result.add_suggestion(format!(
+                "Multiple providers are available for {}: {}",
+                env_type,
+                available_candidates.join(", ")
+            ));
+        }
+        Ok(result)
     }
 
     /// Run health check for all package managers (parallel with timeout)
@@ -478,8 +611,6 @@ impl HealthCheckManager {
         let providers: Vec<Arc<dyn Provider>> = {
             let registry = self.registry.read().await;
             let mut provider_ids = registry.list_system_package_provider_ids();
-            // Bulk "package managers" health is for non-environment providers (environment providers
-            // have their own health section).
             provider_ids.retain(|id| registry.get_environment_provider(id).is_none());
             provider_ids.extend(["github".to_string(), "gitlab".to_string()]);
             provider_ids.sort();
@@ -501,15 +632,7 @@ impl HealthCheckManager {
                 )
                 .await
                 .unwrap_or_else(|_| {
-                    let mut r =
-                        PackageManagerHealthResult::new(provider.id(), provider.display_name());
-                    r.add_issue(HealthIssue::new(
-                        Severity::Warning,
-                        IssueCategory::Other,
-                        format!("{} health check timed out", provider.display_name()),
-                    ));
-                    r.finalize();
-                    r
+                    mgr.create_package_manager_timeout_result(provider.id(), provider.display_name())
                 })
             }));
         }
@@ -549,18 +672,15 @@ impl HealthCheckManager {
         let is_available = provider.is_available().await;
 
         if !is_available {
+            result.set_scope_state(HealthScopeState::Unavailable, "provider_not_installed");
             result.add_issue(
-                HealthIssue::new(
-                    Severity::Info,
-                    IssueCategory::ProviderNotFound,
-                    format!("{} is not installed", provider.display_name()),
-                )
-                .with_details(format!(
-                    "The {} package manager is not available on this system",
-                    provider.display_name()
-                ))
-                .with_fix(
-                    self.get_install_command(provider.id()),
+                self.build_install_issue(
+                    provider.id(),
+                    provider.display_name(),
+                    format!(
+                        "The {} package manager is not available on this system",
+                        provider.display_name()
+                    ),
                     format!(
                         "Install {} to enable package management",
                         provider.display_name()
@@ -755,6 +875,97 @@ impl HealthCheckManager {
         result
     }
 
+    pub async fn apply_remediation(
+        &self,
+        remediation_id: &str,
+        dry_run: bool,
+    ) -> CogniaResult<HealthRemediationResult> {
+        let mut parts = remediation_id.splitn(2, ':');
+        let kind = parts.next().unwrap_or_default();
+        let target = parts.next().unwrap_or_default();
+
+        match kind {
+            "install-provider" if !target.is_empty() => {
+                let command = self.get_install_command(target);
+                if dry_run {
+                    return Ok(HealthRemediationResult {
+                        remediation_id: remediation_id.to_string(),
+                        supported: true,
+                        dry_run: true,
+                        executed: false,
+                        success: true,
+                        manual_only: false,
+                        command: Some(command),
+                        description: Some(format!("Install provider {}", target)),
+                        message: format!("Preview install command for {}", target),
+                        stdout: None,
+                        stderr: None,
+                    });
+                }
+
+                let output = crate::platform::process::execute_shell(
+                    &command,
+                    Some(
+                        crate::platform::process::ProcessOptions::new()
+                            .with_timeout(Duration::from_secs(60)),
+                    ),
+                )
+                .await
+                .map_err(|e| CogniaError::Internal(format!("Remediation failed: {}", e)))?;
+
+                Ok(HealthRemediationResult {
+                    remediation_id: remediation_id.to_string(),
+                    supported: true,
+                    dry_run: false,
+                    executed: true,
+                    success: output.success,
+                    manual_only: false,
+                    command: Some(command),
+                    description: Some(format!("Install provider {}", target)),
+                    message: if output.success {
+                        format!("Remediation succeeded for {}", target)
+                    } else {
+                        format!("Remediation failed for {}", target)
+                    },
+                    stdout: Some(output.stdout),
+                    stderr: Some(output.stderr),
+                })
+            }
+            "shell-setup" if !target.is_empty() => {
+                let command = self.get_shell_setup_command(target);
+                Ok(HealthRemediationResult {
+                    remediation_id: remediation_id.to_string(),
+                    supported: true,
+                    dry_run,
+                    executed: false,
+                    success: dry_run,
+                    manual_only: true,
+                    command: Some(command),
+                    description: Some(format!("Update shell configuration for {}", target)),
+                    message: format!(
+                        "Shell setup for {} requires a manual update to your shell configuration",
+                        target
+                    ),
+                    stdout: None,
+                    stderr: None,
+                })
+            }
+            _ => Ok(HealthRemediationResult {
+                remediation_id: remediation_id.to_string(),
+                supported: false,
+                dry_run,
+                executed: false,
+                success: false,
+                manual_only: true,
+                command: None,
+                description: None,
+                message: format!("Unsupported remediation: {}", remediation_id),
+                stdout: None,
+                stderr: None,
+            }),
+        }
+    }
+
     /// Get install instructions for a package manager
     fn get_install_instructions(&self, provider_id: &str) -> String {
         match provider_id {
@@ -916,21 +1127,12 @@ impl HealthCheckManager {
 
         // Check 1: Provider availability
         if !provider.is_available().await {
+            result.set_scope_state(HealthScopeState::Unavailable, "provider_not_installed");
             result.add_issue(
-                HealthIssue::new(
-                    Severity::Info,
-                    IssueCategory::ProviderNotFound,
-                    format!(
-                        "{} is not available or not installed",
-                        provider.display_name()
-                    ),
-                )
-                .with_details(format!(
-                    "The {} command was not found in your PATH",
-                    provider.id()
-                ))
-                .with_fix(
-                    self.get_install_command(provider.id()),
+                self.build_install_issue(
+                    provider.id(),
+                    provider.display_name(),
+                    format!("The {} command was not found in your PATH", provider.id()),
                     format!(
                         "Install {} to enable {} version management",
                         provider.id(),
@@ -1134,7 +1336,8 @@ impl HealthCheckManager {
                         "Expected '{}' in shell config. The provider is installed but may not activate in new shell sessions.",
                         init_pattern
                     ))
-                    .with_fix(
+                    .with_remediation(
+                        Self::remediation_id("shell-setup", provider_id),
                         self.get_shell_setup_command(provider_id),
                         format!(
                             "Add {} initialization to your shell config",
@@ -1216,7 +1419,8 @@ impl HealthCheckManager {
                         ),
                     )
                     .with_details(format!("Expected to find '{}' in PATH", pattern))
-                    .with_fix(
+                    .with_remediation(
+                        Self::remediation_id("shell-setup", provider_id),
                         self.get_shell_setup_command(provider_id),
                         "Add the provider to your shell configuration",
                     ),
@@ -1805,6 +2009,20 @@ mod tests {
     }
 
     #[test]
+    fn test_environment_finalize_unknown_when_scope_unavailable() {
+        let mut result = EnvironmentHealthResult::new("node");
+        result.set_scope_state(HealthScopeState::Unavailable, "provider_not_installed");
+        result.add_issue(HealthIssue::new(
+            Severity::Info,
+            IssueCategory::ProviderNotFound,
+            "Provider not installed",
+        ));
+        result.finalize();
+
+        assert!(matches!(result.status, HealthStatus::Unknown));
+    }
+
+    #[test]
     fn test_check_registry_connectivity_returns_none_for_unknown() {
         let mgr = make_test_manager();
         // Unknown provider should return None (no URL to check)
@@ -1814,5 +2032,79 @@ mod tests {
             .unwrap();
         let result = rt.block_on(mgr.check_registry_connectivity("unknown_provider"));
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_health_issue_with_remediation() {
+        let issue = HealthIssue::new(
+            Severity::Info,
+            IssueCategory::ProviderNotFound,
+            "Provider missing",
+        )
+        .with_remediation(
+            "install-provider:fnm",
+            "winget install Schniz.fnm",
+            "Install fnm",
+        );
+
+        assert_eq!(issue.remediation_id, Some("install-provider:fnm".to_string()));
+        assert_eq!(issue.fix_command, Some("winget install Schniz.fnm".to_string()));
+    }
+
+    #[test]
+    fn test_apply_remediation_install_provider_dry_run() {
+        let mgr = make_test_manager();
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        let result = rt
+            .block_on(mgr.apply_remediation("install-provider:fnm", true))
+            .unwrap();
+
+        assert!(result.supported);
+        assert!(result.dry_run);
+        assert!(!result.executed);
+        assert!(result.success);
+        assert_eq!(result.remediation_id, "install-provider:fnm");
+        assert!(result.command.unwrap_or_default().contains("fnm"));
+    }
+
+    #[test]
+    fn test_apply_remediation_shell_setup_is_manual_only() {
+        let mgr = make_test_manager();
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        let result = rt
+            .block_on(mgr.apply_remediation("shell-setup:fnm", false))
+            .unwrap();
+
+        assert!(result.supported);
+        assert!(result.manual_only);
+        assert!(!result.executed);
+        assert!(!result.success);
+        assert!(result.command.unwrap_or_default().contains("fnm"));
+    }
+
+    #[test]
+    fn test_check_environment_without_registered_provider_returns_supported_fix_metadata() {
+        let mgr = make_test_manager();
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        let result = rt.block_on(mgr.check_environment("node")).unwrap();
+
+        assert!(matches!(result.scope_state, HealthScopeState::Unsupported));
+        assert_eq!(result.provider_id, Some("fnm".to_string()));
+        assert_eq!(
+            result.issues.first().and_then(|issue| issue.remediation_id.clone()),
+            Some("install-provider:fnm".to_string())
+        );
     }
 }

@@ -37,6 +37,7 @@ import type { WslDiskUsage } from '@/types/tauri';
 
 export function WslDistroCard({
   distro,
+  detailHref,
   onLaunch,
   onTerminate,
   onSetDefault,
@@ -74,7 +75,7 @@ export function WslDistroCard({
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <Link
-                  href={`/wsl/distro?name=${encodeURIComponent(distro.name)}`}
+                  href={detailHref ?? `/wsl/distro?name=${encodeURIComponent(distro.name)}`}
                   className="font-semibold truncate hover:underline hover:text-primary transition-colors"
                 >
                   {distro.name}

@@ -1,9 +1,19 @@
-use crate::cache::{DownloadCache, MetadataCache};
+use crate::cache::{download_history::DownloadHistory, DownloadCache, MetadataCache};
 use crate::commands::config::collect_config_list;
+use crate::commands::download::{DownloadTaskInfo, HistoryRecordInfo, HistoryStatsInfo};
+use crate::commands::log::LogExportOptions;
 use crate::config::Settings;
-use crate::core::{EnvironmentManager, HealthCheckManager, Orchestrator, PackageSpec};
+use crate::core::backup::{self, BackupContentType};
+use crate::core::custom_detection::CustomDetectionManager;
+use crate::core::profiles::ProfileManager;
+use crate::core::terminal::TerminalProfileManager;
+use crate::core::{
+    EnvironmentHealthResult, EnvironmentManager, HealthCheckManager, HealthScopeState,
+    HealthStatus, PackageManagerHealthResult, Orchestrator, PackageSpec, SystemHealthResult,
+};
+use crate::download::{DownloadConfig, DownloadManager, DownloadManagerConfig};
 use crate::platform::disk::format_size;
-use crate::platform::env::current_platform;
+use crate::platform::env::{self, current_platform, EnvFileFormat, EnvVarScope};
 use crate::provider::{
     Capability, InstallRequest, InstalledFilter, ProviderRegistry, SearchOptions, UninstallRequest,
 };
@@ -33,10 +43,49 @@ const SUBCOMMANDS: &[&str] = &[
     "cache",
     "doctor",
     "providers",
+    "backup",
+    "profiles",
+    "envvar",
+    "log",
+    "download",
 ];
 
 const ENV_SUBCOMMANDS: &[&str] = &["list", "install", "use", "detect", "remove", "resolve"];
 const CONFIG_SUBCOMMANDS: &[&str] = &["get", "set", "list", "reset", "export", "import"];
+const BACKUP_SUBCOMMANDS: &[&str] = &["list", "create", "restore", "delete"];
+const PROFILES_SUBCOMMANDS: &[&str] = &[
+    "list",
+    "get",
+    "apply",
+    "export",
+    "import",
+    "create-from-current",
+];
+const ENVVAR_SUBCOMMANDS: &[&str] = &[
+    "list",
+    "get",
+    "set",
+    "remove",
+    "list-persistent",
+    "set-persistent",
+    "remove-persistent",
+    "export",
+    "import",
+];
+const LOG_SUBCOMMANDS: &[&str] = &["list", "export", "clear", "size", "cleanup"];
+const DOWNLOAD_SUBCOMMANDS: &[&str] = &[
+    "history-list",
+    "history-stats",
+    "history-clear",
+    "history-remove",
+    "queue-list",
+    "queue-stats",
+    "queue-pause",
+    "queue-resume",
+    "queue-cancel",
+];
+#[cfg(test)]
+const CLI_P0_DOMAINS: &[&str] = &["backup", "profiles", "envvar", "log", "download"];
 
 pub fn has_cli_subcommand() -> bool {
     std::env::args()
@@ -45,6 +94,7 @@ pub fn has_cli_subcommand() -> bool {
 }
 
 struct CliContext {
+    app: tauri::AppHandle,
     settings: Settings,
     registry: Arc<RwLock<ProviderRegistry>>,
 }
@@ -55,7 +105,11 @@ impl CliContext {
             app.state::<crate::SharedSettings>().read().await.clone()
         });
         let registry = app.state::<SharedRegistry>().inner().clone();
-        Self { settings, registry }
+        Self {
+            app: app.clone(),
+            settings,
+            registry,
+        }
     }
 }
 
@@ -85,6 +139,11 @@ pub fn handle_cli(app: &tauri::AppHandle) -> Option<i32> {
             "cache" => cmd_cache(&ctx, &subcmd.matches, json_mode).await,
             "doctor" => cmd_doctor(&ctx, &subcmd.matches, json_mode).await,
             "providers" => cmd_providers(&ctx, &subcmd.matches, json_mode).await,
+            "backup" => cmd_backup(&ctx, &subcmd.matches, json_mode).await,
+            "profiles" => cmd_profiles(&ctx, &subcmd.matches, json_mode).await,
+            "envvar" => cmd_envvar(&ctx, &subcmd.matches, json_mode).await,
+            "log" => cmd_log(&ctx, &subcmd.matches, json_mode).await,
+            "download" => cmd_download(&ctx, &subcmd.matches, json_mode).await,
             other => usage_error(other, json_mode, format!("Unknown subcommand: {}", other)),
         }
     });
@@ -246,6 +305,119 @@ fn runtime_error(command: &str, json_mode: bool, message: impl AsRef<str>) -> i3
 fn parse_config_import_content(file_path: &str, content: &str) -> Result<Settings, String> {
     toml::from_str::<Settings>(content)
         .map_err(|e| format!("Failed to parse configuration '{}': {}", file_path, e))
+}
+
+fn parse_env_scope(raw: Option<String>, default_scope: EnvVarScope) -> Result<EnvVarScope, String> {
+    match raw.unwrap_or_else(|| scope_to_string(default_scope)) {
+        value if value.eq_ignore_ascii_case("process") => Ok(EnvVarScope::Process),
+        value if value.eq_ignore_ascii_case("user") => Ok(EnvVarScope::User),
+        value if value.eq_ignore_ascii_case("system") => Ok(EnvVarScope::System),
+        value => Err(format!(
+            "Invalid scope '{}'. Expected one of: process, user, system",
+            value
+        )),
+    }
+}
+
+fn parse_env_file_format(raw: Option<String>) -> Result<EnvFileFormat, String> {
+    match raw.unwrap_or_else(|| "dotenv".to_string()).to_lowercase().as_str() {
+        "dotenv" => Ok(EnvFileFormat::Dotenv),
+        "shell" => Ok(EnvFileFormat::Shell),
+        "fish" => Ok(EnvFileFormat::Fish),
+        "powershell" | "pwsh" => Ok(EnvFileFormat::PowerShell),
+        "nushell" | "nu" => Ok(EnvFileFormat::Nushell),
+        other => Err(format!(
+            "Invalid format '{}'. Expected one of: dotenv, shell, fish, powershell, nushell",
+            other
+        )),
+    }
+}
+
+fn scope_to_string(scope: EnvVarScope) -> String {
+    match scope {
+        EnvVarScope::Process => "process".to_string(),
+        EnvVarScope::User => "user".to_string(),
+        EnvVarScope::System => "system".to_string(),
+    }
+}
+
+fn read_text_file(file_path: &str) -> Result<String, String> {
+    std::fs::read_to_string(file_path)
+        .map_err(|e| format!("Failed to read file '{}': {}", file_path, e))
+}
+
+fn write_text_file(file_path: &str, content: &str) -> Result<(), String> {
+    std::fs::write(file_path, content)
+        .map_err(|e| format!("Failed to write file '{}': {}", file_path, e))
+}
+
+fn parse_backup_contents(raw_values: Vec<String>) -> Result<Vec<BackupContentType>, String> {
+    if raw_values.is_empty() {
+        return Ok(BackupContentType::all());
+    }
+
+    let mut result = Vec::new();
+    for value in raw_values {
+        match BackupContentType::from_str(&value) {
+            Some(content_type) => result.push(content_type),
+            None => {
+                return Err(format!(
+                    "Invalid backup content '{}'. Expected one of: config, terminal_profiles, environment_profiles, cache_database, download_history, cleanup_history, custom_detection_rules, environment_settings",
+                    value
+                ));
+            }
+        }
+    }
+    Ok(result)
+}
+
+async fn load_profile_manager(ctx: &CliContext) -> Result<ProfileManager, String> {
+    let mut manager = ProfileManager::new(ctx.settings.get_state_dir().join("profiles"), ctx.registry.clone());
+    manager
+        .load()
+        .await
+        .map_err(|e| format!("Failed to load profile manager state: {}", e))?;
+    Ok(manager)
+}
+
+async fn load_backup_dependencies(
+    ctx: &CliContext,
+) -> Result<(TerminalProfileManager, ProfileManager, CustomDetectionManager), String> {
+    let terminal_manager = TerminalProfileManager::new(&ctx.settings.get_root_dir())
+        .await
+        .map_err(|e| format!("Failed to initialize terminal profiles: {}", e))?;
+
+    let profile_manager = load_profile_manager(ctx).await?;
+
+    let config_dir = ctx.app.path().app_config_dir().unwrap_or_default();
+    let mut custom_detection_manager = CustomDetectionManager::new(&config_dir);
+    custom_detection_manager
+        .load()
+        .await
+        .map_err(|e| format!("Failed to load custom detection rules: {}", e))?;
+
+    Ok((
+        terminal_manager,
+        profile_manager,
+        custom_detection_manager,
+    ))
+}
+
+async fn create_cli_download_manager(settings: &Settings) -> DownloadManager {
+    let config = DownloadManagerConfig {
+        max_concurrent: settings.general.parallel_downloads as usize,
+        speed_limit: settings.general.download_speed_limit,
+        default_task_config: DownloadConfig::default(),
+        partials_dir: settings.get_cache_dir().join("partials"),
+        auto_start: true,
+        progress_interval_ms: 100,
+    };
+
+    let client = crate::platform::proxy::build_client(settings);
+    let mut manager = DownloadManager::new(config, client);
+    manager.enable_persistence(&settings.get_cache_dir());
+    let _ = manager.load_persisted_tasks().await;
+    manager
 }
 
 // ── Subcommand: search ───────────────────────────────────────────
@@ -1659,8 +1831,48 @@ async fn cmd_cache(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_m
 
 async fn cmd_doctor(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_mode: bool) -> i32 {
     const COMMAND: &str = "doctor";
+    let fix_id = get_string(&matches.args, "fix");
+    let preview = get_flag(&matches.args, "preview");
     let type_filter = get_string(&matches.args, "type");
     let manager = HealthCheckManager::new(ctx.registry.clone());
+
+    if preview && fix_id.is_none() {
+        return usage_error(COMMAND, json_mode, "--preview requires --fix <remediation-id>");
+    }
+
+    if let Some(remediation_id) = fix_id {
+        match manager.apply_remediation(&remediation_id, preview).await {
+            Ok(result) => {
+                if json_mode {
+                    print_command_json(COMMAND, &result);
+                } else {
+                    println!("Remediation: {}", result.remediation_id);
+                    println!("  Message: {}", result.message);
+                    if let Some(command) = &result.command {
+                        println!("  Command: {}", command);
+                    }
+                    if let Some(stdout) = &result.stdout {
+                        if !stdout.trim().is_empty() {
+                            println!("  Stdout:\n{}", stdout.trim());
+                        }
+                    }
+                    if let Some(stderr) = &result.stderr {
+                        if !stderr.trim().is_empty() {
+                            println!("  Stderr:\n{}", stderr.trim());
+                        }
+                    }
+                }
+                return if result.supported && (result.success || result.manual_only) {
+                    EXIT_OK
+                } else {
+                    EXIT_ERROR
+                };
+            }
+            Err(e) => {
+                return runtime_error(COMMAND, json_mode, format!("Health remediation error: {}", e))
+            }
+        }
+    }
 
     if let Some(ref env_type) = type_filter {
         match manager.check_environment(env_type).await {
@@ -1668,25 +1880,9 @@ async fn cmd_doctor(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_
                 if json_mode {
                     print_command_json(COMMAND, &result);
                 } else {
-                    println!("Health check for {}:", env_type);
-                    let is_healthy = result.issues.is_empty();
-                    println!(
-                        "  Status: {}",
-                        if is_healthy {
-                            "Healthy"
-                        } else {
-                            "Issues found"
-                        }
-                    );
-                    for issue in &result.issues {
-                        println!("  - {}", issue.message);
-                    }
+                    print_environment_health(env_type, &result);
                 }
-                if result.issues.is_empty() {
-                    0
-                } else {
-                    1
-                }
+                doctor_exit_code(result.status)
             }
             Err(e) => {
                 runtime_error(COMMAND, json_mode, format!("Health check error: {}", e))
@@ -1695,52 +1891,121 @@ async fn cmd_doctor(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_
     } else {
         match manager.check_all_with_progress(|_| {}).await {
             Ok(result) => {
-                let total: usize = result
-                    .environments
-                    .iter()
-                    .map(|e| e.issues.len())
-                    .sum::<usize>()
-                    + result
-                        .package_managers
-                        .iter()
-                        .map(|p| p.issues.len())
-                        .sum::<usize>();
                 if json_mode {
                     print_command_json(COMMAND, &result);
-                } else if total == 0 {
-                    println!("All health checks passed");
                 } else {
-                    println!("{} issue(s) found:\n", total);
-                    for env in &result.environments {
-                        if !env.issues.is_empty() {
-                            println!(
-                                "  {} ({}):",
-                                env.env_type,
-                                env.provider_id.as_deref().unwrap_or("unknown")
-                            );
-                            for issue in &env.issues {
-                                println!("    - {}", issue.message);
-                            }
-                        }
-                    }
-                    for pm in &result.package_managers {
-                        if !pm.issues.is_empty() {
-                            println!("  {}:", pm.provider_id);
-                            for issue in &pm.issues {
-                                println!("    - {}", issue.message);
-                            }
-                        }
-                    }
+                    print_system_health(&result);
                 }
-                if total > 0 {
-                    1
-                } else {
-                    0
-                }
+                doctor_exit_code(result.overall_status)
             }
             Err(e) => {
                 runtime_error(COMMAND, json_mode, format!("Health check error: {}", e))
             }
+        }
+    }
+}
+
+fn doctor_exit_code(status: HealthStatus) -> i32 {
+    match status {
+        HealthStatus::Warning | HealthStatus::Error => EXIT_ERROR,
+        HealthStatus::Healthy | HealthStatus::Unknown => EXIT_OK,
+    }
+}
+
+fn scope_state_label(scope_state: Option<&HealthScopeState>) -> &'static str {
+    match scope_state {
+        Some(HealthScopeState::Available) | None => "available",
+        Some(HealthScopeState::Unavailable) => "unavailable",
+        Some(HealthScopeState::Timeout) => "timeout",
+        Some(HealthScopeState::Unsupported) => "unsupported",
+    }
+}
+
+fn print_environment_health(env_type: &str, result: &EnvironmentHealthResult) {
+    println!("Health check for {}:", env_type);
+    println!(
+        "  Status: {:?} ({})",
+        result.status,
+        scope_state_label(Some(&result.scope_state))
+    );
+    if let Some(provider_id) = &result.provider_id {
+        println!("  Provider: {}", provider_id);
+    }
+    for issue in &result.issues {
+        println!("  - [{:?}] {}", issue.severity, issue.message);
+        if let Some(remediation_id) = &issue.remediation_id {
+            println!("      remediation: {}", remediation_id);
+        }
+        if let Some(command) = &issue.fix_command {
+            println!("      fix: {}", command);
+        }
+    }
+}
+
+fn print_package_manager_health(result: &PackageManagerHealthResult) {
+    println!(
+        "  {} [{:?} / {}]:",
+        result.display_name,
+        result.status,
+        scope_state_label(Some(&result.scope_state))
+    );
+    for issue in &result.issues {
+        println!("    - [{:?}] {}", issue.severity, issue.message);
+        if let Some(remediation_id) = &issue.remediation_id {
+            println!("        remediation: {}", remediation_id);
+        }
+        if let Some(command) = &issue.fix_command {
+            println!("        fix: {}", command);
+        }
+    }
+}
+
+fn print_system_health(result: &SystemHealthResult) {
+    let has_findings = !result.system_issues.is_empty()
+        || result.environments.iter().any(|env| !env.issues.is_empty())
+        || result
+            .package_managers
+            .iter()
+            .any(|provider| !provider.issues.is_empty());
+
+    if !has_findings {
+        println!("All health checks passed");
+        return;
+    }
+
+    println!("Health diagnostics complete:\n");
+
+    if !result.system_issues.is_empty() {
+        println!("System:");
+        for issue in &result.system_issues {
+            println!("  - [{:?}] {}", issue.severity, issue.message);
+            if let Some(remediation_id) = &issue.remediation_id {
+                println!("      remediation: {}", remediation_id);
+            }
+            if let Some(command) = &issue.fix_command {
+                println!("      fix: {}", command);
+            }
+        }
+        println!();
+    }
+
+    for env in &result.environments {
+        if env.issues.is_empty() {
+            continue;
+        }
+        print_environment_health(&env.env_type, env);
+        println!();
+    }
+
+    let package_results: Vec<&PackageManagerHealthResult> = result
+        .package_managers
+        .iter()
+        .filter(|provider| !provider.issues.is_empty())
+        .collect();
+    if !package_results.is_empty() {
+        println!("Package Managers:");
+        for provider in package_results {
+            print_package_manager_health(provider);
         }
     }
 }
@@ -1792,6 +2057,1088 @@ async fn cmd_providers(
     EXIT_OK
 }
 
+// ── Subcommand: backup ───────────────────────────────────────────
+
+async fn cmd_backup(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_mode: bool) -> i32 {
+    const COMMAND: &str = "backup";
+    let subcmd = match matches.subcommand.as_ref() {
+        Some(s) => s,
+        None => {
+            return usage_error(
+                COMMAND,
+                json_mode,
+                format!("backup subcommand required ({})", BACKUP_SUBCOMMANDS.join(", ")),
+            );
+        }
+    };
+
+    match subcmd.name.as_str() {
+        "list" => {
+            let command = "backup.list";
+            match backup::list_backups(&ctx.settings).await {
+                Ok(items) => {
+                    if json_mode {
+                        print_command_json(command, &items);
+                    } else if items.is_empty() {
+                        println!("No backups found");
+                    } else {
+                        println!("{} backup(s):\n", items.len());
+                        let rows: Vec<Vec<String>> = items
+                            .iter()
+                            .map(|item| {
+                                vec![
+                                    item.name.clone(),
+                                    item.size_human.clone(),
+                                    item.manifest.created_at.clone(),
+                                    item.path.clone(),
+                                ]
+                            })
+                            .collect();
+                        print_table(&["NAME", "SIZE", "CREATED_AT", "PATH"], &rows);
+                    }
+                    EXIT_OK
+                }
+                Err(e) => runtime_error(command, json_mode, format!("Backup list error: {}", e)),
+            }
+        }
+        "create" => {
+            let command = "backup.create";
+            let contents = match parse_backup_contents(get_string_list(&subcmd.matches.args, "contents")) {
+                Ok(values) => values,
+                Err(msg) => return usage_error(command, json_mode, msg),
+            };
+            let note = get_string(&subcmd.matches.args, "note");
+
+            let (terminal_manager, profile_manager, custom_detection_manager) =
+                match load_backup_dependencies(ctx).await {
+                    Ok(values) => values,
+                    Err(msg) => return runtime_error(command, json_mode, msg),
+                };
+
+            match backup::create_backup(
+                &ctx.settings,
+                &contents,
+                note.as_deref(),
+                &terminal_manager,
+                &profile_manager,
+                &custom_detection_manager,
+            )
+            .await
+            {
+                Ok(result) => {
+                    if json_mode {
+                        print_command_json(command, &result);
+                    } else {
+                        println!("Backup created at: {}", result.path);
+                        println!("Duration: {} ms", result.duration_ms);
+                    }
+                    EXIT_OK
+                }
+                Err(e) => runtime_error(command, json_mode, format!("Backup create error: {}", e)),
+            }
+        }
+        "restore" => {
+            let command = "backup.restore";
+            let backup_path = match get_string(&subcmd.matches.args, "path") {
+                Some(value) => value,
+                None => return usage_error(command, json_mode, "backup path is required"),
+            };
+            let contents = match parse_backup_contents(get_string_list(&subcmd.matches.args, "contents")) {
+                Ok(values) => values,
+                Err(msg) => return usage_error(command, json_mode, msg),
+            };
+
+            let (mut terminal_manager, mut profile_manager, mut custom_detection_manager) =
+                match load_backup_dependencies(ctx).await {
+                    Ok(values) => values,
+                    Err(msg) => return runtime_error(command, json_mode, msg),
+                };
+            let mut settings = ctx.settings.clone();
+
+            match backup::restore_backup(
+                Path::new(&backup_path),
+                &contents,
+                &mut settings,
+                &mut terminal_manager,
+                &mut profile_manager,
+                &mut custom_detection_manager,
+            )
+            .await
+            {
+                Ok(result) => {
+                    if json_mode {
+                        print_command_json(command, &result);
+                    } else {
+                        println!("Restore success: {}", result.success);
+                        if !result.restored.is_empty() {
+                            println!("Restored: {}", result.restored.join(", "));
+                        }
+                        if !result.skipped.is_empty() {
+                            for item in &result.skipped {
+                                eprintln!("Skipped {}: {}", item.content_type, item.reason);
+                            }
+                        }
+                    }
+                    if result.success {
+                        EXIT_OK
+                    } else {
+                        EXIT_ERROR
+                    }
+                }
+                Err(e) => runtime_error(command, json_mode, format!("Backup restore error: {}", e)),
+            }
+        }
+        "delete" => {
+            let command = "backup.delete";
+            let backup_path = match get_string(&subcmd.matches.args, "path") {
+                Some(value) => value,
+                None => return usage_error(command, json_mode, "backup path is required"),
+            };
+
+            match backup::delete_backup(Path::new(&backup_path)).await {
+                Ok(deleted) => {
+                    if json_mode {
+                        print_command_json(command, &json!({ "deleted": deleted, "path": backup_path }));
+                    } else if deleted {
+                        println!("Deleted backup: {}", backup_path);
+                    } else {
+                        println!("Backup not deleted: {}", backup_path);
+                    }
+                    if deleted {
+                        EXIT_OK
+                    } else {
+                        EXIT_ERROR
+                    }
+                }
+                Err(e) => runtime_error(command, json_mode, format!("Backup delete error: {}", e)),
+            }
+        }
+        other => usage_error(COMMAND, json_mode, format!("Unknown backup subcommand: {}", other)),
+    }
+}
+
+// ── Subcommand: profiles ────────────────────────────────────────
+
+async fn cmd_profiles(
+    ctx: &CliContext,
+    matches: &tauri_plugin_cli::Matches,
+    json_mode: bool,
+) -> i32 {
+    const COMMAND: &str = "profiles";
+    let subcmd = match matches.subcommand.as_ref() {
+        Some(s) => s,
+        None => {
+            return usage_error(
+                COMMAND,
+                json_mode,
+                format!(
+                    "profiles subcommand required ({})",
+                    PROFILES_SUBCOMMANDS.join(", ")
+                ),
+            );
+        }
+    };
+
+    match subcmd.name.as_str() {
+        "list" => {
+            let command = "profiles.list";
+            let manager = match load_profile_manager(ctx).await {
+                Ok(mgr) => mgr,
+                Err(msg) => return runtime_error(command, json_mode, msg),
+            };
+            let profiles = manager.list();
+            if json_mode {
+                print_command_json(command, &profiles);
+            } else if profiles.is_empty() {
+                println!("No profiles found");
+            } else {
+                println!("{} profile(s):\n", profiles.len());
+                let rows: Vec<Vec<String>> = profiles
+                    .iter()
+                    .map(|p| {
+                        vec![
+                            p.id.clone(),
+                            p.name.clone(),
+                            p.environments.len().to_string(),
+                            p.updated_at.clone(),
+                        ]
+                    })
+                    .collect();
+                print_table(&["ID", "NAME", "ENVS", "UPDATED_AT"], &rows);
+            }
+            EXIT_OK
+        }
+        "get" => {
+            let command = "profiles.get";
+            let id = match get_string(&subcmd.matches.args, "id") {
+                Some(value) => value,
+                None => return usage_error(command, json_mode, "profile id is required"),
+            };
+            let manager = match load_profile_manager(ctx).await {
+                Ok(mgr) => mgr,
+                Err(msg) => return runtime_error(command, json_mode, msg),
+            };
+            match manager.get(&id) {
+                Some(profile) => {
+                    if json_mode {
+                        print_command_json(command, &profile);
+                    } else {
+                        println!("Profile: {} ({})", profile.name, profile.id);
+                        println!("Environments: {}", profile.environments.len());
+                    }
+                    EXIT_OK
+                }
+                None => runtime_error(command, json_mode, format!("Profile not found: {}", id)),
+            }
+        }
+        "apply" => {
+            let command = "profiles.apply";
+            let id = match get_string(&subcmd.matches.args, "id") {
+                Some(value) => value,
+                None => return usage_error(command, json_mode, "profile id is required"),
+            };
+            let manager = match load_profile_manager(ctx).await {
+                Ok(mgr) => mgr,
+                Err(msg) => return runtime_error(command, json_mode, msg),
+            };
+            match manager.apply(&id).await {
+                Ok(result) => {
+                    if json_mode {
+                        print_command_json(command, &result);
+                    } else {
+                        println!("Applied profile: {}", result.profile_name);
+                        println!(
+                            "Successful: {}, Failed: {}, Skipped: {}",
+                            result.successful.len(),
+                            result.failed.len(),
+                            result.skipped.len()
+                        );
+                    }
+                    if result.failed.is_empty() {
+                        EXIT_OK
+                    } else {
+                        EXIT_ERROR
+                    }
+                }
+                Err(e) => runtime_error(command, json_mode, format!("Profile apply error: {}", e)),
+            }
+        }
+        "export" => {
+            let command = "profiles.export";
+            let id = match get_string(&subcmd.matches.args, "id") {
+                Some(value) => value,
+                None => return usage_error(command, json_mode, "profile id is required"),
+            };
+            let out_path = get_string(&subcmd.matches.args, "out");
+            let manager = match load_profile_manager(ctx).await {
+                Ok(mgr) => mgr,
+                Err(msg) => return runtime_error(command, json_mode, msg),
+            };
+            match manager.export(&id) {
+                Ok(payload) => {
+                    if let Some(ref file_path) = out_path {
+                        if let Err(msg) = write_text_file(file_path, &payload) {
+                            return runtime_error(command, json_mode, msg);
+                        }
+                    }
+
+                    if json_mode {
+                        match serde_json::from_str::<serde_json::Value>(&payload) {
+                            Ok(profile_json) => {
+                                print_command_json(
+                                    command,
+                                    &json!({
+                                        "profile": profile_json,
+                                        "out": out_path,
+                                    }),
+                                );
+                            }
+                            Err(e) => {
+                                return runtime_error(
+                                    command,
+                                    json_mode,
+                                    format!("Failed to parse exported profile JSON: {}", e),
+                                );
+                            }
+                        }
+                    } else if let Some(file_path) = out_path {
+                        println!("Profile exported to {}", file_path);
+                    } else {
+                        println!("{}", payload);
+                    }
+
+                    EXIT_OK
+                }
+                Err(e) => runtime_error(command, json_mode, format!("Profile export error: {}", e)),
+            }
+        }
+        "import" => {
+            let command = "profiles.import";
+            let file_path = match get_string(&subcmd.matches.args, "file") {
+                Some(value) => value,
+                None => return usage_error(command, json_mode, "input file path is required"),
+            };
+            let payload = match read_text_file(&file_path) {
+                Ok(content) => content,
+                Err(msg) => return runtime_error(command, json_mode, msg),
+            };
+            let mut manager = match load_profile_manager(ctx).await {
+                Ok(mgr) => mgr,
+                Err(msg) => return runtime_error(command, json_mode, msg),
+            };
+            match manager.import(&payload).await {
+                Ok(profile) => {
+                    if json_mode {
+                        print_command_json(command, &profile);
+                    } else {
+                        println!("Imported profile: {} ({})", profile.name, profile.id);
+                    }
+                    EXIT_OK
+                }
+                Err(e) => runtime_error(command, json_mode, format!("Profile import error: {}", e)),
+            }
+        }
+        "create-from-current" => {
+            let command = "profiles.create-from-current";
+            let name = match get_string(&subcmd.matches.args, "name") {
+                Some(value) => value,
+                None => return usage_error(command, json_mode, "profile name is required"),
+            };
+            let mut manager = match load_profile_manager(ctx).await {
+                Ok(mgr) => mgr,
+                Err(msg) => return runtime_error(command, json_mode, msg),
+            };
+            match manager.create_from_current(&name).await {
+                Ok(profile) => {
+                    if json_mode {
+                        print_command_json(command, &profile);
+                    } else {
+                        println!("Created profile from current env: {} ({})", profile.name, profile.id);
+                    }
+                    EXIT_OK
+                }
+                Err(e) => runtime_error(
+                    command,
+                    json_mode,
+                    format!("Create profile from current error: {}", e),
+                ),
+            }
+        }
+        other => usage_error(
+            COMMAND,
+            json_mode,
+            format!("Unknown profiles subcommand: {}", other),
+        ),
+    }
+}
+
+// ── Subcommand: envvar ──────────────────────────────────────────
+
+async fn cmd_envvar(_ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_mode: bool) -> i32 {
+    const COMMAND: &str = "envvar";
+    let subcmd = match matches.subcommand.as_ref() {
+        Some(s) => s,
+        None => {
+            return usage_error(
+                COMMAND,
+                json_mode,
+                format!("envvar subcommand required ({})", ENVVAR_SUBCOMMANDS.join(", ")),
+            );
+        }
+    };
+
+    match subcmd.name.as_str() {
+        "list" => {
+            let command = "envvar.list";
+            let vars = env::get_all_vars();
+            if json_mode {
+                print_command_json(command, &vars);
+            } else if vars.is_empty() {
+                println!("No process environment variables found");
+            } else {
+                let mut rows: Vec<Vec<String>> =
+                    vars.into_iter().map(|(k, v)| vec![k, v]).collect();
+                rows.sort_by(|a, b| a[0].cmp(&b[0]));
+                print_table(&["KEY", "VALUE"], &rows);
+            }
+            EXIT_OK
+        }
+        "get" => {
+            let command = "envvar.get";
+            let key = match get_string(&subcmd.matches.args, "key") {
+                Some(value) => value,
+                None => return usage_error(command, json_mode, "environment variable key is required"),
+            };
+            let scope = match parse_env_scope(get_string(&subcmd.matches.args, "scope"), EnvVarScope::Process) {
+                Ok(value) => value,
+                Err(msg) => return usage_error(command, json_mode, msg),
+            };
+            let value_result = match scope {
+                EnvVarScope::Process => Ok(env::get_var(&key)),
+                _ => env::get_persistent_var(&key, scope)
+                    .await
+                    .map_err(|e| e.to_string()),
+            };
+            match value_result {
+                Ok(value) => {
+                    if json_mode {
+                        print_command_json(command, &json!({ "key": key, "scope": scope_to_string(scope), "value": value }));
+                    } else if let Some(val) = value {
+                        println!("{}={}", key, val);
+                    } else {
+                        println!("{} is not set", key);
+                    }
+                    EXIT_OK
+                }
+                Err(e) => runtime_error(command, json_mode, format!("Get env var error: {}", e)),
+            }
+        }
+        "set" => {
+            let command = "envvar.set";
+            let key = match get_string(&subcmd.matches.args, "key") {
+                Some(value) => value,
+                None => return usage_error(command, json_mode, "environment variable key is required"),
+            };
+            let value = match get_string(&subcmd.matches.args, "value") {
+                Some(v) => v,
+                None => return usage_error(command, json_mode, "environment variable value is required"),
+            };
+            let scope = match parse_env_scope(get_string(&subcmd.matches.args, "scope"), EnvVarScope::Process) {
+                Ok(value) => value,
+                Err(msg) => return usage_error(command, json_mode, msg),
+            };
+            let set_result = match scope {
+                EnvVarScope::Process => {
+                    env::set_var(&key, &value);
+                    Ok(())
+                }
+                _ => env::set_persistent_var(&key, &value, scope)
+                    .await
+                    .map_err(|e| e.to_string()),
+            };
+            match set_result {
+                Ok(()) => {
+                    if json_mode {
+                        print_command_json(command, &json!({ "key": key, "scope": scope_to_string(scope), "status": "set" }));
+                    } else {
+                        println!("Set {} ({})", key, scope_to_string(scope));
+                    }
+                    EXIT_OK
+                }
+                Err(e) => runtime_error(command, json_mode, format!("Set env var error: {}", e)),
+            }
+        }
+        "remove" => {
+            let command = "envvar.remove";
+            let key = match get_string(&subcmd.matches.args, "key") {
+                Some(value) => value,
+                None => return usage_error(command, json_mode, "environment variable key is required"),
+            };
+            let scope = match parse_env_scope(get_string(&subcmd.matches.args, "scope"), EnvVarScope::Process) {
+                Ok(value) => value,
+                Err(msg) => return usage_error(command, json_mode, msg),
+            };
+            let remove_result = match scope {
+                EnvVarScope::Process => {
+                    env::remove_var(&key);
+                    Ok(())
+                }
+                _ => env::remove_persistent_var(&key, scope)
+                    .await
+                    .map_err(|e| e.to_string()),
+            };
+            match remove_result {
+                Ok(()) => {
+                    if json_mode {
+                        print_command_json(command, &json!({ "key": key, "scope": scope_to_string(scope), "status": "removed" }));
+                    } else {
+                        println!("Removed {} ({})", key, scope_to_string(scope));
+                    }
+                    EXIT_OK
+                }
+                Err(e) => runtime_error(command, json_mode, format!("Remove env var error: {}", e)),
+            }
+        }
+        "list-persistent" => {
+            let command = "envvar.list-persistent";
+            let scope = match parse_env_scope(get_string(&subcmd.matches.args, "scope"), EnvVarScope::User) {
+                Ok(value) => value,
+                Err(msg) => return usage_error(command, json_mode, msg),
+            };
+            match env::list_persistent_vars(scope).await {
+                Ok(items) => {
+                    if json_mode {
+                        print_command_json(
+                            command,
+                            &json!({ "scope": scope_to_string(scope), "items": items }),
+                        );
+                    } else if items.is_empty() {
+                        println!("No persistent variables found for {}", scope_to_string(scope));
+                    } else {
+                        let rows: Vec<Vec<String>> = items
+                            .iter()
+                            .map(|(k, v)| vec![k.clone(), v.clone()])
+                            .collect();
+                        print_table(&["KEY", "VALUE"], &rows);
+                    }
+                    EXIT_OK
+                }
+                Err(e) => runtime_error(
+                    command,
+                    json_mode,
+                    format!("List persistent vars error: {}", e),
+                ),
+            }
+        }
+        "set-persistent" => {
+            let command = "envvar.set-persistent";
+            let key = match get_string(&subcmd.matches.args, "key") {
+                Some(value) => value,
+                None => return usage_error(command, json_mode, "environment variable key is required"),
+            };
+            let value = match get_string(&subcmd.matches.args, "value") {
+                Some(v) => v,
+                None => return usage_error(command, json_mode, "environment variable value is required"),
+            };
+            let scope = match parse_env_scope(get_string(&subcmd.matches.args, "scope"), EnvVarScope::User) {
+                Ok(value) => value,
+                Err(msg) => return usage_error(command, json_mode, msg),
+            };
+            match env::set_persistent_var(&key, &value, scope).await {
+                Ok(()) => {
+                    if json_mode {
+                        print_command_json(command, &json!({ "key": key, "scope": scope_to_string(scope), "status": "set" }));
+                    } else {
+                        println!("Set persistent {} ({})", key, scope_to_string(scope));
+                    }
+                    EXIT_OK
+                }
+                Err(e) => runtime_error(
+                    command,
+                    json_mode,
+                    format!("Set persistent env var error: {}", e),
+                ),
+            }
+        }
+        "remove-persistent" => {
+            let command = "envvar.remove-persistent";
+            let key = match get_string(&subcmd.matches.args, "key") {
+                Some(value) => value,
+                None => return usage_error(command, json_mode, "environment variable key is required"),
+            };
+            let scope = match parse_env_scope(get_string(&subcmd.matches.args, "scope"), EnvVarScope::User) {
+                Ok(value) => value,
+                Err(msg) => return usage_error(command, json_mode, msg),
+            };
+            match env::remove_persistent_var(&key, scope).await {
+                Ok(()) => {
+                    if json_mode {
+                        print_command_json(command, &json!({ "key": key, "scope": scope_to_string(scope), "status": "removed" }));
+                    } else {
+                        println!("Removed persistent {} ({})", key, scope_to_string(scope));
+                    }
+                    EXIT_OK
+                }
+                Err(e) => runtime_error(
+                    command,
+                    json_mode,
+                    format!("Remove persistent env var error: {}", e),
+                ),
+            }
+        }
+        "export" => {
+            let command = "envvar.export";
+            let file_path = match get_string(&subcmd.matches.args, "file") {
+                Some(value) => value,
+                None => return usage_error(command, json_mode, "output file path is required"),
+            };
+            let scope = match parse_env_scope(get_string(&subcmd.matches.args, "scope"), EnvVarScope::Process) {
+                Ok(value) => value,
+                Err(msg) => return usage_error(command, json_mode, msg),
+            };
+            let format = match parse_env_file_format(get_string(&subcmd.matches.args, "format")) {
+                Ok(value) => value,
+                Err(msg) => return usage_error(command, json_mode, msg),
+            };
+
+            let vars: Result<Vec<(String, String)>, String> = match scope {
+                EnvVarScope::Process => {
+                    let mut values: Vec<(String, String)> = env::get_all_vars().into_iter().collect();
+                    values.sort_by(|a, b| a.0.cmp(&b.0));
+                    Ok(values)
+                }
+                _ => env::list_persistent_vars(scope).await.map_err(|e| e.to_string()),
+            };
+
+            match vars {
+                Ok(values) => {
+                    let content = env::generate_env_file(&values, format);
+                    if let Err(msg) = write_text_file(&file_path, &content) {
+                        return runtime_error(command, json_mode, msg);
+                    }
+                    if json_mode {
+                        print_command_json(
+                            command,
+                            &json!({ "file": file_path, "scope": scope_to_string(scope), "count": values.len() }),
+                        );
+                    } else {
+                        println!("Exported {} variables to {}", values.len(), file_path);
+                    }
+                    EXIT_OK
+                }
+                Err(e) => runtime_error(command, json_mode, format!("Export env vars error: {}", e)),
+            }
+        }
+        "import" => {
+            let command = "envvar.import";
+            let file_path = match get_string(&subcmd.matches.args, "file") {
+                Some(value) => value,
+                None => return usage_error(command, json_mode, "input file path is required"),
+            };
+            let scope = match parse_env_scope(get_string(&subcmd.matches.args, "scope"), EnvVarScope::User) {
+                Ok(value) => value,
+                Err(msg) => return usage_error(command, json_mode, msg),
+            };
+            let content = match read_text_file(&file_path) {
+                Ok(text) => text,
+                Err(msg) => return runtime_error(command, json_mode, msg),
+            };
+            let parsed = env::parse_env_file(&content);
+
+            let mut imported = 0usize;
+            let mut failed = Vec::new();
+            for (key, value) in parsed {
+                let result = match scope {
+                    EnvVarScope::Process => {
+                        env::set_var(&key, &value);
+                        Ok(())
+                    }
+                    _ => env::set_persistent_var(&key, &value, scope)
+                        .await
+                        .map_err(|e| e.to_string()),
+                };
+                match result {
+                    Ok(()) => imported += 1,
+                    Err(e) => failed.push(format!("{}: {}", key, e)),
+                }
+            }
+
+            if json_mode {
+                print_command_json(
+                    command,
+                    &json!({
+                        "file": file_path,
+                        "scope": scope_to_string(scope),
+                        "imported": imported,
+                        "failed": failed,
+                    }),
+                );
+            } else {
+                println!("Imported {} variable(s)", imported);
+                for err in &failed {
+                    eprintln!("Failed: {}", err);
+                }
+            }
+
+            if failed.is_empty() {
+                EXIT_OK
+            } else {
+                EXIT_ERROR
+            }
+        }
+        other => usage_error(COMMAND, json_mode, format!("Unknown envvar subcommand: {}", other)),
+    }
+}
+
+// ── Subcommand: log ─────────────────────────────────────────────
+
+async fn cmd_log(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_mode: bool) -> i32 {
+    const COMMAND: &str = "log";
+    let subcmd = match matches.subcommand.as_ref() {
+        Some(s) => s,
+        None => {
+            return usage_error(
+                COMMAND,
+                json_mode,
+                format!("log subcommand required ({})", LOG_SUBCOMMANDS.join(", ")),
+            );
+        }
+    };
+
+    match subcmd.name.as_str() {
+        "list" => {
+            let command = "log.list";
+            match crate::commands::log::log_list_files(ctx.app.clone()).await {
+                Ok(files) => {
+                    if json_mode {
+                        print_command_json(command, &files);
+                    } else if files.is_empty() {
+                        println!("No log files found");
+                    } else {
+                        let rows: Vec<Vec<String>> = files
+                            .iter()
+                            .map(|item| {
+                                vec![
+                                    item.name.clone(),
+                                    format_size(item.size),
+                                    item.modified.to_string(),
+                                    item.path.clone(),
+                                ]
+                            })
+                            .collect();
+                        print_table(&["NAME", "SIZE", "MODIFIED", "PATH"], &rows);
+                    }
+                    EXIT_OK
+                }
+                Err(e) => runtime_error(command, json_mode, format!("Log list error: {}", e)),
+            }
+        }
+        "export" => {
+            let command = "log.export";
+            let start_time = get_string(&subcmd.matches.args, "start-time")
+                .and_then(|v| v.parse::<i64>().ok());
+            let end_time = get_string(&subcmd.matches.args, "end-time")
+                .and_then(|v| v.parse::<i64>().ok());
+            let options = LogExportOptions {
+                file_name: get_string(&subcmd.matches.args, "file"),
+                level_filter: None,
+                target: None,
+                search: get_string(&subcmd.matches.args, "search"),
+                use_regex: Some(get_flag(&subcmd.matches.args, "regex")),
+                start_time,
+                end_time,
+                format: get_string(&subcmd.matches.args, "format"),
+                diagnostic_mode: Some(false),
+                sanitize_sensitive: Some(false),
+            };
+            let out_path = get_string(&subcmd.matches.args, "out");
+
+            match crate::commands::log::log_export(ctx.app.clone(), options).await {
+                Ok(result) => {
+                    if let Some(ref file_path) = out_path {
+                        if let Err(msg) = write_text_file(file_path, &result.content) {
+                            return runtime_error(command, json_mode, msg);
+                        }
+                    }
+
+                    if json_mode {
+                        print_command_json(
+                            command,
+                            &json!({
+                                "file_name": result.file_name,
+                                "out": out_path,
+                                "bytes": result.content.len(),
+                            }),
+                        );
+                    } else if let Some(file_path) = out_path {
+                        println!("Exported logs to {}", file_path);
+                    } else {
+                        println!("{}", result.content);
+                    }
+                    EXIT_OK
+                }
+                Err(e) => runtime_error(command, json_mode, format!("Log export error: {}", e)),
+            }
+        }
+        "clear" => {
+            let command = "log.clear";
+            let file_name = get_string(&subcmd.matches.args, "file");
+            match crate::commands::log::log_clear(ctx.app.clone(), file_name.clone()).await {
+                Ok(()) => {
+                    if json_mode {
+                        print_command_json(command, &json!({ "cleared": true, "file": file_name }));
+                    } else if let Some(file) = file_name {
+                        println!("Cleared log file {}", file);
+                    } else {
+                        println!("Cleared log files");
+                    }
+                    EXIT_OK
+                }
+                Err(e) => runtime_error(command, json_mode, format!("Log clear error: {}", e)),
+            }
+        }
+        "size" => {
+            let command = "log.size";
+            match crate::commands::log::log_get_total_size(ctx.app.clone()).await {
+                Ok(total) => {
+                    if json_mode {
+                        print_command_json(
+                            command,
+                            &json!({ "total_bytes": total, "total_human": format_size(total) }),
+                        );
+                    } else {
+                        println!("Total log size: {}", format_size(total));
+                    }
+                    EXIT_OK
+                }
+                Err(e) => runtime_error(command, json_mode, format!("Log size error: {}", e)),
+            }
+        }
+        "cleanup" => {
+            let command = "log.cleanup";
+            match crate::commands::log::cleanup_logs_with_policy(
+                &ctx.app,
+                ctx.settings.log.max_retention_days,
+                ctx.settings.log.max_total_size_mb,
+            )
+            .await
+            {
+                Ok(result) => {
+                    if json_mode {
+                        print_command_json(command, &result);
+                    } else {
+                        println!(
+                            "Deleted {} file(s), freed {}",
+                            result.deleted_count,
+                            format_size(result.freed_bytes)
+                        );
+                    }
+                    EXIT_OK
+                }
+                Err(e) => runtime_error(command, json_mode, format!("Log cleanup error: {}", e)),
+            }
+        }
+        other => usage_error(COMMAND, json_mode, format!("Unknown log subcommand: {}", other)),
+    }
+}
+
+// ── Subcommand: download ────────────────────────────────────────
+
+async fn cmd_download(
+    ctx: &CliContext,
+    matches: &tauri_plugin_cli::Matches,
+    json_mode: bool,
+) -> i32 {
+    const COMMAND: &str = "download";
+    let subcmd = match matches.subcommand.as_ref() {
+        Some(s) => s,
+        None => {
+            return usage_error(
+                COMMAND,
+                json_mode,
+                format!(
+                    "download subcommand required ({})",
+                    DOWNLOAD_SUBCOMMANDS.join(", ")
+                ),
+            );
+        }
+    };
+
+    match subcmd.name.as_str() {
+        "history-list" => {
+            let command = "download.history-list";
+            let limit =
+                get_string(&subcmd.matches.args, "limit").and_then(|v| v.parse::<usize>().ok());
+            match DownloadHistory::open(&ctx.settings.get_cache_dir()).await {
+                Ok(history) => {
+                    let records: Vec<HistoryRecordInfo> = history
+                        .list()
+                        .into_iter()
+                        .take(limit.unwrap_or(100))
+                        .map(HistoryRecordInfo::from)
+                        .collect();
+                    if json_mode {
+                        print_command_json(command, &records);
+                    } else if records.is_empty() {
+                        println!("No download history records found");
+                    } else {
+                        let rows: Vec<Vec<String>> = records
+                            .iter()
+                            .map(|item| {
+                                vec![
+                                    item.id.clone(),
+                                    item.filename.clone(),
+                                    item.status.clone(),
+                                    item.size_human.clone(),
+                                    item.completed_at.clone(),
+                                ]
+                            })
+                            .collect();
+                        print_table(&["ID", "FILE", "STATUS", "SIZE", "COMPLETED_AT"], &rows);
+                    }
+                    EXIT_OK
+                }
+                Err(e) => runtime_error(command, json_mode, format!("History list error: {}", e)),
+            }
+        }
+        "history-stats" => {
+            let command = "download.history-stats";
+            match DownloadHistory::open(&ctx.settings.get_cache_dir()).await {
+                Ok(history) => {
+                    let stats = HistoryStatsInfo::from(history.stats());
+                    if json_mode {
+                        print_command_json(command, &stats);
+                    } else {
+                        println!("Total: {}", stats.total_count);
+                        println!("Completed: {}", stats.completed_count);
+                        println!("Failed: {}", stats.failed_count);
+                        println!("Cancelled: {}", stats.cancelled_count);
+                        println!("Transferred: {}", stats.total_bytes_human);
+                    }
+                    EXIT_OK
+                }
+                Err(e) => runtime_error(command, json_mode, format!("History stats error: {}", e)),
+            }
+        }
+        "history-clear" => {
+            let command = "download.history-clear";
+            let days = get_string(&subcmd.matches.args, "days").and_then(|v| v.parse::<i64>().ok());
+            match DownloadHistory::open(&ctx.settings.get_cache_dir()).await {
+                Ok(mut history) => {
+                    let clear_result = if let Some(days) = days {
+                        history.clear_older_than(days).await
+                    } else {
+                        history.clear().await
+                    };
+                    match clear_result {
+                        Ok(removed) => {
+                            if json_mode {
+                                print_command_json(command, &json!({ "removed": removed, "days": days }));
+                            } else {
+                                println!("Removed {} history record(s)", removed);
+                            }
+                            EXIT_OK
+                        }
+                        Err(e) => runtime_error(command, json_mode, format!("History clear error: {}", e)),
+                    }
+                }
+                Err(e) => runtime_error(command, json_mode, format!("History clear error: {}", e)),
+            }
+        }
+        "history-remove" => {
+            let command = "download.history-remove";
+            let id = match get_string(&subcmd.matches.args, "id") {
+                Some(value) => value,
+                None => return usage_error(command, json_mode, "history record id is required"),
+            };
+            match DownloadHistory::open(&ctx.settings.get_cache_dir()).await {
+                Ok(mut history) => match history.remove(&id).await {
+                    Ok(removed) => {
+                        if json_mode {
+                            print_command_json(command, &json!({ "id": id, "removed": removed }));
+                        } else if removed {
+                            println!("Removed history record {}", id);
+                        } else {
+                            println!("History record not found: {}", id);
+                        }
+                        if removed {
+                            EXIT_OK
+                        } else {
+                            EXIT_ERROR
+                        }
+                    }
+                    Err(e) => runtime_error(command, json_mode, format!("History remove error: {}", e)),
+                },
+                Err(e) => runtime_error(command, json_mode, format!("History remove error: {}", e)),
+            }
+        }
+        "queue-list" => {
+            let command = "download.queue-list";
+            let manager = create_cli_download_manager(&ctx.settings).await;
+            let tasks = manager.list_tasks().await;
+            let payload: Vec<DownloadTaskInfo> = tasks.iter().map(DownloadTaskInfo::from).collect();
+            if json_mode {
+                print_command_json(command, &payload);
+            } else if payload.is_empty() {
+                println!("No queued download tasks found");
+            } else {
+                let rows: Vec<Vec<String>> = payload
+                    .iter()
+                    .map(|item| {
+                        vec![
+                            item.id.clone(),
+                            item.name.clone(),
+                            item.state.clone(),
+                            item.progress.percent.to_string(),
+                        ]
+                    })
+                    .collect();
+                print_table(&["ID", "NAME", "STATE", "PERCENT"], &rows);
+            }
+            EXIT_OK
+        }
+        "queue-stats" => {
+            let command = "download.queue-stats";
+            let manager = create_cli_download_manager(&ctx.settings).await;
+            let stats = manager.stats().await;
+            if json_mode {
+                print_command_json(command, &stats);
+            } else {
+                println!("Total tasks: {}", stats.total_tasks);
+                println!("Queued: {}", stats.queued);
+                println!("Downloading: {}", stats.downloading);
+                println!("Paused: {}", stats.paused);
+                println!("Completed: {}", stats.completed);
+                println!("Failed: {}", stats.failed);
+                println!("Cancelled: {}", stats.cancelled);
+            }
+            EXIT_OK
+        }
+        "queue-pause" => {
+            let command = "download.queue-pause";
+            let id = match get_string(&subcmd.matches.args, "id") {
+                Some(value) => value,
+                None => return usage_error(command, json_mode, "task id is required"),
+            };
+            let manager = create_cli_download_manager(&ctx.settings).await;
+            match manager.pause(&id).await {
+                Ok(()) => {
+                    if json_mode {
+                        print_command_json(command, &json!({ "id": id, "status": "paused" }));
+                    } else {
+                        println!("Paused task {}", id);
+                    }
+                    EXIT_OK
+                }
+                Err(e) => runtime_error(command, json_mode, format!("Pause task error: {}", e)),
+            }
+        }
+        "queue-resume" => {
+            let command = "download.queue-resume";
+            let id = match get_string(&subcmd.matches.args, "id") {
+                Some(value) => value,
+                None => return usage_error(command, json_mode, "task id is required"),
+            };
+            let manager = create_cli_download_manager(&ctx.settings).await;
+            match manager.resume(&id).await {
+                Ok(()) => {
+                    if json_mode {
+                        print_command_json(command, &json!({ "id": id, "status": "resumed" }));
+                    } else {
+                        println!("Resumed task {}", id);
+                    }
+                    EXIT_OK
+                }
+                Err(e) => runtime_error(command, json_mode, format!("Resume task error: {}", e)),
+            }
+        }
+        "queue-cancel" => {
+            let command = "download.queue-cancel";
+            let id = match get_string(&subcmd.matches.args, "id") {
+                Some(value) => value,
+                None => return usage_error(command, json_mode, "task id is required"),
+            };
+            let manager = create_cli_download_manager(&ctx.settings).await;
+            match manager.cancel(&id).await {
+                Ok(()) => {
+                    if json_mode {
+                        print_command_json(command, &json!({ "id": id, "status": "cancelled" }));
+                    } else {
+                        println!("Cancelled task {}", id);
+                    }
+                    EXIT_OK
+                }
+                Err(e) => runtime_error(command, json_mode, format!("Cancel task error: {}", e)),
+            }
+        }
+        other => usage_error(
+            COMMAND,
+            json_mode,
+            format!("Unknown download subcommand: {}", other),
+        ),
+    }
+}
+
 // ── Tests ────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -1830,6 +3177,11 @@ mod tests {
             "cache",
             "doctor",
             "providers",
+            "backup",
+            "profiles",
+            "envvar",
+            "log",
+            "download",
         ];
         for cmd in &expected {
             assert!(SUBCOMMANDS.contains(cmd), "Missing subcommand: {}", cmd);
@@ -1838,7 +3190,7 @@ mod tests {
 
     #[test]
     fn test_subcommands_count() {
-        assert_eq!(SUBCOMMANDS.len(), 11);
+        assert_eq!(SUBCOMMANDS.len(), 16);
     }
 
     #[test]
@@ -1876,6 +3228,82 @@ mod tests {
     }
 
     #[test]
+    fn test_p0_domain_subcommands_contains_expected() {
+        let backup_expected = ["list", "create", "restore", "delete"];
+        for cmd in &backup_expected {
+            assert!(
+                BACKUP_SUBCOMMANDS.contains(cmd),
+                "Missing backup subcommand: {}",
+                cmd
+            );
+        }
+
+        let profiles_expected = ["list", "get", "apply", "export", "import", "create-from-current"];
+        for cmd in &profiles_expected {
+            assert!(
+                PROFILES_SUBCOMMANDS.contains(cmd),
+                "Missing profiles subcommand: {}",
+                cmd
+            );
+        }
+
+        let envvar_expected = [
+            "list",
+            "get",
+            "set",
+            "remove",
+            "list-persistent",
+            "set-persistent",
+            "remove-persistent",
+            "export",
+            "import",
+        ];
+        for cmd in &envvar_expected {
+            assert!(
+                ENVVAR_SUBCOMMANDS.contains(cmd),
+                "Missing envvar subcommand: {}",
+                cmd
+            );
+        }
+
+        let log_expected = ["list", "export", "clear", "size", "cleanup"];
+        for cmd in &log_expected {
+            assert!(LOG_SUBCOMMANDS.contains(cmd), "Missing log subcommand: {}", cmd);
+        }
+
+        let download_expected = [
+            "history-list",
+            "history-stats",
+            "history-clear",
+            "history-remove",
+            "queue-list",
+            "queue-stats",
+            "queue-pause",
+            "queue-resume",
+            "queue-cancel",
+        ];
+        for cmd in &download_expected {
+            assert!(
+                DOWNLOAD_SUBCOMMANDS.contains(cmd),
+                "Missing download subcommand: {}",
+                cmd
+            );
+        }
+    }
+
+    #[test]
+    fn test_cli_p0_domains_constant_contains_expected() {
+        let expected = ["backup", "profiles", "envvar", "log", "download"];
+        for domain in &expected {
+            assert!(
+                CLI_P0_DOMAINS.contains(domain),
+                "Missing P0 domain: {}",
+                domain
+            );
+        }
+    }
+
+    #[test]
     fn test_cli_schema_alignment_with_tauri_conf() {
         let conf: serde_json::Value =
             serde_json::from_str(include_str!("../tauri.conf.json")).expect("tauri.conf.json");
@@ -1907,6 +3335,55 @@ mod tests {
             CONFIG_SUBCOMMANDS.iter().map(|s| s.to_string()).collect();
         runtime_config.sort();
         assert_eq!(declared_config, runtime_config, "config subcommands drift");
+
+        let backup_subcommands = subcommands_obj["backup"]["subcommands"]
+            .as_object()
+            .expect("backup.subcommands object");
+        let mut declared_backup: Vec<String> = backup_subcommands.keys().cloned().collect();
+        declared_backup.sort();
+        let mut runtime_backup: Vec<String> =
+            BACKUP_SUBCOMMANDS.iter().map(|s| s.to_string()).collect();
+        runtime_backup.sort();
+        assert_eq!(declared_backup, runtime_backup, "backup subcommands drift");
+
+        let profiles_subcommands = subcommands_obj["profiles"]["subcommands"]
+            .as_object()
+            .expect("profiles.subcommands object");
+        let mut declared_profiles: Vec<String> = profiles_subcommands.keys().cloned().collect();
+        declared_profiles.sort();
+        let mut runtime_profiles: Vec<String> =
+            PROFILES_SUBCOMMANDS.iter().map(|s| s.to_string()).collect();
+        runtime_profiles.sort();
+        assert_eq!(declared_profiles, runtime_profiles, "profiles subcommands drift");
+
+        let envvar_subcommands = subcommands_obj["envvar"]["subcommands"]
+            .as_object()
+            .expect("envvar.subcommands object");
+        let mut declared_envvar: Vec<String> = envvar_subcommands.keys().cloned().collect();
+        declared_envvar.sort();
+        let mut runtime_envvar: Vec<String> =
+            ENVVAR_SUBCOMMANDS.iter().map(|s| s.to_string()).collect();
+        runtime_envvar.sort();
+        assert_eq!(declared_envvar, runtime_envvar, "envvar subcommands drift");
+
+        let log_subcommands = subcommands_obj["log"]["subcommands"]
+            .as_object()
+            .expect("log.subcommands object");
+        let mut declared_log: Vec<String> = log_subcommands.keys().cloned().collect();
+        declared_log.sort();
+        let mut runtime_log: Vec<String> = LOG_SUBCOMMANDS.iter().map(|s| s.to_string()).collect();
+        runtime_log.sort();
+        assert_eq!(declared_log, runtime_log, "log subcommands drift");
+
+        let download_subcommands = subcommands_obj["download"]["subcommands"]
+            .as_object()
+            .expect("download.subcommands object");
+        let mut declared_download: Vec<String> = download_subcommands.keys().cloned().collect();
+        declared_download.sort();
+        let mut runtime_download: Vec<String> =
+            DOWNLOAD_SUBCOMMANDS.iter().map(|s| s.to_string()).collect();
+        runtime_download.sort();
+        assert_eq!(declared_download, runtime_download, "download subcommands drift");
     }
 
     #[test]
@@ -1962,6 +3439,67 @@ mod tests {
             .collect();
         assert!(list_names.contains(&"provider"));
         assert!(list_names.contains(&"outdated"));
+
+        let backup_create_args = subcommands_obj["backup"]["subcommands"]["create"]["args"]
+            .as_array()
+            .expect("backup.create args");
+        let backup_create_names: Vec<&str> = backup_create_args
+            .iter()
+            .filter_map(|a| a.get("name").and_then(|n| n.as_str()))
+            .collect();
+        assert!(backup_create_names.contains(&"contents"));
+        assert!(backup_create_names.contains(&"note"));
+
+        let profiles_get_args = subcommands_obj["profiles"]["subcommands"]["get"]["args"]
+            .as_array()
+            .expect("profiles.get args");
+        let profiles_get_names: Vec<&str> = profiles_get_args
+            .iter()
+            .filter_map(|a| a.get("name").and_then(|n| n.as_str()))
+            .collect();
+        assert!(profiles_get_names.contains(&"id"));
+
+        let envvar_set_args = subcommands_obj["envvar"]["subcommands"]["set"]["args"]
+            .as_array()
+            .expect("envvar.set args");
+        let envvar_set_names: Vec<&str> = envvar_set_args
+            .iter()
+            .filter_map(|a| a.get("name").and_then(|n| n.as_str()))
+            .collect();
+        assert!(envvar_set_names.contains(&"key"));
+        assert!(envvar_set_names.contains(&"value"));
+        assert!(envvar_set_names.contains(&"scope"));
+
+        let log_export_args = subcommands_obj["log"]["subcommands"]["export"]["args"]
+            .as_array()
+            .expect("log.export args");
+        let log_export_names: Vec<&str> = log_export_args
+            .iter()
+            .filter_map(|a| a.get("name").and_then(|n| n.as_str()))
+            .collect();
+        assert!(log_export_names.contains(&"file"));
+        assert!(log_export_names.contains(&"out"));
+        assert!(log_export_names.contains(&"format"));
+
+        let download_queue_pause_args = subcommands_obj["download"]["subcommands"]["queue-pause"]["args"]
+            .as_array()
+            .expect("download.queue-pause args");
+        let download_queue_pause_names: Vec<&str> = download_queue_pause_args
+            .iter()
+            .filter_map(|a| a.get("name").and_then(|n| n.as_str()))
+            .collect();
+        assert!(download_queue_pause_names.contains(&"id"));
+
+        let doctor_args = subcommands_obj["doctor"]["args"]
+            .as_array()
+            .expect("doctor args");
+        let doctor_names: Vec<&str> = doctor_args
+            .iter()
+            .filter_map(|a| a.get("name").and_then(|n| n.as_str()))
+            .collect();
+        assert!(doctor_names.contains(&"type"));
+        assert!(doctor_names.contains(&"fix"));
+        assert!(doctor_names.contains(&"preview"));
     }
 
     // ── get_flag ─────────────────────────────────────────────────
@@ -2192,6 +3730,14 @@ mod tests {
     }
 
     #[test]
+    fn test_doctor_exit_code_for_warning_and_error() {
+        assert_eq!(doctor_exit_code(HealthStatus::Warning), EXIT_ERROR);
+        assert_eq!(doctor_exit_code(HealthStatus::Error), EXIT_ERROR);
+        assert_eq!(doctor_exit_code(HealthStatus::Healthy), EXIT_OK);
+        assert_eq!(doctor_exit_code(HealthStatus::Unknown), EXIT_OK);
+    }
+
+    #[test]
     fn test_print_json_nested_no_panic() {
         print_json(&serde_json::json!({
             "cache": { "size": 1024, "entries": 5 },
@@ -2229,6 +3775,29 @@ mod tests {
     }
 
     #[test]
+    fn test_usage_error_returns_usage_exit_code() {
+        let exit_code = usage_error("backup.restore", true, "backup path is required");
+        assert_eq!(exit_code, EXIT_USAGE_ERROR);
+    }
+
+    #[test]
+    fn test_runtime_error_returns_runtime_exit_code() {
+        let exit_code = runtime_error("download.queue-pause", true, "pause failed");
+        assert_eq!(exit_code, EXIT_ERROR);
+    }
+
+    #[test]
+    fn test_p0_json_success_envelope_contract_shape() {
+        let payload = cli_success_envelope(
+            "download.history-stats",
+            serde_json::json!({ "total_count": 0 }),
+        );
+        assert_eq!(payload["ok"], serde_json::json!(true));
+        assert_eq!(payload["command"], serde_json::json!("download.history-stats"));
+        assert!(payload.get("data").is_some());
+    }
+
+    #[test]
     fn test_parse_config_import_content_valid() {
         let defaults = Settings::default();
         let toml_content = toml::to_string_pretty(&defaults).expect("serialize settings");
@@ -2241,6 +3810,69 @@ mod tests {
         let err = parse_config_import_content("broken.toml", "this = [not valid toml")
             .expect_err("should fail");
         assert!(err.contains("Failed to parse configuration 'broken.toml'"));
+    }
+
+    #[test]
+    fn test_parse_env_scope_valid_values() {
+        assert_eq!(
+            parse_env_scope(Some("process".to_string()), EnvVarScope::User).unwrap(),
+            EnvVarScope::Process
+        );
+        assert_eq!(
+            parse_env_scope(Some("USER".to_string()), EnvVarScope::Process).unwrap(),
+            EnvVarScope::User
+        );
+        assert_eq!(
+            parse_env_scope(Some("system".to_string()), EnvVarScope::Process).unwrap(),
+            EnvVarScope::System
+        );
+    }
+
+    #[test]
+    fn test_parse_env_scope_invalid_value() {
+        let err = parse_env_scope(Some("bad-scope".to_string()), EnvVarScope::Process)
+            .expect_err("invalid scope should fail");
+        assert!(err.contains("Invalid scope"));
+    }
+
+    #[test]
+    fn test_parse_env_file_format_valid_values() {
+        assert_eq!(
+            parse_env_file_format(Some("dotenv".to_string())).unwrap(),
+            EnvFileFormat::Dotenv
+        );
+        assert_eq!(
+            parse_env_file_format(Some("shell".to_string())).unwrap(),
+            EnvFileFormat::Shell
+        );
+        assert_eq!(
+            parse_env_file_format(Some("pwsh".to_string())).unwrap(),
+            EnvFileFormat::PowerShell
+        );
+        assert_eq!(
+            parse_env_file_format(Some("nu".to_string())).unwrap(),
+            EnvFileFormat::Nushell
+        );
+    }
+
+    #[test]
+    fn test_parse_env_file_format_invalid_value() {
+        let err = parse_env_file_format(Some("ini".to_string()))
+            .expect_err("invalid format should fail");
+        assert!(err.contains("Invalid format"));
+    }
+
+    #[test]
+    fn test_parse_backup_contents_empty_defaults_to_all() {
+        let parsed = parse_backup_contents(Vec::new()).expect("parse backup contents");
+        assert!(!parsed.is_empty());
+    }
+
+    #[test]
+    fn test_parse_backup_contents_invalid_value() {
+        let err = parse_backup_contents(vec!["bad-content".to_string()])
+            .expect_err("invalid content should fail");
+        assert!(err.contains("Invalid backup content"));
     }
 
     // ── Combined arg scenarios ───────────────────────────────────

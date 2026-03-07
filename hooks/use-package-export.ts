@@ -4,6 +4,7 @@ import { useCallback } from 'react';
 import { writeClipboard, readClipboard } from '@/lib/clipboard';
 import { usePackageStore } from '@/lib/stores/packages';
 import { toast } from 'sonner';
+import { getPackageKeyFromParts } from '@/lib/packages';
 
 export interface ExportedPackageList {
   version: string;
@@ -16,20 +17,37 @@ export interface ExportedPackageList {
   bookmarks: string[];
 }
 
+export interface ImportPreviewEntry {
+  id: string;
+  name: string;
+  version?: string;
+  provider?: string;
+  status: 'installable' | 'skipped' | 'invalid';
+  reason?: string;
+}
+
+export interface ImportPreviewSummary {
+  installable: ImportPreviewEntry[];
+  skipped: ImportPreviewEntry[];
+  invalid: ImportPreviewEntry[];
+}
+
 export function usePackageExport() {
   const { installedPackages, bookmarkedPackages } = usePackageStore();
 
+  const buildExportData = useCallback((): ExportedPackageList => ({
+    version: '1.0',
+    exportedAt: new Date().toISOString(),
+    packages: installedPackages.map(pkg => ({
+      name: pkg.name,
+      version: pkg.version,
+      provider: pkg.provider,
+    })),
+    bookmarks: bookmarkedPackages,
+  }), [installedPackages, bookmarkedPackages]);
+
   const exportPackages = useCallback(() => {
-    const exportData: ExportedPackageList = {
-      version: '1.0',
-      exportedAt: new Date().toISOString(),
-      packages: installedPackages.map(pkg => ({
-        name: pkg.name,
-        version: pkg.version,
-        provider: pkg.provider,
-      })),
-      bookmarks: bookmarkedPackages,
-    };
+    const exportData = buildExportData();
 
     const json = JSON.stringify(exportData, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
@@ -45,7 +63,7 @@ export function usePackageExport() {
 
     toast.success('Package list exported successfully');
     return exportData;
-  }, [installedPackages, bookmarkedPackages]);
+  }, [buildExportData]);
 
   const importPackages = useCallback(async (file: File): Promise<ExportedPackageList | null> => {
     try {
@@ -67,15 +85,16 @@ export function usePackageExport() {
   }, []);
 
   const exportToClipboard = useCallback(async () => {
-    const packageNames = installedPackages.map(pkg => pkg.name).join('\n');
+    const exportData = buildExportData();
+    const manifest = JSON.stringify(exportData, null, 2);
     
     try {
-      await writeClipboard(packageNames);
-      toast.success('Package names copied to clipboard');
+      await writeClipboard(manifest);
+      toast.success('Package manifest copied to clipboard');
     } catch {
       toast.error('Failed to copy to clipboard');
     }
-  }, [installedPackages]);
+  }, [buildExportData]);
 
   const importFromClipboard = useCallback(async (): Promise<ExportedPackageList | null> => {
     try {
@@ -109,10 +128,63 @@ export function usePackageExport() {
     }
   }, []);
 
+  const getImportPreview = useCallback((data: ExportedPackageList): ImportPreviewSummary => {
+    const installedVersionKeys = new Set(
+      installedPackages.map((pkg) => `${getPackageKeyFromParts(pkg.name, pkg.provider)}@${pkg.version}`),
+    );
+    const seen = new Set<string>();
+
+    return data.packages.reduce<ImportPreviewSummary>((summary, pkg, index) => {
+      const trimmedName = pkg.name.trim();
+      const scopedKey = getPackageKeyFromParts(trimmedName, pkg.provider);
+      const identityKey = `${scopedKey}@${pkg.version ?? ''}`;
+      const entry: ImportPreviewEntry = {
+        id: `${identityKey || 'invalid'}:${index}`,
+        name: trimmedName,
+        provider: pkg.provider,
+        version: pkg.version,
+        status: 'installable',
+      };
+
+      if (!trimmedName) {
+        summary.invalid.push({
+          ...entry,
+          name: pkg.name,
+          status: 'invalid',
+          reason: 'missing-name',
+        });
+        return summary;
+      }
+
+      if (seen.has(identityKey)) {
+        summary.skipped.push({
+          ...entry,
+          status: 'skipped',
+          reason: 'duplicate-entry',
+        });
+        return summary;
+      }
+      seen.add(identityKey);
+
+      if (pkg.version && installedVersionKeys.has(identityKey)) {
+        summary.skipped.push({
+          ...entry,
+          status: 'skipped',
+          reason: 'already-installed',
+        });
+        return summary;
+      }
+
+      summary.installable.push(entry);
+      return summary;
+    }, { installable: [], skipped: [], invalid: [] });
+  }, [installedPackages]);
+
   return {
     exportPackages,
     importPackages,
     importFromClipboard,
     exportToClipboard,
+    getImportPreview,
   };
 }

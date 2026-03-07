@@ -1,7 +1,10 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 
+export type OnboardingMode = 'quick' | 'detailed';
+
 export type OnboardingStepId =
+  | 'mode-selection'
   | 'welcome'
   | 'language'
   | 'theme'
@@ -10,42 +13,67 @@ export type OnboardingStepId =
   | 'shell-init'
   | 'complete';
 
-export const ONBOARDING_STEPS: OnboardingStepId[] = [
-  'welcome',
-  'language',
-  'theme',
-  'environment-detection',
-  'mirrors',
-  'shell-init',
-  'complete',
-];
+export const ONBOARDING_STEP_SEQUENCES: Record<OnboardingMode, OnboardingStepId[]> = {
+  quick: [
+    'mode-selection',
+    'language',
+    'theme',
+    'environment-detection',
+    'mirrors',
+    'shell-init',
+    'complete',
+  ],
+  detailed: [
+    'mode-selection',
+    'welcome',
+    'language',
+    'theme',
+    'environment-detection',
+    'mirrors',
+    'shell-init',
+    'complete',
+  ],
+};
+
+const MODE_SELECTION_STEPS: OnboardingStepId[] = ['mode-selection'];
+
+export const ONBOARDING_STEPS: OnboardingStepId[] = ONBOARDING_STEP_SEQUENCES.detailed;
+
+export function getOnboardingSteps(mode: OnboardingMode | null | undefined): OnboardingStepId[] {
+  return mode ? ONBOARDING_STEP_SEQUENCES[mode] : MODE_SELECTION_STEPS;
+}
+
+function clampStepIndex(step: number, steps: OnboardingStepId[]): number {
+  if (steps.length === 0) {
+    return 0;
+  }
+
+  return Math.max(0, Math.min(step, steps.length - 1));
+}
+
+function addVisitedStep(visitedSteps: string[], stepId?: string): string[] {
+  if (!stepId || visitedSteps.includes(stepId)) {
+    return visitedSteps;
+  }
+
+  return [...visitedSteps, stepId];
+}
 
 export interface OnboardingState {
-  /** Whether the onboarding wizard has ever been completed */
+  mode: OnboardingMode | null;
   completed: boolean;
-  /** Whether onboarding was explicitly skipped */
   skipped: boolean;
-  /** Current step index (0-based) */
   currentStep: number;
-  /** Set of step IDs that have been visited */
   visitedSteps: string[];
-  /** Whether the wizard dialog is currently open */
   wizardOpen: boolean;
-  /** Whether the guided tour has been completed */
   tourCompleted: boolean;
-  /** Whether the guided tour is currently active */
   tourActive: boolean;
-  /** Current tour step index */
   tourStep: number;
-  /** Store version for migrations */
   version: number;
-  /** IDs of bubble hints the user has dismissed */
   dismissedHints: string[];
-  /** Whether contextual bubble hints are enabled */
   hintsEnabled: boolean;
-
-  // Actions
   setWizardOpen: (open: boolean) => void;
+  selectMode: (mode: OnboardingMode) => void;
   goToStep: (step: number) => void;
   nextStep: () => void;
   prevStep: () => void;
@@ -67,6 +95,7 @@ export interface OnboardingState {
 export const useOnboardingStore = create<OnboardingState>()(
   persist(
     (set) => ({
+      mode: null,
       completed: false,
       skipped: false,
       currentStep: 0,
@@ -75,29 +104,54 @@ export const useOnboardingStore = create<OnboardingState>()(
       tourCompleted: false,
       tourActive: false,
       tourStep: 0,
-      version: 2,
+      version: 3,
       dismissedHints: [],
       hintsEnabled: true,
 
       setWizardOpen: (wizardOpen) => set({ wizardOpen }),
 
+      selectMode: (mode) =>
+        set((state) => {
+          if (state.mode === mode) {
+            return {
+              mode,
+              visitedSteps: addVisitedStep(state.visitedSteps, 'mode-selection'),
+            };
+          }
+
+          return {
+            mode,
+            currentStep: 0,
+            visitedSteps: ['mode-selection'],
+          };
+        }),
+
       goToStep: (step) =>
         set((state) => {
-          const stepId = ONBOARDING_STEPS[step];
-          const visitedSteps = stepId && !state.visitedSteps.includes(stepId)
-            ? [...state.visitedSteps, stepId]
-            : state.visitedSteps;
-          return { currentStep: step, visitedSteps };
+          const steps = getOnboardingSteps(state.mode);
+          const nextStep = clampStepIndex(step, steps);
+          const stepId = steps[nextStep];
+
+          return {
+            currentStep: nextStep,
+            visitedSteps: addVisitedStep(state.visitedSteps, stepId),
+          };
         }),
 
       nextStep: () =>
         set((state) => {
-          const next = Math.min(state.currentStep + 1, ONBOARDING_STEPS.length - 1);
-          const stepId = ONBOARDING_STEPS[next];
-          const visitedSteps = stepId && !state.visitedSteps.includes(stepId)
-            ? [...state.visitedSteps, stepId]
-            : state.visitedSteps;
-          return { currentStep: next, visitedSteps };
+          const steps = getOnboardingSteps(state.mode);
+          if (steps.length <= 1) {
+            return state;
+          }
+
+          const nextStep = clampStepIndex(state.currentStep + 1, steps);
+          const stepId = steps[nextStep];
+
+          return {
+            currentStep: nextStep,
+            visitedSteps: addVisitedStep(state.visitedSteps, stepId),
+          };
         }),
 
       prevStep: () =>
@@ -107,18 +161,16 @@ export const useOnboardingStore = create<OnboardingState>()(
 
       markStepVisited: (stepId) =>
         set((state) => ({
-          visitedSteps: state.visitedSteps.includes(stepId)
-            ? state.visitedSteps
-            : [...state.visitedSteps, stepId],
+          visitedSteps: addVisitedStep(state.visitedSteps, stepId),
         })),
 
       completeOnboarding: () =>
-        set({
+        set((state) => ({
           completed: true,
           skipped: false,
           wizardOpen: false,
-          currentStep: ONBOARDING_STEPS.length - 1,
-        }),
+          currentStep: getOnboardingSteps(state.mode).length - 1,
+        })),
 
       skipOnboarding: () =>
         set({
@@ -128,6 +180,7 @@ export const useOnboardingStore = create<OnboardingState>()(
 
       resetOnboarding: () =>
         set({
+          mode: null,
           completed: false,
           skipped: false,
           currentStep: 0,
@@ -192,24 +245,39 @@ export const useOnboardingStore = create<OnboardingState>()(
     {
       name: 'cognia-onboarding',
       storage: createJSONStorage(() => localStorage),
-      version: 2,
+      version: 3,
       migrate: (persistedState, version) => {
-        const state = persistedState as Record<string, unknown>;
+        const state = (persistedState ?? {}) as Record<string, unknown>;
+
         if (version < 1) {
-          // v0 → v1: ensure all fields exist
           if (!('tourCompleted' in state)) state.tourCompleted = false;
           if (!('visitedSteps' in state)) state.visitedSteps = [];
           if (!('version' in state)) state.version = 1;
         }
+
         if (version < 2) {
-          // v1 → v2: add bubble hint fields
           if (!('dismissedHints' in state)) state.dismissedHints = [];
           if (!('hintsEnabled' in state)) state.hintsEnabled = true;
           state.version = 2;
         }
+
+        if (version < 3) {
+          if (!('mode' in state)) state.mode = null;
+
+          const completed = Boolean(state.completed);
+          const skipped = Boolean(state.skipped);
+          if (!completed && !skipped) {
+            state.currentStep = 0;
+            state.visitedSteps = [];
+          }
+
+          state.version = 3;
+        }
+
         return state as unknown as OnboardingState;
       },
       partialize: (state) => ({
+        mode: state.mode,
         completed: state.completed,
         skipped: state.skipped,
         currentStep: state.currentStep,

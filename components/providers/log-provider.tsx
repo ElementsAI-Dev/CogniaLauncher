@@ -20,6 +20,7 @@ import {
 } from "@/lib/tauri";
 import { captureFrontendCrash } from "@/lib/crash-reporter";
 import type { UnlistenFn } from "@tauri-apps/api/event";
+import type { DiagnosticRuntimeBreadcrumb } from "@/types/tauri";
 import { useLocale } from "@/components/providers/locale-provider";
 import { toast } from "sonner";
 
@@ -35,6 +36,38 @@ const originalConsole = {
 
 // Module-level flag to prevent race conditions with React StrictMode double-invoke
 let consoleIntercepted = false;
+const RUNTIME_BREADCRUMB_LIMIT = 100;
+const RUNTIME_BREADCRUMB_MESSAGE_LIMIT = 4096;
+const runtimeBreadcrumbs: DiagnosticRuntimeBreadcrumb[] = [];
+
+function pushRuntimeBreadcrumb(
+  level: string,
+  target: string,
+  message: string,
+): void {
+  const boundedMessage =
+    message.length > RUNTIME_BREADCRUMB_MESSAGE_LIMIT
+      ? message.slice(0, RUNTIME_BREADCRUMB_MESSAGE_LIMIT)
+      : message;
+
+  runtimeBreadcrumbs.push({
+    timestamp: new Date().toISOString(),
+    level,
+    target,
+    message: boundedMessage,
+  });
+
+  if (runtimeBreadcrumbs.length > RUNTIME_BREADCRUMB_LIMIT) {
+    runtimeBreadcrumbs.splice(
+      0,
+      runtimeBreadcrumbs.length - RUNTIME_BREADCRUMB_LIMIT,
+    );
+  }
+}
+
+function getRuntimeBreadcrumbsSnapshot(): DiagnosticRuntimeBreadcrumb[] {
+  return runtimeBreadcrumbs.slice();
+}
 
 interface LogProviderProps {
   children: ReactNode;
@@ -132,6 +165,8 @@ export function LogProvider({ children }: LogProviderProps) {
         // Skip noisy messages from React internals, HMR, etc.
         if (CONSOLE_IGNORE_PATTERNS.some((p) => p.test(message))) return;
 
+        pushRuntimeBreadcrumb(level, "webview", message);
+
         // Add to log store (deferred to avoid setState during render)
         setTimeout(() => {
           addLog({
@@ -181,15 +216,33 @@ export function LogProvider({ children }: LogProviderProps) {
         message,
         target: "runtime",
       });
+      pushRuntimeBreadcrumb("error", "runtime", message);
 
       const result = await captureFrontendCrash({
         source,
         error,
         includeConfig: true,
         extra,
+        runtimeBreadcrumbs: getRuntimeBreadcrumbsSnapshot(),
       });
 
       if (result.captured) {
+        addLog({
+          timestamp: Date.now(),
+          level: "info",
+          message: `Automatic frontend crash diagnostics captured (${result.crashInfo?.id ?? "unknown-id"})`,
+          target: "runtime",
+          context: {
+            reason: "captured",
+            ...(result.crashInfo?.id ? { crashId: result.crashInfo.id } : {}),
+            ...(result.crashInfo?.source
+              ? { crashSource: result.crashInfo.source }
+              : {}),
+            ...(result.crashInfo?.reportPath
+              ? { reportPath: result.crashInfo.reportPath }
+              : {}),
+          },
+        });
         toast.warning(t("diagnostic.autoCaptureToastTitle"), {
           description: t("diagnostic.autoCaptureToastDescription"),
         });
@@ -199,6 +252,15 @@ export function LogProvider({ children }: LogProviderProps) {
           level: "warn",
           message: "Automatic frontend crash diagnostic capture failed",
           target: "runtime",
+          context: { reason: result.reason },
+        });
+      } else {
+        addLog({
+          timestamp: Date.now(),
+          level: "debug",
+          message: `Automatic frontend crash capture skipped (${result.reason ?? "unknown"})`,
+          target: "runtime",
+          context: { reason: result.reason ?? "unknown" },
         });
       }
     };
@@ -236,7 +298,10 @@ export function LogProvider({ children }: LogProviderProps) {
 
     return () => {
       window.removeEventListener("error", handleWindowError);
-      window.removeEventListener("unhandledrejection", handleUnhandledRejection);
+      window.removeEventListener(
+        "unhandledrejection",
+        handleUnhandledRejection,
+      );
     };
   }, [addLog, t]);
 
@@ -345,10 +410,16 @@ export function LogProvider({ children }: LogProviderProps) {
                 envType: progress.envType,
                 version: progress.version,
                 step: progress.step,
-                phase: progress.phase,
-                terminalState: progress.terminalState,
-                failureClass: progress.failureClass,
-                artifact: progress.artifact?.id,
+                ...(progress.phase ? { phase: progress.phase } : {}),
+                ...(progress.terminalState
+                  ? { terminalState: progress.terminalState }
+                  : {}),
+                ...(progress.failureClass
+                  ? { failureClass: progress.failureClass }
+                  : {}),
+                ...(progress.artifact?.id
+                  ? { artifact: progress.artifact.id }
+                  : {}),
               },
             });
           },

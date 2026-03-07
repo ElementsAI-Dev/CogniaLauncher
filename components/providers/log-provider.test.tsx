@@ -269,6 +269,7 @@ describe("LogProvider", () => {
           expect.objectContaining({
             source: "window.error",
             includeConfig: true,
+            runtimeBreadcrumbs: expect.any(Array),
           }),
         );
       });

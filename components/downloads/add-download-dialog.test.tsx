@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AddDownloadDialog } from "./add-download-dialog";
 import { LocaleProvider } from "@/components/providers/locale-provider";
@@ -41,6 +41,16 @@ const mockMessages = {
       manualPathRequired: "Please enter the path manually",
       browseFolder: "Browse",
       dialogError: "Failed to open dialog",
+      tags: "Tags",
+      tagsPlaceholder: "comma,separated,tags",
+      settings: {
+        autoExtract: "Auto Extract",
+        autoRename: "Auto Rename",
+        deleteAfterExtract: "Delete archive after extraction",
+      },
+      extractDest: "Extract Destination",
+      extractDestPlaceholder: "/path/to/extracted",
+      selectExtractDest: "Select extract destination",
     },
   },
   zh: {
@@ -180,6 +190,51 @@ describe("AddDownloadDialog", () => {
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({
         provider: "npm",
+      }),
+    );
+  });
+
+  it("submits advanced request fields without dropping them", async () => {
+    const onSubmit = jest.fn().mockResolvedValue(undefined);
+    render(
+      <TestWrapper>
+        <AddDownloadDialog {...defaultProps} onSubmit={onSubmit} />
+      </TestWrapper>,
+    );
+
+    fireEvent.change(screen.getByLabelText("URL"), {
+      target: { value: "https://example.com/archive.zip" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("/path/to/file.zip"), {
+      target: { value: "/downloads/archive.zip" },
+    });
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "archive.zip" },
+    });
+
+    fireEvent.click(screen.getByLabelText("Auto Extract"));
+    fireEvent.change(screen.getByPlaceholderText("/path/to/extracted"), {
+      target: { value: "/downloads/extracted" },
+    });
+    fireEvent.click(screen.getByLabelText("Delete archive after extraction"));
+    fireEvent.click(screen.getByLabelText("Auto Rename"));
+    fireEvent.change(screen.getByPlaceholderText("comma,separated,tags"), {
+      target: { value: "github,release" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledTimes(1);
+    });
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        autoExtract: true,
+        extractDest: "/downloads/extracted",
+        deleteAfterExtract: true,
+        autoRename: true,
+        tags: ["github", "release"],
       }),
     );
   });

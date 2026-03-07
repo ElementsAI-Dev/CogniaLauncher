@@ -15,6 +15,7 @@ import { PackageHistoryList } from '@/components/packages/detail/package-history
 import { usePackages } from '@/hooks/use-packages';
 import { usePackageStore } from '@/lib/stores/packages';
 import { useLocale } from '@/components/providers/locale-provider';
+import { getPackageKeyFromParts, isPackagePinned } from '@/lib/packages';
 import {
   ArrowLeft,
   LayoutDashboard,
@@ -43,6 +44,7 @@ export function PackageDetailPage({ packageName, providerId }: PackageDetailPage
     rollbackPackage,
     pinPackage,
     unpinPackage,
+    fetchPinnedPackages,
     resolveDependencies,
     getPackageHistory,
     installedPackages,
@@ -77,7 +79,7 @@ export function PackageDetailPage({ packageName, providerId }: PackageDetailPage
   );
 
   const isInstalled = !!installedPkg;
-  const isPinned = pinnedPackages.includes(packageName);
+  const isPinned = isPackagePinned(pinnedPackages, packageName, providerId);
   const isBookmarked = bookmarkedPackages.includes(packageName);
   const isInstalling = installing.includes(
     providerId ? `${providerId}:${packageName}` : packageName
@@ -131,7 +133,8 @@ export function PackageDetailPage({ packageName, providerId }: PackageDetailPage
   useEffect(() => {
     loadPackageInfo();
     fetchInstalledPackages();
-  }, [loadPackageInfo, fetchInstalledPackages]);
+    fetchPinnedPackages();
+  }, [loadPackageInfo, fetchInstalledPackages, fetchPinnedPackages]);
 
   useEffect(() => {
     if (activeTab === 'history') {
@@ -166,31 +169,31 @@ export function PackageDetailPage({ packageName, providerId }: PackageDetailPage
 
   const handleRollback = useCallback(async (version: string) => {
     try {
-      await rollbackPackage(packageName, version);
+      await rollbackPackage(getPackageKeyFromParts(packageName, providerId), version);
       toast.success(t('packages.rollbackSuccess', { name: packageName, version }));
       markHistoryDirty();
     } catch (err) {
       toast.error(t('packages.rollbackFailed', { error: String(err) }));
     }
-  }, [packageName, rollbackPackage, markHistoryDirty, t]);
+  }, [packageName, providerId, rollbackPackage, markHistoryDirty, t]);
 
   const handlePin = useCallback(async () => {
     try {
-      await pinPackage(packageName, installedPkg?.version);
+      await pinPackage(getPackageKeyFromParts(packageName, providerId), installedPkg?.version);
       toast.success(t('packages.pinned', { name: packageName }));
     } catch (err) {
       toast.error(t('packages.pinFailed', { name: packageName, error: String(err) }));
     }
-  }, [packageName, installedPkg, pinPackage, t]);
+  }, [packageName, providerId, installedPkg, pinPackage, t]);
 
   const handleUnpin = useCallback(async () => {
     try {
-      await unpinPackage(packageName);
+      await unpinPackage(getPackageKeyFromParts(packageName, providerId));
       toast.success(t('packages.unpinned', { name: packageName }));
     } catch (err) {
       toast.error(t('packages.unpinFailed', { name: packageName, error: String(err) }));
     }
-  }, [packageName, unpinPackage, t]);
+  }, [packageName, providerId, unpinPackage, t]);
 
   const handleResolveDeps = useCallback(async () => {
     setResolvingDeps(true);

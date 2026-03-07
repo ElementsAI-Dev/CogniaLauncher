@@ -1,15 +1,15 @@
 //! GitHub repository commands for download integration
 
-use crate::download::DownloadTask;
 use crate::platform::disk::format_size;
 use crate::provider::github::{
     GitHubAsset, GitHubBranch, GitHubProvider, GitHubRelease, GitHubTag,
 };
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 use tauri::State;
 
-use super::download::SharedDownloadManager;
+use super::download::{
+    download_add, DownloadRequest, SharedDownloadManager, SharedSettings,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -138,22 +138,38 @@ async fn make_github_provider(token: Option<String>) -> GitHubProvider {
     GitHubProvider::new().with_token(effective_token)
 }
 
-async fn enqueue_github_download(
-    manager: &State<'_, SharedDownloadManager>,
+fn build_github_download_request(
     url: String,
     destination: &str,
     file_name: String,
     provider: String,
     headers: std::collections::HashMap<String, String>,
-) -> Result<String, String> {
-    let full_path = PathBuf::from(destination).join(&file_name);
-    let task = DownloadTask::builder(url, full_path, file_name)
-        .with_provider(provider)
-        .with_headers(headers)
-        .build();
-
-    let mgr = manager.read().await;
-    Ok(mgr.add_task(task).await)
+) -> DownloadRequest {
+    let full_path = std::path::PathBuf::from(destination)
+        .join(&file_name)
+        .display()
+        .to_string();
+    DownloadRequest {
+        url,
+        destination: full_path,
+        name: file_name,
+        checksum: None,
+        priority: None,
+        provider: Some(provider),
+        headers: if headers.is_empty() {
+            None
+        } else {
+            Some(headers)
+        },
+        auto_extract: None,
+        extract_dest: None,
+        segments: None,
+        mirror_urls: None,
+        post_action: None,
+        delete_after_extract: None,
+        auto_rename: None,
+        tags: None,
+    }
 }
 
 #[tauri::command]
@@ -221,6 +237,7 @@ pub async fn github_download_asset(
     destination: String,
     token: Option<String>,
     manager: State<'_, SharedDownloadManager>,
+    settings: State<'_, SharedSettings>,
 ) -> Result<String, String> {
     let provider = make_github_provider(token).await;
 
@@ -232,15 +249,14 @@ pub async fn github_download_asset(
     };
 
     let headers = provider.get_download_headers();
-    enqueue_github_download(
-        &manager,
+    let request = build_github_download_request(
         download_url,
         &destination,
         asset_name,
         format!("github:{}", repo),
         headers,
-    )
-    .await
+    );
+    download_add(request, manager, settings).await
 }
 
 #[tauri::command]
@@ -251,6 +267,7 @@ pub async fn github_download_source(
     destination: String,
     token: Option<String>,
     manager: State<'_, SharedDownloadManager>,
+    settings: State<'_, SharedSettings>,
 ) -> Result<String, String> {
     let provider = make_github_provider(token).await;
     let url = provider.get_source_archive_url(&repo, &ref_name, &format);
@@ -264,15 +281,14 @@ pub async fn github_download_source(
     );
 
     let headers = provider.get_source_download_headers();
-    enqueue_github_download(
-        &manager,
+    let request = build_github_download_request(
         url,
         &destination,
         file_name,
         format!("github:{}", repo),
         headers,
-    )
-    .await
+    );
+    download_add(request, manager, settings).await
 }
 
 #[tauri::command]
@@ -352,4 +368,38 @@ pub async fn github_get_repo_info(
 pub async fn github_validate_token(token: String) -> Result<bool, String> {
     let provider = GitHubProvider::new().with_token(Some(token));
     Ok(provider.validate_token().await)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_github_download_request;
+    use std::collections::HashMap;
+
+    #[test]
+    fn build_request_preserves_provider_headers_and_file_path() {
+        let mut headers = HashMap::new();
+        headers.insert("Authorization".to_string(), "Bearer token".to_string());
+        headers.insert("Accept".to_string(), "application/octet-stream".to_string());
+
+        let request = build_github_download_request(
+            "https://api.github.com/repos/a/b/releases/assets/1".to_string(),
+            "/tmp/downloads",
+            "asset.zip".to_string(),
+            "github:a/b".to_string(),
+            headers.clone(),
+        );
+
+        assert_eq!(
+            request.url,
+            "https://api.github.com/repos/a/b/releases/assets/1"
+        );
+        assert_eq!(request.name, "asset.zip");
+        assert_eq!(request.provider.as_deref(), Some("github:a/b"));
+        assert_eq!(request.headers, Some(headers));
+        let destination = std::path::Path::new(&request.destination);
+        assert!(destination.ends_with(std::path::Path::new("downloads").join("asset.zip")));
+        assert!(request.delete_after_extract.is_none());
+        assert!(request.auto_rename.is_none());
+        assert!(request.tags.is_none());
+    }
 }

@@ -3,6 +3,12 @@ import userEvent from "@testing-library/user-event";
 import { BatchOperations } from "./batch-operations";
 import type { BatchResult } from "@/lib/tauri";
 
+const mockListenBatchProgress = jest.fn();
+
+jest.mock("@/lib/tauri", () => ({
+  listenBatchProgress: (...args: unknown[]) => mockListenBatchProgress(...args),
+}));
+
 jest.mock("@/components/providers/locale-provider", () => ({
   useLocale: () => ({
     t: (key: string, params?: Record<string, unknown>) => {
@@ -15,6 +21,8 @@ jest.mock("@/components/providers/locale-provider", () => ({
         "packages.selected": `${params?.count ?? 0} selected`,
         "packages.dryRun": "Dry run",
         "packages.forceOption": "Force",
+        "packages.parallelOption": "Parallel",
+        "packages.globalInstallOption": "Global",
         "packages.processing": "Processing...",
         "packages.processingDesc": "Please wait",
         "packages.packagesLabel": "Packages",
@@ -67,6 +75,7 @@ const defaultProps = {
 describe("BatchOperations", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockListenBatchProgress.mockResolvedValue(jest.fn());
   });
 
   it("renders floating action bar when packages are selected", () => {
@@ -109,6 +118,8 @@ describe("BatchOperations", () => {
 
     expect(screen.getByLabelText("Dry run")).toBeInTheDocument();
     expect(screen.getByLabelText("Force")).toBeInTheDocument();
+    expect(screen.getByLabelText("Parallel")).toBeInTheDocument();
+    expect(screen.getByLabelText("Global")).toBeInTheDocument();
   });
 
   it("calls onBatchInstall when install is confirmed", async () => {
@@ -125,8 +136,45 @@ describe("BatchOperations", () => {
     await waitFor(() => {
       expect(defaultProps.onBatchInstall).toHaveBeenCalledWith(
         ["package1", "package2"],
-        { dryRun: false, force: false },
+        { dryRun: false, force: false, parallel: true, global: true },
       );
+    });
+  });
+
+  it("renders stage-aware progress details while batch install is running", async () => {
+    const user = userEvent.setup();
+    let resolveBatch: (value: BatchResult) => void = () => {};
+    const pendingResult = new Promise<BatchResult>((resolve) => {
+      resolveBatch = resolve;
+    });
+    const onBatchInstall = jest.fn().mockReturnValue(pendingResult);
+
+    mockListenBatchProgress.mockImplementation(async (callback) => {
+      const cb = callback as (progress: {
+        type: string;
+        package: string;
+        current: number;
+        total: number;
+      }) => void;
+      cb({ type: "installing", package: "package1", current: 1, total: 2 });
+      return jest.fn();
+    });
+
+    render(<BatchOperations {...defaultProps} onBatchInstall={onBatchInstall} />);
+
+    await user.click(screen.getByRole("button", { name: /^install$/i }));
+    const dialogInstallButton = screen
+      .getAllByRole("button", { name: /install/i })
+      .find((btn) => btn.closest('[role="dialog"]'));
+    await user.click(dialogInstallButton!);
+
+    await waitFor(() => {
+      expect(screen.getByText(/package1/i)).toBeInTheDocument();
+    });
+
+    resolveBatch(mockBatchResult);
+    await waitFor(() => {
+      expect(screen.getByText("Successful")).toBeInTheDocument();
     });
   });
 

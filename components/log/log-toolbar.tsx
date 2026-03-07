@@ -50,12 +50,24 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { LogFilter, LogLevel, LogPresetScope } from "@/types/log";
 
 interface LogToolbarProps {
   onExport?: (format: "txt" | "json" | "csv") => void;
+  onDiagnosticExport?: () => void;
   showRealtimeControls?: boolean;
   showMaxLogs?: boolean;
   showQueryScanLimit?: boolean;
+  showPresetControls?: boolean;
+  presetScope?: LogPresetScope;
+  filterState?: LogFilter;
+  onSearchChange?: (search: string) => void;
+  onToggleLevel?: (level: LogLevel) => void;
+  onFilterChange?: (filter: Partial<LogFilter>) => void;
+  onTimeRangeChange?: (startTime: number | null, endTime: number | null) => void;
+  showBookmarksOnly?: boolean;
+  onShowBookmarksOnlyChange?: (show: boolean) => void;
+  showBookmarksToggle?: boolean;
 }
 
 type TimeRangePreset = "all" | "1h" | "24h" | "7d" | "custom";
@@ -67,29 +79,50 @@ const SCAN_LINE_PRESETS = [5_000, 20_000, 50_000] as const;
 
 export function LogToolbar({
   onExport,
+  onDiagnosticExport,
   showRealtimeControls = true,
   showMaxLogs = true,
   showQueryScanLimit = false,
+  showPresetControls = true,
+  presetScope = "realtime",
+  filterState,
+  onSearchChange,
+  onToggleLevel,
+  onFilterChange,
+  onTimeRangeChange,
+  showBookmarksOnly,
+  onShowBookmarksOnlyChange,
+  showBookmarksToggle = true,
 }: LogToolbarProps) {
   const { t } = useLocale();
   const {
-    filter,
+    filter: storeFilter,
     autoScroll,
     paused,
     maxLogs,
-    setSearch,
-    toggleLevel,
-    setFilter,
-    setTimeRange,
+    setSearch: setStoreSearch,
+    toggleLevel: toggleStoreLevel,
+    setFilter: setStoreFilter,
+    setTimeRange: setStoreTimeRange,
     toggleAutoScroll,
     togglePaused,
     clearLogs,
     setMaxLogs,
     getLogStats,
-    showBookmarksOnly,
-    setShowBookmarksOnly,
+    showBookmarksOnly: storeShowBookmarksOnly,
+    setShowBookmarksOnly: setStoreShowBookmarksOnly,
+    saveFilterPreset,
+    deleteFilterPreset,
+    getFilterPresets,
   } = useLogStore();
   const { exportLogs } = useLogs();
+  const filter = filterState ?? storeFilter;
+  const setSearch = onSearchChange ?? setStoreSearch;
+  const toggleLevel = onToggleLevel ?? toggleStoreLevel;
+  const setFilter = onFilterChange ?? setStoreFilter;
+  const setTimeRange = onTimeRangeChange ?? setStoreTimeRange;
+  const activeShowBookmarksOnly = showBookmarksOnly ?? storeShowBookmarksOnly;
+  const setShowBookmarksOnly = onShowBookmarksOnlyChange ?? setStoreShowBookmarksOnly;
 
   const stats = getLogStats();
   const [timeRangePreset, setTimeRangePreset] = useState<TimeRangePreset>(
@@ -107,7 +140,9 @@ export function LogToolbar({
   const [localSearch, setLocalSearch] = useState<string | null>(null);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [activePresetId, setActivePresetId] = useState<string>("none");
   const searchValue = localSearch ?? filter.search;
+  const scopedPresets = getFilterPresets(presetScope);
 
   const handleSearchChange = useCallback(
     (value: string) => {
@@ -134,7 +169,7 @@ export function LogToolbar({
     (filter.useRegex ? 1 : 0) +
     (filter.target ? 1 : 0) +
     (filter.maxScanLines ? 1 : 0) +
-    (showBookmarksOnly ? 1 : 0);
+    (showBookmarksToggle && activeShowBookmarksOnly ? 1 : 0);
 
   const timeRangeOptions = useMemo(
     () => ({
@@ -157,6 +192,14 @@ export function LogToolbar({
     },
     [onExport, exportLogs],
   );
+
+  const handleDiagnosticExport = useCallback(() => {
+    if (onDiagnosticExport) {
+      onDiagnosticExport();
+      return;
+    }
+    handleExport("json");
+  }, [handleExport, onDiagnosticExport]);
 
   const handlePresetChange = useCallback(
     (value: string) => {
@@ -238,6 +281,64 @@ export function LogToolbar({
     },
     [setFilter],
   );
+
+  const applyFilterPreset = useCallback(
+    (presetId: string) => {
+      if (presetId === "none") {
+        setActivePresetId("none");
+        return;
+      }
+      const preset = scopedPresets.find((item) => item.id === presetId);
+      if (!preset) {
+        setActivePresetId("none");
+        return;
+      }
+
+      setLocalSearch(null);
+      setSearch(preset.filter.search ?? "");
+      setFilter({
+        levels: [...preset.filter.levels],
+        target: preset.filter.target,
+        useRegex: preset.filter.useRegex ?? false,
+        maxScanLines: preset.filter.maxScanLines ?? null,
+      });
+      setTimeRange(
+        preset.filter.startTime ?? null,
+        preset.filter.endTime ?? null,
+      );
+      setCustomStart(formatDateTimeInput(preset.filter.startTime));
+      setCustomEnd(formatDateTimeInput(preset.filter.endTime));
+      setTimeRangePreset(
+        preset.filter.startTime || preset.filter.endTime ? "custom" : "all",
+      );
+      setActivePresetId(presetId);
+    },
+    [scopedPresets, setFilter, setSearch, setTimeRange],
+  );
+
+  const handleSavePreset = useCallback(() => {
+    const name = window.prompt(
+      t("logs.presetNamePrompt"),
+      t("logs.presetDefaultName"),
+    );
+    if (!name) return;
+    const id = saveFilterPreset(name, presetScope, {
+      levels: [...filter.levels],
+      search: searchValue,
+      target: filter.target,
+      useRegex: filter.useRegex ?? false,
+      maxScanLines: filter.maxScanLines ?? null,
+      startTime: filter.startTime ?? null,
+      endTime: filter.endTime ?? null,
+    });
+    setActivePresetId(id);
+  }, [filter, presetScope, saveFilterPreset, searchValue, t]);
+
+  const handleDeletePreset = useCallback(() => {
+    if (activePresetId === "none") return;
+    deleteFilterPreset(activePresetId);
+    setActivePresetId("none");
+  }, [activePresetId, deleteFilterPreset]);
 
   return (
     <Collapsible open={showAdvanced} onOpenChange={setShowAdvanced}>
@@ -408,6 +509,10 @@ export function LogToolbar({
             <DropdownMenuItem onClick={() => handleExport("csv")}>
               {t("logs.exportCsv")}
             </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={handleDiagnosticExport}>
+              {t("logs.exportDiagnostic")}
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
 
@@ -500,6 +605,43 @@ export function LogToolbar({
               </Select>
             </div>
 
+            {showPresetControls && (
+              <>
+                <Separator orientation="vertical" className="h-5 hidden sm:block" />
+                <div className="flex items-center gap-2">
+                  <Label className="text-xs text-muted-foreground shrink-0">
+                    {t("logs.presets")}:
+                  </Label>
+                  <Select value={activePresetId} onValueChange={applyFilterPreset}>
+                    <SelectTrigger className="h-8 w-[170px]" size="sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">{t("logs.presetNone")}</SelectItem>
+                      {scopedPresets.map((preset) => (
+                        <SelectItem key={preset.id} value={preset.id}>
+                          {preset.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button type="button" size="sm" variant="outline" className="h-8" onClick={handleSavePreset}>
+                    {t("logs.savePreset")}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-8"
+                    onClick={handleDeletePreset}
+                    disabled={activePresetId === "none"}
+                  >
+                    {t("logs.deletePreset")}
+                  </Button>
+                </div>
+              </>
+            )}
+
             {timeRangePreset === "custom" && (
               <div className="flex flex-wrap items-center gap-2">
                 <Input
@@ -564,22 +706,25 @@ export function LogToolbar({
               </Label>
             </div>
 
-            <Separator orientation="vertical" className="h-5 hidden sm:block" />
-
             {/* Bookmarks only toggle */}
-            <div className="flex items-center gap-2">
-              <Switch
-                id="bookmarks-toggle"
-                checked={showBookmarksOnly}
-                onCheckedChange={setShowBookmarksOnly}
-              />
-              <Label
-                htmlFor="bookmarks-toggle"
-                className="text-xs text-muted-foreground cursor-pointer"
-              >
-                {t("logs.bookmarksOnly")}
-              </Label>
-            </div>
+            {showBookmarksToggle && (
+              <>
+                <Separator orientation="vertical" className="h-5 hidden sm:block" />
+                <div className="flex items-center gap-2">
+                  <Switch
+                    id="bookmarks-toggle"
+                    checked={activeShowBookmarksOnly}
+                    onCheckedChange={setShowBookmarksOnly}
+                  />
+                  <Label
+                    htmlFor="bookmarks-toggle"
+                    className="text-xs text-muted-foreground cursor-pointer"
+                  >
+                    {t("logs.bookmarksOnly")}
+                  </Label>
+                </div>
+              </>
+            )}
 
             {showQueryScanLimit && (
               <>

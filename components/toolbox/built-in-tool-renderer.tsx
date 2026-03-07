@@ -1,9 +1,10 @@
 'use client';
 
-import { Suspense, use, type ComponentType } from 'react';
+import { Suspense, use, useCallback, useEffect, type ComponentType } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EnvironmentErrorBoundary } from '@/components/environments/environment-error-boundary';
 import { useLocale } from '@/components/providers/locale-provider';
+import { useToolboxStore } from '@/lib/stores/toolbox';
 import { getToolById } from '@/lib/constants/toolbox';
 import type { ToolComponentProps } from '@/types/toolbox';
 
@@ -36,9 +37,18 @@ function loadBuiltInComponent(builtInId: string): Promise<ComponentType<ToolComp
   return promise;
 }
 
-function BuiltInToolRendererInner({ builtInId }: { builtInId: string }) {
+function BuiltInToolRendererInner({
+  builtInId,
+  onReady,
+}: {
+  builtInId: string;
+  onReady?: () => void;
+}) {
   /* eslint-disable -- dynamic component loaded from module-level promise cache */
   const Component = use(loadBuiltInComponent(builtInId));
+  useEffect(() => {
+    onReady?.();
+  }, [onReady]);
   if (!Component) return null;
   return <Component />;
   /* eslint-enable */
@@ -46,6 +56,20 @@ function BuiltInToolRendererInner({ builtInId }: { builtInId: string }) {
 
 export function BuiltInToolRenderer({ builtInId }: { builtInId: string }) {
   const { t } = useLocale();
+  const setToolLifecycle = useToolboxStore((state) => state.setToolLifecycle);
+  const clearToolLifecycle = useToolboxStore((state) => state.clearToolLifecycle);
+  const unifiedToolId = `builtin:${builtInId}`;
+
+  useEffect(() => {
+    setToolLifecycle(unifiedToolId, 'prepare');
+    return () => clearToolLifecycle(unifiedToolId);
+  }, [unifiedToolId, setToolLifecycle, clearToolLifecycle]);
+
+  const handleReady = useCallback(() => {
+    setToolLifecycle(unifiedToolId, 'postProcess');
+    setToolLifecycle(unifiedToolId, 'success');
+  }, [setToolLifecycle, unifiedToolId]);
+
   return (
     <EnvironmentErrorBoundary
       fallbackTitle={t('toolbox.errorBoundary.title')}
@@ -53,7 +77,7 @@ export function BuiltInToolRenderer({ builtInId }: { builtInId: string }) {
       retryLabel={t('toolbox.errorBoundary.retry')}
     >
       <Suspense fallback={<ToolLoadingFallback />}>
-        <BuiltInToolRendererInner builtInId={builtInId} />
+        <BuiltInToolRendererInner builtInId={builtInId} onReady={handleReady} />
       </Suspense>
     </EnvironmentErrorBoundary>
   );

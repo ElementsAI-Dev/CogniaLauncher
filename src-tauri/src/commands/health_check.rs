@@ -1,6 +1,6 @@
 use crate::core::{
-    EnvironmentHealthResult, HealthCheckManager, HealthCheckProgress, PackageManagerHealthResult,
-    SystemHealthResult,
+    EnvironmentHealthResult, HealthCheckManager, HealthCheckProgress, HealthRemediationResult,
+    PackageManagerHealthResult, SystemHealthResult,
 };
 use crate::provider::SharedRegistry;
 use tauri::{AppHandle, Emitter, State};
@@ -54,6 +54,20 @@ pub async fn health_check_package_manager(
     let manager = HealthCheckManager::new(registry.inner().clone());
     manager
         .check_package_manager(&provider_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Preview or apply a supported health remediation action
+#[tauri::command]
+pub async fn health_check_fix(
+    remediation_id: String,
+    dry_run: Option<bool>,
+    registry: State<'_, SharedRegistry>,
+) -> Result<HealthRemediationResult, String> {
+    let manager = HealthCheckManager::new(registry.inner().clone());
+    manager
+        .apply_remediation(&remediation_id, dry_run.unwrap_or(true))
         .await
         .map_err(|e| e.to_string())
 }

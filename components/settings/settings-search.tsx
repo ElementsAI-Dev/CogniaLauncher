@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect, useCallback } from "react";
+import { useRef, useEffect, useCallback, type RefObject } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -19,6 +19,7 @@ import { isInputFocused } from "@/lib/utils/dom";
 interface SettingsSearchProps {
   search: UseSettingsSearchReturn;
   onNavigateToSetting?: (section: SettingsSection, key: string, focusId?: string) => void;
+  inputRef?: RefObject<HTMLInputElement | null>;
   t: TranslateFunction;
   className?: string;
 }
@@ -26,10 +27,12 @@ interface SettingsSearchProps {
 export function SettingsSearch({
   search,
   onNavigateToSetting,
+  inputRef,
   t,
   className,
 }: SettingsSearchProps) {
-  const inputRef = useRef<HTMLInputElement>(null);
+  const internalInputRef = useRef<HTMLInputElement>(null);
+  const resolvedInputRef = inputRef ?? internalInputRef;
   const {
     query,
     setQuery,
@@ -45,17 +48,17 @@ export function SettingsSearch({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "/" && !isInputFocused()) {
         e.preventDefault();
-        inputRef.current?.focus();
+        resolvedInputRef.current?.focus();
       }
-      if (e.key === "Escape" && inputRef.current === document.activeElement) {
+      if (e.key === "Escape" && resolvedInputRef.current === document.activeElement) {
         clearSearch();
-        inputRef.current?.blur();
+        resolvedInputRef.current?.blur();
       }
     };
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [clearSearch]);
+  }, [clearSearch, resolvedInputRef]);
 
   const handleResultClick = useCallback(
     (result: SettingsSearchResult) => {
@@ -81,7 +84,7 @@ export function SettingsSearch({
       <div className="relative">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
-          ref={inputRef}
+          ref={resolvedInputRef}
           type="text"
           placeholder={t("settings.search.placeholder")}
           value={query}

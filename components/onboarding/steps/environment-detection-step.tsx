@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { Layers, RefreshCw, CheckCircle2, XCircle, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -8,21 +9,45 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import * as tauri from '@/lib/tauri';
-import { useEnvironmentStore } from '@/lib/stores/environment';
+import { getLogicalEnvType, useEnvironmentStore } from '@/lib/stores/environment';
 import { useEnvironmentDetection } from '@/hooks/use-environment-detection';
 import { formatDetectionSource } from '@/lib/environment-detection';
 import type { DetectedEnv, EnvironmentDetectionStepProps } from '@/types/onboarding';
 
-export function EnvironmentDetectionStep({ t }: EnvironmentDetectionStepProps) {
+function mergeRetainedSystemRows(previous: DetectedEnv[], next: DetectedEnv[]): DetectedEnv[] {
+  const rows = new Map<string, DetectedEnv>();
+
+  for (const row of next) {
+    rows.set(row.envType ?? row.name, row);
+  }
+
+  for (const row of previous) {
+    if (row.scope !== 'system') {
+      continue;
+    }
+
+    const key = row.envType ?? row.name;
+    if (!rows.has(key)) {
+      rows.set(key, row);
+    }
+  }
+
+  return Array.from(rows.values()).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export function EnvironmentDetectionStep({ t, mode = 'quick' }: EnvironmentDetectionStepProps) {
   const isDesktop = tauri.isTauri();
+  const router = useRouter();
   const [detecting, setDetecting] = useState(false);
   const [detected, setDetected] = useState<DetectedEnv[]>([]);
+  const [detectError, setDetectError] = useState<string | null>(null);
   const [hasRun, setHasRun] = useState(false);
   const runningRef = useRef(false);
   const storeEnvironments = useEnvironmentStore((s) => s.environments);
   const storeProviders = useEnvironmentStore((s) => s.availableProviders);
   const setEnvironments = useEnvironmentStore((s) => s.setEnvironments);
   const setAvailableProviders = useEnvironmentStore((s) => s.setAvailableProviders);
+  const setWorkflowContext = useEnvironmentStore((s) => s.setWorkflowContext);
   const { detectSystemEnvironments, buildOnboardingDetections } = useEnvironmentDetection({
     availableProviders: storeProviders,
   });
@@ -31,6 +56,7 @@ export function EnvironmentDetectionStep({ t }: EnvironmentDetectionStepProps) {
     if (runningRef.current) return;
     runningRef.current = true;
     setDetecting(true);
+    setDetectError(null);
     try {
       if (!isDesktop) {
         setDetected([]);
@@ -46,6 +72,9 @@ export function EnvironmentDetectionStep({ t }: EnvironmentDetectionStepProps) {
       const systemDetected = systemResult.status === 'fulfilled'
         ? systemResult.value
         : [];
+      const systemError = systemResult.status === 'rejected'
+        ? (systemResult.reason instanceof Error ? systemResult.reason.message : String(systemResult.reason))
+        : null;
       const environments = environmentsResult.status === 'fulfilled'
         ? environmentsResult.value
         : storeEnvironments;
@@ -60,15 +89,24 @@ export function EnvironmentDetectionStep({ t }: EnvironmentDetectionStepProps) {
         setAvailableProviders(providersResult.value);
       }
 
-      setDetected(
-        buildOnboardingDetections({
-          environments,
-          systemDetections: systemDetected,
-          providers,
-        }),
-      );
-    } catch {
-      setDetected([]);
+      const nextDetections = buildOnboardingDetections({
+        environments,
+        systemDetections: systemDetected,
+        providers,
+      });
+
+      if (systemError) {
+        setDetectError(systemError);
+      }
+
+      setDetected((previous) => (
+        systemError
+          ? mergeRetainedSystemRows(previous, nextDetections)
+          : nextDetections
+      ));
+    } catch (error) {
+      setDetectError(error instanceof Error ? error.message : String(error));
+      setDetected((previous) => previous);
     } finally {
       runningRef.current = false;
       setDetecting(false);
@@ -115,6 +153,17 @@ export function EnvironmentDetectionStep({ t }: EnvironmentDetectionStepProps) {
 
   const detectedCount = detected.filter((e) => e.available).length;
 
+  const handleManageEnvironment = useCallback((envType: string) => {
+    const logicalEnvType = getLogicalEnvType(envType, storeProviders);
+    setWorkflowContext({
+      envType: logicalEnvType,
+      origin: 'onboarding',
+      returnHref: '/environments',
+      updatedAt: Date.now(),
+    });
+    router.push(`/environments/${logicalEnvType}`);
+  }, [router, setWorkflowContext, storeProviders]);
+
   return (
     <div className="flex flex-col items-center text-center space-y-6 py-4">
       <div className="flex h-16 w-16 items-center justify-center rounded-xl bg-primary/10 text-primary">
@@ -126,6 +175,23 @@ export function EnvironmentDetectionStep({ t }: EnvironmentDetectionStepProps) {
           {t('onboarding.envDetectionDesc')}
         </p>
       </div>
+
+      {mode === 'detailed' && (
+        <div className="w-full max-w-md space-y-3 text-left">
+          <Alert>
+            <Info className="h-4 w-4" />
+            <AlertDescription className="text-sm">
+              {t('onboarding.envDetailedPurpose')}
+            </AlertDescription>
+          </Alert>
+          <Alert>
+            <Info className="h-4 w-4" />
+            <AlertDescription className="text-sm">
+              {t('onboarding.envDetailedRecommendation')}
+            </AlertDescription>
+          </Alert>
+        </div>
+      )}
 
       {detecting ? (
         <div className="w-full max-w-sm space-y-2">
@@ -145,12 +211,22 @@ export function EnvironmentDetectionStep({ t }: EnvironmentDetectionStepProps) {
           )}
           {isDesktop ? (
             <>
+              {detectError && (
+                <Alert className="w-full max-w-sm text-left">
+                  <Info className="h-4 w-4" />
+                  <AlertDescription className="text-xs">
+                    {t('onboarding.envDetectionError', { message: detectError })}
+                  </AlertDescription>
+                </Alert>
+              )}
               <div className="w-full max-w-sm space-y-2">
-                {detected.map((env) => (
-                  <Card
-                    key={env.name}
-                    className="py-0"
-                  >
+                {detected.map((env) => {
+                  const envType = env.envType;
+                  return (
+                    <Card
+                      key={env.name}
+                      className="py-0"
+                    >
                     <CardContent className="flex items-center gap-3 p-3">
                       {env.available ? (
                         <CheckCircle2 className="h-5 w-5 text-green-500 shrink-0" />
@@ -178,21 +254,34 @@ export function EnvironmentDetectionStep({ t }: EnvironmentDetectionStepProps) {
                           </div>
                         )}
                       </div>
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <Badge variant={env.available ? 'default' : 'secondary'}>
-                          {env.available ? t('onboarding.envAvailable') : t('onboarding.envNotFound')}
-                        </Badge>
-                        {env.scope && (
-                          <Badge variant="outline">
-                            {env.scope === 'system'
-                              ? t('onboarding.envScopeSystem')
-                              : t('onboarding.envScopeManaged')}
+                      <div className="flex flex-col items-end gap-2 shrink-0">
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <Badge variant={env.available ? 'default' : 'secondary'}>
+                            {env.available ? t('onboarding.envAvailable') : t('onboarding.envNotFound')}
                           </Badge>
+                          {env.scope && (
+                            <Badge variant="outline">
+                              {env.scope === 'system'
+                                ? t('onboarding.envScopeSystem')
+                                : t('onboarding.envScopeManaged')}
+                            </Badge>
+                          )}
+                        </div>
+                        {env.available && envType && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs"
+                            onClick={() => handleManageEnvironment(envType)}
+                          >
+                            {t('onboarding.envManageAction')}
+                          </Button>
                         )}
                       </div>
                     </CardContent>
-                  </Card>
-                ))}
+                    </Card>
+                  );
+                })}
               </div>
               <Button
                 variant="outline"

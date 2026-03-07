@@ -4,7 +4,8 @@ import { useEffect, useRef } from 'react';
 import { useTheme } from 'next-themes';
 import { useAppearanceStore } from '@/lib/stores/appearance';
 import { useLocale } from '@/components/providers/locale-provider';
-import { parseAppearanceConfig } from '@/lib/theme';
+import { APPEARANCE_CONFIG_PATHS, parseAppearanceConfig } from '@/lib/theme';
+import { configSet, isTauri } from '@/lib/tauri';
 import { toast } from 'sonner';
 
 export function useAppearanceConfigSync(config: Record<string, string>) {
@@ -31,39 +32,77 @@ export function useAppearanceConfigSync(config: Record<string, string>) {
 
     const parsed = parseAppearanceConfig(config);
 
-    if (parsed.theme && parsed.theme !== theme) {
+    if (parsed.theme !== theme) {
       setTheme(parsed.theme);
     }
 
-    if (parsed.accentColor && parsed.accentColor !== accentColor) {
+    if (parsed.accentColor !== accentColor) {
       setAccentColor(parsed.accentColor);
     }
 
-    if (parsed.chartColorTheme && parsed.chartColorTheme !== chartColorTheme) {
+    if (parsed.chartColorTheme !== chartColorTheme) {
       setChartColorTheme(parsed.chartColorTheme);
     }
 
-    if (parsed.interfaceRadius !== undefined && parsed.interfaceRadius !== interfaceRadius) {
+    if (parsed.interfaceRadius !== interfaceRadius) {
       setInterfaceRadius(parsed.interfaceRadius);
     }
 
-    if (parsed.interfaceDensity && parsed.interfaceDensity !== interfaceDensity) {
+    if (parsed.interfaceDensity !== interfaceDensity) {
       setInterfaceDensity(parsed.interfaceDensity);
     }
 
-    if (typeof parsed.reducedMotion === 'boolean' && parsed.reducedMotion !== reducedMotion) {
+    if (parsed.reducedMotion !== reducedMotion) {
       setReducedMotion(parsed.reducedMotion);
     }
 
-    if (parsed.windowEffect && parsed.windowEffect !== windowEffect) {
+    if (parsed.windowEffect !== windowEffect) {
       setWindowEffect(parsed.windowEffect);
     }
 
-    if (parsed.locale && parsed.locale !== locale) {
+    if (parsed.locale !== locale) {
       setLocale(parsed.locale);
     }
 
     if (parsed.invalidKeys.length > 0) {
+      if (isTauri()) {
+        void Promise.all(
+          parsed.invalidKeys.map(async (key) => {
+            const configPath = APPEARANCE_CONFIG_PATHS[key];
+            let canonicalValue = '';
+            switch (key) {
+              case 'theme':
+                canonicalValue = parsed.theme;
+                break;
+              case 'accentColor':
+                canonicalValue = parsed.accentColor;
+                break;
+              case 'chartColorTheme':
+                canonicalValue = parsed.chartColorTheme;
+                break;
+              case 'interfaceRadius':
+                canonicalValue = String(parsed.interfaceRadius);
+                break;
+              case 'interfaceDensity':
+                canonicalValue = parsed.interfaceDensity;
+                break;
+              case 'reducedMotion':
+                canonicalValue = String(parsed.reducedMotion);
+                break;
+              case 'windowEffect':
+                canonicalValue = parsed.windowEffect;
+                break;
+              case 'language':
+                canonicalValue = parsed.locale;
+                break;
+            }
+            await configSet(configPath, canonicalValue);
+          }),
+        ).catch((err) => {
+          console.error('Failed to write canonical appearance values:', err);
+        });
+      }
+
       const fieldLabels = parsed.invalidKeys
         .map((key) => {
           switch (key) {

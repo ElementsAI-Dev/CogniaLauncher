@@ -1,0 +1,32 @@
+[plugin]
+id = "com.cognia.builtin.port-inspector"
+name = "Port Inspector"
+version = "0.1.0"
+description = "Inspect listening sockets with targeted filters, normalized process context, and explicit missing-metadata reporting."
+authors = ["CogniaLauncher Team"]
+tool_contract_version = "1.0.0"
+compatible_cognia_versions = ">=0.1.0"
+
+[[tools]]
+id = "port-inspect"
+name_en = "Port Inspect"
+name_zh = "端口检查"
+description_en = "Inspect local listening sockets with filterable process context and troubleshooting metadata."
+description_zh = "以可筛选的进程上下文和诊断元数据检查本地监听套接字。"
+category = "developer"
+keywords = ["port", "network", "listen", "process", "debug", "localhost"]
+icon = "Network"
+entry = "port_inspect"
+
+[permissions]
+process_exec = true
+
+[locales.en]
+success = "Port inspection completed."
+missingTool = "No supported port inspection command is available."
+invalidInput = "Input must be empty, a port number, or a JSON object with filter fields such as port/processNameContains."
+
+[locales.zh]
+success = "端口检查完成。"
+missingTool = "当前系统缺少可用的端口检查命令。"
+invalidInput = "输入必须为空、端口号，或包含 port/processNameContains 等筛选字段的 JSON 对象。"

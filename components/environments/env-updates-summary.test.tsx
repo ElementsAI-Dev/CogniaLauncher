@@ -7,7 +7,8 @@ const t = (key: string, params?: Record<string, string | number>) => {
   const translations: Record<string, string> = {
     "environments.updates.allUpToDate": "All environments are up to date",
     "environments.updates.recheck": "Recheck",
-    "environments.updates.checkingAll": "Checking all environments for updates...",
+    "environments.updates.checkingAll":
+      "Checking all environments for updates...",
     "environments.updates.outdatedCount": `${params?.count ?? 0} environment(s) have updates available`,
     "environments.updates.upgradeToVersion": "Upgrade",
   };
@@ -53,7 +54,9 @@ describe("EnvUpdatesSummary", () => {
         t={t}
       />,
     );
-    expect(screen.getByText("Checking all environments for updates...")).toBeInTheDocument();
+    expect(
+      screen.getByText("Checking all environments for updates..."),
+    ).toBeInTheDocument();
   });
 
   it("shows all up to date when no outdated results", () => {
@@ -70,7 +73,9 @@ describe("EnvUpdatesSummary", () => {
         t={t}
       />,
     );
-    expect(screen.getByText("All environments are up to date")).toBeInTheDocument();
+    expect(
+      screen.getByText("All environments are up to date"),
+    ).toBeInTheDocument();
   });
 
   it("shows outdated count and upgrade buttons", () => {
@@ -87,7 +92,9 @@ describe("EnvUpdatesSummary", () => {
         t={t}
       />,
     );
-    expect(screen.getByText("2 environment(s) have updates available")).toBeInTheDocument();
+    expect(
+      screen.getByText("2 environment(s) have updates available"),
+    ).toBeInTheDocument();
     const upgradeButtons = screen.getAllByText("Upgrade");
     expect(upgradeButtons).toHaveLength(2);
   });
@@ -108,7 +115,7 @@ describe("EnvUpdatesSummary", () => {
       />,
     );
     await user.click(screen.getByText("Upgrade"));
-    expect(onUpgrade).toHaveBeenCalledWith("node", "22.0.0");
+    expect(onUpgrade).toHaveBeenCalledWith("node", "22.0.0", "test");
   });
 
   it("calls onCheckAll when recheck button clicked", async () => {
@@ -145,7 +152,9 @@ describe("EnvUpdatesSummary", () => {
         t={t}
       />,
     );
-    expect(screen.getByText("2 environment(s) have updates available")).toBeInTheDocument();
+    expect(
+      screen.getByText("2 environment(s) have updates available"),
+    ).toBeInTheDocument();
     expect(screen.getByText("node")).toBeInTheDocument();
     expect(screen.getByText("go")).toBeInTheDocument();
   });

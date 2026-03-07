@@ -11,6 +11,7 @@
 use crate::SharedSettings;
 use log::info;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use tauri::{
@@ -51,7 +52,18 @@ pub enum TrayClickBehavior {
     #[default]
     ToggleWindow,
     ShowMenu,
+    CheckUpdates,
     DoNothing,
+}
+
+/// Tray notification visibility policy
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TrayNotificationLevel {
+    #[default]
+    All,
+    ImportantOnly,
+    None,
 }
 
 /// Identifiers for tray menu items that can be toggled on/off
@@ -63,6 +75,7 @@ pub enum TrayMenuItemId {
     Downloads,
     Settings,
     CheckUpdates,
+    ToggleNotifications,
     OpenLogs,
     AlwaysOnTop,
     Autostart,
@@ -78,6 +91,7 @@ impl TrayMenuItemId {
             Self::Downloads,
             Self::Settings,
             Self::CheckUpdates,
+            Self::ToggleNotifications,
             Self::OpenLogs,
             Self::AlwaysOnTop,
             Self::Autostart,
@@ -108,9 +122,12 @@ pub struct TrayState {
     pub language: TrayLanguage,
     pub active_downloads: AtomicUsize,
     pub has_update: bool,
+    pub has_error: bool,
     pub click_behavior: TrayClickBehavior,
     pub minimize_to_tray: bool,
     pub start_minimized: bool,
+    pub show_notifications: bool,
+    pub notification_level: TrayNotificationLevel,
     pub always_on_top: AtomicBool,
     pub menu_config: TrayMenuConfig,
 }
@@ -122,9 +139,12 @@ impl Default for TrayState {
             language: TrayLanguage::default(),
             active_downloads: AtomicUsize::new(0),
             has_update: false,
+            has_error: false,
             click_behavior: TrayClickBehavior::default(),
             minimize_to_tray: true,
             start_minimized: false,
+            show_notifications: true,
+            notification_level: TrayNotificationLevel::default(),
             always_on_top: AtomicBool::new(false),
             menu_config: TrayMenuConfig::default(),
         }
@@ -139,6 +159,7 @@ struct MenuLabels {
     hide_window: &'static str,
     open_settings: &'static str,
     check_updates: &'static str,
+    toggle_notifications: &'static str,
     open_logs: &'static str,
     autostart: &'static str,
     always_on_top: &'static str,
@@ -168,6 +189,7 @@ impl MenuLabels {
                 hide_window: "Hide Window",
                 open_settings: "Settings",
                 check_updates: "Check for Updates",
+                toggle_notifications: "Show Notifications",
                 open_logs: "Open Log Directory",
                 autostart: "Start with System",
                 always_on_top: "Always on Top",
@@ -191,6 +213,7 @@ impl MenuLabels {
                 hide_window: "隐藏窗口",
                 open_settings: "设置",
                 check_updates: "检查更新",
+                toggle_notifications: "显示通知",
                 open_logs: "打开日志目录",
                 autostart: "开机启动",
                 always_on_top: "置顶窗口",
@@ -220,23 +243,100 @@ fn get_tooltip(state: &TrayState) -> String {
 
     match state.language {
         TrayLanguage::En => {
-            if state.has_update {
-                format!("{} | Update available", base)
-            } else if active_downloads > 0 {
+            if active_downloads > 0 {
                 format!("{} | {} active download(s)", base, active_downloads)
+            } else if state.has_update {
+                format!("{} | Update available", base)
+            } else if state.has_error {
+                format!("{} | Last tray action failed", base)
             } else {
                 base
             }
         }
         TrayLanguage::Zh => {
-            if state.has_update {
-                format!("{} | 有可用更新", base)
-            } else if active_downloads > 0 {
+            if active_downloads > 0 {
                 format!("{} | {} 个活动下载", base, active_downloads)
+            } else if state.has_update {
+                format!("{} | 有可用更新", base)
+            } else if state.has_error {
+                format!("{} | 最近一次托盘操作失败", base)
             } else {
                 base
             }
         }
+    }
+}
+
+fn resolve_icon_state(state: &TrayState) -> TrayIconState {
+    if state.active_downloads.load(Ordering::SeqCst) > 0 {
+        TrayIconState::Downloading
+    } else if state.has_update {
+        TrayIconState::Update
+    } else if state.has_error {
+        TrayIconState::Error
+    } else {
+        TrayIconState::Normal
+    }
+}
+
+fn normalize_menu_items(items: &[TrayMenuItemId]) -> Vec<TrayMenuItemId> {
+    let mut seen = HashSet::new();
+    let mut normalized: Vec<TrayMenuItemId> = Vec::new();
+
+    for item in items {
+        if seen.insert(*item) {
+            normalized.push(*item);
+        }
+    }
+
+    if !seen.contains(&TrayMenuItemId::Quit) {
+        normalized.push(TrayMenuItemId::Quit);
+    }
+
+    if normalized.is_empty() {
+        return TrayMenuItemId::defaults();
+    }
+
+    normalized
+}
+
+fn apply_visual_state_to_tray<R: Runtime>(app: &AppHandle<R>, state: &TrayState) -> Result<(), String> {
+    if let Some(tray) = app.tray_by_id(TRAY_ICON_ID) {
+        let icon_bytes = get_icon_for_state(state.icon_state);
+        let icon = Image::from_bytes(icon_bytes).map_err(|e| e.to_string())?;
+        tray.set_icon(Some(icon)).map_err(|e| e.to_string())?;
+
+        let tooltip = get_tooltip(state);
+        tray.set_tooltip(Some(&tooltip))
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+fn refresh_tray_visual_state<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+    if let Some(state_arc) = app.try_state::<SharedTrayState>() {
+        let mut guard = state_arc
+            .try_write()
+            .map_err(|e| format!("Failed to write tray state: {}", e))?;
+        guard.icon_state = resolve_icon_state(&guard);
+        apply_visual_state_to_tray(app, &guard)?;
+    }
+    Ok(())
+}
+
+fn should_send_notification(
+    show_notifications: bool,
+    notification_level: TrayNotificationLevel,
+    important: Option<bool>,
+) -> bool {
+    if !show_notifications {
+        return false;
+    }
+
+    match notification_level {
+        TrayNotificationLevel::All => true,
+        TrayNotificationLevel::ImportantOnly => important.unwrap_or(false),
+        TrayNotificationLevel::None => false,
     }
 }
 
@@ -424,6 +524,18 @@ fn build_menu<R: Runtime>(
                 menu.append(&item)?;
                 need_separator = true;
             }
+            TrayMenuItemId::ToggleNotifications => {
+                let item = CheckMenuItem::with_id(
+                    app,
+                    "toggle_notifications",
+                    labels.toggle_notifications,
+                    true,
+                    state.show_notifications,
+                    None::<&str>,
+                )?;
+                menu.append(&item)?;
+                need_separator = true;
+            }
             TrayMenuItemId::OpenLogs => {
                 let item =
                     MenuItem::with_id(app, "open_logs", labels.open_logs, true, None::<&str>)?;
@@ -480,6 +592,14 @@ fn show_and_navigate<R: Runtime>(app: &AppHandle<R>, path: &str) {
     }
 }
 
+fn trigger_update_check<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+    let _ = app.emit("check-updates", ());
+}
+
 /// Handle menu events
 fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
     let id = event.id.as_ref();
@@ -519,16 +639,47 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
         // Actions
         "settings" => show_and_navigate(app, "/settings"),
         "check_updates" => {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
-                let _ = window.set_focus();
-                let _ = app.emit("check-updates", ());
+            trigger_update_check(app);
+        }
+        "toggle_notifications" => {
+            if let Some(tray_state) = app.try_state::<SharedTrayState>() {
+                let Ok(mut guard) = tray_state.try_write() else {
+                    return;
+                };
+                guard.show_notifications = !guard.show_notifications;
+                let new_val = guard.show_notifications;
+                drop(guard);
+
+                if let Some(settings) = app.try_state::<SharedSettings>() {
+                    let settings_handle = settings.inner().clone();
+                    tauri::async_runtime::spawn(async move {
+                        let mut settings_guard = settings_handle.write().await;
+                        settings_guard.tray.show_notifications = new_val;
+                        let _ = settings_guard.save().await;
+                    });
+                }
+
+                let _ = app.emit("tray-show-notifications-changed", new_val);
+                let _ = refresh_tray_visual_state(app);
+                update_menu_state(app);
             }
         }
         "open_logs" => {
-            if let Ok(log_dir) = app.path().app_log_dir() {
-                let _ = tauri_plugin_opener::open_path(log_dir, None::<&str>);
+            let open_result = app
+                .path()
+                .app_log_dir()
+                .map_err(|e| e.to_string())
+                .and_then(|log_dir| {
+                    tauri_plugin_opener::open_path(log_dir, None::<&str>)
+                        .map_err(|e| e.to_string())
+                });
+
+            if let Some(tray_state) = app.try_state::<SharedTrayState>() {
+                if let Ok(mut guard) = tray_state.try_write() {
+                    guard.has_error = open_result.is_err();
+                }
             }
+            let _ = refresh_tray_visual_state(app);
         }
 
         // Toggles
@@ -592,6 +743,9 @@ fn handle_tray_click<R: Runtime>(app: &AppHandle<R>, behavior: TrayClickBehavior
         TrayClickBehavior::ShowMenu => {
             // Menu is shown automatically by right-click
         }
+        TrayClickBehavior::CheckUpdates => {
+            trigger_update_check(app);
+        }
         TrayClickBehavior::DoNothing => {}
     }
 }
@@ -630,14 +784,19 @@ pub fn setup_tray(app: &AppHandle<Wry>) -> Result<(), Box<dyn std::error::Error>
 
     let default_state = TrayState::default();
 
-    let (click_behavior, tooltip, menu) = if let Some(ref state_arc) = tray_state {
+    let (click_behavior, tooltip, resolved_icon_state, menu) = if let Some(ref state_arc) = tray_state {
         let guard = futures::executor::block_on(state_arc.read());
         let is_visible = app
             .get_webview_window("main")
             .map(|w| w.is_visible().unwrap_or(true))
             .unwrap_or(true);
         let m = build_menu(app, is_visible, &guard)?;
-        (guard.click_behavior, get_tooltip(&guard), m)
+        (
+            guard.click_behavior,
+            get_tooltip(&guard),
+            resolve_icon_state(&guard),
+            m,
+        )
     } else {
         let is_visible = app
             .get_webview_window("main")
@@ -647,11 +806,12 @@ pub fn setup_tray(app: &AppHandle<Wry>) -> Result<(), Box<dyn std::error::Error>
         (
             TrayClickBehavior::default(),
             format!("CogniaLauncher v{}", APP_VERSION),
+            resolve_icon_state(&default_state),
             m,
         )
     };
 
-    let icon_bytes = get_icon_for_state(TrayIconState::Normal);
+    let icon_bytes = get_icon_for_state(resolved_icon_state);
     let icon = Image::from_bytes(icon_bytes)?;
 
     let show_menu_on_left = matches!(click_behavior, TrayClickBehavior::ShowMenu);
@@ -739,10 +899,11 @@ pub async fn tray_set_icon_state(
         guard.icon_state = icon_state;
     }
 
-    if let Some(tray) = app.tray_by_id(TRAY_ICON_ID) {
-        let icon_bytes = get_icon_for_state(icon_state);
-        let icon = Image::from_bytes(icon_bytes).map_err(|e| e.to_string())?;
-        tray.set_icon(Some(icon)).map_err(|e| e.to_string())?;
+    if let Some(state_arc) = app.try_state::<SharedTrayState>() {
+        let guard = state_arc
+            .try_read()
+            .map_err(|e| format!("Failed to read tray state: {}", e))?;
+        apply_visual_state_to_tray(&app, &guard)?;
     }
 
     Ok(())
@@ -760,8 +921,7 @@ pub async fn tray_update_tooltip(
     };
 
     if let Some(tray) = app.tray_by_id(TRAY_ICON_ID) {
-        tray.set_tooltip(Some(&tooltip))
-            .map_err(|e| e.to_string())?;
+        tray.set_tooltip(Some(&tooltip)).map_err(|e| e.to_string())?;
     }
 
     Ok(())
@@ -779,20 +939,7 @@ pub async fn tray_set_active_downloads(
         guard.active_downloads.store(count, Ordering::SeqCst);
     }
 
-    // Update icon state based on downloads
-    let new_icon_state = if count > 0 {
-        TrayIconState::Downloading
-    } else {
-        let guard = state.read().await;
-        if guard.has_update {
-            TrayIconState::Update
-        } else {
-            TrayIconState::Normal
-        }
-    };
-
-    tray_set_icon_state(app.clone(), state.clone(), new_icon_state).await?;
-    tray_update_tooltip(app, state).await
+    refresh_tray_visual_state(&app)
 }
 
 /// Set whether an update is available
@@ -807,19 +954,22 @@ pub async fn tray_set_has_update(
         guard.has_update = has_update;
     }
 
-    let new_icon_state = {
-        let guard = state.read().await;
-        if guard.active_downloads.load(Ordering::SeqCst) > 0 {
-            TrayIconState::Downloading
-        } else if has_update {
-            TrayIconState::Update
-        } else {
-            TrayIconState::Normal
-        }
-    };
+    refresh_tray_visual_state(&app)
+}
 
-    tray_set_icon_state(app.clone(), state.clone(), new_icon_state).await?;
-    tray_update_tooltip(app, state).await
+/// Set whether tray currently has an error indicator
+#[tauri::command]
+pub async fn tray_set_has_error(
+    app: AppHandle<Wry>,
+    state: State<'_, SharedTrayState>,
+    has_error: bool,
+) -> Result<(), String> {
+    {
+        let mut guard = state.write().await;
+        guard.has_error = has_error;
+    }
+
+    refresh_tray_visual_state(&app)
 }
 
 /// Set the tray menu language
@@ -867,6 +1017,50 @@ pub async fn tray_set_click_behavior(
     Ok(())
 }
 
+/// Set whether tray notifications are shown
+#[tauri::command]
+pub async fn tray_set_show_notifications(
+    app: AppHandle<Wry>,
+    state: State<'_, SharedTrayState>,
+    enabled: bool,
+) -> Result<(), String> {
+    {
+        let mut guard = state.write().await;
+        guard.show_notifications = enabled;
+    }
+
+    if let Some(settings) = app.try_state::<SharedSettings>() {
+        let mut settings_guard = settings.write().await;
+        settings_guard.tray.show_notifications = enabled;
+        settings_guard.save().await.map_err(|e| e.to_string())?;
+    }
+
+    let _ = app.emit("tray-show-notifications-changed", enabled);
+    update_menu_state(&app);
+    Ok(())
+}
+
+/// Set tray notification level policy
+#[tauri::command]
+pub async fn tray_set_notification_level(
+    app: AppHandle<Wry>,
+    state: State<'_, SharedTrayState>,
+    level: TrayNotificationLevel,
+) -> Result<(), String> {
+    {
+        let mut guard = state.write().await;
+        guard.notification_level = level;
+    }
+
+    if let Some(settings) = app.try_state::<SharedSettings>() {
+        let mut settings_guard = settings.write().await;
+        settings_guard.tray.notification_level = level;
+        settings_guard.save().await.map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
 /// Get the current tray state
 #[tauri::command]
 pub async fn tray_get_state(state: State<'_, SharedTrayState>) -> Result<TrayStateInfo, String> {
@@ -876,9 +1070,12 @@ pub async fn tray_get_state(state: State<'_, SharedTrayState>) -> Result<TraySta
         language: guard.language,
         active_downloads: guard.active_downloads.load(Ordering::SeqCst),
         has_update: guard.has_update,
+        has_error: guard.has_error,
         click_behavior: guard.click_behavior,
         minimize_to_tray: guard.minimize_to_tray,
         start_minimized: guard.start_minimized,
+        show_notifications: guard.show_notifications,
+        notification_level: guard.notification_level,
         always_on_top: guard.always_on_top.load(Ordering::SeqCst),
         menu_config: guard.menu_config.clone(),
     })
@@ -892,9 +1089,12 @@ pub struct TrayStateInfo {
     pub language: TrayLanguage,
     pub active_downloads: usize,
     pub has_update: bool,
+    pub has_error: bool,
     pub click_behavior: TrayClickBehavior,
     pub minimize_to_tray: bool,
     pub start_minimized: bool,
+    pub show_notifications: bool,
+    pub notification_level: TrayNotificationLevel,
     pub always_on_top: bool,
     pub menu_config: TrayMenuConfig,
 }
@@ -945,10 +1145,23 @@ pub fn tray_disable_autostart(app: AppHandle<Wry>) -> Result<(), String> {
 #[tauri::command]
 pub async fn tray_send_notification(
     app: AppHandle<Wry>,
+    state: State<'_, SharedTrayState>,
     title: String,
     body: String,
+    important: Option<bool>,
 ) -> Result<(), String> {
     use tauri_plugin_notification::NotificationExt;
+
+    let (show_notifications, notification_level) = {
+        let guard = state.read().await;
+        (guard.show_notifications, guard.notification_level)
+    };
+
+    let allowed = should_send_notification(show_notifications, notification_level, important);
+
+    if !allowed {
+        return Ok(());
+    }
 
     app.notification()
         .builder()
@@ -1038,14 +1251,19 @@ pub async fn tray_set_menu_config(
     state: State<'_, SharedTrayState>,
     config: TrayMenuConfig,
 ) -> Result<(), String> {
+    let normalized_items = normalize_menu_items(&config.items);
+    let normalized = TrayMenuConfig {
+        items: normalized_items,
+    };
+
     {
         let mut guard = state.write().await;
-        guard.menu_config = config.clone();
+        guard.menu_config = normalized.clone();
     }
 
     if let Some(settings) = app.try_state::<SharedSettings>() {
         let mut settings_guard = settings.write().await;
-        settings_guard.tray.menu_items = config.items.clone();
+        settings_guard.tray.menu_items = normalized.items.clone();
         settings_guard.save().await.map_err(|e| e.to_string())?;
     }
 
@@ -1081,4 +1299,104 @@ pub async fn tray_reset_menu_config(
     update_menu_state(&app);
     info!("Tray menu config reset to defaults");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalize_menu_items_dedupes_and_appends_quit() {
+        let normalized = normalize_menu_items(&[
+            TrayMenuItemId::ShowHide,
+            TrayMenuItemId::ShowHide,
+            TrayMenuItemId::Downloads,
+        ]);
+        assert_eq!(
+            normalized,
+            vec![
+                TrayMenuItemId::ShowHide,
+                TrayMenuItemId::Downloads,
+                TrayMenuItemId::Quit,
+            ]
+        );
+    }
+
+    #[test]
+    fn normalize_menu_items_keeps_existing_quit_once() {
+        let normalized = normalize_menu_items(&[
+            TrayMenuItemId::Settings,
+            TrayMenuItemId::Quit,
+            TrayMenuItemId::Settings,
+            TrayMenuItemId::Quit,
+        ]);
+        assert_eq!(
+            normalized,
+            vec![TrayMenuItemId::Settings, TrayMenuItemId::Quit]
+        );
+    }
+
+    #[test]
+    fn resolve_icon_state_applies_priority_order() {
+        let mut state = TrayState::default();
+
+        state.has_update = true;
+        state.has_error = true;
+        assert_eq!(resolve_icon_state(&state), TrayIconState::Update);
+
+        state.active_downloads.store(2, Ordering::SeqCst);
+        assert_eq!(resolve_icon_state(&state), TrayIconState::Downloading);
+
+        state.active_downloads.store(0, Ordering::SeqCst);
+        state.has_update = false;
+        assert_eq!(resolve_icon_state(&state), TrayIconState::Error);
+
+        state.has_error = false;
+        assert_eq!(resolve_icon_state(&state), TrayIconState::Normal);
+    }
+
+    #[test]
+    fn should_send_notification_respects_level_and_importance() {
+        assert!(should_send_notification(
+            true,
+            TrayNotificationLevel::All,
+            Some(false)
+        ));
+        assert!(!should_send_notification(
+            true,
+            TrayNotificationLevel::ImportantOnly,
+            None
+        ));
+        assert!(should_send_notification(
+            true,
+            TrayNotificationLevel::ImportantOnly,
+            Some(true)
+        ));
+        assert!(!should_send_notification(
+            true,
+            TrayNotificationLevel::None,
+            Some(true)
+        ));
+        assert!(!should_send_notification(
+            false,
+            TrayNotificationLevel::All,
+            Some(true)
+        ));
+    }
+
+    #[test]
+    fn get_tooltip_uses_priority_for_english_and_chinese() {
+        let mut state = TrayState::default();
+        state.language = TrayLanguage::En;
+        state.has_update = true;
+        state.has_error = true;
+        let tooltip_en = get_tooltip(&state);
+        assert!(tooltip_en.contains("Update available"));
+        assert!(!tooltip_en.contains("failed"));
+
+        state.language = TrayLanguage::Zh;
+        let tooltip_zh = get_tooltip(&state);
+        assert!(tooltip_zh.contains("有可用更新"));
+        assert!(!tooltip_zh.contains("失败"));
+    }
 }

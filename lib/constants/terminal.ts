@@ -1,3 +1,5 @@
+import type { ShellType, TerminalEditorLanguage } from '@/types/tauri';
+
 export type EnvVarCategory = 'path' | 'language' | 'system' | 'other';
 
 export function categorizeVar(key: string): EnvVarCategory {
@@ -30,3 +32,16 @@ export const ENV_VAR_CATEGORY_KEYS: Record<EnvVarCategory, string> = {
 
 export const PS_VALID_POLICIES = ['Restricted', 'AllSigned', 'RemoteSigned', 'Unrestricted', 'Bypass'];
 export const PS_ALLOWED_SCOPES = ['CurrentUser', 'Process'];
+
+export const TERMINAL_EDITOR_LANGUAGE_BY_SHELL: Record<ShellType, TerminalEditorLanguage> = {
+  bash: 'bash',
+  zsh: 'bash',
+  fish: 'bash',
+  powershell: 'powershell',
+  cmd: 'dos',
+  nushell: 'bash',
+};
+
+export function getTerminalEditorLanguage(shellType: ShellType): TerminalEditorLanguage {
+  return TERMINAL_EDITOR_LANGUAGE_BY_SHELL[shellType] ?? 'plaintext';
+}

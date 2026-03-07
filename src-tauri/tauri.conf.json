@@ -397,6 +397,15 @@
               "short": "t",
               "takesValue": true,
               "description": "Check specific environment type"
+            },
+            {
+              "name": "fix",
+              "takesValue": true,
+              "description": "Preview or apply a remediation by remediation id"
+            },
+            {
+              "name": "preview",
+              "description": "Preview remediation without executing it"
             }
           ]
         },
@@ -409,6 +418,414 @@
               "description": "Show only system package providers"
             }
           ]
+        },
+        "backup": {
+          "description": "Manage application backups",
+          "subcommands": {
+            "list": {
+              "description": "List available backups"
+            },
+            "create": {
+              "description": "Create a new backup",
+              "args": [
+                {
+                  "name": "contents",
+                  "takesValue": true,
+                  "multiple": true,
+                  "description": "Backup content types"
+                },
+                {
+                  "name": "note",
+                  "takesValue": true,
+                  "description": "Optional backup note"
+                }
+              ]
+            },
+            "restore": {
+              "description": "Restore from a backup path",
+              "args": [
+                {
+                  "name": "path",
+                  "index": 1,
+                  "takesValue": true,
+                  "description": "Backup directory path"
+                },
+                {
+                  "name": "contents",
+                  "takesValue": true,
+                  "multiple": true,
+                  "description": "Restore content types"
+                }
+              ]
+            },
+            "delete": {
+              "description": "Delete a backup directory",
+              "args": [
+                {
+                  "name": "path",
+                  "index": 1,
+                  "takesValue": true,
+                  "description": "Backup directory path"
+                }
+              ]
+            }
+          }
+        },
+        "profiles": {
+          "description": "Manage environment profiles",
+          "subcommands": {
+            "list": {
+              "description": "List profiles"
+            },
+            "get": {
+              "description": "Get profile details",
+              "args": [
+                {
+                  "name": "id",
+                  "index": 1,
+                  "takesValue": true,
+                  "description": "Profile ID"
+                }
+              ]
+            },
+            "apply": {
+              "description": "Apply profile environments",
+              "args": [
+                {
+                  "name": "id",
+                  "index": 1,
+                  "takesValue": true,
+                  "description": "Profile ID"
+                }
+              ]
+            },
+            "export": {
+              "description": "Export profile JSON",
+              "args": [
+                {
+                  "name": "id",
+                  "index": 1,
+                  "takesValue": true,
+                  "description": "Profile ID"
+                },
+                {
+                  "name": "out",
+                  "takesValue": true,
+                  "description": "Optional output file path"
+                }
+              ]
+            },
+            "import": {
+              "description": "Import profile JSON from file",
+              "args": [
+                {
+                  "name": "file",
+                  "index": 1,
+                  "takesValue": true,
+                  "description": "Input JSON file path"
+                }
+              ]
+            },
+            "create-from-current": {
+              "description": "Create profile from current environment",
+              "args": [
+                {
+                  "name": "name",
+                  "index": 1,
+                  "takesValue": true,
+                  "description": "Profile name"
+                }
+              ]
+            }
+          }
+        },
+        "envvar": {
+          "description": "Manage environment variables",
+          "subcommands": {
+            "list": {
+              "description": "List process environment variables"
+            },
+            "get": {
+              "description": "Get environment variable value",
+              "args": [
+                {
+                  "name": "key",
+                  "index": 1,
+                  "takesValue": true,
+                  "description": "Environment variable key"
+                },
+                {
+                  "name": "scope",
+                  "takesValue": true,
+                  "description": "Scope: process|user|system"
+                }
+              ]
+            },
+            "set": {
+              "description": "Set environment variable value",
+              "args": [
+                {
+                  "name": "key",
+                  "index": 1,
+                  "takesValue": true,
+                  "description": "Environment variable key"
+                },
+                {
+                  "name": "value",
+                  "index": 2,
+                  "takesValue": true,
+                  "description": "Environment variable value"
+                },
+                {
+                  "name": "scope",
+                  "takesValue": true,
+                  "description": "Scope: process|user|system"
+                }
+              ]
+            },
+            "remove": {
+              "description": "Remove environment variable",
+              "args": [
+                {
+                  "name": "key",
+                  "index": 1,
+                  "takesValue": true,
+                  "description": "Environment variable key"
+                },
+                {
+                  "name": "scope",
+                  "takesValue": true,
+                  "description": "Scope: process|user|system"
+                }
+              ]
+            },
+            "list-persistent": {
+              "description": "List persistent environment variables",
+              "args": [
+                {
+                  "name": "scope",
+                  "takesValue": true,
+                  "description": "Scope: user|system"
+                }
+              ]
+            },
+            "set-persistent": {
+              "description": "Set persistent environment variable",
+              "args": [
+                {
+                  "name": "key",
+                  "index": 1,
+                  "takesValue": true,
+                  "description": "Environment variable key"
+                },
+                {
+                  "name": "value",
+                  "index": 2,
+                  "takesValue": true,
+                  "description": "Environment variable value"
+                },
+                {
+                  "name": "scope",
+                  "takesValue": true,
+                  "description": "Scope: user|system"
+                }
+              ]
+            },
+            "remove-persistent": {
+              "description": "Remove persistent environment variable",
+              "args": [
+                {
+                  "name": "key",
+                  "index": 1,
+                  "takesValue": true,
+                  "description": "Environment variable key"
+                },
+                {
+                  "name": "scope",
+                  "takesValue": true,
+                  "description": "Scope: user|system"
+                }
+              ]
+            },
+            "export": {
+              "description": "Export environment variables to file",
+              "args": [
+                {
+                  "name": "file",
+                  "index": 1,
+                  "takesValue": true,
+                  "description": "Output file path"
+                },
+                {
+                  "name": "scope",
+                  "takesValue": true,
+                  "description": "Scope: process|user|system"
+                },
+                {
+                  "name": "format",
+                  "takesValue": true,
+                  "description": "Format: dotenv|shell|fish|powershell|nushell"
+                }
+              ]
+            },
+            "import": {
+              "description": "Import environment variables from file",
+              "args": [
+                {
+                  "name": "file",
+                  "index": 1,
+                  "takesValue": true,
+                  "description": "Input file path"
+                },
+                {
+                  "name": "scope",
+                  "takesValue": true,
+                  "description": "Scope: process|user|system"
+                }
+              ]
+            }
+          }
+        },
+        "log": {
+          "description": "Manage application logs",
+          "subcommands": {
+            "list": {
+              "description": "List log files"
+            },
+            "export": {
+              "description": "Export log entries",
+              "args": [
+                {
+                  "name": "file",
+                  "takesValue": true,
+                  "description": "Source log file name"
+                },
+                {
+                  "name": "out",
+                  "takesValue": true,
+                  "description": "Optional output file path"
+                },
+                {
+                  "name": "format",
+                  "takesValue": true,
+                  "description": "Export format: txt|json"
+                },
+                {
+                  "name": "search",
+                  "takesValue": true,
+                  "description": "Search text"
+                },
+                {
+                  "name": "regex",
+                  "description": "Interpret search as regex"
+                },
+                {
+                  "name": "start-time",
+                  "takesValue": true,
+                  "description": "Start timestamp (ms)"
+                },
+                {
+                  "name": "end-time",
+                  "takesValue": true,
+                  "description": "End timestamp (ms)"
+                }
+              ]
+            },
+            "clear": {
+              "description": "Clear log files",
+              "args": [
+                {
+                  "name": "file",
+                  "takesValue": true,
+                  "description": "Optional file name to clear"
+                }
+              ]
+            },
+            "size": {
+              "description": "Show total log size"
+            },
+            "cleanup": {
+              "description": "Run log cleanup policy"
+            }
+          }
+        },
+        "download": {
+          "description": "Manage download queue and history",
+          "subcommands": {
+            "history-list": {
+              "description": "List download history",
+              "args": [
+                {
+                  "name": "limit",
+                  "takesValue": true,
+                  "description": "Maximum records"
+                }
+              ]
+            },
+            "history-stats": {
+              "description": "Show download history statistics"
+            },
+            "history-clear": {
+              "description": "Clear download history",
+              "args": [
+                {
+                  "name": "days",
+                  "takesValue": true,
+                  "description": "Clear records older than N days"
+                }
+              ]
+            },
+            "history-remove": {
+              "description": "Remove one history record",
+              "args": [
+                {
+                  "name": "id",
+                  "index": 1,
+                  "takesValue": true,
+                  "description": "History record ID"
+                }
+              ]
+            },
+            "queue-list": {
+              "description": "List persisted queue tasks"
+            },
+            "queue-stats": {
+              "description": "Show queue statistics"
+            },
+            "queue-pause": {
+              "description": "Pause queue task",
+              "args": [
+                {
+                  "name": "id",
+                  "index": 1,
+                  "takesValue": true,
+                  "description": "Task ID"
+                }
+              ]
+            },
+            "queue-resume": {
+              "description": "Resume queue task",
+              "args": [
+                {
+                  "name": "id",
+                  "index": 1,
+                  "takesValue": true,
+                  "description": "Task ID"
+                }
+              ]
+            },
+            "queue-cancel": {
+              "description": "Cancel queue task",
+              "args": [
+                {
+                  "name": "id",
+                  "index": 1,
+                  "takesValue": true,
+                  "description": "Task ID"
+                }
+              ]
+            }
+          }
         }
       }
     }

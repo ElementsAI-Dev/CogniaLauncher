@@ -1,4 +1,10 @@
-import { parsePackageSpec, getPackageKey, getHighlightClass } from './packages';
+import {
+  parsePackageSpec,
+  getPackageKey,
+  getHighlightClass,
+  getPackageKeyFromParts,
+  isPackagePinned,
+} from './packages';
 
 describe('parsePackageSpec', () => {
   it('parses "provider:name" format', () => {
@@ -35,6 +41,28 @@ describe('getPackageKey', () => {
   it('returns just name when no provider', () => {
     expect(getPackageKey({ provider: null, name: 'lodash' } as never)).toBe('lodash');
     expect(getPackageKey({ provider: '', name: 'lodash' } as never)).toBe('lodash');
+  });
+});
+
+describe('getPackageKeyFromParts', () => {
+  it('builds canonical provider-scoped keys', () => {
+    expect(getPackageKeyFromParts('lodash', 'npm')).toBe('npm:lodash');
+  });
+
+  it('falls back to plain name when provider is missing', () => {
+    expect(getPackageKeyFromParts('lodash', null)).toBe('lodash');
+    expect(getPackageKeyFromParts('lodash', undefined)).toBe('lodash');
+  });
+});
+
+describe('isPackagePinned', () => {
+  it('matches canonical provider-scoped pin entries', () => {
+    expect(isPackagePinned(['npm:lodash'], 'lodash', 'npm')).toBe(true);
+    expect(isPackagePinned(['npm:lodash'], 'lodash', 'pip')).toBe(false);
+  });
+
+  it('falls back to legacy unscoped pin entries', () => {
+    expect(isPackagePinned(['lodash'], 'lodash', 'npm')).toBe(true);
   });
 });
 

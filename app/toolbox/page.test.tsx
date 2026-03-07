@@ -1,9 +1,10 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import ToolboxPage from './page';
 
 let mockIsDesktop = true;
 let mockFetchPlugins = jest.fn();
+const mockPush = jest.fn();
 const createTool = (index: number) => ({
   id: `builtin:tool-${index}`,
   name: `Tool ${index}`,
@@ -18,6 +19,7 @@ const createTool = (index: number) => ({
 const createToolboxState = (overrides: Record<string, unknown> = {}) => ({
   filteredTools: [],
   allTools: [],
+  excludedTools: [],
   categoryToolCounts: new Map<string, number>(),
   totalToolCount: 0,
   dynamicCategories: [],
@@ -39,6 +41,12 @@ const createToolboxState = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 let mockToolboxState = createToolboxState();
+
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({
+    push: mockPush,
+  }),
+}));
 
 jest.mock('@/components/providers/locale-provider', () => ({
   useLocale: () => ({ t: (key: string) => key }),
@@ -96,8 +104,24 @@ jest.mock('@/components/toolbox', () => {
   ToolSearchBar.displayName = 'ToolSearchBar';
 
   return {
-    ToolGrid: ({ tools }: { tools: Array<{ id: string }> }) => (
-      <div data-testid="tool-grid" data-tool-count={tools.length} />
+    ToolGrid: ({
+      tools,
+      onOpen,
+    }: {
+      tools: Array<{ id: string }>;
+      onOpen: (id: string) => void;
+    }) => (
+      <div data-testid="tool-grid" data-tool-count={tools.length}>
+        {tools.length > 0 && (
+          <button
+            type="button"
+            data-testid="open-first-tool"
+            onClick={() => onOpen(tools[0].id)}
+          >
+            open first tool
+          </button>
+        )}
+      </div>
     ),
     ToolCategoryNav: () => <div data-testid="category-nav" />,
     ToolSearchBar,
@@ -197,5 +221,20 @@ describe('ToolboxPage plugin bootstrap', () => {
     expect(toolGrid).toHaveAttribute('data-tool-count', String(manyTools.length));
     expect(listScrollArea.className).toContain('overflow-y-auto');
     expect(screen.queryByTestId('empty-state')).not.toBeInTheDocument();
+  });
+
+  it('navigates tool open action to canonical toolbox detail route', () => {
+    const addRecent = jest.fn();
+    mockToolboxState = createToolboxState({
+      filteredTools: [createTool(1)],
+      allTools: [createTool(1)],
+      addRecent,
+    });
+    render(<ToolboxPage />);
+
+    fireEvent.click(screen.getByTestId('open-first-tool'));
+
+    expect(mockPush).toHaveBeenCalledWith('/toolbox/builtin%3Atool-1');
+    expect(addRecent).not.toHaveBeenCalled();
   });
 });

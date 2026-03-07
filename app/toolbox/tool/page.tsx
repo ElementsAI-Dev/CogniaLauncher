@@ -1,20 +1,25 @@
 'use client';
 
-import { Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useEffect, useMemo } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { ToolDetailPageClient } from '@/components/toolbox/tool-detail-page-client';
-import { PageLoadingSkeleton } from '@/components/layout/page-loading-skeleton';
+import { decodeToolIdFromPath, getToolboxDetailPath } from '@/lib/toolbox-route';
 
-function ToolPageContent() {
+export default function LegacyToolDetailPage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
-  const toolId = searchParams.get('id') ?? '';
-  return <ToolDetailPageClient toolId={toolId} />;
-}
+  const toolId = useMemo(() => {
+    const rawToolId = searchParams.get('id') ?? '';
+    return decodeToolIdFromPath(rawToolId);
+  }, [searchParams]);
 
-export default function ToolPage() {
-  return (
-    <Suspense fallback={<PageLoadingSkeleton variant="cards" />}>
-      <ToolPageContent />
-    </Suspense>
-  );
+  useEffect(() => {
+    if (!toolId) {
+      return;
+    }
+
+    router.replace(getToolboxDetailPath(toolId));
+  }, [router, toolId]);
+
+  return <ToolDetailPageClient toolId="" />;
 }

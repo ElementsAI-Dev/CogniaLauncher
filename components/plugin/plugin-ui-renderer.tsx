@@ -40,7 +40,7 @@ import { cn } from '@/lib/utils';
 import { writeClipboard } from '@/lib/clipboard';
 import { useLocale } from '@/components/providers/locale-provider';
 import { DynamicIcon } from '@/components/ui/dynamic-icon';
-import { Copy, Check, Upload } from 'lucide-react';
+import { Copy, Check, Upload, Download, ChevronDown, ChevronUp } from 'lucide-react';
 import type {
   UiBlock,
   UiTextBlock,
@@ -64,6 +64,10 @@ import type {
   UiDescriptionListBlock,
   UiStatCardsBlock,
   UiResultBlock,
+  UiConditionalGroupBlock,
+  UiStepperBlock,
+  UiLogStreamBlock,
+  UiArtifactActionsBlock,
   FormField,
   PluginUiAction,
 } from '@/types/plugin-ui';
@@ -120,7 +124,7 @@ function BlockRenderer({ block, onAction, state }: BlockRendererProps) {
     case 'code':
       return <CodeBlockComponent block={block} />;
     case 'table':
-      return <TableBlock block={block} />;
+      return <TableBlock block={block} onAction={onAction} state={state} />;
     case 'key-value':
       return <KeyValueBlock block={block} />;
     case 'form':
@@ -136,13 +140,21 @@ function BlockRenderer({ block, onAction, state }: BlockRendererProps) {
     case 'file-input':
       return <FileInputBlock block={block} onAction={onAction} state={state} />;
     case 'json-view':
-      return <JsonViewBlock block={block} />;
+      return <JsonViewBlock block={block} onAction={onAction} state={state} />;
     case 'description-list':
       return <DescriptionListBlock block={block} />;
     case 'stat-cards':
       return <StatCardsBlock block={block} />;
     case 'result':
       return <ResultBlock block={block} />;
+    case 'conditional-group':
+      return <ConditionalGroupBlock block={block} onAction={onAction} state={state} />;
+    case 'stepper':
+      return <StepperBlock block={block} onAction={onAction} state={state} />;
+    case 'log-stream':
+      return <LogStreamBlock block={block} onAction={onAction} state={state} />;
+    case 'artifact-actions':
+      return <ArtifactActionsBlock block={block} onAction={onAction} state={state} />;
     case 'group':
       return <GroupBlock block={block} onAction={onAction} state={state} />;
     default:
@@ -225,27 +237,89 @@ function CodeBlockComponent({ block }: { block: UiCodeBlock }) {
   );
 }
 
-function TableBlock({ block }: { block: UiTableBlock }) {
+function TableBlock({
+  block,
+  onAction,
+  state,
+}: {
+  block: UiTableBlock;
+  onAction: (action: PluginUiAction) => void;
+  state?: Record<string, unknown>;
+}) {
+  const csv = [block.headers, ...block.rows]
+    .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    .join('\n');
+
   return (
-    <div className="rounded-md border overflow-x-auto">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            {block.headers.map((h, i) => (
-              <TableHead key={i}>{h}</TableHead>
-            ))}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {block.rows.map((row, ri) => (
-            <TableRow key={ri}>
-              {row.map((cell, ci) => (
-                <TableCell key={ci}>{cell}</TableCell>
+    <div className="space-y-2">
+      <div className="flex items-center justify-end gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={async () => {
+            await writeClipboard(csv);
+            emitAction(
+              onAction,
+              {
+                action: 'output_copy',
+              },
+              {
+                sourceType: 'table',
+                sourceId: 'table',
+                runtimeContext: { blockType: 'table' },
+                state,
+              },
+            );
+          }}
+        >
+          <Copy className="mr-1.5 h-3.5 w-3.5" />
+          Copy
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={() => {
+            downloadTextFile('table-output.csv', csv, 'text/csv;charset=utf-8');
+            emitAction(
+              onAction,
+              {
+                action: 'output_export',
+              },
+              {
+                sourceType: 'table',
+                sourceId: 'table',
+                runtimeContext: { blockType: 'table', format: 'csv' },
+                state,
+              },
+            );
+          }}
+        >
+          <Download className="mr-1.5 h-3.5 w-3.5" />
+          Export
+        </Button>
+      </div>
+      <div className="rounded-md border overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              {block.headers.map((h, i) => (
+                <TableHead key={i}>{h}</TableHead>
               ))}
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+          </TableHeader>
+          <TableBody>
+            {block.rows.map((row, ri) => (
+              <TableRow key={ri}>
+                {row.map((cell, ci) => (
+                  <TableCell key={ci}>{cell}</TableCell>
+                ))}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
     </div>
   );
 }
@@ -263,13 +337,101 @@ function KeyValueBlock({ block }: { block: UiKeyValueBlock }) {
   );
 }
 
-function JsonViewBlock({ block }: { block: UiJsonViewBlock }) {
+function JsonViewBlock({
+  block,
+  onAction,
+  state,
+}: {
+  block: UiJsonViewBlock;
+  onAction: (action: PluginUiAction) => void;
+  state?: Record<string, unknown>;
+}) {
+  const [expanded, setExpanded] = useState(block.expanded ?? false);
   const pretty = JSON.stringify(block.data, null, 2);
+  const displayed = expanded ? pretty : pretty.split('\n').slice(0, 12).join('\n');
+  const sourceId = block.label ?? 'json-view';
+
   return (
     <div className="space-y-2">
-      {block.label && <span className="text-sm font-medium">{block.label}</span>}
+      <div className="flex items-center justify-between gap-2">
+        {block.label ? <span className="text-sm font-medium">{block.label}</span> : <span />}
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={async () => {
+              await writeClipboard(pretty);
+              emitAction(
+                onAction,
+                {
+                  action: 'output_copy',
+                },
+                {
+                  sourceType: 'json-view',
+                  sourceId,
+                  runtimeContext: { blockType: 'json-view' },
+                  state,
+                },
+              );
+            }}
+          >
+            <Copy className="mr-1.5 h-3.5 w-3.5" />
+            Copy
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              downloadTextFile('output.json', pretty, 'application/json;charset=utf-8');
+              emitAction(
+                onAction,
+                {
+                  action: 'output_export',
+                },
+                {
+                  sourceType: 'json-view',
+                  sourceId,
+                  runtimeContext: { blockType: 'json-view', format: 'json' },
+                  state,
+                },
+              );
+            }}
+          >
+            <Download className="mr-1.5 h-3.5 w-3.5" />
+            Export
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setExpanded((prev) => {
+                const next = !prev;
+                emitAction(
+                  onAction,
+                  {
+                    action: 'output_expand',
+                  },
+                  {
+                    sourceType: 'json-view',
+                    sourceId,
+                    runtimeContext: { blockType: 'json-view', expanded: next },
+                    state,
+                  },
+                );
+                return next;
+              });
+            }}
+          >
+            {expanded ? <ChevronUp className="mr-1.5 h-3.5 w-3.5" /> : <ChevronDown className="mr-1.5 h-3.5 w-3.5" />}
+            {expanded ? 'Collapse' : 'Expand'}
+          </Button>
+        </div>
+      </div>
       <pre className="rounded-md bg-muted/50 p-4 overflow-x-auto text-sm font-mono">
-        <code>{pretty}</code>
+        <code>{displayed}</code>
       </pre>
     </div>
   );
@@ -343,6 +505,190 @@ function UnsupportedBlockFallback({ type }: { type: string }) {
   );
 }
 
+interface ActionDefaults {
+  sourceType?: string;
+  sourceId?: string;
+  runtimeContext?: Record<string, unknown>;
+  state?: Record<string, unknown>;
+}
+
+function emitAction(
+  onAction: (action: PluginUiAction) => void,
+  action: PluginUiAction,
+  defaults: ActionDefaults = {},
+) {
+  const correlationId = action.correlationId
+    ?? (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
+
+  onAction({
+    ...action,
+    version: action.version ?? 2,
+    sourceType: action.sourceType ?? defaults.sourceType,
+    sourceId: action.sourceId ?? defaults.sourceId,
+    correlationId,
+    runtimeContext: {
+      renderer: 'plugin-ui',
+      ...(defaults.runtimeContext ?? {}),
+      ...(action.runtimeContext ?? {}),
+    },
+    state: action.state ?? defaults.state,
+  });
+}
+
+function downloadTextFile(
+  filename: string,
+  content: string,
+  mimeType = 'text/plain;charset=utf-8',
+) {
+  if (typeof window === 'undefined') return;
+  const blob = new Blob([content], { type: mimeType });
+  const href = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = href;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(href);
+}
+
+function readPathValue(state: Record<string, unknown> | undefined, path: string): unknown {
+  if (!state) return undefined;
+  const parts = path.split('.').filter(Boolean);
+  let current: unknown = state;
+  for (const part of parts) {
+    if (!current || typeof current !== 'object' || !(part in current)) {
+      return undefined;
+    }
+    current = (current as Record<string, unknown>)[part];
+  }
+  return current;
+}
+
+function serializeAndValidateFormData(
+  block: UiFormBlock,
+  formData: Record<string, unknown>,
+): {
+  formData: Record<string, unknown>;
+  formDataTypes: Record<string, string>;
+  errors: Record<string, string>;
+} {
+  const serialized: Record<string, unknown> = {};
+  const formDataTypes: Record<string, string> = {};
+  const errors: Record<string, string> = {};
+
+  for (const field of block.fields) {
+    const value = formData[field.id];
+    formDataTypes[field.id] = field.type;
+
+    switch (field.type) {
+      case 'input':
+      case 'password':
+      case 'textarea': {
+        const text = typeof value === 'string' ? value : String(value ?? '');
+        if ('required' in field && field.required && text.trim().length === 0) {
+          errors[field.id] = 'This field is required.';
+        }
+        serialized[field.id] = text;
+        break;
+      }
+      case 'number': {
+        const isEmpty = value === null || value === undefined || value === '';
+        const num = Number(value);
+        if (field.required && isEmpty) {
+          errors[field.id] = 'This field is required.';
+          serialized[field.id] = null;
+          break;
+        }
+        if (!isEmpty && !Number.isFinite(num)) {
+          errors[field.id] = 'Invalid number value.';
+          serialized[field.id] = null;
+          break;
+        }
+        if (!isEmpty && field.min !== undefined && num < field.min) {
+          errors[field.id] = `Value must be >= ${field.min}.`;
+        } else if (!isEmpty && field.max !== undefined && num > field.max) {
+          errors[field.id] = `Value must be <= ${field.max}.`;
+        }
+        serialized[field.id] = isEmpty ? null : num;
+        break;
+      }
+      case 'radio-group':
+      case 'select': {
+        const selected = typeof value === 'string' ? value : String(value ?? '');
+        if ('required' in field && field.required && selected.trim().length === 0) {
+          errors[field.id] = 'Please choose an option.';
+        }
+        serialized[field.id] = selected;
+        break;
+      }
+      case 'date-time': {
+        const text = String(value ?? '').trim();
+        if (field.required && text.length === 0) {
+          errors[field.id] = 'This field is required.';
+        } else if (text && field.min && text < field.min) {
+          errors[field.id] = `Date must be after ${field.min}.`;
+        } else if (text && field.max && text > field.max) {
+          errors[field.id] = `Date must be before ${field.max}.`;
+        }
+        serialized[field.id] = text;
+        break;
+      }
+      case 'multi-select': {
+        const items = Array.isArray(value)
+          ? value.map((item) => String(item ?? '').trim()).filter((item) => item.length > 0)
+          : [];
+        if (field.required && items.length === 0) {
+          errors[field.id] = 'Select at least one option.';
+        }
+        serialized[field.id] = items;
+        break;
+      }
+      case 'switch':
+      case 'checkbox':
+        serialized[field.id] = Boolean(value);
+        break;
+      case 'slider': {
+        const sliderValue = Number(value);
+        if (!Number.isFinite(sliderValue)) {
+          errors[field.id] = 'Invalid slider value.';
+          serialized[field.id] = field.min;
+          break;
+        }
+        if (sliderValue < field.min) {
+          errors[field.id] = `Value must be >= ${field.min}.`;
+        } else if (sliderValue > field.max) {
+          errors[field.id] = `Value must be <= ${field.max}.`;
+        }
+        serialized[field.id] = sliderValue;
+        break;
+      }
+      case 'array': {
+        const items = Array.isArray(value)
+          ? value.map((item) => String(item ?? '').trim()).filter((item) => item.length > 0)
+          : [];
+        const minItems = field.minItems ?? 0;
+        if (items.length < minItems) {
+          errors[field.id] = `At least ${minItems} item(s) required.`;
+        }
+        if (field.maxItems !== undefined && items.length > field.maxItems) {
+          errors[field.id] = `At most ${field.maxItems} item(s) allowed.`;
+        }
+        serialized[field.id] = items;
+        break;
+      }
+      default:
+        break;
+    }
+  }
+
+  return {
+    formData: serialized,
+    formDataTypes,
+    errors,
+  };
+}
+
 // ============================================================================
 // i18n Helper Components
 // ============================================================================
@@ -392,7 +738,7 @@ function FormBlock({
           initial[field.id] = field.defaultValue ?? '';
           break;
         case 'number':
-          initial[field.id] = field.defaultValue ?? 0;
+          initial[field.id] = field.defaultValue ?? '';
           break;
         case 'select':
         case 'radio-group':
@@ -408,27 +754,37 @@ function FormBlock({
         case 'slider':
           initial[field.id] = field.defaultValue ?? field.min;
           break;
+        case 'array':
+          initial[field.id] = field.defaultValues ?? [];
+          break;
       }
     }
     return initial;
   });
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
 
   const handleSubmit = useCallback(
     (e: React.FormEvent) => {
       e.preventDefault();
-      const formDataTypes = Object.fromEntries(
-        block.fields.map((field) => [field.id, field.type]),
-      );
-      onAction({
+      const serialized = serializeAndValidateFormData(block, formData);
+      setValidationErrors(serialized.errors);
+      if (Object.keys(serialized.errors).length > 0) return;
+
+      emitAction(
+        onAction,
+        {
         action: 'form_submit',
-        version: 2,
-        sourceType: 'form',
-        sourceId: block.id,
         formId: block.id,
-        formData,
-        formDataTypes,
-        state,
-      });
+          formData: serialized.formData,
+          formDataTypes: serialized.formDataTypes,
+        },
+        {
+          sourceType: 'form',
+          sourceId: block.id,
+          runtimeContext: { blockType: 'form', blockId: block.id },
+          state,
+        },
+      );
     },
     [block, formData, state, onAction],
   );
@@ -436,12 +792,24 @@ function FormBlock({
   return (
     <form onSubmit={handleSubmit} className="space-y-4 rounded-md border p-4">
       {block.fields.map((field) => (
-        <FormFieldRenderer
-          key={field.id}
-          field={field}
-          value={formData[field.id]}
-          onChange={(v) => setFormData((prev) => ({ ...prev, [field.id]: v }))}
-        />
+        <div key={field.id} className="space-y-1">
+          <FormFieldRenderer
+            field={field}
+            value={formData[field.id]}
+            onChange={(v) => {
+              setFormData((prev) => ({ ...prev, [field.id]: v }));
+              setValidationErrors((prev) => {
+                if (!(field.id in prev)) return prev;
+                const next = { ...prev };
+                delete next[field.id];
+                return next;
+              });
+            }}
+          />
+          {validationErrors[field.id] && (
+            <p className="text-xs text-destructive">{validationErrors[field.id]}</p>
+          )}
+        </div>
       ))}
       <SubmitButton label={block.submitLabel} />
     </form>
@@ -478,10 +846,15 @@ function FormFieldRenderer({
           <Input
             id={field.id}
             type="number"
-            value={typeof value === 'number' ? String(value) : ''}
+            value={value === '' || value === null || value === undefined ? '' : String(value)}
             onChange={(e) => {
-              const next = e.target.value === '' ? '' : Number(e.target.value);
-              onChange(next === '' || Number.isNaN(next) ? 0 : next);
+              const raw = e.target.value;
+              if (raw === '') {
+                onChange('');
+                return;
+              }
+              const next = Number(raw);
+              onChange(Number.isFinite(next) ? next : raw);
             }}
             placeholder={field.placeholder}
             min={field.min}
@@ -620,6 +993,58 @@ function FormFieldRenderer({
         </div>
       );
     }
+    case 'array': {
+      const items = Array.isArray(value) ? value.map((v) => String(v ?? '')) : [];
+      const maxItems = field.maxItems ?? Number.POSITIVE_INFINITY;
+      const minItems = field.minItems ?? 0;
+      return (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label className="text-sm">{field.label}</Label>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={items.length >= maxItems}
+              onClick={() => onChange([...items, ''])}
+            >
+              Add
+            </Button>
+          </div>
+          <div className="space-y-2 rounded-md border p-3">
+            {items.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No items yet.</p>
+            ) : (
+              items.map((item, index) => (
+                <div key={`${field.id}-${index}`} className="flex items-center gap-2">
+                  <Input
+                    value={item}
+                    placeholder={field.placeholder ?? field.itemLabel ?? 'Value'}
+                    onChange={(e) => {
+                      const next = [...items];
+                      next[index] = e.target.value;
+                      onChange(next);
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    disabled={items.length <= minItems}
+                    onClick={() => {
+                      const next = items.filter((_, i) => i !== index);
+                      onChange(next);
+                    }}
+                  >
+                    Remove
+                  </Button>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      );
+    }
     case 'slider':
       return (
         <div className="space-y-1.5">
@@ -665,16 +1090,21 @@ function ActionsBlock({
           variant={(btn.variant as 'default' | 'secondary' | 'outline' | 'destructive' | 'ghost') ?? 'default'}
           size="sm"
           className="gap-1.5"
-          onClick={() =>
-            onAction({
+          onClick={() => {
+            emitAction(
+              onAction,
+              {
               action: 'button_click',
-              version: 2,
-              sourceType: 'actions',
-              sourceId: btn.id,
               buttonId: btn.id,
-              state,
-            })
-          }
+              },
+              {
+                sourceType: 'actions',
+                sourceId: btn.id,
+                runtimeContext: { blockType: 'actions', buttonId: btn.id },
+                state,
+              },
+            );
+          }}
         >
           {btn.icon && <DynamicIcon name={btn.icon} className="h-3.5 w-3.5" />}
           {btn.label}
@@ -700,14 +1130,19 @@ function TabsBlock({
   const defaultTab = block.defaultTab ?? block.tabs[0]?.id;
   return (
     <Tabs defaultValue={defaultTab} onValueChange={(tabId) => {
-      onAction({
+      emitAction(
+        onAction,
+        {
         action: 'tab_change',
-        version: 2,
-        sourceType: 'tabs',
-        sourceId: tabId,
         tabId,
-        state,
-      });
+        },
+        {
+          sourceType: 'tabs',
+          sourceId: tabId,
+          runtimeContext: { blockType: 'tabs', tabId },
+          state,
+        },
+      );
     }}>
       <TabsList>
         {block.tabs.map((tab) => (
@@ -806,15 +1241,20 @@ function FileInputBlock({
           ...(dataUrl ? { dataUrl } : {}),
         });
       }
-      onAction({
+      emitAction(
+        onAction,
+        {
         action: 'file_selected',
-        version: 2,
-        sourceType: 'file-input',
-        sourceId: block.id,
         fileInputId: block.id,
         files,
-        state,
-      });
+        },
+        {
+          sourceType: 'file-input',
+          sourceId: block.id,
+          runtimeContext: { blockType: 'file-input', inputId: block.id },
+          state,
+        },
+      );
     },
     [block.id, block.includeDataUrl, onAction, state],
   );
@@ -832,6 +1272,246 @@ function FileInputBlock({
           onChange={handleChange}
         />
       </div>
+    </div>
+  );
+}
+
+function ConditionalGroupBlock({
+  block,
+  onAction,
+  state,
+}: {
+  block: UiConditionalGroupBlock;
+  onAction: (action: PluginUiAction) => void;
+  state?: Record<string, unknown>;
+}) {
+  const value = readPathValue(state, block.when.path);
+  const existsOk = block.when.exists === undefined
+    ? true
+    : block.when.exists
+      ? value !== undefined && value !== null
+      : value === undefined || value === null;
+  const equalsOk = block.when.equals === undefined ? true : value === block.when.equals;
+  const notEqualsOk = block.when.notEquals === undefined ? true : value !== block.when.notEquals;
+  const visible = existsOk && equalsOk && notEqualsOk;
+
+  if (!visible) return null;
+
+  return (
+    <div className="space-y-4">
+      {block.children.map((child, i) => (
+        <BlockRenderer key={i} block={child} onAction={onAction} state={state} />
+      ))}
+    </div>
+  );
+}
+
+function StepperBlock({
+  block,
+  onAction,
+  state,
+}: {
+  block: UiStepperBlock;
+  onAction: (action: PluginUiAction) => void;
+  state?: Record<string, unknown>;
+}) {
+  const initialId = block.defaultStepId ?? block.steps[0]?.id ?? '';
+  const [currentStepId, setCurrentStepId] = useState(initialId);
+  const currentIndex = Math.max(0, block.steps.findIndex((step) => step.id === currentStepId));
+  const currentStep = block.steps[currentIndex];
+
+  const setStep = useCallback((nextStepId: string) => {
+    setCurrentStepId(nextStepId);
+    emitAction(
+      onAction,
+      {
+      action: 'tab_change',
+      tabId: nextStepId,
+      },
+      {
+        sourceType: 'stepper',
+        sourceId: nextStepId,
+        runtimeContext: { blockType: 'stepper', stepperId: block.id, stepId: nextStepId },
+        state,
+      },
+    );
+  }, [onAction, state, block.id]);
+
+  if (!currentStep) return null;
+
+  return (
+    <div className="space-y-3 rounded-md border p-4">
+      <div className="flex flex-wrap gap-2">
+        {block.steps.map((step, index) => (
+          <Button
+            key={step.id}
+            type="button"
+            size="sm"
+            variant={index === currentIndex ? 'default' : 'outline'}
+            onClick={() => setStep(step.id)}
+          >
+            {step.label}
+          </Button>
+        ))}
+      </div>
+      <div className="space-y-4">
+        {currentStep.children.map((child, i) => (
+          <BlockRenderer key={i} block={child} onAction={onAction} state={state} />
+        ))}
+      </div>
+      <div className="flex items-center justify-between">
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={currentIndex <= 0}
+          onClick={() => setStep(block.steps[currentIndex - 1].id)}
+        >
+          Previous
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          disabled={currentIndex >= block.steps.length - 1}
+          onClick={() => setStep(block.steps[currentIndex + 1].id)}
+        >
+          Next
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function LogStreamBlock({
+  block,
+  onAction,
+  state,
+}: {
+  block: UiLogStreamBlock;
+  onAction: (action: PluginUiAction) => void;
+  state?: Record<string, unknown>;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const content = block.entries
+    .map((entry) => `[${entry.level ?? 'info'}]${entry.timestamp ? ` ${entry.timestamp}` : ''} ${entry.message}`)
+    .join('\n');
+
+  return (
+    <div className="space-y-2 rounded-md border bg-muted/30 p-3">
+      <div className="flex items-center justify-end gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={async () => {
+            await writeClipboard(content);
+            emitAction(
+              onAction,
+              {
+                action: 'output_copy',
+              },
+              {
+                sourceType: 'log-stream',
+                sourceId: 'log-stream',
+                runtimeContext: { blockType: 'log-stream' },
+                state,
+              },
+            );
+          }}
+        >
+          <Copy className="mr-1.5 h-3.5 w-3.5" />
+          Copy
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={() => {
+            setExpanded((prev) => {
+              const next = !prev;
+              emitAction(
+                onAction,
+                {
+                  action: 'output_expand',
+                },
+                {
+                  sourceType: 'log-stream',
+                  sourceId: 'log-stream',
+                  runtimeContext: { blockType: 'log-stream', expanded: next },
+                  state,
+                },
+              );
+              return next;
+            });
+          }}
+        >
+          {expanded ? <ChevronUp className="mr-1.5 h-3.5 w-3.5" /> : <ChevronDown className="mr-1.5 h-3.5 w-3.5" />}
+          {expanded ? 'Collapse' : 'Expand'}
+        </Button>
+      </div>
+      <div className={cn('overflow-y-auto space-y-1', expanded ? 'max-h-none' : 'max-h-56')}>
+        {block.entries.map((entry, index) => (
+          <p key={index} className="font-mono text-xs">
+            <span className="text-muted-foreground mr-2">
+              [{entry.level ?? 'info'}]
+              {entry.timestamp ? ` ${entry.timestamp}` : ''}
+            </span>
+            <span>{entry.message}</span>
+          </p>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ArtifactActionsBlock({
+  block,
+  onAction,
+  state,
+}: {
+  block: UiArtifactActionsBlock;
+  onAction: (action: PluginUiAction) => void;
+  state?: Record<string, unknown>;
+}) {
+  return (
+    <div className="space-y-2 rounded-md border p-3">
+      {block.artifacts.map((artifact) => (
+        <div key={artifact.id} className="flex items-center justify-between gap-2">
+          <span className="text-sm">{artifact.label}</span>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={async () => {
+                if ((artifact.action ?? 'open') === 'copy' && artifact.content) {
+                  await writeClipboard(artifact.content);
+                } else if (artifact.href) {
+                  window.open(artifact.href, '_blank', 'noopener,noreferrer');
+                }
+                emitAction(
+                  onAction,
+                  {
+                  action: 'artifact_action',
+                  runtimeContext: {
+                    artifactId: artifact.id,
+                    artifactAction: artifact.action ?? 'open',
+                  },
+                  },
+                  {
+                    sourceType: 'artifact-actions',
+                    sourceId: artifact.id,
+                    runtimeContext: { blockType: 'artifact-actions' },
+                    state,
+                  },
+                );
+              }}
+            >
+              {(artifact.action ?? 'open') === 'copy' ? 'Copy' : 'Open'}
+            </Button>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

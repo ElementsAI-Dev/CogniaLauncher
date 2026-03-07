@@ -1,5 +1,5 @@
 use crate::cache::{
-    external, migration, CacheAccessStats, CacheEntryType, CacheSizeSnapshot, CleanupHistory,
+    external, migration, CacheAccessStats, CacheEntry, CacheEntryType, CacheSizeSnapshot, CleanupHistory,
     CleanupRecord, CleanupRecordBuilder, CombinedCacheStats, DownloadCache, DownloadResumer,
     ExternalCacheCleanResult, ExternalCacheInfo, MetadataCache, MigrationMode, MigrationResult,
     MigrationValidation,
@@ -8,11 +8,82 @@ use crate::config::Settings;
 use crate::platform::{disk, disk::format_size, fs, process::ProcessOptions};
 use chrono::{TimeZone, Utc};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::RwLock;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CacheCommandScope {
+    All,
+    Download,
+    Metadata,
+    External,
+}
+
+impl CacheCommandScope {
+    fn parse(scope: Option<&str>) -> Result<Self, String> {
+        match scope.unwrap_or("all") {
+            "all" => Ok(Self::All),
+            "download" => Ok(Self::Download),
+            "metadata" => Ok(Self::Metadata),
+            "external" => Ok(Self::External),
+            other => Err(format!(
+                "Invalid cache scope: {}. Use 'all', 'download', 'metadata', or 'external'",
+                other
+            )),
+        }
+    }
+
+    fn from_clean_type(clean_type: &str) -> Self {
+        match clean_type {
+            "downloads" => Self::Download,
+            "metadata" => Self::Metadata,
+            _ => Self::All,
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::All => "all",
+            Self::Download => "download",
+            Self::Metadata => "metadata",
+            Self::External => "external",
+        }
+    }
+
+    fn includes_download(self) -> bool {
+        matches!(self, Self::All | Self::Download)
+    }
+
+    fn includes_metadata(self) -> bool {
+        matches!(self, Self::All | Self::Metadata)
+    }
+
+    fn domains(self) -> Vec<String> {
+        match self {
+            Self::External => external_cache_domains(),
+            _ => internal_cache_domains(),
+        }
+    }
+}
+
+fn internal_cache_domains() -> Vec<String> {
+    vec![
+        "cache_overview".to_string(),
+        "cache_entries".to_string(),
+        "about_cache_stats".to_string(),
+    ]
+}
+
+fn external_cache_domains() -> Vec<String> {
+    vec![
+        "external_cache".to_string(),
+        "cache_overview".to_string(),
+        "about_cache_stats".to_string(),
+    ]
+}
 
 /// Event payload for cache state changes
 #[derive(Clone, Serialize)]
@@ -21,20 +92,110 @@ struct CacheChangedEvent {
     action: String,
     freed_bytes: u64,
     freed_human: String,
+    scope: String,
+    domains: Vec<String>,
 }
 
-fn emit_cache_changed(app: &AppHandle, action: &str, freed_bytes: u64) {
+fn emit_cache_changed(
+    app: &AppHandle,
+    action: &str,
+    freed_bytes: u64,
+    scope: &str,
+    domains: Vec<String>,
+) {
     let _ = app.emit(
         "cache-changed",
         CacheChangedEvent {
             action: action.to_string(),
             freed_bytes,
             freed_human: format_size(freed_bytes),
+            scope: scope.to_string(),
+            domains,
         },
     );
 }
 
 pub type SharedSettings = Arc<RwLock<Settings>>;
+
+fn cache_entry_type_label(entry_type: CacheEntryType) -> &'static str {
+    match entry_type {
+        CacheEntryType::Download => "download",
+        CacheEntryType::Metadata => "metadata",
+        CacheEntryType::Partial => "partial",
+        CacheEntryType::Index => "index",
+    }
+}
+
+fn append_cleanup_entry(builder: &mut CleanupRecordBuilder, entry: &CacheEntry) {
+    builder.add_file(
+        entry.file_path.display().to_string(),
+        entry.size,
+        cache_entry_type_label(entry.entry_type.clone()),
+    );
+}
+
+pub async fn record_cache_snapshot(cache_dir: &Path, metadata_cache_ttl: i64) -> Result<(), String> {
+    let download_cache = DownloadCache::open(cache_dir)
+        .await
+        .map_err(|e| e.to_string())?;
+    let metadata_cache = MetadataCache::open_with_ttl(cache_dir, metadata_cache_ttl)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let download_stats = download_cache.stats().await.map_err(|e| e.to_string())?;
+    let metadata_stats = metadata_cache.stats().await.map_err(|e| e.to_string())?;
+
+    download_cache
+        .record_size_snapshot(
+            download_stats.total_size,
+            download_stats.entry_count,
+            metadata_stats.entry_count,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let _ = download_cache.prune_old_snapshots(90).await;
+    Ok(())
+}
+
+async fn persist_cleanup_record(cache_dir: &Path, record: CleanupRecord) -> Result<(), String> {
+    if record.file_count == 0 {
+        return Ok(());
+    }
+
+    let mut history = CleanupHistory::open(cache_dir)
+        .await
+        .map_err(|e| e.to_string())?;
+    history.add(record).await.map_err(|e| e.to_string())
+}
+
+async fn finalize_internal_cache_mutation(
+    app: &AppHandle,
+    cache_dir: &Path,
+    metadata_cache_ttl: i64,
+    action: &str,
+    scope: CacheCommandScope,
+    freed_bytes: u64,
+    record: Option<CleanupRecord>,
+) -> Result<(), String> {
+    if let Some(record) = record {
+        persist_cleanup_record(cache_dir, record).await?;
+    }
+
+    record_cache_snapshot(cache_dir, metadata_cache_ttl).await?;
+    emit_cache_changed(app, action, freed_bytes, scope.as_str(), scope.domains());
+    Ok(())
+}
+
+fn emit_external_cache_changed(app: &AppHandle, action: &str, freed_bytes: u64, scope: &str) {
+    emit_cache_changed(
+        app,
+        action,
+        freed_bytes,
+        scope,
+        external_cache_domains(),
+    );
+}
 
 #[derive(Serialize)]
 pub struct CacheInfo {
@@ -189,15 +350,18 @@ pub async fn cache_clean(
     };
 
     let total_freed = dl_freed + md_freed + partial_freed;
-
-    // Record in cleanup history (was previously missing)
-    if deleted_count > 0 {
-        if let Ok(mut history) = CleanupHistory::open(&cache_dir).await {
-            let _ = history.add(record).await;
-        }
-    }
-
-    emit_cache_changed(&app, "clean", total_freed);
+    let scope = CacheCommandScope::from_clean_type(clean_type_str);
+    let cleanup_record = if deleted_count > 0 { Some(record) } else { None };
+    finalize_internal_cache_mutation(
+        &app,
+        &cache_dir,
+        metadata_cache_ttl,
+        "clean",
+        scope,
+        total_freed,
+        cleanup_record,
+    )
+    .await?;
 
     Ok(CleanResult {
         freed_bytes: total_freed,
@@ -231,12 +395,14 @@ pub struct CacheIssue {
 
 #[tauri::command]
 pub async fn cache_verify(
+    scope: Option<String>,
     settings: State<'_, SharedSettings>,
 ) -> Result<CacheVerificationResult, String> {
     let s = settings.read().await;
     let cache_dir = s.get_cache_dir();
     let metadata_cache_ttl = s.general.metadata_cache_ttl as i64;
     drop(s);
+    let scope = CacheCommandScope::parse(scope.as_deref())?;
 
     let download_cache = DownloadCache::open(&cache_dir)
         .await
@@ -260,69 +426,71 @@ pub async fn cache_verify(
     let mut corrupted_files = 0usize;
     let mut size_mismatches = 0usize;
 
-    // Verify download cache entries (full checksum verification)
-    for entry in dl_entries {
-        if !fs::exists(&entry.file_path).await {
-            missing_files += 1;
-            details.push(CacheIssue {
-                entry_key: entry.key,
-                issue_type: "missing".to_string(),
-                description: "File not found on disk".to_string(),
-            });
-            continue;
-        }
+    if scope.includes_download() {
+        for entry in dl_entries {
+            if !fs::exists(&entry.file_path).await {
+                missing_files += 1;
+                details.push(CacheIssue {
+                    entry_key: entry.key,
+                    issue_type: "missing".to_string(),
+                    description: "File not found on disk".to_string(),
+                });
+                continue;
+            }
 
-        let actual_size = fs::file_size(&entry.file_path).await.unwrap_or(entry.size);
-        if actual_size != entry.size {
-            size_mismatches += 1;
-            details.push(CacheIssue {
-                entry_key: entry.key.clone(),
-                issue_type: "size_mismatch".to_string(),
-                description: format!("Expected {} bytes, got {} bytes", entry.size, actual_size),
-            });
-            continue;
-        }
+            let actual_size = fs::file_size(&entry.file_path).await.unwrap_or(entry.size);
+            if actual_size != entry.size {
+                size_mismatches += 1;
+                details.push(CacheIssue {
+                    entry_key: entry.key.clone(),
+                    issue_type: "size_mismatch".to_string(),
+                    description: format!("Expected {} bytes, got {} bytes", entry.size, actual_size),
+                });
+                continue;
+            }
 
-        let actual_checksum = fs::calculate_sha256(&entry.file_path)
-            .await
-            .map_err(|e| e.to_string())?;
-        if actual_checksum != entry.checksum {
-            corrupted_files += 1;
-            details.push(CacheIssue {
-                entry_key: entry.key,
-                issue_type: "checksum_mismatch".to_string(),
-                description: "File content has been corrupted".to_string(),
-            });
-            continue;
-        }
+            let actual_checksum = fs::calculate_sha256(&entry.file_path)
+                .await
+                .map_err(|e| e.to_string())?;
+            if actual_checksum != entry.checksum {
+                corrupted_files += 1;
+                details.push(CacheIssue {
+                    entry_key: entry.key,
+                    issue_type: "checksum_mismatch".to_string(),
+                    description: "File content has been corrupted".to_string(),
+                });
+                continue;
+            }
 
-        valid_entries += 1;
+            valid_entries += 1;
+        }
     }
 
-    // Verify metadata cache entries (existence + size check)
-    for entry in md_entries {
-        if !fs::exists(&entry.file_path).await {
-            missing_files += 1;
-            details.push(CacheIssue {
-                entry_key: format!("metadata:{}", entry.key),
-                issue_type: "missing".to_string(),
-                description: "Metadata file not found on disk".to_string(),
-            });
-            continue;
-        }
+    if scope.includes_metadata() {
+        for entry in md_entries {
+            if !fs::exists(&entry.file_path).await {
+                missing_files += 1;
+                details.push(CacheIssue {
+                    entry_key: format!("metadata:{}", entry.key),
+                    issue_type: "missing".to_string(),
+                    description: "Metadata file not found on disk".to_string(),
+                });
+                continue;
+            }
 
-        let actual_size = fs::file_size(&entry.file_path).await.unwrap_or(entry.size);
-        if actual_size != entry.size {
-            size_mismatches += 1;
-            details.push(CacheIssue {
-                entry_key: format!("metadata:{}", entry.key),
-                issue_type: "size_mismatch".to_string(),
-                description: format!("Expected {} bytes, got {} bytes", entry.size, actual_size),
-            });
-            continue;
-        }
+            let actual_size = fs::file_size(&entry.file_path).await.unwrap_or(entry.size);
+            if actual_size != entry.size {
+                size_mismatches += 1;
+                details.push(CacheIssue {
+                    entry_key: format!("metadata:{}", entry.key),
+                    issue_type: "size_mismatch".to_string(),
+                    description: format!("Expected {} bytes, got {} bytes", entry.size, actual_size),
+                });
+                continue;
+            }
 
-        valid_entries += 1;
+            valid_entries += 1;
+        }
     }
 
     Ok(CacheVerificationResult {
@@ -346,6 +514,7 @@ pub struct CacheRepairResult {
 
 #[tauri::command]
 pub async fn cache_repair(
+    scope: Option<String>,
     app: AppHandle,
     settings: State<'_, SharedSettings>,
 ) -> Result<CacheRepairResult, String> {
@@ -353,6 +522,7 @@ pub async fn cache_repair(
     let cache_dir = s.get_cache_dir();
     let metadata_cache_ttl = s.general.metadata_cache_ttl as i64;
     drop(s);
+    let scope = CacheCommandScope::parse(scope.as_deref())?;
 
     let mut download_cache = DownloadCache::open(&cache_dir)
         .await
@@ -373,85 +543,105 @@ pub async fn cache_repair(
     let mut removed_entries = 0usize;
     let mut recovered_entries = 0usize;
     let mut freed_bytes = 0u64;
+    let mut cleanup_builder = CleanupRecordBuilder::new(format!("repair_{}", scope.as_str()), false);
 
-    // Repair download cache entries
-    for entry in dl_entries {
-        let exists = fs::exists(&entry.file_path).await;
-        let actual_size = if exists {
-            fs::file_size(&entry.file_path).await.unwrap_or(entry.size)
-        } else {
-            0
-        };
+    if scope.includes_download() {
+        for entry in dl_entries {
+            let exists = fs::exists(&entry.file_path).await;
+            let actual_size = if exists {
+                fs::file_size(&entry.file_path).await.unwrap_or(entry.size)
+            } else {
+                0
+            };
 
-        if !exists {
-            // File missing: remove orphaned DB record
-            let _ = download_cache
-                .remove(&entry.checksum)
-                .await
-                .map_err(|e| e.to_string())?;
-            removed_entries += 1;
-            continue;
-        }
-
-        if actual_size != entry.size {
-            // Size mismatch: remove entry and corrupted file
-            freed_bytes += actual_size;
-            let _ = download_cache
-                .remove(&entry.checksum)
-                .await
-                .map_err(|e| e.to_string())?;
-            removed_entries += 1;
-            continue;
-        }
-
-        // Verify checksum
-        match fs::calculate_sha256(&entry.file_path).await {
-            Ok(actual_checksum) if actual_checksum != entry.checksum => {
-                // Corrupted checksum in DB: re-register with correct checksum so the entry stays valid
-                let _ = download_cache.remove(&entry.checksum).await;
-                match download_cache
-                    .add_file(&entry.file_path, &actual_checksum)
+            if !exists {
+                let _ = download_cache
+                    .remove(&entry.checksum)
                     .await
-                {
-                    Ok(_) => {
-                        recovered_entries += 1;
-                    }
-                    Err(_) => {
-                        removed_entries += 1;
-                        freed_bytes += actual_size;
-                    }
-                }
+                    .map_err(|e| e.to_string())?;
+                cleanup_builder.add_file(entry.file_path.display().to_string(), 0, "download");
+                removed_entries += 1;
+                continue;
             }
-            Err(_) => {
-                // Cannot verify: remove
+
+            if actual_size != entry.size {
                 freed_bytes += actual_size;
                 let _ = download_cache
                     .remove(&entry.checksum)
                     .await
                     .map_err(|e| e.to_string())?;
+                cleanup_builder.add_file(
+                    entry.file_path.display().to_string(),
+                    actual_size,
+                    "download",
+                );
+                removed_entries += 1;
+                continue;
+            }
+
+            match fs::calculate_sha256(&entry.file_path).await {
+                Ok(actual_checksum) if actual_checksum != entry.checksum => {
+                    let _ = download_cache.remove(&entry.checksum).await;
+                    match download_cache
+                        .add_file(&entry.file_path, &actual_checksum)
+                        .await
+                    {
+                        Ok(_) => {
+                            recovered_entries += 1;
+                        }
+                        Err(_) => {
+                            removed_entries += 1;
+                            freed_bytes += actual_size;
+                            cleanup_builder.add_file(
+                                entry.file_path.display().to_string(),
+                                actual_size,
+                                "download",
+                            );
+                        }
+                    }
+                }
+                Err(_) => {
+                    freed_bytes += actual_size;
+                    let _ = download_cache
+                        .remove(&entry.checksum)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    cleanup_builder.add_file(
+                        entry.file_path.display().to_string(),
+                        actual_size,
+                        "download",
+                    );
+                    removed_entries += 1;
+                }
+                _ => {}
+            }
+        }
+    }
+
+    if scope.includes_metadata() {
+        for entry in md_entries {
+            if !fs::exists(&entry.file_path).await {
+                let raw_key = entry.key.strip_prefix("metadata:").unwrap_or(&entry.key);
+                let _ = metadata_cache
+                    .remove(raw_key)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                cleanup_builder.add_file(entry.file_path.display().to_string(), 0, "metadata");
                 removed_entries += 1;
             }
-            _ => {
-                // Valid entry, no action needed
-            }
         }
     }
 
-    // Repair metadata cache entries (remove orphaned records where file is missing)
-    for entry in md_entries {
-        if !fs::exists(&entry.file_path).await {
-            // preview_clean returns keys with "metadata:" prefix; remove() adds it again,
-            // so we strip the prefix to avoid double-prefixing
-            let raw_key = entry.key.strip_prefix("metadata:").unwrap_or(&entry.key);
-            let _ = metadata_cache
-                .remove(raw_key)
-                .await
-                .map_err(|e| e.to_string())?;
-            removed_entries += 1;
-        }
-    }
-
-    emit_cache_changed(&app, "repair", freed_bytes);
+    finalize_internal_cache_mutation(
+        &app,
+        &cache_dir,
+        metadata_cache_ttl,
+        "repair",
+        scope,
+        freed_bytes,
+        Some(cleanup_builder.build()),
+    )
+    .await?;
 
     Ok(CacheRepairResult {
         removed_entries,
@@ -998,14 +1188,16 @@ pub async fn cache_clean_enhanced(
     };
 
     let total_freed = dl_freed + md_freed + partial_freed;
-
-    // Save to history
-    let mut history = CleanupHistory::open(&cache_dir)
-        .await
-        .map_err(|e| e.to_string())?;
-    history.add(record).await.map_err(|e| e.to_string())?;
-
-    emit_cache_changed(&app, "clean_enhanced", total_freed);
+    finalize_internal_cache_mutation(
+        &app,
+        &cache_dir,
+        metadata_cache_ttl,
+        "clean_enhanced",
+        CacheCommandScope::from_clean_type(clean_type_str),
+        total_freed,
+        Some(record),
+    )
+    .await?;
 
     Ok(EnhancedCleanResult {
         freed_bytes: total_freed,
@@ -1215,20 +1407,49 @@ pub async fn list_cache_entries(
 pub async fn delete_cache_entry(
     key: String,
     use_trash: Option<bool>,
+    app: AppHandle,
     settings: State<'_, SharedSettings>,
 ) -> Result<bool, String> {
     let s = settings.read().await;
     let cache_dir = s.get_cache_dir();
+    let metadata_cache_ttl = s.general.metadata_cache_ttl as i64;
     drop(s);
 
     let mut download_cache = DownloadCache::open(&cache_dir)
         .await
         .map_err(|e| e.to_string())?;
+    let existing_entry = download_cache
+        .get_entry(&key)
+        .await
+        .map_err(|e| e.to_string())?;
 
-    download_cache
+    let removed = download_cache
         .remove_with_option(&key, use_trash.unwrap_or(false))
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    if removed {
+        let mut builder = CleanupRecordBuilder::new("delete_entry", use_trash.unwrap_or(false));
+        let freed_bytes = if let Some(entry) = existing_entry.as_ref() {
+            append_cleanup_entry(&mut builder, entry);
+            entry.size
+        } else {
+            0
+        };
+
+        finalize_internal_cache_mutation(
+            &app,
+            &cache_dir,
+            metadata_cache_ttl,
+            "delete_entry",
+            CacheCommandScope::All,
+            freed_bytes,
+            Some(builder.build()),
+        )
+        .await?;
+    }
+
+    Ok(removed)
 }
 
 /// Delete multiple cache entries by keys
@@ -1236,10 +1457,12 @@ pub async fn delete_cache_entry(
 pub async fn delete_cache_entries(
     keys: Vec<String>,
     use_trash: Option<bool>,
+    app: AppHandle,
     settings: State<'_, SharedSettings>,
 ) -> Result<usize, String> {
     let s = settings.read().await;
     let cache_dir = s.get_cache_dir();
+    let metadata_cache_ttl = s.general.metadata_cache_ttl as i64;
     drop(s);
 
     let mut download_cache = DownloadCache::open(&cache_dir)
@@ -1248,15 +1471,38 @@ pub async fn delete_cache_entries(
 
     let use_trash = use_trash.unwrap_or(false);
     let mut deleted = 0;
+    let mut freed_bytes = 0u64;
+    let mut builder = CleanupRecordBuilder::new("delete_entries", use_trash);
 
     for key in keys {
-        if download_cache
-            .remove_with_option(&key, use_trash)
+        let existing_entry = download_cache
+            .get_entry(&key)
             .await
-            .is_ok()
-        {
-            deleted += 1;
+            .map_err(|e| e.to_string())?;
+        match download_cache.remove_with_option(&key, use_trash).await {
+            Ok(true) => {
+                deleted += 1;
+                if let Some(entry) = existing_entry.as_ref() {
+                    freed_bytes += entry.size;
+                    append_cleanup_entry(&mut builder, entry);
+                }
+            }
+            Ok(false) => {}
+            Err(_) => {}
         }
+    }
+
+    if deleted > 0 {
+        finalize_internal_cache_mutation(
+            &app,
+            &cache_dir,
+            metadata_cache_ttl,
+            "delete_entries",
+            CacheCommandScope::All,
+            freed_bytes,
+            Some(builder.build()),
+        )
+        .await?;
     }
 
     Ok(deleted)
@@ -1351,20 +1597,45 @@ pub async fn calculate_external_cache_size(
 pub async fn clean_external_cache(
     provider: String,
     use_trash: bool,
+    app: AppHandle,
 ) -> Result<ExternalCacheCleanResult, String> {
-    external::clean_cache(&provider, use_trash)
+    let result = external::clean_cache(&provider, use_trash)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    if result.success {
+        emit_external_cache_changed(
+            &app,
+            "external_clean",
+            result.freed_bytes,
+            &format!("external:{}", result.provider),
+        );
+    }
+
+    Ok(result)
 }
 
 /// Clean all external package manager caches
 #[tauri::command]
 pub async fn clean_all_external_caches(
     use_trash: bool,
+    app: AppHandle,
 ) -> Result<Vec<ExternalCacheCleanResult>, String> {
-    external::clean_all_caches(use_trash)
+    let results = external::clean_all_caches(use_trash)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    let total_freed = results
+        .iter()
+        .filter(|result| result.success)
+        .map(|result| result.freed_bytes)
+        .sum();
+
+    if results.iter().any(|result| result.success) {
+        emit_external_cache_changed(&app, "external_clean_all", total_freed, "external");
+    }
+
+    Ok(results)
 }
 
 /// Get combined cache statistics (internal + external)
@@ -1591,6 +1862,7 @@ pub async fn get_cache_path_info(
 #[tauri::command]
 pub async fn set_cache_path(
     new_path: String,
+    app: AppHandle,
     settings: State<'_, SharedSettings>,
 ) -> Result<(), String> {
     let path = PathBuf::from(&new_path);
@@ -1616,23 +1888,54 @@ pub async fn set_cache_path(
 
     // Update settings
     let mut s = settings.write().await;
+    let metadata_cache_ttl = s.general.metadata_cache_ttl as i64;
     s.paths.cache = if new_path.is_empty() {
         None
     } else {
         Some(path)
     };
     s.save().await.map_err(|e| e.to_string())?;
+    let active_cache_dir = s.get_cache_dir();
+    drop(s);
+
+    finalize_internal_cache_mutation(
+        &app,
+        &active_cache_dir,
+        metadata_cache_ttl,
+        "path_changed",
+        CacheCommandScope::All,
+        0,
+        None,
+    )
+    .await?;
 
     Ok(())
 }
 
 /// Reset cache path to default
 #[tauri::command]
-pub async fn reset_cache_path(settings: State<'_, SharedSettings>) -> Result<String, String> {
+pub async fn reset_cache_path(
+    app: AppHandle,
+    settings: State<'_, SharedSettings>,
+) -> Result<String, String> {
     let mut s = settings.write().await;
+    let metadata_cache_ttl = s.general.metadata_cache_ttl as i64;
     s.paths.cache = None;
     s.save().await.map_err(|e| e.to_string())?;
     let default_path = s.get_cache_dir();
+    drop(s);
+
+    finalize_internal_cache_mutation(
+        &app,
+        &default_path,
+        metadata_cache_ttl,
+        "path_reset",
+        CacheCommandScope::All,
+        0,
+        None,
+    )
+    .await?;
+
     Ok(default_path.display().to_string())
 }
 
@@ -1666,6 +1969,7 @@ pub async fn cache_migrate(
 ) -> Result<MigrationResult, String> {
     let s = settings.read().await;
     let source = s.get_cache_dir();
+    let metadata_cache_ttl = s.general.metadata_cache_ttl as i64;
     drop(s);
 
     let dest = PathBuf::from(&destination);
@@ -1687,7 +1991,7 @@ pub async fn cache_migrate(
     // If migration succeeded with Move mode, update the config to point to new path
     if result.success && migration_mode == MigrationMode::Move {
         let mut s = settings.write().await;
-        s.paths.cache = Some(dest);
+        s.paths.cache = Some(dest.clone());
         if let Err(e) = s.save().await {
             // Migration succeeded but config save failed - warn but don't fail
             log::warn!("Cache migrated but config update failed: {}", e);
@@ -1696,7 +2000,22 @@ pub async fn cache_migrate(
     // For MoveAndLink mode, the old path still works via symlink, no config change needed
 
     if result.success {
-        emit_cache_changed(&app, "migrate", result.bytes_migrated);
+        let active_cache_dir = if migration_mode == MigrationMode::Move {
+            dest.clone()
+        } else {
+            source.clone()
+        };
+
+        finalize_internal_cache_mutation(
+            &app,
+            &active_cache_dir,
+            metadata_cache_ttl,
+            "migrate",
+            CacheCommandScope::All,
+            result.bytes_migrated,
+            None,
+        )
+        .await?;
     }
 
     Ok(result)
@@ -1767,13 +2086,16 @@ pub async fn cache_force_clean(
 
     let total_freed = dl_freed + md_size_before + partial_freed;
 
-    // Save history
-    let mut history = CleanupHistory::open(&cache_dir)
-        .await
-        .map_err(|e| e.to_string())?;
-    history.add(record).await.map_err(|e| e.to_string())?;
-
-    emit_cache_changed(&app, "force_clean", total_freed);
+    finalize_internal_cache_mutation(
+        &app,
+        &cache_dir,
+        metadata_cache_ttl,
+        "force_clean",
+        CacheCommandScope::All,
+        total_freed,
+        Some(record),
+    )
+    .await?;
 
     Ok(EnhancedCleanResult {
         freed_bytes: total_freed,
@@ -1790,6 +2112,7 @@ pub async fn cache_force_clean_external(
     provider: String,
     use_command: Option<bool>,
     use_trash: Option<bool>,
+    app: AppHandle,
 ) -> Result<ExternalCacheCleanResult, String> {
     let provider_enum = external::ExternalCacheProvider::parse_str(&provider)
         .ok_or_else(|| format!("Unknown provider: {}", provider))?;
@@ -1836,14 +2159,21 @@ pub async fn cache_force_clean_external(
         Ok(()) => {
             external::invalidate_discovery_cache().await;
             external::invalidate_provider_size_cache(provider_enum.id()).await;
-            Ok(ExternalCacheCleanResult {
+            let result = ExternalCacheCleanResult {
                 provider: provider_enum.id().to_string(),
                 display_name: provider_enum.display_name().to_string(),
                 freed_bytes: freed,
                 freed_human: format_size(freed),
                 success: true,
                 error: None,
-            })
+            };
+            emit_external_cache_changed(
+                &app,
+                "external_force_clean",
+                freed,
+                &format!("external:{}", result.provider),
+            );
+            Ok(result)
         }
         Err(e) => Ok(ExternalCacheCleanResult {
             provider: provider_enum.id().to_string(),
@@ -1978,10 +2308,12 @@ pub struct CacheOptimizeResult {
 
 #[tauri::command]
 pub async fn cache_optimize(
+    app: AppHandle,
     settings: State<'_, SharedSettings>,
 ) -> Result<CacheOptimizeResult, String> {
     let s = settings.read().await;
     let cache_dir = s.get_cache_dir();
+    let metadata_cache_ttl = s.general.metadata_cache_ttl as i64;
     drop(s);
 
     let download_cache = DownloadCache::open(&cache_dir)
@@ -1991,6 +2323,17 @@ pub async fn cache_optimize(
     let (size_before, size_after) = download_cache.optimize().await.map_err(|e| e.to_string())?;
 
     let size_saved = size_before.saturating_sub(size_after);
+
+    finalize_internal_cache_mutation(
+        &app,
+        &cache_dir,
+        metadata_cache_ttl,
+        "optimize",
+        CacheCommandScope::All,
+        size_saved,
+        None,
+    )
+    .await?;
 
     Ok(CacheOptimizeResult {
         size_before,
@@ -2028,7 +2371,9 @@ pub async fn get_cache_size_history(
 
 #[cfg(test)]
 mod tests {
-    use super::CacheOptimizeResult;
+    use super::{record_cache_snapshot, CacheChangedEvent, CacheCommandScope, CacheOptimizeResult};
+    use crate::cache::{DownloadCache, MetadataCache};
+    use tempfile::tempdir;
     use serde_json::Value;
 
     #[test]
@@ -2061,5 +2406,90 @@ mod tests {
         ));
         assert!(value.get("size_before").is_none());
         assert!(value.get("size_before_human").is_none());
+    }
+
+    #[test]
+    fn cache_changed_event_serializes_scope_and_domains() {
+        let payload = CacheChangedEvent {
+            action: "repair".to_string(),
+            freed_bytes: 128,
+            freed_human: "128 B".to_string(),
+            scope: "download".to_string(),
+            domains: vec![
+                "cache_overview".to_string(),
+                "cache_entries".to_string(),
+                "about_cache_stats".to_string(),
+            ],
+        };
+
+        let value = serde_json::to_value(payload).expect("serialize cache changed event");
+
+        assert_eq!(
+            value.get("scope"),
+            Some(&Value::String("download".to_string()))
+        );
+        assert!(matches!(value.get("domains"), Some(Value::Array(domains)) if domains.len() == 3));
+        assert!(value.get("freedBytes").is_some());
+        assert!(value.get("freedHuman").is_some());
+    }
+
+    #[test]
+    fn cache_command_scope_maps_internal_and_external_domains() {
+        assert_eq!(
+            CacheCommandScope::Download.domains(),
+            vec![
+                "cache_overview".to_string(),
+                "cache_entries".to_string(),
+                "about_cache_stats".to_string(),
+            ]
+        );
+        assert_eq!(
+            CacheCommandScope::External.domains(),
+            vec![
+                "external_cache".to_string(),
+                "cache_overview".to_string(),
+                "about_cache_stats".to_string(),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn record_cache_snapshot_tracks_download_and_metadata_counts() {
+        let dir = tempdir().expect("tempdir");
+        let cache_dir = dir.path();
+        let test_file = cache_dir.join("snapshot-source.bin");
+        tokio::fs::write(&test_file, b"snapshot-test")
+            .await
+            .expect("write test file");
+
+        let checksum = crate::platform::fs::calculate_sha256(&test_file)
+            .await
+            .expect("checksum");
+
+        let mut download_cache = DownloadCache::open(cache_dir).await.expect("download cache");
+        download_cache
+            .add_file(&test_file, &checksum)
+            .await
+            .expect("cache download file");
+
+        let mut metadata_cache = MetadataCache::open_with_ttl(cache_dir, 3600)
+            .await
+            .expect("metadata cache");
+        metadata_cache
+            .set("snapshot-meta", &serde_json::json!({ "name": "cached" }))
+            .await
+            .expect("write metadata cache");
+
+        record_cache_snapshot(cache_dir, 3600)
+            .await
+            .expect("record snapshot");
+
+        let snapshots = download_cache
+            .get_size_snapshots(30)
+            .await
+            .expect("load snapshots");
+        assert_eq!(snapshots.len(), 1);
+        assert_eq!(snapshots[0].download_count, 1);
+        assert_eq!(snapshots[0].metadata_count, 1);
     }
 }

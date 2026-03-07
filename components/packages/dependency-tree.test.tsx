@@ -85,6 +85,50 @@ const mockResolution = {
   total_size: null,
 };
 
+const nestedResolution = {
+  ...mockResolution,
+  tree: [
+    {
+      name: "root-lib",
+      version: "3.0.0",
+      constraint: ">=3.0.0",
+      provider: "pip",
+      dependencies: [
+        {
+          name: "mid-lib",
+          version: "2.0.0",
+          constraint: ">=2.0.0",
+          provider: "pip",
+          dependencies: [
+            {
+              name: "leaf-lib",
+              version: "1.0.0",
+              constraint: ">=1.0.0",
+              provider: "pip",
+              dependencies: [],
+              is_direct: false,
+              is_installed: false,
+              is_conflict: false,
+              conflict_reason: null,
+              depth: 2,
+            },
+          ],
+          is_direct: false,
+          is_installed: false,
+          is_conflict: false,
+          conflict_reason: null,
+          depth: 1,
+        },
+      ],
+      is_direct: true,
+      is_installed: true,
+      is_conflict: false,
+      conflict_reason: null,
+      depth: 0,
+    },
+  ],
+};
+
 const mockOnResolve = jest.fn().mockResolvedValue(mockResolution);
 
 const defaultProps = {
@@ -182,6 +226,47 @@ describe("DependencyTree", () => {
     render(<DependencyTree {...defaultProps} resolution={mockResolution} />);
     await user.click(screen.getByRole("button", { name: /collapse all/i }));
     // No error means collapseAll ran successfully
+  });
+
+  it("expands nested dependency levels when expand all is triggered", async () => {
+    const user = userEvent.setup();
+    render(<DependencyTree {...defaultProps} resolution={nestedResolution} />);
+
+    await user.click(screen.getByRole("button", { name: /expand all/i }));
+
+    expect(screen.getByText("mid-lib")).toBeVisible();
+    expect(screen.getByText("leaf-lib")).toBeVisible();
+  });
+
+  it("collapses all then allows manual deep-node expansion", async () => {
+    const user = userEvent.setup();
+    render(<DependencyTree {...defaultProps} resolution={nestedResolution} />);
+
+    await user.click(screen.getByRole("button", { name: /expand all/i }));
+    expect(screen.getByText("leaf-lib")).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: /collapse all/i }));
+
+    const hiddenLeaf = screen.queryByText("leaf-lib");
+    if (hiddenLeaf) {
+      expect(hiddenLeaf).not.toBeVisible();
+    }
+
+    const rootToggle = screen
+      .getByText("root-lib")
+      .closest("div")
+      ?.querySelector("button");
+    expect(rootToggle).toBeTruthy();
+    await user.click(rootToggle!);
+
+    const midToggle = screen
+      .getByText("mid-lib")
+      .closest("div")
+      ?.querySelector("button");
+    expect(midToggle).toBeTruthy();
+    await user.click(midToggle!);
+
+    expect(screen.getByText("leaf-lib")).toBeVisible();
   });
 
   it("handles search input change", async () => {

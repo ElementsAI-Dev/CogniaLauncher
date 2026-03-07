@@ -7,6 +7,8 @@ import { DEFAULT_SIDEBAR_ITEM_ORDER } from "@/lib/sidebar/order";
 const mockIsTauri = jest.fn(() => false);
 const mockTraySetMinimizeToTray = jest.fn().mockResolvedValue(undefined);
 const mockTraySetStartMinimized = jest.fn().mockResolvedValue(undefined);
+const mockTraySetShowNotifications = jest.fn().mockResolvedValue(undefined);
+const mockTraySetNotificationLevel = jest.fn().mockResolvedValue(undefined);
 
 jest.mock("@/lib/tauri", () => ({
   isTauri: () => mockIsTauri(),
@@ -14,6 +16,8 @@ jest.mock("@/lib/tauri", () => ({
   trayEnableAutostart: jest.fn().mockResolvedValue(undefined),
   trayDisableAutostart: jest.fn().mockResolvedValue(undefined),
   traySetClickBehavior: jest.fn().mockResolvedValue(undefined),
+  traySetShowNotifications: (v: boolean) => mockTraySetShowNotifications(v),
+  traySetNotificationLevel: (v: string) => mockTraySetNotificationLevel(v),
   traySetMinimizeToTray: (v: boolean) => mockTraySetMinimizeToTray(v),
   traySetStartMinimized: (v: boolean) => mockTraySetStartMinimized(v),
   trayGetAvailableMenuItems: jest.fn().mockResolvedValue(["show_hide", "quit"]),
@@ -35,10 +39,16 @@ const mockT = (key: string) => {
     "settings.autostartDesc": "Start app on login",
     "settings.showNotifications": "Show Notifications",
     "settings.showNotificationsDesc": "Show desktop notifications",
+    "settings.trayNotificationLevel": "Notification Level",
+    "settings.trayNotificationLevelDesc": "Choose which tray notifications to display",
+    "settings.trayNotificationLevelAll": "All",
+    "settings.trayNotificationLevelImportantOnly": "Important Only",
+    "settings.trayNotificationLevelNone": "None",
     "settings.trayClickBehavior": "Tray Click Behavior",
     "settings.trayClickBehaviorDesc": "Action when tray icon is clicked",
     "settings.trayClickToggle": "Toggle Window",
     "settings.trayClickMenu": "Show Menu",
+    "settings.trayClickCheckUpdates": "Check Updates",
     "settings.trayClickNothing": "Do Nothing",
   };
   return translations[key] || key;
@@ -54,6 +64,7 @@ describe("TraySettings", () => {
     autostart: false,
     trayClickBehavior: "toggle_window",
     showNotifications: true,
+    trayNotificationLevel: "all",
     sidebarItemOrder: [...DEFAULT_SIDEBAR_ITEM_ORDER],
   };
 
@@ -229,6 +240,7 @@ describe("TraySettings", () => {
       mockIsTauri.mockReturnValue(true);
       mockTraySetMinimizeToTray.mockClear();
       mockTraySetStartMinimized.mockClear();
+      mockTraySetShowNotifications.mockClear();
     });
 
     it("should call traySetMinimizeToTray when minimize toggle changes", () => {
@@ -263,6 +275,23 @@ describe("TraySettings", () => {
 
       expect(onValueChange).toHaveBeenCalledWith("startMinimized", true);
       expect(mockTraySetStartMinimized).toHaveBeenCalledWith(true);
+    });
+
+    it("should call traySetShowNotifications when notifications toggle changes", () => {
+      const onValueChange = jest.fn();
+      render(
+        <TraySettings
+          appSettings={appSettings}
+          onValueChange={onValueChange}
+          t={mockT}
+        />,
+      );
+
+      const switches = screen.getAllByRole("switch");
+      fireEvent.click(switches[3]); // showNotifications
+
+      expect(onValueChange).toHaveBeenCalledWith("showNotifications", false);
+      expect(mockTraySetShowNotifications).toHaveBeenCalledWith(false);
     });
 
     it("should render tray menu customizer in Tauri mode", () => {

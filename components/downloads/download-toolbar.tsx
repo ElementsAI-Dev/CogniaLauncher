@@ -33,7 +33,9 @@ export type StatusFilter =
   | "queued"
   | "paused"
   | "completed"
-  | "failed";
+  | "failed"
+  | "cancelled"
+  | "extracting";
 
 export interface DownloadToolbarProps {
   searchQuery: string;
@@ -51,6 +53,7 @@ export interface DownloadToolbarProps {
   onCancelAll: () => void;
   onClearFinished: () => void;
   onRetryFailed: () => void;
+  extractingCount: number;
   stats: QueueStats;
   isLoading: boolean;
   t: (key: string) => string;
@@ -72,6 +75,7 @@ export function DownloadToolbar({
   onCancelAll,
   onClearFinished,
   onRetryFailed,
+  extractingCount,
   stats,
   isLoading,
   t,
@@ -262,6 +266,18 @@ export function DownloadToolbar({
             {t("downloads.toolbar.filterFailed")}
             <Badge variant="secondary" className="px-1.5 py-0 text-xs">
               {stats.failed}
+            </Badge>
+          </TabsTrigger>
+          <TabsTrigger value="cancelled" className="gap-1.5">
+            {t("downloads.toolbar.filterCancelled")}
+            <Badge variant="secondary" className="px-1.5 py-0 text-xs">
+              {stats.cancelled}
+            </Badge>
+          </TabsTrigger>
+          <TabsTrigger value="extracting" className="gap-1.5">
+            {t("downloads.toolbar.filterExtracting")}
+            <Badge variant="secondary" className="px-1.5 py-0 text-xs">
+              {extractingCount}
             </Badge>
           </TabsTrigger>
         </TabsList>

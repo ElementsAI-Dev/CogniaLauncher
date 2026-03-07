@@ -18,6 +18,7 @@ describe('useLogStore', () => {
       drawerOpen: false,
       logFiles: [],
       selectedLogFile: null,
+      filterPresets: [],
       bookmarkedIds: [],
       showBookmarksOnly: false,
       _logCounts: { trace: 0, debug: 0, info: 0, warn: 0, error: 0 },
@@ -412,6 +413,53 @@ describe('useLogStore', () => {
 
       useLogStore.getState().setSelectedLogFile(null);
       expect(useLogStore.getState().selectedLogFile).toBeNull();
+    });
+  });
+
+  describe('filter presets', () => {
+    it('should save and retrieve presets by scope', () => {
+      const firstId = useLogStore.getState().saveFilterPreset('Realtime Preset', 'realtime', {
+        levels: ['info', 'warn'],
+        search: 'startup',
+        useRegex: false,
+        target: 'app',
+        maxScanLines: null,
+        startTime: null,
+        endTime: null,
+      });
+      useLogStore.getState().saveFilterPreset('History Preset', 'historical', {
+        levels: ['error'],
+        search: 'panic',
+        useRegex: true,
+        target: 'backend',
+        maxScanLines: 5000,
+        startTime: 100,
+        endTime: 200,
+      });
+
+      const realtime = useLogStore.getState().getFilterPresets('realtime');
+      const historical = useLogStore.getState().getFilterPresets('historical');
+
+      expect(realtime).toHaveLength(1);
+      expect(historical).toHaveLength(1);
+      expect(realtime[0].id).toBe(firstId);
+      expect(realtime[0].filter.search).toBe('startup');
+      expect(historical[0].filter.search).toBe('panic');
+    });
+
+    it('should delete presets by id', () => {
+      const id = useLogStore.getState().saveFilterPreset('Delete Me', 'realtime', {
+        levels: ['info'],
+        search: '',
+        useRegex: false,
+        target: undefined,
+        maxScanLines: null,
+        startTime: null,
+        endTime: null,
+      });
+
+      useLogStore.getState().deleteFilterPreset(id);
+      expect(useLogStore.getState().getFilterPresets('realtime')).toHaveLength(0);
     });
   });
 

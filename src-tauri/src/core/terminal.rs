@@ -1193,6 +1193,54 @@ impl TerminalConfigMutationStage {
     }
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum TerminalConfigDiagnosticCategory {
+    Validation,
+    Backup,
+    Write,
+    Verification,
+    Snapshot,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalConfigDiagnosticLocation {
+    pub line: Option<usize>,
+    pub column: Option<usize>,
+    pub end_line: Option<usize>,
+    pub end_column: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalConfigDiagnostic {
+    pub category: TerminalConfigDiagnosticCategory,
+    pub stage: Option<TerminalConfigMutationStage>,
+    pub message: String,
+    pub location: Option<TerminalConfigDiagnosticLocation>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum TerminalEditorLanguage {
+    Bash,
+    PowerShell,
+    Dos,
+    Plaintext,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalConfigEditorMetadata {
+    pub path: String,
+    pub shell_type: ShellType,
+    pub language: TerminalEditorLanguage,
+    pub snapshot_path: Option<String>,
+    pub fingerprint: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TerminalConfigMutationResult {
@@ -1202,6 +1250,26 @@ pub struct TerminalConfigMutationResult {
     pub bytes_written: usize,
     pub verified: bool,
     pub diagnostics: Vec<String>,
+    #[serde(default)]
+    pub diagnostic_details: Vec<TerminalConfigDiagnostic>,
+    #[serde(default)]
+    pub snapshot_path: Option<String>,
+    #[serde(default)]
+    pub fingerprint: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalConfigRestoreResult {
+    pub path: String,
+    pub snapshot_path: String,
+    pub bytes_written: usize,
+    pub verified: bool,
+    pub diagnostics: Vec<String>,
+    #[serde(default)]
+    pub diagnostic_details: Vec<TerminalConfigDiagnostic>,
+    #[serde(default)]
+    pub fingerprint: Option<String>,
 }
 
 fn stage_error(stage: TerminalConfigMutationStage, message: impl Into<String>) -> CogniaError {
@@ -1210,6 +1278,168 @@ fn stage_error(stage: TerminalConfigMutationStage, message: impl Into<String>) -
 
 fn stage_wrap(stage: TerminalConfigMutationStage, error: CogniaError) -> CogniaError {
     stage_error(stage, error.to_string())
+}
+
+fn diagnostic_with_stage(
+    stage: TerminalConfigMutationStage,
+    message: impl Into<String>,
+    location: Option<TerminalConfigDiagnosticLocation>,
+) -> TerminalConfigDiagnostic {
+    let category = match stage {
+        TerminalConfigMutationStage::Validation => TerminalConfigDiagnosticCategory::Validation,
+        TerminalConfigMutationStage::Backup => TerminalConfigDiagnosticCategory::Backup,
+        TerminalConfigMutationStage::Write => TerminalConfigDiagnosticCategory::Write,
+        TerminalConfigMutationStage::Verification => TerminalConfigDiagnosticCategory::Verification,
+    };
+    TerminalConfigDiagnostic {
+        category,
+        stage: Some(stage),
+        message: message.into(),
+        location,
+    }
+}
+
+fn snapshot_path_for_target(path: &Path) -> PathBuf {
+    let parent = path.parent().unwrap_or(path);
+    let file_name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("config");
+    parent
+        .join(".cognia")
+        .join("terminal-snapshots")
+        .join(format!("{}.latest", file_name))
+}
+
+fn editor_language_for_shell(shell_type: ShellType) -> TerminalEditorLanguage {
+    match shell_type {
+        ShellType::Bash | ShellType::Zsh | ShellType::Fish | ShellType::Nushell => {
+            TerminalEditorLanguage::Bash
+        }
+        ShellType::PowerShell => TerminalEditorLanguage::PowerShell,
+        ShellType::Cmd => TerminalEditorLanguage::Dos,
+    }
+}
+
+fn infer_shell_type_from_path(path: &Path) -> ShellType {
+    let lower = path.to_string_lossy().to_ascii_lowercase();
+    if lower.ends_with(".ps1") || lower.contains("powershell_profile") {
+        return ShellType::PowerShell;
+    }
+    if lower.ends_with(".nu") || lower.contains("nushell") {
+        return ShellType::Nushell;
+    }
+    if lower.contains("fish") || lower.ends_with(".fish") {
+        return ShellType::Fish;
+    }
+    if lower.ends_with(".cmd") || lower.ends_with(".bat") {
+        return ShellType::Cmd;
+    }
+    if lower.contains("zsh") {
+        return ShellType::Zsh;
+    }
+    ShellType::Bash
+}
+
+fn count_unescaped(line: &str, needle: char) -> usize {
+    let mut escaped = false;
+    let mut count = 0usize;
+    for ch in line.chars() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        if ch == needle {
+            count += 1;
+        }
+    }
+    count
+}
+
+pub fn validate_shell_config_content(
+    content: &str,
+    shell_type: ShellType,
+) -> Vec<TerminalConfigDiagnostic> {
+    let mut diagnostics: Vec<TerminalConfigDiagnostic> = Vec::new();
+    for (idx, raw_line) in content.lines().enumerate() {
+        let line_no = idx + 1;
+        let line = raw_line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        let make_loc = || {
+            Some(TerminalConfigDiagnosticLocation {
+                line: Some(line_no),
+                column: Some(1),
+                end_line: Some(line_no),
+                end_column: Some(raw_line.chars().count().max(1)),
+            })
+        };
+
+        match shell_type {
+            ShellType::Bash | ShellType::Zsh | ShellType::Fish | ShellType::Nushell => {
+                if count_unescaped(raw_line, '"') % 2 != 0 {
+                    diagnostics.push(diagnostic_with_stage(
+                        TerminalConfigMutationStage::Validation,
+                        "Unterminated double quote",
+                        make_loc(),
+                    ));
+                }
+                if count_unescaped(raw_line, '\'') % 2 != 0 {
+                    diagnostics.push(diagnostic_with_stage(
+                        TerminalConfigMutationStage::Validation,
+                        "Unterminated single quote",
+                        make_loc(),
+                    ));
+                }
+            }
+            ShellType::PowerShell => {
+                let open = raw_line.matches('{').count();
+                let close = raw_line.matches('}').count();
+                if open != close {
+                    diagnostics.push(diagnostic_with_stage(
+                        TerminalConfigMutationStage::Validation,
+                        "Unbalanced curly braces",
+                        make_loc(),
+                    ));
+                }
+                if count_unescaped(raw_line, '"') % 2 != 0 {
+                    diagnostics.push(diagnostic_with_stage(
+                        TerminalConfigMutationStage::Validation,
+                        "Unterminated double quote",
+                        make_loc(),
+                    ));
+                }
+                if count_unescaped(raw_line, '\'') % 2 != 0 {
+                    diagnostics.push(diagnostic_with_stage(
+                        TerminalConfigMutationStage::Validation,
+                        "Unterminated single quote",
+                        make_loc(),
+                    ));
+                }
+            }
+            ShellType::Cmd => {}
+        }
+    }
+    diagnostics
+}
+
+async fn persist_shell_config_snapshot(path: &Path, content: &str) -> CogniaResult<PathBuf> {
+    let snapshot_path = snapshot_path_for_target(path);
+    if let Some(parent) = snapshot_path.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|e| CogniaError::Internal(format!("Failed to create snapshot dir: {}", e)))?;
+    }
+    tokio::fs::write(&snapshot_path, content)
+        .await
+        .map_err(|e| CogniaError::Internal(format!("Failed to persist snapshot: {}", e)))?;
+    Ok(snapshot_path)
 }
 
 fn normalize_config_text(input: &str) -> String {
@@ -1228,6 +1458,36 @@ pub async fn read_shell_config(path: &Path) -> CogniaResult<String> {
         .await
         .map_err(|e| CogniaError::Internal(format!("Failed to read config: {}", e)))?;
     Ok(decode_config_bytes(&bytes))
+}
+
+pub async fn get_shell_config_editor_metadata(
+    path: &Path,
+    shell_type: ShellType,
+) -> CogniaResult<TerminalConfigEditorMetadata> {
+    if path.as_os_str().is_empty() {
+        return Err(stage_error(
+            TerminalConfigMutationStage::Validation,
+            "Config path cannot be empty",
+        ));
+    }
+    let snapshot_path = snapshot_path_for_target(path);
+    let snapshot = if fs::exists(&snapshot_path).await {
+        Some(snapshot_path.display().to_string())
+    } else {
+        None
+    };
+    let fingerprint = if fs::exists(path).await {
+        fs::calculate_sha256(path).await.ok()
+    } else {
+        None
+    };
+    Ok(TerminalConfigEditorMetadata {
+        path: path.display().to_string(),
+        shell_type,
+        language: editor_language_for_shell(shell_type),
+        snapshot_path: snapshot,
+        fingerprint,
+    })
 }
 
 /// Decode raw bytes to String, detecting BOM for UTF-8/UTF-16LE/UTF-16BE.
@@ -1322,6 +1582,13 @@ pub async fn backup_shell_config_verified(
         bytes_written: 0,
         verified: true,
         diagnostics: vec!["Backup created and verified".to_string()],
+        diagnostic_details: vec![diagnostic_with_stage(
+            TerminalConfigMutationStage::Verification,
+            "Backup created and verified",
+            None,
+        )],
+        snapshot_path: None,
+        fingerprint: fs::calculate_sha256(path).await.ok(),
     })
 }
 
@@ -1346,6 +1613,14 @@ pub async fn append_to_shell_config_verified(
         return Err(stage_error(
             TerminalConfigMutationStage::Validation,
             "Config path cannot be empty",
+        ));
+    }
+    let shell_type = infer_shell_type_from_path(path);
+    let validation_diagnostics = validate_shell_config_content(content, shell_type);
+    if let Some(first) = validation_diagnostics.first() {
+        return Err(stage_error(
+            TerminalConfigMutationStage::Validation,
+            format!("Shell config validation failed: {}", first.message),
         ));
     }
 
@@ -1392,6 +1667,11 @@ pub async fn append_to_shell_config_verified(
             "Persisted config content does not contain the appended block",
         ));
     }
+    let snapshot_path = persist_shell_config_snapshot(path, &persisted)
+        .await
+        .ok()
+        .map(|p| p.display().to_string());
+    let fingerprint = fs::calculate_sha256(path).await.ok();
 
     Ok(TerminalConfigMutationResult {
         operation: TerminalConfigMutationOperation::Append,
@@ -1400,6 +1680,13 @@ pub async fn append_to_shell_config_verified(
         bytes_written: appended.as_bytes().len(),
         verified: true,
         diagnostics: vec!["Append operation verified by read-back".to_string()],
+        diagnostic_details: vec![diagnostic_with_stage(
+            TerminalConfigMutationStage::Verification,
+            "Append operation verified by read-back",
+            None,
+        )],
+        snapshot_path,
+        fingerprint,
     })
 }
 
@@ -1412,6 +1699,14 @@ pub async fn write_shell_config_verified(
         return Err(stage_error(
             TerminalConfigMutationStage::Validation,
             "Config path cannot be empty",
+        ));
+    }
+    let shell_type = infer_shell_type_from_path(path);
+    let validation_diagnostics = validate_shell_config_content(content, shell_type);
+    if let Some(first) = validation_diagnostics.first() {
+        return Err(stage_error(
+            TerminalConfigMutationStage::Validation,
+            format!("Shell config validation failed: {}", first.message),
         ));
     }
 
@@ -1457,6 +1752,11 @@ pub async fn write_shell_config_verified(
             "Persisted config content mismatch after write",
         ));
     }
+    let snapshot_path = persist_shell_config_snapshot(path, &persisted)
+        .await
+        .ok()
+        .map(|p| p.display().to_string());
+    let fingerprint = fs::calculate_sha256(path).await.ok();
 
     debug!("Wrote and verified config {}", path.display());
     Ok(TerminalConfigMutationResult {
@@ -1466,6 +1766,59 @@ pub async fn write_shell_config_verified(
         bytes_written: content.as_bytes().len(),
         verified: true,
         diagnostics: vec!["Write operation verified by read-back".to_string()],
+        diagnostic_details: vec![diagnostic_with_stage(
+            TerminalConfigMutationStage::Verification,
+            "Write operation verified by read-back",
+            None,
+        )],
+        snapshot_path,
+        fingerprint,
+    })
+}
+
+pub async fn restore_shell_config_snapshot(path: &Path) -> CogniaResult<TerminalConfigRestoreResult> {
+    if path.as_os_str().is_empty() {
+        return Err(stage_error(
+            TerminalConfigMutationStage::Validation,
+            "Config path cannot be empty",
+        ));
+    }
+    let snapshot_path = snapshot_path_for_target(path);
+    if !fs::exists(&snapshot_path).await {
+        return Err(stage_error(
+            TerminalConfigMutationStage::Validation,
+            format!(
+                "No restorable snapshot found for target: {}",
+                path.display()
+            ),
+        ));
+    }
+
+    let snapshot_content = read_shell_config(&snapshot_path)
+        .await
+        .map_err(|e| stage_wrap(TerminalConfigMutationStage::Verification, e))?;
+    let write_result = write_shell_config_verified(path, &snapshot_content).await?;
+
+    Ok(TerminalConfigRestoreResult {
+        path: path.display().to_string(),
+        snapshot_path: snapshot_path.display().to_string(),
+        bytes_written: write_result.bytes_written,
+        verified: write_result.verified,
+        diagnostics: {
+            let mut diagnostics = write_result.diagnostics.clone();
+            diagnostics.push("Config restored from latest snapshot".to_string());
+            diagnostics
+        },
+        diagnostic_details: {
+            let mut details = write_result.diagnostic_details.clone();
+            details.push(diagnostic_with_stage(
+                TerminalConfigMutationStage::Verification,
+                "Config restored from latest snapshot",
+                None,
+            ));
+            details
+        },
+        fingerprint: write_result.fingerprint,
     })
 }
 
@@ -4505,6 +4858,61 @@ source ~/no_space.nu
             .unwrap_err()
             .to_string();
         assert!(err.contains("[backup]"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_validate_shell_config_content_reports_location() {
+        let diagnostics = validate_shell_config_content("export A=\"unterminated", ShellType::Bash);
+        assert!(!diagnostics.is_empty());
+        let first = &diagnostics[0];
+        assert_eq!(
+            first.category,
+            TerminalConfigDiagnosticCategory::Validation
+        );
+        assert_eq!(first.stage, Some(TerminalConfigMutationStage::Validation));
+        assert_eq!(first.location.as_ref().and_then(|loc| loc.line), Some(1));
+    }
+
+    #[tokio::test]
+    async fn test_get_shell_config_editor_metadata_maps_shell_language() {
+        let dir = std::env::temp_dir().join("cognia_test_editor_metadata");
+        let path = dir.join("profile.ps1");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(&path, "$env:FOO='bar'").unwrap();
+
+        let metadata = get_shell_config_editor_metadata(&path, ShellType::PowerShell)
+            .await
+            .unwrap();
+        assert_eq!(metadata.shell_type, ShellType::PowerShell);
+        assert_eq!(metadata.language, TerminalEditorLanguage::PowerShell);
+        assert!(metadata.fingerprint.is_some());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn test_restore_shell_config_snapshot_replaces_current_content() {
+        let dir = std::env::temp_dir().join("cognia_test_restore_snapshot");
+        let path = dir.join(".bashrc");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        write_shell_config_verified(&path, "export FOO=before\n")
+            .await
+            .unwrap();
+        tokio::fs::write(&path, "export FOO=drift\n").await.unwrap();
+
+        let restore_result = restore_shell_config_snapshot(&path).await.unwrap();
+        assert!(restore_result.verified);
+        assert!(restore_result.snapshot_path.contains(".latest"));
+        let restored = read_shell_config(&path).await.unwrap();
+        assert_eq!(
+            normalize_config_text(&restored),
+            normalize_config_text("export FOO=before\n")
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }

@@ -1,6 +1,8 @@
 import { useState, useCallback } from 'react';
 import * as tauri from '@/lib/tauri';
 import type {
+  EditorCapabilityProbeResult,
+  EditorOpenActionResult,
   GitRepoInfo,
   GitCommitEntry,
   GitBranchInfo,
@@ -19,6 +21,11 @@ import type {
   GitReflogEntry,
   GitCloneOptions,
 } from '@/types/tauri';
+import type {
+  GitConfigApplyPlanItem,
+  GitConfigApplyResultItem,
+  GitConfigApplySummary,
+} from '@/types/git';
 
 export interface UseGitReturn {
   // State
@@ -52,7 +59,9 @@ export interface UseGitReturn {
   getConfigFilePath: () => Promise<string | null>;
   listAliases: () => Promise<GitConfigEntry[]>;
   setConfigIfUnset: (key: string, value: string) => Promise<boolean>;
-  openConfigInEditor: () => Promise<string>;
+  applyConfigPlan: (items: GitConfigApplyPlanItem[]) => Promise<GitConfigApplySummary>;
+  probeConfigEditor: () => Promise<EditorCapabilityProbeResult>;
+  openConfigInEditor: () => Promise<EditorOpenActionResult>;
 
   // Actions - Repository inspection
   setRepoPath: (path: string) => Promise<void>;
@@ -300,13 +309,116 @@ export function useGit(): UseGitReturn {
     }
   }, []);
 
-  const openConfigInEditor = useCallback(async (): Promise<string> => {
+  const applyConfigPlan = useCallback(async (items: GitConfigApplyPlanItem[]): Promise<GitConfigApplySummary> => {
+    if (!tauri.isTauri()) throw new Error('Not in Tauri environment');
+
+    const actionableItems = items.filter((item) => item.selected);
+    const results: GitConfigApplyResultItem[] = [];
+    let succeeded = 0;
+    let failed = 0;
+    let skipped = 0;
+
+    for (const item of actionableItems) {
+      try {
+        if (item.mode === 'unset') {
+          await tauri.gitRemoveConfig(item.key);
+          results.push({
+            key: item.key,
+            mode: item.mode,
+            success: true,
+            applied: true,
+            message: 'Removed',
+          });
+          succeeded += 1;
+          continue;
+        }
+
+        const value = item.value ?? '';
+        if (item.mode === 'set_if_unset') {
+          const wasSet = await tauri.gitSetConfigIfUnset(item.key, value);
+          results.push({
+            key: item.key,
+            mode: item.mode,
+            success: true,
+            applied: wasSet,
+            message: wasSet ? 'Applied' : 'Skipped (already set)',
+          });
+          succeeded += 1;
+          if (!wasSet) skipped += 1;
+          continue;
+        }
+
+        await tauri.gitSetConfig(item.key, value);
+        results.push({
+          key: item.key,
+          mode: item.mode,
+          success: true,
+          applied: true,
+          message: 'Applied',
+        });
+        succeeded += 1;
+      } catch (e) {
+        failed += 1;
+        results.push({
+          key: item.key,
+          mode: item.mode,
+          success: false,
+          applied: false,
+          message: String(e),
+        });
+      }
+    }
+
+    await refreshConfig();
+    return {
+      total: actionableItems.length,
+      succeeded,
+      failed,
+      skipped,
+      results,
+    };
+  }, [refreshConfig]);
+
+  const probeConfigEditor = useCallback(async (): Promise<EditorCapabilityProbeResult> => {
+    if (!tauri.isTauri()) {
+      return {
+        available: false,
+        reason: 'runtime_error',
+        preferredEditor: null,
+        configPath: null,
+        fallbackAvailable: false,
+      };
+    }
+    try {
+      return await tauri.gitProbeEditorCapability();
+    } catch (e) {
+      setError(String(e));
+      return {
+        available: false,
+        reason: 'runtime_error',
+        preferredEditor: null,
+        configPath: null,
+        fallbackAvailable: false,
+      };
+    }
+  }, []);
+
+  const openConfigInEditor = useCallback(async (): Promise<EditorOpenActionResult> => {
     if (!tauri.isTauri()) throw new Error('Not in Tauri environment');
     try {
       return await tauri.gitOpenConfigInEditor();
     } catch (e) {
-      setError(String(e));
-      throw e;
+      const message = String(e);
+      setError(message);
+      return {
+        success: false,
+        kind: 'error',
+        reason: 'runtime_error',
+        message,
+        openedWith: null,
+        fallbackUsed: false,
+        fallbackPath: null,
+      };
     }
   }, []);
 
@@ -1052,6 +1164,8 @@ export function useGit(): UseGitReturn {
     getConfigFilePath,
     listAliases,
     setConfigIfUnset,
+    applyConfigPlan,
+    probeConfigEditor,
     openConfigInEditor,
     setRepoPath,
     refreshRepoInfo,

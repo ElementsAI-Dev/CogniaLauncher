@@ -73,4 +73,9 @@ plugin-sdk-ts/**/node_modules/
 plugin-sdk-ts/**/dist/
 plugin-sdk-ts/**/*.wasm
 
+# Built-in plugin workspace build artifacts
+plugins/**/target/
+plugins/**/node_modules/
+plugins/**/dist/
+
 openspec

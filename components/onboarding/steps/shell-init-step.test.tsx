@@ -35,6 +35,10 @@ const mockT = (key: string) => {
     "onboarding.shellCopied": "Copied!",
     "onboarding.shellCopyFailed": "Copy failed",
     "onboarding.shellHint": "You can do this later in settings",
+    "onboarding.shellDetailedWhereTitle": "Where to paste this",
+    "onboarding.shellDetailedWhereDesc": "Open the config file and paste the snippet.",
+    "onboarding.shellDetailedVerifyTitle": "How to verify it",
+    "onboarding.shellDetailedVerifyDesc": "Restart the terminal and run a familiar tool command.",
   };
   return translations[key] || key;
 };
@@ -169,5 +173,13 @@ describe("ShellInitStep", () => {
     await waitFor(() => {
       expect(toast.error).toHaveBeenCalledWith("Auto setup failed");
     });
+  });
+
+  it("shows extra follow-up guidance in detailed mode", () => {
+    render(<ShellInitStep t={mockT} mode="detailed" />);
+    expect(screen.getByText("Where to paste this")).toBeInTheDocument();
+    expect(screen.getByText("Open the config file and paste the snippet.")).toBeInTheDocument();
+    expect(screen.getByText("How to verify it")).toBeInTheDocument();
+    expect(screen.getByText("Restart the terminal and run a familiar tool command.")).toBeInTheDocument();
   });
 });

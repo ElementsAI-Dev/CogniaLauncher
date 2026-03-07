@@ -148,6 +148,46 @@ export interface RustupOverride {
   toolchain: string;
 }
 
+export type RustupFailureClass =
+  | 'provider_unavailable'
+  | 'toolchain_not_installed'
+  | 'component_missing'
+  | 'target_install_failed'
+  | 'metadata_corrupt'
+  | 'command_timeout'
+  | 'invalid_profile'
+  | 'unknown_error';
+
+export interface RustupOperationError {
+  class: RustupFailureClass;
+  message: string;
+  rawError?: string | null;
+  retryable: boolean;
+}
+
+export interface RustupOperationResult {
+  operation: string;
+  toolchain?: string | null;
+  subject?: string | null;
+  success: boolean;
+  error?: RustupOperationError | null;
+}
+
+export interface RustupScopedListResult<T> {
+  operation: string;
+  toolchain?: string | null;
+  success: boolean;
+  items: T[];
+  error?: RustupOperationError | null;
+}
+
+export interface RustupProfileResult {
+  operation: string;
+  profile?: string | null;
+  success: boolean;
+  error?: RustupOperationError | null;
+}
+
 /** Go environment info from `go env -json` */
 export interface GoEnvInfo {
   goroot: string;
@@ -311,6 +351,8 @@ export interface CacheEntryList {
   has_more: boolean;
 }
 
+export type CacheCommandScope = 'all' | 'download' | 'metadata';
+
 export interface CacheVerificationResult {
   valid_entries: number;
   missing_files: number;
@@ -417,6 +459,9 @@ export interface CacheAutoCleanedEvent {
   evictedCount: number;
   stalePartialsRemoved: number;
   totalFreedHuman: string;
+  action?: string;
+  scope?: string;
+  domains?: string[];
 }
 
 // ============================================================================
@@ -962,9 +1007,12 @@ export interface LogEntry {
   lineNumber: number;
 }
 
+export type LogOperationStatus = 'success' | 'partial_success' | 'failed';
+
 export interface LogQueryOptions {
   fileName?: string;
   levelFilter?: string[];
+  target?: string;
   search?: string;
   useRegex?: boolean;
   startTime?: number | null;
@@ -983,14 +1031,22 @@ export interface LogQueryResult {
 export interface LogExportOptions {
   fileName?: string;
   levelFilter?: string[];
+  target?: string;
   search?: string;
   useRegex?: boolean;
   startTime?: number | null;
   endTime?: number | null;
-  format?: 'txt' | 'json';
+  format?: 'txt' | 'json' | 'csv';
+  diagnosticMode?: boolean;
+  sanitizeSensitive?: boolean;
 }
 
 export interface LogExportResult {
+  sizeBytes?: number;
+  status?: LogOperationStatus;
+  redactedCount?: number;
+  sanitized?: boolean;
+  warnings?: string[];
   content: string;
   fileName: string;
 }
@@ -998,6 +1054,16 @@ export interface LogExportResult {
 export interface LogCleanupResult {
   deletedCount: number;
   freedBytes: number;
+  status?: LogOperationStatus;
+  warnings?: string[];
+}
+
+export interface LogCleanupPreviewResult {
+  deletedCount: number;
+  freedBytes: number;
+  protectedCount: number;
+  status: LogOperationStatus;
+  warnings: string[];
 }
 
 // ============================================================================
@@ -1045,6 +1111,15 @@ export interface DownloadTask {
   supportsResume: boolean;
   metadata: Record<string, string>;
   serverFilename: string | null;
+  tags?: string[];
+  speedLimit?: number;
+  autoExtract?: boolean;
+  extractDest?: string | null;
+  segments?: number;
+  postAction?: 'none' | 'open_file' | 'reveal_in_folder';
+  deleteAfterExtract?: boolean;
+  autoRename?: boolean;
+  recoverable?: boolean | null;
 }
 
 export interface DownloadQueueStats {
@@ -1116,6 +1191,9 @@ export interface DownloadRequest {
   segments?: number;
   mirrorUrls?: string[];
   postAction?: 'none' | 'open_file' | 'reveal_in_folder';
+  deleteAfterExtract?: boolean;
+  autoRename?: boolean;
+  tags?: string[];
 }
 
 export interface VerifyResult {
@@ -1142,7 +1220,8 @@ export type DownloadEvent =
 
 export type TrayIconState = 'normal' | 'downloading' | 'update' | 'error';
 export type TrayLanguage = 'en' | 'zh';
-export type TrayClickBehavior = 'toggle_window' | 'show_menu' | 'do_nothing';
+export type TrayClickBehavior = 'toggle_window' | 'show_menu' | 'check_updates' | 'do_nothing';
+export type TrayNotificationLevel = 'all' | 'important_only' | 'none';
 
 export type TrayMenuItemId =
   | 'show_hide'
@@ -1150,6 +1229,7 @@ export type TrayMenuItemId =
   | 'downloads'
   | 'settings'
   | 'check_updates'
+  | 'toggle_notifications'
   | 'open_logs'
   | 'always_on_top'
   | 'autostart'
@@ -1164,9 +1244,12 @@ export interface TrayStateInfo {
   language: TrayLanguage;
   activeDownloads: number;
   hasUpdate: boolean;
+  hasError: boolean;
   clickBehavior: TrayClickBehavior;
   minimizeToTray: boolean;
   startMinimized: boolean;
+  showNotifications: boolean;
+  notificationLevel: TrayNotificationLevel;
   alwaysOnTop: boolean;
   menuConfig: TrayMenuConfig;
 }
@@ -1264,6 +1347,9 @@ export type HealthStatus = 'healthy' | 'warning' | 'error' | 'unknown';
 /** Severity level of a health issue */
 export type Severity = 'info' | 'warning' | 'error' | 'critical';
 
+/** Availability/scope state for a health target */
+export type HealthScopeState = 'available' | 'unavailable' | 'timeout' | 'unsupported';
+
 /** Category of health issue */
 export type IssueCategory =
   | 'path_conflict'
@@ -1284,6 +1370,7 @@ export interface HealthIssue {
   details: string | null;
   fix_command: string | null;
   fix_description: string | null;
+  remediation_id?: string | null;
 }
 
 /** Result of a health check for a single environment */
@@ -1291,6 +1378,8 @@ export interface EnvironmentHealthResult {
   env_type: string;
   provider_id: string | null;
   status: HealthStatus;
+  scope_state?: HealthScopeState;
+  scope_reason?: string | null;
   issues: HealthIssue[];
   suggestions: string[];
   current_version: string | null;
@@ -1303,6 +1392,8 @@ export interface PackageManagerHealthResult {
   provider_id: string;
   display_name: string;
   status: HealthStatus;
+  scope_state?: HealthScopeState;
+  scope_reason?: string | null;
   version: string | null;
   executable_path: string | null;
   issues: HealthIssue[];
@@ -1318,6 +1409,21 @@ export interface SystemHealthResult {
   system_issues: HealthIssue[];
   skipped_providers: string[];
   checked_at: string;
+}
+
+/** Result of previewing or applying a health remediation */
+export interface HealthRemediationResult {
+  remediation_id: string;
+  supported: boolean;
+  dry_run: boolean;
+  executed: boolean;
+  success: boolean;
+  manual_only: boolean;
+  command: string | null;
+  description: string | null;
+  message: string;
+  stdout: string | null;
+  stderr: string | null;
 }
 
 // ============================================================================
@@ -1736,6 +1842,44 @@ export interface GitCloneProgress {
   message: string;
 }
 
+export type EditorCapabilityReason =
+  | 'ok'
+  | 'editor_not_found'
+  | 'config_not_found'
+  | 'runtime_error';
+
+export interface EditorCapabilityProbeResult {
+  available: boolean;
+  reason: EditorCapabilityReason;
+  preferredEditor: string | null;
+  configPath: string | null;
+  fallbackAvailable: boolean;
+}
+
+export type EditorOpenActionKind =
+  | 'opened_editor'
+  | 'fallback_opened'
+  | 'unavailable'
+  | 'error';
+
+export type EditorOpenActionReason =
+  | 'ok'
+  | 'editor_not_found'
+  | 'config_not_found'
+  | 'editor_launch_failed'
+  | 'fallback_failed'
+  | 'runtime_error';
+
+export interface EditorOpenActionResult {
+  success: boolean;
+  kind: EditorOpenActionKind;
+  reason: EditorOpenActionReason;
+  message: string;
+  openedWith: string | null;
+  fallbackUsed: boolean;
+  fallbackPath: string | null;
+}
+
 /** Git submodule information */
 export interface GitSubmoduleInfo {
   path: string;
@@ -2048,8 +2192,38 @@ export interface ShellConfigEntries {
   sources: string[];
 }
 
+export type TerminalEditorLanguage = 'bash' | 'powershell' | 'dos' | 'plaintext';
 export type TerminalConfigMutationOperation = 'backup' | 'append' | 'write';
 export type TerminalConfigMutationStage = 'validation' | 'backup' | 'write' | 'verification';
+export type TerminalConfigDiagnosticCategory =
+  | 'validation'
+  | 'backup'
+  | 'write'
+  | 'verification'
+  | 'snapshot'
+  | 'unknown';
+
+export interface TerminalConfigDiagnosticLocation {
+  line: number | null;
+  column: number | null;
+  endLine: number | null;
+  endColumn: number | null;
+}
+
+export interface TerminalConfigDiagnostic {
+  category: TerminalConfigDiagnosticCategory;
+  stage: TerminalConfigMutationStage | null;
+  message: string;
+  location: TerminalConfigDiagnosticLocation | null;
+}
+
+export interface TerminalConfigEditorMetadata {
+  path: string;
+  shellType: ShellType;
+  language: TerminalEditorLanguage;
+  snapshotPath: string | null;
+  fingerprint: string | null;
+}
 
 export interface TerminalConfigMutationResult {
   operation: TerminalConfigMutationOperation;
@@ -2058,6 +2232,19 @@ export interface TerminalConfigMutationResult {
   bytesWritten: number;
   verified: boolean;
   diagnostics: string[];
+  diagnosticDetails?: TerminalConfigDiagnostic[];
+  snapshotPath?: string | null;
+  fingerprint?: string | null;
+}
+
+export interface TerminalConfigRestoreResult {
+  path: string;
+  snapshotPath: string;
+  bytesWritten: number;
+  verified: boolean;
+  diagnostics: string[];
+  diagnosticDetails?: TerminalConfigDiagnostic[];
+  fingerprint?: string | null;
 }
 
 // ============================================================================
@@ -2074,7 +2261,9 @@ export interface DiagnosticExportOptions {
 /** Options for auto-capturing a frontend crash diagnostic bundle */
 export interface DiagnosticCaptureFrontendCrashOptions {
   includeConfig?: boolean;
+  source?: string;
   errorContext: DiagnosticErrorContext;
+  runtimeBreadcrumbs?: DiagnosticRuntimeBreadcrumb[];
 }
 
 /** Error context to embed in a diagnostic report */
@@ -2086,6 +2275,13 @@ export interface DiagnosticErrorContext {
   extra?: Record<string, unknown>;
 }
 
+export interface DiagnosticRuntimeBreadcrumb {
+  timestamp: string;
+  level: string;
+  target: string;
+  message: string;
+}
+
 /** Result of a diagnostic bundle export */
 export interface DiagnosticExportResult {
   path: string;
@@ -2095,6 +2291,8 @@ export interface DiagnosticExportResult {
 
 /** Information about a crash from a previous session */
 export interface CrashInfo {
+  id?: string;
+  source?: string;
   reportPath: string;
   timestamp: string;
   message?: string;

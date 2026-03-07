@@ -3,6 +3,8 @@
  * Dynamic WASM plugin loading with Extism runtime
  */
 
+import type { ToolCompatibility, ToolOrigin } from '@/types/tool-contract';
+
 // ============================================================================
 // Plugin Manifest & Metadata
 // ============================================================================
@@ -24,6 +26,8 @@ export interface PluginMeta {
   repository: string | null;
   homepage: string | null;
   minCogniaVersion: string | null;
+  toolContractVersion?: string | null;
+  compatibleCogniaVersions?: string | null;
   icon: { path: string } | null;
 }
 
@@ -36,6 +40,7 @@ export interface PluginToolDeclaration {
   category: string;
   keywords: string[];
   icon: string;
+  capabilities?: string[];
   entry: string;
   uiMode?: 'text' | 'declarative' | 'iframe';
 }
@@ -64,6 +69,8 @@ export interface PluginPermissionState {
   denied: string[];
 }
 
+export type PluginPermissionMode = 'compat' | 'strict';
+
 // ============================================================================
 // Plugin Info (from registry)
 // ============================================================================
@@ -73,13 +80,29 @@ export interface PluginInfo {
   name: string;
   version: string;
   description: string;
+  normalizedDescription?: string | null;
+  descriptionFallbackNeeded?: boolean;
   authors: string[];
   toolCount: number;
+  // Card-level, bounded preview metadata derived from full tool inventory.
+  toolPreviews?: PluginToolPreview[];
+  // Total discoverable tool count used for overflow semantics in preview UI.
+  toolPreviewCount?: number;
+  // Indicates whether toolPreviewCount exceeds toolPreviews.length.
+  hasMoreToolPreviews?: boolean;
+  // True while tool inventory hydration is still in progress for this plugin.
+  toolPreviewLoading?: boolean;
   enabled: boolean;
   installedAt: string;
   updatedAt: string | null;
   updateUrl: string | null;
+  toolContractVersion?: string;
+  compatibility?: ToolCompatibility;
   source: PluginSource;
+  builtinCandidate: boolean;
+  builtinSyncStatus: string | null;
+  builtinSyncMessage: string | null;
+  deprecationWarnings?: PluginDeprecationNotice[];
 }
 
 export interface PluginUpdateInfo {
@@ -97,6 +120,23 @@ export interface PluginHealth {
   totalDurationMs: number;
   lastError: string | null;
   autoDisabled: boolean;
+}
+
+export interface PluginDeprecationNotice {
+  code: string;
+  message: string;
+  guidance: string;
+  severity: 'warning' | 'critical';
+}
+
+export interface PluginCapabilityAuditRecord {
+  pluginId: string;
+  toolEntry: string;
+  permission: string;
+  capability: string;
+  allowed: boolean;
+  timestamp: string;
+  reason: string | null;
 }
 
 export interface PluginSettingDeclaration {
@@ -134,12 +174,32 @@ export interface PluginToolInfo {
   pluginName: string;
   toolId: string;
   nameEn: string;
+  normalizedName?: string;
   nameZh: string | null;
   descriptionEn: string;
+  normalizedDescription?: string | null;
+  descriptionFallbackNeeded?: boolean;
   descriptionZh: string | null;
   category: string;
   keywords: string[];
   icon: string;
+  entry: string;
+  uiMode: string;
+  origin?: ToolOrigin;
+  contractVersion?: string;
+  capabilityDeclarations?: string[];
+  compatibility?: ToolCompatibility;
+  discoverable?: boolean;
+  exclusionReason?: string | null;
+  deprecationWarnings?: PluginDeprecationNotice[];
+}
+
+export interface PluginToolPreview {
+  toolId: string;
+  name: string;
+  description: string | null;
+  // True when preview description is missing and UI should render fallback copy.
+  descriptionFallbackNeeded: boolean;
   entry: string;
   uiMode: string;
 }
@@ -166,6 +226,18 @@ export interface PluginUiEntry {
 // ============================================================================
 
 export type PluginLanguage = 'rust' | 'javascript' | 'typescript';
+export type ScaffoldLifecycleProfile = 'external' | 'builtin';
+
+export type ScaffoldContractTemplate = 'minimal' | 'advanced';
+export type ScaffoldSchemaPreset = 'basic-form' | 'multi-step-flow' | 'repeatable-collection';
+
+export interface ScaffoldTemplateOptions {
+  includeUnifiedContractSamples?: boolean;
+  contractTemplate?: ScaffoldContractTemplate;
+  schemaPreset?: ScaffoldSchemaPreset;
+  includeValidationGuidance?: boolean;
+  includeStarterTests?: boolean;
+}
 
 export interface ScaffoldPermissions {
   configRead: boolean;
@@ -188,16 +260,33 @@ export interface ScaffoldConfig {
   license?: string;
   repository?: string;
   homepage?: string;
+  lifecycleProfile?: ScaffoldLifecycleProfile;
   language: PluginLanguage;
   permissions: ScaffoldPermissions;
   includeCi?: boolean;
   includeVscode?: boolean;
   additionalKeywords?: string[];
+  templateOptions?: ScaffoldTemplateOptions;
+}
+
+export interface ScaffoldHandoff {
+  profile: ScaffoldLifecycleProfile;
+  artifactPath: string;
+  buildCommands: string[];
+  nextSteps: string[];
+  importPath?: string;
+  importRequiresBuild: boolean;
+  lifecycleManifestPath: string;
+  builtinCatalogPath?: string;
+  builtinChecksumCommand?: string;
+  builtinValidationCommand?: string;
 }
 
 export interface ScaffoldResult {
   pluginDir: string;
   filesCreated: string[];
+  lifecycleProfile: ScaffoldLifecycleProfile;
+  handoff: ScaffoldHandoff;
 }
 
 export interface ScaffoldOpenResult {
@@ -208,6 +297,9 @@ export interface ScaffoldOpenResult {
 
 export interface ValidationResult {
   valid: boolean;
+  canImport: boolean;
+  buildRequired: boolean;
+  missingArtifactPath?: string;
   errors: string[];
   warnings: string[];
 }

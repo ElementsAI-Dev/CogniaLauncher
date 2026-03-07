@@ -7,6 +7,7 @@ import {
   saveSearchHistory,
   clearSearchHistory as clearStoredHistory,
 } from '@/lib/dashboard-utils';
+import { getToolboxDetailPath } from '@/lib/toolbox-route';
 import type { SearchResult } from '@/types/dashboard';
 import type { EnvironmentInfo, InstalledPackage } from '@/lib/tauri';
 import { createElement } from 'react';
@@ -134,7 +135,7 @@ export function useDashboardSearch({
         title: tool.name,
         subtitle: tool.description,
         icon: createElement(Wrench, { className: 'h-4 w-4' }),
-        href: `/toolbox/tool?id=${encodeURIComponent(tool.id)}`,
+        href: getToolboxDetailPath(tool.id),
       }));
   }, [query, allTools]);
 

@@ -7,6 +7,7 @@ const mockPackageInstall = jest.fn();
 const mockPackageUninstall = jest.fn();
 const mockPackageList = jest.fn();
 const mockProviderList = jest.fn();
+const mockGetPinnedPackages = jest.fn();
 const mockPluginDispatchEvent = jest.fn(() => Promise.resolve());
 
 jest.mock('@/lib/tauri', () => ({
@@ -16,6 +17,7 @@ jest.mock('@/lib/tauri', () => ({
   packageUninstall: (...args: Parameters<typeof mockPackageUninstall>) => mockPackageUninstall(...args),
   packageList: (...args: Parameters<typeof mockPackageList>) => mockPackageList(...args),
   providerList: (...args: Parameters<typeof mockProviderList>) => mockProviderList(...args),
+  getPinnedPackages: (...args: Parameters<typeof mockGetPinnedPackages>) => mockGetPinnedPackages(...args),
   pluginDispatchEvent: (...args: Parameters<typeof mockPluginDispatchEvent>) => mockPluginDispatchEvent(...args),
 }));
 
@@ -30,6 +32,7 @@ const mockRemoveInstalling = jest.fn();
 const mockSetLastScanTimestamp = jest.fn();
 const mockIsScanFresh = jest.fn(() => false);
 const mockSetProviders = jest.fn();
+const mockSetPinnedPackages = jest.fn();
 
 interface MockInstalledPackage {
   name: string;
@@ -48,6 +51,7 @@ interface MockStoreState {
   searchResults: unknown[];
   bookmarkedPackages: string[];
   providers: MockProvider[];
+  pinnedPackages: string[];
   isLoading: boolean;
   error: string | null;
 }
@@ -57,6 +61,7 @@ const mockStoreState: MockStoreState = {
   searchResults: [],
   bookmarkedPackages: [],
   providers: [],
+  pinnedPackages: [],
   isLoading: false,
   error: null,
 };
@@ -80,6 +85,10 @@ const mockStoreActions = {
   setProviders: (providers: MockProvider[]) => {
     mockSetProviders(providers);
     mockStoreState.providers = providers ?? [];
+  },
+  setPinnedPackages: (pinnedPackages: string[]) => {
+    mockSetPinnedPackages(pinnedPackages);
+    mockStoreState.pinnedPackages = pinnedPackages ?? [];
   },
 };
 
@@ -110,6 +119,7 @@ describe('usePackages', () => {
     mockStoreState.searchResults = [];
     mockStoreState.bookmarkedPackages = [];
     mockStoreState.providers = [];
+    mockStoreState.pinnedPackages = [];
     mockStoreState.isLoading = false;
     mockStoreState.error = null;
     mockIsScanFresh.mockReturnValue(false);
@@ -223,6 +233,40 @@ describe('usePackages', () => {
     });
 
     expect(mockProviderList).toHaveBeenCalledTimes(1);
+  });
+
+  it('should bypass provider cache when force refresh is requested', async () => {
+    const firstProviders = [{ id: 'npm', display_name: 'npm' }];
+    const refreshedProviders = [{ id: 'pip', display_name: 'pip' }];
+    mockProviderList
+      .mockResolvedValueOnce(firstProviders)
+      .mockResolvedValueOnce(refreshedProviders);
+    const { result } = renderHook(() => usePackages());
+
+    await act(async () => {
+      await result.current.fetchProviders();
+    });
+    await act(async () => {
+      await result.current.fetchProviders(true);
+    });
+
+    expect(mockProviderList).toHaveBeenCalledTimes(2);
+    expect(mockSetProviders).toHaveBeenLastCalledWith(refreshedProviders);
+  });
+
+  it('hydrates pinned packages from backend truth', async () => {
+    mockGetPinnedPackages.mockResolvedValue([
+      ['npm:lodash', '4.17.21'],
+      ['requests', '2.0.0'],
+    ]);
+    const { result } = renderHook(() => usePackages());
+
+    await act(async () => {
+      await result.current.fetchPinnedPackages();
+    });
+
+    expect(mockGetPinnedPackages).toHaveBeenCalledTimes(1);
+    expect(mockSetPinnedPackages).toHaveBeenCalledWith(['npm:lodash', 'requests']);
   });
 
   it('should handle search error', async () => {

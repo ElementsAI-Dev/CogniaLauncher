@@ -70,6 +70,7 @@ describe('TOUR_STEPS', () => {
 
 describe('STEP_ICONS', () => {
   it('has icon for each wizard step', () => {
+    expect(STEP_ICONS['mode-selection']).toBeDefined();
     expect(STEP_ICONS['welcome']).toBeDefined();
     expect(STEP_ICONS['language']).toBeDefined();
     expect(STEP_ICONS['theme']).toBeDefined();

@@ -29,8 +29,8 @@ Object.assign(URL, {
 jest.mock('@/lib/stores/packages', () => ({
   usePackageStore: jest.fn(() => ({
     installedPackages: [
-      { name: 'react', version: '18.0.0' },
-      { name: 'typescript', version: '5.0.0' },
+      { name: 'react', version: '18.0.0', provider: 'npm' },
+      { name: 'typescript', version: '5.0.0', provider: 'npm' },
     ],
     bookmarkedPackages: ['lodash', 'axios'],
   })),
@@ -69,6 +69,7 @@ describe('usePackageExport', () => {
     expect(result.current).toHaveProperty('importPackages');
     expect(result.current).toHaveProperty('importFromClipboard');
     expect(result.current).toHaveProperty('exportToClipboard');
+    expect(result.current).toHaveProperty('getImportPreview');
   });
 
   it('should export packages as JSON', async () => {
@@ -83,7 +84,7 @@ describe('usePackageExport', () => {
     expect(mockRevokeObjectURL).toHaveBeenCalled();
   });
 
-  it('should copy package names to clipboard', async () => {
+  it('should copy manifest JSON to clipboard', async () => {
     const { result } = renderHook(() => usePackageExport());
 
     await act(async () => {
@@ -91,6 +92,17 @@ describe('usePackageExport', () => {
     });
 
     expect(clipboardMock.writeClipboard).toHaveBeenCalled();
+    const clipboardPayload = clipboardMock.writeClipboard.mock.calls[0][0] as string;
+    const parsed = JSON.parse(clipboardPayload) as {
+      packages: Array<{ name: string; provider?: string; version?: string }>;
+      bookmarks: string[];
+    };
+    expect(parsed.packages[0]).toEqual({
+      name: 'react',
+      provider: 'npm',
+      version: '18.0.0',
+    });
+    expect(parsed.bookmarks).toEqual(['lodash', 'axios']);
   });
 
   it('should handle copy error', async () => {
@@ -175,6 +187,29 @@ describe('usePackageExport', () => {
       });
 
       expect(data).toBeNull();
+    });
+  });
+
+  describe('getImportPreview', () => {
+    it('classifies installable, skipped, and invalid entries', () => {
+      const { result } = renderHook(() => usePackageExport());
+
+      const preview = result.current.getImportPreview({
+        version: '1.0',
+        exportedAt: '2025-01-01',
+        packages: [
+          { name: 'react', provider: 'npm', version: '18.0.0' },
+          { name: 'react', provider: 'npm', version: '18.0.0' },
+          { name: 'requests', provider: 'pip', version: '2.31.0' },
+          { name: '   ' },
+        ],
+        bookmarks: ['lodash'],
+      });
+
+      expect(preview.installable).toHaveLength(1);
+      expect(preview.installable[0].name).toBe('requests');
+      expect(preview.skipped).toHaveLength(2);
+      expect(preview.invalid).toHaveLength(1);
     });
   });
 });

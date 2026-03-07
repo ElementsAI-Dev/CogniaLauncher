@@ -28,6 +28,7 @@ describe("UpdateSettings", () => {
     autostart: false,
     trayClickBehavior: "toggle_window",
     showNotifications: true,
+    trayNotificationLevel: "all",
     sidebarItemOrder: [...DEFAULT_SIDEBAR_ITEM_ORDER],
   };
 

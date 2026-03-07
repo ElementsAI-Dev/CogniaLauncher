@@ -20,6 +20,7 @@ describe('Settings Registry', () => {
         'appearance',
         'updates',
         'tray',
+        'shortcuts',
         'paths',
         'provider',
         'backup',
@@ -169,6 +170,7 @@ describe('Settings Registry', () => {
         'appearance',
         'updates',
         'tray',
+        'shortcuts',
         'paths',
         'provider',
         'backup',
@@ -201,6 +203,7 @@ describe('Settings Registry', () => {
         'appearance',
         'updates',
         'tray',
+        'shortcuts',
         'paths',
         'provider',
         'backup',
@@ -254,6 +257,7 @@ describe('Settings Registry', () => {
         'appearance',
         'updates',
         'tray',
+        'shortcuts',
         'paths',
         'provider',
         'backup',
@@ -297,5 +301,23 @@ describe('Settings Registry', () => {
       expect(section.id).toBe('general');
       expect(section.order).toBe(1);
     });
+  });
+});
+
+function findSetting(key: string) {
+  return SETTINGS_REGISTRY.find((setting) => setting.key === key);
+}
+
+describe('settings registry focus mappings', () => {
+  it('maps tray menu customization to actionable tray menu control', () => {
+    expect(findSetting('tray.menu_customize')?.focusId).toBe(
+      'tray-menu-customize',
+    );
+  });
+
+  it('maps appearance background image entry to actionable background toggle', () => {
+    expect(findSetting('appearance.background_image')?.focusId).toBe(
+      'background-enabled',
+    );
   });
 });

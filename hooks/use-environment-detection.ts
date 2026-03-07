@@ -87,8 +87,9 @@ export function useEnvironmentDetection(
       return detected;
     } catch (error) {
       setSystemDetections([]);
-      setSystemDetectError(error instanceof Error ? error.message : String(error));
-      return [];
+      const message = error instanceof Error ? error.message : String(error);
+      setSystemDetectError(message);
+      throw error instanceof Error ? error : new Error(message);
     } finally {
       setSystemDetecting(false);
     }

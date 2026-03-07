@@ -20,6 +20,16 @@ fn emit_batch_progress(app_handle: &AppHandle, progress: &BatchProgress) {
     let _ = app_handle.emit("batch-progress", progress);
 }
 
+fn parse_package_scope_key(raw: &str) -> (Option<&str>, &str) {
+    if let Some((provider, name)) = raw.split_once(':') {
+        if !provider.is_empty() && !provider.contains('@') {
+            return (Some(provider), name);
+        }
+    }
+
+    (None, raw)
+}
+
 /// Batch install packages with progress tracking
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
@@ -985,11 +995,23 @@ pub async fn package_pin(
     version: Option<String>,
     settings: State<'_, SharedSettings>,
 ) -> Result<(), String> {
+    let (provider, package_name) = parse_package_scope_key(&name);
+    let scoped_key = provider
+        .map(|provider_id| format!("{provider_id}:{package_name}"))
+        .unwrap_or_else(|| package_name.to_string());
+
     let mut settings_guard = settings.write().await;
     settings_guard
         .provider_settings
         .pinned_packages
-        .insert(name, version);
+        .insert(scoped_key, version);
+
+    if provider.is_some() {
+        settings_guard
+            .provider_settings
+            .pinned_packages
+            .remove(package_name);
+    }
 
     // Persist settings to disk
     settings_guard.save().await.map_err(|e| e.to_string())?;
@@ -1002,11 +1024,23 @@ pub async fn package_unpin(
     name: String,
     settings: State<'_, SharedSettings>,
 ) -> Result<(), String> {
+    let (provider, package_name) = parse_package_scope_key(&name);
+    let scoped_key = provider
+        .map(|provider_id| format!("{provider_id}:{package_name}"))
+        .unwrap_or_else(|| package_name.to_string());
+
     let mut settings_guard = settings.write().await;
     settings_guard
         .provider_settings
         .pinned_packages
-        .remove(&name);
+        .remove(&scoped_key);
+
+    if provider.is_some() {
+        settings_guard
+            .provider_settings
+            .pinned_packages
+            .remove(package_name);
+    }
 
     // Persist settings to disk
     settings_guard.save().await.map_err(|e| e.to_string())?;
@@ -1036,18 +1070,23 @@ pub async fn package_rollback(
     settings: State<'_, SharedSettings>,
 ) -> Result<(), String> {
     let reg = registry.read().await;
+    let (provider_hint, package_name) = parse_package_scope_key(&name);
 
-    let provider = reg
-        .find_for_package(&name)
-        .await
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| format!("No provider found for: {}", name))?;
+    let provider = if let Some(provider_id) = provider_hint {
+        reg.get(provider_id)
+            .ok_or_else(|| format!("Provider not found: {}", provider_id))?
+    } else {
+        reg.find_for_package(package_name)
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("No provider found for: {}", package_name))?
+    };
 
     let provider_id = provider.id().to_string();
 
     let uninstall_result = provider
         .uninstall(crate::provider::UninstallRequest {
-            name: name.clone(),
+            name: package_name.to_string(),
             version: None,
             force: true,
         })
@@ -1055,7 +1094,7 @@ pub async fn package_rollback(
 
     if let Err(err) = uninstall_result {
         let _ = HistoryManager::record_rollback(
-            &name,
+            package_name,
             &to_version,
             &provider_id,
             false,
@@ -1067,7 +1106,7 @@ pub async fn package_rollback(
 
     let install_result = provider
         .install(crate::provider::InstallRequest {
-            name: name.clone(),
+            name: package_name.to_string(),
             version: Some(to_version.clone()),
             global: true,
             force: true,
@@ -1077,14 +1116,14 @@ pub async fn package_rollback(
     match install_result {
         Ok(_) => {
             let _ =
-                HistoryManager::record_rollback(&name, &to_version, &provider_id, true, None).await;
+                HistoryManager::record_rollback(package_name, &to_version, &provider_id, true, None).await;
             // Invalidate package caches after successful rollback
             crate::commands::package::invalidate_package_caches(settings.inner()).await;
             Ok(())
         }
         Err(err) => {
             let _ = HistoryManager::record_rollback(
-                &name,
+                package_name,
                 &to_version,
                 &provider_id,
                 false,
@@ -1316,5 +1355,11 @@ mod tests {
             reason,
             Some("provider does not declare update capability".into())
         );
+    }
+
+    #[test]
+    fn parse_package_scope_key_extracts_provider_and_name() {
+        assert_eq!(parse_package_scope_key("npm:typescript"), (Some("npm"), "typescript"));
+        assert_eq!(parse_package_scope_key("typescript"), (None, "typescript"));
     }
 }

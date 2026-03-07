@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { DocsPageClient } from './docs-page-client';
 
 jest.mock('@/components/providers/locale-provider', () => ({
@@ -56,6 +56,10 @@ jest.mock('@/components/ui/scroll-area', () => ({
 }));
 
 describe('DocsPageClient', () => {
+  afterEach(() => {
+    window.location.hash = '';
+  });
+
   it('renders all layout sections', () => {
     render(<DocsPageClient contentZh="# 你好" contentEn="# Hello" slug={['guide']} />);
     expect(screen.getByTestId('sidebar')).toBeInTheDocument();
@@ -101,7 +105,7 @@ describe('DocsPageClient', () => {
   });
 
   it('passes searchIndex to DocsSidebar', () => {
-    const index = [{ slug: 'x', headingsZh: [], headingsEn: [], excerptZh: '', excerptEn: '' }];
+    const index = [{ slug: 'x', pageSlug: 'x', anchorId: 'intro', sectionTitle: 'Intro', locale: 'en', excerpt: 'intro' }];
     render(<DocsPageClient contentZh="# A" contentEn="# B" slug={['guide']} searchIndex={index} />);
     expect(screen.getByTestId('sidebar')).toHaveAttribute('data-index-count', '1');
     expect(screen.getByTestId('mobile-sidebar')).toHaveAttribute('data-index-count', '1');
@@ -122,5 +126,44 @@ describe('DocsPageClient', () => {
     const footer = screen.getByTestId('nav-footer');
     expect(footer).toHaveAttribute('data-prev', 'prev-page');
     expect(footer).toHaveAttribute('data-next', 'next-page');
+  });
+
+  it('scrolls to hash target on load', () => {
+    const target = document.createElement('div');
+    target.id = 'target-heading';
+    const scrollMock = jest.fn();
+    Object.defineProperty(target, 'scrollIntoView', { value: scrollMock, writable: true });
+    document.body.appendChild(target);
+    window.location.hash = '#target-heading';
+
+    render(<DocsPageClient contentZh="# A" contentEn="# B" slug={['guide']} />);
+
+    expect(scrollMock).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
+    document.body.removeChild(target);
+  });
+
+  it('responds to hashchange events for deep links', () => {
+    const target = document.createElement('div');
+    target.id = 'next-heading';
+    const scrollMock = jest.fn();
+    Object.defineProperty(target, 'scrollIntoView', { value: scrollMock, writable: true });
+    document.body.appendChild(target);
+
+    render(<DocsPageClient contentZh="# A" contentEn="# B" slug={['guide']} />);
+    window.location.hash = '#next-heading';
+    fireEvent(window, new HashChangeEvent('hashchange'));
+
+    expect(scrollMock).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
+    document.body.removeChild(target);
+  });
+
+  it('falls back safely when hash target is missing', () => {
+    const scrollSpy = jest.spyOn(HTMLElement.prototype, 'scrollIntoView');
+    window.location.hash = '#missing-heading';
+
+    render(<DocsPageClient contentZh="# A" contentEn="# B" slug={['guide']} />);
+
+    expect(scrollSpy).toHaveBeenCalled();
+    scrollSpy.mockRestore();
   });
 });

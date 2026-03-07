@@ -168,7 +168,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let persistence = QueuePersistence::new(tmp.path());
 
-        let mut task1 = create_test_task("active");
+        let task1 = create_test_task("active");
         let mut task2 = create_test_task("completed");
         task2.mark_completed();
         let mut task3 = create_test_task("cancelled");

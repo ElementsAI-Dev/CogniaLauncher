@@ -4,6 +4,20 @@ import { DownloadDetailDialog } from './download-detail-dialog';
 import { LocaleProvider } from '@/components/providers/locale-provider';
 import type { DownloadTask } from '@/types/tauri';
 
+const mockStoreState: {
+  tasks: DownloadTask[];
+  progressMap: Record<string, DownloadTask['progress']>;
+} = {
+  tasks: [],
+  progressMap: {},
+};
+
+jest.mock('@/lib/stores/download', () => ({
+  useDownloadStore: (
+    selector: (state: typeof mockStoreState) => unknown
+  ) => selector(mockStoreState),
+}));
+
 jest.mock('sonner', () => ({
   toast: {
     success: jest.fn(),
@@ -20,6 +34,7 @@ const mockMessages = {
       started: 'Started',
       completed: 'Completed',
       actions: 'Actions',
+      save: 'Save',
     },
     downloads: {
       state: {
@@ -51,6 +66,8 @@ const mockMessages = {
         extractedFiles: 'Extracted files: {count}',
         checksumResult: 'Checksum: {checksum}',
         calculating: 'Calculating...',
+        taskSpeedLimit: 'Task Speed Limit',
+        taskSpeedLimitSaved: 'Task speed limit saved',
       },
       actions: {
         retryTask: 'Retry This Task',
@@ -123,6 +140,11 @@ function renderDialog(props: Partial<React.ComponentProps<typeof DownloadDetailD
 }
 
 describe('DownloadDetailDialog', () => {
+  beforeEach(() => {
+    mockStoreState.tasks = [];
+    mockStoreState.progressMap = {};
+  });
+
   it('renders task name and state badge', () => {
     renderDialog();
 
@@ -269,5 +291,71 @@ describe('DownloadDetailDialog', () => {
     renderDialog({ task: failedTask });
 
     expect(screen.getByText('Connection timeout')).toBeInTheDocument();
+  });
+
+  it('hides retry button for unrecoverable failed tasks', () => {
+    const failedTask = {
+      ...baseTask,
+      state: 'failed' as const,
+      error: 'Checksum mismatch',
+      recoverable: false,
+    };
+    const onRetry = jest.fn().mockResolvedValue(undefined);
+
+    renderDialog({ task: failedTask, onRetry });
+
+    expect(screen.queryByText('Retry This Task')).not.toBeInTheDocument();
+  });
+
+  it('uses live progress from store when available', () => {
+    const queuedTask: DownloadTask = {
+      ...baseTask,
+      state: 'queued',
+      progress: {
+        downloadedBytes: 0,
+        totalBytes: 100,
+        speed: 0,
+        speedHuman: '0 B/s',
+        percent: 0,
+        etaSecs: null,
+        etaHuman: null,
+        downloadedHuman: '0 B',
+        totalHuman: '100 B',
+      },
+    };
+
+    mockStoreState.tasks = [queuedTask];
+    mockStoreState.progressMap = {
+      [queuedTask.id]: {
+        downloadedBytes: 50,
+        totalBytes: 100,
+        speed: 10,
+        speedHuman: '10 B/s',
+        percent: 50,
+        etaSecs: 5,
+        etaHuman: '5s',
+        downloadedHuman: '50 B',
+        totalHuman: '100 B',
+      },
+    };
+
+    renderDialog({ task: queuedTask });
+
+    expect(screen.getByText('50 B / 100 B')).toBeInTheDocument();
+    expect(screen.getByText(/10 B\/s/)).toBeInTheDocument();
+  });
+
+  it('applies per-task speed limit from detail dialog', async () => {
+    const onSetTaskSpeedLimit = jest.fn().mockResolvedValue(undefined);
+    renderDialog({ onSetTaskSpeedLimit });
+
+    const speedInput = screen.getByRole('textbox');
+    await userEvent.clear(speedInput);
+    await userEvent.type(speedInput, '1024');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => {
+      expect(onSetTaskSpeedLimit).toHaveBeenCalledWith('task-1', 1024);
+    });
   });
 });

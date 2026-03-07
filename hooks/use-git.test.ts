@@ -81,7 +81,22 @@ jest.mock('@/lib/tauri', () => ({
   gitGetConfigFilePath: jest.fn().mockResolvedValue('/home/user/.gitconfig'),
   gitListAliases: jest.fn().mockResolvedValue([{ key: 'co', value: 'checkout' }]),
   gitSetConfigIfUnset: jest.fn().mockResolvedValue(true),
-  gitOpenConfigInEditor: jest.fn().mockResolvedValue(''),
+  gitProbeEditorCapability: jest.fn().mockResolvedValue({
+    available: true,
+    reason: 'ok',
+    preferredEditor: 'code',
+    configPath: '/home/user/.gitconfig',
+    fallbackAvailable: true,
+  }),
+  gitOpenConfigInEditor: jest.fn().mockResolvedValue({
+    success: true,
+    kind: 'opened_editor',
+    reason: 'ok',
+    message: 'Opened in code',
+    openedWith: 'code',
+    fallbackUsed: false,
+    fallbackPath: '/home/user/.gitconfig',
+  }),
 }));
 
 // Get mocked tauri for assertions
@@ -593,10 +608,45 @@ describe('useGit', () => {
 
   it('openConfigInEditor calls tauri', async () => {
     const { result } = renderHook(() => useGit());
+    let openResult: Awaited<ReturnType<typeof result.current.openConfigInEditor>> | undefined;
     await act(async () => {
-      await result.current.openConfigInEditor();
+      openResult = await result.current.openConfigInEditor();
     });
     expect(tauri.gitOpenConfigInEditor).toHaveBeenCalled();
+    expect(openResult!.kind).toBe('opened_editor');
+  });
+
+  it('probeConfigEditor calls tauri capability probe', async () => {
+    const { result } = renderHook(() => useGit());
+    let probe: Awaited<ReturnType<typeof result.current.probeConfigEditor>> | undefined;
+    await act(async () => {
+      probe = await result.current.probeConfigEditor();
+    });
+    expect(tauri.gitProbeEditorCapability).toHaveBeenCalled();
+    expect(probe!.available).toBe(true);
+  });
+
+  it('applyConfigPlan maps set/remove/set_if_unset operations and summarizes results', async () => {
+    const { result } = renderHook(() => useGit());
+    tauri.gitSetConfigIfUnset.mockResolvedValueOnce(false);
+
+    let summary: Awaited<ReturnType<typeof result.current.applyConfigPlan>> | undefined;
+    await act(async () => {
+      summary = await result.current.applyConfigPlan([
+        { key: 'pull.rebase', mode: 'set', value: 'true', selected: true },
+        { key: 'core.safecrlf', mode: 'set_if_unset', value: 'warn', selected: true },
+        { key: 'user.signingkey', mode: 'unset', value: null, selected: true },
+        { key: 'color.ui', mode: 'set', value: 'auto', selected: false },
+      ]);
+    });
+
+    expect(tauri.gitSetConfig).toHaveBeenCalledWith('pull.rebase', 'true');
+    expect(tauri.gitSetConfigIfUnset).toHaveBeenCalledWith('core.safecrlf', 'warn');
+    expect(tauri.gitRemoveConfig).toHaveBeenCalledWith('user.signingkey');
+    expect(summary!.total).toBe(3);
+    expect(summary!.succeeded).toBe(3);
+    expect(summary!.failed).toBe(0);
+    expect(summary!.skipped).toBe(1);
   });
 
   // ===== Error handling =====

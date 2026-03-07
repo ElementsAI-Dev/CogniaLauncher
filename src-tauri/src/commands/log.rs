@@ -14,7 +14,7 @@ use tokio::io::AsyncBufReadExt;
 
 const MAX_SCAN_LINES_LIMIT: usize = 200_000;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LogFileInfo {
     pub name: String,
@@ -39,6 +39,7 @@ pub async fn log_export(
     let query_options = LogQueryOptions {
         file_name: options.file_name.clone(),
         level_filter: options.level_filter.clone(),
+        target: options.target.clone(),
         search: options.search.clone(),
         use_regex: options.use_regex,
         start_time: options.start_time,
@@ -54,13 +55,19 @@ pub async fn log_export(
 
     let format = options
         .format
-        .unwrap_or_else(|| "txt".to_string())
-        .to_lowercase();
-    let is_json = format == "json";
-    let mut content = if is_json {
-        String::from("[\n")
-    } else {
-        String::new()
+        .as_deref()
+        .map(|value| value.to_lowercase())
+        .unwrap_or_else(|| "txt".to_string());
+    let export_format = match format.as_str() {
+        "json" => LogExportFormat::Json,
+        "csv" => LogExportFormat::Csv,
+        "txt" => LogExportFormat::Txt,
+        other => return Err(format!("Unsupported log export format: {other}")),
+    };
+    let mut content = match export_format {
+        LogExportFormat::Json => String::from("[\n"),
+        LogExportFormat::Csv => String::from("timestamp,level,target,message"),
+        LogExportFormat::Txt => String::new(),
     };
     let mut first = true;
 
@@ -69,7 +76,7 @@ pub async fn log_export(
             line_number = idx + 1;
             if let Some(entry) = parse_log_line(&line, line_number) {
                 if matches_filters(&entry, &query_options, regex.as_ref()) {
-                    append_export_entry(&mut content, &entry, is_json, &mut first);
+                    append_export_entry(&mut content, &entry, export_format, &mut first);
                 }
             }
         }
@@ -88,13 +95,13 @@ pub async fn log_export(
             line_number += 1;
             if let Some(entry) = parse_log_line(&line, line_number) {
                 if matches_filters(&entry, &query_options, regex.as_ref()) {
-                    append_export_entry(&mut content, &entry, is_json, &mut first);
+                    append_export_entry(&mut content, &entry, export_format, &mut first);
                 }
             }
         }
     }
 
-    if is_json {
+    if export_format == LogExportFormat::Json {
         if first {
             content = "[]".to_string();
         } else {
@@ -107,14 +114,38 @@ pub async fn log_export(
         .file_name
         .clone()
         .unwrap_or_else(|| format!("cognia-logs-{}", Utc::now().format("%Y-%m-%d")));
-    let extension = if format == "json" { "json" } else { "txt" };
+    let extension = match export_format {
+        LogExportFormat::Json => "json",
+        LogExportFormat::Csv => "csv",
+        LogExportFormat::Txt => "txt",
+    };
     let file_name = if base_name.ends_with(&format!(".{extension}")) {
         base_name
     } else {
         format!("{base_name}.{extension}")
     };
 
-    Ok(LogExportResult { content, file_name })
+    let diagnostic_mode = options.diagnostic_mode.unwrap_or(false);
+    let sanitize_sensitive = options.sanitize_sensitive.unwrap_or(diagnostic_mode);
+    let (content, redacted_count) = if sanitize_sensitive {
+        redact_sensitive_text(&content)
+    } else {
+        (content, 0)
+    };
+
+    Ok(LogExportResult {
+        size_bytes: content.len(),
+        status: if redacted_count > 0 {
+            "partial_success".to_string()
+        } else {
+            "success".to_string()
+        },
+        redacted_count,
+        sanitized: sanitize_sensitive,
+        warnings: Vec::new(),
+        content,
+        file_name,
+    })
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -132,6 +163,7 @@ pub struct LogEntry {
 pub struct LogQueryOptions {
     pub file_name: Option<String>,
     pub level_filter: Option<Vec<String>>,
+    pub target: Option<String>,
     pub search: Option<String>,
     pub use_regex: Option<bool>,
     pub start_time: Option<i64>,
@@ -154,16 +186,24 @@ pub struct LogQueryResult {
 pub struct LogExportOptions {
     pub file_name: Option<String>,
     pub level_filter: Option<Vec<String>>,
+    pub target: Option<String>,
     pub search: Option<String>,
     pub use_regex: Option<bool>,
     pub start_time: Option<i64>,
     pub end_time: Option<i64>,
     pub format: Option<String>,
+    pub diagnostic_mode: Option<bool>,
+    pub sanitize_sensitive: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LogExportResult {
+    pub size_bytes: usize,
+    pub status: String,
+    pub redacted_count: usize,
+    pub sanitized: bool,
+    pub warnings: Vec<String>,
     pub content: String,
     pub file_name: String,
 }
@@ -191,13 +231,41 @@ async fn read_gzip_lines(path: &std::path::Path) -> Result<Vec<String>, String> 
         .map_err(|e| format!("Failed to join compressed log read task: {}", e))?
 }
 
-fn append_export_entry(content: &mut String, entry: &LogEntry, is_json: bool, first: &mut bool) {
-    if is_json {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LogExportFormat {
+    Txt,
+    Json,
+    Csv,
+}
+
+fn append_export_entry(
+    content: &mut String,
+    entry: &LogEntry,
+    format: LogExportFormat,
+    first: &mut bool,
+) {
+    if format == LogExportFormat::Json {
         if !*first {
             content.push_str(",\n");
         }
         content.push_str("  ");
         content.push_str(&serde_json::to_string(entry).unwrap_or_else(|_| "{}".to_string()));
+        *first = false;
+        return;
+    }
+
+    if format == LogExportFormat::Csv {
+        content.push('\n');
+
+        let timestamp = entry.timestamp.replace('"', "\"\"");
+        let level = entry.level.to_uppercase().replace('"', "\"\"");
+        let target = entry.target.replace('"', "\"\"");
+        let message = entry.message.replace('"', "\"\"");
+
+        content.push_str(&format!(
+            "\"{}\",\"{}\",\"{}\",\"{}\"",
+            timestamp, level, target, message
+        ));
         *first = false;
         return;
     }
@@ -222,6 +290,31 @@ fn append_export_entry(content: &mut String, entry: &LogEntry, is_json: bool, fi
         ));
     }
     *first = false;
+}
+
+fn redact_sensitive_text(input: &str) -> (String, usize) {
+    let mut result = input.to_string();
+    let mut redacted_count = 0usize;
+
+    if let Ok(key_value_regex) =
+        Regex::new(r"(?i)\b(token|secret|api[_-]?key|password)\b\s*[:=]\s*([^\s,;]+)")
+    {
+        redacted_count += key_value_regex.find_iter(&result).count();
+        result = key_value_regex
+            .replace_all(&result, |caps: &regex::Captures| {
+                format!("{}=<redacted>", &caps[1])
+            })
+            .to_string();
+    }
+
+    if let Ok(bearer_regex) = Regex::new(r"(?i)\bbearer\s+[A-Za-z0-9._\-]+") {
+        redacted_count += bearer_regex.find_iter(&result).count();
+        result = bearer_regex
+            .replace_all(&result, "Bearer <redacted>")
+            .to_string();
+    }
+
+    (result, redacted_count)
 }
 
 fn get_log_dir(app: &AppHandle) -> Option<PathBuf> {
@@ -319,6 +412,12 @@ fn matches_filters(entry: &LogEntry, options: &LogQueryOptions, regex: Option<&R
                     return false;
                 }
             }
+        }
+    }
+
+    if let Some(ref target) = options.target {
+        if !target.is_empty() && !entry.target.contains(target) {
+            return false;
         }
     }
 
@@ -477,6 +576,11 @@ pub async fn log_list_files(app: AppHandle) -> Result<Vec<LogFileInfo>, String> 
 fn has_active_filters(options: &LogQueryOptions) -> bool {
     if let Some(ref levels) = options.level_filter {
         if !levels.is_empty() {
+            return true;
+        }
+    }
+    if let Some(ref target) = options.target {
+        if !target.is_empty() {
             return true;
         }
     }
@@ -796,6 +900,18 @@ pub async fn log_get_total_size(app: AppHandle) -> Result<u64, String> {
 pub struct LogCleanupResult {
     pub deleted_count: usize,
     pub freed_bytes: u64,
+    pub status: String,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LogCleanupPreviewResult {
+    pub deleted_count: usize,
+    pub freed_bytes: u64,
+    pub protected_count: usize,
+    pub status: String,
+    pub warnings: Vec<String>,
 }
 
 #[tauri::command]
@@ -809,6 +925,19 @@ pub async fn log_cleanup(
     drop(settings_guard);
 
     cleanup_logs_with_policy(&app, max_retention_days, max_total_size_mb).await
+}
+
+#[tauri::command]
+pub async fn log_cleanup_preview(
+    app: AppHandle,
+    settings: tauri::State<'_, SharedSettings>,
+) -> Result<LogCleanupPreviewResult, String> {
+    let settings_guard = settings.read().await;
+    let max_retention_days = settings_guard.log.max_retention_days;
+    let max_total_size_mb = settings_guard.log.max_total_size_mb;
+    drop(settings_guard);
+
+    cleanup_preview_with_policy(&app, max_retention_days, max_total_size_mb).await
 }
 
 #[tauri::command]
@@ -846,9 +975,14 @@ pub async fn log_delete_batch(
 
     let mut deleted_count = 0usize;
     let mut freed_bytes = 0u64;
+    let mut warnings = Vec::new();
 
     for name in &file_names {
         if current_log.as_deref() == Some(name.as_str()) {
+            warnings.push(format!(
+                "Skipped current session log file: {}",
+                name
+            ));
             continue; // Skip current session log
         }
         let path = log_dir.join(name);
@@ -856,8 +990,13 @@ pub async fn log_delete_batch(
             if let Ok(meta) = fs::metadata(&path).await {
                 freed_bytes += meta.len();
             }
-            if fs::remove_file(&path).await.is_ok() {
-                deleted_count += 1;
+            match fs::remove_file(&path).await {
+                Ok(()) => {
+                    deleted_count += 1;
+                }
+                Err(err) => {
+                    warnings.push(format!("Failed to delete {}: {}", name, err));
+                }
             }
         }
     }
@@ -865,6 +1004,14 @@ pub async fn log_delete_batch(
     Ok(LogCleanupResult {
         deleted_count,
         freed_bytes,
+        status: if warnings.is_empty() {
+            "success".to_string()
+        } else if deleted_count > 0 {
+            "partial_success".to_string()
+        } else {
+            "failed".to_string()
+        },
+        warnings,
     })
 }
 
@@ -922,6 +1069,8 @@ pub async fn cleanup_logs_with_policy(
         return Ok(LogCleanupResult {
             deleted_count: 0,
             freed_bytes: 0,
+            status: "success".to_string(),
+            warnings: Vec::new(),
         });
     }
 
@@ -933,6 +1082,7 @@ pub async fn cleanup_logs_with_policy(
 
     let mut deleted_count = 0usize;
     let mut freed_bytes = 0u64;
+    let mut warnings = Vec::new();
     let mut remaining_size: u64 = files.iter().map(|f| f.size).sum();
     let max_total_bytes = (max_total_size_mb as u64) * 1024 * 1024;
 
@@ -970,10 +1120,15 @@ pub async fn cleanup_logs_with_policy(
         }
 
         if should_delete {
-            if fs::remove_file(&path).await.is_ok() {
-                deleted_count += 1;
-                freed_bytes += file.size;
-                remaining_size -= file.size;
+            match fs::remove_file(&path).await {
+                Ok(()) => {
+                    deleted_count += 1;
+                    freed_bytes += file.size;
+                    remaining_size -= file.size;
+                }
+                Err(err) => {
+                    warnings.push(format!("Failed to delete {}: {}", file.name, err));
+                }
             }
         }
     }
@@ -981,7 +1136,83 @@ pub async fn cleanup_logs_with_policy(
     Ok(LogCleanupResult {
         deleted_count,
         freed_bytes,
+        status: if warnings.is_empty() {
+            "success".to_string()
+        } else if deleted_count > 0 {
+            "partial_success".to_string()
+        } else {
+            "failed".to_string()
+        },
+        warnings,
     })
+}
+
+fn preview_cleanup_from_files(
+    files: &[LogFileInfo],
+    now: i64,
+    max_retention_days: u32,
+    max_total_size_mb: u32,
+) -> LogCleanupPreviewResult {
+    if files.is_empty() {
+        return LogCleanupPreviewResult {
+            deleted_count: 0,
+            freed_bytes: 0,
+            protected_count: 0,
+            status: "success".to_string(),
+            warnings: Vec::new(),
+        };
+    }
+
+    let mut deleted_count = 0usize;
+    let mut freed_bytes = 0u64;
+    let mut remaining_size: u64 = files.iter().map(|f| f.size).sum();
+    let max_total_bytes = (max_total_size_mb as u64) * 1024 * 1024;
+
+    // Skip the first file (current session log, newest)
+    for file in files.iter().skip(1).rev() {
+        let age_days = (now - file.modified) / 86400;
+        let mut should_delete = false;
+
+        if max_retention_days > 0 && age_days > max_retention_days as i64 {
+            should_delete = true;
+        }
+
+        if !should_delete && max_total_bytes > 0 && remaining_size > max_total_bytes {
+            should_delete = true;
+        }
+
+        if should_delete {
+            deleted_count += 1;
+            freed_bytes += file.size;
+            remaining_size = remaining_size.saturating_sub(file.size);
+        }
+    }
+
+    LogCleanupPreviewResult {
+        deleted_count,
+        freed_bytes,
+        protected_count: 1,
+        status: "success".to_string(),
+        warnings: Vec::new(),
+    }
+}
+
+pub async fn cleanup_preview_with_policy(
+    app: &AppHandle,
+    max_retention_days: u32,
+    max_total_size_mb: u32,
+) -> Result<LogCleanupPreviewResult, String> {
+    let files = log_list_files(app.clone()).await?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    Ok(preview_cleanup_from_files(
+        &files,
+        now,
+        max_retention_days,
+        max_total_size_mb,
+    ))
 }
 
 #[cfg(test)]
@@ -1024,6 +1255,7 @@ mod tests {
         let options = LogQueryOptions {
             file_name: None,
             level_filter: Some(vec!["INFO".to_string()]),
+            target: None,
             search: None,
             use_regex: Some(false),
             start_time: Some(start),
@@ -1080,6 +1312,7 @@ mod tests {
         let options = LogQueryOptions {
             file_name: None,
             level_filter: Some(vec!["INFO".to_string()]),
+            target: None,
             search: Some("msg-".to_string()),
             use_regex: Some(false),
             start_time: None,
@@ -1131,5 +1364,108 @@ mod tests {
         assert_eq!(cap_max_scan_lines(Some(MAX_SCAN_LINES_LIMIT + 123)), Some(MAX_SCAN_LINES_LIMIT));
         assert_eq!(cap_max_scan_lines(Some(10_000)), Some(10_000));
         assert_eq!(cap_max_scan_lines(None), None);
+    }
+
+    #[test]
+    fn target_filter_matches_expected_entries() {
+        let entry = parse_log_line(
+            "[2026-03-01 10:00:00.000][INFO][network::http] request complete",
+            1,
+        )
+        .expect("expected parsed log line");
+
+        let matching_options = LogQueryOptions {
+            file_name: None,
+            level_filter: Some(vec!["INFO".to_string()]),
+            target: Some("network".to_string()),
+            search: None,
+            use_regex: Some(false),
+            start_time: None,
+            end_time: None,
+            limit: None,
+            offset: None,
+            max_scan_lines: None,
+        };
+        assert!(matches_filters(&entry, &matching_options, None));
+
+        let mismatching_options = LogQueryOptions {
+            target: Some("database".to_string()),
+            ..matching_options
+        };
+        assert!(!matches_filters(&entry, &mismatching_options, None));
+    }
+
+    #[test]
+    fn csv_export_rows_escape_quotes_and_include_header() {
+        let entry = LogEntry {
+            timestamp: "2026-03-01T10:00:00.000Z".to_string(),
+            level: "info".to_string(),
+            target: "service\"core".to_string(),
+            message: "hello,\"world\"".to_string(),
+            line_number: 1,
+        };
+
+        let mut content = "timestamp,level,target,message".to_string();
+        let mut first = true;
+        append_export_entry(&mut content, &entry, LogExportFormat::Csv, &mut first);
+
+        assert_eq!(
+            content,
+            "timestamp,level,target,message\n\"2026-03-01T10:00:00.000Z\",\"INFO\",\"service\"\"core\",\"hello,\"\"world\"\"\""
+        );
+    }
+
+    #[test]
+    fn cleanup_preview_is_non_mutating_and_protects_current_session() {
+        let now = 1_800_000_000i64;
+        let files = vec![
+            LogFileInfo {
+                name: "current.log".to_string(),
+                path: "/tmp/current.log".to_string(),
+                size: 400,
+                modified: now,
+            },
+            LogFileInfo {
+                name: "old.log".to_string(),
+                path: "/tmp/old.log".to_string(),
+                size: 600,
+                modified: now - 40 * 86_400,
+            },
+        ];
+        let snapshot = files.clone();
+
+        let preview = preview_cleanup_from_files(&files, now, 7, 0);
+        assert_eq!(preview.deleted_count, 1);
+        assert_eq!(preview.freed_bytes, 600);
+        assert_eq!(preview.protected_count, 1);
+        assert_eq!(preview.status, "success");
+
+        // Ensure preview path does not mutate source file metadata.
+        assert_eq!(files, snapshot);
+    }
+
+    #[test]
+    fn diagnostic_redaction_summary_metadata_is_emitted() {
+        let input = "token=abc123\nAuthorization: Bearer my-secret-token";
+        let (sanitized, redacted_count) = redact_sensitive_text(input);
+        assert!(redacted_count >= 2);
+        assert!(sanitized.contains("token=<redacted>"));
+        assert!(sanitized.contains("Bearer <redacted>"));
+
+        let payload = serde_json::to_value(LogExportResult {
+            size_bytes: sanitized.len(),
+            status: "partial_success".to_string(),
+            redacted_count,
+            sanitized: true,
+            warnings: Vec::new(),
+            content: sanitized,
+            file_name: "diagnostic.log".to_string(),
+        })
+        .expect("serialize export payload");
+
+        assert_eq!(payload["status"], "partial_success");
+        assert!(payload["redactedCount"].as_u64().unwrap_or(0) >= 2);
+        assert_eq!(payload["sanitized"], true);
+        assert!(payload["sizeBytes"].as_u64().unwrap_or(0) > 0);
     }
 }

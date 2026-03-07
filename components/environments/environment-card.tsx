@@ -48,6 +48,7 @@ import { useLocale } from "@/components/providers/locale-provider";
 import { UpdateCheckerCard } from "@/components/environments/update-checker";
 import { EolBadge } from "@/components/environments/eol-badge";
 import { DetectedVersionBadge } from "@/components/environments/detected-version-badge";
+import { EnvironmentWorkflowBanner } from "@/components/environments/environment-workflow-banner";
 import { formatSize, cn } from "@/lib/utils";
 import { LanguageIcon } from "@/components/provider-management/provider-icon";
 import { LANGUAGES } from "@/lib/constants/environments";
@@ -63,6 +64,7 @@ interface EnvironmentCardProps {
   availableProviders?: { id: string; name: string }[];
   onProviderChange?: (providerId: string) => void;
   selectedProviderId?: string;
+  projectPath?: string | null;
 }
 
 export function EnvironmentCard({
@@ -76,9 +78,10 @@ export function EnvironmentCard({
   availableProviders = [],
   onProviderChange,
   selectedProviderId,
+  projectPath,
 }: EnvironmentCardProps) {
   const { t } = useLocale();
-  const { openVersionBrowser } = useEnvironmentStore();
+  const { openVersionBrowser, setWorkflowContext } = useEnvironmentStore();
   const [customVersion, setCustomVersion] = useState("");
   const [localProjectPath, setLocalProjectPath] = useState("");
   const [isInstalling, setIsInstalling] = useState(false);
@@ -93,6 +96,17 @@ export function EnvironmentCard({
 
   const logicalType = getLogicalEnvType(env.env_type);
   const langInfo = LANGUAGES.find((l) => l.id === logicalType);
+
+  const handleViewDetails = () => {
+    setWorkflowContext({
+      envType: logicalType,
+      origin: "overview",
+      returnHref: "/environments",
+      projectPath: projectPath || null,
+      providerId: currentProviderId,
+      updatedAt: Date.now(),
+    });
+  };
 
   const handleInstall = async (version: string) => {
     if (!onInstall) return;
@@ -189,6 +203,15 @@ export function EnvironmentCard({
               t={t}
             />
           )}
+          <EnvironmentWorkflowBanner
+            envType={logicalType}
+            projectPath={projectPath}
+            providerLabel={
+              availableProviders.find((provider) => provider.id === currentProviderId)?.name
+              || env.provider
+            }
+            t={t}
+          />
 
           {/* Title Row */}
           <div className="flex items-start justify-between gap-3">
@@ -478,7 +501,10 @@ export function EnvironmentCard({
               className="flex-1 gap-2"
               asChild
             >
-              <Link href={`/environments/${getLogicalEnvType(env.env_type)}`}>
+              <Link
+                href={`/environments/${logicalType}`}
+                onClick={handleViewDetails}
+              >
                 <Settings2 className="h-4 w-4" />
                 {t("environments.viewDetails")}
               </Link>

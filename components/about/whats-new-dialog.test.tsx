@@ -30,9 +30,13 @@ const mockT = (key: string) => {
     "about.changelogViewOnGithub": "View on GitHub",
     "about.changelogShowAll": "Show All",
     "about.changelogGotIt": "Got It",
+    "about.changelogLocal": "Bundled",
+    "about.changelogRemote": "GitHub",
+    "about.changelogReleaseNotes": "Release Notes",
     "about.changelogAdded": "Added",
     "about.changelogFixed": "Fixed",
     "about.changelogChanged": "Changed",
+    "about.changelogRelativeTime": "1d ago",
   };
   return translations[key] || key;
 };
@@ -64,6 +68,7 @@ const defaultProps = {
   open: true,
   onOpenChange: jest.fn(),
   entries,
+  locale: "en",
   onDismiss: jest.fn(),
   onShowFullChangelog: jest.fn(),
   t: mockT,
@@ -124,6 +129,12 @@ describe("WhatsNewDialog", () => {
   it("renders pre-release badge for prerelease entries", () => {
     render(<WhatsNewDialog {...defaultProps} />);
     expect(screen.getByText("Pre-release")).toBeInTheDocument();
+  });
+
+  it("renders source badges for local and remote entries", () => {
+    render(<WhatsNewDialog {...defaultProps} />);
+    expect(screen.getByText("Bundled")).toBeInTheDocument();
+    expect(screen.getByText("GitHub")).toBeInTheDocument();
   });
 
   it("renders change descriptions with type badges", () => {

@@ -101,4 +101,40 @@ describe("IssueCard", () => {
     );
     expect(screen.getByText("Detailed explanation here")).toBeInTheDocument();
   });
+
+  it("renders remediation actions and calls preview handler", async () => {
+    const onPreviewRemediation = jest.fn().mockResolvedValue({
+      remediation_id: "install-provider:fnm",
+      supported: true,
+      dry_run: true,
+      executed: false,
+      success: true,
+      manual_only: false,
+      command: "winget install Schniz.fnm",
+      description: "Install fnm",
+      message: "Preview install command for fnm",
+      stdout: null,
+      stderr: null,
+    });
+
+    render(
+      <IssueCard
+        issue={{
+          message: "Provider missing",
+          severity: "info",
+          category: "provider_not_found",
+          details: null,
+          fix_command: "winget install Schniz.fnm",
+          fix_description: "Install fnm",
+          remediation_id: "install-provider:fnm",
+        }}
+        onCopy={mockOnCopy}
+        onPreviewRemediation={onPreviewRemediation}
+        t={mockT}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("previewFix"));
+    expect(onPreviewRemediation).toHaveBeenCalledWith({ remediation_id: "install-provider:fnm" });
+  });
 });

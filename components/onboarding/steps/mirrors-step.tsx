@@ -9,7 +9,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { MIRROR_PRESETS } from '@/lib/constants/mirrors';
 import type { MirrorsStepProps } from '@/types/onboarding';
 
-export function MirrorsStep({ t, onApplyPreset }: MirrorsStepProps) {
+export function MirrorsStep({ t, onApplyPreset, mode = 'quick' }: MirrorsStepProps) {
   const [selected, setSelected] = useState<string>('default');
 
   const handleChange = useCallback((key: string) => {
@@ -30,6 +30,14 @@ export function MirrorsStep({ t, onApplyPreset }: MirrorsStepProps) {
           {t('onboarding.mirrorsDesc')}
         </p>
       </div>
+      {mode === 'detailed' && (
+        <Alert className="w-full max-w-md text-left">
+          <Info className="h-4 w-4" />
+          <AlertDescription className="text-sm">
+            {t('onboarding.mirrorsDetailedRecommendation')}
+          </AlertDescription>
+        </Alert>
+      )}
       <RadioGroup
         value={selected}
         onValueChange={handleChange}
@@ -59,6 +67,14 @@ export function MirrorsStep({ t, onApplyPreset }: MirrorsStepProps) {
           </Label>
         ))}
       </RadioGroup>
+      {mode === 'detailed' && (
+        <Alert className="max-w-md text-left">
+          <Info className="h-4 w-4" />
+          <AlertDescription className="text-sm">
+            {t('onboarding.mirrorsDetailedSafety')}
+          </AlertDescription>
+        </Alert>
+      )}
       <Alert className="max-w-sm">
         <Info className="h-4 w-4" />
         <AlertDescription className="text-xs">

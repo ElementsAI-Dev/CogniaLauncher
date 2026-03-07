@@ -13,6 +13,13 @@ const mockBatchUpdate = jest.fn().mockResolvedValue({ successful: [], failed: []
 const mockBatchUninstall = jest.fn().mockResolvedValue({ successful: [], failed: [] });
 const mockGetInstallHistory = jest.fn().mockResolvedValue([]);
 const mockClearInstallHistory = jest.fn().mockResolvedValue(undefined);
+const mockPinPackage = jest.fn().mockResolvedValue(undefined);
+const mockUnpinPackage = jest.fn().mockResolvedValue(undefined);
+const mockRollbackPackage = jest.fn().mockResolvedValue(undefined);
+const mockFetchPinnedPackages = jest.fn().mockResolvedValue([]);
+const mockUseKeyboardShortcuts = jest.fn();
+const mockPush = jest.fn();
+let mockPackageDetailsDialogProps: Record<string, unknown> | null = null;
 const mockResolveDependencies = jest.fn().mockResolvedValue({
   success: true,
   packages: [],
@@ -32,7 +39,7 @@ let mockSearchResults: Array<{
   description: string | null;
   latest_version: string | null;
 }> = [];
-const mockPackageStoreState = {
+  const mockPackageStoreState = {
   selectedPackages: [] as string[],
   clearPackageSelection: jest.fn(),
   bookmarkedPackages: [] as string[],
@@ -61,6 +68,15 @@ const mockPackageStoreState = {
     error: number;
   },
   lastUpdateCheck: null as number | null,
+  searchMeta: null as null | {
+    total: number;
+    page: number;
+    pageSize: number;
+    facets: {
+      providers: Record<string, number>;
+      licenses: Record<string, number>;
+    };
+  },
 };
 
 jest.mock('@/hooks/use-packages', () => ({
@@ -88,9 +104,10 @@ jest.mock('@/hooks/use-packages', () => ({
     batchUninstall: mockBatchUninstall,
     resolveDependencies: mockResolveDependencies,
     comparePackages: jest.fn(),
-    pinPackage: jest.fn(),
-    unpinPackage: jest.fn(),
-    rollbackPackage: jest.fn(),
+    pinPackage: mockPinPackage,
+    unpinPackage: mockUnpinPackage,
+    rollbackPackage: mockRollbackPackage,
+    fetchPinnedPackages: mockFetchPinnedPackages,
     getInstallHistory: mockGetInstallHistory,
     clearInstallHistory: mockClearInstallHistory,
   }),
@@ -101,7 +118,13 @@ jest.mock('@/lib/stores/packages', () => ({
 }));
 
 jest.mock('@/hooks/use-keyboard-shortcuts', () => ({
-  useKeyboardShortcuts: jest.fn(),
+  useKeyboardShortcuts: (...args: unknown[]) => mockUseKeyboardShortcuts(...args),
+}));
+
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({
+    push: mockPush,
+  }),
 }));
 
 jest.mock('@/components/providers/locale-provider', () => ({
@@ -115,12 +138,27 @@ jest.mock('@/components/providers/locale-provider', () => ({
         'packages.searchResults': 'Search Results',
         'packages.dependencies': 'Dependencies',
         'packages.history': 'History',
+        'packages.searchSummary': `Showing ${params?.from ?? 0}-${params?.to ?? 0} of ${params?.total ?? 0}`,
+        'packages.searchFacets': 'Search facets',
+        'packages.searchFacetProviders': 'Providers',
+        'packages.searchFacetLicenses': 'Licenses',
+        'packages.searchPrevPage': 'Previous page',
+        'packages.searchNextPage': 'Next page',
         'packages.clickToCheck': 'Click to check for updates',
         'packages.allUpToDate': 'All packages up to date',
         'packages.noUpdates': 'No updates available',
         'packages.checkForUpdates': 'Check for Updates',
         'packages.installHistory': 'Install History',
         'packages.installHistoryDesc': 'Recent package operations',
+        'packages.historyNameFilter': 'Filter history by package',
+        'packages.historyActionFilter': 'Action',
+        'packages.historyStatusFilter': 'Status',
+        'packages.historyApplyFilters': 'Apply Filters',
+        'packages.historyResetFilters': 'Reset Filters',
+        'packages.historyStatusAll': 'All statuses',
+        'packages.historyStatusSuccess': 'Success',
+        'packages.historyStatusFailed': 'Failed',
+        'packages.historyOpenDetails': 'View Details',
         'packages.noHistory': 'No history entries',
         'packages.clearHistory': 'Clear History',
         'packages.historyCleared': 'History cleared',
@@ -143,7 +181,40 @@ jest.mock('sonner', () => ({
 }));
 
 jest.mock('@/components/packages/search-bar', () => ({
-  SearchBar: () => <div data-testid="search-bar">Search</div>,
+  SearchBar: ({
+    inputRef,
+    onSearch,
+  }: {
+    inputRef?: { current: HTMLInputElement | null };
+    onSearch?: (
+      query: string,
+      options: {
+        providers?: string[];
+        installedOnly?: boolean;
+        notInstalled?: boolean;
+        hasUpdates?: boolean;
+        sortBy?: string;
+      },
+    ) => void;
+  }) => (
+    <div data-testid="search-bar">
+      <input data-testid="packages-search-input" ref={inputRef} />
+      <button
+        data-testid="trigger-advanced-search"
+        onClick={() =>
+          onSearch?.('vite', {
+            providers: ['npm'],
+            installedOnly: true,
+            notInstalled: false,
+            hasUpdates: true,
+            sortBy: 'name',
+          })
+        }
+      >
+        Trigger search
+      </button>
+    </div>
+  ),
 }));
 
 jest.mock('@/components/packages/package-list', () => ({
@@ -154,7 +225,7 @@ jest.mock('@/components/packages/package-list', () => ({
     onInstall?: (n: string) => void;
     onSelect?: (p: { name: string }) => void;
     onResolveDependencies?: (p: { name: string; provider?: string; version?: string; latest_version?: string }, source: 'installed' | 'search') => void;
-    onPin?: (n: string) => void;
+    onPin?: (n: string, version?: string, provider?: string) => void;
     onUnpin?: (n: string) => void;
     onBookmark?: (n: string) => void;
   }) => (
@@ -171,7 +242,7 @@ jest.mock('@/components/packages/package-list', () => ({
           Resolve
         </button>
       )}
-      {onPin && <button data-testid={`pin-${type}`} onClick={() => onPin('typescript')}>Pin</button>}
+      {onPin && <button data-testid={`pin-${type}`} onClick={() => onPin('typescript', '5.0.0', 'npm')}>Pin</button>}
       {onUnpin && <button data-testid={`unpin-${type}`} onClick={() => onUnpin('typescript')}>Unpin</button>}
       {onBookmark && <button data-testid={`bookmark-${type}`} onClick={() => onBookmark('typescript')}>Bookmark</button>}
     </div>
@@ -179,7 +250,10 @@ jest.mock('@/components/packages/package-list', () => ({
 }));
 
 jest.mock('@/components/packages/package-details-dialog', () => ({
-  PackageDetailsDialog: () => null,
+  PackageDetailsDialog: (props: Record<string, unknown>) => {
+    mockPackageDetailsDialogProps = props;
+    return null;
+  },
 }));
 
 jest.mock('@/components/packages/batch-operations', () => ({
@@ -208,7 +282,14 @@ jest.mock('@/components/packages/export-import-dialog', () => ({
 }));
 
 jest.mock('@/components/packages/provider-status-badge', () => ({
-  ProviderStatusBadge: () => <div data-testid="provider-status">Providers</div>,
+  ProviderStatusBadge: ({ onRefresh }: { onRefresh?: () => void }) => (
+    <div data-testid="provider-status">
+      Providers
+      <button data-testid="provider-refresh" onClick={() => onRefresh?.()}>
+        Refresh providers
+      </button>
+    </div>
+  ),
 }));
 
 jest.mock('@/components/packages/stats-overview', () => ({
@@ -218,6 +299,7 @@ jest.mock('@/components/packages/stats-overview', () => ({
 describe('PackagesPage', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockPackageDetailsDialogProps = null;
     mockGetInstallHistory.mockResolvedValue([]);
     mockClearInstallHistory.mockResolvedValue(undefined);
     mockResolveDependencies.mockResolvedValue({
@@ -259,6 +341,44 @@ describe('PackagesPage', () => {
   it('renders search bar', () => {
     render(<PackagesPage />);
     expect(screen.getByTestId('search-bar')).toBeInTheDocument();
+  });
+
+  it('maps advanced search options into backend search payload contract', async () => {
+    const user = userEvent.setup();
+    render(<PackagesPage />);
+
+    await user.click(screen.getByTestId('trigger-advanced-search'));
+
+    await waitFor(() => {
+      expect(mockAdvancedSearch).toHaveBeenCalledWith(
+        'vite',
+        expect.objectContaining({
+          providers: ['npm'],
+          sortBy: 'name',
+          filters: expect.objectContaining({
+            installedOnly: true,
+            notInstalled: false,
+            hasUpdates: true,
+          }),
+        }),
+      );
+    });
+  });
+
+  it('focuses package search input when keyboard shortcut action runs', () => {
+    render(<PackagesPage />);
+
+    const registration = mockUseKeyboardShortcuts.mock.calls[0][0] as {
+      shortcuts: Array<{ key: string; ctrlKey?: boolean; action: () => void }>;
+    };
+    const searchShortcut = registration.shortcuts.find(
+      (shortcut) => shortcut.key === 'f' && shortcut.ctrlKey,
+    );
+    expect(searchShortcut).toBeDefined();
+
+    searchShortcut?.action();
+
+    expect(screen.getByTestId('packages-search-input')).toHaveFocus();
   });
 
   it('renders stats overview', () => {
@@ -305,7 +425,7 @@ describe('PackagesPage', () => {
     await user.click(screen.getByText(/History/));
     await waitFor(() => {
       expect(screen.getByText(/history unavailable/i)).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /refresh/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /^refresh$/i })).toBeInTheDocument();
     });
   });
 
@@ -340,6 +460,17 @@ describe('PackagesPage', () => {
   it('renders provider status badge', () => {
     render(<PackagesPage />);
     expect(screen.getByTestId('provider-status')).toBeInTheDocument();
+  });
+
+  it('forces provider refresh when provider status badge requests refresh', async () => {
+    const user = userEvent.setup();
+    render(<PackagesPage />);
+    mockFetchProviders.mockClear();
+
+    await user.click(screen.getByTestId('provider-refresh'));
+
+    expect(mockFetchProviders).toHaveBeenCalledTimes(1);
+    expect(mockFetchProviders).toHaveBeenCalledWith(true);
   });
 
   it('renders export/import dialog trigger', () => {
@@ -436,6 +567,44 @@ describe('PackagesPage', () => {
     });
   });
 
+  it('passes selected version through pin action from package detail dialog', async () => {
+    const user = userEvent.setup();
+    render(<PackagesPage />);
+
+    await user.click(screen.getByTestId('select-installed'));
+
+    expect(mockPackageDetailsDialogProps).toBeTruthy();
+    const onPin = mockPackageDetailsDialogProps?.onPin as
+      | ((name: string, version?: string) => Promise<void>)
+      | undefined;
+    expect(onPin).toBeDefined();
+
+    await onPin?.('typescript', '4.9.0');
+
+    expect(mockPinPackage).toHaveBeenCalledWith('npm:typescript', '4.9.0');
+  });
+
+  it('evaluates installed/current version by provider-aware package identity in detail dialog', async () => {
+    mockSearchResults = [
+      {
+        name: 'typescript',
+        provider: 'pip',
+        description: 'python wrapper',
+        latest_version: '1.0.0',
+      },
+    ];
+
+    const user = userEvent.setup();
+    render(<PackagesPage />);
+
+    await user.click(screen.getByText(/Search Results/));
+    await user.click(screen.getByTestId('select-search'));
+
+    expect(mockPackageDetailsDialogProps).toBeTruthy();
+    expect(mockPackageDetailsDialogProps?.isInstalled).toBe(false);
+    expect(mockPackageDetailsDialogProps?.currentVersion).toBeUndefined();
+  });
+
   it('switches to dependencies tab', async () => {
     const user = userEvent.setup();
     render(<PackagesPage />);
@@ -515,6 +684,86 @@ describe('PackagesPage', () => {
 
     await waitFor(() => {
       expect(screen.getByTitle(longName)).toBeInTheDocument();
+    });
+  });
+
+  it('applies provider-aware history filters through backend query params', async () => {
+    const user = userEvent.setup();
+    render(<PackagesPage />);
+
+    await user.click(screen.getByText(/History/));
+    await user.type(screen.getByPlaceholderText('Filter history by package'), 'react');
+    await user.click(screen.getByRole('combobox', { name: /Action/i }));
+    await user.click(screen.getByText('install'));
+    await user.click(screen.getByRole('combobox', { name: /Status/i }));
+    await user.click(screen.getByText('Success'));
+    await user.click(screen.getByRole('button', { name: /Apply Filters/i }));
+
+    await waitFor(() => {
+      expect(mockGetInstallHistory).toHaveBeenLastCalledWith({
+        limit: 200,
+        name: 'react',
+        provider: undefined,
+        action: 'install',
+        success: true,
+      });
+    });
+  });
+
+  it('preserves provider context when opening package detail from history', async () => {
+    mockGetInstallHistory.mockResolvedValueOnce([
+      {
+        id: '1',
+        name: 'react',
+        version: '18.0.0',
+        action: 'install',
+        timestamp: '2026-03-04T08:00:00.000Z',
+        provider: 'npm',
+        success: true,
+        error_message: null,
+      },
+    ]);
+
+    const user = userEvent.setup();
+    render(<PackagesPage />);
+
+    await user.click(screen.getByText(/History/));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /View Details/i })).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: /View Details/i }));
+
+    expect(mockPush).toHaveBeenCalledWith('/packages/detail?name=react&provider=npm');
+  });
+
+  it('shows synchronized search facets and pagination summary', async () => {
+    mockSearchResults = [
+      {
+        name: 'react',
+        provider: 'npm',
+        description: 'React library',
+        latest_version: '19.0.0',
+      },
+    ];
+    mockPackageStoreState.searchMeta = {
+      total: 25,
+      page: 1,
+      pageSize: 10,
+      facets: {
+        providers: { npm: 20, pip: 5 },
+        licenses: { MIT: 15, Apache: 10 },
+      },
+    };
+
+    const user = userEvent.setup();
+    render(<PackagesPage />);
+    await user.click(screen.getByText(/Search Results/));
+
+    await waitFor(() => {
+      expect(screen.getByText('Showing 11-11 of 25')).toBeInTheDocument();
+      expect(screen.getByText('npm (20)')).toBeInTheDocument();
+      expect(screen.getByText('MIT (15)')).toBeInTheDocument();
     });
   });
 });

@@ -42,7 +42,7 @@ jest.mock('@/components/ui/scroll-area', () => ({
 }));
 
 const defaultResults = [
-  { title: '快速开始', titleEn: 'Quick Start', slug: 'getting-started', snippet: 'Quick Start', score: 10 },
+  { title: '快速开始', titleEn: 'Quick Start', slug: 'getting-started', anchorId: 'quick-start', snippet: 'Quick Start', score: 10 },
   { title: '安装指南', titleEn: 'Installation', slug: 'installation', snippet: 'Installation', score: 5 },
 ];
 
@@ -91,7 +91,7 @@ describe('DocsSearch', () => {
     const input = screen.getByTestId('search-input');
     fireEvent.change(input, { target: { value: 'start' } });
     fireEvent.click(screen.getByText('Quick Start'));
-    expect(mockPush).toHaveBeenCalledWith('/docs/getting-started');
+    expect(mockPush).toHaveBeenCalledWith('/docs/getting-started#quick-start');
   });
 
   it('navigates on Enter key', () => {
@@ -100,7 +100,7 @@ describe('DocsSearch', () => {
     const input = screen.getByTestId('search-input');
     fireEvent.change(input, { target: { value: 'start' } });
     fireEvent.keyDown(input, { key: 'Enter' });
-    expect(mockPush).toHaveBeenCalledWith('/docs/getting-started');
+    expect(mockPush).toHaveBeenCalledWith('/docs/getting-started#quick-start');
   });
 
   it('moves selection with ArrowDown', () => {
@@ -157,7 +157,7 @@ describe('DocsSearch', () => {
   });
 
   it('passes searchIndex to searchDocs', () => {
-    const index = [{ slug: 'test', headingsZh: [], headingsEn: [], excerptZh: '', excerptEn: '' }];
+    const index = [{ slug: 'test', pageSlug: 'test', anchorId: 'intro', sectionTitle: 'Intro', locale: 'en', excerpt: 'intro section' }];
     mockSearchDocs.mockReturnValue([]);
     render(<DocsSearch searchIndex={index} />);
     const input = screen.getByTestId('search-input');
@@ -208,6 +208,18 @@ describe('DocsSearch', () => {
     fireEvent.change(input, { target: { value: 'start' } });
     fireEvent.click(screen.getByText('Quick Start'));
     expect(input).toHaveValue('');
+  });
+
+  it('resets keyboard selection after Escape', () => {
+    mockSearchDocs.mockReturnValue(defaultResults);
+    render(<DocsSearch />);
+    const input = screen.getByTestId('search-input');
+    fireEvent.change(input, { target: { value: 'start' } });
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    fireEvent.keyDown(input, { key: 'Escape' });
+    fireEvent.focus(input);
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(mockPush).toHaveBeenCalledWith('/docs/getting-started#quick-start');
   });
 
   it('shows result slug', () => {

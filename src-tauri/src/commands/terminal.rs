@@ -1,8 +1,9 @@
 use crate::config::Settings;
 use crate::core::terminal::{
     self, PSModuleInfo, PSProfileInfo, PSScriptInfo, ShellConfigEntries, ShellFrameworkInfo,
-    ShellInfo, ShellPlugin, TerminalConfigMutationResult, TerminalProfile, TerminalProfileManager,
-    TerminalProfileTemplate,
+    ShellInfo, ShellPlugin, TerminalConfigDiagnostic, TerminalConfigEditorMetadata,
+    TerminalConfigMutationResult, TerminalConfigRestoreResult, TerminalProfile,
+    TerminalProfileManager, TerminalProfileTemplate,
 };
 use crate::core::EnvironmentManager;
 use crate::platform::env::{EnvModifications, ShellType};
@@ -543,6 +544,33 @@ pub fn terminal_parse_config_content(
     shell_type: ShellType,
 ) -> Result<ShellConfigEntries, String> {
     Ok(terminal::parse_shell_config(&content, shell_type))
+}
+
+#[tauri::command]
+pub fn terminal_validate_config_content(
+    content: String,
+    shell_type: ShellType,
+) -> Result<Vec<TerminalConfigDiagnostic>, String> {
+    Ok(terminal::validate_shell_config_content(&content, shell_type))
+}
+
+#[tauri::command]
+pub async fn terminal_get_config_editor_metadata(
+    path: String,
+    shell_type: ShellType,
+) -> Result<TerminalConfigEditorMetadata, String> {
+    terminal::get_shell_config_editor_metadata(&PathBuf::from(&path), shell_type)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn terminal_restore_config_snapshot(
+    path: String,
+) -> Result<TerminalConfigRestoreResult, String> {
+    terminal::restore_shell_config_snapshot(&PathBuf::from(&path))
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ============================================================================

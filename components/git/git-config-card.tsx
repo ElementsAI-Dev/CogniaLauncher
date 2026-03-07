@@ -24,8 +24,10 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Settings2, Plus, Trash2, Save, Search, ChevronRight, FileEdit, FolderOpen } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
+import { toast } from 'sonner';
 import type { GitConfigEntry } from '@/types/tauri';
 import type { GitConfigCardProps } from '@/types/git';
+import { validateGitConfigEntry } from '@/lib/git-settings-templates';
 
 function groupBySection(entries: GitConfigEntry[]): Record<string, GitConfigEntry[]> {
   const groups: Record<string, GitConfigEntry[]> = {};
@@ -38,7 +40,15 @@ function groupBySection(entries: GitConfigEntry[]): Record<string, GitConfigEntr
   return groups;
 }
 
-export function GitConfigCard({ config, onSet, onRemove, configFilePath, onOpenInEditor }: GitConfigCardProps) {
+export function GitConfigCard({
+  config,
+  onSet,
+  onRemove,
+  configFilePath,
+  editorCapability,
+  onOpenInEditor,
+  onOpenFileLocation,
+}: GitConfigCardProps) {
   const { t } = useLocale();
   const [newKey, setNewKey] = useState('');
   const [newValue, setNewValue] = useState('');
@@ -59,12 +69,22 @@ export function GitConfigCard({ config, onSet, onRemove, configFilePath, onOpenI
 
   const handleAdd = async () => {
     if (!newKey.trim()) return;
+    const validationMessageKey = validateGitConfigEntry(newKey.trim(), newValue);
+    if (validationMessageKey) {
+      toast.error(t(validationMessageKey));
+      return;
+    }
     await onSet(newKey.trim(), newValue);
     setNewKey('');
     setNewValue('');
   };
 
   const handleSaveEdit = async (key: string) => {
+    const validationMessageKey = validateGitConfigEntry(key, editValue);
+    if (validationMessageKey) {
+      toast.error(t(validationMessageKey));
+      return;
+    }
     await onSet(key, editValue);
     setEditingKey(null);
     setEditValue('');
@@ -152,12 +172,31 @@ export function GitConfigCard({ config, onSet, onRemove, configFilePath, onOpenI
               </CardDescription>
             )}
           </div>
-          {onOpenInEditor && (
-            <Button variant="outline" size="sm" onClick={onOpenInEditor} className="gap-1">
-              <FileEdit className="h-3 w-3" />
-              {t('git.config.openInEditor')}
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            {onOpenInEditor && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void onOpenInEditor()}
+                className="gap-1"
+                disabled={editorCapability ? !editorCapability.available : false}
+              >
+                <FileEdit className="h-3 w-3" />
+                {t('git.config.openInEditor')}
+              </Button>
+            )}
+            {onOpenFileLocation && configFilePath && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void onOpenFileLocation()}
+                className="gap-1"
+              >
+                <FolderOpen className="h-3 w-3" />
+                {t('git.config.openLocation')}
+              </Button>
+            )}
+          </div>
         </div>
       </CardHeader>
       <CardContent>

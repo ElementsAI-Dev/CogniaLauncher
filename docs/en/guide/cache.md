@@ -34,7 +34,16 @@ Clean by cache type:
 - **Clean All** — Delete all cache
 - **Clean by Type** — Only clean download cache or metadata cache
 - **Clean by Provider** — Clean cache for a specific Provider
-- **Clean by Age** — Clean cache older than a specified number of days
+- **Clean Expired** — Preview expired entries and confirm cleanup
+
+### Browse Cache Entries
+
+The cache browser supports:
+
+- Search by key/path
+- Sort by created time, size, and hit count
+- Type filters: **All**, **Download**, **Metadata**, **Partial**, **Index**
+- Batch deletion with optional move-to-trash behavior
 
 ### Verify Cache
 

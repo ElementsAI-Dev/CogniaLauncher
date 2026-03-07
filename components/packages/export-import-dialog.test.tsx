@@ -6,6 +6,7 @@ const mockExportPackages = jest.fn();
 const mockImportPackages = jest.fn();
 const mockImportFromClipboard = jest.fn();
 const mockExportToClipboard = jest.fn();
+const mockGetImportPreview = jest.fn();
 
 jest.mock("@/hooks/use-package-export", () => ({
   usePackageExport: () => ({
@@ -13,6 +14,7 @@ jest.mock("@/hooks/use-package-export", () => ({
     importPackages: mockImportPackages,
     importFromClipboard: mockImportFromClipboard,
     exportToClipboard: mockExportToClipboard,
+    getImportPreview: mockGetImportPreview,
   }),
 }));
 
@@ -39,6 +41,11 @@ jest.mock("@/components/providers/locale-provider", () => ({
         "packages.importFromClipboard": "Paste from Clipboard",
         "packages.importFromClipboardDesc":
           "Import packages from clipboard (JSON or one package per line)",
+        "packages.restoreBookmarks": "Restore bookmarks",
+        "packages.importPreviewInstallable": "Installable",
+        "packages.importPreviewSkipped": "Skipped",
+        "packages.importPreviewInvalid": "Invalid",
+        "packages.importSummary": "Import summary",
         "packages.fileLoaded": "File loaded successfully",
         "packages.packagesLabel": "Packages",
         "packages.selected": `${params?.count || 0} selected`,
@@ -61,6 +68,11 @@ jest.mock("sonner", () => ({
 describe("ExportImportDialog", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGetImportPreview.mockReturnValue({
+      installable: [{ id: "pip:requests@2.31.0:0", name: "requests", provider: "pip", version: "2.31.0", status: "installable" }],
+      skipped: [{ id: "npm:react@18.0.0:1", name: "react", provider: "npm", version: "18.0.0", status: "skipped", reason: "already-installed" }],
+      invalid: [{ id: "invalid:2", name: "   ", status: "invalid", reason: "missing-name" }],
+    });
   });
 
   it("renders trigger button", () => {
@@ -166,5 +178,50 @@ describe("ExportImportDialog", () => {
     expect(scrollArea).toBeInTheDocument();
     expect(scrollArea).toHaveClass("max-h-[45dvh]");
     expect(scrollArea).not.toHaveClass("h-[200px]");
+  });
+
+  it("shows preview groups and restore bookmarks option", async () => {
+    mockImportFromClipboard.mockResolvedValueOnce({
+      version: "1.0",
+      exportedAt: "2025-01-01",
+      packages: [{ name: "requests", provider: "pip", version: "2.31.0" }],
+      bookmarks: ["requests"],
+    });
+
+    const user = userEvent.setup();
+    render(<ExportImportDialog />);
+    await user.click(screen.getByText("Export/Import"));
+    await user.click(screen.getByRole("tab", { name: /Import/i }));
+    await user.click(screen.getByText("Paste from Clipboard"));
+
+    expect(screen.getByText("Installable")).toBeInTheDocument();
+    expect(screen.getByText("Skipped")).toBeInTheDocument();
+    expect(screen.getByText("Invalid")).toBeInTheDocument();
+    expect(screen.getByText("Restore bookmarks")).toBeInTheDocument();
+  });
+
+  it("passes bookmark restoration choice into onImport", async () => {
+    mockImportFromClipboard.mockResolvedValueOnce({
+      version: "1.0",
+      exportedAt: "2025-01-01",
+      packages: [{ name: "requests", provider: "pip", version: "2.31.0" }],
+      bookmarks: ["requests"],
+    });
+    const onImport = jest.fn().mockResolvedValue(undefined);
+
+    const user = userEvent.setup();
+    render(<ExportImportDialog onImport={onImport} />);
+    await user.click(screen.getByText("Export/Import"));
+    await user.click(screen.getByRole("tab", { name: /Import/i }));
+    await user.click(screen.getByText("Paste from Clipboard"));
+    await user.click(screen.getByText("Restore bookmarks"));
+    await user.click(screen.getByRole("button", { name: /Install 1 selected/i }));
+
+    expect(onImport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bookmarks: [],
+        packages: [{ name: "requests", provider: "pip", version: "2.31.0" }],
+      }),
+    );
   });
 });

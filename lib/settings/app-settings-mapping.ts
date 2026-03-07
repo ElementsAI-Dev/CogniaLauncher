@@ -1,4 +1,4 @@
-import type { TrayClickBehavior } from "@/lib/tauri";
+import type { TrayClickBehavior, TrayNotificationLevel } from "@/lib/tauri";
 import type { AppSettings } from "@/lib/stores/settings";
 
 type ConfigBackedAppSettingKey = Exclude<
@@ -14,6 +14,7 @@ export const APP_SETTINGS_CONFIG_KEY_MAP = {
   startMinimized: "tray.start_minimized",
   trayClickBehavior: "tray.click_behavior",
   showNotifications: "tray.show_notifications",
+  trayNotificationLevel: "tray.notification_level",
 } as const satisfies Record<ConfigBackedAppSettingKey, string>;
 
 export const CONFIG_KEY_TO_APP_SETTING = Object.fromEntries(
@@ -34,7 +35,23 @@ function parseTrayClickBehavior(
   fallback: TrayClickBehavior,
 ): TrayClickBehavior {
   if (!value) return fallback;
-  if (value === "toggle_window" || value === "show_menu" || value === "do_nothing") {
+  if (
+    value === "toggle_window"
+    || value === "show_menu"
+    || value === "check_updates"
+    || value === "do_nothing"
+  ) {
+    return value;
+  }
+  return fallback;
+}
+
+function parseTrayNotificationLevel(
+  value: string | undefined,
+  fallback: TrayNotificationLevel,
+): TrayNotificationLevel {
+  if (!value) return fallback;
+  if (value === "all" || value === "important_only" || value === "none") {
     return value;
   }
   return fallback;
@@ -74,6 +91,10 @@ export function configToAppSettings(
       config[APP_SETTINGS_CONFIG_KEY_MAP.showNotifications],
       fallback.showNotifications,
     ),
+    trayNotificationLevel: parseTrayNotificationLevel(
+      config[APP_SETTINGS_CONFIG_KEY_MAP.trayNotificationLevel],
+      fallback.trayNotificationLevel,
+    ),
   };
 }
 
@@ -90,6 +111,7 @@ export function appSettingValueToConfigValue(
 ): string | null {
   if (key === "autostart" || key === "sidebarItemOrder") return null;
   if (key === "trayClickBehavior") return String(value);
+  if (key === "trayNotificationLevel") return String(value);
   if (typeof value === "boolean") return String(value);
   return null;
 }

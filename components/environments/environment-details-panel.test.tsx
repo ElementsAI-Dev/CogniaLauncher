@@ -101,6 +101,8 @@ describe("EnvironmentDetailsPanel", () => {
   const mockLoadEnvSettings = jest.fn();
   const mockSaveEnvSettings = jest.fn();
   const mockDetectVersions = jest.fn();
+  const mockSetWorkflowContext = jest.fn();
+  const mockSetWorkflowAction = jest.fn();
 
   const defaultEnv = {
     env_type: "Node",
@@ -138,6 +140,8 @@ describe("EnvironmentDetailsPanel", () => {
     jest.clearAllMocks();
     mockUseEnvironmentStore.mockReturnValue({
       getEnvSettings: jest.fn(() => defaultEnvSettings),
+      setWorkflowContext: mockSetWorkflowContext,
+      setWorkflowAction: mockSetWorkflowAction,
     });
     mockUseEnvironments.mockReturnValue({
       loadEnvSettings: mockLoadEnvSettings,

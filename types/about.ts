@@ -1,5 +1,19 @@
 import type { GpuInfo, ComponentInfo, BatteryInfo, DiskInfo, NetworkInterfaceInfo } from './tauri';
 
+export type SystemSubsystem =
+  | 'platform'
+  | 'components'
+  | 'battery'
+  | 'disks'
+  | 'networks'
+  | 'cache'
+  | 'homeDir';
+
+export interface SystemSectionState {
+  status: 'ok' | 'failed' | 'unavailable';
+  itemCount?: number;
+}
+
 export interface SystemInfo {
   os: string;
   arch: string;
@@ -35,6 +49,25 @@ export interface SystemInfo {
   battery: BatteryInfo | null;
   disks: DiskInfo[];
   networks: NetworkInterfaceInfo[];
+  subsystemErrors?: SystemSubsystem[];
+  sectionSummary?: Partial<Record<SystemSubsystem, SystemSectionState>>;
 }
 
-export type UpdateStatus = 'idle' | 'downloading' | 'installing' | 'done' | 'error';
+export type UpdateStatus =
+  | 'idle'
+  | 'checking'
+  | 'update_available'
+  | 'up_to_date'
+  | 'downloading'
+  | 'installing'
+  | 'done'
+  | 'error';
+
+export type UpdateErrorCategory =
+  | 'network_error'
+  | 'timeout_error'
+  | 'permission_error'
+  | 'unsupported_error'
+  | 'update_check_failed'
+  | 'update_install_failed'
+  | 'unknown_error';

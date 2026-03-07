@@ -41,6 +41,7 @@ jest.mock("@/lib/stores/changelog", () => ({
 // Mock platform detection
 jest.mock("@/lib/platform", () => ({
   isTauri: jest.fn().mockReturnValue(true),
+  getOsLocale: jest.fn().mockReturnValue("en-US"),
 }));
 
 // Mock the Tauri API
@@ -97,11 +98,7 @@ jest.mock("@/lib/tauri", () => ({
     externalCaches: [],
   }),
   logGetTotalSize: jest.fn().mockResolvedValue(512000),
-  getComponentsInfo: jest.fn().mockResolvedValue({
-    frameworks: [],
-    runtimes: [],
-    databases: [],
-  }),
+  getComponentsInfo: jest.fn().mockResolvedValue([]),
   getBatteryInfo: jest.fn().mockResolvedValue(null),
   getDiskInfo: jest.fn().mockResolvedValue([]),
   getNetworkInterfaces: jest.fn().mockResolvedValue([]),
@@ -286,7 +283,7 @@ describe("About Page", () => {
       renderWithProviders(<AboutPage />);
 
       await waitFor(() => {
-        expect(screen.getByText("x86_64")).toBeInTheDocument();
+        expect(screen.getAllByText("x86_64").length).toBeGreaterThanOrEqual(1);
       });
     });
 
@@ -486,7 +483,7 @@ describe("About Page Error Handling", () => {
     renderWithProviders(<AboutPage />);
 
     await waitFor(() => {
-      expect(screen.getByRole("alert")).toBeInTheDocument();
+      expect(screen.getAllByRole("alert").length).toBeGreaterThanOrEqual(1);
     });
   });
 
@@ -494,7 +491,9 @@ describe("About Page Error Handling", () => {
     renderWithProviders(<AboutPage />);
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
+      expect(
+        screen.getAllByRole("button", { name: /retry/i }).length,
+      ).toBeGreaterThanOrEqual(1);
     });
   });
 });

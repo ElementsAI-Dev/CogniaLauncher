@@ -103,6 +103,10 @@ impl PermissionManager {
         self.mode = mode;
     }
 
+    pub fn mode(&self) -> PermissionEnforcementMode {
+        self.mode
+    }
+
     pub fn register_plugin(&mut self, plugin_id: &str, permissions: PluginPermissions) {
         self.states.insert(
             plugin_id.to_string(),

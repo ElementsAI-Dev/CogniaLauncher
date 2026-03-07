@@ -126,6 +126,7 @@ const SETTING_FOCUS_IDS: Record<string, string> = {
   "appearance.interface_radius": "interface-radius-label",
   "appearance.interface_density": "interface-density",
   "appearance.reduced_motion": "reduced-motion",
+  "appearance.background_image": "background-enabled",
   "appearance.window_effect": "window-effect",
 
   // Updates
@@ -139,7 +140,7 @@ const SETTING_FOCUS_IDS: Record<string, string> = {
   "tray.autostart": "autostart",
   "tray.show_notifications": "show-notifications",
   "tray.click_behavior": "tray-click-behavior",
-  "tray.menu_customize": "tray-click-behavior",
+  "tray.menu_customize": "tray-menu-customize",
 
   // Paths
   "paths.root": "paths-root",
@@ -620,6 +621,15 @@ const SETTINGS_REGISTRY_BASE: SettingDefinition[] = [
     descKey: 'settings.showNotificationsDesc',
     type: 'switch',
     keywords: ['notification', 'alert', 'popup', '通知', '提醒', '弹窗'],
+    tauriOnly: true,
+  },
+  {
+    key: 'tray.notification_level',
+    section: 'tray',
+    labelKey: 'settings.trayNotificationLevel',
+    descKey: 'settings.trayNotificationLevelDesc',
+    type: 'select',
+    keywords: ['tray', 'notification', 'level', 'important', '托盘', '通知', '级别', '重要'],
     tauriOnly: true,
   },
   {

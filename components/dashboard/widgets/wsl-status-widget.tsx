@@ -6,12 +6,15 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { useLocale } from '@/components/providers/locale-provider';
 import { useWslStatus } from '@/hooks/use-wsl-status';
+import { useWslStore } from '@/lib/stores/wsl';
+import { buildWslOverviewHref } from '@/lib/wsl/workflow';
 import { Terminal, ExternalLink, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 
 export function WslStatusWidget() {
   const { t } = useLocale();
   const { available, distros, status, runningCount } = useWslStatus();
+  const overviewContext = useWslStore((state) => state.overviewContext);
 
   if (available === null) {
     return (
@@ -87,7 +90,7 @@ export function WslStatusWidget() {
       </CardContent>
       <CardFooter className="border-t pt-4">
         <Button variant="outline" size="sm" className="w-full gap-2" asChild>
-          <Link href="/wsl">
+          <Link href={buildWslOverviewHref({ ...overviewContext, origin: 'widget' })}>
             <ExternalLink className="h-3.5 w-3.5" />
             {t('wsl.title')}
           </Link>

@@ -20,6 +20,7 @@ import {
 } from "@/lib/stores/environment";
 import { useEnvironments } from "@/hooks/use-environments";
 import { useProjectPath } from "@/hooks/use-auto-version";
+import { EnvironmentWorkflowBanner } from "@/components/environments/environment-workflow-banner";
 import {
   Globe,
   Settings2,
@@ -78,7 +79,7 @@ export function EnvironmentDetailsPanel({
     null,
   );
   // Get persisted environment settings from store
-  const { getEnvSettings } = useEnvironmentStore();
+  const { getEnvSettings, setWorkflowContext, setWorkflowAction } = useEnvironmentStore();
   const { loadEnvSettings, saveEnvSettings, detectVersions } = useEnvironments();
   const { projectPath } = useProjectPath();
   const envSettings = env ? getEnvSettings(env.env_type) : null;
@@ -88,9 +89,17 @@ export function EnvironmentDetailsPanel({
 
   useEffect(() => {
     if (open && env) {
+      setWorkflowContext({
+        envType: env.env_type,
+        origin: 'overview',
+        returnHref: '/environments',
+        projectPath: projectPath || null,
+        providerId: env.provider_id || env.env_type,
+        updatedAt: Date.now(),
+      });
       void loadEnvSettings(env.env_type);
     }
-  }, [open, env, loadEnvSettings]);
+  }, [env, loadEnvSettings, open, projectPath, setWorkflowContext]);
 
   if (!env) return null;
 
@@ -166,8 +175,37 @@ export function EnvironmentDetailsPanel({
   const handleRefresh = async () => {
     if (!onRefresh) return;
     setIsRefreshing(true);
+    setWorkflowAction({
+      envType: env.env_type,
+      action: 'refresh',
+      status: 'running',
+      providerId: env.provider_id || env.env_type,
+      projectPath: projectPath || null,
+      updatedAt: Date.now(),
+    });
     try {
       await onRefresh();
+      await detectVersions(projectPath || ".", { force: true });
+      setWorkflowAction({
+        envType: env.env_type,
+        action: 'refresh',
+        status: 'success',
+        providerId: env.provider_id || env.env_type,
+        projectPath: projectPath || null,
+        updatedAt: Date.now(),
+      });
+    } catch (error) {
+      setWorkflowAction({
+        envType: env.env_type,
+        action: 'refresh',
+        status: 'error',
+        providerId: env.provider_id || env.env_type,
+        projectPath: projectPath || null,
+        error: error instanceof Error ? error.message : String(error),
+        retryable: true,
+        updatedAt: Date.now(),
+      });
+      throw error;
     } finally {
       setIsRefreshing(false);
     }
@@ -223,6 +261,13 @@ export function EnvironmentDetailsPanel({
               </Button>
             )}
           </div>
+          <EnvironmentWorkflowBanner
+            envType={env.env_type}
+            projectPath={projectPath}
+            providerLabel={env.provider}
+            onRefresh={onRefresh ? handleRefresh : undefined}
+            t={t}
+          />
         </SheetHeader>
 
         <ScrollArea className="flex-1">

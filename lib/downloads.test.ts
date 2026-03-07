@@ -4,6 +4,7 @@ import {
   joinDestinationPath,
   getStateBadgeVariant,
   findClosestPriority,
+  normalizeDownloadFailure,
   runDownloadPreflight,
   runDownloadPreflightWithUi,
 } from './downloads';
@@ -305,5 +306,38 @@ describe('runDownloadPreflightWithUi', () => {
     expect(ok).toBe(false);
     expect(onError).toHaveBeenCalledWith('disk exploded');
     expect(onInfo).not.toHaveBeenCalled();
+  });
+});
+
+describe('normalizeDownloadFailure', () => {
+  it('maps cancelled state to cancelled class with retry', () => {
+    const info = normalizeDownloadFailure({
+      state: 'cancelled',
+      error: null,
+    });
+
+    expect(info.failureClass).toBe('cancelled');
+    expect(info.retryable).toBe(true);
+  });
+
+  it('maps checksum errors to integrity_error without retry', () => {
+    const info = normalizeDownloadFailure({
+      state: 'failed',
+      error: 'Checksum mismatch: expected abc, got def',
+      recoverable: false,
+    });
+
+    expect(info.failureClass).toBe('integrity_error');
+    expect(info.retryable).toBe(false);
+  });
+
+  it('maps timeout failures to timeout class with retry', () => {
+    const info = normalizeDownloadFailure({
+      state: 'failed',
+      error: 'Download timeout after 300 seconds',
+    });
+
+    expect(info.failureClass).toBe('timeout');
+    expect(info.retryable).toBe(true);
   });
 });

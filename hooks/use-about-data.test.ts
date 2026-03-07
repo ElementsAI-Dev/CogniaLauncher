@@ -68,6 +68,7 @@ describe('useAboutData', () => {
       expect(result.current.systemInfo?.os).toBe('Web');
       expect(result.current.systemInfo?.arch).toBe('Browser');
       expect(result.current.systemInfo?.appVersion).toBe('1.0.0');
+      expect(result.current.updateStatus).toBe('up_to_date');
     });
 
     it('should set updateInfo with no update available in web mode', async () => {
@@ -207,6 +208,7 @@ describe('useAboutData', () => {
       await act(async () => {});
 
       expect(result.current.error).toBe('network_error');
+      expect(result.current.updateErrorCategory).toBe('network_error');
     });
 
     it('should handle timeout error during update check', async () => {
@@ -278,6 +280,7 @@ describe('useAboutData', () => {
       expect(result.current.systemInfo?.battery).toBeNull();
       expect(result.current.systemInfo?.disks).toEqual([]);
       expect(result.current.systemInfo?.networks).toEqual([]);
+      expect(result.current.systemInfo?.subsystemErrors).toEqual([]);
     });
 
     it('should load components and battery info from backend', async () => {
@@ -357,7 +360,7 @@ describe('useAboutData', () => {
       });
 
       expect(mockSelfUpdate).toHaveBeenCalled();
-      expect(result.current.updateStatus).toBe('done');
+      expect(result.current.updateStatus).toBe('installing');
       expect(mockToastSuccess).toHaveBeenCalled();
     });
 

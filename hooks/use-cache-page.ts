@@ -15,7 +15,7 @@ import type {
   DatabaseInfo,
 } from '@/lib/tauri';
 import * as tauri from '@/lib/tauri';
-import type { CleanType, OperationType } from '@/types/cache';
+import type { CacheBrowserTypeFilter, CleanType, OperationType } from '@/types/cache';
 import { ENTRIES_PER_PAGE } from '@/lib/constants/cache';
 import { useDebounce } from '@/hooks/use-mobile';
 import {
@@ -79,7 +79,7 @@ export function useCachePage({ t }: UseCachePageOptions) {
   const [browserTotalCount, setBrowserTotalCount] = useState(0);
   const [browserLoading, setBrowserLoading] = useState(false);
   const [browserSearch, setBrowserSearch] = useState('');
-  const [browserTypeFilter, setBrowserTypeFilter] = useState<string>('');
+  const [browserTypeFilter, setBrowserTypeFilter] = useState<CacheBrowserTypeFilter>('all');
   const [browserSortBy, setBrowserSortBy] = useState<string>('created_desc');
   const [browserPage, setBrowserPage] = useState(0);
   const [browserSelectedKeys, setBrowserSelectedKeys] = useState<Set<string>>(new Set());
@@ -160,8 +160,9 @@ export function useCachePage({ t }: UseCachePageOptions) {
     const page = resetPage ? 0 : (explicitPage ?? browserPage);
     if (resetPage) setBrowserPage(0);
     try {
+      const entryTypeFilter = browserTypeFilter === 'all' ? undefined : browserTypeFilter;
       const result = await tauri.listCacheEntries({
-        entryType: browserTypeFilter || undefined,
+        entryType: entryTypeFilter,
         search: (searchOverride ?? browserSearchRef.current) || undefined,
         sortBy: browserSortBy,
         limit: ENTRIES_PER_PAGE,
@@ -411,7 +412,7 @@ export function useCachePage({ t }: UseCachePageOptions) {
   const handleVerify = async () => {
     setOperationLoading('verify');
     try {
-      const result = await verifyCacheIntegrity();
+      const result = await verifyCacheIntegrity('all');
       if (result.is_healthy) {
         toast.success(t('cache.verifySuccess'));
       } else {
@@ -428,7 +429,7 @@ export function useCachePage({ t }: UseCachePageOptions) {
   const handleRepair = async () => {
     setOperationLoading('repair');
     try {
-      const result = await repairCache();
+      const result = await repairCache('all');
       const repairedCount = result.removed_entries + result.recovered_entries;
       toast.success(t('cache.repairSuccess', { count: repairedCount, size: result.freed_human }));
       await refreshOverviewState({ includeCacheInfo: false });
@@ -449,6 +450,11 @@ export function useCachePage({ t }: UseCachePageOptions) {
     try {
       const result = await tauri.cacheOptimize();
       setOptimizeResult(result);
+      await refreshOverviewState();
+      emitInvalidations(
+        ['cache_overview', 'cache_entries', 'about_cache_stats'],
+        'cache-page:optimize',
+      );
       if (result.sizeSaved > 0) {
         toast.success(t('cache.optimizeSuccess', { saved: result.sizeSavedHuman }));
       } else {

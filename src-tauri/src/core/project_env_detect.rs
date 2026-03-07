@@ -80,9 +80,9 @@ pub fn default_detection_sources(env_type: &str) -> &'static [&'static str] {
         ],
         "zig" => &[
             ".zig-version",
-            "build.zig.zon (minimum_zig_version)",
             ".tool-versions",
             "mise.toml",
+            "build.zig.zon (minimum_zig_version)",
         ],
         "dart" => &[
             "pubspec.yaml (environment.sdk)",
@@ -173,19 +173,13 @@ pub fn default_detection_sources(env_type: &str) -> &'static [&'static str] {
     }
 }
 
-/// Default enabled sources (first two) used when the user has no saved settings yet.
+/// Default enabled sources used when the user has no saved settings yet.
+///
+/// We intentionally enable every supported authoritative source by default so
+/// new and existing projects do not silently miss valid runtime pins.
 pub fn default_enabled_detection_sources(env_type: &str) -> Vec<String> {
-    let take_count = match env_type {
-        // Java defaults include local + manifest sources to preserve
-        // deterministic local -> manifest -> global resolution when combined
-        // with EnvironmentManager global fallback.
-        "java" => 5,
-        _ => 2,
-    };
-
     default_detection_sources(env_type)
         .iter()
-        .take(take_count)
         .map(|s| (*s).to_string())
         .collect()
 }
@@ -211,6 +205,7 @@ pub fn classify_detection_source(env_type: &str, source: &str) -> String {
     if source.contains("pom.xml")
         || source.contains("build.gradle")
         || source.contains("package.json")
+        || source.contains("build.zig.zon")
         || source.contains("Cargo.toml")
         || source.contains("go.mod")
         || source.contains("Pipfile")
@@ -583,15 +578,27 @@ async fn detect_bun(dir: &Path, source: &str) -> CogniaResult<Option<DetectedVal
 async fn detect_zig(dir: &Path, source: &str) -> CogniaResult<Option<DetectedValue>> {
     match source {
         ".zig-version" => read_version_file(dir.join(".zig-version"), ".zig-version").await,
-        "build.zig.zon (minimum_zig_version)" => {
-            read_build_zig_zon_min_version(dir.join("build.zig.zon")).await
-        }
         ".tool-versions" => {
             read_tool_versions(dir.join(".tool-versions"), &["zig"], ".tool-versions").await
         }
-        "mise.toml" => read_mise_toml(dir, &["zig"], source).await,
+        "mise.toml" | ".mise.toml" => read_zig_mise_toml(dir).await,
+        "build.zig.zon (minimum_zig_version)" => {
+            read_build_zig_zon_min_version(dir.join("build.zig.zon")).await
+        }
         _ => Ok(None),
     }
+}
+
+async fn read_zig_mise_toml(dir: &Path) -> CogniaResult<Option<DetectedValue>> {
+    let detected = read_mise_toml(dir, &["zig"], "mise.toml").await?;
+    Ok(detected.map(|mut value| {
+        let source_label = match value.path.file_name().and_then(|name| name.to_str()) {
+            Some(".mise.toml") => ".mise.toml",
+            _ => "mise.toml",
+        };
+        value.source = source_label.to_string();
+        value
+    }))
 }
 
 async fn read_build_zig_zon_min_version(path: PathBuf) -> CogniaResult<Option<DetectedValue>> {
@@ -3678,6 +3685,110 @@ rust-version = "1.70"
         assert_eq!(elixir.version, "1.17.0");
     }
 
+    #[tokio::test]
+    async fn zig_default_sources_use_canonical_precedence() {
+        assert_eq!(
+            default_detection_sources("zig"),
+            [
+                ".zig-version",
+                ".tool-versions",
+                "mise.toml",
+                "build.zig.zon (minimum_zig_version)"
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn zig_prefers_tool_versions_over_build_zig_zon() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(root.join(".tool-versions"), "zig 0.13.0\n")
+            .await
+            .unwrap();
+        crate::platform::fs::write_file_string(
+            root.join("build.zig.zon"),
+            ".{ .minimum_zig_version = \"0.12.0\" }",
+        )
+        .await
+        .unwrap();
+
+        let sources = default_detection_sources("zig")
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect::<Vec<_>>();
+        let detected = detect_env_version("zig", root, &sources).await.unwrap().unwrap();
+        assert_eq!(detected.version, "0.13.0");
+        assert_eq!(detected.source, ".tool-versions");
+    }
+
+    #[tokio::test]
+    async fn zig_reports_dotted_mise_source_label_and_path() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(root.join(".mise.toml"), "[tools]\nzig = \"0.14.0\"\n")
+            .await
+            .unwrap();
+
+        let sources = default_detection_sources("zig")
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect::<Vec<_>>();
+        let detected = detect_env_version("zig", root, &sources).await.unwrap().unwrap();
+        assert_eq!(detected.version, "0.14.0");
+        assert_eq!(detected.source, ".mise.toml");
+        assert_eq!(
+            detected
+                .source_path
+                .as_ref()
+                .and_then(|p| p.file_name())
+                .and_then(|n| n.to_str()),
+            Some(".mise.toml")
+        );
+    }
+
+    #[tokio::test]
+    async fn zig_falls_through_invalid_higher_priority_sources() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(root.join(".zig-version"), "  \n")
+            .await
+            .unwrap();
+        crate::platform::fs::write_file_string(root.join(".tool-versions"), "zig\n")
+            .await
+            .unwrap();
+        crate::platform::fs::write_file_string(root.join(".mise.toml"), "[tools]\nzig = \"0.15.0\"\n")
+            .await
+            .unwrap();
+
+        let sources = default_detection_sources("zig")
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect::<Vec<_>>();
+        let detected = detect_env_version("zig", root, &sources).await.unwrap().unwrap();
+        assert_eq!(detected.version, "0.15.0");
+        assert_eq!(detected.source, ".mise.toml");
+    }
+
+    #[tokio::test]
+    async fn zig_malformed_build_zig_zon_does_not_produce_false_positive() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join("build.zig.zon"),
+            ".{ .minimum_zig_version = \"   \" }",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["build.zig.zon (minimum_zig_version)".to_string()];
+        let detected = detect_env_version("zig", root, &sources).await.unwrap();
+        assert!(detected.is_none());
+    }
+
     // ── Edge case tests ──
 
     #[tokio::test]
@@ -4018,11 +4129,16 @@ rust-version = "1.70"
                 "default_detection_sources(\"{}\") returned empty",
                 env_type
             );
-            // All sources should include mise.toml as last entry
+            let expected_last = if *env_type == "zig" {
+                "build.zig.zon (minimum_zig_version)"
+            } else {
+                "mise.toml"
+            };
             assert_eq!(
                 *sources.last().unwrap(),
-                "mise.toml",
-                "mise.toml should be the last source for {}",
+                expected_last,
+                "{} should be the last source for {}",
+                expected_last,
                 env_type
             );
         }
@@ -4034,15 +4150,23 @@ rust-version = "1.70"
     }
 
     #[tokio::test]
-    async fn default_enabled_returns_first_two_for_non_java() {
+    async fn default_enabled_node_includes_all_supported_sources() {
         let enabled = default_enabled_detection_sources("node");
-        assert_eq!(enabled.len(), 2);
-        assert_eq!(enabled[0], ".nvmrc");
-        assert_eq!(enabled[1], ".node-version");
+        assert_eq!(
+            enabled,
+            vec![
+                ".nvmrc".to_string(),
+                ".node-version".to_string(),
+                ".tool-versions".to_string(),
+                "package.json (volta.node)".to_string(),
+                "package.json (engines.node)".to_string(),
+                "mise.toml".to_string(),
+            ]
+        );
     }
 
     #[tokio::test]
-    async fn default_enabled_java_includes_manifest_sources() {
+    async fn default_enabled_java_includes_all_supported_sources() {
         let enabled = default_enabled_detection_sources("java");
         assert_eq!(
             enabled,
@@ -4052,7 +4176,8 @@ rust-version = "1.70"
                 ".tool-versions".to_string(),
                 "pom.xml (java.version)".to_string(),
                 "build.gradle (sourceCompatibility)".to_string(),
-            ]
+                "mise.toml".to_string(),
+            ],
         );
     }
 

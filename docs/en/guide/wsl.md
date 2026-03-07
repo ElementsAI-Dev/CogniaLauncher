@@ -38,8 +38,9 @@ CogniaLauncher provides comprehensive Windows Subsystem for Linux (WSL) manageme
 
 ### Import & Export
 
-- **Export** — Export a distribution as a tar file
-- **Import** — Import a distribution from a tar file
+- **Capability-gated Formats** — VHD export/import controls are only shown when runtime capability detection supports them
+- **Export** — Deterministic export path handling (`.tar` or `.vhdx`) with actionable error feedback
+- **Import** — Import a distribution from a tar/vhdx file (VHD mode follows runtime capability gating)
 - **In-place Import** — Import using VHD format
 
 ### Runtime Management
@@ -50,6 +51,8 @@ CogniaLauncher provides comprehensive Windows Subsystem for Linux (WSL) manageme
 - **View Running** — List currently running distributions
 - **Open in Explorer** — Open distribution filesystem in Windows Explorer
 - **Open in Terminal** — Open distribution directly in Windows Terminal (or fallback shell)
+- **Inline lifecycle feedback** — Long-running, batch, and high-risk operations remain visible in-page with running, success, failure, and retry guidance
+- **Workflow continuation** — Distro detail links preserve a return path back to the originating overview, sidebar, or widget workflow
 
 ### Disk Management
 
@@ -61,11 +64,24 @@ CogniaLauncher provides comprehensive Windows Subsystem for Linux (WSL) manageme
 - **Resize Virtual Disk** — Use `wsl --manage <distro> --resize <size>`
 - **Sparse Mode** — Enable/disable VHD auto-reclaim
 - **Clone Distribution** — Duplicate an existing distro via export/import flow
+- **Batch launch / terminate** — Execute multi-distro runtime actions with per-distro outcome summaries and stale-selection normalization
 
 ### Network & Users
 
 - **Get IP** — View distribution IP address
 - **Change Default User** — Modify default login user for a distribution
+- **Health Check** — Run distro health diagnostics and inspect structured issues/timestamp in detail workflow
+- **Port Forwarding** — Add/remove `netsh portproxy` rules with explicit confirmation and risk guidance
+
+### Assistance Facilities
+
+- **Runtime Assistance Region** — Main WSL workflow exposes guided actions grouped as check / repair / maintenance.
+- **Distro Assistance Region** — Distro detail workflow exposes context-aware actions with selected distro prefilled.
+- **Preflight Checks** — Runtime and distro preflight produce structured check items and actionable recommendations.
+- **Contextual Recovery Suggestions** — Error surfaces can suggest relevant assistance actions inline and launch them in-context.
+- **Structured Diagnostics Summary** — Assistance actions return status, timestamp, findings, recommendations, and retry support.
+- **Post-Action Reconciliation** — Assistance-triggered mutations refresh affected runtime/distro slices to avoid stale UI state.
+- **Return-path preservation** — Assistance and distro workflows keep a clear path back to the originating WSL entry surface
 
 ### Distribution Configuration
 
@@ -89,6 +105,7 @@ The following operations show a confirmation dialog in the UI with admin privile
 - Migration and resize (`move` / `resize`)
 - Mount and unmount disk (`mount` / `unmount`)
 - Shutdown all instances (`shutdown`)
+- Port-forward mutations (`add/remove portproxy rule`)
 
 ---
 

@@ -5,6 +5,8 @@ import {
   getLogicalEnvType,
   useEnvironmentStore,
   type EnvironmentSettings,
+  type EnvironmentWorkflowActionKind,
+  type EnvironmentWorkflowActionStatus,
 } from '@/lib/stores/environment';
 import * as tauri from '@/lib/tauri';
 import { formatSize, formatSpeed } from '@/lib/utils';
@@ -38,6 +40,14 @@ function isCancelledMessage(message: string): boolean {
   return normalized.includes("cancelled") || normalized.includes("canceled");
 }
 
+function getPersistedProjectPath(): string | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  return window.localStorage.getItem('cognia-project-path');
+}
+
 export function useEnvironments() {
   // Select state values
   const environments = useEnvironmentStore((s) => s.environments);
@@ -47,10 +57,13 @@ export function useEnvironments() {
   // Select stable action references (these don't change between renders)
   const setLoading = useEnvironmentStore((s) => s.setLoading);
   const setError = useEnvironmentStore((s) => s.setError);
+  const setEnvironments = useEnvironmentStore((s) => s.setEnvironments);
   const setEnvSettings = useEnvironmentStore((s) => s.setEnvSettings);
   const updateEnvironment = useEnvironmentStore((s) => s.updateEnvironment);
   const setDetectedVersions = useEnvironmentStore((s) => s.setDetectedVersions);
+  const setAvailableProviders = useEnvironmentStore((s) => s.setAvailableProviders);
   const setCurrentInstallation = useEnvironmentStore((s) => s.setCurrentInstallation);
+  const setLastEnvScanTimestamp = useEnvironmentStore((s) => s.setLastEnvScanTimestamp);
   const openProgressDialog = useEnvironmentStore((s) => s.openProgressDialog);
   const closeProgressDialog = useEnvironmentStore((s) => s.closeProgressDialog);
   const updateInstallationProgress = useEnvironmentStore((s) => s.updateInstallationProgress);
@@ -62,6 +75,7 @@ export function useEnvironments() {
   const providersInFlightRef = useRef<Promise<tauri.EnvironmentProviderInfo[]> | null>(null);
   const providersCacheTimestampRef = useRef<number | null>(null);
   const detectionSourcesCacheRef = useRef<Map<string, string[]>>(new Map());
+  const defaultDetectionSourcesCacheRef = useRef<Map<string, string[]>>(new Map());
   const detectedVersionsCacheRef = useRef<{
     path: string;
     timestamp: number;
@@ -107,6 +121,129 @@ export function useEnvironments() {
     })),
     auto_switch: settings.autoSwitch,
   }), [toLogicalEnvType]);
+
+  const syncWorkflowContext = useCallback((
+    envType: string,
+    options?: {
+      providerId?: string | null;
+      projectPath?: string | null;
+    },
+  ) => {
+    const store = useEnvironmentStore.getState();
+    const logicalEnvType = toLogicalEnvType(envType);
+    const currentContext = store.workflowContext;
+    const sameTarget = currentContext?.envType === logicalEnvType;
+    const resolvedProjectPath =
+      options?.projectPath
+      ?? (sameTarget ? currentContext?.projectPath : null)
+      ?? getPersistedProjectPath();
+    const resolvedProviderId =
+      options?.providerId
+      ?? (sameTarget ? currentContext?.providerId : null)
+      ?? store.getSelectedProvider(logicalEnvType, options?.providerId ?? envType);
+
+    store.setWorkflowContext({
+      envType: logicalEnvType,
+      origin: sameTarget ? currentContext.origin : 'direct',
+      returnHref: sameTarget ? currentContext.returnHref ?? '/environments' : '/environments',
+      projectPath: resolvedProjectPath,
+      providerId: resolvedProviderId,
+      updatedAt: Date.now(),
+    });
+
+    return {
+      logicalEnvType,
+      projectPath: resolvedProjectPath,
+      providerId: resolvedProviderId,
+    };
+  }, [toLogicalEnvType]);
+
+  const setWorkflowActionState = useCallback((
+    envType: string,
+    action: EnvironmentWorkflowActionKind,
+    status: EnvironmentWorkflowActionStatus,
+    options?: {
+      version?: string | null;
+      providerId?: string | null;
+      projectPath?: string | null;
+      error?: string | null;
+      retryable?: boolean;
+    },
+  ) => {
+    const synced = syncWorkflowContext(envType, {
+      providerId: options?.providerId,
+      projectPath: options?.projectPath,
+    });
+
+    useEnvironmentStore.getState().setWorkflowAction({
+      envType: synced.logicalEnvType,
+      action,
+      status,
+      version: options?.version ?? null,
+      providerId: synced.providerId,
+      projectPath: synced.projectPath,
+      error: options?.error ?? null,
+      retryable: options?.retryable,
+      updatedAt: Date.now(),
+    });
+
+    return synced;
+  }, [syncWorkflowContext]);
+
+  const reconcileEnvironmentWorkflow = useCallback(async (options?: {
+    projectPath?: string | null;
+    refreshProviders?: boolean;
+  }) => {
+    if (!tauri.isTauri()) {
+      return;
+    }
+
+    const resolvedProjectPath =
+      options?.projectPath
+      ?? useEnvironmentStore.getState().workflowContext?.projectPath
+      ?? getPersistedProjectPath();
+
+    detectedVersionsCacheRef.current = null;
+
+    const refreshes: Promise<unknown>[] = [
+      tauri.envList(true).then((envs) => {
+        setEnvironments(envs);
+        setLastEnvScanTimestamp(Date.now());
+        return envs;
+      }),
+    ];
+
+    if (options?.refreshProviders) {
+      refreshes.push(
+        tauri.envListProviders(true).then((providers) => {
+          setAvailableProviders(providers);
+          providersCacheTimestampRef.current = Date.now();
+          return providers;
+        }),
+      );
+    }
+
+    if (resolvedProjectPath) {
+      refreshes.push(
+        tauri.envDetectAll(resolvedProjectPath).then((detected) => {
+          detectedVersionsCacheRef.current = {
+            path: resolvedProjectPath,
+            timestamp: Date.now(),
+            versions: detected,
+          };
+          setDetectedVersions(detected);
+          return detected;
+        }),
+      );
+    }
+
+    await Promise.all(refreshes);
+  }, [
+    setAvailableProviders,
+    setDetectedVersions,
+    setEnvironments,
+    setLastEnvScanTimestamp,
+  ]);
 
   const isScanFresh = useEnvironmentStore((s) => s.isScanFresh);
 
@@ -188,10 +325,40 @@ export function useEnvironments() {
     }
   }, [toLogicalEnvType]);
 
+  const getDefaultDetectionSources = useCallback(async (envType: string, force?: boolean) => {
+    const logicalEnvType = toLogicalEnvType(envType);
+    const cached = defaultDetectionSourcesCacheRef.current.get(logicalEnvType);
+    if (!force && cached) {
+      return cached;
+    }
+
+    const fallback = useEnvironmentStore
+      .getState()
+      .getEnvSettings(logicalEnvType)
+      .detectionFiles
+      .filter((file) => file.enabled)
+      .map((file) => file.fileName);
+
+    if (!tauri.isTauri() || typeof tauri.envGetDefaultDetectionSources !== 'function') {
+      defaultDetectionSourcesCacheRef.current.set(logicalEnvType, fallback);
+      return fallback;
+    }
+
+    try {
+      const sources = await tauri.envGetDefaultDetectionSources(logicalEnvType);
+      const unique = Array.from(new Set(sources));
+      defaultDetectionSourcesCacheRef.current.set(logicalEnvType, unique);
+      return unique;
+    } catch {
+      defaultDetectionSourcesCacheRef.current.set(logicalEnvType, fallback);
+      return fallback;
+    }
+  }, [toLogicalEnvType]);
+
   const normalizeDetectionFiles = useCallback((
     sources: string[],
+    defaultEnabledSources: string[],
     detectionFiles: EnvironmentSettings['detectionFiles'],
-    defaultEnableFirstTwo: boolean,
   ): EnvironmentSettings['detectionFiles'] => {
     if (sources.length === 0) {
       return detectionFiles;
@@ -200,12 +367,13 @@ export function useEnvironments() {
     const savedFlags = new Map(
       detectionFiles.map((file) => [file.fileName, file.enabled]),
     );
+    const defaultEnabled = new Set(defaultEnabledSources);
 
-    return sources.map((fileName, index) => ({
+    return sources.map((fileName) => ({
       fileName,
       enabled: savedFlags.has(fileName)
         ? Boolean(savedFlags.get(fileName))
-        : (defaultEnableFirstTwo && index < 2),
+        : defaultEnabled.has(fileName),
     }));
   }, []);
 
@@ -225,11 +393,14 @@ export function useEnvironments() {
         }
 
         const normalized = toSettings(settings);
-        const sources = await getDetectionSources(logicalEnvType);
+        const [sources, defaultEnabledSources] = await Promise.all([
+          getDetectionSources(logicalEnvType),
+          getDefaultDetectionSources(logicalEnvType),
+        ]);
         const normalizedDetectionFiles = normalizeDetectionFiles(
           sources,
+          defaultEnabledSources,
           normalized.detectionFiles,
-          false,
         );
         const merged: EnvironmentSettings = {
           ...useEnvironmentStore.getState().getEnvSettings(logicalEnvType),
@@ -243,14 +414,17 @@ export function useEnvironments() {
         return merged;
       }
 
-      const sources = await getDetectionSources(logicalEnvType);
+      const [sources, defaultEnabledSources] = await Promise.all([
+        getDetectionSources(logicalEnvType),
+        getDefaultDetectionSources(logicalEnvType),
+      ]);
       const defaults = useEnvironmentStore.getState().getEnvSettings(logicalEnvType);
       const nextSettings: EnvironmentSettings = {
         ...defaults,
         detectionFiles: normalizeDetectionFiles(
           sources,
+          defaultEnabledSources,
           defaults.detectionFiles,
-          true,
         ),
       };
 
@@ -261,6 +435,7 @@ export function useEnvironments() {
       return null;
     }
   }, [
+    getDefaultDetectionSources,
     getDetectionSources,
     normalizeDetectionFiles,
     normalizeEnvType,
@@ -272,32 +447,54 @@ export function useEnvironments() {
 
   const saveEnvSettings = useCallback(async (envType: string, settings: EnvironmentSettings) => {
     const logicalEnvType = toLogicalEnvType(envType);
-    const sources = await getDetectionSources(logicalEnvType);
+    const projectPath =
+      useEnvironmentStore.getState().workflowContext?.projectPath
+      ?? getPersistedProjectPath();
+    const [sources, defaultEnabledSources] = await Promise.all([
+      getDetectionSources(logicalEnvType),
+      getDefaultDetectionSources(logicalEnvType),
+    ]);
     const normalizedSettings: EnvironmentSettings = {
       ...settings,
       detectionFiles: normalizeDetectionFiles(
         sources,
+        defaultEnabledSources,
         settings.detectionFiles,
-        settings.detectionFiles.length === 0,
       ),
     };
     const config = toSettingsConfig(logicalEnvType, normalizedSettings);
+    setWorkflowActionState(logicalEnvType, 'saveSettings', 'running', {
+      projectPath,
+    });
     if (tauri.isTauri()) {
       try {
         await tauri.envSaveSettings(config);
       } catch (err) {
+        setWorkflowActionState(logicalEnvType, 'saveSettings', 'error', {
+          projectPath,
+          error: formatError(err),
+          retryable: true,
+        });
         setError(formatError(err));
         throw err;
       }
     }
     detectionSourcesCacheRef.current.delete(logicalEnvType);
+    defaultDetectionSourcesCacheRef.current.delete(logicalEnvType);
     detectedVersionsCacheRef.current = null;
     setEnvSettings(logicalEnvType, normalizedSettings);
+    await reconcileEnvironmentWorkflow({ projectPath });
+    setWorkflowActionState(logicalEnvType, 'saveSettings', 'success', {
+      projectPath,
+    });
   }, [
+    getDefaultDetectionSources,
     getDetectionSources,
     normalizeDetectionFiles,
+    reconcileEnvironmentWorkflow,
     setError,
     setEnvSettings,
+    setWorkflowActionState,
     toLogicalEnvType,
     toSettingsConfig,
   ]);
@@ -315,6 +512,11 @@ export function useEnvironments() {
     if (shouldResolveAlias && tauri.isTauri()) {
       resolvedVersion = await tauri.envResolveAlias(aliasEnvType, aliasKey);
     }
+
+    setWorkflowActionState(envType, 'install', 'running', {
+      version: resolvedVersion,
+      providerId: resolvedProviderId,
+    });
     
     // Track current installation for cancellation support
     setCurrentInstallation({ envType, version: resolvedVersion });
@@ -411,6 +613,11 @@ export function useEnvironments() {
         ['environment_data', 'provider_data', 'cache_overview', 'about_cache_stats'],
         'environments:install-version',
       );
+      await reconcileEnvironmentWorkflow({ refreshProviders: true });
+      setWorkflowActionState(envType, 'install', 'success', {
+        version: resolvedVersion,
+        providerId: resolvedProviderId,
+      });
       
       // If not using events (web mode), manually update progress
       if (!unlistenRef.current) {
@@ -428,6 +635,7 @@ export function useEnvironments() {
       }
     } catch (err) {
       const errorMsg = formatError(err);
+      const isCancelled = isCancelledMessage(errorMsg);
       const currentProgress = useEnvironmentStore.getState().installationProgress;
       const alreadyTerminal =
         currentProgress?.terminalState !== undefined ||
@@ -436,7 +644,6 @@ export function useEnvironments() {
         currentProgress?.step === 'cancelled';
 
       if (!alreadyTerminal) {
-        const isCancelled = isCancelledMessage(errorMsg);
         updateInstallationProgress({
           step: isCancelled ? 'cancelled' : 'error',
           terminalState: isCancelled ? 'cancelled' : 'failed',
@@ -446,6 +653,12 @@ export function useEnvironments() {
           error: errorMsg,
         });
       }
+      setWorkflowActionState(envType, 'install', 'error', {
+        version: resolvedVersion,
+        providerId: resolvedProviderId,
+        error: errorMsg,
+        retryable: !isCancelled,
+      });
       setError(errorMsg);
       
       // Cleanup listener and installation state on error
@@ -454,11 +667,23 @@ export function useEnvironments() {
       unlistenRef.current = null;
       throw err;
     }
-  }, [environments, availableProviders, setCurrentInstallation, openProgressDialog, updateInstallationProgress, closeProgressDialog, updateEnvironment, setError]);
+  }, [
+    environments,
+    availableProviders,
+    setCurrentInstallation,
+    openProgressDialog,
+    updateInstallationProgress,
+    closeProgressDialog,
+    updateEnvironment,
+    reconcileEnvironmentWorkflow,
+    setError,
+    setWorkflowActionState,
+  ]);
 
   const uninstallVersion = useCallback(async (envType: string, version: string) => {
     setLoading(true);
     setError(null);
+    setWorkflowActionState(envType, 'uninstall', 'running', { version });
     try {
       await tauri.envUninstall(envType, version);
       const env = await tauri.envGet(envType);
@@ -467,16 +692,24 @@ export function useEnvironments() {
         ['environment_data', 'provider_data', 'cache_overview', 'about_cache_stats'],
         'environments:uninstall-version',
       );
+      await reconcileEnvironmentWorkflow({ refreshProviders: true });
+      setWorkflowActionState(envType, 'uninstall', 'success', { version });
     } catch (err) {
+      setWorkflowActionState(envType, 'uninstall', 'error', {
+        version,
+        error: formatError(err),
+        retryable: true,
+      });
       setError(formatError(err));
       throw err;
     } finally {
       setLoading(false);
     }
-  }, [setLoading, setError, updateEnvironment]);
+  }, [reconcileEnvironmentWorkflow, setError, setLoading, setWorkflowActionState, updateEnvironment]);
 
   const setGlobalVersion = useCallback(async (envType: string, version: string) => {
     setError(null);
+    setWorkflowActionState(envType, 'setGlobal', 'running', { version });
     try {
       const mutation = await tauri.envUseGlobal(envType, version);
       if (mutation?.success === false) {
@@ -492,14 +725,25 @@ export function useEnvironments() {
         ['environment_data', 'provider_data'],
         'environments:set-global',
       );
+      await reconcileEnvironmentWorkflow({});
+      setWorkflowActionState(envType, 'setGlobal', 'success', { version });
     } catch (err) {
+      setWorkflowActionState(envType, 'setGlobal', 'error', {
+        version,
+        error: formatError(err),
+        retryable: true,
+      });
       setError(formatError(err));
       throw err;
     }
-  }, [setError, updateEnvironment]);
+  }, [reconcileEnvironmentWorkflow, setError, setWorkflowActionState, updateEnvironment]);
 
   const setLocalVersion = useCallback(async (envType: string, version: string, projectPath: string) => {
     setError(null);
+    setWorkflowActionState(envType, 'setLocal', 'running', {
+      version,
+      projectPath,
+    });
     try {
       const mutation = await tauri.envUseLocal(envType, version, projectPath);
       if (mutation?.success === false) {
@@ -512,13 +756,27 @@ export function useEnvironments() {
         ['environment_data', 'provider_data'],
         'environments:set-local',
       );
+      await reconcileEnvironmentWorkflow({ projectPath });
+      setWorkflowActionState(envType, 'setLocal', 'success', {
+        version,
+        projectPath,
+      });
     } catch (err) {
+      setWorkflowActionState(envType, 'setLocal', 'error', {
+        version,
+        projectPath,
+        error: formatError(err),
+        retryable: true,
+      });
       setError(formatError(err));
       throw err;
     }
-  }, [setError]);
+  }, [reconcileEnvironmentWorkflow, setError, setWorkflowActionState]);
 
-  const detectVersions = useCallback(async (startPath: string) => {
+  const detectVersions = useCallback(async (
+    startPath: string,
+    options?: { force?: boolean },
+  ) => {
     if (!tauri.isTauri()) {
       return [];
     }
@@ -526,6 +784,7 @@ export function useEnvironments() {
     const now = Date.now();
     const cached = detectedVersionsCacheRef.current;
     if (
+      !options?.force &&
       cached &&
       cached.path === startPath &&
       now - cached.timestamp < DETECTED_VERSIONS_CACHE_TTL_MS

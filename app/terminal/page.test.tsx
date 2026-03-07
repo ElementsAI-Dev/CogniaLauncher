@@ -75,6 +75,8 @@ const mockTerminalHookState = {
   backupShellConfig: jest.fn(),
   parseConfigContent: jest.fn(),
   writeShellConfig: jest.fn(),
+  getConfigEditorMetadata: jest.fn(),
+  restoreConfigSnapshot: jest.fn(),
   detectFrameworks: jest.fn(),
   fetchPlugins: jest.fn(),
   fetchFrameworkCacheStats: jest.fn(),

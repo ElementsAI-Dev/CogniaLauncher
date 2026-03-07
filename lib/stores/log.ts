@@ -3,11 +3,20 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import { ALL_LEVELS } from '@/lib/constants/log';
 
 export type { LogLevel, LogEntry, LogFilter, LogFileInfo } from '@/types/log';
-import type { LogLevel, LogEntry, LogFilter, LogFileInfo } from '@/types/log';
+export type { LogFilterPreset, LogPresetScope } from '@/types/log';
+import type {
+  LogLevel,
+  LogEntry,
+  LogFilter,
+  LogFileInfo,
+  LogFilterPreset,
+  LogPresetScope,
+} from '@/types/log';
 
 const EMPTY_LOG_COUNTS: Record<LogLevel, number> = {
   trace: 0, debug: 0, info: 0, warn: 0, error: 0,
 };
+const LOG_FILTER_PRESET_VERSION = 1;
 
 interface LogState {
   logs: LogEntry[];
@@ -18,6 +27,7 @@ interface LogState {
   drawerOpen: boolean;
   logFiles: LogFileInfo[];
   selectedLogFile: string | null;
+  filterPresets: LogFilterPreset[];
   bookmarkedIds: string[];
   showBookmarksOnly: boolean;
   _logCounts: Record<LogLevel, number>;
@@ -39,6 +49,9 @@ interface LogState {
   toggleDrawer: () => void;
   setLogFiles: (files: LogFileInfo[]) => void;
   setSelectedLogFile: (fileName: string | null) => void;
+  saveFilterPreset: (name: string, scope: LogPresetScope, filter: LogFilter) => string;
+  deleteFilterPreset: (id: string) => void;
+  getFilterPresets: (scope: LogPresetScope) => LogFilterPreset[];
   toggleBookmark: (id: string) => void;
   setShowBookmarksOnly: (show: boolean) => void;
   
@@ -48,9 +61,14 @@ interface LogState {
 }
 
 let logIdCounter = 0;
+let presetIdCounter = 0;
 
 function generateLogId(): string {
   return `log_${Date.now()}_${logIdCounter++}`;
+}
+
+function generatePresetId(): string {
+  return `preset_${Date.now()}_${presetIdCounter++}`;
 }
 
 function buildLogCounts(logs: LogEntry[]): Record<LogLevel, number> {
@@ -85,6 +103,7 @@ export const useLogStore = create<LogState>()(
       drawerOpen: false,
       logFiles: [],
       selectedLogFile: null,
+      filterPresets: [],
       bookmarkedIds: [],
       showBookmarksOnly: false,
       _logCounts: { ...EMPTY_LOG_COUNTS },
@@ -177,6 +196,52 @@ export const useLogStore = create<LogState>()(
 
       setLogFiles: (logFiles) => set({ logFiles }),
       setSelectedLogFile: (selectedLogFile) => set({ selectedLogFile }),
+      saveFilterPreset: (name, scope, filter) => {
+        const normalizedName = name.trim();
+        const targetName = normalizedName || `Preset ${Date.now()}`;
+        const now = Date.now();
+        const existing = get().filterPresets.find(
+          (preset) => preset.scope === scope && preset.name.toLowerCase() === targetName.toLowerCase(),
+        );
+
+        if (existing) {
+          const nextPreset: LogFilterPreset = {
+            ...existing,
+            filter: { ...filter },
+            version: LOG_FILTER_PRESET_VERSION,
+            updatedAt: now,
+          };
+          set((state) => ({
+            filterPresets: state.filterPresets.map((preset) =>
+              preset.id === existing.id ? nextPreset : preset,
+            ),
+          }));
+          return existing.id;
+        }
+
+        const id = generatePresetId();
+        const nextPreset: LogFilterPreset = {
+          id,
+          name: targetName,
+          scope,
+          version: LOG_FILTER_PRESET_VERSION,
+          filter: { ...filter },
+          updatedAt: now,
+        };
+        set((state) => ({
+          filterPresets: [nextPreset, ...state.filterPresets],
+        }));
+        return id;
+      },
+      deleteFilterPreset: (id) => set((state) => ({
+        filterPresets: state.filterPresets.filter((preset) => preset.id !== id),
+      })),
+      getFilterPresets: (scope) => {
+        const presets = get().filterPresets
+          .filter((preset) => preset.scope === scope)
+          .sort((a, b) => b.updatedAt - a.updatedAt);
+        return presets.map((preset) => ({ ...preset, filter: { ...preset.filter } }));
+      },
       toggleBookmark: (id) => set((state) => ({
         bookmarkedIds: state.bookmarkedIds.includes(id)
           ? state.bookmarkedIds.filter((i) => i !== id)
@@ -262,6 +327,19 @@ export const useLogStore = create<LogState>()(
           endTime: null,
         },
         autoScroll: state.autoScroll,
+        filterPresets: state.filterPresets.map((preset) => ({
+          ...preset,
+          version: LOG_FILTER_PRESET_VERSION,
+          filter: {
+            levels: preset.filter.levels,
+            search: preset.filter.search,
+            target: preset.filter.target,
+            useRegex: preset.filter.useRegex ?? false,
+            maxScanLines: preset.filter.maxScanLines ?? null,
+            startTime: preset.filter.startTime ?? null,
+            endTime: preset.filter.endTime ?? null,
+          },
+        })),
         bookmarkedIds: state.bookmarkedIds,
       }),
     }

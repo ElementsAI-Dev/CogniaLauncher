@@ -12,10 +12,36 @@ jest.mock('@/components/providers/locale-provider', () => ({
         'toolbox.errorBoundary.title': 'Error',
         'toolbox.errorBoundary.description': 'Something went wrong',
         'toolbox.errorBoundary.retry': 'Retry',
+        'toolbox.plugin.healthGood': 'Healthy',
+        'toolbox.plugin.healthWarning': 'Degraded',
+        'toolbox.plugin.healthCritical': 'Unhealthy',
+        'toolbox.plugin.permissionPolicyModeCompatTag': 'Compat',
+        'toolbox.plugin.permissionPolicyModeStrictTag': 'Strict',
+        'toolbox.plugin.declaredCapabilities': 'Declared Capabilities',
+        'toolbox.plugin.grantedCapabilities': 'Granted Capabilities',
+        'toolbox.plugin.capabilitiesEmpty': 'None',
+        'toolbox.plugin.capabilityPolicyMismatch': 'Policy mismatch',
       };
       return map[key] || key;
     },
   }),
+}));
+
+jest.mock('@/lib/stores/plugin', () => ({
+  usePluginStore: (
+    selector: (state: {
+      installedPlugins: unknown[];
+      healthMap: Record<string, unknown>;
+      permissionMode: 'compat' | 'strict';
+      permissionStates: Record<string, { granted: string[] }>;
+    }) => unknown,
+  ) =>
+    selector({
+      installedPlugins: [],
+      healthMap: {},
+      permissionMode: 'compat',
+      permissionStates: {},
+    }),
 }));
 
 jest.mock('next/link', () => {
@@ -81,7 +107,7 @@ describe('ToolDetailPanel', () => {
     render(<ToolDetailPanel tool={mockTool} open={true} onOpenChange={jest.fn()} />);
     expect(screen.getByRole('link', { name: 'Open Full Page' })).toHaveAttribute(
       'href',
-      '/toolbox/tool?id=builtin%3Ajson-formatter',
+      '/toolbox/builtin%3Ajson-formatter',
     );
   });
 
@@ -123,6 +149,8 @@ describe('ToolDetailPanel', () => {
     };
     render(<ToolDetailPanel tool={pluginTool} open={true} onOpenChange={jest.fn()} />);
     expect(screen.getByText('Plugin')).toBeInTheDocument();
+    expect(screen.getByText('Declared Capabilities')).toBeInTheDocument();
+    expect(screen.getByText('Granted Capabilities')).toBeInTheDocument();
   });
 
   it('renders dedicated header, actions, and body regions', () => {

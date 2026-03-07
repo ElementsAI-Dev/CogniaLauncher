@@ -1,3 +1,4 @@
+pub mod contract;
 pub mod host_functions;
 pub mod loader;
 pub mod manager;

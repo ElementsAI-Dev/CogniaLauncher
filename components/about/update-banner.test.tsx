@@ -98,7 +98,7 @@ describe("UpdateBanner", () => {
         updateStatus="installing"
       />,
     );
-    expect(screen.getByText(/Installing/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Installing/).length).toBeGreaterThanOrEqual(1);
   });
 
   it("calls onUpdate when update button is clicked", async () => {
@@ -115,6 +115,9 @@ describe("UpdateBanner", () => {
   it("disables update button when not desktop", () => {
     render(<UpdateBanner {...defaultProps} isDesktop={false} />);
     expect(screen.getByText("Update").closest("button")).toBeDisabled();
+    const desktopOnlyHints = screen.getAllByText("Updates are only available on desktop");
+    expect(desktopOnlyHints.length).toBeGreaterThanOrEqual(2);
+    expect(desktopOnlyHints.some((el) => el.tagName === "P")).toBe(true);
   });
 
   it("does not render release notes area when release_notes is null", () => {

@@ -1,7 +1,9 @@
 use crate::cache::MetadataCache;
 use crate::config::Settings;
 use crate::provider::{InstalledPackage, PackageSummary, ProviderRegistry, SearchOptions};
+use crate::resolver::Version;
 use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::State;
@@ -12,6 +14,62 @@ pub type SharedSettings = Arc<RwLock<Settings>>;
 
 /// TTL for installed package cache used by search (matches package.rs)
 const INSTALLED_CACHE_TTL: i64 = 60;
+
+fn installed_lookup_key(provider: &str, name: &str) -> String {
+    format!("{}:{}", provider.to_ascii_lowercase(), name.to_ascii_lowercase())
+}
+
+fn compare_versions(left: &str, right: &str) -> Option<Ordering> {
+    match (left.parse::<Version>(), right.parse::<Version>()) {
+        (Ok(left_version), Ok(right_version)) => Some(left_version.cmp(&right_version)),
+        _ => Some(left.to_ascii_lowercase().cmp(&right.to_ascii_lowercase())),
+    }
+}
+
+fn matches_metadata_filters(
+    filters: Option<&SearchFilters>,
+    license: Option<&str>,
+    latest_version: Option<&str>,
+) -> bool {
+    let Some(filters) = filters else {
+        return true;
+    };
+
+    if let Some(licenses) = filters.license.as_ref() {
+        if !licenses.is_empty() {
+            let Some(actual_license) = license else {
+                return false;
+            };
+            let normalized_license = actual_license.trim().to_ascii_lowercase();
+            if !licenses
+                .iter()
+                .any(|candidate| candidate.trim().eq_ignore_ascii_case(&normalized_license))
+            {
+                return false;
+            }
+        }
+    }
+
+    if let Some(min_version) = filters.min_version.as_deref() {
+        let Some(actual_version) = latest_version else {
+            return false;
+        };
+        if matches!(compare_versions(actual_version, min_version), Some(Ordering::Less)) {
+            return false;
+        }
+    }
+
+    if let Some(max_version) = filters.max_version.as_deref() {
+        let Some(actual_version) = latest_version else {
+            return false;
+        };
+        if matches!(compare_versions(actual_version, max_version), Some(Ordering::Greater)) {
+            return false;
+        }
+    }
+
+    true
+}
 
 /// Build installed package set, preferring cached data from `package_list`.
 async fn get_installed_set(
@@ -29,7 +87,7 @@ async fn get_installed_set(
                 return cached
                     .data
                     .into_iter()
-                    .map(|p| (p.name.to_lowercase(), p.version))
+                    .map(|p| (installed_lookup_key(&p.provider, &p.name), p.version))
                     .collect();
             }
         }
@@ -45,7 +103,10 @@ async fn get_installed_set(
                     .await
                 {
                     for pkg in installed {
-                        installed_set.insert(pkg.name.to_lowercase(), pkg.version);
+                        installed_set.insert(
+                            installed_lookup_key(&pkg.provider, &pkg.name),
+                            pkg.version,
+                        );
                     }
                 }
             }
@@ -102,6 +163,56 @@ pub struct SearchFacets {
     pub licenses: HashMap<String, usize>,
 }
 
+fn has_newer_version(current: &str, latest: &str) -> bool {
+    match (current.parse::<Version>(), latest.parse::<Version>()) {
+        (Ok(current_ver), Ok(latest_ver)) => latest_ver > current_ver,
+        _ => !latest.trim().eq_ignore_ascii_case(current.trim()),
+    }
+}
+
+fn matches_filters(
+    filters: Option<&SearchFilters>,
+    is_installed: bool,
+    has_update: bool,
+) -> bool {
+    if let Some(filters) = filters {
+        if filters.installed_only.unwrap_or(false) && !is_installed {
+            return false;
+        }
+        if filters.not_installed.unwrap_or(false) && is_installed {
+            return false;
+        }
+        if filters.has_updates.unwrap_or(false) && !has_update {
+            return false;
+        }
+    }
+    true
+}
+
+fn sort_scored_packages(
+    all_results: &mut [ScoredPackage],
+    sort_by: Option<&str>,
+    sort_order: Option<&str>,
+) {
+    let alpha_sort = matches!(sort_by, Some("name") | Some("provider"));
+    all_results.sort_by(|a, b| {
+        let ordering = match sort_by {
+            Some("name") => a.package.name.cmp(&b.package.name),
+            Some("provider") => a.package.provider.cmp(&b.package.provider),
+            _ => b
+                .score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal),
+        };
+
+        match sort_order {
+            Some("desc") if alpha_sort => ordering.reverse(),
+            Some("asc") if !alpha_sort => ordering.reverse(),
+            _ => ordering,
+        }
+    });
+}
+
 /// Advanced package search with filtering and scoring
 #[tauri::command]
 pub async fn advanced_search(
@@ -141,21 +252,36 @@ pub async fn advanced_search(
             if let Ok(results) = p.search(&options.query, search_opts).await {
                 for pkg in results {
                     let name_lower = pkg.name.to_lowercase();
+                    let installed_key = installed_lookup_key(provider_id, &pkg.name);
 
                     // Calculate relevance score
                     let score = calculate_score(&pkg, &query_terms);
 
                     // Check if installed
-                    let is_installed = installed_set.contains_key(&name_lower);
+                    let is_installed = installed_set.contains_key(&installed_key);
+                    let has_update = match (installed_set.get(&installed_key), pkg.latest_version.as_ref())
+                    {
+                        (Some(current), Some(latest)) => has_newer_version(current, latest),
+                        _ => false,
+                    };
+
+                    let package_info = p.get_package_info(&pkg.name).await.ok();
+                    let package_license = package_info
+                        .as_ref()
+                        .and_then(|info| info.license.as_ref())
+                        .map(|license| license.trim())
+                        .filter(|license| !license.is_empty());
 
                     // Apply filters
-                    if let Some(ref filters) = options.filters {
-                        if filters.installed_only.unwrap_or(false) && !is_installed {
-                            continue;
-                        }
-                        if filters.not_installed.unwrap_or(false) && is_installed {
-                            continue;
-                        }
+                    if !matches_filters(options.filters.as_ref(), is_installed, has_update) {
+                        continue;
+                    }
+                    if !matches_metadata_filters(
+                        options.filters.as_ref(),
+                        package_license,
+                        pkg.latest_version.as_deref(),
+                    ) {
+                        continue;
                     }
 
                     // Determine match type
@@ -170,13 +296,16 @@ pub async fn advanced_search(
                     };
 
                     *facets.providers.entry(pkg.provider.clone()).or_insert(0) += 1;
+                    if let Some(license) = package_license {
+                        *facets.licenses.entry(license.to_string()).or_insert(0) += 1;
+                    }
 
                     all_results.push(ScoredPackage {
                         package: pkg,
                         score,
                         match_type: match_type.into(),
                         is_installed,
-                        has_update: false, // TODO: Check for updates
+                        has_update,
                     });
                 }
             }
@@ -184,19 +313,11 @@ pub async fn advanced_search(
     }
 
     // Sort by score (or custom sort)
-    all_results.sort_by(|a, b| match options.sort_by.as_deref() {
-        Some("name") => a.package.name.cmp(&b.package.name),
-        Some("provider") => a.package.provider.cmp(&b.package.provider),
-        _ => b
-            .score
-            .partial_cmp(&a.score)
-            .unwrap_or(std::cmp::Ordering::Equal),
-    });
-
-    // Reverse if descending
-    if options.sort_order.as_deref() == Some("asc") && options.sort_by.is_some() {
-        all_results.reverse();
-    }
+    sort_scored_packages(
+        &mut all_results,
+        options.sort_by.as_deref(),
+        options.sort_order.as_deref(),
+    );
 
     let total = all_results.len();
     let page_size = options.limit.unwrap_or(20);
@@ -414,4 +535,96 @@ pub async fn compare_packages(
         packages: items,
         features,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        has_newer_version, installed_lookup_key, matches_filters, sort_scored_packages,
+        ScoredPackage, SearchFilters,
+    };
+    use crate::provider::PackageSummary;
+
+    fn sample_result(name: &str, provider: &str, score: f64) -> ScoredPackage {
+        ScoredPackage {
+            package: PackageSummary {
+                name: name.to_string(),
+                description: None,
+                latest_version: Some("1.0.0".to_string()),
+                provider: provider.to_string(),
+            },
+            score,
+            match_type: "fuzzy".to_string(),
+            is_installed: false,
+            has_update: false,
+        }
+    }
+
+    #[test]
+    fn has_newer_version_handles_semver() {
+        assert!(has_newer_version("1.0.0", "1.0.1"));
+        assert!(has_newer_version("1.2.3", "2.0.0"));
+        assert!(!has_newer_version("2.0.0", "1.9.9"));
+    }
+
+    #[test]
+    fn has_newer_version_handles_non_semver_fallback() {
+        assert!(has_newer_version("stable", "nightly"));
+        assert!(!has_newer_version("stable", "stable"));
+    }
+
+    #[test]
+    fn matches_filters_honors_installation_and_update_flags() {
+        let installed_only = SearchFilters {
+            installed_only: Some(true),
+            ..Default::default()
+        };
+        assert!(matches_filters(Some(&installed_only), true, false));
+        assert!(!matches_filters(Some(&installed_only), false, false));
+
+        let not_installed = SearchFilters {
+            not_installed: Some(true),
+            ..Default::default()
+        };
+        assert!(matches_filters(Some(&not_installed), false, false));
+        assert!(!matches_filters(Some(&not_installed), true, false));
+
+        let has_updates = SearchFilters {
+            has_updates: Some(true),
+            ..Default::default()
+        };
+        assert!(matches_filters(Some(&has_updates), true, true));
+        assert!(!matches_filters(Some(&has_updates), true, false));
+    }
+
+    #[test]
+    fn sort_scored_packages_honors_non_default_sort_and_order() {
+        let mut by_name = vec![
+            sample_result("zeta", "pip", 0.1),
+            sample_result("alpha", "npm", 0.9),
+        ];
+        sort_scored_packages(&mut by_name, Some("name"), Some("asc"));
+        assert_eq!(by_name[0].package.name, "alpha");
+        sort_scored_packages(&mut by_name, Some("name"), Some("desc"));
+        assert_eq!(by_name[0].package.name, "zeta");
+
+        let mut by_score = vec![
+            sample_result("pkg-low", "npm", 0.2),
+            sample_result("pkg-high", "npm", 0.8),
+        ];
+        sort_scored_packages(&mut by_score, None, Some("asc"));
+        assert_eq!(by_score[0].package.name, "pkg-low");
+        sort_scored_packages(&mut by_score, None, Some("desc"));
+        assert_eq!(by_score[0].package.name, "pkg-high");
+    }
+
+    #[test]
+    fn installed_lookup_key_is_provider_aware() {
+        assert_eq!(installed_lookup_key("npm", "TypeScript"), "npm:typescript");
+        assert_eq!(installed_lookup_key("pip", "TypeScript"), "pip:typescript");
+        assert_ne!(
+            installed_lookup_key("npm", "TypeScript"),
+            installed_lookup_key("pip", "TypeScript")
+        );
+    }
 }

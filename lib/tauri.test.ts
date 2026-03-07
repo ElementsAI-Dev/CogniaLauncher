@@ -27,7 +27,14 @@ jest.mock('@tauri-apps/api/core', () => ({
   invoke: (...args: unknown[]) => mockInvoke(...args),
 }));
 
-import { cacheOptimize, getCacheSizeHistory, getAppVersion, isTauri, openExternal } from './tauri';
+import {
+  cacheOptimize,
+  getCacheSizeHistory,
+  getAppVersion,
+  isTauri,
+  openExternal,
+  advancedSearch,
+} from './tauri';
 
 describe('Tauri Utility Functions', () => {
   describe('isTauri', () => {
@@ -183,6 +190,58 @@ describe('Cache Payload Normalization', () => {
         metadataCount: 4,
       },
     ]);
+  });
+});
+
+describe('Advanced Search Payload Mapping', () => {
+  beforeEach(() => {
+    mockInvoke.mockReset();
+  });
+
+  it('maps camelCase advanced search options to snake_case payload', async () => {
+    mockInvoke.mockResolvedValueOnce({
+      packages: [],
+      total: 0,
+      page: 0,
+      page_size: 20,
+      facets: { providers: {}, licenses: {} },
+    });
+
+    await advancedSearch({
+      query: 'react',
+      providers: ['npm'],
+      limit: 20,
+      offset: 0,
+      sortBy: 'name',
+      sortOrder: 'asc',
+      filters: {
+        hasUpdates: true,
+        installedOnly: true,
+        notInstalled: false,
+        license: ['MIT'],
+        minVersion: '1.0.0',
+        maxVersion: '2.0.0',
+      },
+    });
+
+    expect(mockInvoke).toHaveBeenCalledWith('advanced_search', {
+      options: {
+        query: 'react',
+        providers: ['npm'],
+        limit: 20,
+        offset: 0,
+        sort_by: 'name',
+        sort_order: 'asc',
+        filters: {
+          has_updates: true,
+          installed_only: true,
+          not_installed: false,
+          license: ['MIT'],
+          min_version: '1.0.0',
+          max_version: '2.0.0',
+        },
+      },
+    });
   });
 });
 

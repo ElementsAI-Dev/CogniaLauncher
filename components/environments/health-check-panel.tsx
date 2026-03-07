@@ -46,7 +46,15 @@ interface HealthCheckPanelProps {
 export function HealthCheckPanel({ className }: HealthCheckPanelProps) {
   const { t: _t } = useLocale();
   const t = (key: string, params?: Record<string, string | number>) => _t(`environments.healthCheck.${key}`, params);
-  const { systemHealth, loading, error, checkAll } =
+  const {
+    systemHealth,
+    loading,
+    error,
+    activeRemediationId,
+    checkAll,
+    previewRemediation,
+    applyRemediation,
+  } =
     useHealthCheck();
   const [expandedEnvs, setExpandedEnvs] = useState<Set<string>>(new Set());
 
@@ -145,6 +153,9 @@ export function HealthCheckPanel({ className }: HealthCheckPanelProps) {
                     key={idx}
                     issue={issue}
                     onCopy={copyToClipboard}
+                    onPreviewRemediation={previewRemediation}
+                    onApplyRemediation={applyRemediation}
+                    activeRemediationId={activeRemediationId}
                     t={t}
                   />
                 ))}
@@ -187,9 +198,9 @@ export function HealthCheckPanel({ className }: HealthCheckPanelProps) {
                             variant={
                               env.status === "healthy"
                                 ? "default"
-                                : env.status === "warning"
-                                  ? "secondary"
-                                  : "destructive"
+                                : env.status === "error"
+                                  ? "destructive"
+                                  : "secondary"
                             }
                           >
                             {env.issues.filter(i => i.severity !== 'info').length} {t("issues")}
@@ -229,6 +240,9 @@ export function HealthCheckPanel({ className }: HealthCheckPanelProps) {
                                 key={idx}
                                 issue={issue}
                                 onCopy={copyToClipboard}
+                                onPreviewRemediation={previewRemediation}
+                                onApplyRemediation={applyRemediation}
+                                activeRemediationId={activeRemediationId}
                                 t={t}
                               />
                             ))}
@@ -286,9 +300,9 @@ export function HealthCheckPanel({ className }: HealthCheckPanelProps) {
                               variant={
                                 pm.status === "healthy"
                                   ? "default"
-                                  : pm.status === "warning"
-                                    ? "secondary"
-                                    : "destructive"
+                                  : pm.status === "error"
+                                    ? "destructive"
+                                    : "secondary"
                               }
                             >
                               {pm.issues.filter(i => i.severity !== 'info').length} {t("issues")}
@@ -312,6 +326,9 @@ export function HealthCheckPanel({ className }: HealthCheckPanelProps) {
                                   key={idx}
                                   issue={issue}
                                   onCopy={copyToClipboard}
+                                  onPreviewRemediation={previewRemediation}
+                                  onApplyRemediation={applyRemediation}
+                                  activeRemediationId={activeRemediationId}
                                   t={t}
                                 />
                               ))}

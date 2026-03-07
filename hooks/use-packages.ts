@@ -196,12 +196,15 @@ export function usePackages() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchInstalledPackages]);
 
-  const batchInstall = useCallback(async (packages: string[], dryRun?: boolean, force?: boolean) => {
+  const batchInstall = useCallback(async (
+    packages: string[],
+    options?: { dryRun?: boolean; force?: boolean; parallel?: boolean; global?: boolean },
+  ) => {
     store.setError(null);
     const normalized = packages.map(normalizePackageId);
     normalized.forEach((p) => store.addInstalling(p));
     try {
-      const result = await tauri.batchInstall(packages, { dryRun, force });
+      const result = await tauri.batchInstall(packages, options);
       await fetchInstalledPackages(undefined, true);
       emitInvalidations(
         ['package_data', 'provider_data', 'cache_overview', 'about_cache_stats'],
@@ -271,14 +274,14 @@ export function usePackages() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchInstalledPackages]);
 
-  const fetchProviders = useCallback(async () => {
+  const fetchProviders = useCallback(async (force?: boolean) => {
     const state = usePackageStore.getState();
     const now = Date.now();
     const isProvidersCacheFresh =
       providerCacheTimestampRef.current !== null &&
       now - providerCacheTimestampRef.current < PROVIDER_CACHE_TTL_MS;
 
-    if (isProvidersCacheFresh && state.providers.length > 0) {
+    if (!force && isProvidersCacheFresh && state.providers.length > 0) {
       return state.providers;
     }
 
@@ -348,27 +351,38 @@ export function usePackages() {
     }
   }, [runUpdateCheck, store]);
 
+  const fetchPinnedPackages = useCallback(async () => {
+    try {
+      const pinned = await tauri.getPinnedPackages();
+      store.setPinnedPackages(pinned.map(([key]) => key));
+      return pinned;
+    } catch (err) {
+      store.setError(formatError(err));
+      return [];
+    }
+  }, [store]);
+
   const pinPackage = useCallback(async (name: string, version?: string) => {
     try {
       await tauri.packagePin(name, version);
-      store.addPinnedPackage(name);
+      await fetchPinnedPackages();
     } catch (err) {
       store.setError(formatError(err));
       throw err;
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [fetchPinnedPackages]);
 
   const unpinPackage = useCallback(async (name: string) => {
     try {
       await tauri.packageUnpin(name);
-      store.removePinnedPackage(name);
+      await fetchPinnedPackages();
     } catch (err) {
       store.setError(formatError(err));
       throw err;
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [fetchPinnedPackages]);
 
   const rollbackPackage = useCallback(async (name: string, toVersion: string) => {
     store.addInstalling(name);
@@ -487,6 +501,7 @@ export function usePackages() {
     rollbackPackage,
     resolveDependencies,
     comparePackages,
+    fetchPinnedPackages,
     getInstallHistory,
     getPackageHistory,
     clearInstallHistory,

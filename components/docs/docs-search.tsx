@@ -55,10 +55,13 @@ export function DocsSearch({ className, searchIndex }: DocsSearchProps) {
 
   const navigateToResult = useCallback((result: DocSearchResult) => {
     const slugArr = slugToArray(result.slug);
-    const href = slugArr.length === 0 ? '/docs' : `/docs/${slugArr.join('/')}`;
+    const baseHref = slugArr.length === 0 ? '/docs' : `/docs/${slugArr.join('/')}`;
+    const hash = result.anchorId ? `#${encodeURIComponent(result.anchorId)}` : '';
+    const href = `${baseHref}${hash}`;
     router.push(href);
     setQuery('');
     setOpen(false);
+    setSelectedIndex(0);
   }, [router]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -79,6 +82,7 @@ export function DocsSearch({ className, searchIndex }: DocsSearchProps) {
         break;
       case 'Escape':
         setOpen(false);
+        setSelectedIndex(0);
         inputRef.current?.blur();
         break;
     }
@@ -121,7 +125,7 @@ export function DocsSearch({ className, searchIndex }: DocsSearchProps) {
               <div className="p-1">
                 {results.map((result, i) => (
                   <button
-                    key={result.slug}
+                    key={`${result.slug}#${result.anchorId ?? ''}`}
                     className={cn(
                       'flex w-full items-start gap-2 rounded-sm px-2 py-1.5 text-sm text-left transition-colors',
                       i === selectedIndex

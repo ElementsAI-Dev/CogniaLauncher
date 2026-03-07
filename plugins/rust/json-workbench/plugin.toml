@@ -1,0 +1,33 @@
+[plugin]
+id = "com.cognia.builtin.json-workbench"
+name = "JSON Workbench"
+version = "0.1.0"
+description = "Validate, convert, diff, and format JSON/YAML payloads for structured-document diagnostics."
+authors = ["CogniaLauncher Team"]
+tool_contract_version = "1.0.0"
+compatible_cognia_versions = ">=0.1.0"
+
+[[tools]]
+id = "json-workbench"
+name_en = "JSON Workbench"
+name_zh = "JSON 工作台"
+description_en = "Validate, convert, format, and diff JSON/YAML payloads."
+description_zh = "校验、转换、格式化并比较 JSON/YAML 载荷。"
+category = "developer"
+keywords = ["json", "format", "minify", "compare", "payload", "debug"]
+icon = "Braces"
+entry = "json_workbench"
+
+[permissions]
+
+[locales.en]
+success = "JSON workflow completed."
+invalidInput = "Input must be JSON with mode and input fields."
+invalidJson = "Provided content is not valid JSON."
+unsupportedMode = "Requested mode or format is not supported."
+
+[locales.zh]
+success = "JSON 工作流执行完成。"
+invalidInput = "输入必须是包含 mode 和 input 字段的 JSON。"
+invalidJson = "提供的内容不是合法 JSON。"
+unsupportedMode = "请求的模式或格式暂不支持。"

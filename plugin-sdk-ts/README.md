@@ -40,6 +40,32 @@ pnpm add @cognia/plugin-sdk
 pnpm add -D @extism/js-pdk esbuild
 ```
 
+### Unified Contract Scaffold Options
+
+The scaffold now supports unified toolbox contract options through `templateOptions`:
+
+- `includeUnifiedContractSamples`
+- `contractTemplate`: `minimal` or `advanced`
+- `schemaPreset`: `basic-form`, `multi-step-flow`, `repeatable-collection`
+- `includeValidationGuidance`
+- `includeStarterTests`
+
+Generated projects can include:
+
+- `contracts/unified-tool-contract.sample.json`
+- `schemas/input.schema.json`
+- `schemas/output.schema.json`
+- `schemas/action-envelope.schema.json`
+- `docs/validation-guide.md`
+
+Manifest contract defaults in scaffolded projects:
+
+```toml
+[plugin]
+tool_contract_version = "1.0.0"
+compatible_cognia_versions = ">=0.1.0"
+```
+
 ### tsconfig.json
 
 ```json

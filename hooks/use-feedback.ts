@@ -67,9 +67,19 @@ export function useFeedback(): UseFeedbackReturn {
               : undefined,
           });
 
-          toast.success(t('feedback.submitSuccess'), {
-            description: t('feedback.submitSuccessDesc'),
-          });
+          if (data.includeDiagnostics && result.diagnosticPath) {
+            toast.success(t('feedback.submitSuccess'), {
+              description: t('feedback.submitSuccessWithDiagnostics'),
+            });
+          } else if (data.includeDiagnostics && result.diagnosticError) {
+            toast.warning(t('feedback.submitSuccess'), {
+              description: t('feedback.submitSuccessDiagnosticsWarning'),
+            });
+          } else {
+            toast.success(t('feedback.submitSuccess'), {
+              description: t('feedback.submitSuccessDesc'),
+            });
+          }
 
           return result;
         }
@@ -127,33 +137,19 @@ export function useFeedback(): UseFeedbackReturn {
 
   const listFeedbacks = useCallback(async (): Promise<FeedbackItem[]> => {
     if (!isTauri()) return [];
-    try {
-      const result = await tauri.feedbackList();
-      return result.items;
-    } catch (err) {
-      console.error('Failed to list feedbacks:', err);
-      return [];
-    }
+    const result = await tauri.feedbackList();
+    return result.items;
   }, []);
 
   const deleteFeedback = useCallback(async (id: string): Promise<void> => {
     if (!isTauri()) return;
-    try {
-      await tauri.feedbackDelete(id);
-    } catch (err) {
-      console.error('Failed to delete feedback:', err);
-    }
+    await tauri.feedbackDelete(id);
   }, []);
 
   const exportFeedbackJson = useCallback(
     async (id: string): Promise<string | null> => {
       if (!isTauri()) return null;
-      try {
-        return await tauri.feedbackExport(id);
-      } catch (err) {
-        console.error('Failed to export feedback:', err);
-        return null;
-      }
+      return await tauri.feedbackExport(id);
     },
     [],
   );

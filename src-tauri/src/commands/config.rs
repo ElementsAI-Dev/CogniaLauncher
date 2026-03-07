@@ -82,6 +82,7 @@ const CONFIG_LIST_STATIC_KEYS: &[&str] = &[
     "tray.minimize_to_tray",
     "tray.start_minimized",
     "tray.show_notifications",
+    "tray.notification_level",
     "tray.click_behavior",
     "tray.menu_items",
     "paths.root",
@@ -299,6 +300,7 @@ mod tests {
         assert!(CONFIG_LIST_STATIC_KEYS.contains(&"tray.minimize_to_tray"));
         assert!(CONFIG_LIST_STATIC_KEYS.contains(&"tray.start_minimized"));
         assert!(CONFIG_LIST_STATIC_KEYS.contains(&"tray.show_notifications"));
+        assert!(CONFIG_LIST_STATIC_KEYS.contains(&"tray.notification_level"));
         assert!(CONFIG_LIST_STATIC_KEYS.contains(&"tray.click_behavior"));
         assert!(CONFIG_LIST_STATIC_KEYS.contains(&"tray.menu_items"));
     }

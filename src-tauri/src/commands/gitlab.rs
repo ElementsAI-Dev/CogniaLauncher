@@ -1,15 +1,15 @@
 //! GitLab repository commands for download integration
 
-use crate::download::DownloadTask;
 use crate::error::CogniaError;
 use crate::provider::gitlab::{
     GitLabBranch, GitLabProvider, GitLabRelease, GitLabReleaseLink, GitLabTag,
 };
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 use tauri::State;
 
-use super::download::SharedDownloadManager;
+use super::download::{
+    download_add, DownloadRequest, SharedDownloadManager, SharedSettings,
+};
 
 fn map_gitlab_error(e: CogniaError) -> String {
     let msg = e.to_string();
@@ -209,22 +209,38 @@ async fn make_gitlab_provider(
         .with_instance_url(effective_url)
 }
 
-async fn enqueue_gitlab_download(
-    manager: &State<'_, SharedDownloadManager>,
+fn build_gitlab_download_request(
     url: String,
     destination: &str,
     file_name: String,
     provider: String,
     headers: std::collections::HashMap<String, String>,
-) -> Result<String, String> {
-    let full_path = PathBuf::from(destination).join(&file_name);
-    let task = DownloadTask::builder(url, full_path, file_name)
-        .with_provider(provider)
-        .with_headers(headers)
-        .build();
-
-    let mgr = manager.read().await;
-    Ok(mgr.add_task(task).await)
+) -> DownloadRequest {
+    let full_path = std::path::PathBuf::from(destination)
+        .join(&file_name)
+        .display()
+        .to_string();
+    DownloadRequest {
+        url,
+        destination: full_path,
+        name: file_name,
+        checksum: None,
+        priority: None,
+        provider: Some(provider),
+        headers: if headers.is_empty() {
+            None
+        } else {
+            Some(headers)
+        },
+        auto_extract: None,
+        extract_dest: None,
+        segments: None,
+        mirror_urls: None,
+        post_action: None,
+        delete_after_extract: None,
+        auto_rename: None,
+        tags: None,
+    }
 }
 
 #[tauri::command]
@@ -335,19 +351,19 @@ pub async fn gitlab_download_asset(
     token: Option<String>,
     instance_url: Option<String>,
     manager: State<'_, SharedDownloadManager>,
+    settings: State<'_, SharedSettings>,
 ) -> Result<String, String> {
     let provider = make_gitlab_provider(token, instance_url).await;
 
     let headers = provider.get_download_headers();
-    enqueue_gitlab_download(
-        &manager,
+    let request = build_gitlab_download_request(
         asset_url,
         &destination,
         asset_name,
         format!("gitlab:{}", project),
         headers,
-    )
-    .await
+    );
+    download_add(request, manager, settings).await
 }
 
 #[tauri::command]
@@ -359,6 +375,7 @@ pub async fn gitlab_download_source(
     token: Option<String>,
     instance_url: Option<String>,
     manager: State<'_, SharedDownloadManager>,
+    settings: State<'_, SharedSettings>,
 ) -> Result<String, String> {
     let provider = make_gitlab_provider(token, instance_url).await;
     let url = provider.get_source_archive_url(&project, &ref_name, &format);
@@ -377,15 +394,14 @@ pub async fn gitlab_download_source(
     );
 
     let headers = provider.get_download_headers();
-    enqueue_gitlab_download(
-        &manager,
+    let request = build_gitlab_download_request(
         url,
         &destination,
         file_name,
         format!("gitlab:{}", project),
         headers,
-    )
-    .await
+    );
+    download_add(request, manager, settings).await
 }
 
 #[tauri::command]
@@ -578,21 +594,21 @@ pub async fn gitlab_download_job_artifacts(
     token: Option<String>,
     instance_url: Option<String>,
     manager: State<'_, SharedDownloadManager>,
+    settings: State<'_, SharedSettings>,
 ) -> Result<String, String> {
     let provider = make_gitlab_provider(token, instance_url).await;
     let url = provider.get_job_artifacts_url(&project, job_id);
     let file_name = format!("{}-artifacts-{}.zip", job_name, job_id);
 
     let headers = provider.get_download_headers();
-    enqueue_gitlab_download(
-        &manager,
+    let request = build_gitlab_download_request(
         url,
         &destination,
         file_name,
         format!("gitlab:{}", project),
         headers,
-    )
-    .await
+    );
+    download_add(request, manager, settings).await
 }
 
 // ============================================================================
@@ -682,20 +698,20 @@ pub async fn gitlab_download_package_file(
     token: Option<String>,
     instance_url: Option<String>,
     manager: State<'_, SharedDownloadManager>,
+    settings: State<'_, SharedSettings>,
 ) -> Result<String, String> {
     let provider = make_gitlab_provider(token, instance_url).await;
     let url = provider.get_package_file_url(&project, package_id, &file_name);
 
     let headers = provider.get_download_headers();
-    enqueue_gitlab_download(
-        &manager,
+    let request = build_gitlab_download_request(
         url,
         &destination,
         file_name,
         format!("gitlab:{}", project),
         headers,
-    )
-    .await
+    );
+    download_add(request, manager, settings).await
 }
 
 #[tauri::command]
@@ -715,4 +731,37 @@ pub async fn gitlab_get_instance_url() -> Result<Option<String>, String> {
         .await
         .map_err(|e| e.to_string())?;
     Ok(settings.get_value("providers.gitlab.url"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_gitlab_download_request;
+    use std::collections::HashMap;
+
+    #[test]
+    fn build_request_uses_full_file_destination_and_headers() {
+        let mut headers = HashMap::new();
+        headers.insert("Private-Token".to_string(), "glpat-xxx".to_string());
+
+        let request = build_gitlab_download_request(
+            "https://gitlab.example.com/api/v4/projects/1/jobs/2/artifacts".to_string(),
+            "/tmp/gitlab",
+            "build-artifacts.zip".to_string(),
+            "gitlab:group/project".to_string(),
+            headers.clone(),
+        );
+
+        assert_eq!(
+            request.url,
+            "https://gitlab.example.com/api/v4/projects/1/jobs/2/artifacts"
+        );
+        assert_eq!(request.name, "build-artifacts.zip");
+        assert_eq!(request.provider.as_deref(), Some("gitlab:group/project"));
+        assert_eq!(request.headers, Some(headers));
+        let destination = std::path::Path::new(&request.destination);
+        assert!(destination.ends_with(std::path::Path::new("gitlab").join("build-artifacts.zip")));
+        assert!(request.delete_after_extract.is_none());
+        assert!(request.auto_rename.is_none());
+        assert!(request.tags.is_none());
+    }
 }

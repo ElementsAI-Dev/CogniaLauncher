@@ -5,6 +5,10 @@ import type {
   RustTarget,
   RustupShowInfo,
   RustupOverride,
+  RustupOperationError,
+  RustupOperationResult,
+  RustupScopedListResult,
+  RustupProfileResult,
 } from '@/types/tauri';
 
 export interface UseRustupReturn {
@@ -16,6 +20,7 @@ export interface UseRustupReturn {
   profile: string | null;
   loading: boolean;
   error: string | null;
+  lastOperationError: RustupOperationError | null;
 
   // Component management
   listComponents: (toolchain?: string) => Promise<RustComponent[]>;
@@ -68,6 +73,8 @@ export function useRustup(): UseRustupReturn {
   const [profile, setProfileState] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastOperationError, setLastOperationError] =
+    useState<RustupOperationError | null>(null);
 
   const withLoading = useCallback(
     async <T>(fn: () => Promise<T>): Promise<T> => {
@@ -86,33 +93,86 @@ export function useRustup(): UseRustupReturn {
     [],
   );
 
+  const throwRustupError = useCallback((fallbackMessage: string, detail?: RustupOperationError | null): never => {
+    const message = detail
+      ? `${detail.class}: ${detail.message}${detail.retryable ? ' (retryable)' : ''}`
+      : fallbackMessage;
+    if (detail) {
+      setLastOperationError(detail);
+    }
+    throw new Error(message);
+  }, []);
+
+  const requireRustupListSuccess = useCallback(
+    <T,>(result: RustupScopedListResult<T>, fallbackMessage: string): T[] => {
+      if (!result.success) {
+        return throwRustupError(fallbackMessage, result.error ?? null);
+      }
+      setLastOperationError(null);
+      return result.items;
+    },
+    [throwRustupError],
+  );
+
+  const requireRustupOperationSuccess = useCallback(
+    (result: RustupOperationResult, fallbackMessage: string): void => {
+      if (!result.success) {
+        return throwRustupError(fallbackMessage, result.error ?? null);
+      }
+      setLastOperationError(null);
+    },
+    [throwRustupError],
+  );
+
+  const requireRustupProfileSuccess = useCallback(
+    (result: RustupProfileResult, fallbackMessage: string): string => {
+      if (!result.success || !result.profile) {
+        return throwRustupError(fallbackMessage, result.error ?? null);
+      }
+      setLastOperationError(null);
+      return result.profile;
+    },
+    [throwRustupError],
+  );
+
   // ── Component management ──
 
   const listComponents = useCallback(
     async (toolchain?: string): Promise<RustComponent[]> => {
       return withLoading(async () => {
         const result = await tauri.rustupListComponents(toolchain);
-        setComponents(result);
-        return result;
+        const items = requireRustupListSuccess(
+          result,
+          'Failed to list rustup components',
+        );
+        setComponents(items);
+        return items;
       });
     },
-    [withLoading],
+    [requireRustupListSuccess, withLoading],
   );
 
   const addComponent = useCallback(
     async (component: string, toolchain?: string): Promise<void> => {
-      await withLoading(() => tauri.rustupAddComponent(component, toolchain));
+      await withLoading(async () => {
+        const result = await tauri.rustupAddComponent(component, toolchain);
+        requireRustupOperationSuccess(result, 'Failed to add rustup component');
+      });
     },
-    [withLoading],
+    [requireRustupOperationSuccess, withLoading],
   );
 
   const removeComponent = useCallback(
     async (component: string, toolchain?: string): Promise<void> => {
-      await withLoading(() =>
-        tauri.rustupRemoveComponent(component, toolchain),
-      );
+      await withLoading(async () => {
+        const result = await tauri.rustupRemoveComponent(component, toolchain);
+        requireRustupOperationSuccess(
+          result,
+          'Failed to remove rustup component',
+        );
+      });
     },
-    [withLoading],
+    [requireRustupOperationSuccess, withLoading],
   );
 
   // ── Target management ──
@@ -121,50 +181,70 @@ export function useRustup(): UseRustupReturn {
     async (toolchain?: string): Promise<RustTarget[]> => {
       return withLoading(async () => {
         const result = await tauri.rustupListTargets(toolchain);
-        setTargets(result);
-        return result;
+        const items = requireRustupListSuccess(
+          result,
+          'Failed to list rustup targets',
+        );
+        setTargets(items);
+        return items;
       });
     },
-    [withLoading],
+    [requireRustupListSuccess, withLoading],
   );
 
   const addTarget = useCallback(
     async (target: string, toolchain?: string): Promise<void> => {
-      await withLoading(() => tauri.rustupAddTarget(target, toolchain));
+      await withLoading(async () => {
+        const result = await tauri.rustupAddTarget(target, toolchain);
+        requireRustupOperationSuccess(result, 'Failed to add rustup target');
+      });
     },
-    [withLoading],
+    [requireRustupOperationSuccess, withLoading],
   );
 
   const removeTarget = useCallback(
     async (target: string, toolchain?: string): Promise<void> => {
-      await withLoading(() => tauri.rustupRemoveTarget(target, toolchain));
+      await withLoading(async () => {
+        const result = await tauri.rustupRemoveTarget(target, toolchain);
+        requireRustupOperationSuccess(result, 'Failed to remove rustup target');
+      });
     },
-    [withLoading],
+    [requireRustupOperationSuccess, withLoading],
   );
 
   // ── Override management ──
 
   const overrideSet = useCallback(
     async (toolchain: string, path?: string): Promise<void> => {
-      await withLoading(() => tauri.rustupOverrideSet(toolchain, path));
+      await withLoading(async () => {
+        const result = await tauri.rustupOverrideSet(toolchain, path);
+        requireRustupOperationSuccess(result, 'Failed to set rustup override');
+      });
     },
-    [withLoading],
+    [requireRustupOperationSuccess, withLoading],
   );
 
   const overrideUnset = useCallback(
     async (path?: string): Promise<void> => {
-      await withLoading(() => tauri.rustupOverrideUnset(path));
+      await withLoading(async () => {
+        const result = await tauri.rustupOverrideUnset(path);
+        requireRustupOperationSuccess(result, 'Failed to unset rustup override');
+      });
     },
-    [withLoading],
+    [requireRustupOperationSuccess, withLoading],
   );
 
   const overrideList = useCallback(async (): Promise<RustupOverride[]> => {
     return withLoading(async () => {
       const result = await tauri.rustupOverrideList();
-      setOverrides(result);
-      return result;
+      const items = requireRustupListSuccess(
+        result,
+        'Failed to list rustup overrides',
+      );
+      setOverrides(items);
+      return items;
     });
-  }, [withLoading]);
+  }, [requireRustupListSuccess, withLoading]);
 
   // ── Info & updates ──
 
@@ -209,19 +289,24 @@ export function useRustup(): UseRustupReturn {
   const getProfile = useCallback(async (): Promise<string> => {
     return withLoading(async () => {
       const result = await tauri.rustupGetProfile();
-      setProfileState(result);
-      return result;
+      const profileValue = requireRustupProfileSuccess(
+        result,
+        'Failed to get rustup profile',
+      );
+      setProfileState(profileValue);
+      return profileValue;
     });
-  }, [withLoading]);
+  }, [requireRustupProfileSuccess, withLoading]);
 
   const setProfile = useCallback(
     async (newProfile: string): Promise<void> => {
       await withLoading(async () => {
-        await tauri.rustupSetProfile(newProfile);
-        setProfileState(newProfile);
+        const result = await tauri.rustupSetProfile(newProfile);
+        requireRustupOperationSuccess(result, 'Failed to set rustup profile');
+        setProfileState(newProfile.trim().toLowerCase());
       });
     },
-    [withLoading],
+    [requireRustupOperationSuccess, withLoading],
   );
 
   // ── Refresh all ──
@@ -232,11 +317,11 @@ export function useRustup(): UseRustupReturn {
     setError(null);
     try {
       const [comps, tgts, ovrs, info, prof] = await Promise.all([
-        tauri.rustupListComponents().catch(() => [] as RustComponent[]),
-        tauri.rustupListTargets().catch(() => [] as RustTarget[]),
-        tauri.rustupOverrideList().catch(() => [] as RustupOverride[]),
+        tauri.rustupListComponents().then((r) => r.items).catch(() => [] as RustComponent[]),
+        tauri.rustupListTargets().then((r) => r.items).catch(() => [] as RustTarget[]),
+        tauri.rustupOverrideList().then((r) => r.items).catch(() => [] as RustupOverride[]),
         tauri.rustupShow().catch(() => null),
-        tauri.rustupGetProfile().catch(() => null),
+        tauri.rustupGetProfile().then((r) => (r.success ? (r.profile ?? null) : null)).catch(() => null),
       ]);
       setComponents(comps);
       setTargets(tgts);
@@ -259,6 +344,7 @@ export function useRustup(): UseRustupReturn {
     profile,
     loading,
     error,
+    lastOperationError,
     listComponents,
     addComponent,
     removeComponent,

@@ -49,6 +49,7 @@ export function ProviderDetailPageClient({ providerId }: ProviderDetailPageClien
     loadingUpdates,
     healthResult,
     loadingHealth,
+    activeRemediationId,
     installHistory,
     loadingHistory,
     historyError,
@@ -68,6 +69,8 @@ export function ProviderDetailPageClient({ providerId }: ProviderDetailPageClien
     updatePackage,
     updateAllPackages,
     runHealthCheck,
+    previewHealthRemediation,
+    applyHealthRemediation,
     fetchHistory,
     fetchEnvironmentInfo,
   } = useProviderDetail(providerId);
@@ -256,6 +259,9 @@ export function ProviderDetailPageClient({ providerId }: ProviderDetailPageClien
             healthResult={healthResult}
             loadingHealth={loadingHealth}
             onRunHealthCheck={runHealthCheck}
+            onPreviewRemediation={previewHealthRemediation}
+            onApplyRemediation={applyHealthRemediation}
+            activeRemediationId={activeRemediationId}
             t={t}
           />
         </TabsContent>

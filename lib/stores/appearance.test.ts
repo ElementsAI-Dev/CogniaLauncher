@@ -162,6 +162,15 @@ describe('useAppearanceStore', () => {
       expect(useAppearanceStore.getState().backgroundFit).toBe('tile');
     });
 
+    it('clamps out-of-range background opacity and blur values', () => {
+      useAppearanceStore.getState().setBackgroundOpacity(200);
+      useAppearanceStore.getState().setBackgroundBlur(-2);
+
+      const state = useAppearanceStore.getState();
+      expect(state.backgroundOpacity).toBe(100);
+      expect(state.backgroundBlur).toBe(0);
+    });
+
     it('clearBackground resets background fields', () => {
       useAppearanceStore.getState().setBackgroundEnabled(true);
       useAppearanceStore.getState().setBackgroundOpacity(80);
@@ -280,6 +289,33 @@ describe('useAppearanceStore', () => {
       expect(migrated.backgroundOpacity).toBe(50);
       expect(migrated.backgroundBlur).toBe(5);
       expect(migrated.backgroundFit).toBe('tile');
+      expect(migrated.windowEffect).toBe('auto');
+    });
+
+    it('normalizes invalid persisted values during migration', () => {
+      const invalid = {
+        accentColor: 'pink',
+        chartColorTheme: 'neon',
+        interfaceRadius: 0.92,
+        interfaceDensity: 'tiny',
+        reducedMotion: 'unknown',
+        backgroundEnabled: 'maybe',
+        backgroundOpacity: 150,
+        backgroundBlur: -9,
+        backgroundFit: 'stretch',
+        windowEffect: 'glass',
+      };
+      const migrated = getPersistConfig().migrate(invalid, 7) as Record<string, unknown>;
+
+      expect(migrated.accentColor).toBe('blue');
+      expect(migrated.chartColorTheme).toBe('default');
+      expect(migrated.interfaceRadius).toBe(1);
+      expect(migrated.interfaceDensity).toBe('comfortable');
+      expect(migrated.reducedMotion).toBe(false);
+      expect(migrated.backgroundEnabled).toBe(false);
+      expect(migrated.backgroundOpacity).toBe(100);
+      expect(migrated.backgroundBlur).toBe(0);
+      expect(migrated.backgroundFit).toBe('cover');
       expect(migrated.windowEffect).toBe('auto');
     });
   });

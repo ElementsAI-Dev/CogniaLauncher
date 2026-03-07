@@ -314,10 +314,11 @@ describe('Environment Constants', () => {
       expect(INSTALLATION_STEPS).toContain('configuring');
       expect(INSTALLATION_STEPS).toContain('done');
       expect(INSTALLATION_STEPS).toContain('error');
+      expect(INSTALLATION_STEPS).toContain('cancelled');
     });
 
-    it('has exactly 6 steps', () => {
-      expect(INSTALLATION_STEPS.length).toBe(6);
+    it('has exactly 7 steps', () => {
+      expect(INSTALLATION_STEPS.length).toBe(7);
     });
 
     it('has steps in logical order', () => {
@@ -326,11 +327,13 @@ describe('Environment Constants', () => {
       const extractingIndex = INSTALLATION_STEPS.indexOf('extracting');
       const configuringIndex = INSTALLATION_STEPS.indexOf('configuring');
       const doneIndex = INSTALLATION_STEPS.indexOf('done');
+      const cancelledIndex = INSTALLATION_STEPS.indexOf('cancelled');
 
       expect(fetchingIndex).toBeLessThan(downloadingIndex);
       expect(downloadingIndex).toBeLessThan(extractingIndex);
       expect(extractingIndex).toBeLessThan(configuringIndex);
       expect(configuringIndex).toBeLessThan(doneIndex);
+      expect(doneIndex).toBeLessThan(cancelledIndex);
     });
 
     it('is readonly at TypeScript level', () => {

@@ -109,7 +109,8 @@ export type FormField =
   | { type: 'date-time'; id: string; label: string; defaultValue?: string; min?: string; max?: string; required?: boolean }
   | { type: 'multi-select'; id: string; label: string; options: { label: string; value: string }[]; defaultValues?: string[]; required?: boolean }
   | { type: 'checkbox'; id: string; label: string; defaultChecked?: boolean }
-  | { type: 'slider'; id: string; label: string; min: number; max: number; step?: number; defaultValue?: number };
+  | { type: 'slider'; id: string; label: string; min: number; max: number; step?: number; defaultValue?: number }
+  | { type: 'array'; id: string; label: string; itemLabel?: string; placeholder?: string; defaultValues?: string[]; minItems?: number; maxItems?: number };
 
 export interface UiActionsBlock {
   type: 'actions';
@@ -188,13 +189,79 @@ export interface UiResultBlock {
   status?: 'info' | 'success' | 'warning' | 'error';
 }
 
+export interface UiConditionalGroupBlock {
+  type: 'conditional-group';
+  when: {
+    path: string;
+    equals?: unknown;
+    notEquals?: unknown;
+    exists?: boolean;
+  };
+  children: UiBlock[];
+}
+
+export interface UiStepperBlock {
+  type: 'stepper';
+  id: string;
+  steps: {
+    id: string;
+    label: string;
+    children: UiBlock[];
+  }[];
+  defaultStepId?: string;
+}
+
+export interface UiLogStreamBlock {
+  type: 'log-stream';
+  entries: {
+    level?: 'debug' | 'info' | 'warning' | 'error';
+    message: string;
+    timestamp?: string;
+  }[];
+}
+
+export interface UiArtifactActionsBlock {
+  type: 'artifact-actions';
+  artifacts: {
+    id: string;
+    label: string;
+    href?: string;
+    content?: string;
+    action?: 'open' | 'copy';
+  }[];
+}
+
+export type UiLogStreamEntry = UiLogStreamBlock['entries'][number];
+export type UiArtifactAction = UiArtifactActionsBlock['artifacts'][number];
+
 export type UiBlock =
   | UiTextBlock | UiHeadingBlock | UiMarkdownBlock | UiDividerBlock
   | UiAlertBlock | UiBadgeBlock | UiProgressBlock | UiImageBlock
   | UiCodeBlock | UiTableBlock | UiKeyValueBlock
   | UiFormBlock | UiActionsBlock | UiGroupBlock
   | UiTabsBlock | UiAccordionBlock | UiCopyButtonBlock | UiFileInputBlock
-  | UiJsonViewBlock | UiDescriptionListBlock | UiStatCardsBlock | UiResultBlock;
+  | UiJsonViewBlock | UiDescriptionListBlock | UiStatCardsBlock | UiResultBlock
+  | UiConditionalGroupBlock | UiStepperBlock | UiLogStreamBlock | UiArtifactActionsBlock;
+
+export interface UiOutputChannels {
+  structured?: UiBlock[];
+  stream?: UiLogStreamEntry[];
+  artifacts?: UiArtifactAction[];
+  summary?:
+    | string
+    | {
+      status?: 'info' | 'success' | 'warning' | 'error';
+      title?: string;
+      message: string;
+      details?: string;
+    };
+}
+
+export interface UiResponseEnvelope {
+  ui?: UiBlock[];
+  state?: Record<string, unknown>;
+  outputChannels?: UiOutputChannels;
+}
 
 // ============================================================================
 // Action Payload (parsed from input when user interacts)
@@ -205,6 +272,8 @@ export interface UiAction {
   version?: 1 | 2;
   sourceType?: string;
   sourceId?: string;
+  correlationId?: string;
+  runtimeContext?: Record<string, unknown>;
   buttonId?: string;
   formId?: string;
   formData?: Record<string, unknown>;
@@ -383,6 +452,31 @@ export function result(
   return block;
 }
 
+export function conditionalGroup(
+  when: UiConditionalGroupBlock['when'],
+  children: UiBlock[],
+): UiConditionalGroupBlock {
+  return { type: 'conditional-group', when, children };
+}
+
+export function stepper(
+  id: string,
+  steps: UiStepperBlock['steps'],
+  defaultStepId?: string,
+): UiStepperBlock {
+  const block: UiStepperBlock = { type: 'stepper', id, steps };
+  if (defaultStepId) block.defaultStepId = defaultStepId;
+  return block;
+}
+
+export function logStream(entries: UiLogStreamEntry[]): UiLogStreamBlock {
+  return { type: 'log-stream', entries };
+}
+
+export function artifactActions(artifacts: UiArtifactAction[]): UiArtifactActionsBlock {
+  return { type: 'artifact-actions', artifacts };
+}
+
 export function numberField(
   id: string,
   label: string,
@@ -461,16 +555,44 @@ export function multiSelectField(
   };
 }
 
+export function arrayField(
+  id: string,
+  label: string,
+  options?: {
+    itemLabel?: string;
+    placeholder?: string;
+    defaultValues?: string[];
+    minItems?: number;
+    maxItems?: number;
+  },
+): FormField {
+  return { type: 'array', id, label, ...(options ?? {}) };
+}
+
 // ============================================================================
 // Render Functions
 // ============================================================================
 
 export function render(blocks: UiBlock[]): string {
-  return JSON.stringify({ ui: blocks });
+  const payload: UiResponseEnvelope = { ui: blocks };
+  return JSON.stringify(payload);
 }
 
 export function renderWithState(blocks: UiBlock[], state: Record<string, unknown>): string {
-  return JSON.stringify({ ui: blocks, state });
+  const payload: UiResponseEnvelope = { ui: blocks, state };
+  return JSON.stringify(payload);
+}
+
+export function renderWithChannels(
+  blocks: UiBlock[],
+  outputChannels: UiOutputChannels,
+  state?: Record<string, unknown>,
+): string {
+  const payload: UiResponseEnvelope = { ui: blocks, outputChannels };
+  if (state) {
+    payload.state = state;
+  }
+  return JSON.stringify(payload);
 }
 
 export function parseAction(input: string): UiAction | null {

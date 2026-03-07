@@ -13,7 +13,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useLocale } from "@/components/providers/locale-provider";
-import { isTauri, configSet } from "@/lib/tauri";
+import { useSettings } from "@/hooks/use-settings";
+import { isTauri } from "@/lib/tauri";
+import { normalizeThemeMode, syncAppearanceConfigValue } from "@/lib/theme";
 import type { ThemeMode } from "@/lib/theme/types";
 
 const emptySubscribe = () => () => {};
@@ -29,14 +31,22 @@ function useMounted() {
 export function ThemeToggle() {
   const mounted = useMounted();
   const { theme, setTheme } = useTheme();
+  const { updateConfigValue, fetchConfig } = useSettings();
   const { t } = useLocale();
 
   const handleThemeSelect = async (value: ThemeMode) => {
-    setTheme(value);
+    const normalized = normalizeThemeMode(value);
+    setTheme(normalized);
 
     if (isTauri()) {
       try {
-        await configSet("appearance.theme", value);
+        const canonical = await syncAppearanceConfigValue({
+          key: "appearance.theme",
+          value: normalized,
+          updateConfigValue,
+          fetchConfig,
+        });
+        setTheme(normalizeThemeMode(canonical));
       } catch (err) {
         console.error("Failed to sync theme to backend:", err);
       }

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { writeClipboard } from '@/lib/clipboard';
+import { useMemo, useState, type ReactNode } from "react";
+import { writeClipboard } from "@/lib/clipboard";
 import { Card, CardHeader, CardTitle, CardDescription, CardAction, CardContent } from "@/components/ui/card";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -33,7 +33,7 @@ import {
 import { toast } from "sonner";
 import { useSystemInfoDisplay } from "@/hooks/use-system-info-display";
 import { buildSystemInfoText } from "@/lib/about-utils";
-import { formatUptime } from "@/lib/utils";
+import { formatBytes, formatUptime } from "@/lib/utils";
 import { APP_VERSION } from "@/lib/app-version";
 import type { SystemInfo } from "@/types/about";
 import type { SelfUpdateInfo } from "@/lib/tauri";
@@ -54,14 +54,14 @@ function InfoRow({
   unknownText,
 }: InfoRowProps) {
   return (
-    <div className="flex justify-between items-center min-h-[24px]">
+    <div className="flex justify-between items-center min-h-[24px] gap-4">
       <span className="text-[13px] text-muted-foreground">{label}</span>
       {isLoading ? (
         <Skeleton className="h-4 w-20" />
       ) : isMono && value && value.length > 25 ? (
         <Tooltip>
           <TooltipTrigger asChild>
-            <span className="text-[13px] font-medium text-foreground font-mono truncate max-w-[200px] cursor-help">
+            <span className="text-[13px] font-medium text-foreground font-mono truncate max-w-[240px] cursor-help">
               {value}
             </span>
           </TooltipTrigger>
@@ -86,8 +86,12 @@ interface SystemInfoCardProps {
   updateInfo: SelfUpdateInfo | null;
   systemError: string | null;
   onRetry: () => void;
-  t: (key: string) => string;
+  t: (key: string, params?: Record<string, string | number>) => string;
 }
+
+const COMPONENTS_PREVIEW_COUNT = 6;
+const DISKS_PREVIEW_COUNT = 4;
+const NETWORKS_PREVIEW_COUNT = 4;
 
 export function SystemInfoCard({
   systemInfo,
@@ -98,6 +102,9 @@ export function SystemInfoCard({
   t,
 }: SystemInfoCardProps) {
   const [copied, setCopied] = useState(false);
+  const [showAllComponents, setShowAllComponents] = useState(false);
+  const [showAllDisks, setShowAllDisks] = useState(false);
+  const [showAllNetworks, setShowAllNetworks] = useState(false);
 
   const unknownText = t("common.unknown");
 
@@ -110,6 +117,23 @@ export function SystemInfoCard({
     cpuCoresDisplay,
     gpuDisplay,
   } = useSystemInfoDisplay(systemInfo);
+
+  const componentItems = systemInfo?.components || [];
+  const diskItems = systemInfo?.disks || [];
+  const networkItems = useMemo(() => {
+    if (!systemInfo?.networks) return [];
+    return systemInfo.networks;
+  }, [systemInfo?.networks]);
+
+  const visibleComponents = showAllComponents
+    ? componentItems
+    : componentItems.slice(0, COMPONENTS_PREVIEW_COUNT);
+  const visibleDisks = showAllDisks
+    ? diskItems
+    : diskItems.slice(0, DISKS_PREVIEW_COUNT);
+  const visibleNetworks = showAllNetworks
+    ? networkItems
+    : networkItems.slice(0, NETWORKS_PREVIEW_COUNT);
 
   const copySystemInfo = async () => {
     const text = buildSystemInfoText({
@@ -128,6 +152,42 @@ export function SystemInfoCard({
     } catch {
       toast.error(t("about.copyFailed"));
     }
+  };
+
+  const renderSectionHeader = (icon: ReactNode, label: string, count?: number) => (
+    <div className="flex items-center gap-1.5 mb-2">
+      {icon}
+      <Badge variant="outline" className="text-[10px] uppercase tracking-wider font-medium">
+        {label}
+      </Badge>
+      {typeof count === "number" && (
+        <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-5">
+          {t("about.totalItems", { count })}
+        </Badge>
+      )}
+    </div>
+  );
+
+  const renderDisclosureButton = (
+    totalCount: number,
+    visibleCount: number,
+    expanded: boolean,
+    toggle: () => void,
+  ) => {
+    if (totalCount <= visibleCount && !expanded) return null;
+
+    return (
+      <Button
+        variant="link"
+        size="sm"
+        className="h-auto px-0 text-xs"
+        onClick={toggle}
+      >
+        {expanded
+          ? t("about.showLess")
+          : t("about.showMore", { count: totalCount - visibleCount })}
+      </Button>
+    );
   };
 
   return (
@@ -203,14 +263,21 @@ export function SystemInfoCard({
           </Alert>
         )}
 
-        {/* OS & Device Section */}
+        {!!systemInfo?.subsystemErrors?.length && (
+          <Alert aria-live="polite">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>{t("about.subsystemWarnings")}</AlertTitle>
+            <AlertDescription>
+              {systemInfo.subsystemErrors.join(", ")}
+            </AlertDescription>
+          </Alert>
+        )}
+
         <div className="space-y-1">
-          <div className="flex items-center gap-1.5 mb-2">
-            <Server className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
-            <Badge variant="outline" className="text-[10px] uppercase tracking-wider font-medium">
-              {t("about.deviceInfo")}
-            </Badge>
-          </div>
+          {renderSectionHeader(
+            <Server className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />,
+            t("about.deviceInfo"),
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
             <InfoRow
               label={t("about.operatingSystem")}
@@ -236,19 +303,28 @@ export function SystemInfoCard({
               isLoading={systemLoading}
               unknownText={unknownText}
             />
+            <InfoRow
+              label={t("about.operatingSystem") + " ID"}
+              value={systemInfo?.distributionId || undefined}
+              isLoading={systemLoading}
+              unknownText={unknownText}
+            />
+            <InfoRow
+              label={t("about.operatingSystem") + " Name"}
+              value={systemInfo?.osName || undefined}
+              isLoading={systemLoading}
+              unknownText={unknownText}
+            />
           </div>
         </div>
 
         <Separator />
 
-        {/* Hardware Section */}
         <div className="space-y-1">
-          <div className="flex items-center gap-1.5 mb-2">
-            <Cpu className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
-            <Badge variant="outline" className="text-[10px] uppercase tracking-wider font-medium">
-              {t("about.hardwareInfo")}
-            </Badge>
-          </div>
+          {renderSectionHeader(
+            <Cpu className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />,
+            t("about.hardwareInfo"),
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
             <InfoRow
               label={t("about.cpu")}
@@ -286,6 +362,12 @@ export function SystemInfoCard({
               isLoading={systemLoading}
               unknownText={unknownText}
             />
+            <InfoRow
+              label={t("about.architecture")}
+              value={systemInfo?.cpuArch || undefined}
+              isLoading={systemLoading}
+              unknownText={unknownText}
+            />
             <div className="space-y-1">
               <InfoRow
                 label={t("about.memory")}
@@ -312,6 +394,36 @@ export function SystemInfoCard({
                 </div>
               )}
             </div>
+            <InfoRow
+              label={t("about.totalMemory")}
+              value={
+                systemInfo?.totalMemory
+                  ? formatBytes(systemInfo.totalMemory)
+                  : undefined
+              }
+              isLoading={systemLoading}
+              unknownText={unknownText}
+            />
+            <InfoRow
+              label={t("about.availableMemory")}
+              value={
+                systemInfo?.availableMemory
+                  ? formatBytes(systemInfo.availableMemory)
+                  : undefined
+              }
+              isLoading={systemLoading}
+              unknownText={unknownText}
+            />
+            <InfoRow
+              label={t("about.usedMemory")}
+              value={
+                systemInfo?.usedMemory
+                  ? formatBytes(systemInfo.usedMemory)
+                  : undefined
+              }
+              isLoading={systemLoading}
+              unknownText={unknownText}
+            />
             {systemInfo && systemInfo.totalSwap > 0 && (
               <div className="space-y-1">
                 <InfoRow
@@ -343,17 +455,15 @@ export function SystemInfoCard({
           </div>
         </div>
 
-        {/* GPU Section - only shown if GPUs detected */}
         {systemInfo?.gpus && systemInfo.gpus.length > 0 && (
           <>
             <Separator />
             <div className="space-y-1">
-              <div className="flex items-center gap-1.5 mb-2">
-                <Gauge className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
-                <Badge variant="outline" className="text-[10px] uppercase tracking-wider font-medium">
-                  {t("about.gpuInfo")}
-                </Badge>
-              </div>
+              {renderSectionHeader(
+                <Gauge className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />,
+                t("about.gpuInfo"),
+                systemInfo.gpus.length,
+              )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
                 {systemInfo.gpus.map((gpu, idx) => (
                   <InfoRow
@@ -389,21 +499,19 @@ export function SystemInfoCard({
           </>
         )}
 
-        {/* Temperature Section - only shown if components detected */}
-        {systemInfo?.components && systemInfo.components.length > 0 && (
+        {componentItems.length > 0 && (
           <>
             <Separator />
             <div className="space-y-1">
-              <div className="flex items-center gap-1.5 mb-2">
-                <Thermometer className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
-                <Badge variant="outline" className="text-[10px] uppercase tracking-wider font-medium">
-                  {t("about.temperature")}
-                </Badge>
-              </div>
+              {renderSectionHeader(
+                <Thermometer className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />,
+                t("about.temperature"),
+                componentItems.length,
+              )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
-                {systemInfo.components.slice(0, 6).map((comp, idx) => (
+                {visibleComponents.map((comp, idx) => (
                   <InfoRow
-                    key={idx}
+                    key={`${comp.label}-${idx}`}
                     label={comp.label}
                     value={
                       comp.temperature != null
@@ -415,25 +523,28 @@ export function SystemInfoCard({
                   />
                 ))}
               </div>
+              {renderDisclosureButton(
+                componentItems.length,
+                showAllComponents ? componentItems.length : COMPONENTS_PREVIEW_COUNT,
+                showAllComponents,
+                () => setShowAllComponents((prev) => !prev),
+              )}
             </div>
           </>
         )}
 
-        {/* Battery Section - only shown if battery detected */}
         {systemInfo?.battery && (
           <>
             <Separator />
             <div className="space-y-1">
-              <div className="flex items-center gap-1.5 mb-2">
-                {systemInfo.battery.isCharging ? (
+              {renderSectionHeader(
+                systemInfo.battery.isCharging ? (
                   <BatteryCharging className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
                 ) : (
                   <Battery className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
-                )}
-                <Badge variant="outline" className="text-[10px] uppercase tracking-wider font-medium">
-                  {t("about.battery")}
-                </Badge>
-              </div>
+                ),
+                t("about.battery"),
+              )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
                 <div className="space-y-1">
                   <InfoRow
@@ -502,23 +613,33 @@ export function SystemInfoCard({
           </>
         )}
 
-        {/* Storage Section - only shown if disks detected */}
-        {systemInfo?.disks && systemInfo.disks.length > 0 && (
+        {diskItems.length > 0 && (
           <>
             <Separator />
             <div className="space-y-1">
-              <div className="flex items-center gap-1.5 mb-2">
-                <Database className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
-                <Badge variant="outline" className="text-[10px] uppercase tracking-wider font-medium">
-                  {t("about.storage")}
-                </Badge>
-              </div>
+              {renderSectionHeader(
+                <Database className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />,
+                t("about.storage"),
+                diskItems.length,
+              )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
-                {systemInfo.disks.slice(0, 4).map((disk, idx) => (
-                  <div key={idx} className="space-y-1">
+                {visibleDisks.map((disk, idx) => (
+                  <div key={`${disk.mountPoint || disk.name}-${idx}`} className="space-y-1">
                     <InfoRow
                       label={disk.mountPoint || disk.name}
                       value={`${disk.usedSpaceHuman} / ${disk.totalSpaceHuman} (${disk.diskType})`}
+                      isLoading={systemLoading}
+                      unknownText={unknownText}
+                    />
+                    <InfoRow
+                      label="Filesystem"
+                      value={disk.fileSystem}
+                      isLoading={systemLoading}
+                      unknownText={unknownText}
+                    />
+                    <InfoRow
+                      label="IO"
+                      value={`${disk.readBytesHuman} / ${disk.writtenBytesHuman}`}
                       isLoading={systemLoading}
                       unknownText={unknownText}
                     />
@@ -533,7 +654,7 @@ export function SystemInfoCard({
                                 ? "[&>[data-slot=progress-indicator]]:bg-yellow-500"
                                 : "[&>[data-slot=progress-indicator]]:bg-blue-500"
                           }`}
-                          aria-label={`${disk.mountPoint} ${Math.round(disk.usagePercent)}%`}
+                          aria-label={`${disk.mountPoint || disk.name} ${Math.round(disk.usagePercent)}%`}
                         />
                         <span className="text-[11px] text-muted-foreground w-8 text-right">
                           {Math.round(disk.usagePercent)}%
@@ -543,49 +664,70 @@ export function SystemInfoCard({
                   </div>
                 ))}
               </div>
+              {renderDisclosureButton(
+                diskItems.length,
+                showAllDisks ? diskItems.length : DISKS_PREVIEW_COUNT,
+                showAllDisks,
+                () => setShowAllDisks((prev) => !prev),
+              )}
             </div>
           </>
         )}
 
-        {/* Network Section - only shown if interfaces detected */}
-        {systemInfo?.networks && systemInfo.networks.length > 0 && (
+        {networkItems.length > 0 && (
           <>
             <Separator />
             <div className="space-y-1">
-              <div className="flex items-center gap-1.5 mb-2">
-                <Wifi className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
-                <Badge variant="outline" className="text-[10px] uppercase tracking-wider font-medium">
-                  {t("about.networkInfo")}
-                </Badge>
-              </div>
+              {renderSectionHeader(
+                <Wifi className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />,
+                t("about.networkInfo"),
+                networkItems.length,
+              )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
-                {systemInfo.networks
-                  .filter((n) => n.ipAddresses.length > 0 && n.macAddress !== "00:00:00:00:00:00")
-                  .slice(0, 4)
-                  .map((net, idx) => (
+                {visibleNetworks.map((net, idx) => (
+                  <div key={`${net.name}-${idx}`} className="space-y-1">
                     <InfoRow
-                      key={idx}
                       label={net.name}
-                      value={`${net.ipAddresses[0]}${net.mtu ? ` (MTU: ${net.mtu})` : ""}`}
+                      value={
+                        net.ipAddresses.length > 0
+                          ? `${net.ipAddresses[0]}${net.mtu ? ` (MTU: ${net.mtu})` : ""}`
+                          : t("about.noIpAddress")
+                      }
                       isLoading={systemLoading}
                       unknownText={unknownText}
                     />
-                  ))}
+                    <InfoRow
+                      label="Traffic"
+                      value={`${net.totalReceivedHuman} / ${net.totalTransmittedHuman}`}
+                      isLoading={systemLoading}
+                      unknownText={unknownText}
+                    />
+                    <InfoRow
+                      label="Errors"
+                      value={`${net.totalErrorsOnReceived}/${net.totalErrorsOnTransmitted}`}
+                      isLoading={systemLoading}
+                      unknownText={unknownText}
+                    />
+                  </div>
+                ))}
               </div>
+              {renderDisclosureButton(
+                networkItems.length,
+                showAllNetworks ? networkItems.length : NETWORKS_PREVIEW_COUNT,
+                showAllNetworks,
+                () => setShowAllNetworks((prev) => !prev),
+              )}
             </div>
           </>
         )}
 
         <Separator />
 
-        {/* Runtime Section */}
         <div className="space-y-1">
-          <div className="flex items-center gap-1.5 mb-2">
-            <HardDrive className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
-            <Badge variant="outline" className="text-[10px] uppercase tracking-wider font-medium">
-              {t("about.runtimeInfo")}
-            </Badge>
-          </div>
+          {renderSectionHeader(
+            <HardDrive className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />,
+            t("about.runtimeInfo"),
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
             <InfoRow
               label={t("about.appVersion")}

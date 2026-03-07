@@ -97,7 +97,8 @@ export type FormField =
   | FormDateTimeField
   | FormMultiSelectField
   | FormCheckboxField
-  | FormSliderField;
+  | FormSliderField
+  | FormArrayField;
 
 export interface FormInputField {
   type: 'input';
@@ -198,6 +199,17 @@ export interface FormSliderField {
   defaultValue?: number;
 }
 
+export interface FormArrayField {
+  type: 'array';
+  id: string;
+  label: string;
+  itemLabel?: string;
+  placeholder?: string;
+  defaultValues?: string[];
+  minItems?: number;
+  maxItems?: number;
+}
+
 export interface UiActionsBlock {
   type: 'actions';
   buttons: ActionButton[];
@@ -272,6 +284,65 @@ export interface UiResultBlock {
   status?: 'info' | 'success' | 'warning' | 'error';
 }
 
+export interface UiConditionalGroupBlock {
+  type: 'conditional-group';
+  when: {
+    path: string;
+    equals?: unknown;
+    notEquals?: unknown;
+    exists?: boolean;
+  };
+  children: UiBlock[];
+}
+
+export interface UiStepperBlock {
+  type: 'stepper';
+  id: string;
+  steps: {
+    id: string;
+    label: string;
+    children: UiBlock[];
+  }[];
+  defaultStepId?: string;
+}
+
+export interface UiLogStreamBlock {
+  type: 'log-stream';
+  entries: {
+    level?: 'debug' | 'info' | 'warning' | 'error';
+    message: string;
+    timestamp?: string;
+  }[];
+}
+
+export interface UiArtifactActionsBlock {
+  type: 'artifact-actions';
+  artifacts: {
+    id: string;
+    label: string;
+    href?: string;
+    content?: string;
+    action?: 'open' | 'copy';
+  }[];
+}
+
+export type UiLogStreamEntry = UiLogStreamBlock['entries'][number];
+export type UiArtifactAction = UiArtifactActionsBlock['artifacts'][number];
+
+export interface PluginUiOutputChannels {
+  structured?: UiBlock[];
+  stream?: UiLogStreamEntry[];
+  artifacts?: UiArtifactAction[];
+  summary?:
+    | string
+    | {
+      status?: 'info' | 'success' | 'warning' | 'error';
+      title?: string;
+      message: string;
+      details?: string;
+    };
+}
+
 // ============================================================================
 // Layout Block
 // ============================================================================
@@ -309,6 +380,10 @@ export type UiBlock =
   | UiDescriptionListBlock
   | UiStatCardsBlock
   | UiResultBlock
+  | UiConditionalGroupBlock
+  | UiStepperBlock
+  | UiLogStreamBlock
+  | UiArtifactActionsBlock
   | UiGroupBlock;
 
 // ============================================================================
@@ -316,8 +391,11 @@ export type UiBlock =
 // ============================================================================
 
 export interface PluginUiResponse {
-  ui: UiBlock[];
+  ui?: UiBlock[];
   state?: Record<string, unknown>;
+  outputChannels?: PluginUiOutputChannels;
+  stream?: UiLogStreamEntry[];
+  artifacts?: UiArtifactAction[];
 }
 
 export interface PluginUiAction {
@@ -325,6 +403,8 @@ export interface PluginUiAction {
   version?: 1 | 2;
   sourceType?: string;
   sourceId?: string;
+  correlationId?: string;
+  runtimeContext?: Record<string, unknown>;
   buttonId?: string;
   formId?: string;
   formData?: Record<string, unknown>;

@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SettingsSearch } from "./settings-search";
 import type { UseSettingsSearchReturn } from "@/hooks/use-settings-search";
+import { fireEvent } from "@testing-library/react";
 
 const mockT = (key: string, params?: Record<string, string | number>) => {
   const translations: Record<string, string> = {
@@ -199,6 +200,17 @@ describe("SettingsSearch", () => {
       "general.parallel_downloads",
       "parallel-downloads",
     );
+  });
+
+  it("uses externally provided input ref for '/' focus shortcut", () => {
+    const search = createMockSearch();
+    const externalRef = { current: null as HTMLInputElement | null };
+    render(<SettingsSearch search={search} t={mockT} inputRef={externalRef} />);
+
+    fireEvent.keyDown(document, { key: "/" });
+
+    expect(externalRef.current).toBeInstanceOf(HTMLInputElement);
+    expect(externalRef.current).toHaveFocus();
   });
 
   it("shows more results indicator when there are more than 8 results", () => {

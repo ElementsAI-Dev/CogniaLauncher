@@ -8,7 +8,7 @@ describe('constants', () => {
   });
 
   it('exports CACHE_CATEGORY_ORDER with expected categories', () => {
-    expect(CACHE_CATEGORY_ORDER).toEqual(['system', 'package_manager', 'devtools', 'terminal']);
+    expect(CACHE_CATEGORY_ORDER).toEqual(['system', 'package_manager', 'devtools', 'terminal', 'other']);
   });
 });
 

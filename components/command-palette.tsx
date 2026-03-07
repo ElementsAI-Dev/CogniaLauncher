@@ -8,6 +8,7 @@ import { useFeedbackStore } from "@/lib/stores/feedback";
 import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import { useToolbox } from "@/hooks/use-toolbox";
 import { isTauri } from "@/lib/tauri";
+import { getToolboxDetailPath } from "@/lib/toolbox-route";
 import {
   CommandDialog,
   CommandInput,
@@ -139,7 +140,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                   key={tool.id}
                   value={`${tool.name} ${tool.keywords.join(" ")}`}
                   onSelect={() => {
-                    router.push(`/toolbox/tool?id=${encodeURIComponent(tool.id)}`);
+                    router.push(getToolboxDetailPath(tool.id));
                     closePalette();
                   }}
                 >

@@ -1,0 +1,32 @@
+[plugin]
+id = "com.cognia.builtin.git-workspace-summary"
+name = "Git Workspace Summary"
+version = "0.1.0"
+description = "Summarize Git repository health with divergence, stash, conflict, rename, delete, and last-commit signals."
+authors = ["CogniaLauncher Team"]
+tool_contract_version = "1.0.0"
+compatible_cognia_versions = ">=0.1.0"
+
+[[tools]]
+id = "git-workspace-summary"
+name_en = "Git Workspace Summary"
+name_zh = "Git 工作区摘要"
+description_en = "Summarize repository health with divergence, stash, conflict, rename, and last-commit context."
+description_zh = "汇总仓库的同步差异、stash、冲突、重命名与最近提交等健康状态。"
+category = "developer"
+keywords = ["git", "repo", "status", "branch", "ahead", "behind", "dirty"]
+icon = "GitBranch"
+entry = "git_workspace_summary"
+
+[permissions]
+process_exec = true
+
+[locales.en]
+success = "Git workspace summary completed."
+invalidInput = "Input must be a path string or JSON object with repoPath."
+notRepo = "The provided path is not a Git repository."
+
+[locales.zh]
+success = "Git 工作区摘要完成。"
+invalidInput = "输入必须是路径字符串或包含 repoPath 的 JSON 对象。"
+notRepo = "提供的路径不是 Git 仓库。"

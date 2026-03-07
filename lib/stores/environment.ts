@@ -52,6 +52,48 @@ export interface EnvironmentSettings {
   autoSwitch: boolean;
 }
 
+export type EnvironmentWorkflowOrigin =
+  | 'dashboard'
+  | 'overview'
+  | 'detail'
+  | 'onboarding'
+  | 'direct';
+
+export type EnvironmentWorkflowActionKind =
+  | 'install'
+  | 'uninstall'
+  | 'setGlobal'
+  | 'setLocal'
+  | 'refresh'
+  | 'saveSettings';
+
+export type EnvironmentWorkflowActionStatus =
+  | 'running'
+  | 'success'
+  | 'error'
+  | 'blocked';
+
+export interface EnvironmentWorkflowContext {
+  envType: string;
+  origin: EnvironmentWorkflowOrigin;
+  returnHref?: string | null;
+  projectPath?: string | null;
+  providerId?: string | null;
+  updatedAt: number;
+}
+
+export interface EnvironmentWorkflowAction {
+  envType: string;
+  action: EnvironmentWorkflowActionKind;
+  status: EnvironmentWorkflowActionStatus;
+  version?: string | null;
+  providerId?: string | null;
+  projectPath?: string | null;
+  error?: string | null;
+  retryable?: boolean;
+  updatedAt: number;
+}
+
 // Filter types for environment list
 export type EnvironmentStatusFilter = 'all' | 'available' | 'unavailable';
 export type EnvironmentSortBy = 'name' | 'installed_count' | 'provider';
@@ -74,6 +116,11 @@ interface EnvironmentState {
   
   // Persisted settings per environment type
   envSettings: Record<string, EnvironmentSettings>;
+  selectedProviders: Record<string, string>;
+
+  // Workflow continuity state
+  workflowContext: EnvironmentWorkflowContext | null;
+  workflowAction: EnvironmentWorkflowAction | null;
   
   // Dialog states
   addDialogOpen: boolean;
@@ -111,6 +158,15 @@ interface EnvironmentState {
   setDetectionFiles: (envType: string, files: DetectionFileConfig[]) => void;
   toggleDetectionFile: (envType: string, fileName: string, enabled: boolean) => void;
   setAutoSwitch: (envType: string, enabled: boolean) => void;
+  setSelectedProvider: (envType: string, providerId: string) => void;
+  clearSelectedProvider: (envType: string) => void;
+  getSelectedProvider: (envType: string, fallbackProviderId?: string | null) => string;
+
+  // Workflow continuity actions
+  setWorkflowContext: (context: EnvironmentWorkflowContext | null) => void;
+  clearWorkflowContext: () => void;
+  setWorkflowAction: (action: EnvironmentWorkflowAction | null) => void;
+  clearWorkflowAction: () => void;
   
   // Installation state
   currentInstallation: { envType: string; version: string } | null;
@@ -216,6 +272,52 @@ function normalizeProviderAliases(providers: ProviderAlias[]): ProviderAlias[] {
   }));
 }
 
+function isProviderCompatible(
+  providerId: string,
+  logicalEnvType: string,
+  availableProviders: ProviderAlias[],
+): boolean {
+  const normalizedProviderId = normalizeEnvType(providerId);
+  return normalizeProviderAliases(availableProviders).some((provider) => (
+    provider.id === normalizedProviderId && provider.env_type === logicalEnvType
+  ));
+}
+
+function resolveSelectedProvider(
+  envType: string,
+  selectedProviders: Record<string, string>,
+  availableProviders: ProviderAlias[],
+  fallbackProviderId?: string | null,
+): string {
+  const logicalEnvType = resolveLogicalEnvSettingsType(envType, availableProviders);
+  const selectedProviderId = selectedProviders[logicalEnvType];
+
+  if (selectedProviderId && isProviderCompatible(selectedProviderId, logicalEnvType, availableProviders)) {
+    return normalizeEnvType(selectedProviderId);
+  }
+
+  if (fallbackProviderId && isProviderCompatible(fallbackProviderId, logicalEnvType, availableProviders)) {
+    return normalizeEnvType(fallbackProviderId);
+  }
+
+  const firstMatchingProvider = normalizeProviderAliases(availableProviders)
+    .find((provider) => provider.env_type === logicalEnvType);
+
+  return firstMatchingProvider?.id
+    ?? normalizeEnvType(fallbackProviderId || logicalEnvType);
+}
+
+function pruneSelectedProviders(
+  selectedProviders: Record<string, string>,
+  availableProviders: ProviderAlias[],
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(selectedProviders).filter(([logicalEnvType, providerId]) => (
+      isProviderCompatible(providerId, logicalEnvType, availableProviders)
+    )),
+  );
+}
+
 function resolveLogicalEnvSettingsType(
   envType: string,
   availableProviders: ProviderAlias[],
@@ -229,9 +331,9 @@ function resolveLogicalEnvSettingsType(
 // Helper to get default settings for an environment type
 function getDefaultEnvSettings(envType: string): EnvironmentSettings {
   const normalizedEnvType = PROVIDER_ENV_TYPE_MAP[normalizeEnvType(envType)] || normalizeEnvType(envType);
-  const detectionFiles = (DEFAULT_DETECTION_FILES[normalizedEnvType] || []).map((fileName, idx) => ({
+  const detectionFiles = (DEFAULT_DETECTION_FILES[normalizedEnvType] || []).map((fileName) => ({
     fileName,
-    enabled: idx < 2, // Enable first two by default
+    enabled: true,
   }));
   
   return {
@@ -351,6 +453,11 @@ export const useEnvironmentStore = create<EnvironmentState>()(
       sortBy: 'name' as EnvironmentSortBy,
       viewMode: 'grid' as EnvironmentViewMode,
 
+      // Workflow state
+      selectedProviders: {},
+      workflowContext: null,
+      workflowAction: null,
+
       // Update check state
       updateCheckResults: {},
       lastEnvUpdateCheck: null,
@@ -362,7 +469,10 @@ export const useEnvironmentStore = create<EnvironmentState>()(
       setAvailableVersions: (envType, versions) => set((state) => ({
         availableVersions: { ...state.availableVersions, [envType]: versions }
       })),
-      setAvailableProviders: (providers) => set({ availableProviders: providers }),
+      setAvailableProviders: (providers) => set((state) => ({
+        availableProviders: providers,
+        selectedProviders: pruneSelectedProviders(state.selectedProviders, providers),
+      })),
       setLoading: (loading) => set({ loading }),
       setError: (error) => set({ error }),
       
@@ -492,6 +602,40 @@ export const useEnvironmentStore = create<EnvironmentState>()(
           }),
         ),
       })),
+
+      setSelectedProvider: (envType, providerId) => set((state) => {
+        const logicalEnvType = resolveLogicalEnvSettingsType(envType, state.availableProviders);
+        return {
+          selectedProviders: {
+            ...state.selectedProviders,
+            [logicalEnvType]: normalizeEnvType(providerId),
+          },
+        };
+      }),
+
+      clearSelectedProvider: (envType) => set((state) => {
+        const logicalEnvType = resolveLogicalEnvSettingsType(envType, state.availableProviders);
+        const nextSelectedProviders = { ...state.selectedProviders };
+        delete nextSelectedProviders[logicalEnvType];
+        return {
+          selectedProviders: nextSelectedProviders,
+        };
+      }),
+
+      getSelectedProvider: (envType, fallbackProviderId) => {
+        const state = get();
+        return resolveSelectedProvider(
+          envType,
+          state.selectedProviders,
+          state.availableProviders,
+          fallbackProviderId,
+        );
+      },
+
+      setWorkflowContext: (workflowContext) => set({ workflowContext }),
+      clearWorkflowContext: () => set({ workflowContext: null }),
+      setWorkflowAction: (workflowAction) => set({ workflowAction }),
+      clearWorkflowAction: () => set({ workflowAction: null }),
       
       // Installation state
       setCurrentInstallation: (installation) => set({ currentInstallation: installation }),
@@ -579,6 +723,7 @@ export const useEnvironmentStore = create<EnvironmentState>()(
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         envSettings: state.envSettings,
+        selectedProviders: state.selectedProviders,
         viewMode: state.viewMode,
         updateCheckResults: state.updateCheckResults,
         lastEnvUpdateCheck: state.lastEnvUpdateCheck,

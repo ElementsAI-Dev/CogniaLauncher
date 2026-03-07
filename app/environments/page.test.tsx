@@ -19,6 +19,21 @@ const mockLoadEnvSettings = jest.fn().mockResolvedValue({
 const mockSaveEnvSettings = jest.fn().mockResolvedValue(undefined);
 const mockIsTauri = jest.fn(() => true);
 const mockGetProjectDetectedForEnv = jest.fn(() => null);
+const mockGetSelectedProvider = jest.fn((envType: string, fallbackProviderId?: string | null) =>
+  fallbackProviderId ?? envType,
+);
+const mockSetSelectedProvider = jest.fn();
+const mockSetWorkflowContext = jest.fn();
+const mockSetWorkflowAction = jest.fn();
+const mockEnvironmentStoreState = {
+  workflowContext: null as
+    | {
+        envType: string;
+        origin?: string;
+        returnHref?: string | null;
+      }
+    | null,
+};
 
 jest.mock('@/hooks/use-environments', () => ({
   useEnvironments: () => ({
@@ -98,11 +113,16 @@ jest.mock('@/lib/stores/environment', () => ({
       setViewMode: jest.fn(),
       clearFilters: jest.fn(),
       updateCheckResults: [],
+      getSelectedProvider: mockGetSelectedProvider,
+      setSelectedProvider: mockSetSelectedProvider,
+      setWorkflowContext: mockSetWorkflowContext,
+      setWorkflowAction: mockSetWorkflowAction,
     }),
     {
       getState: () => ({
         setEnvSettings: jest.fn(),
         getEnvSettings: jest.fn().mockReturnValue({}),
+        workflowContext: mockEnvironmentStoreState.workflowContext,
       }),
     }
   ),
@@ -211,6 +231,7 @@ describe('EnvironmentsPage', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockIsTauri.mockReturnValue(true);
+    mockEnvironmentStoreState.workflowContext = null;
   });
 
   it('renders page title', () => {
@@ -249,7 +270,7 @@ describe('EnvironmentsPage', () => {
         autoSwitch: false,
       }),
     );
-    expect(mockDetectVersions).toHaveBeenLastCalledWith('/test/project');
+    expect(mockDetectVersions).toHaveBeenLastCalledWith('/test/project', { force: true });
   });
 
   it('renders environment cards', () => {

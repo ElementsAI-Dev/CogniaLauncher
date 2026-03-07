@@ -79,7 +79,7 @@ describe("ToolboxFavoritesWidget", () => {
 
     render(<ToolboxFavoritesWidget />);
     fireEvent.click(screen.getByText("Tool One"));
-    expect(mockPush).toHaveBeenCalledWith("/toolbox/tool?id=t1");
+    expect(mockPush).toHaveBeenCalledWith("/toolbox/t1");
   });
 
   it("renders recent tools section with label", () => {
@@ -97,7 +97,7 @@ describe("ToolboxFavoritesWidget", () => {
 
     render(<ToolboxFavoritesWidget />);
     fireEvent.click(screen.getByText("Recent Tool"));
-    expect(mockPush).toHaveBeenCalledWith("/toolbox/tool?id=r1");
+    expect(mockPush).toHaveBeenCalledWith("/toolbox/r1");
   });
 
   it("limits favorites to 6 and recent tools to 4", () => {

@@ -19,6 +19,7 @@ jest.mock("@/components/providers/locale-provider", () => ({
         "dashboard.quickSearch.noResults": "No results found",
         "dashboard.quickSearch.environments": "Environments",
         "dashboard.quickSearch.packages": "Packages",
+        "dashboard.quickSearch.tools": "Tools",
         "dashboard.quickSearch.actions": "Quick Actions",
         "dashboard.quickSearch.recentSearches": "Recent Searches",
         "dashboard.quickSearch.clearRecent": "Clear recent",
@@ -30,6 +31,19 @@ jest.mock("@/components/providers/locale-provider", () => ({
       };
       return translations[key] || key;
     },
+  }),
+}));
+
+let mockAllTools: Array<{
+  id: string;
+  name: string;
+  description: string;
+  keywords: string[];
+}> = [];
+
+jest.mock("@/hooks/use-toolbox", () => ({
+  useToolbox: () => ({
+    allTools: mockAllTools,
   }),
 }));
 
@@ -109,6 +123,7 @@ describe("QuickSearch", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     localStorage.clear();
+    mockAllTools = [];
   });
 
   it("renders search input with placeholder", () => {
@@ -347,6 +362,37 @@ describe("QuickSearch", () => {
       />,
     );
     expect(container.firstChild).toHaveClass("custom-search");
+  });
+
+  it("navigates tool results to canonical toolbox route", async () => {
+    mockAllTools = [
+      {
+        id: "builtin:json-formatter",
+        name: "JSON Formatter",
+        description: "Format JSON",
+        keywords: ["json"],
+      },
+    ];
+
+    render(
+      <QuickSearch environments={mockEnvironments} packages={mockPackages} />,
+    );
+
+    const input = screen.getByPlaceholderText(
+      "Search environments, packages...",
+    );
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "json" } });
+
+    await waitFor(() => {
+      expect(screen.getByText("JSON Formatter")).toBeInTheDocument();
+    });
+
+    const resultText = screen.getByText("JSON Formatter");
+    const resultItem = resultText.closest("[cmdk-item]") ?? resultText;
+    fireEvent.click(resultItem);
+
+    expect(mockPush).toHaveBeenCalledWith("/toolbox/builtin%3Ajson-formatter");
   });
 
 });

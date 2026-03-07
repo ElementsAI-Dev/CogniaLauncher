@@ -9,6 +9,16 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   Table,
   TableBody,
   TableCell,
@@ -30,7 +40,6 @@ import {
 } from 'lucide-react';
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import { toast } from 'sonner';
-import { isTauri, wslListPortForwards, wslAddPortForward, wslRemovePortForward } from '@/lib/tauri';
 import { parseListeningPorts, parseInterfaces } from '@/lib/wsl';
 import type { NetworkInfo, ListeningPort, NetworkInterface, WslDistroNetworkProps } from '@/types/wsl';
 
@@ -41,7 +50,16 @@ interface PortForwardRule {
   connectPort: string;
 }
 
-export function WslDistroNetwork({ distroName, isRunning, getIpAddress, onExec, t }: WslDistroNetworkProps) {
+export function WslDistroNetwork({
+  distroName,
+  isRunning,
+  getIpAddress,
+  onExec,
+  listPortForwards,
+  addPortForward,
+  removePortForward,
+  t,
+}: WslDistroNetworkProps) {
   const [info, setInfo] = useState<NetworkInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -50,6 +68,11 @@ export function WslDistroNetwork({ distroName, isRunning, getIpAddress, onExec, 
   const [pfConnectPort, setPfConnectPort] = useState('');
   const [pfConnectAddr, setPfConnectAddr] = useState('');
   const [pfAdding, setPfAdding] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<
+    | { type: 'add'; rule: { listenPort: number; connectPort: number; connectAddress: string } }
+    | { type: 'remove'; listenPort: number }
+    | null
+  >(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -108,45 +131,73 @@ export function WslDistroNetwork({ distroName, isRunning, getIpAddress, onExec, 
   }, [distroName, getIpAddress, onExec]);
 
   const refreshPortForwards = useCallback(async () => {
-    if (!isTauri()) return;
     try {
-      const rules = await wslListPortForwards();
+      const rules = await listPortForwards();
       setPortForwards(rules);
     } catch {
       setPortForwards([]);
     }
-  }, []);
+  }, [listPortForwards]);
 
-  const handleAddPortForward = useCallback(async () => {
-    const lp = parseInt(pfListenPort, 10);
-    const cp = parseInt(pfConnectPort, 10);
-    if (!lp || !cp || !pfConnectAddr.trim()) return;
+  const showMutationError = useCallback((err: unknown) => {
+    toast.error(t('wsl.detail.portForward.actionFailed').replace('{error}', String(err)));
+  }, [t]);
+
+  const performAddPortForward = useCallback(async (rule: {
+    listenPort: number;
+    connectPort: number;
+    connectAddress: string;
+  }) => {
     setPfAdding(true);
     try {
-      await wslAddPortForward(lp, cp, pfConnectAddr.trim());
+      await addPortForward(rule.listenPort, rule.connectPort, rule.connectAddress);
       toast.success(t('wsl.detail.portForward.added'));
       setPfListenPort('');
       setPfConnectPort('');
       setPfConnectAddr('');
       await refreshPortForwards();
     } catch (err) {
-      toast.error(String(err));
+      showMutationError(err);
     } finally {
       setPfAdding(false);
     }
-  }, [pfListenPort, pfConnectPort, pfConnectAddr, refreshPortForwards, t]);
+  }, [addPortForward, refreshPortForwards, showMutationError, t]);
 
-  const handleRemovePortForward = useCallback(async (listenPort: string) => {
-    const lp = parseInt(listenPort, 10);
-    if (!lp) return;
+  const performRemovePortForward = useCallback(async (listenPort: number) => {
     try {
-      await wslRemovePortForward(lp);
+      await removePortForward(listenPort);
       toast.success(t('wsl.detail.portForward.removed'));
       await refreshPortForwards();
     } catch (err) {
-      toast.error(String(err));
+      showMutationError(err);
     }
-  }, [refreshPortForwards, t]);
+  }, [refreshPortForwards, removePortForward, showMutationError, t]);
+
+  const handleAddPortForward = useCallback(() => {
+    const lp = parseInt(pfListenPort, 10);
+    const cp = parseInt(pfConnectPort, 10);
+    if (!lp || !cp || !pfConnectAddr.trim()) return;
+    setConfirmAction({
+      type: 'add',
+      rule: { listenPort: lp, connectPort: cp, connectAddress: pfConnectAddr.trim() },
+    });
+  }, [pfConnectAddr, pfConnectPort, pfListenPort]);
+
+  const handleRemovePortForward = useCallback((listenPort: string) => {
+    const lp = parseInt(listenPort, 10);
+    if (!lp) return;
+    setConfirmAction({ type: 'remove', listenPort: lp });
+  }, []);
+
+  const confirmAndExecute = useCallback(async () => {
+    if (!confirmAction) return;
+    if (confirmAction.type === 'add') {
+      await performAddPortForward(confirmAction.rule);
+    } else {
+      await performRemovePortForward(confirmAction.listenPort);
+    }
+    setConfirmAction(null);
+  }, [confirmAction, performAddPortForward, performRemovePortForward]);
 
   // Auto-load if running
   useEffect(() => {
@@ -402,6 +453,7 @@ export function WslDistroNetwork({ distroName, isRunning, getIpAddress, onExec, 
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-xs text-muted-foreground">{t('wsl.detail.portForward.desc')}</p>
+          <p className="text-xs text-muted-foreground">{t('wsl.detail.portForward.riskHint')}</p>
 
           {portForwards.length > 0 && (
             <ScrollArea className="max-h-[200px]">
@@ -425,6 +477,7 @@ export function WslDistroNetwork({ distroName, isRunning, getIpAddress, onExec, 
                           variant="ghost"
                           size="icon"
                           className="h-6 w-6"
+                          aria-label={`remove-port-forward-${rule.listenPort}`}
                           onClick={() => handleRemovePortForward(rule.listenPort)}
                         >
                           <Trash2 className="h-3 w-3 text-destructive" />
@@ -471,6 +524,7 @@ export function WslDistroNetwork({ distroName, isRunning, getIpAddress, onExec, 
               variant="outline"
               size="sm"
               className="h-7 gap-1"
+              aria-label="add-port-forward-rule"
               disabled={pfAdding || !pfListenPort || !pfConnectPort || !pfConnectAddr}
               onClick={handleAddPortForward}
             >
@@ -497,6 +551,38 @@ export function WslDistroNetwork({ distroName, isRunning, getIpAddress, onExec, 
           </div>
         </CardContent>
       </Card>
+
+      <AlertDialog open={!!confirmAction} onOpenChange={(open) => !open && setConfirmAction(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {confirmAction?.type === 'add'
+                ? t('wsl.detail.portForward.confirmAddTitle')
+                : t('wsl.detail.portForward.confirmRemoveTitle')}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmAction?.type === 'add'
+                ? t('wsl.detail.portForward.confirmAddDesc')
+                    .replace('{listenPort}', String(confirmAction.rule.listenPort))
+                    .replace('{connectAddress}', confirmAction.rule.connectAddress)
+                    .replace('{connectPort}', String(confirmAction.rule.connectPort))
+                : t('wsl.detail.portForward.confirmRemoveDesc')
+                    .replace('{listenPort}', String(confirmAction?.listenPort ?? ''))}
+              <br />
+              <span className="text-muted-foreground">{t('wsl.detail.portForward.riskHint')}</span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmAndExecute}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {t('common.confirm')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

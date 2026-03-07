@@ -291,7 +291,8 @@ impl ZigProvider {
         let re = regex::Regex::new(r#"\.minimum_zig_version\s*=\s*"([^"]+)""#).ok()?;
         re.captures(content)
             .and_then(|caps| caps.get(1))
-            .map(|m| m.as_str().to_string())
+            .map(|m| m.as_str().trim().to_string())
+            .filter(|version| !version.is_empty())
     }
 
     /// Extract Zig version from a `mise.toml` / `.mise.toml` file.
@@ -761,84 +762,27 @@ impl EnvironmentProvider for ZigProvider {
     }
 
     async fn detect_version(&self, start_path: &Path) -> CogniaResult<Option<VersionDetection>> {
-        let version_files = [".zig-version"];
-
-        let mut current = start_path.to_path_buf();
-        loop {
-            // 1. Check version files
-            for file_name in &version_files {
-                let version_file = current.join(file_name);
-                if version_file.exists() {
-                    if let Ok(content) = crate::platform::fs::read_file_string(&version_file).await
-                    {
-                        let version = content.trim().to_string();
-                        if !version.is_empty() {
-                            return Ok(Some(VersionDetection {
-                                version,
-                                source: VersionSource::LocalFile,
-                                source_path: Some(version_file),
-                            }));
-                        }
-                    }
-                }
-            }
-
-            // 2. Check .tool-versions
-            let tool_versions = current.join(".tool-versions");
-            if tool_versions.exists() {
-                if let Ok(content) = crate::platform::fs::read_file_string(&tool_versions).await {
-                    for line in content.lines() {
-                        let line = line.trim();
-                        if line.starts_with("zig ") {
-                            let version = line.strip_prefix("zig ").unwrap_or("").trim();
-                            if !version.is_empty() {
-                                return Ok(Some(VersionDetection {
-                                    version: version.to_string(),
-                                    source: VersionSource::LocalFile,
-                                    source_path: Some(tool_versions),
-                                }));
-                            }
-                        }
-                    }
-                }
-            }
-
-            // 3. Check mise.toml / .mise.toml
-            for mise_name in &["mise.toml", ".mise.toml"] {
-                let mise_file = current.join(mise_name);
-                if mise_file.exists() {
-                    if let Ok(content) = crate::platform::fs::read_file_string(&mise_file).await {
-                        if let Some(version) = Self::parse_mise_toml_zig_version(&content) {
-                            return Ok(Some(VersionDetection {
-                                version,
-                                source: VersionSource::LocalFile,
-                                source_path: Some(mise_file),
-                            }));
-                        }
-                    }
-                }
-            }
-
-            // 4. Check build.zig.zon for minimum_zig_version
-            let build_zig_zon = current.join("build.zig.zon");
-            if build_zig_zon.exists() {
-                if let Ok(content) = crate::platform::fs::read_file_string(&build_zig_zon).await {
-                    if let Some(version) = Self::parse_build_zig_zon_version(&content) {
-                        return Ok(Some(VersionDetection {
-                            version,
-                            source: VersionSource::Manifest,
-                            source_path: Some(build_zig_zon),
-                        }));
-                    }
-                }
-            }
-
-            if !current.pop() {
-                break;
-            }
+        let sources = crate::core::project_env_detect::default_detection_sources("zig")
+            .iter()
+            .map(|source| (*source).to_string())
+            .collect::<Vec<_>>();
+        if let Some(detected) =
+            crate::core::project_env_detect::detect_env_version("zig", start_path, &sources)
+                .await?
+        {
+            let source = match detected.source_type.as_str() {
+                "manifest" => VersionSource::Manifest,
+                "global" => VersionSource::GlobalFile,
+                _ => VersionSource::LocalFile,
+            };
+            return Ok(Some(VersionDetection {
+                version: detected.version,
+                source,
+                source_path: detected.source_path,
+            }));
         }
 
-        // 5. Fall back to current version
+        // Fall back to the currently active Zig when no project-local pin is found.
         if let Some(version) = self.get_current_version().await? {
             return Ok(Some(VersionDetection {
                 version,
@@ -1139,6 +1083,14 @@ mod tests {
             ZigProvider::parse_build_zig_zon_version(content),
             Some("0.12.0".to_string())
         );
+    }
+
+    #[test]
+    fn test_parse_build_zig_zon_ignores_blank_version() {
+        let content = r#".{
+    .minimum_zig_version = "   ",
+}"#;
+        assert_eq!(ZigProvider::parse_build_zig_zon_version(content), None);
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -1850,6 +1802,82 @@ mod tests {
             det.version, "0.12.0",
             "Should fall through to .tool-versions"
         );
+    }
+
+    #[tokio::test]
+    async fn test_detect_version_from_dotted_mise_reports_source_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(tmp.path().join(".mise.toml"), "[tools]\nzig = \"0.15.0\"\n").unwrap();
+
+        let provider = provider_with_dir(tmp.path());
+        let detection = provider.detect_version(tmp.path()).await.unwrap().unwrap();
+        assert_eq!(detection.version, "0.15.0");
+        assert!(matches!(detection.source, VersionSource::LocalFile));
+        assert_eq!(
+            detection
+                .source_path
+                .as_ref()
+                .and_then(|p| p.file_name())
+                .and_then(|n| n.to_str()),
+            Some(".mise.toml")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_detect_version_falls_through_invalid_higher_priority_sources() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(tmp.path().join(".zig-version"), "   \n").unwrap();
+        fs::write(tmp.path().join(".tool-versions"), "zig\n").unwrap();
+        fs::write(tmp.path().join(".mise.toml"), "[tools]\nzig = \"0.16.0\"\n").unwrap();
+
+        let provider = provider_with_dir(tmp.path());
+        let detection = provider.detect_version(tmp.path()).await.unwrap().unwrap();
+        assert_eq!(detection.version, "0.16.0");
+        assert!(matches!(detection.source, VersionSource::LocalFile));
+        assert_eq!(
+            detection
+                .source_path
+                .as_ref()
+                .and_then(|p| p.file_name())
+                .and_then(|n| n.to_str()),
+            Some(".mise.toml")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_detect_version_parity_with_shared_detection_pipeline() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(tmp.path().join(".tool-versions"), "zig 0.13.1\n").unwrap();
+        fs::write(tmp.path().join(".mise.toml"), "[tools]\nzig = \"0.12.0\"\n").unwrap();
+        fs::write(
+            tmp.path().join("build.zig.zon"),
+            ".{ .minimum_zig_version = \"0.11.0\" }",
+        )
+        .unwrap();
+
+        let provider = provider_with_dir(tmp.path());
+        let provider_detection = provider.detect_version(tmp.path()).await.unwrap().unwrap();
+
+        let sources = crate::core::project_env_detect::default_detection_sources("zig")
+            .iter()
+            .map(|source| (*source).to_string())
+            .collect::<Vec<_>>();
+        let shared_detection =
+            crate::core::project_env_detect::detect_env_version("zig", tmp.path(), &sources)
+                .await
+                .unwrap()
+                .unwrap();
+
+        assert_eq!(provider_detection.version, shared_detection.version);
+        assert_eq!(provider_detection.source_path, shared_detection.source_path);
+        let expected_shared_source_type = match provider_detection.source {
+            VersionSource::Manifest => "manifest",
+            VersionSource::LocalFile => "local",
+            VersionSource::GlobalFile | VersionSource::SystemDefault | VersionSource::SystemExecutable => {
+                "global"
+            }
+        };
+        assert_eq!(shared_detection.source_type, expected_shared_source_type);
     }
 
     // ════════════════════════════════════════════════════════════════

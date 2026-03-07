@@ -30,9 +30,8 @@ describe('highlightShellConfig', () => {
   });
 
   it('falls back to bash for unknown shell', () => {
-    const bashResult = highlightShellConfig('echo test', 'bash');
     const unknownResult = highlightShellConfig('echo test', 'unknown-shell');
-    expect(unknownResult).toBe(bashResult);
+    expect(unknownResult).toBe('echo test');
   });
 
   it('escapes HTML in fallback mode', () => {

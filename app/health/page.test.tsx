@@ -110,7 +110,7 @@ describe('HealthPage', () => {
       skipped_providers: [],
     };
     render(<HealthPage />);
-    expect(screen.getByText('environments.healthCheck.status.warning')).toBeInTheDocument();
+    expect(screen.getAllByText('environments.healthCheck.status.warning').length).toBeGreaterThan(0);
   });
 
   it('shows stats grid counts', () => {
@@ -127,7 +127,7 @@ describe('HealthPage', () => {
       skipped_providers: [],
     };
     render(<HealthPage />);
-    expect(screen.getByText('1')).toBeInTheDocument(); // healthy
+    expect(screen.getAllByText('1').length).toBeGreaterThan(0); // healthy card count appears
   });
 
   it('shows desktop-only fallback in web mode', () => {

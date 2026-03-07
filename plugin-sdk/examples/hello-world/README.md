@@ -11,6 +11,22 @@ A minimal example plugin demonstrating the Cognia Plugin SDK.
   - Structured output blocks (`result`, `stat-cards`, `description-list`, `json-view`)
   - Action payload metadata handling (`version`, `sourceType`, `sourceId`, `formDataTypes`)
 
+## Unified Contract Notes
+
+For strict-mode-ready plugins, keep the manifest contract metadata and capability declarations aligned:
+
+```toml
+[plugin]
+tool_contract_version = "1.0.0"
+compatible_cognia_versions = ">=0.1.0"
+
+[[tools]]
+ui_mode = "declarative"
+capabilities = ["environment.read", "process.exec"]
+```
+
+When scaffolded with unified templates, the project also includes schema + guidance files under `contracts/`, `schemas/`, and `docs/validation-guide.md`.
+
 ## Build
 
 ```bash

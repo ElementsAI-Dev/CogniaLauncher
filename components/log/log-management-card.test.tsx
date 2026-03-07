@@ -18,6 +18,11 @@ jest.mock("@/components/providers/locale-provider", () => ({
         "logs.autoCleanup": "Auto Cleanup",
         "logs.autoCleanupDescription": "Clean old logs on startup",
         "logs.manualCleanup": "Run Cleanup Now",
+        "logs.manualCleanupConfirm": "Confirm Cleanup",
+        "logs.previewCleanup": "Preview Cleanup",
+        "logs.previewReady": "Will clean {count} files and free {size}",
+        "logs.previewSummary": "Cleanup preview",
+        "logs.previewProtected": "{count} current-session file(s) protected",
         "logs.cleanupSuccess": "Cleaned up {count} files, freed {size}",
         "logs.cleanupNone": "No log files need cleanup",
         "logs.deleteFailed": "Failed to delete",
@@ -60,7 +65,9 @@ describe("LogManagementCard", () => {
   const defaultProps = {
     totalSize: 5120,
     fileCount: 3,
-    onCleanup: jest.fn().mockResolvedValue({ deletedCount: 0, freedBytes: 0 }),
+    previewResult: null,
+    onPreviewCleanup: jest.fn().mockResolvedValue({ ok: true, data: { deletedCount: 1, freedBytes: 512, protectedCount: 1, status: 'success', warnings: [] } }),
+    onCleanup: jest.fn().mockResolvedValue({ ok: true, data: { deletedCount: 0, freedBytes: 0, status: 'success', warnings: [] } }),
     onRefresh: jest.fn(),
   };
 
@@ -100,29 +107,50 @@ describe("LogManagementCard", () => {
     expect(screen.getByText("Auto Cleanup")).toBeInTheDocument();
   });
 
-  it("renders manual cleanup button", () => {
+  it("renders preview and confirm cleanup buttons", () => {
     render(<LogManagementCard {...defaultProps} />);
-    expect(screen.getByText("Run Cleanup Now")).toBeInTheDocument();
+    expect(screen.getByText("Preview Cleanup")).toBeInTheDocument();
+    expect(screen.getByText("Confirm Cleanup")).toBeInTheDocument();
   });
 
   it("disables cleanup button when only 1 or 0 files", () => {
     render(<LogManagementCard {...defaultProps} fileCount={1} />);
-    const button = screen.getByText("Run Cleanup Now").closest("button");
-    expect(button).toBeDisabled();
+    const previewButton = screen.getByText("Preview Cleanup").closest("button");
+    const confirmButton = screen.getByText("Confirm Cleanup").closest("button");
+    expect(previewButton).toBeDisabled();
+    expect(confirmButton).toBeDisabled();
   });
 
-  it("enables cleanup button when more than 1 file", () => {
+  it("enables preview button when more than 1 file", () => {
     render(<LogManagementCard {...defaultProps} fileCount={3} />);
-    const button = screen.getByText("Run Cleanup Now").closest("button");
-    expect(button).not.toBeDisabled();
+    const previewButton = screen.getByText("Preview Cleanup").closest("button");
+    expect(previewButton).not.toBeDisabled();
   });
 
-  it("calls onCleanup when cleanup button clicked", async () => {
+  it("calls onPreviewCleanup when preview button clicked", async () => {
     const user = userEvent.setup();
-    const onCleanup = jest.fn().mockResolvedValue({ deletedCount: 2, freedBytes: 1024 });
-    render(<LogManagementCard {...defaultProps} onCleanup={onCleanup} />);
+    const onPreviewCleanup = jest.fn().mockResolvedValue({ ok: true, data: { deletedCount: 2, freedBytes: 1024, protectedCount: 1, status: 'success', warnings: [] } });
+    render(<LogManagementCard {...defaultProps} onPreviewCleanup={onPreviewCleanup} />);
 
-    await user.click(screen.getByText("Run Cleanup Now"));
+    await user.click(screen.getByText("Preview Cleanup"));
+
+    await waitFor(() => {
+      expect(onPreviewCleanup).toHaveBeenCalled();
+    });
+  });
+
+  it("calls onCleanup when confirm button clicked and preview exists", async () => {
+    const user = userEvent.setup();
+    const onCleanup = jest.fn().mockResolvedValue({ ok: true, data: { deletedCount: 2, freedBytes: 1024, status: 'success', warnings: [] } });
+    render(
+      <LogManagementCard
+        {...defaultProps}
+        previewResult={{ deletedCount: 2, freedBytes: 1024, protectedCount: 1, status: 'success', warnings: [] }}
+        onCleanup={onCleanup}
+      />,
+    );
+
+    await user.click(screen.getByText("Confirm Cleanup"));
 
     await waitFor(() => {
       expect(onCleanup).toHaveBeenCalled();

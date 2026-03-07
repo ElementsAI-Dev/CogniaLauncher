@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -34,7 +34,8 @@ import {
 } from "lucide-react";
 import { useLocale } from "@/components/providers/locale-provider";
 import { parsePackageSpec } from "@/lib/packages";
-import type { BatchResult } from "@/lib/tauri";
+import * as tauri from "@/lib/tauri";
+import type { BatchProgress, BatchResult } from "@/lib/tauri";
 import type { BatchOperationsProps, OperationType } from "@/types/packages";
 
 export function BatchOperations({
@@ -50,12 +51,84 @@ export function BatchOperations({
   const [result, setResult] = useState<BatchResult | null>(null);
   const [dryRun, setDryRun] = useState(false);
   const [force, setForce] = useState(false);
+  const [parallel, setParallel] = useState(true);
+  const [globalInstall, setGlobalInstall] = useState(true);
   const [showDetails, setShowDetails] = useState(false);
+  const [batchProgress, setBatchProgress] = useState<BatchProgress | null>(null);
   const { t } = useLocale();
+
+  useEffect(() => {
+    if (!isDialogOpen) return undefined;
+
+    let unlisten: (() => void) | undefined;
+    tauri
+      .listenBatchProgress((progress) => {
+        setBatchProgress(progress);
+      })
+      .then((dispose) => {
+        unlisten = dispose;
+      })
+      .catch(() => {
+        // Ignore listener registration issues and keep fallback loading UI.
+      });
+
+    return () => {
+      unlisten?.();
+    };
+  }, [isDialogOpen]);
+
+  const processingProgress = useMemo(() => {
+    if (!batchProgress) return undefined;
+    switch (batchProgress.type) {
+      case "starting":
+        return 0;
+      case "resolving":
+      case "installing":
+      case "item_completed":
+        return batchProgress.total > 0
+          ? (batchProgress.current / batchProgress.total) * 100
+          : 0;
+      case "downloading": {
+        const downloadPercent =
+          batchProgress.progress <= 1
+            ? batchProgress.progress * 100
+            : batchProgress.progress;
+        const total = Math.max(batchProgress.total, 1);
+        const base = ((batchProgress.current - 1) / total) * 100;
+        const segment = 100 / total;
+        return Math.min(100, Math.max(0, base + (segment * downloadPercent) / 100));
+      }
+      case "completed":
+        return 100;
+      default:
+        return undefined;
+    }
+  }, [batchProgress]);
+
+  const processingLabel = useMemo(() => {
+    if (!batchProgress) return t("packages.processingDesc");
+    switch (batchProgress.type) {
+      case "starting":
+        return t("packages.processing");
+      case "resolving":
+        return `${t("packages.processing")} · ${batchProgress.package}`;
+      case "downloading":
+        return `${t("packages.processing")} · ${batchProgress.package}`;
+      case "installing":
+        return `${t("packages.processing")} · ${batchProgress.package}`;
+      case "item_completed":
+        return `${t("packages.processing")} · ${batchProgress.package}`;
+      case "completed":
+        return t("packages.done");
+      default:
+        return t("packages.processingDesc");
+    }
+  }, [batchProgress, t]);
 
   const handleOperation = useCallback(async () => {
     setIsProcessing(true);
     setResult(null);
+    setBatchProgress(null);
 
     try {
       let batchResult: BatchResult;
@@ -65,6 +138,8 @@ export function BatchOperations({
           batchResult = await onBatchInstall(selectedPackages, {
             dryRun,
             force,
+            parallel,
+            global: globalInstall,
           });
           break;
         case "uninstall":
@@ -96,6 +171,8 @@ export function BatchOperations({
     selectedPackages,
     dryRun,
     force,
+    parallel,
+    globalInstall,
     onBatchInstall,
     onBatchUninstall,
     onBatchUpdate,
@@ -107,7 +184,10 @@ export function BatchOperations({
     setResult(null);
     setDryRun(false);
     setForce(false);
+    setParallel(true);
+    setGlobalInstall(true);
     setShowDetails(false);
+    setBatchProgress(null);
     setIsDialogOpen(true);
   }, []);
 
@@ -264,6 +344,34 @@ export function BatchOperations({
                     {t("packages.forceOption")}
                   </Label>
                 </div>
+                {operationType === "install" && (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id="parallel"
+                        checked={parallel}
+                        onCheckedChange={(checked) =>
+                          setParallel(checked === true)
+                        }
+                      />
+                      <Label htmlFor="parallel">
+                        {t("packages.parallelOption")}
+                      </Label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id="globalInstall"
+                        checked={globalInstall}
+                        onCheckedChange={(checked) =>
+                          setGlobalInstall(checked === true)
+                        }
+                      />
+                      <Label htmlFor="globalInstall">
+                        {t("packages.globalInstallOption")}
+                      </Label>
+                    </div>
+                  </>
+                )}
               </div>
             )}
 
@@ -277,10 +385,13 @@ export function BatchOperations({
                       {t("packages.processing")}
                     </div>
                     <div className="text-sm text-muted-foreground">
-                      {t("packages.processingDesc")}
+                      {processingLabel}
                     </div>
                   </div>
-                  <Progress className="w-full max-w-xs animate-pulse" />
+                  <Progress
+                    value={processingProgress}
+                    className="w-full max-w-xs"
+                  />
                 </div>
               </div>
             )}

@@ -5,7 +5,8 @@ use crate::cache::download_history::{
 };
 use crate::config::Settings;
 use crate::download::{
-    DownloadConfig, DownloadEvent, DownloadManager, DownloadManagerConfig, DownloadTask,
+    DownloadConfig, DownloadEvent, DownloadManager, DownloadManagerConfig, DownloadState,
+    DownloadTask,
 };
 use crate::platform::disk::{self, format_size, DiskSpace};
 use serde::{Deserialize, Serialize};
@@ -42,6 +43,14 @@ pub struct DownloadTaskInfo {
     pub metadata: std::collections::HashMap<String, String>,
     pub server_filename: Option<String>,
     pub tags: Vec<String>,
+    pub speed_limit: u64,
+    pub auto_extract: bool,
+    pub extract_dest: Option<String>,
+    pub segments: u8,
+    pub post_action: String,
+    pub delete_after_extract: bool,
+    pub auto_rename: bool,
+    pub recoverable: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -89,6 +98,26 @@ impl From<&DownloadTask> for DownloadTaskInfo {
             metadata: task.metadata.clone(),
             server_filename: task.server_filename.clone(),
             tags: task.tags.clone(),
+            speed_limit: task.config.speed_limit,
+            auto_extract: task.config.auto_extract,
+            extract_dest: task
+                .config
+                .extract_dest
+                .as_ref()
+                .map(|path| path.display().to_string()),
+            segments: task.config.segments,
+            post_action: match task.config.post_action {
+                crate::download::task::PostAction::None => "none",
+                crate::download::task::PostAction::OpenFile => "open_file",
+                crate::download::task::PostAction::RevealInFolder => "reveal_in_folder",
+            }
+            .to_string(),
+            delete_after_extract: task.config.delete_after_extract,
+            auto_rename: task.config.auto_rename,
+            recoverable: match &task.state {
+                DownloadState::Failed { recoverable, .. } => Some(*recoverable),
+                _ => None,
+            },
         }
     }
 }

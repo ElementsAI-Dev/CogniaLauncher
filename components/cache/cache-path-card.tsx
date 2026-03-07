@@ -230,7 +230,7 @@ export function CachePathCard({ refreshTrigger, onPathChanged }: CachePathCardPr
                     </div>
                   )}
                 </div>
-              ) : open && (
+              ) : isOpen && (
                 <div className="space-y-3">
                   <Skeleton className="h-4 w-24" />
                   <Skeleton className="h-8 w-full" />

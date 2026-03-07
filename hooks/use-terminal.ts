@@ -6,6 +6,10 @@ import { isTauri } from '@/lib/platform';
 import { toast } from 'sonner';
 import type {
   ShellType,
+  TerminalConfigDiagnostic,
+  TerminalConfigMutationResult,
+  TerminalConfigEditorMetadata,
+  TerminalConfigRestoreResult,
   TerminalProfile,
   TerminalProfileTemplate,
 } from '@/types/tauri';
@@ -13,6 +17,33 @@ import type { UseTerminalState, ProxyMode } from '@/types/terminal';
 
 interface UseTerminalOptions {
   t: (key: string, params?: Record<string, string | number>) => string;
+}
+
+function inferShellTypeFromConfigPath(path: string): ShellType {
+  const lower = path.toLowerCase();
+  if (lower.endsWith('.ps1') || lower.includes('powershell_profile')) return 'powershell';
+  if (lower.endsWith('.nu') || lower.includes('nushell')) return 'nushell';
+  if (lower.includes('fish') || lower.endsWith('.fish')) return 'fish';
+  if (lower.endsWith('.cmd') || lower.endsWith('.bat')) return 'cmd';
+  if (lower.includes('zsh')) return 'zsh';
+  return 'bash';
+}
+
+function buildValidationFailureResult(
+  path: string,
+  diagnostics: TerminalConfigDiagnostic[],
+): TerminalConfigMutationResult {
+  return {
+    operation: 'write',
+    path,
+    backupPath: null,
+    bytesWritten: 0,
+    verified: false,
+    diagnostics: diagnostics.map((item) => item.message),
+    diagnosticDetails: diagnostics,
+    snapshotPath: null,
+    fingerprint: null,
+  };
 }
 
 export function useTerminal({ t }: UseTerminalOptions) {
@@ -347,6 +378,19 @@ export function useTerminal({ t }: UseTerminalOptions) {
     }
   }, [t]);
 
+  const getConfigEditorMetadata = useCallback(async (
+    path: string,
+    shellType: ShellType,
+  ): Promise<TerminalConfigEditorMetadata | null> => {
+    if (!isTauri()) return null;
+    try {
+      return await tauri.terminalGetConfigEditorMetadata(path, shellType);
+    } catch (e) {
+      toast.error(t('terminal.toastReadConfigFailed', { error: String(e) }));
+      return null;
+    }
+  }, [t]);
+
   // PowerShell Management
   const fetchPSProfiles = useCallback(async () => {
     if (!isTauri()) return;
@@ -584,7 +628,11 @@ export function useTerminal({ t }: UseTerminalOptions) {
   }, [t]);
 
   // Shell Config Write
-  const writeShellConfig = useCallback(async (path: string, content: string) => {
+  const writeShellConfig = useCallback(async (
+    path: string,
+    content: string,
+    shellType?: ShellType,
+  ) => {
     if (!isTauri()) return;
     setState((prev) => ({
       ...prev,
@@ -596,18 +644,48 @@ export function useTerminal({ t }: UseTerminalOptions) {
       },
     }));
     try {
+      const diagnostics = await tauri.terminalValidateConfigContent(
+        content,
+        shellType ?? inferShellTypeFromConfigPath(path),
+      );
+      if (diagnostics.length > 0) {
+        const result = buildValidationFailureResult(path, diagnostics);
+        const message = t('terminal.toastSaveConfigFailed', { error: diagnostics[0].message });
+        setState((prev) => ({
+          ...prev,
+          configMutationState: {
+            status: 'error',
+            message,
+            result,
+            updatedAt: Date.now(),
+          },
+        }));
+        toast.error(message);
+        return result;
+      }
+
       const result = await tauri.terminalWriteConfigVerified(path, content);
-      const message = t('terminal.toastConfigSaved');
+      const isSuccess = result.verified;
+      const message = isSuccess
+        ? t('terminal.toastConfigSaved')
+        : t('terminal.toastSaveConfigFailed', {
+          error: result.diagnostics[0] ?? 'Config verification failed',
+        });
       setState((prev) => ({
         ...prev,
         configMutationState: {
-          status: 'success',
+          status: isSuccess ? 'success' : 'error',
           message,
           result,
           updatedAt: Date.now(),
         },
       }));
-      toast.success(message);
+      if (isSuccess) {
+        toast.success(message);
+      } else {
+        toast.error(message);
+      }
+      return result;
     } catch (e) {
       const message = t('terminal.toastSaveConfigFailed', { error: String(e) });
       setState((prev) => ({
@@ -620,6 +698,59 @@ export function useTerminal({ t }: UseTerminalOptions) {
         },
       }));
       toast.error(message);
+      return undefined;
+    }
+  }, [t]);
+
+  const restoreConfigSnapshot = useCallback(async (
+    path: string,
+  ): Promise<TerminalConfigRestoreResult | undefined> => {
+    if (!isTauri()) return undefined;
+    setState((prev) => ({
+      ...prev,
+      configMutationState: {
+        status: 'loading',
+        message: null,
+        result: null,
+        updatedAt: Date.now(),
+      },
+    }));
+    try {
+      const result = await tauri.terminalRestoreConfigSnapshot(path);
+      const isSuccess = result.verified;
+      const message = isSuccess
+        ? t('terminal.toastConfigUpdated')
+        : t('terminal.toastSaveConfigFailed', {
+          error: result.diagnostics[0] ?? 'Restore verification failed',
+        });
+      setState((prev) => ({
+        ...prev,
+        configMutationState: {
+          status: isSuccess ? 'success' : 'error',
+          message,
+          result: null,
+          updatedAt: Date.now(),
+        },
+      }));
+      if (isSuccess) {
+        toast.success(message);
+      } else {
+        toast.error(message);
+      }
+      return result;
+    } catch (e) {
+      const message = t('terminal.toastSaveConfigFailed', { error: String(e) });
+      setState((prev) => ({
+        ...prev,
+        configMutationState: {
+          status: 'error',
+          message,
+          result: null,
+          updatedAt: Date.now(),
+        },
+      }));
+      toast.error(message);
+      return undefined;
     }
   }, [t]);
 
@@ -921,6 +1052,7 @@ export function useTerminal({ t }: UseTerminalOptions) {
     appendToShellConfig,
     fetchConfigEntries,
     parseConfigContent,
+    getConfigEditorMetadata,
     fetchPSProfiles,
     readPSProfile,
     writePSProfile,
@@ -943,6 +1075,7 @@ export function useTerminal({ t }: UseTerminalOptions) {
     saveProfileAsTemplate,
     createProfileFromTemplate,
     writeShellConfig,
+    restoreConfigSnapshot,
     installPSModule,
     uninstallPSModule,
     updatePSModule,

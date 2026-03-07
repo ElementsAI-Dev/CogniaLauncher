@@ -27,6 +27,7 @@ const mockT = (key: string) => {
     "settings.trayMenu.downloads": "Downloads",
     "settings.trayMenu.settings": "Settings",
     "settings.trayMenu.checkUpdates": "Check Updates",
+    "settings.trayMenu.toggleNotifications": "Toggle Notifications",
     "settings.trayMenu.openLogs": "Open Logs",
     "settings.trayMenu.alwaysOnTop": "Always on Top",
     "settings.trayMenu.autostart": "Autostart",

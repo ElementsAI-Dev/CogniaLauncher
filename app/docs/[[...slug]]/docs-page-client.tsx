@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { PageHeader } from '@/components/layout/page-header';
 import { useLocale } from '@/components/providers/locale-provider';
 import {
@@ -42,6 +42,35 @@ export function DocsPageClient({ contentZh, contentEn, slug, basePath, searchInd
 
   const readingTime = useMemo(() => estimateReadingTime(content), [content]);
   const headings = useMemo(() => extractHeadings(content), [content]);
+
+  const scrollToHashTarget = useCallback(() => {
+    const rawHash = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : window.location.hash;
+    if (!rawHash) return;
+
+    let targetId = rawHash;
+    try {
+      targetId = decodeURIComponent(rawHash);
+    } catch {
+      // Keep raw hash when decode fails.
+    }
+
+    const target = document.getElementById(targetId);
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
+
+    const main = document.querySelector('main');
+    if (main instanceof HTMLElement) {
+      main.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, []);
+
+  useEffect(() => {
+    scrollToHashTarget();
+    window.addEventListener('hashchange', scrollToHashTarget);
+    return () => window.removeEventListener('hashchange', scrollToHashTarget);
+  }, [content, scrollToHashTarget]);
 
   return (
     <div className="flex h-full">

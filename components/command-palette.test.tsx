@@ -4,6 +4,7 @@ import { CommandPalette } from "./command-palette";
 const mockPush = jest.fn();
 const mockToggleDrawer = jest.fn();
 const mockOnOpenChange = jest.fn();
+let mockAllTools: Array<{ id: string; name: string; keywords: string[] }> = [];
 
 jest.mock("next/navigation", () => ({
   useRouter: () => ({ push: mockPush }),
@@ -29,6 +30,7 @@ jest.mock("@/components/providers/locale-provider", () => ({
         "commandPalette.noResults": "No results found.",
         "commandPalette.groups.navigation": "Navigation",
         "commandPalette.groups.actions": "Actions",
+        "commandPalette.groups.tools": "Tools",
         "commandPalette.actions.toggleLogs": "Toggle logs",
       };
       return translations[key] || key;
@@ -50,7 +52,7 @@ jest.mock("@/hooks/use-keyboard-shortcuts", () => ({
 }));
 
 jest.mock("@/hooks/use-toolbox", () => ({
-  useToolbox: () => ({ allTools: [] }),
+  useToolbox: () => ({ allTools: mockAllTools }),
 }));
 
 jest.mock("@/lib/tauri", () => ({
@@ -60,6 +62,7 @@ jest.mock("@/lib/tauri", () => ({
 describe("CommandPalette", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockAllTools = [];
   });
 
   it("renders without crashing when closed", () => {
@@ -82,5 +85,20 @@ describe("CommandPalette", () => {
     expect(mockOnOpenChange).toBeDefined();
     expect(mockPush).toBeDefined();
     expect(mockToggleDrawer).toBeDefined();
+  });
+
+  it("navigates toolbox tools to canonical detail route", () => {
+    mockAllTools = [
+      {
+        id: "builtin:json-formatter",
+        name: "JSON Formatter",
+        keywords: ["json"],
+      },
+    ];
+
+    render(<CommandPalette open={true} onOpenChange={mockOnOpenChange} />);
+    screen.getByText("JSON Formatter").click();
+
+    expect(mockPush).toHaveBeenCalledWith("/toolbox/builtin%3Ajson-formatter");
   });
 });

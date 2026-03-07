@@ -36,6 +36,7 @@ interface CollapsibleSectionProps {
   title: string;
   description: string;
   icon?: string;
+  open?: boolean;
   defaultOpen?: boolean;
   children: React.ReactNode;
   hasChanges?: boolean;
@@ -50,6 +51,7 @@ export function CollapsibleSection({
   title,
   description,
   icon = "Settings2",
+  open,
   defaultOpen = true,
   children,
   hasChanges = false,
@@ -58,15 +60,19 @@ export function CollapsibleSection({
   t,
   className,
 }: CollapsibleSectionProps) {
-  const [open, setOpen] = useState(defaultOpen);
+  const [internalOpen, setInternalOpen] = useState(defaultOpen);
+  const isControlled = typeof open === "boolean";
+  const resolvedOpen = isControlled ? open : internalOpen;
   const Icon = SECTION_ICONS[icon] || Settings2;
 
   const handleOpenChange = useCallback(
     (newOpen: boolean) => {
-      setOpen(newOpen);
+      if (!isControlled) {
+        setInternalOpen(newOpen);
+      }
       onOpenChange?.(id, newOpen);
     },
-    [id, onOpenChange],
+    [id, isControlled, onOpenChange],
   );
 
   const handleResetClick = useCallback(
@@ -79,7 +85,7 @@ export function CollapsibleSection({
 
   return (
     <Collapsible
-      open={open}
+      open={resolvedOpen}
       onOpenChange={handleOpenChange}
       className={className}
     >
@@ -121,7 +127,7 @@ export function CollapsibleSection({
                 <ChevronDown
                   className={cn(
                     "h-5 w-5 text-muted-foreground transition-transform duration-200",
-                    open && "rotate-180",
+                    resolvedOpen && "rotate-180",
                   )}
                   aria-hidden="true"
                 />

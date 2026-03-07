@@ -34,7 +34,8 @@ export interface CacheDetailPageClientProps {
 // ============================================================================
 
 export type MigrationMode = 'move' | 'move_and_link';
-export type CleanType = 'downloads' | 'metadata' | 'all';
+export type CleanType = 'downloads' | 'metadata' | 'expired' | 'all';
+export type CacheBrowserTypeFilter = 'all' | 'download' | 'metadata' | 'partial' | 'index';
 export type OperationType = 'clean' | 'verify' | 'repair' | 'settings';
 
 // ============================================================================

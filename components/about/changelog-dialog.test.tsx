@@ -9,7 +9,10 @@ jest.mock("@/components/docs/markdown-renderer", () => ({
   ),
 }));
 
-const mockT = (key: string) => {
+const mockT = (
+  key: string,
+  params?: Record<string, string | number>,
+) => {
   const translations: Record<string, string> = {
     "about.changelog": "Changelog",
     "about.changelogDescription": "Recent changes and updates",
@@ -28,7 +31,13 @@ const mockT = (key: string) => {
     "about.changelogPrerelease": "Pre-release",
     "about.changelogViewOnGithub": "View on GitHub",
     "about.changelogAllTypes": "All Types",
+    "about.changelogFilterByType": "Filter by type",
+    "about.changelogExpandAll": "Expand All",
+    "about.changelogCollapseAll": "Collapse All",
+    "about.changelogLocal": "Bundled",
     "about.changelogRemote": "GitHub",
+    "about.changelogReleaseNotes": "Release Notes",
+    "about.changelogRelativeTime": `${params?.time ?? ""} ago`,
   };
   return translations[key] || key;
 };
@@ -59,6 +68,7 @@ const entries: ChangelogEntry[] = [
 const defaultProps = {
   open: true,
   onOpenChange: jest.fn(),
+  locale: "en",
   entries,
   t: mockT,
 };
@@ -110,6 +120,11 @@ describe("ChangelogDialog", () => {
     expect(screen.getAllByText("GitHub").length).toBeGreaterThanOrEqual(1);
   });
 
+  it("renders Bundled badge for local entries", () => {
+    render(<ChangelogDialog {...defaultProps} />);
+    expect(screen.getAllByText("Bundled").length).toBeGreaterThanOrEqual(1);
+  });
+
   it("does not render content when closed", () => {
     render(<ChangelogDialog {...defaultProps} open={false} />);
     expect(screen.queryByText("Changelog")).not.toBeInTheDocument();
@@ -159,6 +174,7 @@ describe("ChangelogDialog", () => {
   it("renders type filter buttons when multiple types exist", () => {
     render(<ChangelogDialog {...defaultProps} />);
     expect(screen.getByText("All Types")).toBeInTheDocument();
+    expect(screen.getByText("Filter by type")).toBeInTheDocument();
   });
 
   it("renders markdown content for entries with markdownBody", () => {
@@ -197,5 +213,12 @@ describe("ChangelogDialog", () => {
     );
     // With both "added" and "fixed" types, the filter bar should show
     expect(screen.getByText("All Types")).toBeInTheDocument();
+  });
+
+  it("supports expand and collapse all controls", () => {
+    render(<ChangelogDialog {...defaultProps} />);
+    expect(screen.getByText("Expand All")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Expand All"));
+    expect(screen.getByText("Collapse All")).toBeInTheDocument();
   });
 });

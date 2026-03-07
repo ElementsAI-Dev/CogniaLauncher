@@ -303,7 +303,7 @@ CogniaLauncher 后端提供 289 条 Tauri 命令，跨 21 个模块，通过 IPC
 
 | 模块 | 命令数 | 命令前缀 | 描述 |
 |------|--------|----------|------|
-| Health Check | 4 | `health_check_*` | 环境和系统健康检查 |
+| Health Check | 5 | `health_check_*` | 环境、Provider 与修复工作流健康检查 |
 | Profiles | 9 | `profile_*` | 配置快照管理 |
 | Launch | 6 | `launch_with_env`, `env_activate`, `exec_shell_with_env`, `which_program` | 程序启动和环境激活 |
 | Shim/PATH | 10 | `shim_*`, `path_*` | Shim 创建和 PATH 管理 |

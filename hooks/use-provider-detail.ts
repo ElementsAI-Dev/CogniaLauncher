@@ -13,6 +13,8 @@ import {
   withThrottle,
 } from '@/lib/cache/invalidation';
 import type {
+  HealthIssue,
+  HealthRemediationResult,
   ProviderInfo,
   InstalledPackage,
   PackageSummary,
@@ -49,6 +51,8 @@ export interface ProviderDetailState {
   // Health
   healthResult: PackageManagerHealthResult | null;
   loadingHealth: boolean;
+  activeRemediationId: string | null;
+  lastRemediationResult: HealthRemediationResult | null;
 
   // History
   installHistory: InstallHistoryEntry[];
@@ -83,6 +87,8 @@ export function useProviderDetail(providerId: string) {
 
   const [healthResult, setHealthResult] = useState<PackageManagerHealthResult | null>(null);
   const [loadingHealth, setLoadingHealth] = useState(false);
+  const [activeRemediationId, setActiveRemediationId] = useState<string | null>(null);
+  const [lastRemediationResult, setLastRemediationResult] = useState<HealthRemediationResult | null>(null);
 
   const [installHistory, setInstallHistory] = useState<InstallHistoryEntry[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -430,6 +436,27 @@ export function useProviderDetail(providerId: string) {
     }
   }, [providerId]);
 
+  const runHealthRemediation = useCallback(async (
+    issue: Pick<HealthIssue, 'remediation_id'>,
+    dryRun: boolean,
+  ) => {
+    if (!issue.remediation_id) {
+      return null;
+    }
+
+    setActiveRemediationId(issue.remediation_id);
+    try {
+      const result = await tauri.healthCheckFix(issue.remediation_id, dryRun);
+      setLastRemediationResult(result);
+      return result;
+    } catch (err) {
+      setError(formatError(err));
+      return null;
+    } finally {
+      setActiveRemediationId(null);
+    }
+  }, []);
+
   // Fetch install history filtered by provider
   const fetchHistory = useCallback(async () => {
     setLoadingHistory(true);
@@ -583,6 +610,8 @@ export function useProviderDetail(providerId: string) {
     loadingUpdates,
     healthResult,
     loadingHealth,
+    activeRemediationId,
+    lastRemediationResult,
     installHistory,
     loadingHistory,
     historyError,
@@ -615,6 +644,10 @@ export function useProviderDetail(providerId: string) {
     updateAllPackages,
     checkUpdates,
     runHealthCheck,
+    previewHealthRemediation: (issue: Pick<HealthIssue, 'remediation_id'>) =>
+      runHealthRemediation(issue, true),
+    applyHealthRemediation: (issue: Pick<HealthIssue, 'remediation_id'>) =>
+      runHealthRemediation(issue, false),
     fetchHistory,
     fetchEnvironmentInfo,
     setSearchQuery,

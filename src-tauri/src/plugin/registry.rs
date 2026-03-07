@@ -1,9 +1,14 @@
 use crate::error::{CogniaError, CogniaResult};
+use crate::plugin::contract::{
+    evaluate_manifest_compatibility, ToolCompatibility, ToolOrigin, TOOL_CONTRACT_VERSION,
+};
 use crate::plugin::manifest::PluginManifest;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+
+pub const BUILTIN_MARKER_FILE: &str = ".cognia-builtin.json";
 
 /// A plugin that has been discovered and registered
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -42,7 +47,13 @@ pub struct PluginInfo {
     pub installed_at: String,
     pub updated_at: Option<String>,
     pub update_url: Option<String>,
+    pub tool_contract_version: String,
+    pub compatibility: ToolCompatibility,
     pub source: PluginSource,
+    #[serde(default)]
+    pub builtin_candidate: bool,
+    pub builtin_sync_status: Option<String>,
+    pub builtin_sync_message: Option<String>,
 }
 
 /// A tool from a plugin, with plugin context
@@ -61,6 +72,10 @@ pub struct PluginToolInfo {
     pub icon: String,
     pub entry: String,
     pub ui_mode: String,
+    pub origin: ToolOrigin,
+    pub contract_version: String,
+    pub capability_declarations: Vec<String>,
+    pub compatibility: ToolCompatibility,
 }
 
 /// Registry that tracks all discovered and loaded plugins
@@ -156,8 +171,12 @@ impl PluginRegistry {
                         enabled: true,
                         installed_at: Utc::now(),
                         updated_at: None,
-                        source: PluginSource::Local {
-                            path: path.display().to_string(),
+                        source: if path.join(BUILTIN_MARKER_FILE).exists() {
+                            PluginSource::BuiltIn
+                        } else {
+                            PluginSource::Local {
+                                path: path.display().to_string(),
+                            }
                         },
                     };
 
@@ -220,18 +239,32 @@ impl PluginRegistry {
     pub fn list(&self) -> Vec<PluginInfo> {
         self.plugins
             .values()
-            .map(|p| PluginInfo {
-                id: p.manifest.plugin.id.clone(),
-                name: p.manifest.plugin.name.clone(),
-                version: p.manifest.plugin.version.clone(),
-                description: p.manifest.plugin.description.clone(),
-                authors: p.manifest.plugin.authors.clone(),
-                tool_count: p.manifest.tools.len(),
-                enabled: p.enabled,
-                installed_at: p.installed_at.to_rfc3339(),
-                updated_at: p.updated_at.map(|d| d.to_rfc3339()),
-                update_url: p.manifest.plugin.update_url.clone(),
-                source: p.source.clone(),
+            .map(|p| {
+                let compatibility = evaluate_manifest_compatibility(&p.manifest);
+                let tool_contract_version = p
+                    .manifest
+                    .plugin
+                    .tool_contract_version
+                    .clone()
+                    .unwrap_or_else(|| TOOL_CONTRACT_VERSION.to_string());
+                PluginInfo {
+                    id: p.manifest.plugin.id.clone(),
+                    name: p.manifest.plugin.name.clone(),
+                    version: p.manifest.plugin.version.clone(),
+                    description: p.manifest.plugin.description.clone(),
+                    authors: p.manifest.plugin.authors.clone(),
+                    tool_count: p.manifest.tools.len(),
+                    enabled: p.enabled,
+                    installed_at: p.installed_at.to_rfc3339(),
+                    updated_at: p.updated_at.map(|d| d.to_rfc3339()),
+                    update_url: p.manifest.plugin.update_url.clone(),
+                    tool_contract_version,
+                    compatibility,
+                    source: p.source.clone(),
+                    builtin_candidate: false,
+                    builtin_sync_status: None,
+                    builtin_sync_message: None,
+                }
             })
             .collect()
     }
@@ -243,6 +276,13 @@ impl PluginRegistry {
             if !plugin.enabled {
                 continue;
             }
+            let compatibility = evaluate_manifest_compatibility(&plugin.manifest);
+            let contract_version = plugin
+                .manifest
+                .plugin
+                .tool_contract_version
+                .clone()
+                .unwrap_or_else(|| TOOL_CONTRACT_VERSION.to_string());
             for tool in &plugin.manifest.tools {
                 tools.push(PluginToolInfo {
                     plugin_id: plugin.manifest.plugin.id.clone(),
@@ -257,6 +297,10 @@ impl PluginRegistry {
                     icon: tool.icon.clone(),
                     entry: tool.entry.clone(),
                     ui_mode: format!("{:?}", tool.ui_mode).to_lowercase(),
+                    origin: ToolOrigin::Plugin,
+                    contract_version: contract_version.clone(),
+                    capability_declarations: tool.capabilities.clone(),
+                    compatibility: compatibility.clone(),
                 });
             }
         }
@@ -282,6 +326,7 @@ impl PluginRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::plugin::contract::{ToolOrigin, TOOL_CONTRACT_VERSION};
     use crate::plugin::manifest::{PluginManifest, PluginMeta, PluginPermissions, ToolDeclaration};
 
     fn make_manifest(id: &str, name: &str, tools: Vec<ToolDeclaration>) -> PluginManifest {
@@ -296,6 +341,8 @@ mod tests {
                 repository: None,
                 homepage: None,
                 min_cognia_version: None,
+                tool_contract_version: None,
+                compatible_cognia_versions: None,
                 icon: None,
                 update_url: None,
                 listen_events: vec![],
@@ -319,6 +366,7 @@ mod tests {
             category: "developer".to_string(),
             keywords: vec![],
             icon: "Wrench".to_string(),
+            capabilities: vec![],
             entry: entry.to_string(),
             ui_mode: crate::plugin::manifest::UiMode::default(),
         }
@@ -554,5 +602,24 @@ mod tests {
         assert!(modes.contains(&"text"));
         assert!(modes.contains(&"declarative"));
         assert!(modes.contains(&"iframe"));
+    }
+
+    #[test]
+    fn test_tool_contract_metadata_defaults_present() {
+        let mut reg = PluginRegistry::new(PathBuf::from("/tmp/plugins"));
+        reg.register(
+            make_manifest("p1", "P1", vec![make_tool("t1", "fn1")]),
+            PathBuf::from("p1.wasm"),
+            PathBuf::from("p1"),
+            PluginSource::BuiltIn,
+        );
+
+        let tools = reg.list_all_tools();
+        assert_eq!(tools.len(), 1);
+        let tool = &tools[0];
+        assert_eq!(tool.origin, ToolOrigin::Plugin);
+        assert_eq!(tool.contract_version, TOOL_CONTRACT_VERSION);
+        assert!(tool.capability_declarations.is_empty());
+        assert!(tool.compatibility.compatible);
     }
 }

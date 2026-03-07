@@ -21,6 +21,17 @@ export interface LogFilter {
   endTime?: number | null;
 }
 
+export type LogPresetScope = 'realtime' | 'historical';
+
+export interface LogFilterPreset {
+  id: string;
+  name: string;
+  scope: LogPresetScope;
+  version: number;
+  filter: LogFilter;
+  updatedAt: number;
+}
+
 export interface LogFileInfo {
   name: string;
   path: string;

@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/layout/page-header';
 import { useToolbox } from '@/hooks/use-toolbox';
 import { usePlugins } from '@/hooks/use-plugins';
@@ -10,21 +11,24 @@ import {
   ToolGrid,
   ToolCategoryNav,
   ToolSearchBar,
-  ToolDetailPanel,
   ToolEmptyState,
 } from '@/components/toolbox';
 import { ToolMobileCategoryNav } from '@/components/toolbox/tool-mobile-category-nav';
+import { ToolboxAssistance } from '@/components/toolbox/toolbox-assistance';
 import { Button } from '@/components/ui/button';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { LayoutGrid, List, Plug } from 'lucide-react';
+import { LayoutGrid, List, Plug, ShieldAlert, Store } from 'lucide-react';
 import Link from 'next/link';
+import { getToolboxDetailPath } from '@/lib/toolbox-route';
 
 export default function ToolboxPage() {
+  const router = useRouter();
   const { t } = useLocale();
   const { fetchPlugins } = usePlugins();
   const {
     filteredTools,
-    allTools,
+    excludedTools,
     categoryToolCounts,
     totalToolCount,
     dynamicCategories,
@@ -36,13 +40,10 @@ export default function ToolboxPage() {
     viewMode,
     selectedCategory,
     searchQuery,
-    activeToolId,
     toggleFavorite,
-    addRecent,
     setViewMode,
     setCategory,
     setSearchQuery,
-    setActiveToolId,
   } = useToolbox();
 
   const searchRef = useRef<import('@/components/toolbox/tool-search-bar').ToolSearchBarRef>(null);
@@ -63,29 +64,10 @@ export default function ToolboxPage() {
 
   const handleOpenTool = useCallback(
     (toolId: string) => {
-      addRecent(toolId);
-      setActiveToolId(toolId);
+      router.push(getToolboxDetailPath(toolId));
     },
-    [addRecent, setActiveToolId],
+    [router],
   );
-
-  const handleClosePanel = useCallback(
-    (open: boolean) => {
-      if (!open) setActiveToolId(null);
-    },
-    [setActiveToolId],
-  );
-
-  const activeTool = useMemo(
-    () => (activeToolId ? allTools.find((t) => t.id === activeToolId) ?? null : null),
-    [activeToolId, allTools],
-  );
-
-  useEffect(() => {
-    if (activeToolId && !activeTool) {
-      setActiveToolId(null);
-    }
-  }, [activeToolId, activeTool, setActiveToolId]);
 
   const emptyType =
     selectedCategory === 'favorites'
@@ -105,6 +87,14 @@ export default function ToolboxPage() {
           description={t('toolbox.description')}
           actions={
             <div className="flex items-center gap-2">
+              {isDesktop && (
+                <Button variant="outline" size="sm" className="gap-1.5" asChild>
+                  <Link href="/toolbox/market">
+                    <Store className="h-3.5 w-3.5" />
+                    {t('toolbox.marketplace.title')}
+                  </Link>
+                </Button>
+              )}
               {isDesktop && (
                 <Button variant="outline" size="sm" className="gap-1.5" asChild>
                   <Link href="/toolbox/plugins">
@@ -150,6 +140,34 @@ export default function ToolboxPage() {
           />
         </div>
 
+        {excludedTools.length > 0 && selectedCategory === 'all' && searchQuery.trim().length === 0 && (
+          <Alert className="shrink-0 border-amber-300/60 bg-amber-50/70 text-amber-900 dark:border-amber-700/50 dark:bg-amber-950/30 dark:text-amber-100">
+            <ShieldAlert className="h-4 w-4" />
+            <AlertTitle>{t('toolbox.plugin.excludedToolsTitle')}</AlertTitle>
+            <AlertDescription className="space-y-2 text-xs">
+              <p>{t('toolbox.plugin.excludedToolsDesc', { count: excludedTools.length })}</p>
+              <div className="space-y-1">
+                {excludedTools.slice(0, 3).map((item) => (
+                  <p key={item.toolId} className="font-mono break-all">
+                    {item.name}: {item.reason}
+                  </p>
+                ))}
+              </div>
+              <div>
+                <Link href="/toolbox/plugins" className="underline underline-offset-4">
+                  {t('toolbox.plugin.excludedToolsOpenPlugins')}
+                </Link>
+              </div>
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {selectedCategory === 'all' && searchQuery.trim().length === 0 && (
+          <div className="shrink-0">
+            <ToolboxAssistance />
+          </div>
+        )}
+
         <div
           data-testid="toolbox-content-shell"
           className="flex min-h-0 flex-1 gap-6 overflow-hidden"
@@ -181,17 +199,33 @@ export default function ToolboxPage() {
                 toolUseCounts={toolUseCounts}
               />
             ) : (
-              <ToolEmptyState type={emptyType} />
+              <ToolEmptyState
+                type={emptyType}
+                actions={
+                  <>
+                    {searchQuery.trim().length > 0 && (
+                      <Button size="sm" variant="outline" onClick={() => setSearchQuery('')}>
+                        {t('toolbox.marketplace.clearSearch')}
+                      </Button>
+                    )}
+                    {isDesktop && (
+                      <Button size="sm" asChild>
+                        <Link href="/toolbox/market">{t('toolbox.assistance.browseMarketplace')}</Link>
+                      </Button>
+                    )}
+                    {excludedTools.length > 0 && (
+                      <Button size="sm" variant="outline" asChild>
+                        <Link href="/toolbox/plugins">{t('toolbox.plugin.excludedToolsOpenPlugins')}</Link>
+                      </Button>
+                    )}
+                  </>
+                }
+              />
             )}
           </div>
         </div>
       </div>
 
-      <ToolDetailPanel
-        tool={activeTool}
-        open={activeTool !== null}
-        onOpenChange={handleClosePanel}
-      />
     </div>
   );
 }

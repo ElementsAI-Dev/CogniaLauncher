@@ -11,6 +11,7 @@ import { PluginIframeView } from '@/components/plugin/plugin-iframe-view';
 import { MarkdownRenderer } from '@/components/docs/markdown-renderer';
 import { useLocale } from '@/components/providers/locale-provider';
 import { usePlugins } from '@/hooks/use-plugins';
+import { useToolboxStore } from '@/lib/stores/toolbox';
 import { Play, AlertCircle, Loader2 } from 'lucide-react';
 import { isTauri } from '@/lib/tauri';
 import type { PluginToolInfo } from '@/types/plugin';
@@ -19,6 +20,10 @@ import type { UiBlock, PluginUiResponse, PluginUiAction } from '@/types/plugin-u
 interface PluginToolRunnerProps {
   tool: PluginToolInfo;
   className?: string;
+}
+
+function toPluginUnifiedToolId(tool: PluginToolInfo): string {
+  return `plugin:${tool.pluginId}:${tool.toolId}`;
 }
 
 export function PluginToolRunner({ tool, className }: PluginToolRunnerProps) {
@@ -53,6 +58,9 @@ export function PluginToolRunner({ tool, className }: PluginToolRunnerProps) {
 function TextToolRunner({ tool, className }: PluginToolRunnerProps) {
   const { t } = useLocale();
   const { callTool } = usePlugins();
+  const setToolLifecycle = useToolboxStore((state) => state.setToolLifecycle);
+  const clearToolLifecycle = useToolboxStore((state) => state.clearToolLifecycle);
+  const unifiedToolId = toPluginUnifiedToolId(tool);
   const [input, setInput] = useState('');
   const [output, setOutput] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -60,6 +68,11 @@ function TextToolRunner({ tool, className }: PluginToolRunnerProps) {
   const [elapsedMs, setElapsedMs] = useState(0);
   const cancelledRef = useRef(false);
   const runIdRef = useRef(0);
+
+  useEffect(() => {
+    setToolLifecycle(unifiedToolId, 'idle');
+    return () => clearToolLifecycle(unifiedToolId);
+  }, [unifiedToolId, setToolLifecycle, clearToolLifecycle]);
 
   useEffect(() => {
     if (!running) return;
@@ -70,31 +83,39 @@ function TextToolRunner({ tool, className }: PluginToolRunnerProps) {
   const handleRun = useCallback(async () => {
     const currentRunId = ++runIdRef.current;
     cancelledRef.current = false;
+    setToolLifecycle(unifiedToolId, 'prepare');
+    setToolLifecycle(unifiedToolId, 'validate');
     setRunning(true);
     setError(null);
     setOutput('');
     setElapsedMs(0);
     try {
+      setToolLifecycle(unifiedToolId, 'execute');
       const result = await callTool(tool.pluginId, tool.entry, input);
       if (!cancelledRef.current && runIdRef.current === currentRunId) {
+        setToolLifecycle(unifiedToolId, 'postProcess');
         setOutput(result ?? '');
+        setToolLifecycle(unifiedToolId, 'success');
       }
     } catch (e) {
       if (!cancelledRef.current && runIdRef.current === currentRunId) {
-        setError((e as Error).message ?? String(e));
+        const message = (e as Error).message ?? String(e);
+        setError(message);
+        setToolLifecycle(unifiedToolId, 'failure', message);
       }
     } finally {
       if (runIdRef.current === currentRunId) {
         setRunning(false);
       }
     }
-  }, [callTool, tool.pluginId, tool.entry, input]);
+  }, [callTool, tool.pluginId, tool.entry, input, setToolLifecycle, unifiedToolId]);
 
   const handleCancel = useCallback(() => {
     cancelledRef.current = true;
     setRunning(false);
     setError(t('toolbox.plugin.cancelled'));
-  }, [t]);
+    setToolLifecycle(unifiedToolId, 'failure', t('toolbox.plugin.cancelled'));
+  }, [t, setToolLifecycle, unifiedToolId]);
 
   const elapsedDisplay = running ? `${(elapsedMs / 1000).toFixed(1)}s` : null;
 
@@ -201,12 +222,75 @@ function SmartOutput({ output, label }: { output: string; label: string }) {
 function normalizeDeclarativeAction(
   action: PluginUiAction,
   toolId: string,
+  pluginId: string,
 ): PluginUiAction {
+  const correlationId = action.correlationId
+    ?? (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
+
   return {
     ...action,
     version: action.version ?? 2,
     sourceType: action.sourceType ?? 'declarative',
     sourceId: action.sourceId ?? toolId,
+    correlationId,
+    runtimeContext: {
+      toolId,
+      pluginId,
+      uiMode: 'declarative',
+      ...(action.runtimeContext ?? {}),
+    },
+  };
+}
+
+function normalizeDeclarativeResponse(parsed: PluginUiResponse): {
+  blocks: UiBlock[];
+  state?: Record<string, unknown>;
+} {
+  const outputChannels = parsed.outputChannels;
+  const baseBlocks = Array.isArray(parsed.ui) ? parsed.ui : [];
+  const structuredBlocks = Array.isArray(outputChannels?.structured)
+    ? outputChannels.structured
+    : [];
+  const streamEntries = Array.isArray(outputChannels?.stream)
+    ? outputChannels.stream
+    : Array.isArray(parsed.stream)
+      ? parsed.stream
+      : [];
+  const artifactActions = Array.isArray(outputChannels?.artifacts)
+    ? outputChannels.artifacts
+    : Array.isArray(parsed.artifacts)
+      ? parsed.artifacts
+      : [];
+
+  const blocks: UiBlock[] = [...baseBlocks, ...structuredBlocks];
+
+  if (outputChannels?.summary) {
+    if (typeof outputChannels.summary === 'string') {
+      blocks.push({ type: 'result', message: outputChannels.summary });
+    } else {
+      blocks.push({
+        type: 'result',
+        title: outputChannels.summary.title,
+        message: outputChannels.summary.message,
+        details: outputChannels.summary.details,
+        status: outputChannels.summary.status,
+      });
+    }
+  }
+
+  if (streamEntries.length > 0) {
+    blocks.push({ type: 'log-stream', entries: streamEntries });
+  }
+
+  if (artifactActions.length > 0) {
+    blocks.push({ type: 'artifact-actions', artifacts: artifactActions });
+  }
+
+  return {
+    blocks,
+    state: parsed.state,
   };
 }
 
@@ -217,6 +301,9 @@ function normalizeDeclarativeAction(
 function DeclarativeToolRunner({ tool, className }: PluginToolRunnerProps) {
   const { t } = useLocale();
   const { callTool } = usePlugins();
+  const setToolLifecycle = useToolboxStore((state) => state.setToolLifecycle);
+  const clearToolLifecycle = useToolboxStore((state) => state.clearToolLifecycle);
+  const unifiedToolId = toPluginUnifiedToolId(tool);
   const [blocks, setBlocks] = useState<UiBlock[]>([]);
   const [uiState, setUiState] = useState<Record<string, unknown> | undefined>();
   const [error, setError] = useState<string | null>(null);
@@ -225,49 +312,66 @@ function DeclarativeToolRunner({ tool, className }: PluginToolRunnerProps) {
 
   // Initial render: call WASM with empty input to get initial UI
   const loadInitialUi = useCallback(async () => {
+    setToolLifecycle(unifiedToolId, 'prepare');
     try {
+      setToolLifecycle(unifiedToolId, 'execute');
       const result = await callTool(tool.pluginId, tool.entry, '');
       const parsed: PluginUiResponse = JSON.parse(result ?? '{}');
-      setBlocks(parsed.ui ?? []);
-      setUiState(parsed.state);
+      const normalized = normalizeDeclarativeResponse(parsed);
+      setToolLifecycle(unifiedToolId, 'postProcess');
+      setBlocks(normalized.blocks);
+      setUiState(normalized.state);
       setError(null);
+      setToolLifecycle(unifiedToolId, 'success');
     } catch (e) {
-      setError((e as Error).message ?? String(e));
+      const message = (e as Error).message ?? String(e);
+      setError(message);
+      setToolLifecycle(unifiedToolId, 'failure', message);
     } finally {
       setLoading(false);
     }
-  }, [callTool, tool.pluginId, tool.entry]);
+  }, [callTool, tool.pluginId, tool.entry, setToolLifecycle, unifiedToolId]);
 
   // Load on mount
   useEffect(() => {
+    setToolLifecycle(unifiedToolId, 'idle');
     loadInitialUi();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    return () => clearToolLifecycle(unifiedToolId);
+  }, [loadInitialUi, unifiedToolId, setToolLifecycle, clearToolLifecycle]);
 
   // Handle actions from UI blocks (button clicks, form submissions)
   const handleAction = useCallback(
     async (action: PluginUiAction) => {
       setProcessing(true);
       try {
-        const normalized = normalizeDeclarativeAction(action, tool.toolId);
+        setToolLifecycle(unifiedToolId, 'validate');
+        const normalized = normalizeDeclarativeAction(
+          action,
+          tool.toolId,
+          tool.pluginId,
+        );
+        setToolLifecycle(unifiedToolId, 'execute');
         const result = await callTool(
           tool.pluginId,
           tool.entry,
           JSON.stringify(normalized),
         );
         const parsed: PluginUiResponse = JSON.parse(result ?? '{}');
-        if (parsed.ui) {
-          setBlocks(parsed.ui);
-          setUiState(parsed.state);
-        }
+        const response = normalizeDeclarativeResponse(parsed);
+        setToolLifecycle(unifiedToolId, 'postProcess');
+        setBlocks(response.blocks);
+        setUiState(response.state);
         setError(null);
+        setToolLifecycle(unifiedToolId, 'success');
       } catch (e) {
-        setError((e as Error).message ?? String(e));
+        const message = (e as Error).message ?? String(e);
+        setError(message);
+        setToolLifecycle(unifiedToolId, 'failure', message);
       } finally {
         setProcessing(false);
       }
     },
-    [callTool, tool.pluginId, tool.entry],
+    [callTool, tool.pluginId, tool.entry, tool.toolId, setToolLifecycle, unifiedToolId],
   );
 
   return (
@@ -320,6 +424,15 @@ function DeclarativeToolRunner({ tool, className }: PluginToolRunnerProps) {
 
 function IframeToolRunner({ tool, className }: PluginToolRunnerProps) {
   const { t } = useLocale();
+  const setToolLifecycle = useToolboxStore((state) => state.setToolLifecycle);
+  const clearToolLifecycle = useToolboxStore((state) => state.clearToolLifecycle);
+  const unifiedToolId = toPluginUnifiedToolId(tool);
+
+  useEffect(() => {
+    setToolLifecycle(unifiedToolId, 'prepare');
+    setToolLifecycle(unifiedToolId, 'success');
+    return () => clearToolLifecycle(unifiedToolId);
+  }, [unifiedToolId, setToolLifecycle, clearToolLifecycle]);
 
   return (
     <div className={className}>

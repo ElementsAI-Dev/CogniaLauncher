@@ -60,6 +60,7 @@ export const DOC_NAV: DocNavItem[] = [
       { title: '贡献指南', titleEn: 'Contributing', slug: 'development/contributing' },
       { title: '添加 Provider', titleEn: 'Adding Providers', slug: 'development/adding-providers' },
       { title: '添加命令', titleEn: 'Adding Commands', slug: 'development/adding-commands' },
+      { title: 'Git 集成矩阵', titleEn: 'Git Integration Matrix', slug: 'development/git-integration-matrix' },
       { title: '测试指南', titleEn: 'Testing', slug: 'development/testing' },
       { title: 'CI/CD', titleEn: 'CI/CD', slug: 'development/ci-cd' },
     ],

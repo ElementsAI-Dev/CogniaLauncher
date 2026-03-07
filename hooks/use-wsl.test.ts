@@ -42,7 +42,17 @@ const mockWslUpdateDistroPackages = jest.fn();
 const mockWslOpenInExplorer = jest.fn();
 const mockWslOpenInTerminal = jest.fn();
 const mockWslCloneDistro = jest.fn();
+const mockWslBatchLaunch = jest.fn();
+const mockWslBatchTerminate = jest.fn();
 const mockWslTotalDiskUsage = jest.fn();
+const mockWslDistroHealthCheck = jest.fn();
+const mockWslListPortForwards = jest.fn();
+const mockWslAddPortForward = jest.fn();
+const mockWslRemovePortForward = jest.fn();
+const mockWslBackupDistro = jest.fn();
+const mockWslListBackups = jest.fn();
+const mockWslRestoreBackup = jest.fn();
+const mockWslDeleteBackup = jest.fn();
 const mockPackageInstall = jest.fn();
 const mockPackageUninstall = jest.fn();
 
@@ -88,7 +98,17 @@ jest.mock('@/lib/tauri', () => ({
   wslOpenInExplorer: (...a: unknown[]) => mockWslOpenInExplorer(...a),
   wslOpenInTerminal: (...a: unknown[]) => mockWslOpenInTerminal(...a),
   wslCloneDistro: (...a: unknown[]) => mockWslCloneDistro(...a),
+  wslBatchLaunch: (...a: unknown[]) => mockWslBatchLaunch(...a),
+  wslBatchTerminate: (...a: unknown[]) => mockWslBatchTerminate(...a),
   wslTotalDiskUsage: (...a: unknown[]) => mockWslTotalDiskUsage(...a),
+  wslDistroHealthCheck: (...a: unknown[]) => mockWslDistroHealthCheck(...a),
+  wslListPortForwards: (...a: unknown[]) => mockWslListPortForwards(...a),
+  wslAddPortForward: (...a: unknown[]) => mockWslAddPortForward(...a),
+  wslRemovePortForward: (...a: unknown[]) => mockWslRemovePortForward(...a),
+  wslBackupDistro: (...a: unknown[]) => mockWslBackupDistro(...a),
+  wslListBackups: (...a: unknown[]) => mockWslListBackups(...a),
+  wslRestoreBackup: (...a: unknown[]) => mockWslRestoreBackup(...a),
+  wslDeleteBackup: (...a: unknown[]) => mockWslDeleteBackup(...a),
   packageInstall: (...a: unknown[]) => mockPackageInstall(...a),
   packageUninstall: (...a: unknown[]) => mockPackageUninstall(...a),
 }));
@@ -981,6 +1001,152 @@ describe('useWsl', () => {
     });
 
     expect(result.current.autoRefreshEnabled).toBe(false);
+  });
+
+  it('should provide runtime assistance actions with support metadata', () => {
+    const { result } = renderHook(() => useWsl());
+    const actions = result.current.getAssistanceActions('runtime');
+
+    expect(actions.some((action) => action.id === 'runtime.preflight')).toBe(true);
+    expect(actions.some((action) => action.id === 'runtime.shutdownAll' && action.risk === 'high')).toBe(true);
+  });
+
+  it('should run runtime preflight assistance action and return structured summary', async () => {
+    mockWslIsAvailable.mockResolvedValue(true);
+    mockWslGetCapabilities.mockResolvedValue({ manage: true });
+    mockWslGetStatus.mockResolvedValue({ version: '2.4.0', statusInfo: '', runningDistros: [] });
+    mockWslListDistros.mockResolvedValue([{ name: 'Ubuntu', state: 'Running', wslVersion: '2', isDefault: true }]);
+    mockWslListRunning.mockResolvedValue(['Ubuntu']);
+
+    const { result } = renderHook(() => useWsl());
+
+    let summary;
+    await act(async () => {
+      summary = await result.current.executeAssistanceAction('runtime.preflight', 'runtime');
+    });
+
+    expect(summary).toMatchObject({
+      actionId: 'runtime.preflight',
+      status: 'success',
+      retryable: true,
+    });
+    expect(Array.isArray(summary.findings)).toBe(true);
+  });
+
+  it('should block unsupported distro assistance action without invoking mutation', async () => {
+    mockWslIsAvailable.mockResolvedValue(true);
+    mockWslListDistros.mockResolvedValue([{ name: 'Ubuntu', state: 'Running', wslVersion: '2', isDefault: true }]);
+    mockWslGetCapabilities.mockResolvedValue({
+      manage: true,
+      move: true,
+      resize: true,
+      setSparse: false,
+    });
+
+    const { result } = renderHook(() => useWsl());
+
+    // Ensure distro is present to isolate capability-based blocking.
+    await act(async () => {
+      await result.current.refreshDistros();
+    });
+    await act(async () => {
+      await result.current.refreshCapabilities();
+    });
+
+    let summary;
+    await act(async () => {
+      summary = await result.current.executeAssistanceAction('distro.enableSparse', 'distro', 'Ubuntu');
+    });
+
+    expect(summary).toMatchObject({
+      actionId: 'distro.enableSparse',
+      status: 'blocked',
+      retryable: false,
+    });
+    expect(mockWslSetSparse).not.toHaveBeenCalled();
+  });
+
+  it('should map runtime error to assistance suggestions', () => {
+    const { result } = renderHook(() => useWsl());
+    const suggestions = result.current.mapErrorToAssistance(
+      'Access is denied while updating kernel',
+      'runtime'
+    );
+
+    expect(suggestions.length).toBeGreaterThan(0);
+    expect(suggestions.some((item) => item.actionId === 'runtime.preflight')).toBe(true);
+    expect(suggestions.some((item) => item.actionId === 'runtime.refreshState')).toBe(true);
+  });
+
+  it('should reconcile additional state slices after restoreBackup', async () => {
+    mockWslRestoreBackup.mockResolvedValue(undefined);
+    mockWslListDistros.mockResolvedValue([]);
+    mockWslGetStatus.mockResolvedValue({ version: '2.4.0', statusInfo: '', runningDistros: [] });
+    mockWslListRunning.mockResolvedValue([]);
+    mockWslGetConfig.mockResolvedValue({});
+    mockWslGetCapabilities.mockResolvedValue({});
+
+    const { result } = renderHook(() => useWsl());
+
+    await act(async () => {
+      await result.current.restoreBackup('backup.tar', 'Ubuntu-Restored', 'C:\\WSL\\Ubuntu-Restored');
+    });
+
+    expect(mockWslRestoreBackup).toHaveBeenCalledWith(
+      'backup.tar',
+      'Ubuntu-Restored',
+      'C:\\WSL\\Ubuntu-Restored'
+    );
+    expect(mockWslGetConfig).toHaveBeenCalled();
+    expect(mockWslGetCapabilities).toHaveBeenCalled();
+  });
+
+  it('should refresh status after setting default WSL version', async () => {
+    mockWslSetDefaultVersion.mockResolvedValue(undefined);
+    mockWslGetStatus.mockResolvedValue({ version: '2.4.0' });
+
+    const { result } = renderHook(() => useWsl());
+
+    await act(async () => {
+      await result.current.setDefaultVersion(2);
+    });
+
+    expect(mockWslSetDefaultVersion).toHaveBeenCalledWith(2);
+    expect(mockWslGetStatus).toHaveBeenCalled();
+  });
+
+  it('should refresh online and status slices after installing online distro', async () => {
+    mockPackageInstall.mockResolvedValue(undefined);
+    mockWslListDistros.mockResolvedValue([]);
+    mockWslGetStatus.mockResolvedValue({ version: '2.4.0' });
+    mockWslListOnline.mockResolvedValue([]);
+
+    const { result } = renderHook(() => useWsl());
+
+    await act(async () => {
+      await result.current.installOnlineDistro('Ubuntu');
+    });
+
+    expect(mockPackageInstall).toHaveBeenCalledWith(['wsl:Ubuntu']);
+    expect(mockWslGetStatus).toHaveBeenCalled();
+    expect(mockWslListOnline).toHaveBeenCalled();
+  });
+
+  it('should refresh running and status slices after batch launch', async () => {
+    mockWslBatchLaunch.mockResolvedValue([['Ubuntu', true, 'ok']]);
+    mockWslListDistros.mockResolvedValue([]);
+    mockWslListRunning.mockResolvedValue(['Ubuntu']);
+    mockWslGetStatus.mockResolvedValue({ version: '2.4.0' });
+
+    const { result } = renderHook(() => useWsl());
+
+    await act(async () => {
+      await result.current.batchLaunch(['Ubuntu']);
+    });
+
+    expect(mockWslBatchLaunch).toHaveBeenCalledWith(['Ubuntu']);
+    expect(mockWslListRunning).toHaveBeenCalled();
+    expect(mockWslGetStatus).toHaveBeenCalled();
   });
 
   // ── Non-Tauri guards ──

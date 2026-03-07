@@ -30,7 +30,12 @@ import {
   MapPin,
   ClipboardCopy,
 } from "lucide-react";
-import type { PackageManagerHealthResult, HealthStatus } from "@/types/tauri";
+import type {
+  HealthIssue,
+  HealthRemediationResult,
+  PackageManagerHealthResult,
+  HealthStatus,
+} from "@/types/tauri";
 import { cn } from "@/lib/utils";
 import { getStatusIcon, getStatusColor, getStatusTextColor } from "@/lib/provider-utils";
 import { IssueCard } from "@/components/environments/health-check-panel";
@@ -40,6 +45,9 @@ interface ProviderHealthTabProps {
   healthResult: PackageManagerHealthResult | null;
   loadingHealth: boolean;
   onRunHealthCheck: () => Promise<unknown>;
+  onPreviewRemediation?: (issue: Pick<HealthIssue, "remediation_id">) => Promise<HealthRemediationResult | null>;
+  onApplyRemediation?: (issue: Pick<HealthIssue, "remediation_id">) => Promise<HealthRemediationResult | null>;
+  activeRemediationId?: string | null;
   t: (key: string, params?: Record<string, string | number>) => string;
 }
 
@@ -52,6 +60,9 @@ export function ProviderHealthTab({
   healthResult,
   loadingHealth,
   onRunHealthCheck,
+  onPreviewRemediation,
+  onApplyRemediation,
+  activeRemediationId,
   t,
 }: ProviderHealthTabProps) {
   const copyDiagnostics = useCallback(() => {
@@ -159,9 +170,9 @@ export function ProviderHealthTab({
                     variant={
                       healthResult.status === "healthy"
                         ? "default"
-                        : healthResult.status === "warning"
-                          ? "secondary"
-                          : "destructive"
+                        : healthResult.status === "error"
+                          ? "destructive"
+                          : "secondary"
                     }
                     className="ml-2"
                   >
@@ -228,7 +239,14 @@ export function ProviderHealthTab({
                   )}
                 </div>
                 {healthResult.issues.map((issue, idx) => (
-                  <IssueCard key={idx} issue={issue} t={t} />
+                  <IssueCard
+                    key={idx}
+                    issue={issue}
+                    onPreviewRemediation={onPreviewRemediation}
+                    onApplyRemediation={onApplyRemediation}
+                    activeRemediationId={activeRemediationId}
+                    t={t}
+                  />
                 ))}
               </div>
             )}

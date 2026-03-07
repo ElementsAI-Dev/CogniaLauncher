@@ -17,10 +17,10 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip
 import { Separator } from '@/components/ui/separator';
 import { useLocale } from '@/components/providers/locale-provider';
 import { useTheme } from 'next-themes';
-import { ONBOARDING_STEPS } from '@/lib/stores/onboarding';
 import { STEP_ICONS } from '@/lib/constants/onboarding';
 import { MIRROR_PRESETS } from '@/lib/constants/mirrors';
 import { isTauri } from '@/lib/tauri';
+import { ModeSelectionStep } from './steps/mode-selection-step';
 import { WelcomeStep } from './steps/welcome-step';
 import { LanguageStep } from './steps/language-step';
 import { ThemeStep } from './steps/theme-step';
@@ -34,6 +34,8 @@ import type { OnboardingWizardProps } from '@/types/onboarding';
 export function OnboardingWizard({
   open,
   currentStep,
+  stepIds,
+  mode,
   totalSteps,
   progress,
   isFirstStep,
@@ -42,6 +44,7 @@ export function OnboardingWizard({
   onNext,
   onPrev,
   onGoTo,
+  onSelectMode,
   onComplete,
   onSkip,
   onStartTour,
@@ -50,34 +53,48 @@ export function OnboardingWizard({
   const { t, locale, setLocale } = useLocale();
   const { theme, setTheme } = useTheme();
 
-  const currentStepId = ONBOARDING_STEPS[currentStep] ?? 'welcome';
+  const currentStepId = stepIds[currentStep] ?? stepIds[0] ?? 'mode-selection';
+  const isModeSelectionStep = currentStepId === 'mode-selection';
+  const nextDisabled = isModeSelectionStep && !mode;
   const [direction, setDirection] = useState<'forward' | 'back'>('forward');
   const prevStepRef = useRef(currentStep);
 
-  // Track direction based on step change
   useEffect(() => {
     if (currentStep > prevStepRef.current) setDirection('forward');
     else if (currentStep < prevStepRef.current) setDirection('back');
     prevStepRef.current = currentStep;
   }, [currentStep]);
 
-  // Keyboard navigation (same pattern as tour-overlay)
+  const handleAdvance = useCallback(() => {
+    if (nextDisabled) {
+      return;
+    }
+
+    if (isLastStep) {
+      onComplete();
+      return;
+    }
+
+    onNext();
+  }, [isLastStep, nextDisabled, onComplete, onNext]);
+
   useEffect(() => {
     if (!open) return;
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowRight' || e.key === 'Enter') {
-        e.preventDefault();
-        if (isLastStep) onComplete();
-        else onNext();
-      } else if (e.key === 'ArrowLeft') {
+
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === 'ArrowRight' || event.key === 'Enter') {
+        event.preventDefault();
+        handleAdvance();
+      } else if (event.key === 'ArrowLeft') {
         if (!isFirstStep) onPrev();
-      } else if (e.key === 'Escape') {
+      } else if (event.key === 'Escape') {
         onSkip();
       }
     };
+
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [open, isFirstStep, isLastStep, onNext, onPrev, onComplete, onSkip]);
+  }, [open, handleAdvance, isFirstStep, onPrev, onSkip]);
 
   const handleStartTourAndClose = useCallback(() => {
     onComplete();
@@ -87,6 +104,7 @@ export function OnboardingWizard({
   const handleApplyMirrorPreset = useCallback(async (presetKey: string) => {
     const preset = MIRROR_PRESETS[presetKey];
     if (!preset || !isTauri()) return;
+
     try {
       const { configSet } = await import('@/lib/tauri');
       await Promise.all([
@@ -96,12 +114,20 @@ export function OnboardingWizard({
         configSet('mirrors.go', preset.go),
       ]);
     } catch {
-      // Non-critical: user can configure mirrors later in Settings
+      // Non-critical: user can configure mirrors later in Settings.
     }
   }, []);
 
   const renderStep = () => {
     switch (currentStepId) {
+      case 'mode-selection':
+        return (
+          <ModeSelectionStep
+            t={t}
+            selectedMode={mode}
+            onSelectMode={onSelectMode}
+          />
+        );
       case 'welcome':
         return <WelcomeStep t={t} />;
       case 'language':
@@ -109,14 +135,21 @@ export function OnboardingWizard({
       case 'theme':
         return <ThemeStep theme={theme} setTheme={setTheme} t={t} />;
       case 'environment-detection':
-        return <EnvironmentDetectionStep t={t} />;
+        return <EnvironmentDetectionStep mode={mode ?? 'quick'} t={t} />;
       case 'mirrors':
-        return <MirrorsStep t={t} onApplyPreset={handleApplyMirrorPreset} />;
+        return (
+          <MirrorsStep
+            mode={mode ?? 'quick'}
+            t={t}
+            onApplyPreset={handleApplyMirrorPreset}
+          />
+        );
       case 'shell-init':
-        return <ShellInitStep t={t} />;
+        return <ShellInitStep mode={mode ?? 'quick'} t={t} />;
       case 'complete':
         return (
           <CompleteStep
+            mode={mode ?? 'quick'}
             t={t}
             onStartTour={handleStartTourAndClose}
             tourCompleted={tourCompleted}
@@ -128,7 +161,7 @@ export function OnboardingWizard({
   };
 
   return (
-    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+    <Dialog open={open} onOpenChange={(nextOpen) => { if (!nextOpen) onClose(); }}>
       <DialogContent className="sm:max-w-[600px] max-h-[85vh] overflow-hidden flex flex-col gap-0 p-0">
         <DialogHeader className="px-6 pt-6 pb-2">
           <DialogTitle className="sr-only">
@@ -137,18 +170,19 @@ export function OnboardingWizard({
           <DialogDescription className="sr-only">
             {t('onboarding.wizardDesc')}
           </DialogDescription>
-          {/* Step indicators */}
           <div className="flex items-center justify-center gap-1.5 pt-1">
-            {ONBOARDING_STEPS.map((stepId, idx) => {
+            {stepIds.map((stepId, index) => {
               const Icon = STEP_ICONS[stepId];
-              const isActive = idx === currentStep;
-              const isDone = idx < currentStep;
-              const stepLabel = t(`onboarding.step${stepId.charAt(0).toUpperCase() + stepId.slice(1).replace(/-./g, (m) => m[1].toUpperCase())}`);
+              const isActive = index === currentStep;
+              const isDone = index < currentStep;
+              const stepLabel = t(`onboarding.step${stepId.charAt(0).toUpperCase() + stepId.slice(1).replace(/-./g, (match) => match[1].toUpperCase())}`);
+
               return (
                 <Tooltip key={stepId}>
                   <TooltipTrigger asChild>
                     <button
-                      onClick={() => onGoTo(idx)}
+                      type="button"
+                      onClick={() => onGoTo(index)}
                       aria-label={stepLabel}
                       className={cn(
                         'flex items-center justify-center rounded-full transition-all',
@@ -167,7 +201,6 @@ export function OnboardingWizard({
               );
             })}
           </div>
-          {/* Progress bar */}
           <div className="pt-3">
             <Progress value={progress} className="h-1" />
             <div className="flex justify-between text-xs text-muted-foreground mt-1.5">
@@ -181,10 +214,9 @@ export function OnboardingWizard({
 
         <Separator />
 
-        {/* Step content */}
         <ScrollArea className="flex-1 min-h-0">
           <div
-            key={currentStepId}
+            key={`${mode ?? 'unselected'}-${currentStepId}`}
             className={cn(
               'px-6 py-4 animate-in fade-in-0 duration-200',
               direction === 'forward' ? 'slide-in-from-right-4' : 'slide-in-from-left-4',
@@ -194,7 +226,6 @@ export function OnboardingWizard({
           </div>
         </ScrollArea>
 
-        {/* Footer */}
         <DialogFooter className="px-6 pb-6 pt-2 flex-row justify-between border-t">
           <div>
             {!isFirstStep && !isLastStep && (
@@ -217,7 +248,7 @@ export function OnboardingWizard({
                 {t('onboarding.finish')}
               </Button>
             ) : (
-              <Button onClick={onNext}>
+              <Button onClick={handleAdvance} disabled={nextDisabled}>
                 {t('onboarding.next')}
                 <ChevronRight className="h-4 w-4 ml-1" />
               </Button>

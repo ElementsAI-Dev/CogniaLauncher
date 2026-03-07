@@ -182,6 +182,11 @@ pnpm tauri dev -- search react --limit 10 --json
 - `cache`
 - `doctor`
 - `providers`
+- `backup`
+- `profiles`
+- `envvar`
+- `log`
+- `download`
 
 环境子命令：
 
@@ -200,6 +205,87 @@ pnpm tauri dev -- search react --limit 10 --json
 - `config reset`
 - `config export <file>`
 - `config import <file>`
+
+备份子命令（P0）：
+
+- `backup list`
+- `backup create [--contents <type>...] [--note <text>]`
+- `backup restore <path> [--contents <type>...]`
+- `backup delete <path>`
+
+配置档案子命令（P0）：
+
+- `profiles list`
+- `profiles get <id>`
+- `profiles apply <id>`
+- `profiles export <id> [--out <file>]`
+- `profiles import <file>`
+- `profiles create-from-current <name>`
+
+环境变量子命令（P0）：
+
+- `envvar list`
+- `envvar get <key> [--scope process|user|system]`
+- `envvar set <key> <value> [--scope process|user|system]`
+- `envvar remove <key> [--scope process|user|system]`
+- `envvar list-persistent [--scope user|system]`
+- `envvar set-persistent <key> <value> [--scope user|system]`
+- `envvar remove-persistent <key> [--scope user|system]`
+- `envvar export <file> [--scope ...] [--format dotenv|shell|fish|powershell|nushell]`
+- `envvar import <file> [--scope process|user|system]`
+
+日志/诊断子命令（P0）：
+
+- `log list`
+- `log export [--file <name>] [--out <file>] [--format txt|json] [--search <text>] [--regex]`
+- `log clear [--file <name>]`
+- `log size`
+- `log cleanup`
+
+下载子命令（P0）：
+
+- `download history-list [--limit <n>]`
+- `download history-stats`
+- `download history-clear [--days <n>]`
+- `download history-remove <id>`
+- `download queue-list`
+- `download queue-stats`
+- `download queue-pause <id>`
+- `download queue-resume <id>`
+- `download queue-cancel <id>`
+
+CLI JSON 契约（`--json`）示例：
+
+```json
+{
+  "ok": true,
+  "command": "download.history-stats",
+  "data": {
+    "total_count": 12,
+    "completed_count": 10
+  }
+}
+```
+
+CLI 错误契约示例：
+
+```json
+{
+  "ok": false,
+  "command": "backup.restore",
+  "error": {
+    "kind": "usage",
+    "message": "backup path is required"
+  }
+}
+```
+
+CLI 分阶段发布说明：
+
+- P0（已完成）：`backup`、`profiles`、`envvar`、`log`、`download`
+- P1（规划中）：高频 `plugin` 与 `git` 自动化命令
+- P2（规划中）：低频或平台依赖较强的高级命令
+- 兼容性契约：现有命令保持向后兼容；统一退出码为 `0`（成功）、`2`（用法错误）、`1`（运行时错误）
 
 ### 添加 UI 组件（shadcn/ui）
 

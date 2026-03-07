@@ -15,6 +15,11 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { useLocale } from "@/components/providers/locale-provider";
 import { isTauri, configGet, configSet } from "@/lib/tauri";
+import type {
+  LogActionResult,
+  LogCleanupPreviewSummary,
+  LogMutationSummary,
+} from "@/hooks/use-logs";
 import { formatBytes } from "@/lib/utils";
 import { Loader2, Settings2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -22,7 +27,9 @@ import { toast } from "sonner";
 interface LogManagementCardProps {
   totalSize: number;
   fileCount: number;
-  onCleanup: () => Promise<{ deletedCount: number; freedBytes: number } | null>;
+  previewResult: LogCleanupPreviewSummary | null;
+  onPreviewCleanup: () => Promise<LogActionResult<LogCleanupPreviewSummary>>;
+  onCleanup: () => Promise<LogActionResult<LogMutationSummary>>;
   onRefresh: () => void;
 }
 
@@ -36,11 +43,14 @@ function normalizeNumberInput(value: string, fallback: string, max?: number): st
 export function LogManagementCard({
   totalSize,
   fileCount,
+  previewResult,
+  onPreviewCleanup,
   onCleanup,
   onRefresh,
 }: LogManagementCardProps) {
   const { t } = useLocale();
   const [cleaning, setCleaning] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
   const [retentionDays, setRetentionDays] = useState<string>("30");
   const [maxTotalSizeMb, setMaxTotalSizeMb] = useState<string>("100");
   const [autoCleanup, setAutoCleanup] = useState(true);
@@ -100,17 +110,22 @@ export function LogManagementCard({
   };
 
   const handleCleanup = async () => {
+    if (!previewResult) return;
     setCleaning(true);
     try {
       const result = await onCleanup();
-      if (result && result.deletedCount > 0) {
+      if (!result.ok) {
+        toast.error(result.error || t("logs.deleteFailed"));
+        return;
+      }
+
+      if (result.data.deletedCount > 0) {
         toast.success(
           t("logs.cleanupSuccess", {
-            count: result.deletedCount,
-            size: formatBytes(result.freedBytes),
+            count: result.data.deletedCount,
+            size: formatBytes(result.data.freedBytes),
           }),
         );
-        onRefresh();
       } else {
         toast.info(t("logs.cleanupNone"));
       }
@@ -118,6 +133,27 @@ export function LogManagementCard({
       toast.error(t("logs.deleteFailed"));
     } finally {
       setCleaning(false);
+    }
+  };
+
+  const handlePreviewCleanup = async () => {
+    setPreviewing(true);
+    try {
+      const result = await onPreviewCleanup();
+      if (!result.ok) {
+        toast.error(result.error || t("logs.deleteFailed"));
+        return;
+      }
+      toast.info(
+        t("logs.previewReady", {
+          count: result.data.deletedCount,
+          size: formatBytes(result.data.freedBytes),
+        }),
+      );
+    } catch {
+      toast.error(t("logs.deleteFailed"));
+    } finally {
+      setPreviewing(false);
     }
   };
 
@@ -232,19 +268,49 @@ export function LogManagementCard({
           </div>
         </div>
 
-        {/* Manual cleanup button */}
+        {previewResult && (
+          <div className="rounded-lg border border-dashed p-3 space-y-1">
+            <p className="text-xs text-muted-foreground">
+              {t("logs.previewSummary")}
+            </p>
+            <p className="text-sm">
+              {t("logs.previewReady", {
+                count: previewResult.deletedCount,
+                size: formatBytes(previewResult.freedBytes),
+              })}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {t("logs.previewProtected", { count: previewResult.protectedCount })}
+            </p>
+          </div>
+        )}
+
+        <Button
+          variant="outline"
+          className="w-full"
+          onClick={handlePreviewCleanup}
+          disabled={previewing || cleaning || fileCount <= 1}
+        >
+          {previewing ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <Trash2 className="mr-2 h-4 w-4" />
+          )}
+          {t("logs.previewCleanup")}
+        </Button>
+
         <Button
           variant="outline"
           className="w-full"
           onClick={handleCleanup}
-          disabled={cleaning || fileCount <= 1}
+          disabled={cleaning || fileCount <= 1 || !previewResult}
         >
           {cleaning ? (
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
           ) : (
             <Trash2 className="mr-2 h-4 w-4" />
           )}
-          {t("logs.manualCleanup")}
+          {t("logs.manualCleanupConfirm")}
         </Button>
       </CardContent>
     </Card>

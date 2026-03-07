@@ -1,6 +1,6 @@
 import type { LucideIcon } from 'lucide-react';
 import type { Locale } from '@/types/i18n';
-import type { OnboardingStepId } from '@/lib/stores/onboarding';
+import type { OnboardingMode, OnboardingStepId } from '@/lib/stores/onboarding';
 
 // ============================================================================
 // Bubble Hint Types
@@ -81,6 +81,8 @@ export interface TargetRect {
 export interface OnboardingWizardProps {
   open: boolean;
   currentStep: number;
+  stepIds: readonly OnboardingStepId[];
+  mode: OnboardingMode | null;
   totalSteps: number;
   progress: number;
   isFirstStep: boolean;
@@ -89,6 +91,7 @@ export interface OnboardingWizardProps {
   onNext: () => void;
   onPrev: () => void;
   onGoTo: (step: number) => void;
+  onSelectMode: (mode: OnboardingMode) => void;
   onComplete: () => void;
   onSkip: () => void;
   onStartTour: () => void;
@@ -103,6 +106,12 @@ export type StepIconMap = Record<OnboardingStepId, LucideIcon>;
 
 export interface WelcomeStepProps {
   t: (key: string, params?: Record<string, string | number>) => string;
+}
+
+export interface ModeSelectionStepProps {
+  selectedMode: OnboardingMode | null;
+  onSelectMode: (mode: OnboardingMode) => void;
+  t: (key: string) => string;
 }
 
 export interface LanguageStepProps {
@@ -131,6 +140,7 @@ export interface ThemeOption {
 }
 
 export interface EnvironmentDetectionStepProps {
+  mode?: OnboardingMode;
   t: (key: string, params?: Record<string, string | number>) => string;
 }
 
@@ -145,11 +155,13 @@ export interface DetectedEnv {
 }
 
 export interface MirrorsStepProps {
+  mode?: OnboardingMode;
   t: (key: string) => string;
   onApplyPreset: (presetKey: string) => void;
 }
 
 export interface ShellInitStepProps {
+  mode?: OnboardingMode;
   t: (key: string) => string;
 }
 
@@ -163,6 +175,7 @@ export interface ShellOption {
 }
 
 export interface CompleteStepProps {
+  mode?: OnboardingMode;
   t: (key: string) => string;
   onStartTour: () => void;
   tourCompleted: boolean;

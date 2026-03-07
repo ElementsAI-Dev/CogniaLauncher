@@ -85,6 +85,7 @@ const mockMessages = {
         cancelled: 'Cancelled',
         completed: 'Completed',
         failed: 'Failed',
+        extracting: 'Extracting',
       },
       actions: {
         pause: 'Pause',
@@ -138,6 +139,8 @@ const mockMessages = {
         filterPaused: 'Paused',
         filterCompleted: 'Completed',
         filterFailed: 'Failed',
+        filterCancelled: 'Cancelled',
+        filterExtracting: 'Extracting',
         noResults: 'No downloads match your search',
         noResultsDesc: 'Try adjusting your search or filters',
         clearFilters: 'Clear Filters',
@@ -328,6 +331,7 @@ function setupMocks() {
     revealFile: jest.fn(),
     retryTask: jest.fn(),
     setPriority: jest.fn(),
+    setTaskSpeedLimit: jest.fn(),
     calculateChecksum: jest.fn().mockResolvedValue('sha256abc'),
     batchPause: jest.fn().mockResolvedValue(0),
     batchResume: jest.fn().mockResolvedValue(0),
@@ -412,6 +416,8 @@ describe('DownloadsPage', () => {
     expect(screen.getByRole('tab', { name: /all/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /downloading/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /paused/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /cancelled/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /extracting/i })).toBeInTheDocument();
   });
 
   it('filters tasks by search query', async () => {

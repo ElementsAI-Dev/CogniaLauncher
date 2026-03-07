@@ -308,9 +308,10 @@ All commands are registered in `src/lib.rs` and organized by module.
 | Command | Purpose |
 |---------|---------|
 | `health_check_environment` | Run health check on a specific environment |
-| `health_check_system` | Run system-wide health check |
-| `health_check_all` | Run health checks on all environments |
-| `health_check_fix` | Apply fix for detected issue |
+| `health_check_all` | Run canonical health checks across system, environments, and providers |
+| `health_check_package_manager` | Run health check on a specific provider / package manager |
+| `health_check_package_managers` | Run health checks on all provider / package manager targets |
+| `health_check_fix` | Preview or apply a supported remediation for a detected issue |
 
 ### Profiles Commands (`commands::profiles`)
 

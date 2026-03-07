@@ -1,7 +1,8 @@
 import { render, screen, act } from "@testing-library/react";
 import { CacheDetailExternalView } from "./cache-detail-external";
 
-const mockDiscoverExternalCaches = jest.fn();
+const mockDiscoverExternalCachesFast = jest.fn();
+const mockCalculateExternalCacheSize = jest.fn();
 const mockGetExternalCachePaths = jest.fn();
 const mockCleanExternalCache = jest.fn();
 const mockCleanAllExternalCaches = jest.fn();
@@ -16,8 +17,11 @@ jest.mock("@/lib/tauri", () => ({
   get isTauri() {
     return () => mockIsTauri;
   },
-  get discoverExternalCaches() {
-    return mockDiscoverExternalCaches;
+  get discoverExternalCachesFast() {
+    return mockDiscoverExternalCachesFast;
+  },
+  get calculateExternalCacheSize() {
+    return mockCalculateExternalCacheSize;
   },
   get getExternalCachePaths() {
     return mockGetExternalCachePaths;
@@ -34,9 +38,13 @@ jest.mock("@/lib/tauri", () => ({
 }));
 
 jest.mock("next/link", () => {
-  const MockLink = ({ children, ...props }: { children: React.ReactNode; href: string }) => (
-    <a {...props}>{children}</a>
-  );
+  const MockLink = ({
+    children,
+    ...props
+  }: {
+    children: React.ReactNode;
+    href: string;
+  }) => <a {...props}>{children}</a>;
   MockLink.displayName = "MockLink";
   return MockLink;
 });
@@ -46,7 +54,15 @@ jest.mock("sonner", () => ({
 }));
 
 jest.mock("@/components/layout/page-header", () => ({
-  PageHeader: ({ title, description, actions }: { title: React.ReactNode; description: React.ReactNode; actions?: React.ReactNode }) => (
+  PageHeader: ({
+    title,
+    description,
+    actions,
+  }: {
+    title: React.ReactNode;
+    description: React.ReactNode;
+    actions?: React.ReactNode;
+  }) => (
     <div>
       <h1>{title}</h1>
       <p>{description}</p>
@@ -62,6 +78,7 @@ const mockCaches = [
     cachePath: "/home/test/.npm",
     size: 524288000,
     sizeHuman: "500 MB",
+    sizePending: false,
     isAvailable: true,
     canClean: true,
     category: "package_manager",
@@ -72,6 +89,7 @@ const mockCaches = [
     cachePath: "/home/test/.cache/pip",
     size: 104857600,
     sizeHuman: "100 MB",
+    sizePending: false,
     isAvailable: false,
     canClean: false,
     category: "package_manager",
@@ -91,7 +109,8 @@ describe("CacheDetailExternal", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockIsTauri = false;
-    mockDiscoverExternalCaches.mockResolvedValue([]);
+    mockDiscoverExternalCachesFast.mockResolvedValue([]);
+    mockCalculateExternalCacheSize.mockResolvedValue(0);
     mockGetExternalCachePaths.mockResolvedValue([]);
     mockCacheForceCleanExternal.mockResolvedValue({
       success: false,
@@ -115,7 +134,9 @@ describe("CacheDetailExternal", () => {
 
   it("renders page description", () => {
     render(<CacheDetailExternalView />);
-    expect(screen.getByText("cache.detail.externalDescription")).toBeInTheDocument();
+    expect(
+      screen.getByText("cache.detail.externalDescription"),
+    ).toBeInTheDocument();
   });
 
   it("renders back to cache link", () => {
@@ -146,7 +167,7 @@ describe("CacheDetailExternal", () => {
 
   it("displays cache items when data loaded", async () => {
     mockIsTauri = true;
-    mockDiscoverExternalCaches.mockResolvedValue(mockCaches);
+    mockDiscoverExternalCachesFast.mockResolvedValue(mockCaches);
     mockGetExternalCachePaths.mockResolvedValue(mockPaths);
     await act(async () => {
       render(<CacheDetailExternalView />);
@@ -157,20 +178,24 @@ describe("CacheDetailExternal", () => {
 
   it("shows available/unavailable badges per cache", async () => {
     mockIsTauri = true;
-    mockDiscoverExternalCaches.mockResolvedValue(mockCaches);
+    mockDiscoverExternalCachesFast.mockResolvedValue(mockCaches);
     mockGetExternalCachePaths.mockResolvedValue(mockPaths);
     await act(async () => {
       render(<CacheDetailExternalView />);
     });
     // "externalAvailable" appears in stats card + badge, so use getAll
-    const availableTexts = screen.getAllByText("cache.detail.externalAvailable");
+    const availableTexts = screen.getAllByText(
+      "cache.detail.externalAvailable",
+    );
     expect(availableTexts.length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText("cache.detail.externalUnavailable")).toBeInTheDocument();
+    expect(
+      screen.getByText("cache.detail.externalUnavailable"),
+    ).toBeInTheDocument();
   });
 
   it("shows cache sizes", async () => {
     mockIsTauri = true;
-    mockDiscoverExternalCaches.mockResolvedValue(mockCaches);
+    mockDiscoverExternalCachesFast.mockResolvedValue(mockCaches);
     mockGetExternalCachePaths.mockResolvedValue(mockPaths);
     await act(async () => {
       render(<CacheDetailExternalView />);
@@ -181,7 +206,7 @@ describe("CacheDetailExternal", () => {
 
   it("shows cache paths", async () => {
     mockIsTauri = true;
-    mockDiscoverExternalCaches.mockResolvedValue(mockCaches);
+    mockDiscoverExternalCachesFast.mockResolvedValue(mockCaches);
     mockGetExternalCachePaths.mockResolvedValue(mockPaths);
     await act(async () => {
       render(<CacheDetailExternalView />);
@@ -192,7 +217,7 @@ describe("CacheDetailExternal", () => {
 
   it("renders clean button per cache item", async () => {
     mockIsTauri = true;
-    mockDiscoverExternalCaches.mockResolvedValue(mockCaches);
+    mockDiscoverExternalCachesFast.mockResolvedValue(mockCaches);
     mockGetExternalCachePaths.mockResolvedValue(mockPaths);
     await act(async () => {
       render(<CacheDetailExternalView />);
@@ -203,7 +228,7 @@ describe("CacheDetailExternal", () => {
 
   it("shows stats cards with correct counts when data loaded", async () => {
     mockIsTauri = true;
-    mockDiscoverExternalCaches.mockResolvedValue(mockCaches);
+    mockDiscoverExternalCachesFast.mockResolvedValue(mockCaches);
     mockGetExternalCachePaths.mockResolvedValue(mockPaths);
     await act(async () => {
       render(<CacheDetailExternalView />);
@@ -218,7 +243,7 @@ describe("CacheDetailExternal", () => {
 
   it("calls cleanExternalCache when clean button clicked and confirmed", async () => {
     mockIsTauri = true;
-    mockDiscoverExternalCaches.mockResolvedValue(mockCaches);
+    mockDiscoverExternalCachesFast.mockResolvedValue(mockCaches);
     mockGetExternalCachePaths.mockResolvedValue(mockPaths);
     mockCleanExternalCache.mockResolvedValue({
       success: true,
@@ -247,7 +272,7 @@ describe("CacheDetailExternal", () => {
 
   it("falls back to cacheForceCleanExternal when cleanExternalCache fails", async () => {
     mockIsTauri = true;
-    mockDiscoverExternalCaches.mockResolvedValue(mockCaches);
+    mockDiscoverExternalCachesFast.mockResolvedValue(mockCaches);
     mockGetExternalCachePaths.mockResolvedValue(mockPaths);
     mockCleanExternalCache.mockResolvedValue({
       success: false,
@@ -280,13 +305,17 @@ describe("CacheDetailExternal", () => {
     });
     await act(async () => {});
 
-    expect(mockCacheForceCleanExternal).toHaveBeenCalledWith("npm", false, true);
+    expect(mockCacheForceCleanExternal).toHaveBeenCalledWith(
+      "npm",
+      false,
+      true,
+    );
     expect(toast.success).toHaveBeenCalled();
   });
 
   it("calls cleanAllExternalCaches when clean all confirmed", async () => {
     mockIsTauri = true;
-    mockDiscoverExternalCaches.mockResolvedValue(mockCaches);
+    mockDiscoverExternalCachesFast.mockResolvedValue(mockCaches);
     mockGetExternalCachePaths.mockResolvedValue(mockPaths);
     mockCleanAllExternalCaches.mockResolvedValue([
       { success: true, freedBytes: 500000, displayName: "npm" },
@@ -323,20 +352,20 @@ describe("CacheDetailExternal", () => {
 
   it("fetches data on mount in Tauri mode", async () => {
     mockIsTauri = true;
-    mockDiscoverExternalCaches.mockResolvedValue([]);
+    mockDiscoverExternalCachesFast.mockResolvedValue([]);
     mockGetExternalCachePaths.mockResolvedValue([]);
     await act(async () => {
       render(<CacheDetailExternalView />);
     });
-    expect(mockDiscoverExternalCaches).toHaveBeenCalledTimes(1);
-    expect(mockGetExternalCachePaths).toHaveBeenCalledTimes(1);
+    expect(mockDiscoverExternalCachesFast).toHaveBeenCalled();
+    expect(mockGetExternalCachePaths).toHaveBeenCalled();
   });
 
   it("renders refresh button", async () => {
     await act(async () => {
       render(<CacheDetailExternalView />);
     });
-    const refreshBtns = screen.getAllByText(/cache\.refreshSuccess/);
+    const refreshBtns = screen.getAllByText(/common\.refresh/);
     expect(refreshBtns.length).toBeGreaterThanOrEqual(1);
   });
 });

@@ -1,8 +1,14 @@
 import { isTauri } from '@/lib/platform';
 import { diagnosticCaptureFrontendCrash } from '@/lib/tauri';
-import type { CrashInfo, DiagnosticErrorContext } from '@/types/tauri';
+import type {
+  CrashInfo,
+  DiagnosticErrorContext,
+  DiagnosticRuntimeBreadcrumb,
+} from '@/types/tauri';
 
 const FRONTEND_CRASH_CAPTURE_SESSION_KEY = 'cognia.frontend-crash-captured';
+const RUNTIME_BREADCRUMB_MAX_ENTRIES = 100;
+const RUNTIME_BREADCRUMB_MAX_MESSAGE_LEN = 4096;
 
 let capturedInMemory = false;
 
@@ -11,6 +17,7 @@ export interface FrontendCrashCaptureOptions {
   error: unknown;
   includeConfig?: boolean;
   extra?: Record<string, unknown>;
+  runtimeBreadcrumbs?: DiagnosticRuntimeBreadcrumb[];
 }
 
 export type FrontendCrashCaptureReason =
@@ -69,13 +76,37 @@ export async function captureFrontendCrash(
   try {
     const crashInfo = await diagnosticCaptureFrontendCrash({
       includeConfig: options.includeConfig ?? true,
+      source: options.source,
       errorContext: buildDiagnosticErrorContext(options),
+      runtimeBreadcrumbs: normalizeRuntimeBreadcrumbs(
+        options.runtimeBreadcrumbs,
+      ),
     });
     return { captured: true, crashInfo };
   } catch (error) {
     console.error('Failed to auto-capture frontend crash diagnostics:', error);
     return { captured: false, reason: 'capture-failed' };
   }
+}
+
+function normalizeRuntimeBreadcrumbs(
+  breadcrumbs?: DiagnosticRuntimeBreadcrumb[],
+): DiagnosticRuntimeBreadcrumb[] | undefined {
+  if (!Array.isArray(breadcrumbs) || breadcrumbs.length === 0) {
+    return undefined;
+  }
+
+  const bounded = breadcrumbs.length > RUNTIME_BREADCRUMB_MAX_ENTRIES
+    ? breadcrumbs.slice(-RUNTIME_BREADCRUMB_MAX_ENTRIES)
+    : breadcrumbs;
+
+  return bounded.map((entry) => ({
+    ...entry,
+    message:
+      entry.message.length > RUNTIME_BREADCRUMB_MAX_MESSAGE_LEN
+        ? entry.message.slice(0, RUNTIME_BREADCRUMB_MAX_MESSAGE_LEN)
+        : entry.message,
+  }));
 }
 
 export function _resetFrontendCrashCaptureForTests(): void {

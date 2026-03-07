@@ -222,7 +222,8 @@ export const TOUR_STEPS: TourStepDef[] = [
 // ============================================================================
 
 export const STEP_ICONS: StepIconMap = {
-  welcome: Sparkles,
+  'mode-selection': Sparkles,
+  welcome: Layers,
   language: Globe,
   theme: Palette,
   'environment-detection': Layers,

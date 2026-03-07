@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,7 +30,19 @@ import {
 } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { toast } from 'sonner';
-import type { GitGlobalSettingsCardProps } from '@/types/git';
+import type {
+  GitConfigApplyPlanItem,
+  GitConfigApplySummary,
+  GitConfigTemplatePreviewItem,
+  GitGlobalSettingsCardProps,
+} from '@/types/git';
+import {
+  buildApplyPlanFromPreview,
+  buildGitTemplatePreview,
+  getGitSettingsTemplate,
+  GIT_SETTINGS_TEMPLATES,
+  validateGitConfigEntry,
+} from '@/lib/git-settings-templates';
 
 interface SettingValue {
   value: string | null;
@@ -51,22 +63,19 @@ const SETTING_KEYS = [
 
 type SettingKey = typeof SETTING_KEYS[number];
 
-const SAFE_DEFAULT_SETTINGS: ReadonlyArray<readonly [SettingKey, string]> = [
-  ['init.defaultBranch', 'main'],
-  ['push.default', 'simple'],
-  ['push.autoSetupRemote', 'true'],
-  ['fetch.prune', 'true'],
-];
-
 export function GitGlobalSettingsCard({
   onGetConfigValue,
   onSetConfig,
   onSetConfigIfUnset,
+  onApplyConfigPlan,
 }: GitGlobalSettingsCardProps) {
   const { t } = useLocale();
   const [settings, setSettings] = useState<Record<string, SettingValue>>({});
   const [initialized, setInitialized] = useState(false);
-  const [applyingDefaults, setApplyingDefaults] = useState(false);
+  const [applyingTemplate, setApplyingTemplate] = useState(false);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>(GIT_SETTINGS_TEMPLATES[0]?.id ?? '');
+  const [templatePreview, setTemplatePreview] = useState<GitConfigTemplatePreviewItem[]>([]);
+  const [lastApplySummary, setLastApplySummary] = useState<GitConfigApplySummary | null>(null);
   const initRef = useRef(false);
   const mountedRef = useRef(true);
 
@@ -108,7 +117,27 @@ export function GitGlobalSettingsCard({
     return v === 'true';
   };
 
+  const currentConfigMap = useMemo(() => {
+    const next: Record<string, string> = {};
+    for (const key of SETTING_KEYS) {
+      const value = settings[key]?.value;
+      if (value !== null && value !== undefined && value !== '') {
+        next[key] = value;
+      }
+    }
+    return next;
+  }, [settings]);
+  const selectedTemplateCount = useMemo(
+    () => templatePreview.filter((item) => item.selected).length,
+    [templatePreview],
+  );
+
   const handleChange = useCallback(async (key: SettingKey, value: string) => {
+    const validationMessageKey = validateGitConfigEntry(key, value);
+    if (validationMessageKey) {
+      toast.error(t(validationMessageKey));
+      return;
+    }
     setSettings((prev) => ({
       ...prev,
       [key]: { value, loading: false },
@@ -119,31 +148,123 @@ export function GitGlobalSettingsCard({
       // revert on error
       loadAllSettings();
     }
-  }, [onSetConfig, loadAllSettings]);
+  }, [onSetConfig, loadAllSettings, t]);
 
   const handleToggle = useCallback(async (key: SettingKey, checked: boolean) => {
     await handleChange(key, checked ? 'true' : 'false');
   }, [handleChange]);
 
-  const handleApplySafeDefaults = useCallback(async () => {
-    if (!onSetConfigIfUnset) return;
-    setApplyingDefaults(true);
-    try {
-      let appliedCount = 0;
-      for (const [key, value] of SAFE_DEFAULT_SETTINGS) {
-        const wasSet = await onSetConfigIfUnset(key, value);
-        if (wasSet) {
-          appliedCount += 1;
+  const applyPlanWithLegacyActions = useCallback(async (
+    items: GitConfigApplyPlanItem[],
+  ): Promise<GitConfigApplySummary> => {
+    const actionableItems = items.filter((item) => item.selected);
+    let succeeded = 0;
+    let failed = 0;
+    let skipped = 0;
+    const results: GitConfigApplySummary['results'] = [];
+
+    for (const item of actionableItems) {
+      try {
+        if (item.mode === 'set_if_unset' && onSetConfigIfUnset) {
+          const wasSet = await onSetConfigIfUnset(item.key, item.value ?? '');
+          succeeded += 1;
+          if (!wasSet) skipped += 1;
+          results.push({
+            key: item.key,
+            mode: item.mode,
+            success: true,
+            applied: wasSet,
+            message: wasSet ? 'Applied' : 'Skipped (already set)',
+          });
+          continue;
         }
+
+        if (item.mode === 'unset') {
+          await onSetConfig(item.key, '');
+          succeeded += 1;
+          results.push({
+            key: item.key,
+            mode: item.mode,
+            success: true,
+            applied: true,
+            message: 'Removed',
+          });
+          continue;
+        }
+
+        await onSetConfig(item.key, item.value ?? '');
+        succeeded += 1;
+        results.push({
+          key: item.key,
+          mode: item.mode,
+          success: true,
+          applied: true,
+          message: 'Applied',
+        });
+      } catch (e) {
+        failed += 1;
+        results.push({
+          key: item.key,
+          mode: item.mode,
+          success: false,
+          applied: false,
+          message: String(e),
+        });
       }
+    }
+
+    return {
+      total: actionableItems.length,
+      succeeded,
+      failed,
+      skipped,
+      results,
+    };
+  }, [onSetConfig, onSetConfigIfUnset]);
+
+  const handleApplyTemplate = useCallback(async () => {
+    const selectedItems = templatePreview.filter((item) => item.selected);
+    if (selectedItems.length === 0) {
+      toast.error(t('git.settings.templateSelectAtLeastOne'));
+      return;
+    }
+
+    const invalidItem = selectedItems.find((item) => item.validationMessageKey);
+    if (invalidItem?.validationMessageKey) {
+      toast.error(t(invalidItem.validationMessageKey));
+      return;
+    }
+
+    setApplyingTemplate(true);
+    try {
+      const plan = buildApplyPlanFromPreview(templatePreview);
+      const summary = onApplyConfigPlan
+        ? await onApplyConfigPlan(plan)
+        : await applyPlanWithLegacyActions(plan);
+      setLastApplySummary(summary);
       await loadAllSettings();
-      toast.success(t('git.settings.safeDefaultsApplied', { count: String(appliedCount) }));
+      toast.success(t('git.settings.templateApplied', { count: String(summary.succeeded) }));
     } catch (e) {
       toast.error(String(e));
     } finally {
-      setApplyingDefaults(false);
+      setApplyingTemplate(false);
     }
-  }, [loadAllSettings, onSetConfigIfUnset, t]);
+  }, [applyPlanWithLegacyActions, loadAllSettings, onApplyConfigPlan, t, templatePreview]);
+
+  useEffect(() => {
+    const template = getGitSettingsTemplate(selectedTemplateId);
+    if (!template) {
+      setTemplatePreview([]);
+      return;
+    }
+    setTemplatePreview(buildGitTemplatePreview(template, currentConfigMap));
+  }, [currentConfigMap, selectedTemplateId]);
+
+  const handleToggleTemplateItem = useCallback((key: string, checked: boolean) => {
+    setTemplatePreview((prev) =>
+      prev.map((item) => (item.key === key ? { ...item, selected: checked } : item)),
+    );
+  }, []);
 
   const renderTextSetting = (key: SettingKey, placeholder?: string, type?: string) => (
     <div className="grid grid-cols-[180px_1fr] items-center gap-3">
@@ -157,11 +278,7 @@ export function GitGlobalSettingsCard({
           }));
         }}
         onBlur={(e) => {
-          const newVal = e.target.value;
-          const oldVal = settings[key]?.value ?? '';
-          if (newVal !== oldVal) {
-            handleChange(key, newVal);
-          }
+          void handleChange(key, e.target.value);
         }}
         onKeyDown={(e) => {
           if (e.key === 'Enter') {
@@ -239,21 +356,84 @@ export function GitGlobalSettingsCard({
           <Settings2 className="h-5 w-5" />
           {t('git.settings.title')}
         </CardTitle>
-        {onSetConfigIfUnset && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 text-xs self-start"
-            disabled={applyingDefaults}
-            onClick={() => {
-              void handleApplySafeDefaults();
-            }}
-          >
-            {t('git.settings.applySafeDefaults')}
-          </Button>
-        )}
       </CardHeader>
       <CardContent>
+        <div className="mb-4 space-y-3 rounded-md border p-3">
+          <div className="grid grid-cols-[180px_1fr] items-center gap-3">
+            <Label className="text-sm font-medium">{t('git.settings.templateTitle')}</Label>
+            <Select value={selectedTemplateId} onValueChange={setSelectedTemplateId}>
+              <SelectTrigger className="h-8 text-sm">
+                <SelectValue placeholder={t('git.settings.templatePlaceholder')} />
+              </SelectTrigger>
+              <SelectContent>
+                {GIT_SETTINGS_TEMPLATES.map((template) => (
+                  <SelectItem key={template.id} value={template.id}>
+                    {t(template.labelKey)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {selectedTemplateId && (
+            <p className="text-xs text-muted-foreground">
+              {t(getGitSettingsTemplate(selectedTemplateId)?.descriptionKey ?? 'git.settings.templatePlaceholder')}
+            </p>
+          )}
+          {templatePreview.length > 0 && (
+            <div className="space-y-2 rounded-md border bg-muted/20 p-2">
+              {templatePreview.map((item) => (
+                <div key={item.key} className="flex items-start gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    checked={item.selected}
+                    onChange={(e) => handleToggleTemplateItem(item.key, e.target.checked)}
+                    className="mt-0.5"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="font-mono break-all">{item.key}</p>
+                    <p className="text-muted-foreground">
+                      {item.currentValue ?? '∅'} → {item.nextValue ?? '∅'} ({t(`git.settings.templateAction.${item.action}`)})
+                    </p>
+                    {item.validationMessageKey && (
+                      <p className="text-destructive">{t(item.validationMessageKey)}</p>
+                    )}
+                  </div>
+                </div>
+              ))}
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs"
+                disabled={applyingTemplate || selectedTemplateCount === 0}
+                onClick={() => {
+                  void handleApplyTemplate();
+                }}
+              >
+                {t('git.settings.templateApply')}
+              </Button>
+            </div>
+          )}
+          {lastApplySummary && (
+            <div className="rounded-md border bg-muted/20 p-2 text-xs">
+              <p>
+                {t('git.settings.templateSummary', {
+                  success: String(lastApplySummary.succeeded),
+                  failed: String(lastApplySummary.failed),
+                  skipped: String(lastApplySummary.skipped),
+                })}
+              </p>
+              {lastApplySummary.results.filter((item) => !item.success).length > 0 && (
+                <div className="mt-1 space-y-1 text-destructive">
+                  {lastApplySummary.results
+                    .filter((item) => !item.success)
+                    .map((item) => (
+                      <p key={`failed-${item.key}`}>{item.key}: {item.message}</p>
+                    ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
         <Accordion type="multiple" defaultValue={['identity', 'commit', 'core']} className="w-full">
           {/* Identity */}
           <AccordionItem value="identity">

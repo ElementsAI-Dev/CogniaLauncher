@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -22,27 +22,51 @@ import {
 import { Download, Loader2 } from 'lucide-react';
 import type { WslExportDialogProps } from '@/types/wsl';
 
+type ExportFormat = 'tar' | 'vhd';
+
+function normalizeExportPath(filePath: string, format: ExportFormat): string {
+  const trimmed = filePath.trim();
+  if (!trimmed) return '';
+
+  if (format === 'vhd') {
+    if (/\.vhdx$/i.test(trimmed)) return trimmed;
+    if (/\.vhd$/i.test(trimmed)) return `${trimmed}x`;
+    const replaced = trimmed.replace(/\.(tar|tar\.gz|tgz)$/i, '.vhdx');
+    return /\.vhdx$/i.test(replaced) ? replaced : `${trimmed}.vhdx`;
+  }
+
+  if (/\.tar$/i.test(trimmed)) return trimmed;
+  const replaced = trimmed.replace(/\.(tar\.gz|tgz|vhdx|vhd)$/i, '.tar');
+  return replaced.endsWith('.tar') ? replaced : `${trimmed}.tar`;
+}
+
 export function WslExportDialog({
   open,
   distroName,
   onOpenChange,
   onExport,
+  capabilities,
   t,
 }: WslExportDialogProps) {
   const [filePath, setFilePath] = useState('');
-  const [format, setFormat] = useState<'tar' | 'tar.gz' | 'vhd'>('tar');
+  const [format, setFormat] = useState<ExportFormat>('tar');
   const [exporting, setExporting] = useState(false);
+  const supportsVhd = capabilities?.exportFormat !== false;
 
-  const ext = format === 'vhd' ? 'vhdx' : format === 'tar.gz' ? 'tar.gz' : 'tar';
+  useEffect(() => {
+    if (!supportsVhd && format === 'vhd') {
+      setFormat('tar');
+    }
+  }, [format, supportsVhd]);
+
+  const ext = format === 'vhd' ? 'vhdx' : 'tar';
 
   const handleBrowse = async () => {
     try {
       const { save } = await import('@tauri-apps/plugin-dialog');
       const filters = format === 'vhd'
         ? [{ name: 'VHD', extensions: ['vhdx'] }]
-        : format === 'tar.gz'
-          ? [{ name: 'Compressed Tar', extensions: ['tar.gz', 'tgz'] }]
-          : [{ name: 'Tar Archive', extensions: ['tar'] }];
+        : [{ name: 'Tar Archive', extensions: ['tar'] }];
       const selected = await save({
         defaultPath: `${distroName}.${ext}`,
         filters,
@@ -59,7 +83,8 @@ export function WslExportDialog({
     if (!filePath.trim()) return;
     setExporting(true);
     try {
-      await onExport(distroName, filePath.trim(), format === 'vhd');
+      const normalizedPath = normalizeExportPath(filePath, format);
+      await onExport(distroName, normalizedPath, format === 'vhd');
       onOpenChange(false);
       setFilePath('');
       setFormat('tar');
@@ -84,16 +109,22 @@ export function WslExportDialog({
         <div className="space-y-4 py-2">
           <div className="space-y-2">
             <Label>{t('wsl.exportFormat')}</Label>
-            <Select value={format} onValueChange={(v) => setFormat(v as 'tar' | 'tar.gz' | 'vhd')}>
+            <Select value={format} onValueChange={(v) => setFormat(v as ExportFormat)}>
               <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="tar">TAR (.tar)</SelectItem>
-                <SelectItem value="tar.gz">TAR + GZip (.tar.gz)</SelectItem>
-                <SelectItem value="vhd">VHD (.vhdx)</SelectItem>
+                {supportsVhd && <SelectItem value="vhd">VHD (.vhdx)</SelectItem>}
               </SelectContent>
             </Select>
+            {!supportsVhd && (
+              <p className="text-xs text-muted-foreground">
+                {t('wsl.capabilityUnsupported')
+                  .replace('{feature}', t('wsl.exportAsVhd'))
+                  .replace('{version}', capabilities?.version ?? 'Unknown')}
+              </p>
+            )}
           </div>
 
           <div className="space-y-2">

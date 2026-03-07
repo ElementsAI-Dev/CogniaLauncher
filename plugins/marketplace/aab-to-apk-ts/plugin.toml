@@ -1,0 +1,20 @@
+[plugin]
+id = "com.cognia.aab-to-apk"
+name = "AAB to APK Converter"
+version = "0.1.0"
+description = "Convert Android App Bundles (.aab) to universal APK files using bundletool"
+authors = ["CogniaLauncher Team"]
+
+[[tools]]
+id = "aab-to-apk"
+name_en = "AAB to APK"
+name_zh = "AAB 转 APK"
+description_en = "Preflight + convert .aab into universal .apk using Java + bundletool"
+description_zh = "先预检再转换：使用 Java + bundletool 将 .aab 转换为通用 .apk"
+category = "mobile"
+keywords = ["android", "aab", "apk", "bundletool", "convert", "preflight", "diagnostics"]
+icon = "Smartphone"
+entry = "convert_aab_to_apk"
+
+[permissions]
+process_exec = true

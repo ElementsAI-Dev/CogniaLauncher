@@ -2,6 +2,30 @@ import { render, screen } from '@testing-library/react';
 import { ToolDetailPageClient } from './tool-detail-page-client';
 
 const mockAddRecent = jest.fn();
+const mockBuiltInTool = {
+  id: 'builtin:json-formatter',
+  name: 'JSON Formatter',
+  description: 'Format JSON',
+  icon: 'Braces',
+  category: 'formatters',
+  keywords: ['json'],
+  isBuiltIn: true,
+  isNew: false,
+  isBeta: false,
+  builtInDef: { id: 'json-formatter' },
+};
+let mockAllTools = [mockBuiltInTool];
+let mockPluginStoreState: {
+  installedPlugins: Array<Record<string, unknown>>;
+  healthMap: Record<string, unknown>;
+  permissionMode: 'compat' | 'strict';
+  permissionStates: Record<string, { granted: string[] }>;
+} = {
+  installedPlugins: [],
+  healthMap: {},
+  permissionMode: 'compat',
+  permissionStates: {},
+};
 
 jest.mock('@/components/providers/locale-provider', () => ({
   useLocale: () => ({
@@ -11,26 +35,27 @@ jest.mock('@/components/providers/locale-provider', () => ({
 
 jest.mock('@/hooks/use-toolbox', () => ({
   useToolbox: () => ({
-    allTools: [
-      {
-        id: 'builtin:json-formatter',
-        name: 'JSON Formatter',
-        description: 'Format JSON',
-        icon: 'Braces',
-        category: 'formatters',
-        keywords: ['json'],
-        isBuiltIn: true,
-        isNew: false,
-        isBeta: false,
-        builtInDef: { id: 'json-formatter' },
-      },
-    ],
+    allTools: mockAllTools,
   }),
 }));
 
 jest.mock('@/lib/stores/toolbox', () => ({
-  useToolboxStore: (selector: (state: { addRecent: (toolId: string) => void }) => unknown) =>
-    selector({ addRecent: mockAddRecent }),
+  useToolboxStore: (
+    selector: (state: { addRecent: (toolId: string) => void; toolLifecycles: Record<string, unknown> }) => unknown,
+  ) =>
+    selector({ addRecent: mockAddRecent, toolLifecycles: {} }),
+}));
+
+jest.mock('@/lib/stores/plugin', () => ({
+  usePluginStore: (
+    selector: (state: {
+      installedPlugins: unknown[];
+      healthMap: Record<string, unknown>;
+      permissionMode: 'compat' | 'strict';
+      permissionStates: Record<string, { granted: string[] }>;
+    }) => unknown,
+  ) =>
+    selector(mockPluginStoreState),
 }));
 
 jest.mock('@/components/toolbox/built-in-tool-renderer', () => ({
@@ -44,6 +69,13 @@ jest.mock('@/components/toolbox/plugin-tool-runner', () => ({
 describe('ToolDetailPageClient', () => {
   beforeEach(() => {
     mockAddRecent.mockReset();
+    mockAllTools = [mockBuiltInTool];
+    mockPluginStoreState = {
+      installedPlugins: [],
+      healthMap: {},
+      permissionMode: 'compat',
+      permissionStates: {},
+    };
   });
 
   it('renders built-in tool by raw tool id on full page', () => {
@@ -55,5 +87,76 @@ describe('ToolDetailPageClient', () => {
     render(<ToolDetailPageClient toolId="unknown-tool" />);
     expect(screen.getByText('toolbox.search.noResults')).toBeInTheDocument();
   });
-});
 
+  it('shows governance summary for plugin tools in detail page', () => {
+    mockAllTools = [
+      {
+        id: 'plugin:com.example:run',
+        name: 'Plugin Run',
+        description: 'Run governed tool',
+        icon: 'Plug',
+        category: 'developer',
+        keywords: [],
+        isBuiltIn: false,
+        isNew: false,
+        isBeta: false,
+        deprecationWarnings: [
+          {
+            code: 'capability_deprecated',
+            severity: 'warning',
+            message: 'deprecated capability',
+            guidance: 'use new one',
+          },
+        ],
+        pluginTool: {
+          pluginId: 'com.example',
+          pluginName: 'Example',
+          toolId: 'run',
+          nameEn: 'Plugin Run',
+          nameZh: null,
+          descriptionEn: 'Run governed tool',
+          descriptionZh: null,
+          category: 'developer',
+          keywords: [],
+          icon: 'Plug',
+          entry: 'run',
+          uiMode: 'text',
+          capabilityDeclarations: ['process.exec'],
+        },
+      },
+    ];
+    mockPluginStoreState = {
+      installedPlugins: [
+        {
+          id: 'com.example',
+          name: 'Example',
+          enabled: true,
+          deprecationWarnings: [],
+        },
+      ],
+      healthMap: {
+        'com.example': {
+          consecutiveFailures: 0,
+          totalCalls: 10,
+          failedCalls: 0,
+          totalDurationMs: 1000,
+          lastError: null,
+          autoDisabled: false,
+        },
+      },
+      permissionMode: 'strict',
+      permissionStates: {
+        'com.example': {
+          granted: ['process_exec'],
+        },
+      },
+    };
+
+    render(<ToolDetailPageClient toolId="plugin:com.example:run" />);
+
+    expect(screen.getByText('toolbox.plugin.declaredCapabilities')).toBeInTheDocument();
+    expect(screen.getByText('toolbox.plugin.grantedCapabilities')).toBeInTheDocument();
+    expect(screen.getAllByText('process.exec').length).toBeGreaterThan(0);
+    expect(screen.getByText('deprecated capability use new one')).toBeInTheDocument();
+  });
+});

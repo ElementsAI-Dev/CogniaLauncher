@@ -16,13 +16,21 @@ jest.mock("next-themes", () => ({
 
 jest.mock("@/lib/tauri", () => ({
   isTauri: jest.fn(),
-  configSet: jest.fn(),
 }));
 
 const tauriMocks = jest.requireMock("@/lib/tauri") as {
   isTauri: jest.Mock;
-  configSet: jest.Mock;
 };
+
+const mockUpdateConfigValue = jest.fn();
+const mockFetchConfig = jest.fn();
+
+jest.mock("@/hooks/use-settings", () => ({
+  useSettings: jest.fn(() => ({
+    updateConfigValue: mockUpdateConfigValue,
+    fetchConfig: mockFetchConfig,
+  })),
+}));
 
 // Mock locale provider
 jest.mock("@/components/providers/locale-provider", () => ({
@@ -44,7 +52,8 @@ describe("ThemeToggle", () => {
     mockSetTheme.mockClear();
     mockTheme = "light";
     tauriMocks.isTauri.mockReturnValue(false);
-    tauriMocks.configSet.mockResolvedValue(undefined);
+    mockUpdateConfigValue.mockResolvedValue(undefined);
+    mockFetchConfig.mockResolvedValue({ "appearance.theme": "dark" });
   });
 
   it("renders without crashing", () => {
@@ -104,10 +113,11 @@ describe("ThemeToggle", () => {
     const darkOption = await screen.findByRole("menuitemradio", { name: /dark/i });
     await user.click(darkOption);
 
-    expect(tauriMocks.configSet).toHaveBeenCalledWith(
+    expect(mockUpdateConfigValue).toHaveBeenCalledWith(
       "appearance.theme",
       "dark",
     );
+    expect(mockFetchConfig).toHaveBeenCalled();
   });
 
   it("calls setTheme when system option is clicked", async () => {

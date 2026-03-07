@@ -1,6 +1,7 @@
-import { CacheDetailPageClient } from '@/components/cache/detail/cache-detail-page';
+import { CacheDetailPageClient } from "@/components/cache/detail/cache-detail-page";
 
-const CACHE_TYPES = ['download', 'metadata', 'external'] as const;
+const CACHE_TYPES = ["download", "metadata", "external"] as const;
+type CacheType = (typeof CACHE_TYPES)[number];
 
 export function generateStaticParams() {
   return CACHE_TYPES.map((cacheType) => ({ cacheType }));
@@ -9,7 +10,7 @@ export function generateStaticParams() {
 export default async function CacheDetailPage({
   params,
 }: {
-  params: Promise<{ cacheType: string }>;
+  params: Promise<{ cacheType: CacheType }>;
 }) {
   const { cacheType } = await params;
   return <CacheDetailPageClient cacheType={cacheType} />;

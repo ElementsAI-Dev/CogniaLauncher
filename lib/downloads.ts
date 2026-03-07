@@ -1,6 +1,25 @@
 import { PRIORITY_OPTIONS } from "@/lib/constants/downloads";
 import type { DownloadTask } from "@/types/tauri";
 
+export type DownloadFailureClass =
+  | "selection_error"
+  | "network_error"
+  | "integrity_error"
+  | "cache_error"
+  | "cancelled"
+  | "timeout";
+
+export interface DownloadFailureInput {
+  state: DownloadTask["state"] | "extracting";
+  error?: string | null;
+  recoverable?: boolean | null;
+}
+
+export interface DownloadFailureInfo {
+  failureClass: DownloadFailureClass;
+  retryable: boolean;
+}
+
 export interface DownloadPreflightInput {
   destinationPath: string;
   expectedBytes?: number | null;
@@ -91,6 +110,64 @@ export function findClosestPriority(priority: number): string {
     diff: Math.abs(Number(o.value) - priority),
   })).sort((a, b) => a.diff - b.diff);
   return sorted[0].value;
+}
+
+export function normalizeDownloadFailure(
+  input: DownloadFailureInput
+): DownloadFailureInfo {
+  if (input.state === "cancelled") {
+    return { failureClass: "cancelled", retryable: true };
+  }
+
+  const raw = (input.error ?? "").toLowerCase();
+  let failureClass: DownloadFailureClass = "network_error";
+
+  if (
+    raw.includes("invalid url") ||
+    raw.includes("not found") ||
+    raw.includes("unauthorized") ||
+    raw.includes("forbidden")
+  ) {
+    failureClass = "selection_error";
+  } else if (
+    raw.includes("checksum mismatch") ||
+    raw.includes("integrity") ||
+    raw.includes("signature")
+  ) {
+    failureClass = "integrity_error";
+  } else if (
+    raw.includes("cache") ||
+    raw.includes("corrupted cached") ||
+    raw.includes("cache hit validation")
+  ) {
+    failureClass = "cache_error";
+  } else if (raw.includes("timeout")) {
+    failureClass = "timeout";
+  } else if (
+    raw.includes("network") ||
+    raw.includes("connection") ||
+    raw.includes("http error") ||
+    raw.includes("rate limited")
+  ) {
+    failureClass = "network_error";
+  }
+
+  const retryableByClass: Record<DownloadFailureClass, boolean> = {
+    selection_error: false,
+    network_error: true,
+    integrity_error: false,
+    cache_error: true,
+    cancelled: true,
+    timeout: true,
+  };
+
+  return {
+    failureClass,
+    retryable:
+      typeof input.recoverable === "boolean"
+        ? input.recoverable
+        : retryableByClass[failureClass],
+  };
 }
 
 /**

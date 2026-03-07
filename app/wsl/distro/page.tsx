@@ -8,6 +8,9 @@ import { PageLoadingSkeleton } from '@/components/layout/page-loading-skeleton';
 function WslDistroPageContent() {
   const searchParams = useSearchParams();
   const distroName = searchParams.get('name') ?? '';
+  const returnTo = searchParams.get('returnTo') ?? undefined;
+  const origin = searchParams.get('origin') ?? undefined;
+  const continueAction = searchParams.get('continue') ?? undefined;
 
   if (!distroName) {
     return (
@@ -17,7 +20,14 @@ function WslDistroPageContent() {
     );
   }
 
-  return <WslDistroDetailPage distroName={distroName} />;
+  return (
+    <WslDistroDetailPage
+      distroName={distroName}
+      returnTo={returnTo}
+      origin={origin}
+      continueAction={continueAction}
+    />
+  );
 }
 
 export default function WslDistroPage() {

@@ -1,7 +1,6 @@
 import { searchDocs } from './search';
 import type { DocSearchEntry } from './content';
 
-// Mock the navigation module to provide test data
 jest.mock('./navigation', () => ({
   flattenNav: () => [
     { title: '快速开始', titleEn: 'Quick Start', slug: 'getting-started' },
@@ -9,31 +8,58 @@ jest.mock('./navigation', () => ({
     { title: '配置说明', titleEn: 'Configuration', slug: 'configuration' },
     { title: '缓存管理', titleEn: 'Cache Management', slug: 'cache-management' },
     { title: '环境管理', titleEn: 'Environment Management', slug: 'environment' },
-    { title: '分组标题', slug: '' }, // No slug - should be skipped
+    { title: '分组标题', slug: '' },
   ],
 }));
 
 const mockSearchIndex: DocSearchEntry[] = [
   {
     slug: 'getting-started',
-    headingsZh: ['快速开始', '前提条件', '第一步'],
-    headingsEn: ['Quick Start', 'Prerequisites', 'First Steps'],
-    excerptZh: '本指南帮助你快速安装和配置 CogniaLauncher',
-    excerptEn: 'This guide helps you quickly install and configure CogniaLauncher',
+    pageSlug: 'getting-started',
+    anchorId: 'quick-start',
+    sectionTitle: 'Quick Start',
+    locale: 'en',
+    excerpt: 'This guide helps you quickly install and configure CogniaLauncher',
+  },
+  {
+    slug: 'getting-started',
+    pageSlug: 'getting-started',
+    anchorId: 'prerequisites',
+    sectionTitle: 'Prerequisites',
+    locale: 'en',
+    excerpt: 'Prepare environment before the first run',
+  },
+  {
+    slug: 'getting-started',
+    pageSlug: 'getting-started',
+    anchorId: '前提条件',
+    sectionTitle: '前提条件',
+    locale: 'zh',
+    excerpt: '开始前请准备依赖项',
   },
   {
     slug: 'installation',
-    headingsZh: ['安装', '系统要求', 'Tauri 运行时'],
-    headingsEn: ['Installation', 'System Requirements', 'Tauri Runtime'],
-    excerptZh: '支持 Windows、macOS 和 Linux 平台',
-    excerptEn: 'Supports Windows, macOS and Linux platforms',
+    pageSlug: 'installation',
+    anchorId: 'tauri-runtime',
+    sectionTitle: 'Tauri Runtime',
+    locale: 'en',
+    excerpt: 'Supports Windows, macOS and Linux platforms',
   },
   {
     slug: 'configuration',
-    headingsZh: ['配置', '全局设置', '代理配置'],
-    headingsEn: ['Configuration', 'Global Settings', 'Proxy Settings'],
-    excerptZh: '通过设置页面或配置文件自定义应用行为',
-    excerptEn: 'Customize application behavior via settings page or config file',
+    pageSlug: 'configuration',
+    anchorId: 'proxy-settings',
+    sectionTitle: 'Proxy Settings',
+    locale: 'en',
+    excerpt: 'Customize application behavior via settings page or config file',
+  },
+  {
+    slug: 'configuration',
+    pageSlug: 'configuration',
+    anchorId: '代理配置',
+    sectionTitle: '代理配置',
+    locale: 'zh',
+    excerpt: '通过设置页面或配置文件自定义应用行为',
   },
 ];
 
@@ -62,7 +88,7 @@ describe('searchDocs', () => {
   });
 
   it('sorts results by score (higher first)', () => {
-    const results = searchDocs('install', 'en');
+    const results = searchDocs('install', 'en', mockSearchIndex);
     for (let i = 1; i < results.length; i++) {
       expect(results[i - 1].score).toBeGreaterThanOrEqual(results[i].score);
     }
@@ -82,41 +108,37 @@ describe('searchDocs', () => {
     expect(results.length).toBeGreaterThan(0);
   });
 
-  it('works without searchIndex (backward compatible)', () => {
+  it('works without searchIndex', () => {
     const results = searchDocs('Quick Start', 'en', undefined);
     expect(results.length).toBeGreaterThan(0);
   });
 
-  it('boosts score when searchIndex headings match', () => {
-    const withoutIndex = searchDocs('Prerequisites', 'en');
-    const withIndex = searchDocs('Prerequisites', 'en', mockSearchIndex);
-    // Without index, "Prerequisites" doesn't match any nav title
-    expect(withoutIndex).toHaveLength(0);
-    // With index, it matches a heading in getting-started
-    expect(withIndex.length).toBeGreaterThan(0);
-    expect(withIndex[0].slug).toBe('getting-started');
+  it('returns section result with anchorId from searchIndex', () => {
+    const results = searchDocs('Prerequisites', 'en', mockSearchIndex);
+    const match = results.find((r) => r.anchorId === 'prerequisites');
+    expect(match).toBeDefined();
+    expect(match?.slug).toBe('getting-started');
   });
 
-  it('matches content excerpts from searchIndex', () => {
-    const results = searchDocs('Tauri Runtime', 'en', mockSearchIndex);
-    expect(results.length).toBeGreaterThan(0);
-    expect(results.some((r) => r.slug === 'installation')).toBe(true);
+  it('uses locale-specific section entries only', () => {
+    const enResults = searchDocs('前提条件', 'en', mockSearchIndex);
+    const zhResults = searchDocs('前提条件', 'zh', mockSearchIndex);
+    expect(enResults).toEqual([]);
+    expect(zhResults.length).toBeGreaterThan(0);
   });
 
-  it('returns snippet from matched heading', () => {
+  it('returns snippet from matched section title', () => {
     const results = searchDocs('Proxy', 'en', mockSearchIndex);
-    expect(results.length).toBeGreaterThan(0);
-    const configResult = results.find((r) => r.slug === 'configuration');
+    const configResult = results.find((r) => r.anchorId === 'proxy-settings');
     expect(configResult).toBeDefined();
-    expect(configResult!.snippet).toContain('Proxy');
+    expect(configResult?.snippet).toContain('Proxy');
   });
 
-  it('returns snippet from excerpt when no heading matches', () => {
+  it('returns snippet from excerpt when section title does not match', () => {
     const results = searchDocs('platforms', 'en', mockSearchIndex);
-    expect(results.length).toBeGreaterThan(0);
-    const installResult = results.find((r) => r.slug === 'installation');
+    const installResult = results.find((r) => r.anchorId === 'tauri-runtime');
     expect(installResult).toBeDefined();
-    expect(installResult!.snippet).toContain('platform');
+    expect(installResult?.snippet.toLowerCase()).toContain('platform');
   });
 
   it('limits results to 15', () => {
@@ -124,7 +146,7 @@ describe('searchDocs', () => {
     expect(results.length).toBeLessThanOrEqual(15);
   });
 
-  it('searches Chinese headings from index', () => {
+  it('searches Chinese section entries from index', () => {
     const results = searchDocs('代理', 'zh', mockSearchIndex);
     expect(results.length).toBeGreaterThan(0);
     expect(results.some((r) => r.slug === 'configuration')).toBe(true);

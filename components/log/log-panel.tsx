@@ -2,7 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
-import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
+import {
+  Empty,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+  EmptyDescription,
+} from "@/components/ui/empty";
 import { LogEntry } from "./log-entry";
 import { LogToolbar } from "./log-toolbar";
 import { useLogStore } from "@/lib/stores/log";
@@ -53,11 +59,14 @@ export function LogPanel({
   const getFilteredLogs = useLogStore((state) => state.getFilteredLogs);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(600);
-
-  const filteredLogs = useMemo(
-    () => getFilteredLogs(),
-    [bookmarkedIds, filter, getFilteredLogs, logs, showBookmarksOnly],
+  const filterSnapshot = useMemo(
+    () => ({ logs, filter, bookmarkedIds, showBookmarksOnly }),
+    [bookmarkedIds, filter, logs, showBookmarksOnly],
   );
+  const filteredLogs = useMemo(() => {
+    void filterSnapshot;
+    return getFilteredLogs();
+  }, [filterSnapshot, getFilteredLogs]);
   const totalHeight = filteredLogs.length * ROW_HEIGHT;
 
   const startIdx = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
@@ -97,7 +106,10 @@ export function LogPanel({
 
   return (
     <div
-      className={cn("flex flex-col overflow-hidden rounded-lg border bg-card", className)}
+      className={cn(
+        "flex flex-col overflow-hidden rounded-lg border bg-card",
+        className,
+      )}
       style={{ maxHeight }}
     >
       {showToolbar && <LogToolbar />}

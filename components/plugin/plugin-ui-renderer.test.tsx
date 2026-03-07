@@ -13,6 +13,10 @@ jest.mock('@/components/docs/markdown-renderer', () => ({
   ),
 }));
 
+jest.mock('@/lib/clipboard', () => ({
+  writeClipboard: jest.fn().mockResolvedValue(undefined),
+}));
+
 describe('PluginUiRenderer', () => {
   const mockOnAction = jest.fn();
 
@@ -187,6 +191,8 @@ describe('PluginUiRenderer', () => {
       expect.objectContaining({
         action: 'button_click',
         buttonId: 'refresh',
+        correlationId: expect.any(String),
+        runtimeContext: expect.objectContaining({ renderer: 'plugin-ui' }),
         state: undefined,
       }),
     );
@@ -376,6 +382,83 @@ describe('PluginUiRenderer', () => {
         formId: 'normalize-test',
         formData: expect.objectContaining({ retries: 1, enabled: true }),
         formDataTypes: expect.objectContaining({ retries: 'number', enabled: 'switch' }),
+        correlationId: expect.any(String),
+        runtimeContext: expect.objectContaining({ renderer: 'plugin-ui', blockType: 'form' }),
+      }),
+    );
+  });
+
+  it('renders conditional-group when condition matches state', () => {
+    const blocks = [
+      {
+        type: 'conditional-group',
+        when: { path: 'mode', equals: 'advanced' },
+        children: [{ type: 'text', content: 'Advanced options' }],
+      },
+    ] as unknown as UiBlock[];
+
+    render(
+      <PluginUiRenderer
+        blocks={blocks}
+        onAction={mockOnAction}
+        state={{ mode: 'advanced' }}
+      />,
+    );
+
+    expect(screen.getByText('Advanced options')).toBeInTheDocument();
+  });
+
+  it('hides conditional-group when condition does not match state', () => {
+    const blocks = [
+      {
+        type: 'conditional-group',
+        when: { path: 'mode', equals: 'advanced' },
+        children: [{ type: 'text', content: 'Advanced options' }],
+      },
+    ] as unknown as UiBlock[];
+
+    render(
+      <PluginUiRenderer
+        blocks={blocks}
+        onAction={mockOnAction}
+        state={{ mode: 'basic' }}
+      />,
+    );
+
+    expect(screen.queryByText('Advanced options')).not.toBeInTheDocument();
+  });
+
+  it('renders stepper block and emits deterministic tab_change envelope', async () => {
+    const user = userEvent.setup();
+    const blocks = [
+      {
+        type: 'stepper',
+        id: 'wizard',
+        steps: [
+          { id: 's1', label: 'Step 1', children: [{ type: 'text', content: 'One' }] },
+          { id: 's2', label: 'Step 2', children: [{ type: 'text', content: 'Two' }] },
+        ],
+        defaultStepId: 's1',
+      },
+    ] as unknown as UiBlock[];
+
+    render(<PluginUiRenderer blocks={blocks} onAction={mockOnAction} />);
+    expect(screen.getByText('One')).toBeInTheDocument();
+    await user.click(screen.getByText('Next'));
+
+    expect(mockOnAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'tab_change',
+        tabId: 's2',
+        sourceType: 'stepper',
+        sourceId: 's2',
+        correlationId: expect.any(String),
+        runtimeContext: expect.objectContaining({
+          renderer: 'plugin-ui',
+          blockType: 'stepper',
+          stepperId: 'wizard',
+          stepId: 's2',
+        }),
       }),
     );
   });
@@ -481,6 +564,63 @@ describe('PluginUiRenderer', () => {
     expect(screen.getByText('pnpm')).toBeInTheDocument();
     expect(screen.getByText('Total')).toBeInTheDocument();
     expect(screen.getAllByText('12').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('renders consistent structured output actions (copy/export/open/expand)', () => {
+    const blocks = [
+      {
+        type: 'json-view',
+        label: 'Payload',
+        data: { ok: true },
+      },
+      {
+        type: 'table',
+        headers: ['Name', 'Value'],
+        rows: [['A', '1']],
+      },
+      {
+        type: 'log-stream',
+        entries: [{ level: 'info', message: 'hello' }],
+      },
+      {
+        type: 'artifact-actions',
+        artifacts: [{ id: 'report', label: 'Report', href: 'https://example.com', action: 'open' }],
+      },
+    ] as unknown as UiBlock[];
+
+    render(<PluginUiRenderer blocks={blocks} onAction={mockOnAction} />);
+    expect(screen.getAllByText('Copy').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText('Export').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Expand').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('Open')).toBeInTheDocument();
+  });
+
+  it('emits structured output expand action envelope for json-view', async () => {
+    const user = userEvent.setup();
+    const blocks = [
+      {
+        type: 'json-view',
+        label: 'Payload',
+        data: { ok: true },
+      },
+    ] as unknown as UiBlock[];
+
+    render(<PluginUiRenderer blocks={blocks} onAction={mockOnAction} />);
+    await user.click(screen.getByText('Expand'));
+
+    expect(mockOnAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'output_expand',
+        sourceType: 'json-view',
+        sourceId: 'Payload',
+        correlationId: expect.any(String),
+        runtimeContext: expect.objectContaining({
+          renderer: 'plugin-ui',
+          blockType: 'json-view',
+          expanded: true,
+        }),
+      }),
+    );
   });
 
   it('renders warning fallback for unknown block types', () => {

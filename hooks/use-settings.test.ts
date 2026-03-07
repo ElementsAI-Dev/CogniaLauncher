@@ -109,6 +109,17 @@ describe('useSettings', () => {
     expect(mockUpdateConfig).toHaveBeenCalledWith('theme', 'light');
   });
 
+  it('normalizes appearance values before config persistence', async () => {
+    const { result } = renderHook(() => useSettings());
+
+    await act(async () => {
+      await result.current.updateConfigValue('appearance.interface_radius', '0.74');
+    });
+
+    expect(mockConfigSet).toHaveBeenCalledWith('appearance.interface_radius', '0.75');
+    expect(mockUpdateConfig).toHaveBeenCalledWith('appearance.interface_radius', '0.75');
+  });
+
   it('should sync max concurrent downloads when parallel_downloads changes', async () => {
     const { result } = renderHook(() => useSettings());
 

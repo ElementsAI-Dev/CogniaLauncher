@@ -8,14 +8,14 @@
 ## 2. Core Components
 
 - `src-tauri/src/core/health_check.rs` (HealthChecker, HealthIssue, HealthCheckResult): Core health checking logic with issue detection and categorization.
-- `src-tauri/src/commands/health_check.rs` (health_check_all, health_check_environment): Tauri commands for triggering health checks.
+- `src-tauri/src/commands/health_check.rs` (`health_check_all`, `health_check_environment`, `health_check_package_manager`, `health_check_package_managers`, `health_check_fix`): Tauri commands for triggering checks and remediation previews/applies.
 - `hooks/use-health-check.ts` (useHealthCheck): React hook for health check operations.
 - `components/environments/health-check-panel.tsx` (HealthCheckPanel): UI component for displaying health check results.
 
 ## 3. Execution Flow (LLM Retrieval Map)
 
 - **1. Trigger:** User initiates health check via `components/environments/health-check-panel.tsx`.
-- **2. Command:** Frontend calls `health_check_all` or `health_check_environment` via `hooks/use-health-check.ts`.
+- **2. Command:** Frontend calls `health_check_all`, scoped health commands, or `health_check_fix` via `hooks/use-health-check.ts` / provider-detail flows.
 - **3. Detection:** `src-tauri/src/core/health_check.rs:15-85` validates environments and detects issues.
 - **4. Results:** Returns `HealthCheckResult` with issues array, each containing severity, category, and remediation steps.
 

@@ -20,18 +20,20 @@ jest.mock("@/lib/stores/environment", () => ({
 
 jest.mock("@/lib/tauri", () => ({
   isTauri: () => mockIsTauri(),
-  envList: mockEnvList,
-  envListProviders: mockEnvListProviders,
+  envList: (...args: Parameters<typeof mockEnvList>) => mockEnvList(...args),
+  envListProviders: (...args: Parameters<typeof mockEnvListProviders>) =>
+    mockEnvListProviders(...args),
 }));
 
 jest.mock("@/hooks/use-environment-detection", () => ({
   useEnvironmentDetection: () => ({
     detectSystemEnvironments: mockDetectSystemEnvironments,
     buildOnboardingDetections: mockBuildOnboardingDetections,
+    systemDetectError: null,
   }),
 }));
 
-const mockT = (key: string) => {
+const mockT = (key: string, params?: Record<string, string | number>) => {
   const translations: Record<string, string> = {
     "onboarding.envDetectionTitle": "Environment Detection",
     "onboarding.envDetectionDesc": "Detecting installed tools",
@@ -44,8 +46,12 @@ const mockT = (key: string) => {
     "onboarding.envScopeManaged": "Managed",
     "onboarding.envRescan": "Rescan",
     "onboarding.envWebModeNote": "Running in web mode",
+    "onboarding.envDetectionError": "Detection failed: {message}",
+    "onboarding.envDetailedPurpose": "Review existing runtimes before you change anything.",
+    "onboarding.envDetailedRecommendation": "Use source and scope details to plan your next step.",
   };
-  return translations[key] || key;
+  const template = translations[key] || key;
+  return template.replace(/\{(\w+)\}/g, (_, token: string) => String(params?.[token] ?? `{${token}}`));
 };
 
 describe("EnvironmentDetectionStep", () => {
@@ -138,8 +144,53 @@ describe("EnvironmentDetectionStep", () => {
     await waitFor(() => {
       expect(screen.getByText("Node.js")).toBeInTheDocument();
       expect(screen.getByText("20.10.0")).toBeInTheDocument();
-      expect(screen.getByText("Source: {source}")).toBeInTheDocument();
+      expect(screen.getByText("Source: node --version")).toBeInTheDocument();
       expect(screen.getByText("System")).toBeInTheDocument();
+    });
+  });
+
+  it("shows system detection failure feedback while keeping remaining detections visible", async () => {
+    mockIsTauri.mockReturnValue(true);
+    mockDetectSystemEnvironments.mockRejectedValue(new Error("Permission denied"));
+    mockEnvList.mockResolvedValue([
+      {
+        env_type: "python",
+        provider_id: "pyenv",
+        provider: "pyenv",
+        current_version: "3.12.1",
+        installed_versions: [],
+        available: true,
+        total_size: 0,
+        version_count: 0,
+      },
+    ]);
+    mockEnvListProviders.mockResolvedValue([]);
+    mockBuildOnboardingDetections.mockReturnValue([
+      {
+        name: "Python",
+        envType: "python",
+        version: "3.12.1",
+        available: true,
+        scope: "managed" as const,
+      },
+    ]);
+
+    render(<EnvironmentDetectionStep t={mockT} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Detection failed: Permission denied")).toBeInTheDocument();
+      expect(screen.getByText("Python")).toBeInTheDocument();
+      expect(screen.getByText("Managed")).toBeInTheDocument();
+      expect(screen.getByText("Rescan")).toBeInTheDocument();
+    });
+  });
+
+  it("shows extra onboarding guidance in detailed mode", async () => {
+    render(<EnvironmentDetectionStep t={mockT} mode="detailed" />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Review existing runtimes before you change anything.")).toBeInTheDocument();
+      expect(screen.getByText("Use source and scope details to plan your next step.")).toBeInTheDocument();
     });
   });
 });

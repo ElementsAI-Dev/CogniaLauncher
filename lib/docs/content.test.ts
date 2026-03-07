@@ -167,57 +167,57 @@ describe('buildSearchIndex', () => {
     expect(index.length).toBeGreaterThan(0);
   });
 
-  it('includes root index entry with slug "index"', () => {
+  it('includes root index entries with slug "index"', () => {
     const index = buildSearchIndex();
-    const rootEntry = index.find((e) => e.slug === 'index');
-    expect(rootEntry).toBeDefined();
+    const rootEntries = index.filter((e) => e.pageSlug === 'index');
+    expect(rootEntries.length).toBeGreaterThan(0);
   });
 
-  it('entries have headings arrays for both locales', () => {
+  it('emits locale-specific entries', () => {
     const index = buildSearchIndex();
-    const entry = index.find((e) => e.slug === 'index');
-    expect(entry).toBeDefined();
-    expect(Array.isArray(entry!.headingsZh)).toBe(true);
-    expect(Array.isArray(entry!.headingsEn)).toBe(true);
-    expect(entry!.headingsZh.length).toBeGreaterThan(0);
-    expect(entry!.headingsEn.length).toBeGreaterThan(0);
+    const rootEntries = index.filter((e) => e.pageSlug === 'index');
+    const locales = new Set(rootEntries.map((e) => e.locale));
+    expect(locales.has('zh')).toBe(true);
+    expect(locales.has('en')).toBe(true);
   });
 
-  it('entries have excerpt strings for both locales', () => {
+  it('entries include section-level metadata', () => {
     const index = buildSearchIndex();
-    const entry = index.find((e) => e.slug === 'index');
+    const entry = index.find((e) => e.pageSlug === 'index');
     expect(entry).toBeDefined();
-    expect(typeof entry!.excerptZh).toBe('string');
-    expect(typeof entry!.excerptEn).toBe('string');
-    expect(entry!.excerptZh.length).toBeGreaterThan(0);
-    expect(entry!.excerptEn.length).toBeGreaterThan(0);
+    expect(entry!.slug).toBe(entry!.pageSlug);
+    expect(typeof entry!.pageSlug).toBe('string');
+    expect(typeof entry!.sectionTitle).toBe('string');
+    expect(typeof entry!.anchorId).toBe('string');
+    expect(['zh', 'en']).toContain(entry!.locale);
+    expect(typeof entry!.excerpt).toBe('string');
+    expect(entry!.sectionTitle.length).toBeGreaterThan(0);
   });
 
   it('excerpt length is capped around 200 characters', () => {
     const index = buildSearchIndex();
     for (const entry of index) {
-      if (entry.excerptZh) {
-        expect(entry.excerptZh.length).toBeLessThanOrEqual(210);
-      }
-      if (entry.excerptEn) {
-        expect(entry.excerptEn.length).toBeLessThanOrEqual(210);
+      if (entry.excerpt) {
+        expect(entry.excerpt.length).toBeLessThanOrEqual(210);
       }
     }
   });
 
-  it('headings do not include markdown formatting', () => {
+  it('section titles do not include markdown formatting', () => {
     const index = buildSearchIndex();
     for (const entry of index) {
-      for (const h of [...entry.headingsZh, ...entry.headingsEn]) {
-        expect(h).not.toMatch(/^\*\*/);
-        expect(h).not.toMatch(/^`/);
-      }
+      expect(entry.sectionTitle).not.toMatch(/^\*\*/);
+      expect(entry.sectionTitle).not.toMatch(/^`/);
     }
   });
 
   it('covers all doc slugs', () => {
     const slugs = getAllDocSlugs();
     const index = buildSearchIndex();
-    expect(index.length).toBe(slugs.length);
+    const indexedSlugs = new Set(index.map((entry) => entry.pageSlug));
+    for (const slugArr of slugs) {
+      const slug = slugArr.length === 0 ? 'index' : slugArr.join('/');
+      expect(indexedSlugs.has(slug)).toBe(true);
+    }
   });
 });

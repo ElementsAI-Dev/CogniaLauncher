@@ -17,6 +17,7 @@ function getMenuItemLabel(id: TrayMenuItemId, t: (key: string) => string): strin
     downloads: t("settings.trayMenu.downloads"),
     settings: t("settings.trayMenu.settings"),
     check_updates: t("settings.trayMenu.checkUpdates"),
+    toggle_notifications: t("settings.trayMenu.toggleNotifications"),
     open_logs: t("settings.trayMenu.openLogs"),
     always_on_top: t("settings.trayMenu.alwaysOnTop"),
     autostart: t("settings.trayMenu.autostart"),
@@ -53,7 +54,7 @@ export function TrayMenuCustomizer({ t }: TrayMenuCustomizerProps) {
   return (
     <div className="px-1 py-3 space-y-3">
       <div className="flex items-center justify-between">
-        <div>
+        <div id="tray-menu-customize">
           <Label className="text-sm">{t("settings.trayMenuCustomize")}</Label>
           <p className="text-xs text-muted-foreground">
             {t("settings.trayMenuCustomizeDesc")}

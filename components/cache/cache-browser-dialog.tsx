@@ -35,6 +35,7 @@ import {
 import { FolderOpen, RefreshCw, Trash2 } from 'lucide-react';
 import type { CacheEntryItem } from '@/lib/tauri';
 import { ENTRIES_PER_PAGE } from '@/lib/constants/cache';
+import type { CacheBrowserTypeFilter } from '@/types/cache';
 
 export interface CacheBrowserDialogProps {
   browserOpen: boolean;
@@ -44,8 +45,8 @@ export interface CacheBrowserDialogProps {
   browserLoading: boolean;
   browserSearch: string;
   setBrowserSearch: (value: string) => void;
-  browserTypeFilter: string;
-  setBrowserTypeFilter: (value: string) => void;
+  browserTypeFilter: CacheBrowserTypeFilter;
+  setBrowserTypeFilter: (value: CacheBrowserTypeFilter) => void;
   browserSortBy: string;
   setBrowserSortBy: (value: string) => void;
   browserPage: number;
@@ -107,10 +108,11 @@ export function CacheBrowserDialog({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">{t('cache.allTypes')}</SelectItem>
+              <SelectItem value="all">{t('cache.allTypes')}</SelectItem>
               <SelectItem value="download">{t('cache.typeDownload')}</SelectItem>
               <SelectItem value="metadata">{t('cache.typeMetadata')}</SelectItem>
               <SelectItem value="partial">{t('cache.typePartial')}</SelectItem>
+              <SelectItem value="index">{t('cache.typeIndex')}</SelectItem>
             </SelectContent>
           </Select>
           <Select value={browserSortBy} onValueChange={setBrowserSortBy}>

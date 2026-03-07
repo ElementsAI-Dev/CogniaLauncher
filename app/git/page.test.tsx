@@ -56,6 +56,7 @@ jest.mock('@/components/providers/locale-provider', () => ({
 
 jest.mock('@/lib/tauri', () => ({
   isTauri: jest.fn().mockReturnValue(true),
+  revealPath: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock('@/hooks/use-git', () => ({
@@ -94,9 +95,32 @@ jest.mock('@/hooks/use-git', () => ({
     getAheadBehind: mockGetAheadBehind,
     getCommitDetail: jest.fn().mockResolvedValue(null),
     getConfigFilePath: jest.fn().mockRejectedValue(new Error('config path unavailable in test')),
-    openConfigInEditor: jest.fn().mockResolvedValue('ok'),
+    probeConfigEditor: jest.fn().mockResolvedValue({
+      available: true,
+      reason: 'ok',
+      preferredEditor: 'code',
+      configPath: '/home/user/.gitconfig',
+      fallbackAvailable: true,
+    }),
+    openConfigInEditor: jest.fn().mockResolvedValue({
+      success: true,
+      kind: 'opened_editor',
+      reason: 'ok',
+      message: 'Opened in code',
+      openedWith: 'code',
+      fallbackUsed: false,
+      fallbackPath: '/home/user/.gitconfig',
+    }),
     getConfigValue: jest.fn().mockResolvedValue(null),
     listAliases: jest.fn().mockResolvedValue([]),
+    setConfigIfUnset: jest.fn().mockResolvedValue(true),
+    applyConfigPlan: jest.fn().mockResolvedValue({
+      total: 0,
+      succeeded: 0,
+      failed: 0,
+      skipped: 0,
+      results: [],
+    }),
     setConfigValue: jest.fn().mockResolvedValue(undefined),
     removeConfigKey: jest.fn().mockResolvedValue(undefined),
     installGit: jest.fn().mockResolvedValue('installed'),
