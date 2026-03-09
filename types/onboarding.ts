@@ -196,7 +196,7 @@ export interface ShellOption {
 
 export interface CompleteStepProps {
   mode?: OnboardingMode;
-  t: (key: string) => string;
+  t: (key: string, params?: Record<string, string | number>) => string;
   onStartTour: () => void;
   onRunAction: (action: OnboardingNextAction) => void;
   tourCompleted: boolean;

@@ -308,7 +308,7 @@ export function useToolboxMarketplace(overrides?: Partial<ToolboxMarketplaceFilt
 
       const result = installMarketplacePluginWithResult
         ? await installMarketplacePluginWithResult(listing.source.storeId)
-        : (() => Promise.resolve())().then(async () => {
+        : await (() => Promise.resolve())().then(async () => {
             const pluginId = await installMarketplacePlugin(listing.source.storeId);
             return pluginId
               ? {
@@ -399,7 +399,7 @@ export function useToolboxMarketplace(overrides?: Partial<ToolboxMarketplaceFilt
         ? (
             updatePluginWithResult
               ? await updatePluginWithResult(listing.pluginId)
-              : (() => Promise.resolve())().then(async () => {
+              : await (() => Promise.resolve())().then(async () => {
                   await updatePlugin(listing.pluginId);
                   return {
                     ok: true,
@@ -414,7 +414,7 @@ export function useToolboxMarketplace(overrides?: Partial<ToolboxMarketplaceFilt
         : (
             installMarketplacePluginWithResult
               ? await installMarketplacePluginWithResult(listing.source.storeId)
-              : (() => Promise.resolve())().then(async () => {
+              : await (() => Promise.resolve())().then(async () => {
                   const pluginId = await installMarketplacePlugin(listing.source.storeId);
                   return pluginId
                     ? {

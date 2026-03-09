@@ -1281,9 +1281,16 @@ export function useGit(): UseGitReturn {
     setLoading(true);
     setError(null);
     try {
-      await checkAvailability();
+      const isAvailable = await checkAvailability();
+      if (!isAvailable) {
+        setVersion(null);
+        setExecutablePath(null);
+        setConfig([]);
+        return;
+      }
       await refreshVersion();
-      await refreshConfig();
+      // Config loading can stall on some machines; do not block core readiness.
+      void refreshConfig();
     } catch (e) {
       setError(String(e));
     } finally {

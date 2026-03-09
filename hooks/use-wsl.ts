@@ -502,6 +502,7 @@ export function useWsl(): UseWslReturn {
       return await tauri.wslMount(options);
     } catch (err) {
       recordWslFailure(err);
+      throw err;
     }
   }, [assertOperationSupported, clearWslFailure, recordWslFailure]);
 
@@ -804,6 +805,7 @@ export function useWsl(): UseWslReturn {
       return await tauri.wslDistroHealthCheck(distro);
     } catch (err) {
       recordWslFailure(err);
+      throw err;
     }
   }, [assertOperationSupported, clearWslFailure, recordWslFailure]);
 
@@ -815,6 +817,7 @@ export function useWsl(): UseWslReturn {
       return await tauri.wslListPortForwards();
     } catch (err) {
       recordWslFailure(err);
+      return [];
     }
   }, [assertOperationSupported, clearWslFailure, recordWslFailure]);
 

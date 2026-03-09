@@ -9,13 +9,13 @@ jest.mock('@/components/toolbox/tool-detail-page-client', () => ({
 }));
 
 describe('ToolboxToolDetailPage', () => {
-  it('generateStaticParams returns raw and encoded toolbox ids', () => {
+  it('generateStaticParams returns only filesystem-safe canonical toolbox ids', () => {
     const params = generateStaticParams();
-    expect(params).toHaveLength(TOOL_REGISTRY.length * 3);
+    const paramIds = params.map((item) => item.toolId);
     TOOL_REGISTRY.forEach((tool) => {
-      expect(params).toContainEqual({ toolId: tool.id });
-      expect(params).toContainEqual({ toolId: `builtin:${tool.id}` });
-      expect(params).toContainEqual({ toolId: `builtin%3A${tool.id}` });
+      expect(paramIds).toContain(tool.id);
+      expect(paramIds).not.toContain(`builtin:${tool.id}`);
+      expect(paramIds).not.toContain(`plugin:${tool.id}`);
     });
   });
 

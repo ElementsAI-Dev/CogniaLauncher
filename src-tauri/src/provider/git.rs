@@ -12,6 +12,8 @@ use std::time::Duration;
 
 /// Default timeout for Git commands (30 seconds)
 const GIT_TIMEOUT: Duration = Duration::from_secs(30);
+/// Short timeout for non-critical global config read operations
+const GIT_CONFIG_READ_TIMEOUT: Duration = Duration::from_secs(5);
 /// Longer timeout for install/update operations
 const GIT_INSTALL_TIMEOUT: Duration = Duration::from_secs(300);
 
@@ -20,6 +22,10 @@ const FIELD_SEP: char = '\x1f';
 
 fn make_opts() -> ProcessOptions {
     ProcessOptions::new().with_timeout(GIT_TIMEOUT)
+}
+
+fn make_config_read_opts() -> ProcessOptions {
+    ProcessOptions::new().with_timeout(GIT_CONFIG_READ_TIMEOUT)
 }
 
 fn make_install_opts() -> ProcessOptions {
@@ -45,7 +51,12 @@ async fn run_git(args: &[&str]) -> CogniaResult<String> {
 
 /// Run a git command, returning stdout even on non-zero exit
 async fn run_git_lenient(args: &[&str]) -> CogniaResult<String> {
-    let out = process::execute("git", args, Some(make_opts()))
+    run_git_lenient_with_opts(args, make_opts()).await
+}
+
+/// Run a git command with custom ProcessOptions, returning stdout even on non-zero exit
+async fn run_git_lenient_with_opts(args: &[&str], opts: ProcessOptions) -> CogniaResult<String> {
+    let out = process::execute("git", args, Some(opts))
         .await
         .map_err(|e| CogniaError::Provider(format!("git: {}", e)))?;
     let stdout = out.stdout.trim().to_string();
@@ -1534,7 +1545,9 @@ impl GitProvider {
 
     /// Get all global git config entries
     pub async fn get_config_list(&self) -> CogniaResult<Vec<GitConfigEntry>> {
-        match run_git_lenient(&["config", "--global", "--list"]).await {
+        match run_git_lenient_with_opts(&["config", "--global", "--list"], make_config_read_opts())
+            .await
+        {
             Ok(output) => Ok(parse_config_list(&output)),
             Err(_) => Ok(vec![]),
         }
@@ -1554,7 +1567,12 @@ impl GitProvider {
 
     /// Get a single global git config value by key
     pub async fn get_config_value(&self, key: &str) -> CogniaResult<Option<String>> {
-        match run_git_lenient(&["config", "--global", "--get", key]).await {
+        match run_git_lenient_with_opts(
+            &["config", "--global", "--get", key],
+            make_config_read_opts(),
+        )
+        .await
+        {
             Ok(v) => {
                 let trimmed = v.trim().to_string();
                 if trimmed.is_empty() {
@@ -1569,7 +1587,12 @@ impl GitProvider {
 
     /// Get the path to the global git config file
     pub async fn get_config_file_path(&self) -> CogniaResult<Option<String>> {
-        match run_git_lenient(&["config", "--global", "--list", "--show-origin"]).await {
+        match run_git_lenient_with_opts(
+            &["config", "--global", "--list", "--show-origin"],
+            make_config_read_opts(),
+        )
+        .await
+        {
             Ok(output) => {
                 // First line format: "file:/path/to/.gitconfig\tkey=value"
                 if let Some(first_line) = output.lines().next() {
@@ -1587,7 +1610,12 @@ impl GitProvider {
 
     /// List all git aliases (alias.* entries)
     pub async fn list_aliases(&self) -> CogniaResult<Vec<GitConfigEntry>> {
-        match run_git_lenient(&["config", "--global", "--get-regexp", "^alias\\."]).await {
+        match run_git_lenient_with_opts(
+            &["config", "--global", "--get-regexp", "^alias\\."],
+            make_config_read_opts(),
+        )
+        .await
+        {
             Ok(output) => {
                 Ok(output
                     .lines()

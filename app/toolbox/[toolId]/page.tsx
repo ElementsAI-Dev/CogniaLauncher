@@ -4,13 +4,8 @@ import { decodeToolIdFromPath, encodeToolIdForPath } from '@/lib/toolbox-route';
 
 export function generateStaticParams() {
   const ids = TOOL_REGISTRY.flatMap((tool) => {
-    const builtInRawId = `builtin:${tool.id}`;
-    return [
-      tool.id,
-      encodeToolIdForPath(tool.id),
-      builtInRawId,
-      encodeToolIdForPath(builtInRawId),
-    ];
+    const encoded = encodeToolIdForPath(tool.id);
+    return encoded === tool.id ? [tool.id] : [tool.id, encoded];
   });
 
   return [...new Set(ids)].map((toolId) => ({ toolId }));

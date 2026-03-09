@@ -297,7 +297,7 @@ function createPresetId(): string {
   return `preset-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function pickAppearanceValues(state: AppearancePresetConfig): AppearanceValueState {
+function pickAppearanceValues(state: AppearanceValueState): AppearanceValueState {
   return {
     accentColor: state.accentColor,
     chartColorTheme: state.chartColorTheme,

@@ -7,9 +7,13 @@ import { Search } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
+type CommandRootProps = React.ComponentPropsWithoutRef<typeof CommandPrimitive> & {
+  shouldFilter?: boolean;
+};
+
 const Command = React.forwardRef<
   React.ElementRef<typeof CommandPrimitive>,
-  React.ComponentPropsWithoutRef<typeof CommandPrimitive>
+  CommandRootProps
 >(({ className, ...props }, ref) => (
   <CommandPrimitive
     ref={ref}
@@ -17,7 +21,7 @@ const Command = React.forwardRef<
       "flex h-full w-full flex-col overflow-hidden rounded-md bg-popover text-popover-foreground",
       className,
     )}
-    {...props}
+    {...(props as React.ComponentPropsWithoutRef<typeof CommandPrimitive>)}
   />
 ));
 Command.displayName = CommandPrimitive.displayName;

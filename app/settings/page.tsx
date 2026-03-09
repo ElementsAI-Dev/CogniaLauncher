@@ -324,11 +324,9 @@ export default function SettingsPage() {
         configKey,
         value: configValue,
         section:
-          appKey === "sidebarItemOrder"
-            ? "appearance"
-            : configKey.startsWith("updates.")
-              ? "updates"
-              : "tray",
+          configKey.startsWith("updates.")
+            ? "updates"
+            : "tray",
       });
     }
 

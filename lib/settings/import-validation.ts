@@ -2,7 +2,7 @@ import type { SettingsSection } from "@/lib/constants/settings-registry";
 import { getAffectedSections, SETTINGS_SECTION_IDS } from "@/lib/settings/section-utils";
 
 export interface SettingsImportPayloadV1 {
-  version?: string;
+  version?: "1.0";
   settings: Record<string, string>;
   appSettings?: unknown;
   appearancePresets?: unknown;

@@ -48,6 +48,13 @@ Thumbs.db
 nul
 *.pem
 
+# Binary artifacts
+*.wasm
+*.exe
+*.dll
+*.so
+*.dylib
+
 # AI and local assistant metadata
 .ace-tool/
 .claude/
@@ -69,6 +76,7 @@ plugin-sdk-ts/**/*.wasm
 plugins/**/target/
 plugins/**/node_modules/
 plugins/**/dist/
+plugins/typescript/**/.tools/
 
 # OpenSpec workspace artifacts
 openspec
