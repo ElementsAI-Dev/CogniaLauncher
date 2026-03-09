@@ -103,6 +103,8 @@ describe('useProviderDetail', () => {
     expect(result.current.searchResults).toEqual([]);
     expect(result.current.availableUpdates).toEqual([]);
     expect(result.current.healthResult).toBeNull();
+    expect(result.current.healthScopeState).toBeNull();
+    expect(result.current.healthScopeReason).toBeNull();
     expect(result.current.installHistory).toEqual([]);
     expect(result.current.pinnedPackages).toEqual([]);
     expect(result.current.environmentInfo).toBeNull();
@@ -459,7 +461,18 @@ describe('useProviderDetail', () => {
   });
 
   it('should run health check', async () => {
-    const health = { status: 'healthy', checks: [] };
+    const health = {
+      provider_id: 'npm',
+      display_name: 'npm',
+      status: 'warning',
+      scope_state: 'timeout',
+      scope_reason: 'health_check_timeout',
+      version: null,
+      executable_path: null,
+      issues: [],
+      install_instructions: null,
+      checked_at: new Date().toISOString(),
+    };
     mockHealthCheckPackageManager.mockResolvedValue(health);
 
     const { result } = renderHook(() => useProviderDetail(PROVIDER_ID));
@@ -471,6 +484,8 @@ describe('useProviderDetail', () => {
 
     expect(res).toEqual(health);
     expect(result.current.healthResult).toEqual(health);
+    expect(result.current.healthScopeState).toBe('timeout');
+    expect(result.current.healthScopeReason).toBe('health_check_timeout');
     expect(mockHealthCheckPackageManager).toHaveBeenCalledWith(PROVIDER_ID);
   });
 
@@ -639,4 +654,3 @@ describe('useProviderDetail', () => {
     expect(result.current.searchQuery).toBe('react');
   });
 });
-

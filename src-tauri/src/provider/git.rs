@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 use std::sync::OnceLock;
 use std::time::Duration;
 
@@ -81,6 +81,91 @@ async fn run_git_in_lenient(path: &str, args: &[&str]) -> CogniaResult<String> {
     let mut full_args = vec!["-C", path];
     full_args.extend_from_slice(args);
     run_git_lenient(&full_args).await
+}
+
+fn classify_config_read_error(operation: &str, error: CogniaError) -> CogniaError {
+    let raw = error.to_string();
+    let lower = raw.to_lowercase();
+    let category = if lower.contains("timed out") || lower.contains("timeout") {
+        "timeout"
+    } else {
+        "execution"
+    };
+    CogniaError::Provider(format!("[git:{category}] {operation} failed: {raw}"))
+}
+
+fn normalize_for_compare(path: &str) -> String {
+    let normalized = path.replace('\\', "/").trim_end_matches('/').to_string();
+    #[cfg(windows)]
+    {
+        normalized.to_lowercase()
+    }
+    #[cfg(not(windows))]
+    {
+        normalized
+    }
+}
+
+fn normalize_relative_history_path(path: &str) -> CogniaResult<String> {
+    let mut result = PathBuf::new();
+    for component in Path::new(path).components() {
+        match component {
+            Component::CurDir => {}
+            Component::Normal(seg) => result.push(seg),
+            Component::ParentDir => {
+                if !result.pop() {
+                    return Err(CogniaError::Provider(
+                        "git: invalid path: outside repository".into(),
+                    ));
+                }
+            }
+            Component::RootDir | Component::Prefix(_) => {
+                return Err(CogniaError::Provider(
+                    "git: invalid path: expected repository-relative path".into(),
+                ));
+            }
+        }
+    }
+
+    if result.as_os_str().is_empty() {
+        return Err(CogniaError::Provider(
+            "git: invalid path: empty file path".into(),
+        ));
+    }
+
+    Ok(result.to_string_lossy().replace('\\', "/"))
+}
+
+async fn normalize_history_file_path(path: &str, file: &str) -> CogniaResult<String> {
+    let file = file.trim();
+    if file.is_empty() {
+        return Err(CogniaError::Provider(
+            "git: invalid path: empty file path".into(),
+        ));
+    }
+
+    let repo_root = run_git_in(path, &["rev-parse", "--show-toplevel"]).await?;
+    let repo_root_norm = normalize_for_compare(&repo_root);
+    let file_norm = normalize_for_compare(file);
+
+    let relative = if Path::new(file).is_absolute() {
+        if file_norm == repo_root_norm {
+            return Err(CogniaError::Provider(
+                "git: invalid path: expected a file path, got repository root".into(),
+            ));
+        }
+        let root_prefix = format!("{}/", repo_root_norm);
+        if !file_norm.starts_with(&root_prefix) {
+            return Err(CogniaError::Provider(
+                "git: invalid path: file is outside repository".into(),
+            ));
+        }
+        file_norm[root_prefix.len()..].to_string()
+    } else {
+        file_norm
+    };
+
+    normalize_relative_history_path(&relative)
 }
 
 /// Run a git command with custom ProcessOptions (e.g. longer timeout)
@@ -1549,7 +1634,7 @@ impl GitProvider {
             .await
         {
             Ok(output) => Ok(parse_config_list(&output)),
-            Err(_) => Ok(vec![]),
+            Err(e) => Err(classify_config_read_error("git config --global --list", e)),
         }
     }
 
@@ -1581,7 +1666,10 @@ impl GitProvider {
                     Ok(Some(trimmed))
                 }
             }
-            Err(_) => Ok(None),
+            Err(e) => Err(classify_config_read_error(
+                &format!("git config --global --get {}", key),
+                e,
+            )),
         }
     }
 
@@ -1689,6 +1777,7 @@ impl GitProvider {
         &self,
         path: &str,
         limit: u32,
+        skip: u32,
         author: Option<&str>,
         since: Option<&str>,
         until: Option<&str>,
@@ -1701,6 +1790,11 @@ impl GitProvider {
         let limit_str = format!("-{}", limit);
         let format_arg = format!("--format={}", format_str);
         let mut args = vec!["log", &format_arg, &limit_str];
+        let skip_arg;
+        if skip > 0 {
+            skip_arg = format!("--skip={}", skip);
+            args.push(&skip_arg);
+        }
 
         let author_arg;
         if let Some(a) = author {
@@ -1717,9 +1811,11 @@ impl GitProvider {
             until_arg = format!("--until={}", u);
             args.push(&until_arg);
         }
+        let normalized_file;
         if let Some(f) = file {
+            normalized_file = normalize_history_file_path(path, f).await?;
             args.push("--");
-            args.push(f);
+            args.push(&normalized_file);
         }
 
         let output = run_git_in_lenient(path, &args).await?;
@@ -1778,6 +1874,7 @@ impl GitProvider {
         path: &str,
         file: &str,
         limit: u32,
+        skip: u32,
     ) -> CogniaResult<Vec<GitCommitEntry>> {
         let format_str = format!(
             "%H{}%P{}%an{}%ae{}%aI{}%s",
@@ -1785,18 +1882,23 @@ impl GitProvider {
         );
         let format_arg = format!("--format={}", format_str);
         let limit_str = format!("-{}", limit);
-        let output = run_git_in_lenient(
-            path,
-            &["log", &format_arg, &limit_str, "--follow", "--", file],
-        )
-        .await?;
+        let skip_arg;
+        let normalized_file = normalize_history_file_path(path, file).await?;
+        let mut args = vec!["log", &format_arg, &limit_str];
+        if skip > 0 {
+            skip_arg = format!("--skip={}", skip);
+            args.push(&skip_arg);
+        }
+        args.extend_from_slice(&["--follow", "--", &normalized_file]);
+        let output = run_git_in_lenient(path, &args).await?;
 
         Ok(parse_log_output(&output))
     }
 
     /// Get blame for a file
     pub async fn get_blame(&self, path: &str, file: &str) -> CogniaResult<Vec<GitBlameEntry>> {
-        let output = run_git_in(path, &["blame", "--line-porcelain", file]).await?;
+        let normalized_file = normalize_history_file_path(path, file).await?;
+        let output = run_git_in(path, &["blame", "--line-porcelain", &normalized_file]).await?;
         Ok(parse_blame_porcelain(&output))
     }
 
@@ -2045,23 +2147,20 @@ impl GitProvider {
         path: &str,
         file: &str,
         limit: u32,
+        skip: u32,
     ) -> CogniaResult<Vec<GitFileStatEntry>> {
         let format_str = format!("%H{}%an{}%aI", FIELD_SEP, FIELD_SEP);
         let format_arg = format!("--format={}", format_str);
         let limit_str = format!("-{}", limit);
-        let output = run_git_in_lenient(
-            path,
-            &[
-                "log",
-                "--numstat",
-                &format_arg,
-                &limit_str,
-                "--follow",
-                "--",
-                file,
-            ],
-        )
-        .await?;
+        let skip_arg;
+        let normalized_file = normalize_history_file_path(path, file).await?;
+        let mut args = vec!["log", "--numstat", &format_arg, &limit_str];
+        if skip > 0 {
+            skip_arg = format!("--skip={}", skip);
+            args.push(&skip_arg);
+        }
+        args.extend_from_slice(&["--follow", "--", &normalized_file]);
+        let output = run_git_in_lenient(path, &args).await?;
         Ok(parse_file_stats(&output))
     }
 
@@ -2072,6 +2171,7 @@ impl GitProvider {
         query: &str,
         search_type: &str,
         limit: u32,
+        skip: u32,
     ) -> CogniaResult<Vec<GitCommitEntry>> {
         let format_str = format!(
             "%H{}%P{}%an{}%ae{}%aI{}%s",
@@ -2079,9 +2179,14 @@ impl GitProvider {
         );
         let format_arg = format!("--format={}", format_str);
         let limit_str = format!("-{}", limit);
+        let skip_arg;
 
         let search_arg;
         let mut args = vec!["log", &format_arg, &limit_str];
+        if skip > 0 {
+            skip_arg = format!("--skip={}", skip);
+            args.push(&skip_arg);
+        }
         match search_type {
             "message" => {
                 search_arg = format!("--grep={}", query);
@@ -3992,6 +4097,33 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_normalize_relative_history_path_basic() {
+        let normalized = normalize_relative_history_path("./src/../src/main.rs").unwrap();
+        assert_eq!(normalized, "src/main.rs");
+    }
+
+    #[test]
+    fn test_normalize_relative_history_path_rejects_escape() {
+        let err = normalize_relative_history_path("../../outside.txt")
+            .err()
+            .expect("expected escape path to fail");
+        assert!(err.to_string().contains("outside repository"));
+    }
+
+    #[test]
+    fn test_normalize_relative_history_path_rejects_absolute() {
+        let absolute = if cfg!(windows) {
+            "C:\\repo\\src\\main.rs"
+        } else {
+            "/repo/src/main.rs"
+        };
+        let err = normalize_relative_history_path(absolute)
+            .err()
+            .expect("expected absolute path to fail");
+        assert!(err.to_string().contains("repository-relative"));
+    }
+
+    #[test]
     fn test_parse_version_windows() {
         assert_eq!(
             parse_version("git version 2.47.1.windows.1"),
@@ -4552,6 +4684,24 @@ filename src/main.rs\n\
     // ====================================================================
     // parse_config_list edge cases
     // ====================================================================
+
+    #[test]
+    fn test_classify_config_read_error_timeout() {
+        let err = CogniaError::Provider("git: Process timed out after 5s".to_string());
+        let classified = classify_config_read_error("git config --global --list", err);
+        assert!(classified
+            .to_string()
+            .contains("[git:timeout] git config --global --list failed"));
+    }
+
+    #[test]
+    fn test_classify_config_read_error_execution() {
+        let err = CogniaError::Provider("git: failed to read config".to_string());
+        let classified = classify_config_read_error("git config --global --get user.name", err);
+        assert!(classified
+            .to_string()
+            .contains("[git:execution] git config --global --get user.name failed"));
+    }
 
     #[test]
     fn test_parse_config_list_empty() {

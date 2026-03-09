@@ -303,6 +303,20 @@ const blocks = [
 Host.outputString(cognia.ui.render(blocks));
 ```
 
+## Built-in Capability Mapping
+
+The built-in plugin workspace includes concrete SDK usage references:
+
+| SDK Module(s) | Built-in Example | Path |
+|---|---|---|
+| `env`, `platform`, `event`, `notification` | Env Provider Audit | `plugins/typescript/env-provider-audit` |
+| `pkg`, `clipboard`, `notification`, `event` | Package Update Advisor | `plugins/typescript/pkg-update-advisor` |
+| `fs`, `config` | File Config Assistant | `plugins/rust/file-config-assistant` |
+
+Governance source:
+
+- `plugins/sdk-capability-matrix.json` defines required plugin IDs, expected permissions, and primary entrypoints used by built-in validation.
+
 ## Host Contract Compatibility
 
 The SDK includes an explicit host contract inventory at `host-contract.json` and

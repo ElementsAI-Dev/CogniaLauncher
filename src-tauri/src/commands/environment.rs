@@ -5,7 +5,7 @@ use crate::core::{
 };
 use crate::provider::{
     EnvironmentProvider, InstallProgressEvent, InstallRequest, InstallStage, ProgressSender,
-    Provider, ProviderRegistry,
+    Provider, ProviderRegistry, InstalledVersion,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -421,9 +421,65 @@ fn build_install_progress(
     }
 }
 
+fn provider_detection_scope(provider_id: &str) -> &'static str {
+    if provider_id.starts_with("system-") || provider_id == "msvc" || provider_id == "msys2" {
+        "system"
+    } else {
+        "managed"
+    }
+}
+
+fn provider_detection_identity_key(env_type: &str, provider_id: &str) -> String {
+    format!(
+        "{}::{}",
+        env_type.trim().to_ascii_lowercase(),
+        provider_id.trim().to_ascii_lowercase()
+    )
+}
+
+fn dedupe_and_sort_provider_detections(
+    rows: Vec<ProviderDetectedEnvironmentInfo>,
+) -> Vec<ProviderDetectedEnvironmentInfo> {
+    let mut seen = std::collections::HashSet::new();
+    let mut deduped = rows
+        .into_iter()
+        .filter(|row| {
+            seen.insert(provider_detection_identity_key(
+                &row.env_type,
+                &row.provider_id,
+            ))
+        })
+        .collect::<Vec<_>>();
+
+    deduped.sort_by(|a, b| {
+        a.env_type
+            .cmp(&b.env_type)
+            .then_with(|| a.provider_id.cmp(&b.provider_id))
+    });
+    deduped
+}
+
+fn resolve_provider_executable_path(
+    installed_versions: &[InstalledVersion],
+    current_version: &str,
+) -> Option<String> {
+    let selected = installed_versions
+        .iter()
+        .find(|version| version.is_current)
+        .or_else(|| {
+            installed_versions
+                .iter()
+                .find(|version| versions_compatible(current_version, &version.version))
+        })
+        .or_else(|| installed_versions.first());
+
+    selected.map(|version| version.install_path.to_string_lossy().to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     #[test]
     fn lifecycle_enforces_canonical_order_and_single_terminal() {
@@ -533,6 +589,107 @@ mod tests {
                 .iter()
                 .map(|source| (*source).to_string())
                 .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn provider_detection_scope_handles_cpp_system_providers() {
+        assert_eq!(provider_detection_scope("system-cpp"), "system");
+        assert_eq!(provider_detection_scope("msvc"), "system");
+        assert_eq!(provider_detection_scope("msys2"), "system");
+        assert_eq!(provider_detection_scope("fnm"), "managed");
+    }
+
+    #[test]
+    fn provider_detection_identity_keeps_msvc_and_msys2_distinct() {
+        let rows = vec![
+            ProviderDetectedEnvironmentInfo {
+                env_type: "cpp".into(),
+                provider_id: "msvc".into(),
+                provider_name: "MSVC".into(),
+                version: "19.40".into(),
+                executable_path: Some("C:\\\\VS\\\\cl.exe".into()),
+                source: "msvc".into(),
+                scope: "system".into(),
+            },
+            ProviderDetectedEnvironmentInfo {
+                env_type: "cpp".into(),
+                provider_id: "msys2".into(),
+                provider_name: "MSYS2".into(),
+                version: "13.2".into(),
+                executable_path: Some("C:\\\\msys64\\\\ucrt64\\\\bin\\\\g++.exe".into()),
+                source: "msys2".into(),
+                scope: "system".into(),
+            },
+            ProviderDetectedEnvironmentInfo {
+                env_type: "cpp".into(),
+                provider_id: "msys2".into(),
+                provider_name: "MSYS2".into(),
+                version: "13.2".into(),
+                executable_path: Some("C:\\\\msys64\\\\ucrt64\\\\bin\\\\g++.exe".into()),
+                source: "msys2".into(),
+                scope: "system".into(),
+            },
+        ];
+
+        let deduped = dedupe_and_sort_provider_detections(rows);
+        assert_eq!(deduped.len(), 2);
+        assert!(deduped.iter().any(|row| row.provider_id == "msvc"));
+        assert!(deduped.iter().any(|row| row.provider_id == "msys2"));
+    }
+
+    #[test]
+    fn resolve_provider_executable_path_prefers_current_flag() {
+        let current_path = PathBuf::from("toolchains/node-current/bin/node");
+        let older_path = PathBuf::from("toolchains/node-older/bin/node");
+        let installed_versions = vec![
+            InstalledVersion {
+                version: "18.20.0".into(),
+                install_path: older_path,
+                size: None,
+                installed_at: None,
+                is_current: false,
+            },
+            InstalledVersion {
+                version: "20.11.1".into(),
+                install_path: current_path.clone(),
+                size: None,
+                installed_at: None,
+                is_current: true,
+            },
+        ];
+
+        let resolved = resolve_provider_executable_path(&installed_versions, "18.20.0");
+        assert_eq!(
+            resolved,
+            Some(current_path.to_string_lossy().to_string())
+        );
+    }
+
+    #[test]
+    fn resolve_provider_executable_path_matches_detected_version() {
+        let version_path = PathBuf::from("toolchains/python-3.12/bin/python");
+        let installed_versions = vec![
+            InstalledVersion {
+                version: "3.10.0".into(),
+                install_path: PathBuf::from("toolchains/python-3.10/bin/python"),
+                size: None,
+                installed_at: None,
+                is_current: false,
+            },
+            InstalledVersion {
+                version: "v3.12.1".into(),
+                install_path: version_path.clone(),
+                size: None,
+                installed_at: None,
+                is_current: false,
+            },
+        ];
+
+        let resolved = resolve_provider_executable_path(&installed_versions, "3.12.1");
+        assert_eq!(
+            resolved,
+            Some(version_path.to_string_lossy().to_string())
         );
     }
 }
@@ -1435,6 +1592,11 @@ pub async fn env_list_providers(
                     "java",
                     "Adoptium Temurin JDK - Cross-platform Java version manager",
                 ),
+                "msvc" => ("cpp", "Visual Studio Build Tools detection"),
+                "msys2" => ("cpp", "MSYS2 pacman toolchain detection"),
+                "vcpkg" => ("cpp", "vcpkg C/C++ dependency and toolchain environment"),
+                "conan" => ("cpp", "Conan C/C++ package and toolchain environment"),
+                "xmake" => ("cpp", "xmake C/C++ build utility environment"),
                 "phpbrew" => ("php", "PHPBrew - Brew & manage multiple PHP versions"),
                 "dotnet" => ("dotnet", ".NET SDK version management"),
                 "deno" => ("deno", "Deno runtime version management"),
@@ -1652,6 +1814,20 @@ pub struct SystemEnvironmentInfo {
     pub source: String,
 }
 
+/// Provider-aware environment detection information.
+/// This keeps provider identity so same-language providers can coexist
+/// in a single detection response (for example msvc + msys2 under cpp).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct ProviderDetectedEnvironmentInfo {
+    pub env_type: String,
+    pub provider_id: String,
+    pub provider_name: String,
+    pub version: String,
+    pub executable_path: Option<String>,
+    pub source: String,
+    pub scope: String,
+}
+
 /// Detect all system-installed environments (not managed by version managers)
 /// This detects environments installed via official installers, package managers, etc.
 #[tauri::command]
@@ -1703,6 +1879,79 @@ pub async fn env_detect_system_all(
     }
 
     Ok(results)
+}
+
+/// Detect current versions from all available environment providers while
+/// preserving provider identity for same-language multi-provider scenarios.
+#[tauri::command]
+pub async fn env_detect_providers_all(
+    force: Option<bool>,
+    registry: State<'_, SharedRegistry>,
+    config: State<'_, crate::commands::config::SharedSettings>,
+) -> Result<Vec<ProviderDetectedEnvironmentInfo>, String> {
+    let cache_key = "env:provider_detect_all";
+
+    if !force.unwrap_or(false) {
+        if let Ok(mut cache) = open_env_metadata_cache(config.inner(), ENV_SYSTEM_DETECT_TTL).await
+        {
+            if let Ok(Some(cached)) = cache
+                .get::<Vec<ProviderDetectedEnvironmentInfo>>(cache_key)
+                .await
+            {
+                if !cached.is_stale {
+                    return Ok(cached.data);
+                }
+            }
+        }
+    }
+
+    let providers: Vec<(String, Arc<dyn EnvironmentProvider>)> = {
+        let registry_guard = registry.inner().read().await;
+        registry_guard
+            .list_all_environment_providers()
+            .into_iter()
+            .filter_map(|provider_id| {
+                registry_guard
+                    .get_environment_provider(provider_id)
+                    .map(|provider| (provider_id.to_string(), provider))
+            })
+            .collect()
+    };
+
+    let mut results = Vec::new();
+    for (provider_id, provider) in providers {
+        if !provider.is_available().await {
+            continue;
+        }
+
+        let Ok(Some(version)) = provider.get_current_version().await else {
+            continue;
+        };
+
+        let versions = provider.list_installed_versions().await.unwrap_or_default();
+        let executable_path = resolve_provider_executable_path(&versions, &version);
+        let logical_env_type = EnvironmentManager::logical_env_type(&provider_id);
+
+        results.push(ProviderDetectedEnvironmentInfo {
+            env_type: logical_env_type,
+            provider_id: provider_id.clone(),
+            provider_name: provider.display_name().to_string(),
+            version,
+            executable_path,
+            source: provider_id.clone(),
+            scope: provider_detection_scope(&provider_id).to_string(),
+        });
+    }
+
+    let normalized = dedupe_and_sort_provider_detections(results);
+
+    if let Ok(mut cache) = open_env_metadata_cache(config.inner(), ENV_SYSTEM_DETECT_TTL).await {
+        let _ = cache
+            .set_with_ttl(cache_key, &normalized, ENV_SYSTEM_DETECT_TTL)
+            .await;
+    }
+
+    Ok(normalized)
 }
 
 /// Detect a specific system-installed environment

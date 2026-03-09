@@ -22,6 +22,7 @@ export type {
   DetectionFileConfig,
   EnvironmentSettingsConfig,
   SystemEnvironmentInfo,
+  ProviderDetectedEnvironmentInfo,
   EnvironmentTypeMapping,
   RustComponent,
   RustTarget,
@@ -187,6 +188,8 @@ export type {
   GitGraphEntry,
   GitAheadBehind,
   GitDayActivity,
+  GitHistoryQuery,
+  GitHistorySearchType,
   GitFileStatEntry,
   GitReflogEntry,
   GitCloneOptions,
@@ -265,6 +268,7 @@ import type {
   EnvironmentProviderInfo,
   EnvironmentSettingsConfig,
   SystemEnvironmentInfo,
+  ProviderDetectedEnvironmentInfo,
   EnvironmentTypeMapping,
   RustComponent,
   RustTarget,
@@ -398,6 +402,8 @@ import type {
   GitGraphEntry,
   GitAheadBehind,
   GitDayActivity,
+  GitHistoryQuery,
+  GitHistorySearchType,
   GitFileStatEntry,
   GitReflogEntry,
   GitCloneOptions,
@@ -600,6 +606,9 @@ export const envGetAllDetectionSources = () =>
 // System environment detection commands
 export const envDetectSystemAll = (force?: boolean) =>
   invoke<SystemEnvironmentInfo[]>("env_detect_system_all", { force });
+
+export const envDetectProvidersAll = (force?: boolean) =>
+  invoke<ProviderDetectedEnvironmentInfo[]>("env_detect_providers_all", { force });
 
 export const envDetectSystem = (envType: string, force?: boolean) =>
   invoke<SystemEnvironmentInfo | null>("env_detect_system", { envType, force });
@@ -833,8 +842,21 @@ export const getBatteryInfo = () =>
 
 // Cache commands
 export const cacheInfo = () => invoke<CacheInfo>("cache_info");
+export interface CacheCleanResult {
+  freed_bytes: number;
+  freed_human: string;
+  deleted_count?: number;
+  skipped_count?: number;
+  file_outcomes?: Array<{
+    path: string;
+    size: number;
+    size_human: string;
+    outcome: string;
+    reason?: string | null;
+  }>;
+}
 export const cacheClean = (cleanType?: string) =>
-  invoke<{ freed_bytes: number; freed_human: string }>("cache_clean", {
+  invoke<CacheCleanResult>("cache_clean", {
     cleanType,
   });
 export const cacheCleanPreview = (cleanType?: string) =>
@@ -896,6 +918,7 @@ export interface ExternalCacheInfo {
   canClean: boolean;
   category: string;
   sizePending?: boolean;
+  probePending?: boolean;
   detectionState?: ExternalCacheDetectionState;
   detectionReason?: string | null;
   detectionError?: string | null;
@@ -922,6 +945,10 @@ export interface CombinedCacheStats {
 
 export const discoverExternalCachesFast = () =>
   invoke<ExternalCacheInfo[]>("discover_external_caches_fast");
+export const discoverExternalCacheCandidates = () =>
+  invoke<ExternalCacheInfo[]>("discover_external_cache_candidates");
+export const probeExternalCacheProvider = (provider: string) =>
+  invoke<ExternalCacheInfo>("probe_external_cache_provider", { provider });
 export const calculateExternalCacheSize = (provider: string) =>
   invoke<number>("calculate_external_cache_size", { provider });
 export const discoverExternalCaches = () =>
@@ -940,6 +967,12 @@ export const getCombinedCacheStats = () =>
 export interface CacheSizeMonitor {
   internalSize: number;
   internalSizeHuman: string;
+  defaultDownloadsSize?: number;
+  defaultDownloadsSizeHuman?: string;
+  defaultDownloadsCount?: number;
+  defaultDownloadsPath?: string | null;
+  defaultDownloadsAvailable?: boolean;
+  defaultDownloadsReason?: string | null;
   externalSize: number;
   externalSizeHuman: string;
   totalSize: number;
@@ -2688,20 +2721,33 @@ export const gitGetRepoInfo = (path: string) =>
 /** Get commit log for a repository */
 export const gitGetLog = (
   path: string,
-  limit?: number,
+  queryOrLimit?: number | GitHistoryQuery,
   author?: string,
   since?: string,
   until?: string,
   file?: string,
-) =>
-  invoke<GitCommitEntry[]>("git_get_log", {
+) => {
+  const query: GitHistoryQuery =
+    typeof queryOrLimit === "object" && queryOrLimit !== null
+      ? queryOrLimit
+      : {
+          limit: queryOrLimit,
+          author,
+          since,
+          until,
+          file,
+        };
+
+  return invoke<GitCommitEntry[]>("git_get_log", {
     path,
-    limit,
-    author,
-    since,
-    until,
-    file,
+    limit: query.limit,
+    skip: query.skip,
+    author: query.author,
+    since: query.since,
+    until: query.until,
+    file: query.file,
   });
+};
 
 /** Get branches for a repository */
 export const gitGetBranches = (path: string) =>
@@ -2724,12 +2770,30 @@ export const gitGetContributors = (path: string) =>
   invoke<GitContributor[]>("git_get_contributors", { path });
 
 /** Get file history (commits that modified a specific file) */
-export const gitGetFileHistory = (path: string, file: string, limit?: number) =>
-  invoke<GitCommitEntry[]>("git_get_file_history", { path, file, limit });
+export const gitGetFileHistory = (
+  path: string,
+  fileOrQuery: string | GitHistoryQuery,
+  limit?: number,
+) => {
+  const query: GitHistoryQuery =
+    typeof fileOrQuery === "string"
+      ? { file: fileOrQuery, limit }
+      : fileOrQuery;
+
+  return invoke<GitCommitEntry[]>("git_get_file_history", {
+    path,
+    file: query.file,
+    limit: query.limit,
+    skip: query.skip,
+  });
+};
 
 /** Get blame information for a file */
-export const gitGetBlame = (path: string, file: string) =>
-  invoke<GitBlameEntry[]>("git_get_blame", { path, file });
+export const gitGetBlame = (path: string, fileOrQuery: string | GitHistoryQuery) => {
+  const query: GitHistoryQuery =
+    typeof fileOrQuery === "string" ? { file: fileOrQuery } : fileOrQuery;
+  return invoke<GitBlameEntry[]>("git_get_blame", { path, file: query.file });
+};
 
 /** Get detailed information about a specific commit */
 export const gitGetCommitDetail = (path: string, hash: string) =>
@@ -2813,22 +2877,42 @@ export const gitGetActivity = (path: string, days?: number) =>
   invoke<GitDayActivity[]>("git_get_activity", { path, days });
 
 /** Get file stats for visual file history */
-export const gitGetFileStats = (path: string, file: string, limit?: number) =>
-  invoke<GitFileStatEntry[]>("git_get_file_stats", { path, file, limit });
+export const gitGetFileStats = (
+  path: string,
+  fileOrQuery: string | GitHistoryQuery,
+  limit?: number,
+) => {
+  const query: GitHistoryQuery =
+    typeof fileOrQuery === "string"
+      ? { file: fileOrQuery, limit }
+      : fileOrQuery;
+  return invoke<GitFileStatEntry[]>("git_get_file_stats", {
+    path,
+    file: query.file,
+    limit: query.limit,
+    skip: query.skip,
+  });
+};
 
 /** Search commits by message, author, or diff content */
 export const gitSearchCommits = (
   path: string,
-  query: string,
+  queryInput: string | GitHistoryQuery,
   searchType?: string,
   limit?: number,
-) =>
-  invoke<GitCommitEntry[]>("git_search_commits", {
+) => {
+  const query: GitHistoryQuery =
+    typeof queryInput === "string"
+      ? { query: queryInput, searchType: searchType as GitHistorySearchType | undefined, limit }
+      : queryInput;
+  return invoke<GitCommitEntry[]>("git_search_commits", {
     path,
-    query,
-    searchType,
-    limit,
+    query: query.query ?? "",
+    searchType: query.searchType,
+    limit: query.limit,
+    skip: query.skip,
   });
+};
 
 // ============================================================================
 // Git Write Operations

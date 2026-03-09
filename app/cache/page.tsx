@@ -374,8 +374,8 @@ export default function CachePage() {
         </Card>
       </div>
 
-      {/* Download Cache + Metadata Cache */}
-      <div className="grid gap-4 grid-cols-1 md:grid-cols-2">
+      {/* Download Cache + Default Downloads + Metadata Cache */}
+      <div className="grid gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
         <Card>
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
@@ -438,6 +438,92 @@ export default function CachePage() {
                       <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
                       <AlertDialogAction
                         onClick={() => handleClean('downloads')}
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      >
+                        {t('cache.clearCache')}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-base">{t('cache.defaultDownloads')}</CardTitle>
+                <CardDescription>{t('cache.defaultDownloadsDesc')}</CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="flex justify-between items-start gap-3">
+              <div className="space-y-1">
+                {loading && !cacheInfo ? (
+                  <>
+                    <Skeleton className="h-6 w-20 mb-1" />
+                    <Skeleton className="h-4 w-28" />
+                  </>
+                ) : (
+                  <>
+                    <p className="text-lg font-semibold">{cacheInfo?.default_downloads?.size_human || '0 B'}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {t('cache.entries', { count: cacheInfo?.default_downloads?.entry_count || 0 })}
+                    </p>
+                    <p className="text-xs text-muted-foreground break-all">
+                      {cacheInfo?.default_downloads?.location || t('cache.defaultDownloadsUnavailable')}
+                    </p>
+                    {cacheInfo?.default_downloads && !cacheInfo.default_downloads.is_available && (
+                      <p className="text-xs text-destructive">
+                        {t('cache.defaultDownloadsUnavailableReason', {
+                          reason: cacheInfo.default_downloads.reason || 'unknown',
+                        })}
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={
+                    isLoading
+                    || !cacheInfo?.default_downloads?.is_available
+                    || (cacheInfo?.default_downloads?.entry_count || 0) === 0
+                  }
+                  onClick={() => handlePreview('default_downloads')}
+                >
+                  <Eye className="h-4 w-4 mr-2" />
+                  {t('cache.preview')}
+                </Button>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={
+                        isLoading
+                        || !cacheInfo?.default_downloads?.is_available
+                        || (cacheInfo?.default_downloads?.entry_count || 0) === 0
+                      }
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      {isCleaning && cleaningType === 'default_downloads' ? t('cache.clearing') : t('cache.clearCache')}
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>{t('cache.clearDefaultDownloads')}</AlertDialogTitle>
+                      <AlertDialogDescription>{t('cache.clearDefaultDownloadsConfirmDesc')}</AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={() => handleClean('default_downloads')}
                         className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                       >
                         {t('cache.clearCache')}

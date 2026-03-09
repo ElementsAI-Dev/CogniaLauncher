@@ -23,6 +23,9 @@ interface HealthSummary {
   warningCount: number;
   errorCount: number;
   unavailableCount: number;
+  unavailableScopeCount: number;
+  timeoutScopeCount: number;
+  unsupportedScopeCount: number;
   packageManagerCount: number;
   unavailablePackageManagerCount: number;
   issueCount: number;
@@ -188,6 +191,7 @@ export function useHealthCheck(): UseHealthCheckReturn {
     const environments = systemHealth?.environments ?? [];
     const packageManagers = systemHealth?.package_managers ?? [];
     const systemIssues = systemHealth?.system_issues ?? [];
+    const scopeTargets = [...environments, ...packageManagers];
     const allIssues = [
       ...systemIssues,
       ...environments.flatMap((env) => env.issues),
@@ -202,6 +206,9 @@ export function useHealthCheck(): UseHealthCheckReturn {
       unavailableCount: environments.filter(
         (env) => (env.scope_state ?? 'available') !== 'available' || env.status === 'unknown',
       ).length,
+      unavailableScopeCount: scopeTargets.filter((target) => (target.scope_state ?? 'available') === 'unavailable').length,
+      timeoutScopeCount: scopeTargets.filter((target) => (target.scope_state ?? 'available') === 'timeout').length,
+      unsupportedScopeCount: scopeTargets.filter((target) => (target.scope_state ?? 'available') === 'unsupported').length,
       packageManagerCount: packageManagers.length,
       unavailablePackageManagerCount: packageManagers.filter(
         (provider) => (provider.scope_state ?? 'available') !== 'available' || provider.status === 'unknown',

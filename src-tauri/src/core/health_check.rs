@@ -1,4 +1,9 @@
 use crate::error::{CogniaError, CogniaResult};
+use crate::platform::env::current_platform;
+use crate::provider::support::{
+    classify_provider_scope, provider_health_probe_timeout, provider_timeout_reason,
+    ProviderAvailabilityProbe, ProviderHealthScope,
+};
 use crate::provider::{EnvironmentProvider, Provider, ProviderRegistry};
 
 use serde::{Deserialize, Serialize};
@@ -339,6 +344,14 @@ pub struct HealthRemediationResult {
     pub stderr: Option<String>,
 }
 
+#[derive(Clone)]
+struct HealthProviderEntry {
+    id: String,
+    display_name: String,
+    provider: Arc<dyn Provider>,
+    is_api_provider: bool,
+}
+
 /// Health check manager
 pub struct HealthCheckManager {
     registry: Arc<RwLock<ProviderRegistry>>,
@@ -347,6 +360,34 @@ pub struct HealthCheckManager {
 impl HealthCheckManager {
     pub fn new(registry: Arc<RwLock<ProviderRegistry>>) -> Self {
         Self { registry }
+    }
+
+    fn map_scope_state(scope: ProviderHealthScope) -> HealthScopeState {
+        match scope {
+            ProviderHealthScope::Available => HealthScopeState::Available,
+            ProviderHealthScope::Unavailable => HealthScopeState::Unavailable,
+            ProviderHealthScope::Timeout => HealthScopeState::Timeout,
+            ProviderHealthScope::Unsupported => HealthScopeState::Unsupported,
+        }
+    }
+
+    async fn list_health_provider_entries(&self) -> Vec<HealthProviderEntry> {
+        let registry = self.registry.read().await;
+        let mut infos = registry.list_all_info();
+        infos.retain(|info| !info.is_environment_provider && info.enabled);
+        infos.sort_by(|left, right| left.id.cmp(&right.id));
+
+        infos
+            .into_iter()
+            .filter_map(|info| {
+                registry.get(&info.id).map(|provider| HealthProviderEntry {
+                    id: info.id.clone(),
+                    display_name: info.display_name,
+                    provider,
+                    is_api_provider: registry.get_api_provider_config(&info.id).is_some(),
+                })
+            })
+            .collect()
     }
 
     fn canonical_environment_types() -> &'static [&'static str] {
@@ -384,7 +425,7 @@ impl HealthCheckManager {
 
     fn create_environment_timeout_result(&self, env_type: &str) -> EnvironmentHealthResult {
         let mut result = EnvironmentHealthResult::new(env_type);
-        result.set_scope_state(HealthScopeState::Timeout, "health_check_timeout");
+        result.set_scope_state(HealthScopeState::Timeout, provider_timeout_reason().code);
         result.add_issue(
             HealthIssue::new(
                 Severity::Warning,
@@ -405,7 +446,7 @@ impl HealthCheckManager {
         display_name: &str,
     ) -> PackageManagerHealthResult {
         let mut result = PackageManagerHealthResult::new(provider_id, display_name);
-        result.set_scope_state(HealthScopeState::Timeout, "health_check_timeout");
+        result.set_scope_state(HealthScopeState::Timeout, provider_timeout_reason().code);
         result.add_issue(
             HealthIssue::new(
                 Severity::Warning,
@@ -415,6 +456,45 @@ impl HealthCheckManager {
             .with_details(
                 "The provider health check did not finish within the configured timeout.",
             ),
+        );
+        result.finalize();
+        result
+    }
+
+    fn create_environment_failure_result(
+        &self,
+        env_type: &str,
+        details: impl Into<String>,
+    ) -> EnvironmentHealthResult {
+        let mut result = EnvironmentHealthResult::new(env_type);
+        result.set_scope_state(HealthScopeState::Unavailable, "health_check_task_failed");
+        result.add_issue(
+            HealthIssue::new(
+                Severity::Warning,
+                IssueCategory::Other,
+                format!("{} health check did not complete", env_type),
+            )
+            .with_details(details),
+        );
+        result.finalize();
+        result
+    }
+
+    fn create_package_manager_failure_result(
+        &self,
+        provider_id: &str,
+        display_name: &str,
+        details: impl Into<String>,
+    ) -> PackageManagerHealthResult {
+        let mut result = PackageManagerHealthResult::new(provider_id, display_name);
+        result.set_scope_state(HealthScopeState::Unavailable, "health_check_task_failed");
+        result.add_issue(
+            HealthIssue::new(
+                Severity::Warning,
+                IssueCategory::Other,
+                format!("{} health check did not complete", display_name),
+            )
+            .with_details(details),
         );
         result.finalize();
         result
@@ -436,18 +516,7 @@ impl HealthCheckManager {
         let mut result = SystemHealthResult::new();
         let env_types = Self::canonical_environment_types();
 
-        let all_pm_entries: Vec<(String, Arc<dyn Provider>)> = {
-            let registry = self.registry.read().await;
-            let mut provider_ids = registry.list_system_package_provider_ids();
-            provider_ids.retain(|id| registry.get_environment_provider(id).is_none());
-            provider_ids.extend(["github".to_string(), "gitlab".to_string()]);
-            provider_ids.sort();
-            provider_ids.dedup();
-            provider_ids
-                .into_iter()
-                .filter_map(|id| registry.get(&id).map(|p| (id, p)))
-                .collect()
-        };
+        let all_pm_entries = self.list_health_provider_entries().await;
 
         let total = 1 + env_types.len() + all_pm_entries.len();
 
@@ -481,56 +550,73 @@ impl HealthCheckManager {
 
         let env_results = futures::future::join_all(env_futures).await;
         for (i, join_result) in env_results.into_iter().enumerate() {
-            if let Ok(Ok(env_result)) = join_result {
-                if env_result.scope_state != HealthScopeState::Available {
-                    if let Some(provider_id) = &env_result.provider_id {
-                        result.skipped_providers.push(provider_id.clone());
-                    }
+            let env_type = env_types.get(i).copied().unwrap_or_default().to_string();
+            let env_result = match join_result {
+                Ok(Ok(value)) => value,
+                Ok(Err(err)) => self.create_environment_failure_result(&env_type, err.to_string()),
+                Err(err) => self.create_environment_failure_result(&env_type, err.to_string()),
+            };
+            if env_result.scope_state != HealthScopeState::Available {
+                if let Some(provider_id) = &env_result.provider_id {
+                    result.skipped_providers.push(provider_id.clone());
                 }
-                result.add_environment(env_result);
             }
+            result.add_environment(env_result);
             on_progress(HealthCheckProgress {
                 completed: 1 + i + 1,
                 total,
-                current_provider: env_types.get(i).copied().unwrap_or_default().to_string(),
+                current_provider: env_type,
                 phase: "environment".into(),
             });
         }
 
         // Phase 3: package manager/provider checks including unavailable providers
         let mut pm_futures = Vec::with_capacity(all_pm_entries.len());
-        let pm_ids: Vec<String> = all_pm_entries.iter().map(|(id, _)| id.clone()).collect();
+        let pm_ids: Vec<String> = all_pm_entries
+            .iter()
+            .map(|entry| entry.id.clone())
+            .collect();
+        let pm_names: Vec<String> = all_pm_entries
+            .iter()
+            .map(|entry| entry.display_name.clone())
+            .collect();
 
-        for (_id, provider) in all_pm_entries {
+        for entry in all_pm_entries {
             let registry = self.registry.clone();
+            let provider_id = entry.id.clone();
+            let display_name = entry.display_name.clone();
+            let provider = entry.provider.clone();
+            let timeout_budget = provider_health_probe_timeout(&provider_id, entry.is_api_provider);
             pm_futures.push(tokio::spawn(async move {
                 let mgr = HealthCheckManager::new(registry);
-                tokio::time::timeout(
-                    Duration::from_secs(15),
-                    mgr.check_package_manager_health(&*provider),
-                )
-                .await
-                .unwrap_or_else(|_| {
-                    mgr.create_package_manager_timeout_result(
-                        provider.id(),
-                        provider.display_name(),
-                    )
-                })
+                tokio::time::timeout(timeout_budget, mgr.check_package_manager_health(&*provider))
+                    .await
+                    .unwrap_or_else(|_| {
+                        mgr.create_package_manager_timeout_result(&provider_id, &display_name)
+                    })
             }));
         }
 
         let pm_results = futures::future::join_all(pm_futures).await;
         for (i, join_result) in pm_results.into_iter().enumerate() {
-            if let Ok(pm_result) = join_result {
-                if pm_result.scope_state != HealthScopeState::Available {
-                    result.skipped_providers.push(pm_result.provider_id.clone());
-                }
-                result.add_package_manager(pm_result);
+            let provider_id = pm_ids.get(i).cloned().unwrap_or_default();
+            let display_name = pm_names.get(i).cloned().unwrap_or(provider_id.clone());
+            let pm_result = match join_result {
+                Ok(value) => value,
+                Err(err) => self.create_package_manager_failure_result(
+                    &provider_id,
+                    &display_name,
+                    err.to_string(),
+                ),
+            };
+            if pm_result.scope_state != HealthScopeState::Available {
+                result.skipped_providers.push(pm_result.provider_id.clone());
             }
+            result.add_package_manager(pm_result);
             on_progress(HealthCheckProgress {
                 completed: 1 + env_types.len() + i + 1,
                 total,
-                current_provider: pm_ids.get(i).cloned().unwrap_or_default(),
+                current_provider: provider_id,
                 phase: "package_manager".into(),
             });
         }
@@ -611,40 +697,50 @@ impl HealthCheckManager {
 
     /// Run health check for all package managers (parallel with timeout)
     pub async fn check_package_managers(&self) -> CogniaResult<Vec<PackageManagerHealthResult>> {
-        let providers: Vec<Arc<dyn Provider>> = {
-            let registry = self.registry.read().await;
-            let mut provider_ids = registry.list_system_package_provider_ids();
-            provider_ids.retain(|id| registry.get_environment_provider(id).is_none());
-            provider_ids.extend(["github".to_string(), "gitlab".to_string()]);
-            provider_ids.sort();
-            provider_ids.dedup();
-            provider_ids
-                .into_iter()
-                .filter_map(|id| registry.get(&id))
-                .collect()
-        };
+        let providers = self.list_health_provider_entries().await;
 
         let mut futures = Vec::with_capacity(providers.len());
-        for provider in providers {
+        let provider_ids: Vec<String> = providers.iter().map(|entry| entry.id.clone()).collect();
+        let display_names: Vec<String> = providers
+            .iter()
+            .map(|entry| entry.display_name.clone())
+            .collect();
+
+        for entry in providers {
             let registry = self.registry.clone();
+            let provider_id = entry.id.clone();
+            let display_name = entry.display_name.clone();
+            let provider = entry.provider.clone();
+            let timeout_budget = provider_health_probe_timeout(&provider_id, entry.is_api_provider);
             futures.push(tokio::spawn(async move {
                 let mgr = HealthCheckManager::new(registry);
-                tokio::time::timeout(
-                    Duration::from_secs(15),
-                    mgr.check_package_manager_health(&*provider),
-                )
-                .await
-                .unwrap_or_else(|_| {
-                    mgr.create_package_manager_timeout_result(
-                        provider.id(),
-                        provider.display_name(),
-                    )
-                })
+                tokio::time::timeout(timeout_budget, mgr.check_package_manager_health(&*provider))
+                    .await
+                    .unwrap_or_else(|_| {
+                        mgr.create_package_manager_timeout_result(&provider_id, &display_name)
+                    })
             }));
         }
 
         let join_results = futures::future::join_all(futures).await;
-        let results = join_results.into_iter().filter_map(|r| r.ok()).collect();
+        let results = join_results
+            .into_iter()
+            .enumerate()
+            .map(|(idx, result)| match result {
+                Ok(value) => value,
+                Err(err) => self.create_package_manager_failure_result(
+                    provider_ids
+                        .get(idx)
+                        .map(String::as_str)
+                        .unwrap_or("unknown-provider"),
+                    display_names
+                        .get(idx)
+                        .map(String::as_str)
+                        .unwrap_or("Unknown Provider"),
+                    err.to_string(),
+                ),
+            })
+            .collect();
         Ok(results)
     }
 
@@ -670,32 +766,89 @@ impl HealthCheckManager {
     ) -> PackageManagerHealthResult {
         let mut result = PackageManagerHealthResult::new(provider.id(), provider.display_name());
 
-        if provider.id() == "github" || provider.id() == "gitlab" {
+        let is_api_provider = {
+            let registry = self.registry.read().await;
+            registry.get_api_provider_config(provider.id()).is_some()
+        };
+
+        if is_api_provider {
             return self.check_api_provider_health(provider).await;
         }
 
         // Check 1: Provider availability
-        let is_available = provider.is_available().await;
+        let timeout_budget = provider_health_probe_timeout(provider.id(), false);
+        let availability = match tokio::time::timeout(timeout_budget, provider.is_available()).await
+        {
+            Ok(true) => ProviderAvailabilityProbe::Available,
+            Ok(false) => ProviderAvailabilityProbe::Unavailable,
+            Err(_) => ProviderAvailabilityProbe::Timeout,
+        };
+        let (scope, runtime_reason) = classify_provider_scope(
+            current_platform(),
+            &provider.supported_platforms(),
+            availability,
+        );
 
-        if !is_available {
-            result.set_scope_state(HealthScopeState::Unavailable, "provider_not_installed");
-            result.add_issue(self.build_install_issue(
-                provider.id(),
-                provider.display_name(),
-                format!(
-                    "The {} package manager is not available on this system",
-                    provider.display_name()
-                ),
-                format!(
-                    "Install {} to enable package management",
-                    provider.display_name()
-                ),
-            ));
+        if !scope.is_available() {
+            if let Some(reason) = runtime_reason.as_ref() {
+                result.set_scope_state(Self::map_scope_state(scope), reason.code);
+            }
+
+            match scope {
+                ProviderHealthScope::Unavailable => {
+                    result.add_issue(self.build_install_issue(
+                        provider.id(),
+                        provider.display_name(),
+                        format!(
+                            "The {} package manager is not available on this system",
+                            provider.display_name()
+                        ),
+                        format!(
+                            "Install {} to enable package management",
+                            provider.display_name()
+                        ),
+                    ));
+                }
+                ProviderHealthScope::Timeout => {
+                    result.add_issue(
+                        HealthIssue::new(
+                            Severity::Warning,
+                            IssueCategory::Other,
+                            format!("{} health check timed out", provider.display_name()),
+                        )
+                        .with_details(format!(
+                            "The provider did not respond within {} seconds.",
+                            timeout_budget.as_secs()
+                        )),
+                    );
+                }
+                ProviderHealthScope::Unsupported => {
+                    result.add_issue(
+                        HealthIssue::new(
+                            Severity::Info,
+                            IssueCategory::ProviderNotFound,
+                            format!(
+                                "{} is not supported on this platform",
+                                provider.display_name()
+                            ),
+                        )
+                        .with_details(
+                            runtime_reason
+                                .as_ref()
+                                .map(|reason| reason.message.clone())
+                                .unwrap_or_else(|| {
+                                    "Provider is unsupported on this runtime".into()
+                                }),
+                        ),
+                    );
+                }
+                ProviderHealthScope::Available => {}
+            }
+
             let system_provider = {
                 let registry = self.registry.read().await;
                 registry.get_system_provider(provider.id())
             };
-
             result.install_instructions = system_provider
                 .and_then(|p| p.get_install_instructions())
                 .or_else(|| Some(self.get_install_instructions(provider.id())));
@@ -751,10 +904,8 @@ impl HealthCheckManager {
         }
 
         // Check 4: Registry connectivity (only for available providers)
-        if is_available {
-            if let Some(issue) = self.check_registry_connectivity(provider.id()).await {
-                result.add_issue(issue);
-            }
+        if let Some(issue) = self.check_registry_connectivity(provider.id()).await {
+            result.add_issue(issue);
         }
 
         result.finalize();
@@ -864,6 +1015,12 @@ impl HealthCheckManager {
                 );
             }
             Err(e) => {
+                if e.is_timeout() {
+                    result
+                        .set_scope_state(HealthScopeState::Timeout, provider_timeout_reason().code);
+                } else {
+                    result.set_scope_state(HealthScopeState::Unavailable, "api_request_failed");
+                }
                 result.add_issue(
                     HealthIssue::new(
                         Severity::Error,
@@ -1131,7 +1288,10 @@ impl HealthCheckManager {
 
         // Check 1: Provider availability
         if !provider.is_available().await {
-            result.set_scope_state(HealthScopeState::Unavailable, "provider_not_installed");
+            result.set_scope_state(
+                HealthScopeState::Unavailable,
+                crate::provider::support::REASON_PROVIDER_UNAVAILABLE,
+            );
             result.add_issue(self.build_install_issue(
                 provider.id(),
                 provider.display_name(),
@@ -1621,6 +1781,7 @@ impl HealthCheckManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::provider::support::REASON_HEALTH_CHECK_TIMEOUT;
 
     #[test]
     fn test_health_status_default() {
@@ -2117,5 +2278,91 @@ mod tests {
                 .and_then(|issue| issue.remediation_id.clone()),
             Some("install-provider:fnm".to_string())
         );
+    }
+
+    #[test]
+    fn test_timeout_results_use_shared_reason_code() {
+        let mgr = make_test_manager();
+
+        let env_timeout = mgr.create_environment_timeout_result("node");
+        assert_eq!(
+            env_timeout.scope_reason.as_deref(),
+            Some(REASON_HEALTH_CHECK_TIMEOUT)
+        );
+
+        let pm_timeout = mgr.create_package_manager_timeout_result("npm", "npm");
+        assert_eq!(
+            pm_timeout.scope_reason.as_deref(),
+            Some(REASON_HEALTH_CHECK_TIMEOUT)
+        );
+    }
+
+    #[test]
+    fn test_map_scope_state_matches_shared_scope() {
+        assert!(matches!(
+            HealthCheckManager::map_scope_state(ProviderHealthScope::Available),
+            HealthScopeState::Available
+        ));
+        assert!(matches!(
+            HealthCheckManager::map_scope_state(ProviderHealthScope::Unavailable),
+            HealthScopeState::Unavailable
+        ));
+        assert!(matches!(
+            HealthCheckManager::map_scope_state(ProviderHealthScope::Timeout),
+            HealthScopeState::Timeout
+        ));
+        assert!(matches!(
+            HealthCheckManager::map_scope_state(ProviderHealthScope::Unsupported),
+            HealthScopeState::Unsupported
+        ));
+    }
+
+    #[test]
+    fn test_list_health_provider_entries_is_registry_driven_and_sorted() {
+        let mut registry = ProviderRegistry::new();
+        registry.register_provider(Arc::new(crate::provider::gitlab::GitLabProvider::new()));
+        registry.register_provider(Arc::new(crate::provider::github::GitHubProvider::new()));
+        registry.register_environment_provider(Arc::new(
+            crate::provider::system::SystemEnvironmentProvider::new(
+                crate::provider::system::SystemEnvironmentType::Node,
+            ),
+        ));
+
+        let mgr = HealthCheckManager::new(Arc::new(RwLock::new(registry)));
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let entries = rt.block_on(mgr.list_health_provider_entries());
+        let ids: Vec<String> = entries.into_iter().map(|entry| entry.id).collect();
+
+        assert_eq!(ids, vec!["github".to_string(), "gitlab".to_string()]);
+    }
+
+    #[test]
+    fn test_failure_result_helpers_are_isolated_per_target() {
+        let mgr = make_test_manager();
+
+        let env_failure = mgr.create_environment_failure_result("node", "join error");
+        assert!(matches!(
+            env_failure.scope_state,
+            HealthScopeState::Unavailable
+        ));
+        assert_eq!(
+            env_failure.scope_reason.as_deref(),
+            Some("health_check_task_failed")
+        );
+        assert_eq!(env_failure.issues.len(), 1);
+
+        let pm_failure = mgr.create_package_manager_failure_result("npm", "npm", "join error");
+        assert!(matches!(
+            pm_failure.scope_state,
+            HealthScopeState::Unavailable
+        ));
+        assert_eq!(
+            pm_failure.scope_reason.as_deref(),
+            Some("health_check_task_failed")
+        );
+        assert_eq!(pm_failure.issues.len(), 1);
     }
 }

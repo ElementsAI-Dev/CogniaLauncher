@@ -247,7 +247,10 @@ export default function DashboardPage() {
 
         {/* Edit Mode Banner */}
         {isEditMode && (
-          <Alert className="border-dashed border-primary/50 bg-primary/5 text-primary">
+          <Alert
+            data-testid="dashboard-edit-mode-banner"
+            className="border-dashed border-primary/50 bg-primary/5 text-primary"
+          >
             <Pencil className="h-4 w-4" />
             <AlertDescription>{t('dashboard.widgets.editModeHint')}</AlertDescription>
           </Alert>

@@ -1,13 +1,14 @@
 use crate::cache::{
     external, migration, CacheAccessStats, CacheEntry, CacheEntryType, CacheSizeSnapshot,
     CleanupHistory, CleanupRecord, CleanupRecordBuilder, CombinedCacheStats, DownloadCache,
-    DownloadResumer, ExternalCacheCleanResult, ExternalCacheInfo, MetadataCache, MigrationMode,
-    MigrationResult, MigrationValidation,
+    DownloadHistory, DownloadResumer, ExternalCacheCleanResult, ExternalCacheInfo, MetadataCache,
+    MigrationMode, MigrationResult, MigrationValidation,
 };
 use crate::config::Settings;
-use crate::platform::{disk, disk::format_size, fs, process::ProcessOptions};
-use chrono::{TimeZone, Utc};
+use crate::platform::{disk, disk::format_size, fs, process::ProcessOptions, PlatformPaths};
+use chrono::{DateTime, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -19,6 +20,7 @@ enum CacheCommandScope {
     All,
     Download,
     Metadata,
+    DefaultDownloads,
     External,
 }
 
@@ -28,9 +30,10 @@ impl CacheCommandScope {
             "all" => Ok(Self::All),
             "download" => Ok(Self::Download),
             "metadata" => Ok(Self::Metadata),
+            "default_downloads" => Ok(Self::DefaultDownloads),
             "external" => Ok(Self::External),
             other => Err(format!(
-                "Invalid cache scope: {}. Use 'all', 'download', 'metadata', or 'external'",
+                "Invalid cache scope: {}. Use 'all', 'download', 'metadata', 'default_downloads', or 'external'",
                 other
             )),
         }
@@ -40,6 +43,7 @@ impl CacheCommandScope {
         match clean_type {
             "downloads" => Self::Download,
             "metadata" => Self::Metadata,
+            "default_downloads" => Self::DefaultDownloads,
             _ => Self::All,
         }
     }
@@ -49,6 +53,7 @@ impl CacheCommandScope {
             Self::All => "all",
             Self::Download => "download",
             Self::Metadata => "metadata",
+            Self::DefaultDownloads => "default_downloads",
             Self::External => "external",
         }
     }
@@ -59,6 +64,10 @@ impl CacheCommandScope {
 
     fn includes_metadata(self) -> bool {
         matches!(self, Self::All | Self::Metadata)
+    }
+
+    fn includes_default_downloads(self) -> bool {
+        matches!(self, Self::All | Self::DefaultDownloads)
     }
 
     fn domains(self) -> Vec<String> {
@@ -134,6 +143,244 @@ fn append_cleanup_entry(builder: &mut CleanupRecordBuilder, entry: &CacheEntry) 
     );
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DefaultDownloadsSkipItem {
+    pub path: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DefaultDownloadsFileOutcome {
+    pub path: String,
+    pub size: u64,
+    pub size_human: String,
+    pub outcome: String,
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DefaultDownloadsStatsInfo {
+    pub entry_count: usize,
+    pub size: u64,
+    pub size_human: String,
+    pub location: Option<String>,
+    pub is_available: bool,
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct DefaultDownloadsCandidate {
+    path: PathBuf,
+    size: u64,
+    created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone)]
+struct DefaultDownloadsCollection {
+    root_path: Option<PathBuf>,
+    is_available: bool,
+    reason: Option<String>,
+    candidates: Vec<DefaultDownloadsCandidate>,
+    skipped: Vec<DefaultDownloadsSkipItem>,
+}
+
+fn unavailable_default_downloads_collection(
+    root_path: Option<PathBuf>,
+    reason: impl Into<String>,
+) -> DefaultDownloadsCollection {
+    DefaultDownloadsCollection {
+        root_path,
+        is_available: false,
+        reason: Some(reason.into()),
+        candidates: Vec::new(),
+        skipped: Vec::new(),
+    }
+}
+
+async fn collect_default_downloads_candidates(cache_dir: &Path) -> DefaultDownloadsCollection {
+    collect_default_downloads_candidates_with_root(cache_dir, None).await
+}
+
+async fn collect_default_downloads_candidates_with_root(
+    cache_dir: &Path,
+    root_override: Option<PathBuf>,
+) -> DefaultDownloadsCollection {
+    let Some(root_path) = root_override.or_else(PlatformPaths::default_download_dir) else {
+        return unavailable_default_downloads_collection(None, "unresolved_default_downloads_path");
+    };
+
+    if !fs::exists(&root_path).await {
+        return unavailable_default_downloads_collection(
+            Some(root_path),
+            "downloads_directory_missing",
+        );
+    }
+
+    let canonical_root = match tokio::fs::canonicalize(&root_path).await {
+        Ok(path) => path,
+        Err(_) => {
+            return unavailable_default_downloads_collection(
+                Some(root_path),
+                "downloads_directory_unresolvable",
+            );
+        }
+    };
+
+    let mut collection = DefaultDownloadsCollection {
+        root_path: Some(root_path),
+        is_available: true,
+        reason: None,
+        candidates: Vec::new(),
+        skipped: Vec::new(),
+    };
+
+    let history = match DownloadHistory::open(cache_dir).await {
+        Ok(history) => history,
+        Err(_) => {
+            collection.skipped.push(DefaultDownloadsSkipItem {
+                path: cache_dir
+                    .join("download_history.json")
+                    .display()
+                    .to_string(),
+                reason: "history_unavailable".to_string(),
+            });
+            return collection;
+        }
+    };
+
+    let mut seen = HashSet::<PathBuf>::new();
+
+    for record in history.list() {
+        let destination = record.destination.clone();
+        let destination_display = destination.display().to_string();
+
+        if !fs::exists(&destination).await {
+            collection.skipped.push(DefaultDownloadsSkipItem {
+                path: destination_display,
+                reason: "file_missing".to_string(),
+            });
+            continue;
+        }
+
+        let canonical_path = match tokio::fs::canonicalize(&destination).await {
+            Ok(path) => path,
+            Err(_) => {
+                collection.skipped.push(DefaultDownloadsSkipItem {
+                    path: destination_display,
+                    reason: "candidate_unresolvable".to_string(),
+                });
+                continue;
+            }
+        };
+
+        if !canonical_path.starts_with(&canonical_root) {
+            collection.skipped.push(DefaultDownloadsSkipItem {
+                path: canonical_path.display().to_string(),
+                reason: "outside_default_downloads_root".to_string(),
+            });
+            continue;
+        }
+
+        if !seen.insert(canonical_path.clone()) {
+            continue;
+        }
+
+        let size = fs::file_size(&canonical_path).await.unwrap_or(record.size);
+        collection.candidates.push(DefaultDownloadsCandidate {
+            path: canonical_path,
+            size,
+            created_at: record.completed_at,
+        });
+    }
+
+    collection.candidates.sort_by(|a, b| {
+        b.created_at
+            .cmp(&a.created_at)
+            .then_with(|| a.path.cmp(&b.path))
+    });
+    collection
+        .skipped
+        .sort_by(|a, b| a.path.cmp(&b.path).then_with(|| a.reason.cmp(&b.reason)));
+    collection
+}
+
+fn summarize_default_downloads(
+    collection: &DefaultDownloadsCollection,
+) -> DefaultDownloadsStatsInfo {
+    let size: u64 = collection.candidates.iter().map(|c| c.size).sum();
+    DefaultDownloadsStatsInfo {
+        entry_count: collection.candidates.len(),
+        size,
+        size_human: format_size(size),
+        location: collection
+            .root_path
+            .as_ref()
+            .map(|path| path.display().to_string()),
+        is_available: collection.is_available,
+        reason: collection.reason.clone(),
+    }
+}
+
+async fn clean_default_downloads_candidates(
+    collection: &DefaultDownloadsCollection,
+    use_trash: bool,
+) -> (u64, usize, Vec<DefaultDownloadsFileOutcome>) {
+    let mut freed = 0u64;
+    let mut deleted_count = 0usize;
+    let mut outcomes = Vec::new();
+
+    for candidate in &collection.candidates {
+        let path_string = candidate.path.display().to_string();
+        if !fs::exists(&candidate.path).await {
+            outcomes.push(DefaultDownloadsFileOutcome {
+                path: path_string,
+                size: 0,
+                size_human: format_size(0),
+                outcome: "skipped".to_string(),
+                reason: Some("file_missing".to_string()),
+            });
+            continue;
+        }
+
+        match fs::remove_file_with_option(&candidate.path, use_trash).await {
+            Ok(_) => {
+                freed += candidate.size;
+                deleted_count += 1;
+                outcomes.push(DefaultDownloadsFileOutcome {
+                    path: candidate.path.display().to_string(),
+                    size: candidate.size,
+                    size_human: format_size(candidate.size),
+                    outcome: "deleted".to_string(),
+                    reason: None,
+                });
+            }
+            Err(_) => {
+                outcomes.push(DefaultDownloadsFileOutcome {
+                    path: path_string,
+                    size: candidate.size,
+                    size_human: format_size(candidate.size),
+                    outcome: "skipped".to_string(),
+                    reason: Some("delete_failed".to_string()),
+                });
+            }
+        }
+    }
+
+    for skipped in &collection.skipped {
+        outcomes.push(DefaultDownloadsFileOutcome {
+            path: skipped.path.clone(),
+            size: 0,
+            size_human: format_size(0),
+            outcome: "skipped".to_string(),
+            reason: Some(skipped.reason.clone()),
+        });
+    }
+
+    (freed, deleted_count, outcomes)
+}
+
 pub async fn record_cache_snapshot(
     cache_dir: &Path,
     metadata_cache_ttl: i64,
@@ -198,6 +445,7 @@ fn emit_external_cache_changed(app: &AppHandle, action: &str, freed_bytes: u64, 
 pub struct CacheInfo {
     pub download_cache: CacheStatsInfo,
     pub metadata_cache: CacheStatsInfo,
+    pub default_downloads: DefaultDownloadsStatsInfo,
     pub total_size: u64,
     pub total_size_human: String,
     pub max_size: Option<u64>,
@@ -218,6 +466,8 @@ pub async fn cache_info(settings: State<'_, SharedSettings>) -> Result<CacheInfo
     let s = settings.read().await;
     let cache_dir = s.get_cache_dir();
     let metadata_cache_ttl = s.general.metadata_cache_ttl as i64;
+    let max_size = s.general.cache_max_size;
+    drop(s);
 
     let download_cache = DownloadCache::open(&cache_dir)
         .await
@@ -228,6 +478,7 @@ pub async fn cache_info(settings: State<'_, SharedSettings>) -> Result<CacheInfo
 
     let dl_stats = download_cache.stats().await.map_err(|e| e.to_string())?;
     let md_stats = metadata_cache.stats().await.map_err(|e| e.to_string())?;
+    let default_downloads = collect_default_downloads_candidates(&cache_dir).await;
 
     let total = dl_stats.total_size + md_stats.total_size;
 
@@ -244,12 +495,13 @@ pub async fn cache_info(settings: State<'_, SharedSettings>) -> Result<CacheInfo
             size_human: format_size(md_stats.total_size),
             location: md_stats.location.display().to_string(),
         },
+        default_downloads: summarize_default_downloads(&default_downloads),
         total_size: total,
         total_size_human: format_size(total),
-        max_size: Some(s.general.cache_max_size),
-        max_size_human: Some(format_size(s.general.cache_max_size)),
-        usage_percent: if s.general.cache_max_size > 0 {
-            Some((total as f64 / s.general.cache_max_size as f64 * 100.0) as u8)
+        max_size: Some(max_size),
+        max_size_human: Some(format_size(max_size)),
+        usage_percent: if max_size > 0 {
+            Some((total as f64 / max_size as f64 * 100.0) as u8)
         } else {
             None
         },
@@ -289,12 +541,14 @@ pub async fn cache_clean(
         &download_cache,
         &metadata_cache,
         &mut resumer,
+        &cache_dir,
         clean_type_str,
         max_age,
     )
     .await?;
     let record = builder.build();
-    let deleted_count = record.file_count;
+    let mut deleted_count = record.file_count;
+    let mut file_outcomes = Vec::new();
 
     let (dl_freed, md_freed) = match clean_type_str {
         "downloads" => {
@@ -312,6 +566,14 @@ pub async fn cache_clean(
                 .await
                 .map_err(|e| e.to_string())?;
             (0, md_size_before)
+        }
+        "default_downloads" => {
+            let default_downloads = collect_default_downloads_candidates(&cache_dir).await;
+            let (freed, deleted, outcomes) =
+                clean_default_downloads_candidates(&default_downloads, false).await;
+            deleted_count = deleted;
+            file_outcomes = outcomes;
+            (freed, 0)
         }
         "expired" => {
             let md_freed = measure_metadata_expired_size(&metadata_cache).await?;
@@ -341,7 +603,7 @@ pub async fn cache_clean(
     };
 
     let partial_freed = match clean_type_str {
-        "metadata" => 0,
+        "metadata" | "default_downloads" => 0,
         "expired" => clean_partials(&mut resumer, max_age).await?,
         _ => clean_partials(&mut resumer, Duration::from_secs(0)).await?,
     };
@@ -367,6 +629,12 @@ pub async fn cache_clean(
     Ok(CleanResult {
         freed_bytes: total_freed,
         freed_human: format_size(total_freed),
+        deleted_count,
+        skipped_count: file_outcomes
+            .iter()
+            .filter(|outcome| outcome.outcome == "skipped")
+            .count(),
+        file_outcomes,
     })
 }
 
@@ -374,6 +642,9 @@ pub async fn cache_clean(
 pub struct CleanResult {
     pub freed_bytes: u64,
     pub freed_human: String,
+    pub deleted_count: usize,
+    pub skipped_count: usize,
+    pub file_outcomes: Vec<DefaultDownloadsFileOutcome>,
 }
 
 /// Verify cache integrity
@@ -497,6 +768,32 @@ pub async fn cache_verify(
             }
 
             valid_entries += 1;
+        }
+    }
+
+    if scope.includes_default_downloads() {
+        let default_downloads = collect_default_downloads_candidates(&cache_dir).await;
+        for candidate in default_downloads.candidates {
+            if fs::exists(&candidate.path).await {
+                valid_entries += 1;
+            } else {
+                missing_files += 1;
+                details.push(CacheIssue {
+                    entry_key: candidate.path.display().to_string(),
+                    issue_type: "missing".to_string(),
+                    description: "Default downloads file not found on disk".to_string(),
+                });
+            }
+        }
+        for skipped in default_downloads.skipped {
+            if skipped.reason == "file_missing" {
+                missing_files += 1;
+            }
+            details.push(CacheIssue {
+                entry_key: skipped.path,
+                issue_type: "default_downloads_skipped".to_string(),
+                description: format!("Skipped default-downloads candidate: {}", skipped.reason),
+            });
         }
     }
 
@@ -637,6 +934,21 @@ pub async fn cache_repair(
                 cleanup_builder.add_file(entry.file_path.display().to_string(), 0, "metadata");
                 removed_entries += 1;
             }
+        }
+    }
+
+    if scope.includes_default_downloads() {
+        let default_downloads = collect_default_downloads_candidates(&cache_dir).await;
+        let (freed, deleted, outcomes) =
+            clean_default_downloads_candidates(&default_downloads, false).await;
+        freed_bytes += freed;
+        removed_entries += deleted;
+
+        for outcome in outcomes
+            .into_iter()
+            .filter(|item| item.outcome == "deleted")
+        {
+            cleanup_builder.add_file(outcome.path, outcome.size, "default_download");
         }
     }
 
@@ -829,6 +1141,7 @@ async fn build_cleanup_record(
     download_cache: &DownloadCache,
     metadata_cache: &MetadataCache,
     resumer: &mut DownloadResumer,
+    cache_dir: &Path,
     clean_type: &str,
     max_age: Duration,
 ) -> Result<(), String> {
@@ -857,6 +1170,16 @@ async fn build_cleanup_record(
                     entry.file_path.display().to_string(),
                     entry.size,
                     "metadata",
+                );
+            }
+        }
+        "default_downloads" => {
+            let default_downloads = collect_default_downloads_candidates(cache_dir).await;
+            for candidate in default_downloads.candidates {
+                builder.add_file(
+                    candidate.path.display().to_string(),
+                    candidate.size,
+                    "default_download",
                 );
             }
         }
@@ -942,6 +1265,8 @@ pub struct CleanPreview {
     pub total_count: usize,
     pub total_size: u64,
     pub total_size_human: String,
+    pub skipped: Vec<DefaultDownloadsSkipItem>,
+    pub skipped_count: usize,
 }
 
 /// Preview files that would be cleaned without actually deleting them
@@ -971,6 +1296,7 @@ pub async fn cache_clean_preview(
     let clean_type = clean_type.as_deref().unwrap_or("all");
     let mut files = Vec::new();
     let mut total_size = 0u64;
+    let mut skipped = Vec::new();
 
     match clean_type {
         "downloads" => {
@@ -1006,6 +1332,20 @@ pub async fn cache_clean_preview(
                     created_at: entry.created_at.to_rfc3339(),
                 });
             }
+        }
+        "default_downloads" => {
+            let default_downloads = collect_default_downloads_candidates(&cache_dir).await;
+            for candidate in &default_downloads.candidates {
+                total_size += candidate.size;
+                files.push(CleanPreviewItem {
+                    path: candidate.path.display().to_string(),
+                    size: candidate.size,
+                    size_human: format_size(candidate.size),
+                    entry_type: "default_download".to_string(),
+                    created_at: candidate.created_at.to_rfc3339(),
+                });
+            }
+            skipped = default_downloads.skipped;
         }
         "expired" => {
             for entry in download_cache
@@ -1074,12 +1414,15 @@ pub async fn cache_clean_preview(
     }
 
     let total_count = files.len();
+    let skipped_count = skipped.len();
 
     Ok(CleanPreview {
         files,
         total_count,
         total_size,
         total_size_human: format_size(total_size),
+        skipped,
+        skipped_count,
     })
 }
 
@@ -1093,6 +1436,8 @@ pub struct EnhancedCleanResult {
     pub deleted_count: usize,
     pub use_trash: bool,
     pub history_id: String,
+    pub file_outcomes: Vec<DefaultDownloadsFileOutcome>,
+    pub skipped_count: usize,
 }
 
 /// Clean cache with option to move to trash instead of permanent delete
@@ -1131,13 +1476,15 @@ pub async fn cache_clean_enhanced(
         &download_cache,
         &metadata_cache,
         &mut resumer,
+        &cache_dir,
         clean_type_str,
         max_age,
     )
     .await?;
     let record = builder.build();
     let history_id = record.id.clone();
-    let deleted_count = record.file_count;
+    let mut deleted_count = record.file_count;
+    let mut file_outcomes = Vec::new();
 
     let (dl_freed, md_freed) = match clean_type_str {
         "downloads" => {
@@ -1158,6 +1505,14 @@ pub async fn cache_clean_enhanced(
                 .await
                 .map_err(|e| e.to_string())?;
             (0, md_size_before)
+        }
+        "default_downloads" => {
+            let default_downloads = collect_default_downloads_candidates(&cache_dir).await;
+            let (freed, deleted, outcomes) =
+                clean_default_downloads_candidates(&default_downloads, use_trash).await;
+            deleted_count = deleted;
+            file_outcomes = outcomes;
+            (freed, 0)
         }
         "expired" => {
             let md_freed = measure_metadata_expired_size(&metadata_cache).await?;
@@ -1190,7 +1545,7 @@ pub async fn cache_clean_enhanced(
     };
 
     let partial_freed = match clean_type_str {
-        "metadata" => 0,
+        "metadata" | "default_downloads" => 0,
         "expired" => clean_partials_with_option(&mut resumer, max_age, use_trash).await?,
         _ => clean_partials_with_option(&mut resumer, Duration::from_secs(0), use_trash).await?,
     };
@@ -1213,6 +1568,11 @@ pub async fn cache_clean_enhanced(
         deleted_count,
         use_trash,
         history_id,
+        skipped_count: file_outcomes
+            .iter()
+            .filter(|outcome| outcome.outcome == "skipped")
+            .count(),
+        file_outcomes,
     })
 }
 
@@ -1592,6 +1952,35 @@ pub async fn discover_external_caches_fast(
     Ok(external::discover_all_caches_cached_with_custom(&excluded, &custom).await)
 }
 
+/// Return lightweight candidate rows for progressive provider probing.
+#[tauri::command]
+pub async fn discover_external_cache_candidates(
+    settings: State<'_, SharedSettings>,
+) -> Result<Vec<ExternalCacheInfo>, String> {
+    let s = settings.read().await;
+    let excluded = s.general.external_cache_excluded_providers.clone();
+    let custom = s.general.custom_cache_entries.clone();
+    drop(s);
+    Ok(external::discover_cache_candidates_with_custom(
+        &excluded, &custom,
+    ))
+}
+
+/// Probe a single provider candidate with bounded timeout.
+#[tauri::command]
+pub async fn probe_external_cache_provider(
+    provider: String,
+    settings: State<'_, SharedSettings>,
+) -> Result<ExternalCacheInfo, String> {
+    let s = settings.read().await;
+    let excluded = s.general.external_cache_excluded_providers.clone();
+    let custom = s.general.custom_cache_entries.clone();
+    drop(s);
+    external::probe_cache_provider_with_custom(&provider, &excluded, &custom)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Calculate size for a single external cache provider (used for progressive loading).
 #[tauri::command]
 pub async fn calculate_external_cache_size(
@@ -1687,6 +2076,12 @@ pub async fn get_combined_cache_stats(
 pub struct CacheSizeMonitor {
     pub internal_size: u64,
     pub internal_size_human: String,
+    pub default_downloads_size: u64,
+    pub default_downloads_size_human: String,
+    pub default_downloads_count: usize,
+    pub default_downloads_path: Option<String>,
+    pub default_downloads_available: bool,
+    pub default_downloads_reason: Option<String>,
     pub external_size: u64,
     pub external_size_human: String,
     pub total_size: u64,
@@ -1733,6 +2128,8 @@ pub async fn cache_size_monitor(
         .map_err(|e| e.to_string())?;
     let dl_stats = download_cache.stats().await.map_err(|e| e.to_string())?;
     let internal_size = dl_stats.total_size;
+    let default_downloads = collect_default_downloads_candidates(&cache_dir).await;
+    let default_downloads_summary = summarize_default_downloads(&default_downloads);
 
     // Get external cache sizes if requested
     let (external_size, external_caches) = if include_ext {
@@ -1756,7 +2153,7 @@ pub async fn cache_size_monitor(
         (0, Vec::new())
     };
 
-    let total_size = internal_size + external_size;
+    let total_size = internal_size + external_size + default_downloads_summary.size;
     let usage_percent = if max_size > 0 {
         (internal_size as f64 / max_size as f64 * 100.0) as f32
     } else {
@@ -1774,6 +2171,12 @@ pub async fn cache_size_monitor(
     Ok(CacheSizeMonitor {
         internal_size,
         internal_size_human: format_size(internal_size),
+        default_downloads_size: default_downloads_summary.size,
+        default_downloads_size_human: default_downloads_summary.size_human,
+        default_downloads_count: default_downloads_summary.entry_count,
+        default_downloads_path: default_downloads_summary.location,
+        default_downloads_available: default_downloads_summary.is_available,
+        default_downloads_reason: default_downloads_summary.reason,
         external_size,
         external_size_human: format_size(external_size),
         total_size,
@@ -2075,6 +2478,7 @@ pub async fn cache_force_clean(
         &download_cache,
         &metadata_cache,
         &mut resumer,
+        &cache_dir,
         "all",
         Duration::from_secs(0),
     )
@@ -2121,6 +2525,8 @@ pub async fn cache_force_clean(
         deleted_count,
         use_trash,
         history_id,
+        file_outcomes: Vec::new(),
+        skipped_count: 0,
     })
 }
 
@@ -2237,7 +2643,7 @@ pub async fn get_external_cache_paths(
     let custom = s.general.custom_cache_entries.clone();
     drop(s);
 
-    let discovered = external::discover_all_caches_fast_with_custom(&excluded, &custom);
+    let discovered = external::discover_all_caches_fast_with_custom(&excluded, &custom).await;
     let mut results = Vec::new();
 
     for cache in discovered {
@@ -2406,8 +2812,12 @@ pub async fn get_cache_size_history(
 
 #[cfg(test)]
 mod tests {
-    use super::{record_cache_snapshot, CacheChangedEvent, CacheCommandScope, CacheOptimizeResult};
-    use crate::cache::{DownloadCache, MetadataCache};
+    use super::{
+        clean_default_downloads_candidates, collect_default_downloads_candidates_with_root,
+        record_cache_snapshot, CacheChangedEvent, CacheCommandScope, CacheOptimizeResult,
+    };
+    use crate::cache::{DownloadCache, DownloadHistory, DownloadRecord, MetadataCache};
+    use chrono::Utc;
     use serde_json::Value;
     use tempfile::tempdir;
 
@@ -2479,6 +2889,14 @@ mod tests {
             ]
         );
         assert_eq!(
+            CacheCommandScope::DefaultDownloads.domains(),
+            vec![
+                "cache_overview".to_string(),
+                "cache_entries".to_string(),
+                "about_cache_stats".to_string(),
+            ]
+        );
+        assert_eq!(
             CacheCommandScope::External.domains(),
             vec![
                 "external_cache".to_string(),
@@ -2486,6 +2904,12 @@ mod tests {
                 "about_cache_stats".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn cache_command_scope_parses_default_downloads() {
+        let parsed = CacheCommandScope::parse(Some("default_downloads"));
+        assert!(matches!(parsed, Ok(CacheCommandScope::DefaultDownloads)));
     }
 
     #[tokio::test]
@@ -2528,5 +2952,97 @@ mod tests {
         assert_eq!(snapshots.len(), 1);
         assert_eq!(snapshots[0].download_count, 1);
         assert_eq!(snapshots[0].metadata_count, 1);
+    }
+
+    #[tokio::test]
+    async fn default_downloads_collection_filters_outside_root_and_cleans_safely() {
+        let dir = tempdir().expect("tempdir");
+        let cache_dir = dir.path().join("cache");
+        let downloads_root = dir.path().join("Downloads");
+        let outside_dir = dir.path().join("outside");
+        tokio::fs::create_dir_all(&cache_dir)
+            .await
+            .expect("create cache dir");
+        tokio::fs::create_dir_all(&downloads_root)
+            .await
+            .expect("create downloads root");
+        tokio::fs::create_dir_all(&outside_dir)
+            .await
+            .expect("create outside dir");
+
+        let inside_path = downloads_root.join("inside.bin");
+        let outside_path = outside_dir.join("outside.bin");
+        tokio::fs::write(&inside_path, b"inside")
+            .await
+            .expect("write inside file");
+        tokio::fs::write(&outside_path, b"outside")
+            .await
+            .expect("write outside file");
+
+        let inside_size = tokio::fs::metadata(&inside_path)
+            .await
+            .expect("inside metadata")
+            .len();
+        let outside_size = tokio::fs::metadata(&outside_path)
+            .await
+            .expect("outside metadata")
+            .len();
+
+        let mut history = DownloadHistory::open(&cache_dir)
+            .await
+            .expect("open history");
+        history
+            .add(DownloadRecord::completed(
+                "https://example.com/inside.bin".to_string(),
+                "inside.bin".to_string(),
+                inside_path.clone(),
+                inside_size,
+                None,
+                Utc::now(),
+                None,
+            ))
+            .await
+            .expect("add inside record");
+        history
+            .add(DownloadRecord::completed(
+                "https://example.com/outside.bin".to_string(),
+                "outside.bin".to_string(),
+                outside_path.clone(),
+                outside_size,
+                None,
+                Utc::now(),
+                None,
+            ))
+            .await
+            .expect("add outside record");
+
+        let collection = collect_default_downloads_candidates_with_root(
+            &cache_dir,
+            Some(downloads_root.clone()),
+        )
+        .await;
+
+        assert!(collection.is_available);
+        assert_eq!(collection.root_path, Some(downloads_root));
+        assert_eq!(collection.candidates.len(), 1);
+        assert_eq!(
+            collection.candidates[0].path,
+            tokio::fs::canonicalize(&inside_path)
+                .await
+                .expect("canonical inside path")
+        );
+        assert!(collection
+            .skipped
+            .iter()
+            .any(|item| item.reason == "outside_default_downloads_root"));
+
+        let (freed, deleted_count, outcomes) =
+            clean_default_downloads_candidates(&collection, false).await;
+        assert_eq!(deleted_count, 1);
+        assert_eq!(freed, inside_size);
+        assert!(!inside_path.exists());
+        assert!(outside_path.exists());
+        assert!(outcomes.iter().any(|item| item.outcome == "skipped"
+            && item.reason.as_deref() == Some("outside_default_downloads_root")));
     }
 }

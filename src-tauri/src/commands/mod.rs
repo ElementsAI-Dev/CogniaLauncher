@@ -53,11 +53,11 @@ pub use cache::{
     cache_force_clean_external, cache_info, cache_migrate, cache_migration_validate, cache_repair,
     cache_size_monitor, cache_verify, calculate_external_cache_size, clean_all_external_caches,
     clean_external_cache, clear_cleanup_history, delete_cache_entries, delete_cache_entry,
-    discover_external_caches, discover_external_caches_fast, get_cache_access_stats,
-    get_cache_path_info, get_cache_settings, get_cleanup_history, get_cleanup_summary,
-    get_combined_cache_stats, get_external_cache_paths, get_top_accessed_entries,
-    list_cache_entries, reset_cache_access_stats, reset_cache_path, set_cache_path,
-    set_cache_settings,
+    discover_external_cache_candidates, discover_external_caches, discover_external_caches_fast,
+    get_cache_access_stats, get_cache_path_info, get_cache_settings, get_cleanup_history,
+    get_cleanup_summary, get_combined_cache_stats, get_external_cache_paths,
+    get_top_accessed_entries, list_cache_entries, probe_external_cache_provider,
+    reset_cache_access_stats, reset_cache_path, set_cache_path, set_cache_settings,
 };
 pub use conda::{
     conda_channel_add, conda_channel_remove, conda_clean, conda_config_set, conda_config_show,

@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ProviderHealthTab } from "./provider-health-tab";
+import { writeClipboard } from "@/lib/clipboard";
 import type { PackageManagerHealthResult } from "@/types/tauri";
 
 jest.mock("@/lib/clipboard", () => ({
@@ -70,6 +71,8 @@ const errorResult: PackageManagerHealthResult = {
   provider_id: "npm",
   display_name: "npm",
   status: "error",
+  scope_state: "unavailable",
+  scope_reason: "provider_executable_unavailable",
   version: null,
   executable_path: null,
   issues: [
@@ -146,6 +149,22 @@ describe("ProviderHealthTab", () => {
     expect(screen.getByText("Error")).toBeInTheDocument();
     expect(screen.getByText("npm not found")).toBeInTheDocument();
     expect(screen.getByText("Install Node.js from nodejs.org")).toBeInTheDocument();
+    expect(screen.getAllByText("Unavailable").length).toBeGreaterThan(0);
+    expect(screen.getByText("provider_executable_unavailable")).toBeInTheDocument();
+  });
+
+  it("includes scope context when copying diagnostics", async () => {
+    const user = userEvent.setup();
+    render(<ProviderHealthTab {...defaultProps} healthResult={errorResult} />);
+    const copyButton = screen.getByText("Copy Diagnostics").closest("button");
+    expect(copyButton).not.toBeNull();
+
+    await user.click(copyButton!);
+
+    expect(writeClipboard).toHaveBeenCalled();
+    const payload = (writeClipboard as jest.Mock).mock.calls[0]?.[0] as string;
+    expect(payload).toContain("Scope: Unavailable");
+    expect(payload).toContain("Scope Reason: provider_executable_unavailable");
   });
 
   it("calls onRunHealthCheck when run check button is clicked", async () => {

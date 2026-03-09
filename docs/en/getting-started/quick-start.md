@@ -61,6 +61,16 @@ Press ++ctrl+k++ (macOS: ++cmd+k++) to open the command palette:
 - Quick navigation
 - Execute common operations
 
+### 5. First-Class Route Orientation
+
+The app shell includes first-class routes for operational workflows:
+
+- General workflows: `/environments`, `/packages`, `/providers`, `/downloads`, `/cache`, `/logs`, `/settings`
+- Desktop-first workflows: `/git`, `/envvar`, `/terminal`, `/health`, `/wsl`
+- Utility workflows: `/toolbox`, `/docs`, `/about`
+
+In Web mode, desktop-first routes present safe fallback guidance instead of desktop-only actions.
+
 ---
 
 ## Project Structure Overview
@@ -73,16 +83,16 @@ CogniaLauncher/
 │   ├── dashboard/            # Dashboard components
 │   ├── settings/             # Settings components
 │   └── ...                   # Other feature components
-├── hooks/                    # React Hooks (51)
+├── hooks/                    # React hooks
 ├── lib/                      # Utilities and state management
-│   ├── stores/               # Zustand Stores (9)
+│   ├── stores/               # Zustand stores
 │   ├── theme/                # Theme system
 │   ├── constants/            # Constants
 │   └── tauri.ts              # Tauri API bindings
 ├── messages/                 # i18n translation files
 ├── src-tauri/                # Tauri/Rust backend
-│   ├── src/commands/         # Tauri commands (217+)
-│   ├── src/provider/         # Provider implementations (51+)
+│   ├── src/commands/         # Tauri commands
+│   ├── src/provider/         # Provider implementations
 │   ├── src/core/             # Core business logic
 │   └── src/cache/            # Cache system
 ├── types/                    # TypeScript type definitions
@@ -94,5 +104,5 @@ CogniaLauncher/
 ## Next Steps
 
 - **[Configuration](configuration.md)** — Customize network, proxy, mirror sources, etc.
-- **[User Guide](../guide/dashboard.md)** — Deep dive into each feature module
+- **[User Guide](../guide/index.md)** — Deep dive into each feature module
 - **[Provider List](../reference/providers-list.md)** — View all supported package managers

@@ -8,6 +8,7 @@ use crate::core::terminal::{
 use crate::core::EnvironmentManager;
 use crate::platform::env::{EnvModifications, ShellType};
 use crate::platform::process::ProcessOptions;
+use log::warn;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -21,20 +22,52 @@ pub type SharedTerminalProfileManager = Arc<RwLock<TerminalProfileManager>>;
 
 /// Resolve the effective proxy URL based on terminal settings and global network settings.
 /// Returns (proxy_url, no_proxy) tuple.
+fn normalize_non_empty(value: Option<&str>) -> Option<String> {
+    let normalized = value?.trim();
+    if normalized.is_empty() {
+        None
+    } else {
+        Some(normalized.to_string())
+    }
+}
+
+fn normalize_proxy_url(value: Option<&str>, source: &str) -> Option<String> {
+    let normalized = normalize_non_empty(value)?;
+    match reqwest::Url::parse(&normalized) {
+        Ok(url) => match url.scheme() {
+            "http" | "https" | "socks5" | "socks5h" => Some(normalized),
+            scheme => {
+                warn!(
+                    "Ignoring unsupported proxy scheme '{}' from {}: {}",
+                    scheme, source, normalized
+                );
+                None
+            }
+        },
+        Err(error) => {
+            warn!(
+                "Ignoring invalid proxy URL from {} ('{}'): {}",
+                source, normalized, error
+            );
+            None
+        }
+    }
+}
+
 fn resolve_proxy(settings: &Settings) -> (Option<String>, Option<String>) {
     match settings.terminal.proxy_mode.as_str() {
         "none" => (None, None),
         "custom" => (
-            settings.terminal.custom_proxy.clone(),
-            settings.terminal.no_proxy.clone(),
+            normalize_proxy_url(
+                settings.terminal.custom_proxy.as_deref(),
+                "terminal.custom_proxy",
+            ),
+            normalize_non_empty(settings.terminal.no_proxy.as_deref()),
         ),
         _ => (
-            settings.network.proxy.clone(),
-            settings
-                .terminal
-                .no_proxy
-                .clone()
-                .or_else(|| settings.network.no_proxy.clone()),
+            normalize_proxy_url(settings.network.proxy.as_deref(), "network.proxy"),
+            normalize_non_empty(settings.terminal.no_proxy.as_deref())
+                .or_else(|| normalize_non_empty(settings.network.no_proxy.as_deref())),
         ),
     }
 }
@@ -45,19 +78,15 @@ fn build_proxy_env_vars(
     no_proxy: &Option<String>,
 ) -> HashMap<String, String> {
     let mut env = HashMap::new();
-    if let Some(ref url) = proxy {
-        if !url.is_empty() {
-            env.insert("HTTP_PROXY".to_string(), url.clone());
-            env.insert("http_proxy".to_string(), url.clone());
-            env.insert("HTTPS_PROXY".to_string(), url.clone());
-            env.insert("https_proxy".to_string(), url.clone());
-        }
+    if let Some(url) = normalize_non_empty(proxy.as_deref()) {
+        env.insert("HTTP_PROXY".to_string(), url.clone());
+        env.insert("http_proxy".to_string(), url.clone());
+        env.insert("HTTPS_PROXY".to_string(), url.clone());
+        env.insert("https_proxy".to_string(), url);
     }
-    if let Some(ref np) = no_proxy {
-        if !np.is_empty() {
-            env.insert("NO_PROXY".to_string(), np.clone());
-            env.insert("no_proxy".to_string(), np.clone());
-        }
+    if let Some(np) = normalize_non_empty(no_proxy.as_deref()) {
+        env.insert("NO_PROXY".to_string(), np.clone());
+        env.insert("no_proxy".to_string(), np);
     }
     env
 }
@@ -906,6 +935,30 @@ mod tests {
     }
 
     #[test]
+    fn resolve_proxy_custom_mode_normalizes_whitespace() {
+        let mut settings = Settings::default();
+        settings.terminal.proxy_mode = "custom".to_string();
+        settings.terminal.custom_proxy = Some("  https://proxy.example.com:8443  ".to_string());
+        settings.terminal.no_proxy = Some(" localhost,127.0.0.1 ".to_string());
+
+        let (proxy, no_proxy) = resolve_proxy(&settings);
+        assert_eq!(proxy, Some("https://proxy.example.com:8443".to_string()));
+        assert_eq!(no_proxy, Some("localhost,127.0.0.1".to_string()));
+    }
+
+    #[test]
+    fn resolve_proxy_custom_mode_ignores_invalid_proxy_url() {
+        let mut settings = Settings::default();
+        settings.terminal.proxy_mode = "custom".to_string();
+        settings.terminal.custom_proxy = Some("ftp://proxy.example.com:21".to_string());
+        settings.terminal.no_proxy = Some("localhost".to_string());
+
+        let (proxy, no_proxy) = resolve_proxy(&settings);
+        assert!(proxy.is_none());
+        assert_eq!(no_proxy, Some("localhost".to_string()));
+    }
+
+    #[test]
     fn resolve_proxy_global_mode_uses_network_proxy() {
         let mut settings = Settings::default();
         settings.terminal.proxy_mode = "global".to_string();
@@ -1002,6 +1055,19 @@ mod tests {
     fn build_proxy_env_vars_empty_string_proxy_sets_nothing() {
         let env = build_proxy_env_vars(&Some(String::new()), &Some(String::new()));
         assert!(env.is_empty());
+    }
+
+    #[test]
+    fn build_proxy_env_vars_trims_values() {
+        let env = build_proxy_env_vars(
+            &Some("  http://proxy:8080  ".to_string()),
+            &Some(" localhost ".to_string()),
+        );
+        assert_eq!(
+            env.get("HTTP_PROXY"),
+            Some(&"http://proxy:8080".to_string())
+        );
+        assert_eq!(env.get("NO_PROXY"), Some(&"localhost".to_string()));
     }
 
     // ======================== existing tests ========================

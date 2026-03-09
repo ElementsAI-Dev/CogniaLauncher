@@ -12,7 +12,7 @@ test.describe('WSL Page', () => {
   test('shows fallback state in web mode', async ({ appPage }) => {
     // In web mode (isTauri()=false), WSL page shows loading/fallback
     // The page should render without crashing
-    await expect(appPage.locator('main')).toBeVisible();
+    await expect(appPage.locator('main').last()).toBeVisible();
     await expect(appPage.getByText('WSL').first()).toBeVisible();
   });
 

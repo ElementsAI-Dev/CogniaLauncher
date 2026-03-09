@@ -191,11 +191,15 @@ e2e/
 ├── navigation.spec.ts      # 侧边栏导航、面包屑、路由
 ├── dashboard.spec.ts       # 仪表板页面
 ├── environments.spec.ts    # 环境管理页面
+├── health.spec.ts          # 健康检查页面（Web 回退）
 ├── packages.spec.ts        # 包管理页面
 ├── providers.spec.ts       # 提供商页面
 ├── cache.spec.ts           # 缓存页面（概览 + 子路由）
 ├── downloads.spec.ts       # 下载管理页面
 ├── git.spec.ts             # Git 页面（Web 回退）
+├── envvar.spec.ts          # 环境变量页面（Web 回退）
+├── terminal.spec.ts        # 终端页面（Web 回退）
+├── toolbox.spec.ts         # 工具箱路由交互
 ├── wsl.spec.ts             # WSL 页面（Web 回退）
 ├── logs.spec.ts            # 日志页面
 ├── settings.spec.ts        # 设置页面
@@ -212,3 +216,4 @@ e2e/
 - E2E 测试运行于 Web 模式（`pnpm dev`），不依赖 Tauri 桌面端
 - 桌面端专属功能（WSL、Git 管理等）在 Web 模式下测试其回退状态
 - 配置文件：`playwright.config.ts`（项目根目录）
+- 路由归属和场景映射应与 `e2e/coverage-matrix.md` 保持一致

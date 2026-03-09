@@ -3,11 +3,14 @@ import { useEnvironmentDetection } from './use-environment-detection';
 
 const mockIsTauri = jest.fn(() => true);
 const mockEnvDetectSystemAll = jest.fn();
+const mockEnvDetectProvidersAll = jest.fn();
 
 jest.mock('@/lib/tauri', () => ({
   isTauri: (...args: Parameters<typeof mockIsTauri>) => mockIsTauri(...args),
   envDetectSystemAll: (...args: Parameters<typeof mockEnvDetectSystemAll>) =>
     mockEnvDetectSystemAll(...args),
+  envDetectProvidersAll: (...args: Parameters<typeof mockEnvDetectProvidersAll>) =>
+    mockEnvDetectProvidersAll(...args),
 }));
 
 describe('useEnvironmentDetection', () => {
@@ -15,6 +18,7 @@ describe('useEnvironmentDetection', () => {
     jest.clearAllMocks();
     mockIsTauri.mockReturnValue(true);
     mockEnvDetectSystemAll.mockResolvedValue([]);
+    mockEnvDetectProvidersAll.mockResolvedValue([]);
   });
 
   it('matches project detection by logical env type', () => {
@@ -53,18 +57,22 @@ describe('useEnvironmentDetection', () => {
     expect(result.current.systemDetections).toEqual([]);
     expect(result.current.systemDetectError).toBeNull();
     expect(mockEnvDetectSystemAll).not.toHaveBeenCalled();
+    expect(mockEnvDetectProvidersAll).not.toHaveBeenCalled();
   });
 
   it('stores system detections and supports logical matching', async () => {
     const systemDetected = [
       {
-        env_type: 'system-node',
+        env_type: 'node',
+        provider_id: 'system-node',
+        provider_name: 'System Node',
         version: '20.11.1',
         executable_path: '/usr/bin/node',
-        source: 'node --version',
+        source: 'system-node',
+        scope: 'system' as const,
       },
     ];
-    mockEnvDetectSystemAll.mockResolvedValue(systemDetected);
+    mockEnvDetectProvidersAll.mockResolvedValue(systemDetected);
 
     const { result } = renderHook(() => useEnvironmentDetection({
       availableProviders: [
@@ -83,10 +91,11 @@ describe('useEnvironmentDetection', () => {
 
     expect(result.current.systemDetections).toEqual(systemDetected);
     expect(result.current.matchSystemByEnvType('node')).toEqual(systemDetected[0]);
+    expect(result.current.matchSystemByEnvType('node', 'system-node')).toEqual(systemDetected[0]);
   });
 
   it('surfaces system detection errors to the caller', async () => {
-    mockEnvDetectSystemAll.mockRejectedValue(new Error('Permission denied'));
+    mockEnvDetectProvidersAll.mockRejectedValue(new Error('Permission denied'));
     const { result } = renderHook(() => useEnvironmentDetection());
 
     await act(async () => {
@@ -126,9 +135,12 @@ describe('useEnvironmentDetection', () => {
       systemDetections: [
         {
           env_type: 'node',
+          provider_id: 'system-node',
+          provider_name: 'System Node',
           version: '20.10.0',
           executable_path: '/usr/bin/node',
-          source: 'node --version',
+          source: 'system-node',
+          scope: 'system' as const,
         },
       ],
       providers: [
@@ -145,9 +157,11 @@ describe('useEnvironmentDetection', () => {
       expect.objectContaining({
         envType: 'node',
         name: 'Node.js',
+        providerId: 'system-node',
+        providerName: 'System Node',
         version: '20.10.0',
         available: true,
-        source: 'node --version',
+        source: 'system-node',
         sourcePath: '/usr/bin/node',
         scope: 'system',
       }),

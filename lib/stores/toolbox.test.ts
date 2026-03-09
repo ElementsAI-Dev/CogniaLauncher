@@ -9,6 +9,10 @@ describe('useToolboxStore', () => {
       recentTools: [],
       toolUseCounts: {},
       toolPreferences: {},
+      assistancePanels: {
+        history: { collapsed: false, hidden: false },
+        featured: { collapsed: false, hidden: false },
+      },
       viewMode: 'grid',
       toolLifecycles: {},
       continuationHint: null,
@@ -26,6 +30,8 @@ describe('useToolboxStore', () => {
     expect(result.current.searchQuery).toBe('');
     expect(result.current.activeToolId).toBeNull();
     expect(result.current.viewMode).toBe('grid');
+    expect(result.current.assistancePanels.history).toEqual({ collapsed: false, hidden: false });
+    expect(result.current.assistancePanels.featured).toEqual({ collapsed: false, hidden: false });
   });
 
   // --- Favorites ---
@@ -289,6 +295,60 @@ describe('useToolboxStore', () => {
     });
   });
 
+  describe('assistance panel preferences', () => {
+    it('collapses and expands a panel independently', () => {
+      const { result } = renderHook(() => useToolboxStore());
+
+      act(() => {
+        result.current.setAssistancePanelCollapsed('history', true);
+      });
+      expect(result.current.assistancePanels.history.collapsed).toBe(true);
+      expect(result.current.assistancePanels.featured.collapsed).toBe(false);
+
+      act(() => {
+        result.current.setAssistancePanelCollapsed('history', false);
+      });
+      expect(result.current.assistancePanels.history.collapsed).toBe(false);
+    });
+
+    it('hides and restores a single panel without losing collapsed state', () => {
+      const { result } = renderHook(() => useToolboxStore());
+
+      act(() => {
+        result.current.setAssistancePanelCollapsed('featured', true);
+        result.current.hideAssistancePanel('featured');
+      });
+
+      expect(result.current.assistancePanels.featured.hidden).toBe(true);
+      expect(result.current.assistancePanels.featured.collapsed).toBe(true);
+
+      act(() => {
+        result.current.restoreAssistancePanel('featured');
+      });
+
+      expect(result.current.assistancePanels.featured.hidden).toBe(false);
+      expect(result.current.assistancePanels.featured.collapsed).toBe(true);
+    });
+
+    it('restores all hidden panels', () => {
+      const { result } = renderHook(() => useToolboxStore());
+
+      act(() => {
+        result.current.hideAssistancePanel('history');
+        result.current.hideAssistancePanel('featured');
+      });
+      expect(result.current.assistancePanels.history.hidden).toBe(true);
+      expect(result.current.assistancePanels.featured.hidden).toBe(true);
+
+      act(() => {
+        result.current.restoreAllAssistancePanels();
+      });
+
+      expect(result.current.assistancePanels.history.hidden).toBe(false);
+      expect(result.current.assistancePanels.featured.hidden).toBe(false);
+    });
+  });
+
   describe('persist migration', () => {
     const getPersistConfig = () =>
       (useToolboxStore as unknown as {
@@ -305,6 +365,10 @@ describe('useToolboxStore', () => {
             'json-formatter': { indent: '2', sortKeys: true, invalid: { nested: true } },
             invalid: 'value',
           },
+          assistancePanels: {
+            history: { collapsed: true, hidden: 'no' },
+            featured: { collapsed: 'yes', hidden: true },
+          },
           viewMode: 'invalid',
         },
         2,
@@ -317,6 +381,10 @@ describe('useToolboxStore', () => {
       expect(migrated.toolPreferences).toEqual({
         'json-formatter': { indent: '2', sortKeys: true },
         invalid: {},
+      });
+      expect(migrated.assistancePanels).toEqual({
+        history: { collapsed: true, hidden: false },
+        featured: { collapsed: false, hidden: true },
       });
     });
   });

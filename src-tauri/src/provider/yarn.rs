@@ -1,5 +1,8 @@
 use super::api::{get_api_client, DEFAULT_NPM_REGISTRY};
-use super::node_base::{parse_node_list_entry, split_name_version};
+use super::node_base::{
+    parse_dependency_constraints_from_json_output, parse_node_list_json_line,
+    parse_node_list_json_output,
+};
 use super::traits::*;
 use crate::error::{CogniaError, CogniaResult};
 use crate::platform::{
@@ -95,58 +98,7 @@ impl YarnProvider {
     /// Parse a single JSON line from `yarn global list --json` into package entries.
     /// Supports both classic `data: "<tree text>"` and structured `data.trees` forms.
     fn parse_yarn_global_list_line(line: &str) -> Vec<(String, String)> {
-        let mut entries = Vec::new();
-        let mut seen = HashSet::new();
-
-        let Ok(json) = serde_json::from_str::<serde_json::Value>(line) else {
-            return entries;
-        };
-        let Some(data) = json.get("data") else {
-            return entries;
-        };
-
-        if let Some(tree_text) = data.as_str() {
-            for row in tree_text.lines() {
-                // Some Yarn outputs may contain multiple entries in one row separated by commas.
-                for segment in row.split(',') {
-                    if let Some((name, version)) = parse_node_list_entry(segment) {
-                        let key = format!("{}@{}", name, version);
-                        if seen.insert(key) {
-                            entries.push((name, version));
-                        }
-                    }
-                }
-            }
-        }
-
-        if let Some(trees) = data.get("trees").and_then(|t| t.as_array()) {
-            for tree in trees {
-                if let Some(tree_name) = tree.get("name").and_then(|n| n.as_str()) {
-                    if let Some((name, version)) = parse_node_list_entry(tree_name) {
-                        let key = format!("{}@{}", name, version);
-                        if seen.insert(key) {
-                            entries.push((name, version));
-                        }
-                        continue;
-                    }
-
-                    // Fallback for already-clean names like `lodash@4.17.21`.
-                    let (pkg_name, pkg_version) = split_name_version(tree_name.trim());
-                    if let Some(version) = pkg_version {
-                        if !pkg_name.is_empty() {
-                            let name = pkg_name.to_string();
-                            let version = version.trim().to_string();
-                            let key = format!("{}@{}", name, version);
-                            if seen.insert(key) {
-                                entries.push((name, version));
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        entries
+        parse_node_list_json_line(line)
     }
 
     /// Detect and cache the Yarn major version (1 for Classic, 2+ for Berry)
@@ -192,11 +144,9 @@ impl YarnProvider {
         let output = self.run_yarn_raw(&args).await?;
 
         // Parse yarn list output to find the package
-        for line in output.lines() {
-            for (pkg_name, version) in Self::parse_yarn_global_list_line(line) {
-                if pkg_name == name {
-                    return Ok(version);
-                }
+        for (pkg_name, version) in parse_node_list_json_output(&output) {
+            if pkg_name == name {
+                return Ok(version);
             }
         }
 
@@ -220,33 +170,44 @@ impl YarnProvider {
 
         let client = crate::platform::proxy::get_shared_client();
 
-        if let Ok(resp) = client
+        let resp = client
             .get(&url)
             .timeout(Duration::from_secs(10))
             .send()
             .await
-        {
-            if resp.status().is_success() {
-                if let Ok(json) = resp.json::<serde_json::Value>().await {
-                    if let Some(deps) = json["dependencies"].as_object() {
-                        return Ok(deps
-                            .iter()
-                            .filter_map(|(dep_name, constraint_val)| {
-                                let constraint_str = constraint_val.as_str()?;
-                                let parsed = constraint_str
-                                    .parse::<VersionConstraint>()
-                                    .unwrap_or(VersionConstraint::Any);
-                                Some(Dependency {
-                                    name: dep_name.to_string(),
-                                    constraint: parsed,
-                                })
-                            })
-                            .collect());
-                    }
-                }
-            }
+            .map_err(|err| {
+                CogniaError::Provider(format!(
+                    "failed to query yarn dependency metadata for {}: {}",
+                    name, err
+                ))
+            })?;
+        if !resp.status().is_success() {
+            return Err(CogniaError::Provider(format!(
+                "yarn dependency metadata request failed for {}: status {}",
+                name,
+                resp.status()
+            )));
         }
-        Ok(vec![])
+        let json = resp.json::<serde_json::Value>().await.map_err(|err| {
+            CogniaError::Provider(format!(
+                "failed to parse yarn dependency metadata for {}: {}",
+                name, err
+            ))
+        })?;
+
+        let pairs = json
+            .get("dependencies")
+            .map(super::node_base::parse_dependency_constraints_from_value)
+            .unwrap_or_default();
+        Ok(pairs
+            .into_iter()
+            .map(|(dep_name, constraint)| Dependency {
+                name: dep_name,
+                constraint: constraint
+                    .parse::<VersionConstraint>()
+                    .unwrap_or(VersionConstraint::Any),
+            })
+            .collect())
     }
 }
 
@@ -357,39 +318,21 @@ impl Provider for YarnProvider {
         let out = self
             .run_yarn(&["info", &pkg, "dependencies", "--json"])
             .await?;
-
-        let value: serde_json::Value =
-            serde_json::from_str(&out).unwrap_or(serde_json::Value::Null);
-        let data = value.get("data").cloned().unwrap_or(value);
-        let parsed = if let Some(data_str) = data.as_str() {
-            serde_json::from_str::<serde_json::Value>(data_str).unwrap_or(serde_json::Value::Null)
-        } else {
-            data
-        };
-
-        let deps_obj = parsed
-            .get("dependencies")
-            .and_then(|deps| deps.as_object())
-            .or_else(|| parsed.as_object());
-
-        let deps = deps_obj
-            .map(|obj| {
-                obj.iter()
-                    .filter_map(|(dep_name, constraint)| {
-                        let constraint_str = constraint.as_str()?;
-                        let parsed = constraint_str
-                            .parse::<VersionConstraint>()
-                            .unwrap_or(VersionConstraint::Any);
-                        Some(Dependency {
-                            name: dep_name.to_string(),
-                            constraint: parsed,
-                        })
-                    })
-                    .collect()
+        let pairs = parse_dependency_constraints_from_json_output(&out).map_err(|err| {
+            CogniaError::Provider(format!(
+                "failed to parse yarn dependencies for {}: {}",
+                pkg, err
+            ))
+        })?;
+        Ok(pairs
+            .into_iter()
+            .map(|(dep_name, constraint)| Dependency {
+                name: dep_name,
+                constraint: constraint
+                    .parse::<VersionConstraint>()
+                    .unwrap_or(VersionConstraint::Any),
             })
-            .unwrap_or_else(Vec::new);
-
-        Ok(deps)
+            .collect())
     }
 
     async fn get_versions(&self, name: &str) -> CogniaResult<Vec<VersionInfo>> {
@@ -485,33 +428,29 @@ impl Provider for YarnProvider {
 
         let output = self.run_yarn_raw(&["global", "list", "--json"]).await?;
 
-        let mut packages = Vec::new();
-        let mut seen = HashSet::new();
-
-        // Parse yarn global list output
-        for line in output.lines() {
-            for (pkg_name, version) in Self::parse_yarn_global_list_line(line) {
-                if let Some(ref name_filter) = filter.name_filter {
-                    if !pkg_name.contains(name_filter) {
-                        continue;
-                    }
-                }
-
-                let dedupe_key = format!("{}@{}", pkg_name.to_ascii_lowercase(), version);
-                if !seen.insert(dedupe_key) {
-                    continue;
-                }
-
-                packages.push(InstalledPackage {
-                    name: pkg_name.clone(),
-                    version,
-                    provider: self.id().into(),
-                    install_path: Self::get_global_dir().unwrap_or_default().join(pkg_name),
-                    installed_at: String::new(),
-                    is_global: true,
-                });
-            }
+        let parsed = parse_node_list_json_output(&output);
+        if !output.trim().is_empty() && parsed.is_empty() {
+            log::warn!("yarn list installed parse produced no entries from non-empty output");
         }
+
+        let packages = parsed
+            .into_iter()
+            .filter(|(pkg_name, _)| {
+                filter
+                    .name_filter
+                    .as_ref()
+                    .map(|needle| pkg_name.contains(needle))
+                    .unwrap_or(true)
+            })
+            .map(|(pkg_name, version)| InstalledPackage {
+                install_path: Self::get_global_dir().unwrap_or_default().join(&pkg_name),
+                name: pkg_name,
+                version,
+                provider: self.id().into(),
+                installed_at: String::new(),
+                is_global: true,
+            })
+            .collect();
 
         Ok(packages)
     }
@@ -709,6 +648,25 @@ mod tests {
     fn test_parse_yarn_global_list_line_comma_separated_tree_text() {
         let line = r#"{"type":"tree","data":"lodash@4.17.21, @types/node@22.10.1, C:\\Users\\Max\\node_modules (174)"}"#;
         let entries = YarnProvider::parse_yarn_global_list_line(line);
+        assert_eq!(entries.len(), 2);
+        assert!(entries.contains(&("lodash".to_string(), "4.17.21".to_string())));
+        assert!(entries.contains(&("@types/node".to_string(), "22.10.1".to_string())));
+    }
+
+    #[test]
+    fn test_parse_yarn_dependency_payload_from_stringified_data() {
+        let output = r#"{"type":"inspect","data":"{\"dependencies\":{\"chalk\":\"^5.3.0\"}}"}"#;
+        let deps = parse_dependency_constraints_from_json_output(output).unwrap();
+
+        assert_eq!(deps, vec![("chalk".to_string(), "^5.3.0".to_string())]);
+    }
+
+    #[test]
+    fn test_parse_yarn_global_list_multi_line_output_via_shared_parser() {
+        let output = r#"{"type":"tree","data":"├── lodash@4.17.21"}
+{"type":"tree","data":{"trees":[{"name":"@types/node@22.10.1"}]}}"#;
+        let entries = parse_node_list_json_output(output);
+
         assert_eq!(entries.len(), 2);
         assert!(entries.contains(&("lodash".to_string(), "4.17.21".to_string())));
         assert!(entries.contains(&("@types/node".to_string(), "22.10.1".to_string())));

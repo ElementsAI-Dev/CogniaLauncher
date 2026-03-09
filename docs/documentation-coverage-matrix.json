@@ -1,0 +1,62 @@
+{
+  "requiredCapabilities": [
+    "desktop-fallback-routing",
+    "package-management-workflow",
+    "docs-validation-workflow",
+    "e2e-route-coverage"
+  ],
+  "capabilities": [
+    {
+      "id": "desktop-fallback-routing",
+      "owner": "app-shell",
+      "operational": true,
+      "enPages": [
+        "docs/en/guide/index.md",
+        "docs/en/getting-started/quick-start.md"
+      ],
+      "zhPages": [
+        "docs/zh/guide/index.md",
+        "docs/zh/getting-started/quick-start.md"
+      ]
+    },
+    {
+      "id": "package-management-workflow",
+      "owner": "packages",
+      "operational": true,
+      "enPages": [
+        "docs/en/guide/packages.md",
+        "docs/en/reference/providers-list.md"
+      ],
+      "zhPages": [
+        "docs/zh/guide/packages.md",
+        "docs/zh/reference/providers-list.md"
+      ]
+    },
+    {
+      "id": "docs-validation-workflow",
+      "owner": "docs",
+      "operational": true,
+      "enPages": [
+        "docs/en/development/docs-quality.md",
+        "docs/en/development/testing.md"
+      ],
+      "zhPages": [
+        "docs/zh/development/docs-quality.md",
+        "docs/zh/development/testing.md"
+      ]
+    },
+    {
+      "id": "e2e-route-coverage",
+      "owner": "qa",
+      "operational": true,
+      "enPages": [
+        "docs/en/development/testing.md",
+        "docs/en/guide/index.md"
+      ],
+      "zhPages": [
+        "docs/zh/development/testing.md",
+        "docs/zh/guide/index.md"
+      ]
+    }
+  ]
+}

@@ -16,10 +16,11 @@ use crate::error::CogniaError;
 use crate::platform::disk::format_size;
 use crate::platform::env::{self, current_platform, EnvFileFormat, EnvVarScope};
 use crate::provider::support::{
-    provider_unavailable_reason, update_support_reason, REASON_INSTALLED_PACKAGE_ENUMERATION_FAILED,
-    REASON_NATIVE_UPDATE_FAILED, REASON_NATIVE_UPDATE_FAILED_WITH_FALLBACK,
-    REASON_NO_MATCHING_INSTALLED_PACKAGES, SUPPORT_STATUS_ERROR, SUPPORT_STATUS_PARTIAL,
-    SUPPORT_STATUS_SUPPORTED, SUPPORT_STATUS_UNSUPPORTED,
+    provider_unavailable_reason, update_support_reason,
+    REASON_INSTALLED_PACKAGE_ENUMERATION_FAILED, REASON_NATIVE_UPDATE_FAILED,
+    REASON_NATIVE_UPDATE_FAILED_WITH_FALLBACK, REASON_NO_MATCHING_INSTALLED_PACKAGES,
+    SUPPORT_STATUS_ERROR, SUPPORT_STATUS_PARTIAL, SUPPORT_STATUS_SUPPORTED,
+    SUPPORT_STATUS_UNSUPPORTED,
 };
 use crate::provider::{
     Capability, InstallRequest, InstalledFilter, ProviderRegistry, SearchOptions, UninstallRequest,
@@ -1240,7 +1241,11 @@ async fn cmd_update(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_
                     return runtime_error(
                         COMMAND,
                         json_mode,
-                        format!("Failed to list installed packages for provider {}: {}", p.id(), e),
+                        format!(
+                            "Failed to list installed packages for provider {}: {}",
+                            p.id(),
+                            e
+                        ),
                     );
                 }
                 continue;
@@ -1365,7 +1370,10 @@ async fn cmd_update(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_
     } else if updates.is_empty() {
         println!("All packages are up to date");
         if coverage.unsupported > 0 {
-            println!("\n{} provider(s) skipped/unsupported.", coverage.unsupported);
+            println!(
+                "\n{} provider(s) skipped/unsupported.",
+                coverage.unsupported
+            );
         }
         if coverage.partial > 0 {
             println!(
@@ -1392,7 +1400,10 @@ async fn cmd_update(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_
         print_table(&["NAME", "CURRENT", "LATEST", "PROVIDER"], &rows);
 
         if coverage.unsupported > 0 {
-            println!("\n{} provider(s) skipped/unsupported.", coverage.unsupported);
+            println!(
+                "\n{} provider(s) skipped/unsupported.",
+                coverage.unsupported
+            );
         }
         if coverage.partial > 0 {
             println!(
@@ -3003,10 +3014,7 @@ async fn cmd_envvar(
                                 vec![
                                     item["key"].as_str().unwrap_or_default().to_string(),
                                     item["value"].as_str().unwrap_or_default().to_string(),
-                                    item["regType"]
-                                        .as_str()
-                                        .unwrap_or("-")
-                                        .to_string(),
+                                    item["regType"].as_str().unwrap_or("-").to_string(),
                                 ]
                             })
                             .collect();
@@ -3204,8 +3212,11 @@ async fn cmd_envvar(
             };
             let result = async {
                 let entries = env::get_persistent_path(scope).await?;
-                let filtered: Vec<String> =
-                    entries.iter().filter(|entry| *entry != &path).cloned().collect();
+                let filtered: Vec<String> = entries
+                    .iter()
+                    .filter(|entry| *entry != &path)
+                    .cloned()
+                    .collect();
                 let removed = filtered.len() != entries.len();
                 if removed {
                     env::set_persistent_path(&filtered, scope).await?;
@@ -3321,11 +3332,9 @@ async fn cmd_envvar(
                     }
                     EXIT_OK
                 }
-                Err(e) => runtime_error(
-                    command,
-                    json_mode,
-                    format!("Deduplicate PATH error: {}", e),
-                ),
+                Err(e) => {
+                    runtime_error(command, json_mode, format!("Deduplicate PATH error: {}", e))
+                }
             }
         }
         "detect-conflicts" => {
@@ -3400,11 +3409,9 @@ async fn cmd_envvar(
                     }
                     EXIT_OK
                 }
-                Err(e) => runtime_error(
-                    command,
-                    json_mode,
-                    format!("Detect conflict error: {}", e),
-                ),
+                Err(e) => {
+                    runtime_error(command, json_mode, format!("Detect conflict error: {}", e))
+                }
             }
         }
         "list-shell-profiles" => {
@@ -4388,10 +4395,10 @@ mod tests {
         assert!(envvar_add_path_names.contains(&"scope"));
         assert!(envvar_add_path_names.contains(&"position"));
 
-        let envvar_reorder_path_args =
-            subcommands_obj["envvar"]["subcommands"]["reorder-path"]["args"]
-                .as_array()
-                .expect("envvar.reorder-path args");
+        let envvar_reorder_path_args = subcommands_obj["envvar"]["subcommands"]["reorder-path"]
+            ["args"]
+            .as_array()
+            .expect("envvar.reorder-path args");
         let envvar_reorder_path_names: Vec<&str> = envvar_reorder_path_args
             .iter()
             .filter_map(|a| a.get("name").and_then(|n| n.as_str()))
@@ -4399,20 +4406,20 @@ mod tests {
         assert!(envvar_reorder_path_names.contains(&"entries"));
         assert!(envvar_reorder_path_names.contains(&"scope"));
 
-        let envvar_read_profile_args =
-            subcommands_obj["envvar"]["subcommands"]["read-shell-profile"]["args"]
-                .as_array()
-                .expect("envvar.read-shell-profile args");
+        let envvar_read_profile_args = subcommands_obj["envvar"]["subcommands"]
+            ["read-shell-profile"]["args"]
+            .as_array()
+            .expect("envvar.read-shell-profile args");
         let envvar_read_profile_names: Vec<&str> = envvar_read_profile_args
             .iter()
             .filter_map(|a| a.get("name").and_then(|n| n.as_str()))
             .collect();
         assert!(envvar_read_profile_names.contains(&"path"));
 
-        let envvar_expand_path_args =
-            subcommands_obj["envvar"]["subcommands"]["expand-path"]["args"]
-                .as_array()
-                .expect("envvar.expand-path args");
+        let envvar_expand_path_args = subcommands_obj["envvar"]["subcommands"]["expand-path"]
+            ["args"]
+            .as_array()
+            .expect("envvar.expand-path args");
         let envvar_expand_path_names: Vec<&str> = envvar_expand_path_args
             .iter()
             .filter_map(|a| a.get("name").and_then(|n| n.as_str()))

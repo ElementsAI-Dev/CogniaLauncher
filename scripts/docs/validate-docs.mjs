@@ -10,6 +10,7 @@ const docsRoot = path.join(repoRoot, 'docs');
 const docsEnRoot = path.join(docsRoot, 'en');
 const docsZhRoot = path.join(docsRoot, 'zh');
 const packageJsonPath = path.join(repoRoot, 'package.json');
+const coverageMatrixPath = path.join(docsRoot, 'documentation-coverage-matrix.json');
 
 const args = process.argv.slice(2);
 const mode = parseMode(args);
@@ -69,11 +70,18 @@ const packageScripts = loadPackageScripts();
 const docsFiles = collectMarkdownFiles(docsRoot);
 const headingCache = buildHeadingCache(docsFiles);
 const issues = [];
+const coverageContext = buildCoverageContext(loadCoverageMatrix(issues), issues);
 
 validateCoreParity(issues);
 for (const filePath of docsFiles) {
-  validateLinks(filePath, headingCache, issues);
-  validateCommandExamples(filePath, packageScripts, issues);
+  validateLinks(filePath, headingCache, issues, coverageContext.capabilityIdsByDocPath);
+  validateCommandExamples(
+    filePath,
+    packageScripts,
+    issues,
+    coverageContext.operationalDocPaths,
+    coverageContext.capabilityIdsByDocPath,
+  );
 }
 
 if (issues.length === 0) {
@@ -83,7 +91,11 @@ if (issues.length === 0) {
 
 for (const issue of issues) {
   const relFilePath = path.relative(repoRoot, issue.file).replace(/\\/g, '/');
-  console.error(`[${issue.type}] ${relFilePath}: ${issue.message}`);
+  const capabilityContext =
+    issue.capabilityIds && issue.capabilityIds.length > 0
+      ? ` [capabilities: ${issue.capabilityIds.join(', ')}]`
+      : '';
+  console.error(`[${issue.type}] ${relFilePath}${capabilityContext}: ${issue.message}`);
 }
 
 const suffix = enforce
@@ -105,6 +117,255 @@ function parseMode(values) {
     throw new Error(`Unsupported docs validation mode: ${rawMode}`);
   }
   return rawMode;
+}
+
+function loadCoverageMatrix(outputIssues) {
+  if (!fileExists(coverageMatrixPath)) {
+    outputIssues.push({
+      type: 'coverage',
+      file: coverageMatrixPath,
+      message: 'Missing documentation coverage matrix at "docs/documentation-coverage-matrix.json".',
+    });
+    return null;
+  }
+
+  try {
+    return JSON.parse(readFileSync(coverageMatrixPath, 'utf8'));
+  } catch (error) {
+    outputIssues.push({
+      type: 'coverage',
+      file: coverageMatrixPath,
+      message: `Failed to parse documentation coverage matrix JSON: ${error.message}`,
+    });
+    return null;
+  }
+}
+
+function buildCoverageContext(rawCoverageMatrix, outputIssues) {
+  const context = {
+    capabilityIdsByDocPath: new Map(),
+    operationalDocPaths: new Set(),
+  };
+
+  if (!rawCoverageMatrix || typeof rawCoverageMatrix !== 'object') {
+    return context;
+  }
+
+  const requiredCapabilities = rawCoverageMatrix.requiredCapabilities;
+  const capabilityMappings = rawCoverageMatrix.capabilities;
+
+  if (!Array.isArray(requiredCapabilities)) {
+    outputIssues.push({
+      type: 'coverage',
+      file: coverageMatrixPath,
+      message: 'Coverage matrix field "requiredCapabilities" must be an array.',
+    });
+  }
+
+  if (!Array.isArray(capabilityMappings)) {
+    outputIssues.push({
+      type: 'coverage',
+      file: coverageMatrixPath,
+      message: 'Coverage matrix field "capabilities" must be an array.',
+    });
+    return context;
+  }
+
+  const capabilityIds = new Set();
+
+  for (let index = 0; index < capabilityMappings.length; index += 1) {
+    const rawMapping = capabilityMappings[index];
+    const mapping = normalizeCoverageMapping(rawMapping, index + 1, outputIssues);
+    if (!mapping) {
+      continue;
+    }
+
+    if (capabilityIds.has(mapping.id)) {
+      outputIssues.push({
+        type: 'coverage',
+        file: coverageMatrixPath,
+        capabilityIds: [mapping.id],
+        message: `Duplicate capability mapping id "${mapping.id}".`,
+      });
+      continue;
+    }
+
+    capabilityIds.add(mapping.id);
+    registerCoveragePaths(mapping, context, outputIssues);
+  }
+
+  if (Array.isArray(requiredCapabilities)) {
+    for (let index = 0; index < requiredCapabilities.length; index += 1) {
+      const rawRequiredId = requiredCapabilities[index];
+      if (typeof rawRequiredId !== 'string' || !rawRequiredId.trim()) {
+        outputIssues.push({
+          type: 'coverage',
+          file: coverageMatrixPath,
+          message: `requiredCapabilities[${index}] must be a non-empty string.`,
+        });
+        continue;
+      }
+
+      const requiredId = rawRequiredId.trim();
+      if (!capabilityIds.has(requiredId)) {
+        outputIssues.push({
+          type: 'coverage',
+          file: coverageMatrixPath,
+          capabilityIds: [requiredId],
+          message: `Required capability "${requiredId}" does not have a matching entry in "capabilities".`,
+        });
+      }
+    }
+  }
+
+  return context;
+}
+
+function normalizeCoverageMapping(rawMapping, rowNumber, outputIssues) {
+  if (!rawMapping || typeof rawMapping !== 'object' || Array.isArray(rawMapping)) {
+    outputIssues.push({
+      type: 'coverage',
+      file: coverageMatrixPath,
+      message: `capabilities[${rowNumber - 1}] must be an object.`,
+    });
+    return null;
+  }
+
+  const id = typeof rawMapping.id === 'string' ? rawMapping.id.trim() : '';
+  const owner = typeof rawMapping.owner === 'string' ? rawMapping.owner.trim() : '';
+  const enPages = normalizeCoveragePageList(rawMapping.enPages, rowNumber, 'enPages', 'docs/en/', outputIssues);
+  const zhPages = normalizeCoveragePageList(rawMapping.zhPages, rowNumber, 'zhPages', 'docs/zh/', outputIssues);
+
+  if (rawMapping.operational !== undefined && typeof rawMapping.operational !== 'boolean') {
+    outputIssues.push({
+      type: 'coverage',
+      file: coverageMatrixPath,
+      capabilityIds: id ? [id] : undefined,
+      message: `capabilities[${rowNumber - 1}].operational must be a boolean when provided.`,
+    });
+  }
+
+  if (!id) {
+    outputIssues.push({
+      type: 'coverage',
+      file: coverageMatrixPath,
+      message: `capabilities[${rowNumber - 1}] is missing required field "id".`,
+    });
+    return null;
+  }
+
+  if (!owner) {
+    outputIssues.push({
+      type: 'coverage',
+      file: coverageMatrixPath,
+      capabilityIds: [id],
+      message: `Capability "${id}" is missing required field "owner".`,
+    });
+    return null;
+  }
+
+  if (enPages.length === 0 || zhPages.length === 0) {
+    outputIssues.push({
+      type: 'coverage',
+      file: coverageMatrixPath,
+      capabilityIds: [id],
+      message: `Capability "${id}" must include at least one valid path in both "enPages" and "zhPages".`,
+    });
+    return null;
+  }
+
+  return {
+    id,
+    owner,
+    operational: rawMapping.operational === true,
+    enPages,
+    zhPages,
+  };
+}
+
+function normalizeCoveragePageList(rawPages, rowNumber, fieldName, requiredPrefix, outputIssues) {
+  if (!Array.isArray(rawPages)) {
+    outputIssues.push({
+      type: 'coverage',
+      file: coverageMatrixPath,
+      message: `capabilities[${rowNumber - 1}].${fieldName} must be an array.`,
+    });
+    return [];
+  }
+
+  const normalizedPages = [];
+
+  for (let pageIndex = 0; pageIndex < rawPages.length; pageIndex += 1) {
+    const rawPage = rawPages[pageIndex];
+    if (typeof rawPage !== 'string' || !rawPage.trim()) {
+      outputIssues.push({
+        type: 'coverage',
+        file: coverageMatrixPath,
+        message: `capabilities[${rowNumber - 1}].${fieldName}[${pageIndex}] must be a non-empty string.`,
+      });
+      continue;
+    }
+
+    const normalizedPath = normalizeRepoRelativePath(rawPage);
+    if (!normalizedPath.startsWith(requiredPrefix)) {
+      outputIssues.push({
+        type: 'coverage',
+        file: coverageMatrixPath,
+        message: `capabilities[${rowNumber - 1}].${fieldName}[${pageIndex}] must start with "${requiredPrefix}".`,
+      });
+      continue;
+    }
+    if (path.extname(normalizedPath) !== '.md') {
+      outputIssues.push({
+        type: 'coverage',
+        file: coverageMatrixPath,
+        message: `capabilities[${rowNumber - 1}].${fieldName}[${pageIndex}] must reference a Markdown file.`,
+      });
+      continue;
+    }
+
+    normalizedPages.push(normalizedPath);
+  }
+
+  return [...new Set(normalizedPages)];
+}
+
+function registerCoveragePaths(mapping, context, outputIssues) {
+  const allPages = [...mapping.enPages, ...mapping.zhPages];
+
+  for (const relativePath of allPages) {
+    const absolutePath = path.resolve(repoRoot, relativePath);
+    const normalizedAbsolutePath = normalizeFsPath(absolutePath);
+    if (!fileExists(absolutePath)) {
+      outputIssues.push({
+        type: 'coverage',
+        file: coverageMatrixPath,
+        capabilityIds: [mapping.id],
+        message: `Capability "${mapping.id}" references missing docs path "${relativePath}".`,
+      });
+      continue;
+    }
+
+    const existingIds = context.capabilityIdsByDocPath.get(normalizedAbsolutePath) ?? new Set();
+    existingIds.add(mapping.id);
+    context.capabilityIdsByDocPath.set(normalizedAbsolutePath, existingIds);
+
+    if (mapping.operational) {
+      context.operationalDocPaths.add(normalizedAbsolutePath);
+    }
+  }
+}
+
+function normalizeRepoRelativePath(value) {
+  return value
+    .trim()
+    .replace(/\\/g, '/')
+    .replace(/^\.\//, '')
+    .replace(/^\/+/, '');
+}
+
+function normalizeFsPath(value) {
+  return path.normalize(value).toLowerCase();
 }
 
 function loadPackageScripts() {
@@ -207,8 +468,9 @@ function validateCoreParity(outputIssues) {
   }
 }
 
-function validateLinks(filePath, headingsByFile, outputIssues) {
+function validateLinks(filePath, headingsByFile, outputIssues, capabilityIdsByDocPath) {
   const fileContent = readFileSync(filePath, 'utf8');
+  const capabilityIds = getCapabilityIdsForFile(filePath, capabilityIdsByDocPath);
   let inFence = false;
   let lineNumber = 0;
 
@@ -236,6 +498,7 @@ function validateLinks(filePath, headingsByFile, outputIssues) {
           outputIssues.push({
             type: 'link',
             file: filePath,
+            capabilityIds,
             message: `Line ${lineNumber}: Missing local anchor "#${anchor}".`,
           });
         }
@@ -248,6 +511,7 @@ function validateLinks(filePath, headingsByFile, outputIssues) {
         outputIssues.push({
           type: 'link',
           file: filePath,
+          capabilityIds,
           message: `Line ${lineNumber}: Linked file does not exist: "${targetPath}".`,
         });
         continue;
@@ -263,6 +527,7 @@ function validateLinks(filePath, headingsByFile, outputIssues) {
         outputIssues.push({
           type: 'link',
           file: filePath,
+          capabilityIds,
           message: `Line ${lineNumber}: Missing anchor "#${normalizedAnchor}" in "${toRepoRelative(resolvedPath)}".`,
         });
       }
@@ -270,12 +535,19 @@ function validateLinks(filePath, headingsByFile, outputIssues) {
   }
 }
 
-function validateCommandExamples(filePath, scripts, outputIssues) {
-  if (!isWorkflowDoc(filePath)) {
+function validateCommandExamples(
+  filePath,
+  scripts,
+  outputIssues,
+  operationalDocPaths,
+  capabilityIdsByDocPath,
+) {
+  if (!shouldValidateCommandExamples(filePath, operationalDocPaths)) {
     return;
   }
 
   const fileContent = readFileSync(filePath, 'utf8');
+  const capabilityIds = getCapabilityIdsForFile(filePath, capabilityIdsByDocPath);
   const lines = fileContent.split(/\r?\n/);
   let inFence = false;
   let fenceLanguage = '';
@@ -304,12 +576,12 @@ function validateCommandExamples(filePath, scripts, outputIssues) {
     }
 
     for (const statement of splitShellStatements(commandLine)) {
-      validateCommandStatement(filePath, index + 1, statement, scripts, outputIssues);
+      validateCommandStatement(filePath, index + 1, statement, scripts, outputIssues, capabilityIds);
     }
   }
 }
 
-function validateCommandStatement(filePath, lineNumber, statement, scripts, outputIssues) {
+function validateCommandStatement(filePath, lineNumber, statement, scripts, outputIssues, capabilityIds) {
   const normalizedStatement = statement
     .trim()
     .replace(/^\$\s*/, '')
@@ -329,6 +601,7 @@ function validateCommandStatement(filePath, lineNumber, statement, scripts, outp
     outputIssues.push({
       type: 'command',
       file: filePath,
+      capabilityIds,
       message: `Line ${lineNumber}: Unsupported package manager "${tool}" in workflow docs.`,
     });
     return;
@@ -351,6 +624,7 @@ function validateCommandStatement(filePath, lineNumber, statement, scripts, outp
     outputIssues.push({
       type: 'command',
       file: filePath,
+      capabilityIds,
       message: `Line ${lineNumber}: Unknown pnpm script "${scriptName}" in command "${normalizedStatement}".`,
     });
     return;
@@ -363,8 +637,16 @@ function validateCommandStatement(filePath, lineNumber, statement, scripts, outp
   outputIssues.push({
     type: 'command',
     file: filePath,
+    capabilityIds,
     message: `Line ${lineNumber}: Unknown pnpm command/script "${subcommand}" in "${normalizedStatement}".`,
   });
+}
+
+function shouldValidateCommandExamples(filePath, operationalDocPaths) {
+  if (operationalDocPaths.has(normalizeFsPath(filePath))) {
+    return true;
+  }
+  return isWorkflowDoc(filePath);
 }
 
 function isWorkflowDoc(filePath) {
@@ -375,6 +657,14 @@ function isWorkflowDoc(filePath) {
     normalized.includes('/docs/zh/getting-started/') ||
     normalized.includes('/docs/zh/development/')
   );
+}
+
+function getCapabilityIdsForFile(filePath, capabilityIdsByDocPath) {
+  const capabilityIds = capabilityIdsByDocPath.get(normalizeFsPath(filePath));
+  if (!capabilityIds) {
+    return undefined;
+  }
+  return Array.from(capabilityIds).sort();
 }
 
 function splitShellStatements(line) {

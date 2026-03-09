@@ -9,7 +9,23 @@ const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = path.resolve(SCRIPT_DIR, '..', '..');
 export const PLUGINS_ROOT = path.join(REPO_ROOT, 'plugins');
 export const CATALOG_PATH = path.join(PLUGINS_ROOT, 'manifest.json');
+export const SDK_CAPABILITY_MATRIX_PATH = path.join(PLUGINS_ROOT, 'sdk-capability-matrix.json');
 export const SUPPORTED_FRAMEWORKS = ['rust', 'typescript'];
+export const DEFAULT_SUPPORTED_SDK_CAPABILITIES = [
+  'clipboard',
+  'config',
+  'env',
+  'event',
+  'fs',
+  'http',
+  'i18n',
+  'log',
+  'notification',
+  'pkg',
+  'platform',
+  'process',
+  'ui',
+];
 
 export function readCatalog() {
   const raw = readFileSync(CATALOG_PATH, 'utf8');
@@ -18,6 +34,12 @@ export function readCatalog() {
 
 export function writeCatalog(catalog) {
   writeFileSync(CATALOG_PATH, `${JSON.stringify(catalog, null, 2)}\n`, 'utf8');
+}
+
+export function readSdkCapabilityMatrix(options = {}) {
+  const matrixPath = resolveRepoPath('plugins/sdk-capability-matrix.json', options);
+  ensureFileExists(matrixPath, 'SDK capability matrix');
+  return JSON.parse(readFileSync(matrixPath, 'utf8'));
 }
 
 function ensureRequiredString(value, field, pluginId) {
@@ -66,6 +88,92 @@ export function validateCatalogShape(catalog) {
     }
     if (plugin.onboarding.profile !== 'builtin') {
       throw new Error(`Plugin "${plugin.id}" must declare onboarding.profile="builtin".`);
+    }
+  }
+}
+
+function ensureStringArray(value, label) {
+  if (!Array.isArray(value)) {
+    throw new Error(`${label} must be an array.`);
+  }
+  const normalized = value.map((item) => {
+    if (typeof item !== 'string' || item.trim() === '') {
+      throw new Error(`${label} must contain non-empty string values.`);
+    }
+    return item.trim();
+  });
+  return [...new Set(normalized)];
+}
+
+export function validateSdkCapabilityMatrixShape(matrix, catalog) {
+  if (!matrix || typeof matrix !== 'object') {
+    throw new Error('SDK capability matrix must be an object.');
+  }
+
+  if (matrix.schemaVersion !== 1) {
+    throw new Error(`Unsupported SDK capability matrix schemaVersion: ${matrix.schemaVersion}`);
+  }
+
+  const requiredPluginIds = ensureStringArray(matrix.requiredPluginIds ?? [], 'requiredPluginIds');
+  const matrixPlugins = Array.isArray(matrix.plugins) ? matrix.plugins : null;
+  if (!matrixPlugins || matrixPlugins.length === 0) {
+    throw new Error('SDK capability matrix must contain non-empty plugins[].');
+  }
+
+  const supportedCapabilities = new Set(
+    ensureStringArray(
+      matrix.supportedSdkCapabilities ?? DEFAULT_SUPPORTED_SDK_CAPABILITIES,
+      'supportedSdkCapabilities',
+    ),
+  );
+
+  const seenPluginIds = new Set();
+  for (const entry of matrixPlugins) {
+    if (!entry || typeof entry !== 'object') {
+      throw new Error('SDK capability matrix plugins[] entries must be objects.');
+    }
+    ensureRequiredString(entry.id, 'id', '<matrix-entry>');
+    if (seenPluginIds.has(entry.id)) {
+      throw new Error(`Duplicate plugin id in SDK capability matrix: ${entry.id}`);
+    }
+    seenPluginIds.add(entry.id);
+
+    const sdkCapabilities = ensureStringArray(entry.sdkCapabilities ?? [], `plugins[${entry.id}].sdkCapabilities`);
+    const expectedPermissions = ensureStringArray(entry.expectedPermissions ?? [], `plugins[${entry.id}].expectedPermissions`);
+    const primaryEntrypoints = ensureStringArray(entry.primaryEntrypoints ?? [], `plugins[${entry.id}].primaryEntrypoints`);
+
+    if (sdkCapabilities.length === 0) {
+      throw new Error(`plugins[${entry.id}].sdkCapabilities must not be empty.`);
+    }
+    if (expectedPermissions.length === 0) {
+      throw new Error(`plugins[${entry.id}].expectedPermissions must not be empty.`);
+    }
+    if (primaryEntrypoints.length === 0) {
+      throw new Error(`plugins[${entry.id}].primaryEntrypoints must not be empty.`);
+    }
+
+    const unsupported = sdkCapabilities.filter((capability) => !supportedCapabilities.has(capability));
+    if (unsupported.length > 0) {
+      throw new Error(
+        `plugins[${entry.id}] has unsupported sdkCapabilities: ${unsupported.join(', ')}`,
+      );
+    }
+  }
+
+  for (const requiredPluginId of requiredPluginIds) {
+    if (!seenPluginIds.has(requiredPluginId)) {
+      throw new Error(
+        `SDK capability matrix missing plugins[] entry for required plugin id: ${requiredPluginId}`,
+      );
+    }
+  }
+
+  const catalogPluginIds = new Set((catalog?.plugins ?? []).map((plugin) => plugin.id));
+  for (const requiredPluginId of requiredPluginIds) {
+    if (!catalogPluginIds.has(requiredPluginId)) {
+      throw new Error(
+        `SDK capability matrix requiredPluginId not found in plugins/manifest.json: ${requiredPluginId}`,
+      );
     }
   }
 }
@@ -392,6 +500,135 @@ export function parseSimpleToml(raw) {
   }
 
   return sections;
+}
+
+function parseTomlSectionLines(raw, sectionName) {
+  const lines = [];
+  let inSection = false;
+
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0 || trimmed.startsWith('#')) {
+      continue;
+    }
+
+    const sectionMatch = trimmed.match(/^\[([^\]]+)\]$/);
+    if (sectionMatch) {
+      inSection = sectionMatch[1] === sectionName;
+      continue;
+    }
+    if (trimmed.startsWith('[[')) {
+      inSection = false;
+      continue;
+    }
+    if (inSection) {
+      lines.push(trimmed);
+    }
+  }
+
+  return lines;
+}
+
+export function parsePluginTomlEnabledPermissions(raw) {
+  const permissions = new Set();
+  for (const line of parseTomlSectionLines(raw, 'permissions')) {
+    const assignment = line.match(/^([A-Za-z0-9_.-]+)\s*=\s*(.+)$/);
+    if (!assignment) {
+      continue;
+    }
+    const [, key, valueRaw] = assignment;
+    const value = valueRaw.trim();
+    if (value === 'true') {
+      permissions.add(key);
+      continue;
+    }
+    if (value.startsWith('[')) {
+      const items = [...value.matchAll(/"([^"]+)"/g)].map((match) => match[1].trim()).filter(Boolean);
+      if (items.length > 0) {
+        permissions.add(key);
+      }
+      continue;
+    }
+    const quoted = value.match(/^"([^"]*)"$/);
+    if (quoted && quoted[1].trim() !== '') {
+      permissions.add(key);
+    }
+  }
+  return [...permissions].sort();
+}
+
+export function parsePluginTomlEntrypoints(raw) {
+  const entries = [];
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0 || trimmed.startsWith('#')) {
+      continue;
+    }
+    const match = trimmed.match(/^entry\s*=\s*"([^"]+)"$/);
+    if (match && match[1].trim() !== '') {
+      entries.push(match[1].trim());
+    }
+  }
+  return [...new Set(entries)];
+}
+
+export function validatePluginCapabilityMatrixEntry(plugin, matrix, options = {}) {
+  const requiredPluginIds = new Set(ensureStringArray(matrix.requiredPluginIds ?? [], 'requiredPluginIds'));
+  const matrixEntry = (matrix.plugins ?? []).find((entry) => entry.id === plugin.id);
+
+  if (!matrixEntry) {
+    if (requiredPluginIds.has(plugin.id)) {
+      return [`${plugin.id} is required by sdk-capability-matrix but has no plugins[] entry.`];
+    }
+    return [];
+  }
+
+  const mismatches = [];
+  const pluginTomlPath = path.join(resolvePluginRoot(plugin, options), 'plugin.toml');
+  ensureFileExists(pluginTomlPath, `plugin.toml for ${plugin.id}`);
+  const pluginTomlRaw = readFileSync(pluginTomlPath, 'utf8');
+
+  const expectedPermissions = new Set(ensureStringArray(matrixEntry.expectedPermissions ?? [], `plugins[${plugin.id}].expectedPermissions`));
+  const actualPermissions = new Set(parsePluginTomlEnabledPermissions(pluginTomlRaw));
+  for (const permission of expectedPermissions) {
+    if (!actualPermissions.has(permission)) {
+      mismatches.push(
+        `${plugin.id} expected permission '${permission}' is missing from plugin.toml [permissions].`,
+      );
+    }
+  }
+  for (const permission of actualPermissions) {
+    if (!expectedPermissions.has(permission)) {
+      mismatches.push(
+        `${plugin.id} has undeclared permission '${permission}' (not listed in sdk-capability-matrix expectedPermissions).`,
+      );
+    }
+  }
+
+  const expectedEntrypoints = new Set(ensureStringArray(matrixEntry.primaryEntrypoints ?? [], `plugins[${plugin.id}].primaryEntrypoints`));
+  const actualEntrypoints = new Set(parsePluginTomlEntrypoints(pluginTomlRaw));
+  for (const entrypoint of expectedEntrypoints) {
+    if (!actualEntrypoints.has(entrypoint)) {
+      mismatches.push(
+        `${plugin.id} expected entrypoint '${entrypoint}' is missing from plugin.toml [[tools]].entry.`,
+      );
+    }
+  }
+
+  const sourcePath = plugin.framework === 'typescript'
+    ? path.join(resolvePluginRoot(plugin, options), 'src', 'index.ts')
+    : path.join(resolvePluginRoot(plugin, options), 'src', 'lib.rs');
+  ensureFileExists(sourcePath, `source file for ${plugin.id}`);
+  const sourceText = readFileSync(sourcePath, 'utf8');
+  for (const entrypoint of expectedEntrypoints) {
+    if (!sourceText.includes(entrypoint)) {
+      mismatches.push(
+        `${plugin.id} source does not reference expected entrypoint '${entrypoint}'.`,
+      );
+    }
+  }
+
+  return mismatches;
 }
 
 function recordMetadataMismatch(mismatches, source, field, expected, actual) {

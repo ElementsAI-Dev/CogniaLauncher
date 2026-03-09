@@ -2,6 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import PackagesPage from './page';
 
+const mockIsTauri = jest.fn(() => true);
 const mockFetchInstalledPackages = jest.fn().mockResolvedValue(undefined);
 const mockFetchProviders = jest.fn().mockResolvedValue(undefined);
 const mockAdvancedSearch = jest.fn().mockResolvedValue(undefined);
@@ -120,6 +121,10 @@ jest.mock('@/lib/stores/packages', () => ({
 
 jest.mock('@/hooks/use-keyboard-shortcuts', () => ({
   useKeyboardShortcuts: (...args: unknown[]) => mockUseKeyboardShortcuts(...args),
+}));
+
+jest.mock('@/lib/tauri', () => ({
+  isTauri: () => mockIsTauri(),
 }));
 
 jest.mock('next/navigation', () => ({
@@ -301,6 +306,7 @@ jest.mock('@/components/packages/stats-overview', () => ({
 describe('PackagesPage', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockIsTauri.mockReturnValue(true);
     mockPackageDetailsDialogProps = null;
     mockGetInstallHistory.mockResolvedValue([]);
     mockClearInstallHistory.mockResolvedValue(undefined);

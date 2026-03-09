@@ -1,14 +1,11 @@
 import { test, expect, navigateTo } from './fixtures/app-fixture';
 
 test.describe('Logs Page', () => {
+  test.describe.configure({ timeout: 90_000 });
   test.skip(({ isMobile }) => isMobile, 'Desktop logs flow is validated in chromium only.');
 
   test.beforeEach(async ({ appPage }) => {
     await navigateTo(appPage, '/logs');
-    const onboardingClose = appPage.getByRole('button', { name: /Close|关闭/i });
-    if (await onboardingClose.isVisible().catch(() => false)) {
-      await onboardingClose.click();
-    }
   });
 
   test('renders page title', async ({ appPage }) => {

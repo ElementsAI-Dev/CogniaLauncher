@@ -188,7 +188,7 @@ export function ExternalCacheSection({
             </div>
 
             {/* Cache list grouped by category */}
-            {loading ? (
+            {loading && externalCaches.length === 0 ? (
               <div className="space-y-3">
                 <Skeleton className="h-16 w-full" />
                 <Skeleton className="h-16 w-full" />
@@ -225,7 +225,9 @@ export function ExternalCacheSection({
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2">
                               <p className="font-medium">{cache.displayName}</p>
-                              {cache.isAvailable ? (
+                              {cache.probePending ? (
+                                <RefreshCw className="h-3 w-3 animate-spin text-muted-foreground" />
+                              ) : cache.isAvailable ? (
                                 <CheckCircle2 className="h-3 w-3 text-green-500" />
                               ) : (
                                 <XCircle className="h-3 w-3 text-muted-foreground" />
@@ -234,7 +236,9 @@ export function ExternalCacheSection({
                             <div className="flex items-center gap-2 text-xs text-muted-foreground">
                               <FolderOpen className="h-3 w-3" />
                               <span className="truncate">
-                                {cache.cachePath || t("cache.managedByTool")}
+                                {cache.probePending
+                                  ? t("common.loading")
+                                  : cache.cachePath || t("cache.managedByTool")}
                               </span>
                             </div>
                           </div>
@@ -243,7 +247,7 @@ export function ExternalCacheSection({
                           <Badge
                             variant={cache.size > 0 ? "default" : "secondary"}
                           >
-                            {cache.sizeHuman}
+                            {cache.probePending ? t("common.loading") : cache.sizeHuman}
                           </Badge>
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -251,7 +255,7 @@ export function ExternalCacheSection({
                                 variant="outline"
                                 size="sm"
                                 disabled={
-                                  !cache.canClean || cleaning === cache.provider
+                                  cache.probePending || !cache.canClean || cleaning === cache.provider
                                 }
                                 onClick={() =>
                                   handleCleanSingle(cache.provider)

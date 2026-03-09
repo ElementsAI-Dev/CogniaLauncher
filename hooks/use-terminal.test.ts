@@ -678,6 +678,39 @@ describe('useTerminal', () => {
 
     expect(result.current.proxySyncState.status).toBe('error');
     expect(result.current.proxySyncState.message).toBe('terminal.toastSaveProxyFailed');
+    expect(result.current.proxySyncState.result).not.toBeNull();
+  });
+
+  it('saveNoProxy persists a trimmed value', async () => {
+    const { result } = renderHook(() => useTerminal({ t: mockT }));
+    await waitFor(() => expect(mockTerminalDetectShells).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      await result.current.updateNoProxy(' localhost,127.0.0.1 ');
+    });
+    await waitFor(() => expect(result.current.noProxy).toBe(' localhost,127.0.0.1 '));
+
+    await act(async () => {
+      await result.current.saveNoProxy();
+    });
+
+    expect(mockConfigSet).toHaveBeenCalledWith('terminal.no_proxy', 'localhost,127.0.0.1');
+    expect(result.current.proxySyncState.status).toBe('success');
+  });
+
+  it('loadProxyConfig sets explicit error sync state on failure', async () => {
+    mockConfigList.mockRejectedValue(new Error('config unavailable'));
+
+    const { result } = renderHook(() => useTerminal({ t: mockT }));
+    await waitFor(() => expect(mockTerminalDetectShells).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      await result.current.loadProxyConfig();
+    });
+
+    expect(result.current.proxySyncState.status).toBe('error');
+    expect(result.current.proxySyncState.message).toBe('terminal.toastLoadProxyVarsFailed');
+    expect(toast.error).toHaveBeenCalledWith('terminal.toastLoadProxyVarsFailed');
   });
 
   it('tracks config resource invalidation after successful config writes', async () => {

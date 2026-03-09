@@ -4,7 +4,7 @@
 //! across Windows, macOS, and Linux platforms.
 
 use super::env::{Architecture, Platform};
-use directories::BaseDirs;
+use directories::{BaseDirs, UserDirs};
 use std::path::PathBuf;
 
 /// Unified path utilities for cross-platform package management
@@ -55,6 +55,10 @@ impl PlatformPaths {
         BaseDirs::new()
     }
 
+    fn user_dirs() -> Option<UserDirs> {
+        UserDirs::new()
+    }
+
     /// Get user home directory
     pub fn home_dir() -> Option<PathBuf> {
         Self::base_dirs().map(|dirs| dirs.home_dir().to_path_buf())
@@ -68,6 +72,32 @@ impl PlatformPaths {
     /// Get user config directory
     pub fn config_dir() -> Option<PathBuf> {
         Self::base_dirs().map(|dirs| dirs.config_dir().to_path_buf())
+    }
+
+    /// Get the OS default Downloads directory with deterministic fallback.
+    pub fn default_download_dir() -> Option<PathBuf> {
+        if let Some(user_dirs) = Self::user_dirs() {
+            if let Some(downloads) = user_dirs.download_dir() {
+                return Some(downloads.to_path_buf());
+            }
+            return Some(user_dirs.home_dir().join("Downloads"));
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            if let Ok(profile) = std::env::var("USERPROFILE") {
+                return Some(PathBuf::from(profile).join("Downloads"));
+            }
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            if let Some(home) = Self::home_dir() {
+                return Some(home.join("Downloads"));
+            }
+        }
+
+        None
     }
 
     // ==================== npm/Node.js paths ====================
@@ -481,6 +511,26 @@ mod tests {
     #[test]
     fn test_config_dir() {
         assert!(PlatformPaths::config_dir().is_some());
+    }
+
+    #[test]
+    fn test_default_download_dir_returns_value_when_home_available() {
+        if PlatformPaths::home_dir().is_some() {
+            assert!(PlatformPaths::default_download_dir().is_some());
+        }
+    }
+
+    #[test]
+    fn test_default_download_dir_prefers_user_dirs_downloads() {
+        let Some(user_dirs) = UserDirs::new() else {
+            return;
+        };
+        let Some(downloads) = user_dirs.download_dir() else {
+            return;
+        };
+
+        let resolved = PlatformPaths::default_download_dir();
+        assert_eq!(resolved, Some(downloads.to_path_buf()));
     }
 
     #[test]

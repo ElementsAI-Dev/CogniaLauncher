@@ -1,0 +1,33 @@
+[plugin]
+id = "com.cognia.builtin.env-provider-audit"
+name = "Env Provider Audit"
+version = "0.1.0"
+description = "Audit runtime environment provider availability and active version signals with actionable diagnostics."
+authors = ["CogniaLauncher Team"]
+tool_contract_version = "1.0.0"
+compatible_cognia_versions = ">=0.1.0"
+
+[[tools]]
+id = "env-provider-audit"
+name_en = "Env Provider Audit"
+name_zh = "环境与提供器巡检"
+description_en = "Audit env/provider availability, current version signals, and return operational recommendations."
+description_zh = "巡检环境/提供器可用性与当前版本信号，并给出可执行建议。"
+category = "developer"
+keywords = ["environment", "provider", "diagnostics", "runtime", "node", "python", "audit"]
+icon = "ShieldCheck"
+entry = "env_provider_audit"
+
+[permissions]
+env_read = true
+notification = true
+
+[locales.en]
+success = "Environment provider audit completed."
+invalidInput = "Input must be empty or a JSON object with envTypes/includeProviders/notifyOnIssues options."
+executionFailed = "Environment provider audit failed due to host capability error."
+
+[locales.zh]
+success = "环境与提供器巡检完成。"
+invalidInput = "输入必须为空，或为包含 envTypes/includeProviders/notifyOnIssues 的 JSON 对象。"
+executionFailed = "环境与提供器巡检因主机能力调用失败。"

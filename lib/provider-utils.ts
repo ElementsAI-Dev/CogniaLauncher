@@ -6,7 +6,7 @@ import {
   Info,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import type { HealthStatus, Severity } from "@/types/tauri";
+import type { HealthScopeState, HealthStatus, Severity } from "@/types/tauri";
 
 /**
  * Map health status to a Lucide icon component.
@@ -82,6 +82,24 @@ export function getStatusTextColor(status: HealthStatus): string {
       return "text-red-600";
     default:
       return "text-gray-400";
+  }
+}
+
+/**
+ * Human-readable scope state labels shared across health surfaces.
+ */
+export function getScopeStateLabel(scopeState?: HealthScopeState | null): string {
+  switch (scopeState) {
+    case "available":
+      return "Available";
+    case "unavailable":
+      return "Unavailable";
+    case "timeout":
+      return "Timeout";
+    case "unsupported":
+      return "Unsupported";
+    default:
+      return "Unknown";
   }
 }
 

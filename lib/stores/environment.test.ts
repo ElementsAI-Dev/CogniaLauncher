@@ -61,6 +61,34 @@ describe('useEnvironmentStore', () => {
 
       expect(useEnvironmentStore.getState().environments.length).toBe(2);
     });
+
+    it('retains multiple providers for the same env_type', () => {
+      const cppMsvc = { env_type: 'cpp', provider_id: 'msvc', provider: 'MSVC', current_version: '19.40', installed_versions: [], available: true, total_size: 0, version_count: 0 };
+      const cppMsys2 = { env_type: 'cpp', provider_id: 'msys2', provider: 'MSYS2', current_version: '13.2', installed_versions: [], available: true, total_size: 0, version_count: 0 };
+
+      useEnvironmentStore.getState().setEnvironments([cppMsvc]);
+      useEnvironmentStore.getState().updateEnvironment(cppMsys2);
+
+      const envs = useEnvironmentStore.getState().environments;
+      expect(envs).toHaveLength(2);
+      expect(envs).toEqual(expect.arrayContaining([
+        expect.objectContaining({ provider_id: 'msvc' }),
+        expect.objectContaining({ provider_id: 'msys2' }),
+      ]));
+    });
+
+    it('updates only matching provider row when env_type is shared', () => {
+      const cppMsvc = { env_type: 'cpp', provider_id: 'msvc', provider: 'MSVC', current_version: '19.30', installed_versions: [], available: true, total_size: 0, version_count: 0 };
+      const cppMsys2 = { env_type: 'cpp', provider_id: 'msys2', provider: 'MSYS2', current_version: '13.1', installed_versions: [], available: true, total_size: 0, version_count: 0 };
+      const cppMsys2Updated = { ...cppMsys2, current_version: '13.2' };
+
+      useEnvironmentStore.getState().setEnvironments([cppMsvc, cppMsys2]);
+      useEnvironmentStore.getState().updateEnvironment(cppMsys2Updated);
+
+      const envs = useEnvironmentStore.getState().environments;
+      expect(envs.find((env) => env.provider_id === 'msvc')?.current_version).toBe('19.30');
+      expect(envs.find((env) => env.provider_id === 'msys2')?.current_version).toBe('13.2');
+    });
   });
 
   describe('selectedEnv', () => {
@@ -513,6 +541,23 @@ describe('useEnvironmentStore', () => {
       expect(state.envSettings.node?.autoSwitch).toBe(true);
       expect(state.envSettings.fnm).toBeUndefined();
     });
+
+    it('keeps C/C++ provider settings under shared logical key', () => {
+      const cppSettings = {
+        envVariables: [{ key: 'CC', value: 'clang', enabled: true }],
+        detectionFiles: [{ fileName: 'CMakeLists.txt (CMAKE_CXX_STANDARD)', enabled: true }],
+        autoSwitch: false,
+      };
+
+      useEnvironmentStore.getState().setEnvSettings('msvc', cppSettings);
+      useEnvironmentStore.getState().setAutoSwitch('msys2', true);
+
+      const state = useEnvironmentStore.getState();
+      expect(state.envSettings.cpp?.envVariables).toEqual(cppSettings.envVariables);
+      expect(state.envSettings.cpp?.autoSwitch).toBe(true);
+      expect(state.envSettings.msvc).toBeUndefined();
+      expect(state.envSettings.msys2).toBeUndefined();
+    });
   });
 
   describe('setDetectionFiles', () => {
@@ -544,6 +589,8 @@ describe('getLogicalEnvType', () => {
   it('falls back to static PROVIDER_ENV_TYPE_MAP', () => {
     expect(getLogicalEnvType('pyenv')).toBe('python');
     expect(getLogicalEnvType('rustup')).toBe('rust');
+    expect(getLogicalEnvType('msvc')).toBe('cpp');
+    expect(getLogicalEnvType('msys2')).toBe('cpp');
   });
 
   it('returns raw value if not in map', () => {
@@ -577,5 +624,9 @@ describe('PROVIDER_ENV_TYPE_MAP', () => {
     expect(PROVIDER_ENV_TYPE_MAP['sdkman']).toBe('java');
     expect(PROVIDER_ENV_TYPE_MAP['dotnet']).toBe('dotnet');
     expect(PROVIDER_ENV_TYPE_MAP['deno']).toBe('deno');
+    expect(PROVIDER_ENV_TYPE_MAP['msvc']).toBe('cpp');
+    expect(PROVIDER_ENV_TYPE_MAP['msys2']).toBe('cpp');
+    expect(PROVIDER_ENV_TYPE_MAP['system-c']).toBe('c');
+    expect(PROVIDER_ENV_TYPE_MAP['system-cpp']).toBe('cpp');
   });
 });

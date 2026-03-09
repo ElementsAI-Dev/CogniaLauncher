@@ -1378,7 +1378,11 @@ mod tests {
         assert!(older_page.has_more);
         assert_eq!(
             collect_messages(&older_page.entries),
-            vec!["msg-7".to_string(), "msg-8".to_string(), "msg-9".to_string(),]
+            vec![
+                "msg-7".to_string(),
+                "msg-8".to_string(),
+                "msg-9".to_string(),
+            ]
         );
 
         let newest_set = newest_page

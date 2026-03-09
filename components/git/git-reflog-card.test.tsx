@@ -114,4 +114,15 @@ describe('GitReflogCard', () => {
       expect(screen.getByText(/checkout: moving from main to dev/)).toBeInTheDocument();
     });
   });
+
+  it('calls onSelectCommit when an entry is clicked', async () => {
+    const onSelectCommit = jest.fn();
+    render(<GitReflogCard onGetReflog={mockOnGetReflog} onSelectCommit={onSelectCommit} />);
+    fireEvent.click(screen.getByText('git.reflog.load'));
+    await waitFor(() => {
+      expect(screen.getByText('abc1234')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText('abc1234'));
+    expect(onSelectCommit).toHaveBeenCalledWith('abc1234567890');
+  });
 });

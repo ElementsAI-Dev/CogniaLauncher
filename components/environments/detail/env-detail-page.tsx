@@ -89,7 +89,6 @@ export function EnvDetailPageClient({ envType }: EnvDetailPageClientProps) {
     if (e.env_type === envType) return true;
     return getLogicalEnvType(e.env_type, availableProviders) === envType;
   }) || null;
-  const detectedVersion = getProjectDetectedForEnv(envType);
 
   // Get providers for this env type
   const getEnvKey = useCallback(
@@ -108,6 +107,10 @@ export function EnvDetailPageClient({ envType }: EnvDetailPageClientProps) {
   }, [availableProviders, envType, getEnvKey]);
 
   const currentProviderId = getSelectedProvider(envType, env?.provider_id || envType);
+  const detectedVersion = getProjectDetectedForEnv(
+    envType,
+    env?.provider_id ?? currentProviderId,
+  );
 
   useEffect(() => {
     setWorkflowContext({

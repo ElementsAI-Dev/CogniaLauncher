@@ -1,10 +1,26 @@
 use crate::error::{CogniaError, CogniaResult};
 use crate::platform::process;
 use crate::provider::InstallReceipt;
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 /// Common utilities for Node.js-based package managers (npm, pnpm, yarn)
 pub struct NodeProviderUtils;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NodeOutdatedEntry {
+    pub name: String,
+    pub current: String,
+    pub latest: String,
+}
+
+pub fn normalize_node_provider_id(input: &str) -> String {
+    input.trim().to_ascii_lowercase()
+}
+
+pub fn normalize_node_package_name(input: &str) -> String {
+    input.trim().to_ascii_lowercase()
+}
 
 /// Split a "name@version" string into (name, version), correctly handling
 /// npm scoped packages like `@scope/name@version`.
@@ -88,6 +104,297 @@ pub fn parse_node_list_entry(line: &str) -> Option<(String, String)> {
     }
 
     Some((pkg_name.to_string(), version.to_string()))
+}
+
+fn parse_installed_version_field(info: &serde_json::Value) -> Option<String> {
+    if let Some(version) = info.get("version").and_then(|v| v.as_str()) {
+        return Some(version.trim().to_string());
+    }
+
+    info.as_str().map(|s| s.trim().to_string())
+}
+
+fn collect_installed_dependency_maps<'a>(
+    value: &'a serde_json::Value,
+    maps: &mut Vec<&'a serde_json::Map<String, serde_json::Value>>,
+) {
+    match value {
+        serde_json::Value::Object(obj) => {
+            if let Some(deps) = obj.get("dependencies").and_then(|v| v.as_object()) {
+                maps.push(deps);
+            }
+
+            if let Some(data) = obj.get("data") {
+                collect_installed_dependency_maps(data, maps);
+            }
+            if let Some(result) = obj.get("result") {
+                collect_installed_dependency_maps(result, maps);
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for item in arr {
+                collect_installed_dependency_maps(item, maps);
+            }
+        }
+        serde_json::Value::String(_) => {}
+        _ => {}
+    }
+}
+
+pub fn parse_installed_packages_from_value(value: &serde_json::Value) -> Vec<(String, String)> {
+    let mut dependency_maps = Vec::new();
+    collect_installed_dependency_maps(value, &mut dependency_maps);
+
+    let mut entries = Vec::new();
+    let mut seen = HashSet::new();
+
+    for deps in dependency_maps {
+        for (name, info) in deps {
+            let Some(version) = parse_installed_version_field(info) else {
+                continue;
+            };
+            if version.is_empty() {
+                continue;
+            }
+
+            let key = format!("{}@{}", normalize_node_package_name(name), version);
+            if seen.insert(key) {
+                entries.push((name.to_string(), version));
+            }
+        }
+    }
+
+    entries
+}
+
+pub fn parse_installed_packages_from_json_output(
+    output: &str,
+) -> CogniaResult<Vec<(String, String)>> {
+    let value = serde_json::from_str::<serde_json::Value>(output).map_err(|err| {
+        CogniaError::Provider(format!(
+            "failed to parse installed packages output as JSON: {}",
+            err
+        ))
+    })?;
+
+    Ok(parse_installed_packages_from_value(&value))
+}
+
+fn collect_dependency_pairs(value: &serde_json::Value, pairs: &mut Vec<(String, String)>) {
+    match value {
+        serde_json::Value::Object(obj) => {
+            if let Some(deps) = obj.get("dependencies") {
+                collect_dependency_pairs(deps, pairs);
+                return;
+            }
+
+            let mut used_nested_payload = false;
+            for nested in ["data", "result", "value"] {
+                if let Some(next) = obj.get(nested) {
+                    used_nested_payload = true;
+                    collect_dependency_pairs(next, pairs);
+                }
+            }
+            if used_nested_payload {
+                return;
+            }
+
+            if !obj.is_empty() && obj.values().all(|v| v.is_string()) {
+                for (dep_name, constraint) in obj {
+                    if let Some(constraint_str) = constraint.as_str() {
+                        let normalized = constraint_str.trim();
+                        if !normalized.is_empty() {
+                            pairs.push((dep_name.to_string(), normalized.to_string()));
+                        }
+                    }
+                }
+                return;
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for item in arr {
+                collect_dependency_pairs(item, pairs);
+            }
+        }
+        serde_json::Value::String(text) => {
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(text) {
+                collect_dependency_pairs(&parsed, pairs);
+            }
+        }
+        _ => {}
+    }
+}
+
+pub fn parse_dependency_constraints_from_value(value: &serde_json::Value) -> Vec<(String, String)> {
+    let mut pairs = Vec::new();
+    collect_dependency_pairs(value, &mut pairs);
+
+    let mut deduped = Vec::new();
+    let mut seen = HashSet::new();
+    for (name, constraint) in pairs {
+        let key = format!("{}::{}", normalize_node_package_name(&name), constraint);
+        if seen.insert(key) {
+            deduped.push((name, constraint));
+        }
+    }
+
+    deduped
+}
+
+pub fn parse_dependency_constraints_from_json_output(
+    output: &str,
+) -> CogniaResult<Vec<(String, String)>> {
+    let value = serde_json::from_str::<serde_json::Value>(output).map_err(|err| {
+        CogniaError::Provider(format!(
+            "failed to parse dependency output as JSON: {}",
+            err
+        ))
+    })?;
+
+    Ok(parse_dependency_constraints_from_value(&value))
+}
+
+fn parse_outdated_entry(
+    name_hint: Option<&str>,
+    value: &serde_json::Value,
+) -> Option<NodeOutdatedEntry> {
+    let obj = value.as_object()?;
+    let name = name_hint.map(|s| s.to_string()).or_else(|| {
+        obj.get("name")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+    })?;
+    let current = obj.get("current").and_then(|v| v.as_str())?;
+    let latest = obj.get("latest").and_then(|v| v.as_str())?;
+
+    Some(NodeOutdatedEntry {
+        name,
+        current: current.to_string(),
+        latest: latest.to_string(),
+    })
+}
+
+fn collect_outdated_entries(value: &serde_json::Value, entries: &mut Vec<NodeOutdatedEntry>) {
+    match value {
+        serde_json::Value::Object(obj) => {
+            if let Some(entry) = parse_outdated_entry(None, value) {
+                entries.push(entry);
+                return;
+            }
+
+            for (name, info) in obj {
+                if let Some(entry) = parse_outdated_entry(Some(name), info) {
+                    entries.push(entry);
+                }
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for item in arr {
+                collect_outdated_entries(item, entries);
+            }
+        }
+        serde_json::Value::String(text) => {
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(text) {
+                collect_outdated_entries(&parsed, entries);
+            }
+        }
+        _ => {}
+    }
+}
+
+pub fn parse_outdated_packages_from_json_output(
+    output: &str,
+) -> CogniaResult<Vec<NodeOutdatedEntry>> {
+    let value = serde_json::from_str::<serde_json::Value>(output).map_err(|err| {
+        CogniaError::Provider(format!("failed to parse outdated output as JSON: {}", err))
+    })?;
+
+    let mut entries = Vec::new();
+    collect_outdated_entries(&value, &mut entries);
+
+    let mut deduped = Vec::new();
+    let mut seen = HashSet::new();
+    for entry in entries {
+        let key = format!(
+            "{}::{}::{}",
+            normalize_node_package_name(&entry.name),
+            entry.current,
+            entry.latest
+        );
+        if seen.insert(key) {
+            deduped.push(entry);
+        }
+    }
+
+    Ok(deduped)
+}
+
+pub fn parse_node_list_json_line(line: &str) -> Vec<(String, String)> {
+    let mut entries = Vec::new();
+    let mut seen = HashSet::new();
+
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(line) else {
+        return entries;
+    };
+    let Some(data) = json.get("data") else {
+        return entries;
+    };
+
+    if let Some(tree_text) = data.as_str() {
+        for row in tree_text.lines() {
+            for segment in row.split(',') {
+                if let Some((name, version)) = parse_node_list_entry(segment) {
+                    let key = format!("{}@{}", normalize_node_package_name(&name), version);
+                    if seen.insert(key) {
+                        entries.push((name, version));
+                    }
+                }
+            }
+        }
+    }
+
+    if let Some(trees) = data.get("trees").and_then(|t| t.as_array()) {
+        for tree in trees {
+            if let Some(tree_name) = tree.get("name").and_then(|n| n.as_str()) {
+                if let Some((name, version)) = parse_node_list_entry(tree_name) {
+                    let key = format!("{}@{}", normalize_node_package_name(&name), version);
+                    if seen.insert(key) {
+                        entries.push((name, version));
+                    }
+                    continue;
+                }
+
+                let (pkg_name, pkg_version) = split_name_version(tree_name.trim());
+                if let Some(version) = pkg_version {
+                    if !pkg_name.is_empty() {
+                        let version = version.trim().to_string();
+                        let key = format!("{}@{}", normalize_node_package_name(pkg_name), version);
+                        if seen.insert(key) {
+                            entries.push((pkg_name.to_string(), version));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    entries
+}
+
+pub fn parse_node_list_json_output(output: &str) -> Vec<(String, String)> {
+    let mut entries = Vec::new();
+    let mut seen = HashSet::new();
+
+    for line in output.lines() {
+        for (name, version) in parse_node_list_json_line(line) {
+            let key = format!("{}@{}", normalize_node_package_name(&name), version);
+            if seen.insert(key) {
+                entries.push((name, version));
+            }
+        }
+    }
+
+    entries
 }
 
 impl NodeProviderUtils {
@@ -333,5 +640,115 @@ mod tests {
             parse_node_list_entry("├── biome@1.9.4 (workspace root dependency)"),
             Some(("biome".to_string(), "1.9.4".to_string()))
         );
+    }
+
+    #[test]
+    fn test_parse_installed_packages_supports_object_and_array_shapes() {
+        let object_shape = serde_json::json!({
+            "dependencies": {
+                "eslint": { "version": "9.17.0" }
+            }
+        });
+        let array_shape = serde_json::json!([
+            {
+                "dependencies": {
+                    "@types/node": { "version": "22.10.1" }
+                }
+            }
+        ]);
+
+        let object_entries = parse_installed_packages_from_value(&object_shape);
+        let array_entries = parse_installed_packages_from_value(&array_shape);
+
+        assert_eq!(
+            object_entries,
+            vec![("eslint".to_string(), "9.17.0".to_string())]
+        );
+        assert_eq!(
+            array_entries,
+            vec![("@types/node".to_string(), "22.10.1".to_string())]
+        );
+    }
+
+    #[test]
+    fn test_parse_installed_packages_from_json_output_errors_for_invalid_json() {
+        let result = parse_installed_packages_from_json_output("not-json");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_dependency_constraints_supports_nested_and_stringified_payloads() {
+        let direct = serde_json::json!({
+            "chalk": "^5.3.0",
+            "@types/node": ">=18.0.0"
+        });
+        let nested = serde_json::json!({
+            "data": "{\"dependencies\":{\"lodash\":\"^4.17.21\"}}"
+        });
+
+        let direct_pairs = parse_dependency_constraints_from_value(&direct);
+        let nested_pairs = parse_dependency_constraints_from_value(&nested);
+
+        assert!(direct_pairs.contains(&("chalk".to_string(), "^5.3.0".to_string())));
+        assert!(direct_pairs.contains(&("@types/node".to_string(), ">=18.0.0".to_string())));
+        assert_eq!(
+            nested_pairs,
+            vec![("lodash".to_string(), "^4.17.21".to_string())]
+        );
+    }
+
+    #[test]
+    fn test_parse_dependency_constraints_from_json_output_errors_for_invalid_json() {
+        let result = parse_dependency_constraints_from_json_output("{bad-json");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_outdated_packages_supports_object_and_array_shapes() {
+        let object_output = r#"{"eslint":{"current":"9.0.0","latest":"9.17.0"}}"#;
+        let array_output = r#"[{"name":"typescript","current":"5.0.0","latest":"5.1.0"}]"#;
+
+        let object_entries = parse_outdated_packages_from_json_output(object_output).unwrap();
+        let array_entries = parse_outdated_packages_from_json_output(array_output).unwrap();
+
+        assert_eq!(
+            object_entries,
+            vec![NodeOutdatedEntry {
+                name: "eslint".to_string(),
+                current: "9.0.0".to_string(),
+                latest: "9.17.0".to_string()
+            }]
+        );
+        assert_eq!(
+            array_entries,
+            vec![NodeOutdatedEntry {
+                name: "typescript".to_string(),
+                current: "5.0.0".to_string(),
+                latest: "5.1.0".to_string()
+            }]
+        );
+    }
+
+    #[test]
+    fn test_parse_node_list_json_line_parses_tree_text_and_trees_array() {
+        let tree_text_line =
+            r#"{"type":"tree","data":"├── lodash@4.17.21\n└── @types/node@22.10.1"}"#;
+        let trees_array_line = r#"{"type":"tree","data":{"trees":[{"name":"eslint@9.17.0"}]}}"#;
+
+        let tree_text_entries = parse_node_list_json_line(tree_text_line);
+        let trees_array_entries = parse_node_list_json_line(trees_array_line);
+
+        assert!(tree_text_entries.contains(&("lodash".to_string(), "4.17.21".to_string())));
+        assert!(tree_text_entries.contains(&("@types/node".to_string(), "22.10.1".to_string())));
+        assert_eq!(
+            trees_array_entries,
+            vec![("eslint".to_string(), "9.17.0".to_string())]
+        );
+    }
+
+    #[test]
+    fn test_normalize_node_provider_and_package_name() {
+        assert_eq!(normalize_node_provider_id("  NPM "), "npm");
+        assert_eq!(normalize_node_package_name("  @Types/Node "), "@types/node");
     }
 }

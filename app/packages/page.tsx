@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import { SearchBar } from '@/components/packages/search-bar';
 import { PackageList } from '@/components/packages/package-list';
 import { PackageDetailsDialog } from '@/components/packages/package-details-dialog';
@@ -27,7 +28,8 @@ import { usePackages } from '@/hooks/use-packages';
 import { usePackageStore } from '@/lib/stores/packages';
 import { useLocale } from '@/components/providers/locale-provider';
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts';
-import { AlertCircle, RefreshCw, ArrowUp, GitBranch, GitCompare, History, Pin, ChevronRight } from 'lucide-react';
+import { isTauri } from '@/lib/tauri';
+import { AlertCircle, RefreshCw, ArrowUp, GitBranch, GitCompare, History, Pin, ChevronRight, Package as PackageIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import type { PackageSummary, InstalledPackage, ResolutionResult, BatchResult } from '@/lib/tauri';
 import type { ExportedPackageList } from '@/hooks/use-package-export';
@@ -35,6 +37,32 @@ import type { DependencyLookupContext, DependencyResolveRequest } from '@/types/
 import { getPackageKeyFromParts, isPackagePinned } from '@/lib/packages';
 
 export default function PackagesPage() {
+  const { t } = useLocale();
+
+  if (!isTauri()) {
+    return (
+      <div className="p-4 md:p-6">
+        <PageHeader
+          title={t('packages.title')}
+          description={t('packages.description')}
+        />
+        <Empty className="border-none py-12" data-testid="packages-web-fallback">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <PackageIcon />
+            </EmptyMedia>
+            <EmptyTitle>{t('environments.desktopOnly')}</EmptyTitle>
+            <EmptyDescription>{t('environments.desktopOnlyDescription')}</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      </div>
+    );
+  }
+
+  return <PackagesDesktopPage />;
+}
+
+function PackagesDesktopPage() {
   const router = useRouter();
   const {
     searchResults,
@@ -79,7 +107,7 @@ export default function PackagesPage() {
     lastUpdateCheck,
     searchMeta,
   } = usePackageStore();
-  
+
   const { t } = useLocale();
 
   const [activeTab, setActiveTab] = useState('installed');

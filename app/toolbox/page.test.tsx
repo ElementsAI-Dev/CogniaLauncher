@@ -28,6 +28,10 @@ const createToolboxState = (overrides: Record<string, unknown> = {}) => ({
   recentTools: [],
   mostUsedCount: 0,
   toolUseCounts: {},
+  assistancePanels: {
+    history: { collapsed: false, hidden: false },
+    featured: { collapsed: false, hidden: false },
+  },
   viewMode: 'grid' as const,
   selectedCategory: 'all' as const,
   searchQuery: '',
@@ -38,6 +42,10 @@ const createToolboxState = (overrides: Record<string, unknown> = {}) => ({
   setCategory: jest.fn(),
   setSearchQuery: jest.fn(),
   setActiveToolId: jest.fn(),
+  setAssistancePanelCollapsed: jest.fn(),
+  hideAssistancePanel: jest.fn(),
+  restoreAssistancePanel: jest.fn(),
+  restoreAllAssistancePanels: jest.fn(),
   ...overrides,
 });
 let mockToolboxState = createToolboxState();
@@ -134,6 +142,10 @@ jest.mock('@/components/toolbox', () => {
 
 jest.mock('@/components/toolbox/tool-mobile-category-nav', () => ({
   ToolMobileCategoryNav: () => <div data-testid="mobile-nav" />,
+}));
+
+jest.mock('@/components/toolbox/toolbox-assistance', () => ({
+  ToolboxAssistance: () => <div data-testid="toolbox-assistance-component" />,
 }));
 
 jest.mock('next/link', () => {
@@ -236,5 +248,43 @@ describe('ToolboxPage plugin bootstrap', () => {
 
     expect(mockPush).toHaveBeenCalledWith('/toolbox/tool?id=builtin%3Atool-1');
     expect(addRecent).not.toHaveBeenCalled();
+  });
+
+  it('renders page-level restore strip when at least one assistance panel is hidden', () => {
+    const restoreAssistancePanel = jest.fn();
+    const restoreAllAssistancePanels = jest.fn();
+    mockToolboxState = createToolboxState({
+      assistancePanels: {
+        history: { collapsed: false, hidden: true },
+        featured: { collapsed: false, hidden: false },
+      },
+      restoreAssistancePanel,
+      restoreAllAssistancePanels,
+    });
+
+    render(<ToolboxPage />);
+
+    expect(screen.getByTestId('toolbox-assistance-restore-strip')).toBeInTheDocument();
+    expect(screen.getByTestId('toolbox-assistance-component')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('toolbox-assistance-restore-history'));
+    fireEvent.click(screen.getByTestId('toolbox-assistance-restore-all'));
+
+    expect(restoreAssistancePanel).toHaveBeenCalledWith('history');
+    expect(restoreAllAssistancePanels).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps only compact restore controls when all assistance panels are hidden', () => {
+    mockToolboxState = createToolboxState({
+      assistancePanels: {
+        history: { collapsed: false, hidden: true },
+        featured: { collapsed: false, hidden: true },
+      },
+    });
+
+    render(<ToolboxPage />);
+
+    expect(screen.getByTestId('toolbox-assistance-restore-strip')).toBeInTheDocument();
+    expect(screen.queryByTestId('toolbox-assistance-component')).not.toBeInTheDocument();
   });
 });

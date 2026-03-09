@@ -108,7 +108,31 @@ describe('TerminalProxySettings', () => {
     );
 
     expect(screen.getByText('Saved')).toBeInTheDocument();
-    screen.getByRole('button', { name: /terminal\.cancel/i }).click();
+    screen.getByRole('button', { name: /common\.clear/i }).click();
     expect(onClearSyncState).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows sync loading state', () => {
+    render(
+      <TerminalProxySettings
+        {...defaultProps}
+        syncStatus="loading"
+      />,
+    );
+
+    expect(screen.getByText('common.loading')).toBeInTheDocument();
+  });
+
+  it('disables inputs while saving', () => {
+    render(
+      <TerminalProxySettings
+        {...defaultProps}
+        proxyMode="custom"
+        saving
+      />,
+    );
+
+    expect(screen.getByLabelText('terminal.customProxyUrl')).toBeDisabled();
+    expect(screen.getByLabelText('terminal.noProxyList')).toBeDisabled();
   });
 });

@@ -7,6 +7,11 @@ function normalizeEnvType(envType: string): string {
   return envType.trim().toLowerCase();
 }
 
+function normalizeProviderId(providerId?: string | null): string {
+  const normalized = providerId?.trim().toLowerCase();
+  return normalized && normalized.length > 0 ? normalized : 'unknown';
+}
+
 function normalizeProviders(providers: ProviderLike[]): ProviderLike[] {
   return providers.map((provider) => ({
     id: provider.id.toLowerCase(),
@@ -23,12 +28,32 @@ export function toLogicalEnvType(
   return normalizeEnvType(getLogicalEnvType(normalized, normalizedProviders));
 }
 
+export function buildProviderDetectionKey(
+  envType: string,
+  providerId?: string | null,
+): string {
+  return `${normalizeEnvType(envType)}::${normalizeProviderId(providerId)}`;
+}
+
 export function matchDetectedByEnvType(
   envType: string,
-  detectedVersions: DetectedEnvironment[],
+  detectedVersions: Array<DetectedEnvironment & { provider_id?: string | null }>,
   providers: ProviderLike[] = [],
+  providerId?: string | null,
 ): DetectedEnvironment | null {
   const targetEnvType = toLogicalEnvType(envType, providers);
+  const normalizedProvider = providerId?.trim().toLowerCase();
+
+  if (normalizedProvider) {
+    const providerMatch = detectedVersions.find((detected) => (
+      toLogicalEnvType(detected.env_type, providers) === targetEnvType
+      && detected.provider_id?.trim().toLowerCase() === normalizedProvider
+    ));
+    if (providerMatch) {
+      return providerMatch;
+    }
+  }
+
   return (
     detectedVersions.find(
       (detected) => toLogicalEnvType(detected.env_type, providers) === targetEnvType,

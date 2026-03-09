@@ -109,6 +109,17 @@ export interface SystemEnvironmentInfo {
   source: string;
 }
 
+/** Provider-aware environment detection info (supports same-language multi-provider rows) */
+export interface ProviderDetectedEnvironmentInfo {
+  env_type: string;
+  provider_id: string;
+  provider_name: string;
+  version: string;
+  executable_path: string | null;
+  source: string;
+  scope: 'system' | 'managed';
+}
+
 /** Environment type mapping from provider ID to logical type */
 export type EnvironmentTypeMapping = Record<string, string>;
 
@@ -302,6 +313,8 @@ export interface ProviderStatusInfo {
   display_name: string;
   installed: boolean;
   platforms: string[];
+  scope_state?: 'available' | 'unavailable' | 'timeout' | 'unsupported';
+  scope_reason?: string | null;
   status?: 'supported' | 'unsupported';
   reason?: string | null;
   reason_code?: string | null;
@@ -317,6 +330,7 @@ export interface ProviderStatusInfo {
 export interface CacheInfo {
   download_cache: CacheStats;
   metadata_cache: CacheStats;
+  default_downloads?: DefaultDownloadsStats;
   total_size: number;
   total_size_human: string;
   max_size?: number;
@@ -329,6 +343,15 @@ export interface CacheStats {
   size: number;
   size_human: string;
   location: string;
+}
+
+export interface DefaultDownloadsStats {
+  entry_count: number;
+  size: number;
+  size_human: string;
+  location?: string | null;
+  is_available: boolean;
+  reason?: string | null;
 }
 
 export interface CacheAccessStats {
@@ -357,7 +380,24 @@ export interface CacheEntryList {
   has_more: boolean;
 }
 
-export type CacheCommandScope = 'all' | 'download' | 'metadata';
+export type CacheCommandScope =
+  | 'all'
+  | 'download'
+  | 'metadata'
+  | 'default_downloads';
+
+export interface DefaultDownloadsSkipItem {
+  path: string;
+  reason: string;
+}
+
+export interface DefaultDownloadsFileOutcome {
+  path: string;
+  size: number;
+  size_human: string;
+  outcome: 'deleted' | 'skipped' | string;
+  reason?: string | null;
+}
 
 export interface CacheVerificationResult {
   valid_entries: number;
@@ -404,6 +444,8 @@ export interface CleanPreview {
   total_count: number;
   total_size: number;
   total_size_human: string;
+  skipped?: DefaultDownloadsSkipItem[];
+  skipped_count?: number;
 }
 
 export interface EnhancedCleanResult {
@@ -412,6 +454,8 @@ export interface EnhancedCleanResult {
   deleted_count: number;
   use_trash: boolean;
   history_id: string;
+  file_outcomes?: DefaultDownloadsFileOutcome[];
+  skipped_count?: number;
 }
 
 export interface CleanedFileInfo {
@@ -1893,6 +1937,47 @@ export interface GitReflogEntry {
   action: string;
   message: string;
   date: string;
+}
+
+export type GitHistorySearchType = 'message' | 'author' | 'diff';
+
+/** Unified history query contract used by git history views. */
+export interface GitHistoryQuery {
+  query?: string;
+  searchType?: GitHistorySearchType;
+  author?: string;
+  since?: string;
+  until?: string;
+  file?: string;
+  branch?: string;
+  limit?: number;
+  skip?: number;
+  append?: boolean;
+}
+
+export type GitHistoryErrorCategory =
+  | 'invalid_path'
+  | 'invalid_query'
+  | 'repo_unavailable'
+  | 'command_failed'
+  | 'unknown';
+
+export interface GitHistoryQueryError {
+  category: GitHistoryErrorCategory;
+  message: string;
+  recoverable: boolean;
+  nextSteps: string[];
+}
+
+/** Unified query status model to distinguish empty results and failures. */
+export interface GitHistoryQueryState {
+  query: GitHistoryQuery | null;
+  loading: boolean;
+  empty: boolean;
+  resultCount: number;
+  hasMore: boolean;
+  error: GitHistoryQueryError | null;
+  updatedAt: string | null;
 }
 
 /** Git clone options */

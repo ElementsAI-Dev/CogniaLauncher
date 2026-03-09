@@ -56,7 +56,12 @@ describe('GitVisualFileHistory', () => {
     fireEvent.change(input, { target: { value: 'src/main.ts' } });
     fireEvent.keyDown(input, { key: 'Enter' });
     await waitFor(() => {
-      expect(mockOnGetFileStats).toHaveBeenCalledWith('src/main.ts', 50);
+      expect(mockOnGetFileStats).toHaveBeenCalledWith({
+        file: 'src/main.ts',
+        limit: 50,
+        skip: 0,
+        append: false,
+      });
     });
   });
 

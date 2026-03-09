@@ -113,7 +113,7 @@ describe('GitCommitLog', () => {
     expect(screen.getByText('git.history.loadMore')).toBeInTheDocument();
   });
 
-  it('calls onLoadMore with correct limit', () => {
+  it('calls onLoadMore with pagination query payload', () => {
     const manyCommits = Array.from({ length: 50 }, (_, i) => ({
       hash: `hash${i}`.padEnd(16, '0'),
       parents: [],
@@ -125,7 +125,12 @@ describe('GitCommitLog', () => {
     const mockLoadMore = jest.fn();
     render(<GitCommitLog commits={manyCommits} onLoadMore={mockLoadMore} />);
     fireEvent.click(screen.getByText('git.history.loadMore'));
-    expect(mockLoadMore).toHaveBeenCalledWith({ limit: 100 });
+    expect(mockLoadMore).toHaveBeenCalledWith({
+      limit: 50,
+      skip: 50,
+      append: true,
+      author: undefined,
+    });
   });
 
   it('updates badge count when search filters results', () => {

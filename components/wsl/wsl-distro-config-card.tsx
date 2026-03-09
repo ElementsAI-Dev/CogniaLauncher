@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef, type KeyboardEvent } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardAction } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,6 +18,11 @@ import {
 import { Settings, Plus, Trash2, AlertCircle, RefreshCw } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { QUICK_SETTINGS } from '@/lib/constants/wsl';
+import { toast } from 'sonner';
+import {
+  normalizeWslCustomConfigInput,
+  validateWslCustomConfigInput,
+} from '@/lib/wsl/config-validation';
 import type { WslDistroConfigCardProps } from '@/types/wsl';
 import type { WslDistroConfig } from '@/types/tauri';
 
@@ -29,15 +34,22 @@ export function WslDistroConfigCard({
 }: WslDistroConfigCardProps) {
   const [config, setConfig] = useState<WslDistroConfig | null>(null);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
   const [customKey, setCustomKey] = useState('');
   const [customValue, setCustomValue] = useState('');
   const [customSection, setCustomSection] = useState('wsl2');
+  const mutationInFlightRef = useRef(false);
+  const customKeyInputRef = useRef<HTMLInputElement | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
-    const result = await getDistroConfig(distroName);
-    setConfig(result);
-    setLoading(false);
+    try {
+      const result = await getDistroConfig(distroName);
+      setConfig(result);
+    } finally {
+      setLoading(false);
+    }
   }, [distroName, getDistroConfig]);
 
   useEffect(() => {
@@ -51,33 +63,90 @@ export function WslDistroConfigCard({
     return () => { cancelled = true; };
   }, [distroName, getDistroConfig]);
 
-  const handleToggle = async (section: string, key: string, currentValue: string) => {
-    const newValue = currentValue === 'true' ? 'false' : 'true';
-    await setDistroConfigValue(distroName, section, key, newValue);
-    await refresh();
-  };
-
-  const handleSetText = async (section: string, key: string, value: string) => {
-    if (value.trim()) {
-      await setDistroConfigValue(distroName, section, key, value.trim());
-    } else {
-      await setDistroConfigValue(distroName, section, key);
+  const runWithSaving = useCallback(async (action: () => Promise<void>): Promise<boolean> => {
+    if (mutationInFlightRef.current) return false;
+    mutationInFlightRef.current = true;
+    setSaving(true);
+    try {
+      await action();
+      return true;
+    } catch (err) {
+      toast.error(String(err));
+      return false;
+    } finally {
+      mutationInFlightRef.current = false;
+      setSaving(false);
     }
-    await refresh();
-  };
+  }, []);
 
-  const handleAddCustom = async () => {
-    if (!customKey.trim()) return;
-    await setDistroConfigValue(distroName, customSection, customKey.trim(), customValue.trim());
-    setCustomKey('');
-    setCustomValue('');
-    await refresh();
-  };
+  const handleToggle = useCallback(async (section: string, key: string, currentValue: string) => {
+    const newValue = currentValue === 'true' ? 'false' : 'true';
+    await runWithSaving(async () => {
+      await setDistroConfigValue(distroName, section, key, newValue);
+      await refresh();
+    });
+  }, [distroName, refresh, runWithSaving, setDistroConfigValue]);
 
-  const handleRemove = async (section: string, key: string) => {
-    await setDistroConfigValue(distroName, section, key);
-    await refresh();
-  };
+  const handleSetText = useCallback(async (section: string, key: string, value: string) => {
+    const normalized = normalizeWslCustomConfigInput({ section, key, value });
+    if (!normalized.section || !normalized.key) return;
+    await runWithSaving(async () => {
+      if (normalized.value) {
+        await setDistroConfigValue(distroName, normalized.section, normalized.key, normalized.value);
+      } else {
+        await setDistroConfigValue(distroName, normalized.section, normalized.key);
+      }
+      await refresh();
+    });
+  }, [distroName, refresh, runWithSaving, setDistroConfigValue]);
+
+  const handleAddCustom = useCallback(async () => {
+    const normalized = normalizeWslCustomConfigInput({
+      section: customSection,
+      key: customKey,
+      value: customValue,
+    });
+    const existingEntries = config?.[normalized.section] ?? null;
+    const validationMessageKey = validateWslCustomConfigInput(normalized, {
+      requireValue: true,
+      existingEntries,
+    });
+    if (validationMessageKey) {
+      setAddError(t(validationMessageKey, {
+        section: normalized.section,
+        key: normalized.key,
+      }));
+      return;
+    }
+
+    setAddError(null);
+    const saved = await runWithSaving(async () => {
+      await setDistroConfigValue(distroName, normalized.section, normalized.key, normalized.value);
+      await refresh();
+    });
+    if (saved) {
+      setCustomKey('');
+      setCustomValue('');
+      requestAnimationFrame(() => {
+        customKeyInputRef.current?.focus();
+      });
+    }
+  }, [config, customKey, customSection, customValue, distroName, refresh, runWithSaving, setDistroConfigValue, t]);
+
+  const handleRemove = useCallback(async (section: string, key: string) => {
+    const normalized = normalizeWslCustomConfigInput({ section, key });
+    if (!normalized.key) return;
+    await runWithSaving(async () => {
+      await setDistroConfigValue(distroName, normalized.section, normalized.key);
+      await refresh();
+    });
+  }, [distroName, refresh, runWithSaving, setDistroConfigValue]);
+
+  const handleCustomInputEnter = useCallback(async (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    await handleAddCustom();
+  }, [handleAddCustom]);
 
   const getValue = (section: string, key: string, defaultValue: string): string => {
     return config?.[section]?.[key] ?? defaultValue;
@@ -124,7 +193,7 @@ export function WslDistroConfigCard({
                 variant="ghost"
                 size="icon"
                 onClick={refresh}
-                disabled={loading}
+                disabled={loading || saving}
                 className="h-8 w-8"
               >
                 <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
@@ -156,11 +225,13 @@ export function WslDistroConfigCard({
                   <Switch
                     checked={value === 'true'}
                     onCheckedChange={() => handleToggle(setting.section, setting.key, value)}
+                    disabled={saving}
                   />
                 ) : setting.type === 'select' && setting.options ? (
                   <Select
                     value={value || ''}
                     onValueChange={(val) => handleSetText(setting.section, setting.key, val)}
+                    disabled={saving}
                   >
                     <SelectTrigger className="h-7 w-32 text-xs">
                       <SelectValue placeholder={setting.defaultValue} />
@@ -176,6 +247,7 @@ export function WslDistroConfigCard({
                     className="h-7 w-40 text-xs"
                     placeholder={setting.defaultValue || '...'}
                     defaultValue={config?.[setting.section]?.[setting.key] ?? ''}
+                    disabled={saving}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
                         handleSetText(setting.section, setting.key, (e.target as HTMLInputElement).value);
@@ -198,11 +270,11 @@ export function WslDistroConfigCard({
         {customEntries.length > 0 && (
           <div className="space-y-2">
             {customEntries.map(({ section, key, value }) => (
-              <div key={`${section}.${key}`} className="flex items-center gap-2 text-sm">
-                <span className="text-muted-foreground font-mono">[{section}]</span>
-                <span className="font-mono">{key}</span>
+              <div key={`${section}.${key}`} className="flex items-start gap-2 rounded-md border px-3 py-2 text-sm">
+                <span className="text-muted-foreground font-mono shrink-0">[{section}]</span>
+                <span className="font-mono shrink-0">{key}</span>
                 <span className="text-muted-foreground">=</span>
-                <span className="font-mono flex-1">{value}</span>
+                <span className="font-mono min-w-0 flex-1 break-all text-xs">{value}</span>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
@@ -210,6 +282,7 @@ export function WslDistroConfigCard({
                       size="icon"
                       className="h-6 w-6 shrink-0"
                       onClick={() => handleRemove(section, key)}
+                      disabled={saving}
                     >
                       <Trash2 className="h-3 w-3 text-destructive" />
                     </Button>
@@ -222,44 +295,65 @@ export function WslDistroConfigCard({
         )}
 
         {/* Add custom setting */}
-        <div className="flex items-end gap-2">
-          <div className="w-24">
-            <Label className="text-xs">Section</Label>
+        <div
+          data-testid="wsl-distro-config-custom-form"
+          className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(110px,140px)_minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end"
+        >
+          <div className="min-w-0 space-y-1">
+            <Label className="text-xs">{t('wsl.config.sectionLabel')}</Label>
             <Input
               value={customSection}
-              onChange={(e) => setCustomSection(e.target.value)}
+              onChange={(e) => {
+                setCustomSection(e.target.value);
+                setAddError(null);
+              }}
+              onKeyDown={handleCustomInputEnter}
               placeholder="wsl2"
               className="h-8 text-xs"
+              disabled={saving}
             />
           </div>
-          <div className="flex-1">
-            <Label className="text-xs">Key</Label>
+          <div className="min-w-0 space-y-1">
+            <Label className="text-xs">{t('wsl.config.keyLabel')}</Label>
             <Input
+              ref={customKeyInputRef}
               value={customKey}
-              onChange={(e) => setCustomKey(e.target.value)}
+              onChange={(e) => {
+                setCustomKey(e.target.value);
+                setAddError(null);
+              }}
+              onKeyDown={handleCustomInputEnter}
               placeholder={t('wsl.config.keyPlaceholder')}
               className="h-8 text-xs"
+              disabled={saving}
             />
           </div>
-          <div className="flex-1">
-            <Label className="text-xs">Value</Label>
+          <div className="min-w-0 space-y-1">
+            <Label className="text-xs">{t('wsl.config.valueLabel')}</Label>
             <Input
               value={customValue}
-              onChange={(e) => setCustomValue(e.target.value)}
+              onChange={(e) => {
+                setCustomValue(e.target.value);
+                setAddError(null);
+              }}
+              onKeyDown={handleCustomInputEnter}
               placeholder={t('wsl.config.valuePlaceholder')}
               className="h-8 text-xs"
+              disabled={saving}
             />
           </div>
           <Button
             variant="outline"
             size="sm"
-            className="h-8 gap-1"
-            onClick={handleAddCustom}
-            disabled={!customKey.trim()}
+            className="h-8 w-full gap-1 sm:w-auto"
+            onClick={() => void handleAddCustom()}
+            disabled={!customKey.trim() || !customValue.trim() || saving}
           >
             <Plus className="h-3 w-3" />
+            {t('common.add')}
           </Button>
         </div>
+        {addError ? <p className="text-xs text-destructive">{addError}</p> : null}
       </CardContent>
     </Card>
   );

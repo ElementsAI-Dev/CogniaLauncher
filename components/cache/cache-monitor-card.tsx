@@ -164,6 +164,12 @@ export function CacheMonitorCard({ refreshTrigger, autoRefreshInterval = 0 }: Ca
                     <p className="text-lg font-bold">{monitor.internalSizeHuman}</p>
                     <p className="text-xs text-muted-foreground">{t('cache.internalCache')}</p>
                   </div>
+                  {((monitor.defaultDownloadsSize ?? 0) > 0 || monitor.defaultDownloadsAvailable === false) && (
+                    <div className="text-center p-3 rounded-lg bg-muted/50">
+                      <p className="text-lg font-bold">{monitor.defaultDownloadsSizeHuman ?? '0 B'}</p>
+                      <p className="text-xs text-muted-foreground">{t('cache.defaultDownloads')}</p>
+                    </div>
+                  )}
                   {monitor.externalSize > 0 && (
                     <div className="text-center p-3 rounded-lg bg-muted/50">
                       <p className="text-lg font-bold">{monitor.externalSizeHuman}</p>

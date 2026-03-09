@@ -1,4 +1,5 @@
 import {
+  buildProviderDetectionKey,
   formatDetectionSource,
   isDetectedVersionCompatible,
   matchDetectedByEnvType,
@@ -24,6 +25,16 @@ describe('environment-detection utils', () => {
     expect(matchDetectedByEnvType('volta-custom', detected, providers)?.version).toBe('20.0.0');
   });
 
+  it('prefers provider-aware match when provider id is given', () => {
+    const detected = [
+      { env_type: 'cpp', provider_id: 'msvc', version: '19.4', source: 'msvc', source_path: null },
+      { env_type: 'cpp', provider_id: 'msys2', version: '13.2', source: 'msys2', source_path: null },
+    ];
+
+    expect(matchDetectedByEnvType('cpp', detected, [], 'msys2')?.version).toBe('13.2');
+    expect(matchDetectedByEnvType('cpp', detected, [], 'msvc')?.version).toBe('19.4');
+  });
+
   it('checks compatibility with boundary prefixes', () => {
     expect(isDetectedVersionCompatible('v20.10.0', '20')).toBe(true);
     expect(isDetectedVersionCompatible('20.10.0', 'v20.10.0')).toBe(true);
@@ -35,5 +46,9 @@ describe('environment-detection utils', () => {
   it('formats detection source labels', () => {
     expect(formatDetectionSource('tool_versions_file')).toBe('tool versions file');
   });
-});
 
+  it('builds stable provider detection keys', () => {
+    expect(buildProviderDetectionKey(' Cpp ', ' MSVC ')).toBe('cpp::msvc');
+    expect(buildProviderDetectionKey('node')).toBe('node::unknown');
+  });
+});

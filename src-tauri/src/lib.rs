@@ -487,6 +487,7 @@ pub fn run() {
             commands::environment::env_save_settings,
             commands::environment::env_load_settings,
             commands::environment::env_detect_system_all,
+            commands::environment::env_detect_providers_all,
             commands::environment::env_detect_system,
             commands::environment::env_get_type_mapping,
             commands::environment::env_verify_install,
@@ -583,6 +584,8 @@ pub fn run() {
             // External cache management
             commands::cache::discover_external_caches,
             commands::cache::discover_external_caches_fast,
+            commands::cache::discover_external_cache_candidates,
+            commands::cache::probe_external_cache_provider,
             commands::cache::calculate_external_cache_size,
             commands::cache::clean_external_cache,
             commands::cache::clean_all_external_caches,

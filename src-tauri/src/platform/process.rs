@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::process::Stdio;
 use std::time::Duration;
 use thiserror::Error;
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::process::Command;
 
 #[derive(Error, Debug)]
@@ -102,24 +102,65 @@ pub async fn execute(
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
 
-    let child = cmd.spawn()?;
+    let mut child = cmd.spawn()?;
 
-    let output = if let Some(timeout) = options.timeout {
-        match tokio::time::timeout(timeout, child.wait_with_output()).await {
+    let stdout_task = child.stdout.take().map(|mut stdout| {
+        tokio::spawn(async move {
+            let mut buffer = Vec::new();
+            let _ = stdout.read_to_end(&mut buffer).await;
+            buffer
+        })
+    });
+
+    let stderr_task = child.stderr.take().map(|mut stderr| {
+        tokio::spawn(async move {
+            let mut buffer = Vec::new();
+            let _ = stderr.read_to_end(&mut buffer).await;
+            buffer
+        })
+    });
+
+    let status = if let Some(timeout) = options.timeout {
+        match tokio::time::timeout(timeout, child.wait()).await {
             Ok(result) => result?,
-            Err(_) => return Err(ProcessError::Timeout(timeout)),
+            Err(_) => {
+                let _ = child.kill().await;
+                let _ = child.wait().await;
+                if let Some(task) = stdout_task {
+                    let _ = task.await;
+                }
+                if let Some(task) = stderr_task {
+                    let _ = task.await;
+                }
+                return Err(ProcessError::Timeout(timeout));
+            }
         }
     } else {
-        child.wait_with_output().await?
+        child.wait().await?
     };
 
-    let exit_code = output.status.code().unwrap_or(-1);
-    let success = output.status.success();
+    let stdout = match stdout_task {
+        Some(task) => {
+            let bytes = task.await.unwrap_or_default();
+            String::from_utf8_lossy(&bytes).to_string()
+        }
+        None => String::new(),
+    };
+    let stderr = match stderr_task {
+        Some(task) => {
+            let bytes = task.await.unwrap_or_default();
+            String::from_utf8_lossy(&bytes).to_string()
+        }
+        None => String::new(),
+    };
+
+    let exit_code = status.code().unwrap_or(-1);
+    let success = status.success();
 
     Ok(ProcessOutput {
         exit_code,
-        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-        stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+        stdout,
+        stderr,
         success,
     })
 }
@@ -469,6 +510,57 @@ mod tests {
 
         assert!(!output.success);
         assert_eq!(output.exit_code, 42);
+    }
+
+    #[tokio::test]
+    async fn test_execute_timeout_returns_timeout_error() {
+        #[cfg(windows)]
+        let result = execute(
+            "cmd",
+            &["/C", "ping -n 3 127.0.0.1 >NUL"],
+            Some(ProcessOptions::new().with_timeout(Duration::from_millis(100))),
+        )
+        .await;
+
+        #[cfg(not(windows))]
+        let result = execute(
+            "sh",
+            &["-c", "sleep 2"],
+            Some(ProcessOptions::new().with_timeout(Duration::from_millis(100))),
+        )
+        .await;
+
+        assert!(matches!(result, Err(ProcessError::Timeout(_))));
+    }
+
+    #[tokio::test]
+    async fn test_execute_timeout_does_not_block_subsequent_commands() {
+        #[cfg(windows)]
+        let _ = execute(
+            "cmd",
+            &["/C", "ping -n 3 127.0.0.1 >NUL"],
+            Some(ProcessOptions::new().with_timeout(Duration::from_millis(100))),
+        )
+        .await;
+
+        #[cfg(not(windows))]
+        let _ = execute(
+            "sh",
+            &["-c", "sleep 2"],
+            Some(ProcessOptions::new().with_timeout(Duration::from_millis(100))),
+        )
+        .await;
+
+        #[cfg(windows)]
+        let next = execute("cmd", &["/C", "echo", "after-timeout"], None)
+            .await
+            .unwrap();
+
+        #[cfg(not(windows))]
+        let next = execute("echo", &["after-timeout"], None).await.unwrap();
+
+        assert!(next.success);
+        assert!(next.stdout.contains("after-timeout"));
     }
 
     #[test]

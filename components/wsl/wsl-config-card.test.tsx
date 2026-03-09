@@ -19,12 +19,22 @@ const mockT = (key: string) => {
     'wsl.config.removed': 'Setting removed',
     'wsl.config.quickSettings': 'Quick Settings',
     'wsl.config.addCustom': 'Add Custom Setting',
+    'wsl.config.sectionLabel': 'Section',
+    'wsl.config.keyLabel': 'Key',
+    'wsl.config.valueLabel': 'Value',
     'wsl.config.keyPlaceholder': 'Key (e.g. memory)',
     'wsl.config.valuePlaceholder': 'Value (e.g. 4GB)',
+    'wsl.config.validation.sectionRequired': 'Section is required.',
+    'wsl.config.validation.keyRequired': 'Key is required.',
+    'wsl.config.validation.valueRequired': 'Value is required.',
+    'wsl.config.validation.invalidSection': 'Section can contain only letters, numbers, ., _, and -.',
+    'wsl.config.validation.invalidKey': 'Key can contain only letters, numbers, ., _, and -.',
+    'wsl.config.validation.duplicateKey': "Key '{key}' already exists in section [{section}].",
     'wsl.config.restartNote': 'Changes require WSL restart (wsl --shutdown) to take effect.',
     'wsl.config.networkPresets': 'Network Presets',
     'wsl.config.presetApplied': 'Network preset applied.',
     'common.add': 'Add',
+    'common.delete': 'Delete',
   };
   return translations[key] || key;
 };
@@ -102,8 +112,19 @@ describe('WslConfigCard', () => {
     render(<WslConfigCard config={emptyConfig} {...defaultProps} />);
 
     expect(screen.getByText('Add Custom Setting')).toBeInTheDocument();
+    expect(screen.getByText('Section')).toBeInTheDocument();
+    expect(screen.getByText('Key')).toBeInTheDocument();
+    expect(screen.getByText('Value')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('Key (e.g. memory)')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('Value (e.g. 4GB)')).toBeInTheDocument();
+  });
+
+  it('uses responsive custom add form layout classes', () => {
+    render(<WslConfigCard config={emptyConfig} {...defaultProps} />);
+
+    const form = screen.getByTestId('wsl-config-custom-form');
+    expect(form.className).toContain('grid-cols-1');
+    expect(form.className).toContain('sm:grid-cols-[minmax(110px,140px)_minmax(0,1fr)_minmax(0,1fr)_auto]');
   });
 
   it('shows restart note', () => {
@@ -248,6 +269,66 @@ describe('WslConfigCard', () => {
     expect(addCustomBtn).not.toBeDisabled();
     await userEvent.click(addCustomBtn);
     expect(defaultProps.onSetConfig).toHaveBeenCalledWith('wsl2', 'swapFile', '2GB');
+  });
+
+  it('blocks invalid custom key before mutation', async () => {
+    render(<WslConfigCard config={emptyConfig} {...defaultProps} />);
+
+    await userEvent.type(screen.getByPlaceholderText('Key (e.g. memory)'), 'bad key');
+    await userEvent.type(screen.getByPlaceholderText('Value (e.g. 4GB)'), '2GB');
+
+    const addButtons = screen.getAllByRole('button', { name: /add/i });
+    await userEvent.click(addButtons[addButtons.length - 1]);
+
+    expect(defaultProps.onSetConfig).not.toHaveBeenCalled();
+    expect(screen.getByText(/letters, numbers/)).toBeInTheDocument();
+  });
+
+  it('blocks duplicate key in selected section', async () => {
+    render(<WslConfigCard config={populatedConfig} {...defaultProps} />);
+
+    await userEvent.type(screen.getByPlaceholderText('Key (e.g. memory)'), 'memory');
+    await userEvent.type(screen.getByPlaceholderText('Value (e.g. 4GB)'), '8GB');
+
+    const addButtons = screen.getAllByRole('button', { name: /add/i });
+    await userEvent.click(addButtons[addButtons.length - 1]);
+
+    expect(defaultProps.onSetConfig).not.toHaveBeenCalled();
+    expect(screen.getByText(/already exists/)).toBeInTheDocument();
+  });
+
+  it('submits custom setting on Enter with same validation flow', async () => {
+    const onSetConfig = jest.fn().mockResolvedValue(undefined);
+    render(<WslConfigCard config={emptyConfig} {...defaultProps} onSetConfig={onSetConfig} />);
+
+    await userEvent.type(screen.getByPlaceholderText('Key (e.g. memory)'), 'swapFile');
+    const valueInput = screen.getByPlaceholderText('Value (e.g. 4GB)');
+    await userEvent.type(valueInput, '2GB');
+    await userEvent.keyboard('{Enter}');
+
+    await screen.findByPlaceholderText('Key (e.g. memory)');
+    expect(onSetConfig).toHaveBeenCalledWith('wsl2', 'swapFile', '2GB');
+  });
+
+  it('disables custom add controls while save is pending', async () => {
+    let resolveSave: (() => void) | null = null;
+    const onSetConfig = jest.fn(() => new Promise<void>((resolve) => { resolveSave = resolve; }));
+
+    render(<WslConfigCard config={emptyConfig} {...defaultProps} onSetConfig={onSetConfig} />);
+
+    await userEvent.type(screen.getByPlaceholderText('Key (e.g. memory)'), 'swapFile');
+    await userEvent.type(screen.getByPlaceholderText('Value (e.g. 4GB)'), '2GB');
+
+    const addButtons = screen.getAllByRole('button', { name: /add/i });
+    const addCustomBtn = addButtons[addButtons.length - 1];
+    await userEvent.click(addCustomBtn);
+
+    expect(addCustomBtn).toBeDisabled();
+    expect(screen.getByPlaceholderText('Key (e.g. memory)')).toBeDisabled();
+    expect(screen.getByPlaceholderText('Value (e.g. 4GB)')).toBeDisabled();
+
+    resolveSave?.();
+    await screen.findByPlaceholderText('Key (e.g. memory)');
   });
 
   it('calls handleRemove when delete button clicked on entry', async () => {

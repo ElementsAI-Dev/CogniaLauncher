@@ -32,6 +32,7 @@ const defaultHookState = {
       isAvailable: true,
       canClean: true,
       category: 'package_manager',
+      probePending: false,
     },
     {
       provider: 'docker',
@@ -42,6 +43,7 @@ const defaultHookState = {
       isAvailable: false,
       canClean: false,
       category: 'devtools',
+      probePending: false,
     },
   ],
   loading: false,
@@ -59,6 +61,7 @@ const defaultHookState = {
         isAvailable: true,
         canClean: true,
         category: 'package_manager',
+        probePending: false,
       },
     ],
     devtools: [
@@ -71,6 +74,7 @@ const defaultHookState = {
         isAvailable: false,
         canClean: false,
         category: 'devtools',
+        probePending: false,
       },
     ],
   },
@@ -154,5 +158,37 @@ describe('ExternalCacheSection', () => {
     await user.click(confirmButtons[confirmButtons.length - 1]);
 
     expect(mockHandleCleanAll).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps completed rows visible while loading when probe results are partial', async () => {
+    mockUseExternalCache.mockReturnValue({
+      ...defaultHookState,
+      loading: true,
+      caches: [
+        {
+          ...defaultHookState.caches[0],
+          probePending: true,
+        },
+      ],
+      grouped: {
+        package_manager: [
+          {
+            ...defaultHookState.caches[0],
+            probePending: true,
+          },
+        ],
+      },
+      orderedCategories: ['package_manager'],
+      cleanableCount: 0,
+      totalSize: 0,
+    });
+
+    const user = userEvent.setup();
+    render(<ExternalCacheSection useTrash={false} setUseTrash={jest.fn()} />);
+
+    await user.click(screen.getByTestId('external-cache-trigger'));
+
+    expect(screen.getByText('npm Cache')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^cache\.clean$/i })).toBeDisabled();
   });
 });

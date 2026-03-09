@@ -13,6 +13,7 @@ import {
   withThrottle,
 } from '@/lib/cache/invalidation';
 import type {
+  HealthScopeState,
   HealthIssue,
   HealthRemediationResult,
   ProviderInfo,
@@ -50,6 +51,8 @@ export interface ProviderDetailState {
 
   // Health
   healthResult: PackageManagerHealthResult | null;
+  healthScopeState: HealthScopeState | null;
+  healthScopeReason: string | null;
   loadingHealth: boolean;
   activeRemediationId: string | null;
   lastRemediationResult: HealthRemediationResult | null;
@@ -609,6 +612,8 @@ export function useProviderDetail(providerId: string) {
     availableUpdates,
     loadingUpdates,
     healthResult,
+    healthScopeState: healthResult?.scope_state ?? null,
+    healthScopeReason: healthResult?.scope_reason ?? null,
     loadingHealth,
     activeRemediationId,
     lastRemediationResult,

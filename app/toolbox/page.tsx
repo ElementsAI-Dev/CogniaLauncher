@@ -40,10 +40,13 @@ export default function ToolboxPage() {
     viewMode,
     selectedCategory,
     searchQuery,
+    assistancePanels,
     toggleFavorite,
     setViewMode,
     setCategory,
     setSearchQuery,
+    restoreAssistancePanel,
+    restoreAllAssistancePanels,
   } = useToolbox();
 
   const searchRef = useRef<import('@/components/toolbox/tool-search-bar').ToolSearchBarRef>(null);
@@ -75,6 +78,22 @@ export default function ToolboxPage() {
       : selectedCategory === 'recent'
         ? 'no-recent'
         : 'no-results';
+
+  const showAssistanceSection = selectedCategory === 'all' && searchQuery.trim().length === 0;
+  const hiddenAssistancePanels = [
+    {
+      id: 'history' as const,
+      hidden: assistancePanels.history.hidden,
+      label: t('toolbox.assistance.panelHistory'),
+    },
+    {
+      id: 'featured' as const,
+      hidden: assistancePanels.featured.hidden,
+      label: t('toolbox.assistance.panelFeatured'),
+    },
+  ].filter((panel) => panel.hidden);
+  const hasVisibleAssistancePanels =
+    !assistancePanels.history.hidden || !assistancePanels.featured.hidden;
 
   return (
     <div
@@ -162,9 +181,41 @@ export default function ToolboxPage() {
           </Alert>
         )}
 
-        {selectedCategory === 'all' && searchQuery.trim().length === 0 && (
-          <div className="shrink-0">
-            <ToolboxAssistance />
+        {showAssistanceSection && (
+          <div className="shrink-0 space-y-2">
+            {hiddenAssistancePanels.length > 0 && (
+              <div
+                data-testid="toolbox-assistance-restore-strip"
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/20 px-3 py-2"
+              >
+                <p className="text-xs text-muted-foreground">
+                  {t('toolbox.assistance.hiddenPanelsHint', {
+                    count: hiddenAssistancePanels.length,
+                  })}
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  {hiddenAssistancePanels.map((panel) => (
+                    <Button
+                      key={panel.id}
+                      size="sm"
+                      variant="outline"
+                      data-testid={`toolbox-assistance-restore-${panel.id}`}
+                      onClick={() => restoreAssistancePanel(panel.id)}
+                    >
+                      {t('toolbox.assistance.restorePanel', { panel: panel.label })}
+                    </Button>
+                  ))}
+                  <Button
+                    size="sm"
+                    data-testid="toolbox-assistance-restore-all"
+                    onClick={restoreAllAssistancePanels}
+                  >
+                    {t('toolbox.assistance.restoreAll')}
+                  </Button>
+                </div>
+              </div>
+            )}
+            {hasVisibleAssistancePanels && <ToolboxAssistance />}
           </div>
         )}
 

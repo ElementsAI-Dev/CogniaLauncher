@@ -4,11 +4,13 @@ use crate::core::{
     HistoryQuery, PackageSpec,
 };
 use crate::platform::current_platform;
+use crate::provider::node_base::{normalize_node_package_name, normalize_node_provider_id};
 use crate::provider::support::{
     provider_unavailable_reason, update_support_reason, SupportReason,
     REASON_INSTALLED_PACKAGE_ENUMERATION_FAILED, REASON_NATIVE_UPDATE_FAILED,
     REASON_NATIVE_UPDATE_FAILED_WITH_FALLBACK, REASON_NO_MATCHING_INSTALLED_PACKAGES,
-    SUPPORT_STATUS_ERROR, SUPPORT_STATUS_PARTIAL, SUPPORT_STATUS_SUPPORTED, SUPPORT_STATUS_UNSUPPORTED,
+    SUPPORT_STATUS_ERROR, SUPPORT_STATUS_PARTIAL, SUPPORT_STATUS_SUPPORTED,
+    SUPPORT_STATUS_UNSUPPORTED,
 };
 use crate::provider::ProviderRegistry;
 use crate::resolver::{Dependency, Package, Resolver, Version, VersionConstraint};
@@ -26,14 +28,41 @@ fn emit_batch_progress(app_handle: &AppHandle, progress: &BatchProgress) {
     let _ = app_handle.emit("batch-progress", progress);
 }
 
-fn parse_package_scope_key(raw: &str) -> (Option<&str>, &str) {
-    if let Some((provider, name)) = raw.split_once(':') {
+fn parse_package_scope_key(raw: &str) -> (Option<String>, String) {
+    let trimmed = raw.trim();
+    if let Some((provider, name)) = trimmed.split_once(':') {
         if !provider.is_empty() && !provider.contains('@') {
-            return (Some(provider), name);
+            return (
+                Some(normalize_node_provider_id(provider)),
+                name.trim().to_string(),
+            );
         }
     }
 
-    (None, raw)
+    (None, trimmed.to_string())
+}
+
+fn package_lookup_key(name: &str) -> String {
+    normalize_node_package_name(name)
+}
+
+fn build_dependency_lookup_conflicts(
+    failures: &std::collections::HashMap<String, String>,
+) -> Vec<ConflictInfo> {
+    let mut conflicts: Vec<ConflictInfo> = failures
+        .iter()
+        .map(|(package, message)| ConflictInfo {
+            package: package.clone(),
+            required_versions: vec![],
+            message: message.clone(),
+        })
+        .collect();
+    conflicts.sort_by(|a, b| {
+        a.package
+            .cmp(&b.package)
+            .then_with(|| a.message.cmp(&b.message))
+    });
+    conflicts
 }
 
 /// Batch install packages with progress tracking
@@ -201,6 +230,9 @@ pub async fn resolve_dependencies(
     // Track which provider provides each package
     let mut package_providers: std::collections::HashMap<String, String> =
         std::collections::HashMap::new();
+    // Record dependency lookup failures so they remain visible in result payloads.
+    let mut dependency_lookup_failures: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
 
     // Collect installed packages for comparison (prefer cached data)
     let mut installed_packages: std::collections::HashMap<String, String> =
@@ -217,7 +249,7 @@ pub async fn resolve_dependencies(
             {
                 if !cached.is_stale {
                     for pkg in cached.data {
-                        installed_packages.insert(pkg.name.to_lowercase(), pkg.version);
+                        installed_packages.insert(package_lookup_key(&pkg.name), pkg.version);
                     }
                     used_cache = true;
                 }
@@ -235,7 +267,7 @@ pub async fn resolve_dependencies(
                         .await
                     {
                         for pkg in installed {
-                            installed_packages.insert(pkg.name.to_lowercase(), pkg.version);
+                            installed_packages.insert(package_lookup_key(&pkg.name), pkg.version);
                         }
                     }
                 }
@@ -243,15 +275,27 @@ pub async fn resolve_dependencies(
         }
     }
 
-    let provider_ids: Vec<String> = reg.list().iter().map(|id| id.to_string()).collect();
+    let provider_ids: Vec<String> = reg
+        .list()
+        .iter()
+        .map(|id| normalize_node_provider_id(id))
+        .collect();
     let mut queue: std::collections::VecDeque<(String, Option<String>)> = specs
         .iter()
-        .map(|spec| (spec.name.clone(), spec.provider.clone()))
+        .map(|spec| {
+            (
+                spec.name.clone(),
+                spec.provider
+                    .as_ref()
+                    .map(|provider| normalize_node_provider_id(provider)),
+            )
+        })
         .collect();
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     while let Some((name, provider_hint)) = queue.pop_front() {
-        if !seen.insert(name.clone()) {
+        let name_key = package_lookup_key(&name);
+        if !seen.insert(name_key.clone()) {
             continue;
         }
 
@@ -267,18 +311,30 @@ pub async fn resolve_dependencies(
                     if let Ok(versions) = provider.get_versions(&name).await {
                         if !versions.is_empty() {
                             package_providers
-                                .entry(name.clone())
+                                .entry(name_key.clone())
                                 .or_insert_with(|| provider_id.to_string());
                         }
                         for v in versions {
                             if let Ok(version) = v.version.parse::<Version>() {
-                                let dependencies = provider
-                                    .get_dependencies(&name, &v.version)
-                                    .await
-                                    .unwrap_or_default();
+                                let dependencies =
+                                    match provider.get_dependencies(&name, &v.version).await {
+                                        Ok(dependencies) => dependencies,
+                                        Err(err) => {
+                                            dependency_lookup_failures
+                                                .entry(name_key.clone())
+                                                .or_insert_with(|| {
+                                                    format!(
+                                                    "dependency lookup failed for {}@{} via {}: {}",
+                                                    name, v.version, provider_id, err
+                                                )
+                                                });
+                                            Vec::new()
+                                        }
+                                    };
 
                                 for dep in &dependencies {
-                                    if !seen.contains(&dep.name) {
+                                    let dep_key = package_lookup_key(&dep.name);
+                                    if !seen.contains(&dep_key) {
                                         queue.push_back((dep.name.clone(), None));
                                     }
                                 }
@@ -305,7 +361,10 @@ pub async fn resolve_dependencies(
                 .map(|(name, version)| ResolvedPackage {
                     name: name.clone(),
                     version: version.to_string(),
-                    provider: package_providers.get(name).cloned().unwrap_or_default(),
+                    provider: package_providers
+                        .get(&package_lookup_key(name))
+                        .cloned()
+                        .unwrap_or_default(),
                 })
                 .collect();
 
@@ -314,21 +373,26 @@ pub async fn resolve_dependencies(
                 resolution: &'a crate::resolver::Resolution,
                 providers: &'a std::collections::HashMap<String, String>,
                 installed: &'a std::collections::HashMap<String, String>,
+                dependency_failures: &'a std::collections::HashMap<String, String>,
                 registry: &'a ProviderRegistry,
                 depth: usize,
             ) -> BoxFuture<'a, DependencyNode> {
                 Box::pin(async move {
-                    let name_lower = dep.name.to_lowercase();
+                    let name_lower = package_lookup_key(&dep.name);
                     let resolved_version = resolution
                         .get(&dep.name)
                         .map(|v| v.to_string())
                         .unwrap_or_default();
                     let is_installed = installed.contains_key(&name_lower);
-                    let provider_id = providers.get(&dep.name).cloned();
+                    let provider_id = providers.get(&name_lower).cloned();
+                    let conflict_reason = dependency_failures.get(&name_lower).cloned();
+                    let is_conflict = conflict_reason.is_some();
 
                     let child_nodes = if let Some(ref provider_id) = provider_id {
                         if let Some(provider) = registry.get(provider_id) {
-                            if let Ok(dependencies) = provider
+                            if is_conflict {
+                                vec![]
+                            } else if let Ok(dependencies) = provider
                                 .get_dependencies(&dep.name, &resolved_version)
                                 .await
                             {
@@ -338,6 +402,7 @@ pub async fn resolve_dependencies(
                                         resolution,
                                         providers,
                                         installed,
+                                        dependency_failures,
                                         registry,
                                         depth + 1,
                                     )
@@ -361,8 +426,8 @@ pub async fn resolve_dependencies(
                         dependencies: child_nodes,
                         is_direct: depth == 0,
                         is_installed,
-                        is_conflict: false,
-                        conflict_reason: None,
+                        is_conflict,
+                        conflict_reason,
                         depth,
                     }
                 })
@@ -374,6 +439,7 @@ pub async fn resolve_dependencies(
                     &resolution,
                     &package_providers,
                     &installed_packages,
+                    &dependency_lookup_failures,
                     &reg,
                     0,
                 )
@@ -383,17 +449,18 @@ pub async fn resolve_dependencies(
             // Calculate install order (packages not yet installed)
             let install_order: Vec<String> = resolved_packages
                 .iter()
-                .filter(|p| !installed_packages.contains_key(&p.name.to_lowercase()))
+                .filter(|p| !installed_packages.contains_key(&package_lookup_key(&p.name)))
                 .map(|p| p.name.clone())
                 .collect();
 
             let total_packages = resolved_packages.len();
+            let conflicts = build_dependency_lookup_conflicts(&dependency_lookup_failures);
 
             Ok(ResolutionResult {
                 packages: resolved_packages,
                 tree,
-                conflicts: vec![],
-                success: true,
+                conflicts: conflicts.clone(),
+                success: conflicts.is_empty(),
                 install_order,
                 total_packages,
                 total_size: None,
@@ -996,6 +1063,7 @@ pub async fn package_pin(
 ) -> Result<(), String> {
     let (provider, package_name) = parse_package_scope_key(&name);
     let scoped_key = provider
+        .as_ref()
         .map(|provider_id| format!("{provider_id}:{package_name}"))
         .unwrap_or_else(|| package_name.to_string());
 
@@ -1009,7 +1077,7 @@ pub async fn package_pin(
         settings_guard
             .provider_settings
             .pinned_packages
-            .remove(package_name);
+            .remove(&package_name);
     }
 
     // Persist settings to disk
@@ -1025,6 +1093,7 @@ pub async fn package_unpin(
 ) -> Result<(), String> {
     let (provider, package_name) = parse_package_scope_key(&name);
     let scoped_key = provider
+        .as_ref()
         .map(|provider_id| format!("{provider_id}:{package_name}"))
         .unwrap_or_else(|| package_name.to_string());
 
@@ -1038,7 +1107,7 @@ pub async fn package_unpin(
         settings_guard
             .provider_settings
             .pinned_packages
-            .remove(package_name);
+            .remove(&package_name);
     }
 
     // Persist settings to disk
@@ -1072,10 +1141,10 @@ pub async fn package_rollback(
     let (provider_hint, package_name) = parse_package_scope_key(&name);
 
     let provider = if let Some(provider_id) = provider_hint {
-        reg.get(provider_id)
+        reg.get(&provider_id)
             .ok_or_else(|| format!("Provider not found: {}", provider_id))?
     } else {
-        reg.find_for_package(package_name)
+        reg.find_for_package(&package_name)
             .await
             .map_err(|e| e.to_string())?
             .ok_or_else(|| format!("No provider found for: {}", package_name))?
@@ -1085,7 +1154,7 @@ pub async fn package_rollback(
 
     let uninstall_result = provider
         .uninstall(crate::provider::UninstallRequest {
-            name: package_name.to_string(),
+            name: package_name.clone(),
             version: None,
             force: true,
         })
@@ -1093,7 +1162,7 @@ pub async fn package_rollback(
 
     if let Err(err) = uninstall_result {
         let _ = HistoryManager::record_rollback(
-            package_name,
+            &package_name,
             &to_version,
             &provider_id,
             false,
@@ -1105,7 +1174,7 @@ pub async fn package_rollback(
 
     let install_result = provider
         .install(crate::provider::InstallRequest {
-            name: package_name.to_string(),
+            name: package_name.clone(),
             version: Some(to_version.clone()),
             global: true,
             force: true,
@@ -1115,7 +1184,7 @@ pub async fn package_rollback(
     match install_result {
         Ok(_) => {
             let _ = HistoryManager::record_rollback(
-                package_name,
+                &package_name,
                 &to_version,
                 &provider_id,
                 true,
@@ -1128,7 +1197,7 @@ pub async fn package_rollback(
         }
         Err(err) => {
             let _ = HistoryManager::record_rollback(
-                package_name,
+                &package_name,
                 &to_version,
                 &provider_id,
                 false,
@@ -1427,11 +1496,44 @@ mod tests {
     }
 
     #[test]
+    fn dependency_lookup_failures_are_exposed_as_conflicts() {
+        let mut failures = std::collections::HashMap::new();
+        failures.insert(
+            "lodash".to_string(),
+            "dependency lookup failed for lodash@4.17.21 via npm: timeout".to_string(),
+        );
+
+        let conflicts = build_dependency_lookup_conflicts(&failures);
+
+        assert_eq!(conflicts.len(), 1);
+        assert_eq!(conflicts[0].package, "lodash");
+        assert!(conflicts[0]
+            .message
+            .contains("dependency lookup failed for lodash@4.17.21"));
+    }
+
+    #[test]
     fn parse_package_scope_key_extracts_provider_and_name() {
         assert_eq!(
             parse_package_scope_key("npm:typescript"),
-            (Some("npm"), "typescript")
+            (Some("npm".to_string()), "typescript".to_string())
         );
-        assert_eq!(parse_package_scope_key("typescript"), (None, "typescript"));
+        assert_eq!(
+            parse_package_scope_key("  NPM:@types/node "),
+            (Some("npm".to_string()), "@types/node".to_string())
+        );
+        assert_eq!(
+            parse_package_scope_key("@types/node"),
+            (None, "@types/node".to_string())
+        );
+        assert_eq!(
+            parse_package_scope_key("typescript"),
+            (None, "typescript".to_string())
+        );
+    }
+
+    #[test]
+    fn package_lookup_key_normalizes_scoped_name_for_matching() {
+        assert_eq!(package_lookup_key(" @Types/Node "), "@types/node");
     }
 }

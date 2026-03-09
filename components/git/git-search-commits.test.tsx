@@ -39,7 +39,13 @@ describe('GitSearchCommits', () => {
     const searchButton = screen.getByRole('button');
     fireEvent.click(searchButton);
     await waitFor(() => {
-      expect(mockOnSearch).toHaveBeenCalledWith('bug', 'message', 50);
+      expect(mockOnSearch).toHaveBeenCalledWith({
+        query: 'bug',
+        searchType: 'message',
+        limit: 50,
+        skip: 0,
+        append: false,
+      });
     });
   });
 
@@ -88,7 +94,13 @@ describe('GitSearchCommits', () => {
     fireEvent.change(input, { target: { value: 'test' } });
     fireEvent.keyDown(input, { key: 'Enter' });
     await waitFor(() => {
-      expect(mockOnSearch).toHaveBeenCalledWith('test', 'message', 50);
+      expect(mockOnSearch).toHaveBeenCalledWith({
+        query: 'test',
+        searchType: 'message',
+        limit: 50,
+        skip: 0,
+        append: false,
+      });
     });
   });
 
@@ -119,5 +131,42 @@ describe('GitSearchCommits', () => {
       expect(screen.getByText('abc1234')).toBeInTheDocument();
       expect(screen.getByText('def5678')).toBeInTheDocument();
     });
+  });
+
+  it('hides load-more when queryState hasMore is false', async () => {
+    const pagedResults = Array.from({ length: 50 }, (_, index) => ({
+      hash: `hash-${index.toString().padStart(4, '0')}`,
+      parents: [],
+      authorName: 'Tester',
+      authorEmail: 'tester@example.com',
+      date: new Date().toISOString(),
+      message: `result ${index}`,
+    }));
+    mockOnSearch.mockResolvedValueOnce(pagedResults);
+
+    render(
+      <GitSearchCommits
+        onSearch={mockOnSearch}
+        queryState={{
+          query: null,
+          loading: false,
+          empty: false,
+          resultCount: 50,
+          hasMore: false,
+          error: null,
+          updatedAt: null,
+        }}
+      />,
+    );
+
+    const input = screen.getByPlaceholderText('git.search.placeholder');
+    fireEvent.change(input, { target: { value: 'test' } });
+    fireEvent.click(screen.getByRole('button'));
+
+    await waitFor(() => {
+      expect(screen.getByText('result 0')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText('git.history.loadMore')).not.toBeInTheDocument();
   });
 });

@@ -105,6 +105,11 @@ const tauri = jest.requireMock('@/lib/tauri');
 describe('useGit', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    tauri.gitGetConfig.mockResolvedValue([{ key: 'user.name', value: 'Test' }]);
+    tauri.gitGetConfigValue.mockResolvedValue('John Doe');
+    tauri.gitGetConfigFilePath.mockResolvedValue('/home/user/.gitconfig');
+    tauri.gitListAliases.mockResolvedValue([{ key: 'co', value: 'checkout' }]);
+    tauri.gitSetConfigIfUnset.mockResolvedValue(true);
   });
 
   // ===== State initialization =====
@@ -158,6 +163,74 @@ describe('useGit', () => {
       await result.current.refreshConfig();
     });
     expect(result.current.config).toEqual([{ key: 'user.name', value: 'Test' }]);
+  });
+
+  it('getConfigSnapshot uses gitGetConfig map as snapshot-first source', async () => {
+    const { result } = renderHook(() => useGit());
+    let snapshot: Awaited<ReturnType<typeof result.current.getConfigSnapshot>> | undefined;
+    await act(async () => {
+      snapshot = await result.current.getConfigSnapshot();
+    });
+    expect(tauri.gitGetConfig).toHaveBeenCalledTimes(1);
+    expect(snapshot!.values['user.name']).toBe('Test');
+    expect(snapshot!.failures).toEqual([]);
+  });
+
+  it('getConfigValuesBatch reads requested keys and returns value map', async () => {
+    tauri.gitGetConfigValue.mockImplementation((key: string) => {
+      if (key === 'user.name') return Promise.resolve('John Doe');
+      if (key === 'core.autocrlf') return Promise.resolve('true');
+      return Promise.resolve(null);
+    });
+    const { result } = renderHook(() => useGit());
+    let batch: Awaited<ReturnType<typeof result.current.getConfigValuesBatch>> | undefined;
+    await act(async () => {
+      batch = await result.current.getConfigValuesBatch(
+        ['user.name', 'core.autocrlf'],
+        { concurrency: 1 },
+      );
+    });
+    expect(tauri.gitGetConfigValue).toHaveBeenCalledWith('user.name');
+    expect(tauri.gitGetConfigValue).toHaveBeenCalledWith('core.autocrlf');
+    expect(batch!.values['user.name']).toBe('John Doe');
+    expect(batch!.values['core.autocrlf']).toBe('true');
+    expect(batch!.failures).toEqual([]);
+  });
+
+  it('getConfigValuesBatch normalizes timeout errors', async () => {
+    tauri.gitGetConfigValue.mockImplementation((key: string) => {
+      if (key === 'user.name') return Promise.reject('[git:timeout] git config read timed out');
+      return Promise.resolve('true');
+    });
+    const { result } = renderHook(() => useGit());
+    let batch: Awaited<ReturnType<typeof result.current.getConfigValuesBatch>> | undefined;
+    await act(async () => {
+      batch = await result.current.getConfigValuesBatch(
+        ['user.name', 'core.autocrlf'],
+        { concurrency: 1 },
+      );
+    });
+    expect(batch!.failures).toHaveLength(1);
+    expect(batch!.failures[0]).toMatchObject({
+      key: 'user.name',
+      category: 'timeout',
+      recoverable: true,
+    });
+  });
+
+  it('getConfigValuesBatch normalizes parse errors', async () => {
+    tauri.gitGetConfigValue.mockRejectedValueOnce('Provider error: invalid git config parse error');
+    const { result } = renderHook(() => useGit());
+    let batch: Awaited<ReturnType<typeof result.current.getConfigValuesBatch>> | undefined;
+    await act(async () => {
+      batch = await result.current.getConfigValuesBatch(['core.editor'], { concurrency: 1 });
+    });
+    expect(batch!.failures).toHaveLength(1);
+    expect(batch!.failures[0]).toMatchObject({
+      key: 'core.editor',
+      category: 'parse_failed',
+      recoverable: true,
+    });
   });
 
   it('setConfigValue calls tauri and refreshes', async () => {
@@ -615,6 +688,90 @@ describe('useGit', () => {
 
     expect(tauri.gitGetStatus).toHaveBeenCalledTimes(1);
     expect(tauri.gitGetLog).toHaveBeenCalledTimes(1);
+  });
+
+  it('tracks unified log query state and append pagination', async () => {
+    const { result } = renderHook(() => useGit());
+    await act(async () => { await result.current.setRepoPath('/repo'); });
+    tauri.gitGetLog.mockReset();
+    tauri.gitGetLog
+      .mockResolvedValueOnce([
+        { hash: 'a1', parents: [], authorName: 'Dev', authorEmail: 'd@e.com', date: '2025-01-01', message: 'a1' },
+      ])
+      .mockResolvedValueOnce([
+        { hash: 'a2', parents: [], authorName: 'Dev', authorEmail: 'd@e.com', date: '2025-01-02', message: 'a2' },
+      ]);
+
+    await act(async () => {
+      await result.current.getLog({ limit: 1 });
+    });
+    expect(tauri.gitGetLog).toHaveBeenNthCalledWith(
+      1,
+      '/repo',
+      expect.objectContaining({ limit: 1, skip: 0, append: false }),
+    );
+    expect(result.current.historyState.log.query).toEqual(
+      expect.objectContaining({ limit: 1, skip: 0, append: false }),
+    );
+    expect(result.current.historyState.log.resultCount).toBe(1);
+
+    await act(async () => {
+      await result.current.getLog({ limit: 1, append: true });
+    });
+    expect(tauri.gitGetLog).toHaveBeenNthCalledWith(
+      2,
+      '/repo',
+      expect.objectContaining({ limit: 1, skip: 1, append: true }),
+    );
+    expect(result.current.commits).toHaveLength(2);
+    expect(result.current.historyState.log.resultCount).toBe(2);
+  });
+
+  it('classifies invalid path error for file history queries', async () => {
+    tauri.gitGetFileHistory.mockRejectedValueOnce('[git:precondition] git: invalid path: file is outside repository');
+    const { result } = renderHook(() => useGit());
+    await act(async () => { await result.current.setRepoPath('/repo'); });
+
+    let entries: unknown[] = [];
+    await act(async () => {
+      entries = await result.current.getFileHistory({ file: '/other/path/file.ts', limit: 10 });
+    });
+
+    expect(entries).toEqual([]);
+    expect(result.current.historyState.fileHistory.error).toMatchObject({
+      category: 'invalid_path',
+      recoverable: true,
+    });
+  });
+
+  it('tracks search query pagination state with unified contract', async () => {
+    tauri.gitSearchCommits.mockResolvedValueOnce([
+      { hash: 's1', parents: [], authorName: 'Dev', authorEmail: 'd@e.com', date: '2025-01-03', message: 'search one' },
+    ]);
+    const { result } = renderHook(() => useGit());
+    await act(async () => { await result.current.setRepoPath('/repo'); });
+
+    await act(async () => {
+      await result.current.searchCommits({
+        query: 'search',
+        searchType: 'message',
+        limit: 1,
+        skip: 0,
+      });
+    });
+
+    expect(tauri.gitSearchCommits).toHaveBeenCalledWith(
+      '/repo',
+      expect.objectContaining({
+        query: 'search',
+        searchType: 'message',
+        limit: 1,
+        skip: 0,
+      }),
+    );
+    expect(result.current.historyState.search.query).toEqual(
+      expect.objectContaining({ query: 'search', limit: 1, skip: 0 }),
+    );
   });
 
   // ===== NEW: Config value operations =====

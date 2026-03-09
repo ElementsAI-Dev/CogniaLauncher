@@ -538,6 +538,9 @@ pub struct ExternalCacheInfo {
     /// When true, the size field is 0 and a separate size calculation is pending.
     #[serde(default)]
     pub size_pending: bool,
+    /// When true, provider path probing is still in progress for this row.
+    #[serde(default)]
+    pub probe_pending: bool,
     pub detection_state: ExternalCacheDetectionState,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detection_reason: Option<String>,
@@ -566,6 +569,8 @@ static DISCOVERY_CACHE: Lazy<RwLock<HashMap<String, DiscoveryCacheEntry>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
 
 const DISCOVERY_CACHE_TTL_SECS: u64 = 60;
+const FAST_DISCOVERY_PROBE_TIMEOUT_MS: u64 = 450;
+const FAST_DISCOVERY_PROBE_CONCURRENCY: usize = 6;
 
 /// A shared in-flight future for provider size calculations.
 type SharedSizeFuture = Shared<BoxFuture<'static, u64>>;
@@ -1551,86 +1556,141 @@ fn collect_discovery_candidates(
     candidates
 }
 
-fn normalize_discovery_state(
+fn normalize_discovery_state_without_path(
     candidate: &ExternalDiscoveryCandidate,
+) -> Option<(
+    bool,
+    ExternalCacheDetectionState,
+    Option<String>,
+    Option<String>,
+)> {
+    let Some(_) = candidate.cache_path.as_ref() else {
+        if candidate.is_custom {
+            return Some((
+                true,
+                ExternalCacheDetectionState::Error,
+                Some("invalid_path".to_string()),
+                Some("Custom cache path is empty".to_string()),
+            ));
+        }
+
+        if candidate.is_available {
+            return Some((
+                true,
+                ExternalCacheDetectionState::Skipped,
+                Some("path_unresolved".to_string()),
+                None,
+            ));
+        }
+
+        return Some((
+            false,
+            ExternalCacheDetectionState::Unavailable,
+            Some("provider_unavailable".to_string()),
+            None,
+        ));
+    };
+
+    None
+}
+
+async fn probe_discovery_state_with_timeout(
+    candidate: &ExternalDiscoveryCandidate,
+    timeout: Duration,
 ) -> (
     bool,
     ExternalCacheDetectionState,
     Option<String>,
     Option<String>,
 ) {
-    let Some(path) = candidate.cache_path.as_ref() else {
-        if candidate.is_custom {
+    if let Some(result) = normalize_discovery_state_without_path(candidate) {
+        return result;
+    }
+
+    let path = match candidate.cache_path.as_ref() {
+        Some(p) => p.clone(),
+        None => {
             return (
                 true,
                 ExternalCacheDetectionState::Error,
-                Some("invalid_path".to_string()),
-                Some("Custom cache path is empty".to_string()),
+                Some("probe_failed".to_string()),
+                Some("Cache path missing during probe".to_string()),
             );
         }
-
-        if candidate.is_available {
-            return (
-                true,
-                ExternalCacheDetectionState::Skipped,
-                Some("path_unresolved".to_string()),
-                None,
-            );
-        }
-
-        return (
-            false,
-            ExternalCacheDetectionState::Unavailable,
-            Some("provider_unavailable".to_string()),
-            None,
-        );
     };
+    let is_available = candidate.is_available;
+    let is_custom = candidate.is_custom;
+    #[cfg(test)]
+    let provider_id = candidate.provider.clone();
 
-    if !path.exists() {
-        if candidate.is_available || candidate.is_custom {
+    let task = tokio::task::spawn_blocking(move || {
+        #[cfg(test)]
+        if provider_id.contains("__force_timeout__") {
+            std::thread::sleep(Duration::from_millis(30));
+        }
+
+        if !path.exists() {
+            if is_available || is_custom {
+                return (
+                    true,
+                    ExternalCacheDetectionState::Skipped,
+                    Some("path_not_found".to_string()),
+                    None,
+                );
+            }
+
             return (
-                true,
-                ExternalCacheDetectionState::Skipped,
-                Some("path_not_found".to_string()),
+                false,
+                ExternalCacheDetectionState::Unavailable,
+                Some("provider_unavailable".to_string()),
                 None,
             );
         }
 
-        return (
-            false,
-            ExternalCacheDetectionState::Unavailable,
-            Some("provider_unavailable".to_string()),
-            None,
-        );
-    }
+        if !path.is_dir() {
+            return (
+                true,
+                ExternalCacheDetectionState::Error,
+                Some("path_not_directory".to_string()),
+                Some("Resolved cache path is not a directory".to_string()),
+            );
+        }
 
-    if !path.is_dir() {
-        return (
+        if let Err(err) = std::fs::read_dir(&path) {
+            return (
+                true,
+                ExternalCacheDetectionState::Error,
+                Some("path_unreadable".to_string()),
+                Some(err.to_string()),
+            );
+        }
+
+        if is_available {
+            (true, ExternalCacheDetectionState::Found, None, None)
+        } else {
+            (
+                true,
+                ExternalCacheDetectionState::Unavailable,
+                Some("provider_unavailable".to_string()),
+                None,
+            )
+        }
+    });
+
+    match tokio::time::timeout(timeout, task).await {
+        Ok(Ok(result)) => result,
+        Ok(Err(join_err)) => (
             true,
             ExternalCacheDetectionState::Error,
-            Some("path_not_directory".to_string()),
-            Some("Resolved cache path is not a directory".to_string()),
-        );
-    }
-
-    if let Err(err) = std::fs::read_dir(path) {
-        return (
+            Some("probe_failed".to_string()),
+            Some(join_err.to_string()),
+        ),
+        Err(_) => (
             true,
             ExternalCacheDetectionState::Error,
-            Some("path_unreadable".to_string()),
-            Some(err.to_string()),
-        );
-    }
-
-    if candidate.is_available {
-        (true, ExternalCacheDetectionState::Found, None, None)
-    } else {
-        (
-            true,
-            ExternalCacheDetectionState::Unavailable,
-            Some("provider_unavailable".to_string()),
-            None,
-        )
+            Some("probe_timeout".to_string()),
+            Some(format!("Probe timed out after {}ms", timeout.as_millis())),
+        ),
     }
 }
 
@@ -1638,6 +1698,7 @@ fn build_external_cache_info(
     candidate: &ExternalDiscoveryCandidate,
     size: u64,
     size_pending: bool,
+    probe_pending: bool,
     detection_state: ExternalCacheDetectionState,
     detection_reason: Option<String>,
     detection_error: Option<String>,
@@ -1665,10 +1726,29 @@ fn build_external_cache_info(
         can_clean,
         category: candidate.category.clone(),
         size_pending,
+        probe_pending,
         detection_state,
         detection_reason,
         detection_error,
     }
+}
+
+fn build_probe_pending_cache_info(candidate: &ExternalDiscoveryCandidate) -> ExternalCacheInfo {
+    let placeholder_state = if candidate.is_available {
+        ExternalCacheDetectionState::Skipped
+    } else {
+        ExternalCacheDetectionState::Unavailable
+    };
+
+    build_external_cache_info(
+        candidate,
+        0,
+        true,
+        true,
+        placeholder_state,
+        Some("probe_pending".to_string()),
+        None,
+    )
 }
 
 fn sort_external_caches(caches: &mut [ExternalCacheInfo]) {
@@ -1741,15 +1821,20 @@ pub async fn discover_all_caches_full_with_custom(
 ) -> CogniaResult<Vec<ExternalCacheInfo>> {
     let candidates = collect_discovery_candidates(excluded, custom_entries);
 
-    let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(6));
+    let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(
+        FAST_DISCOVERY_PROBE_CONCURRENCY,
+    ));
+    let probe_timeout = Duration::from_millis(FAST_DISCOVERY_PROBE_TIMEOUT_MS);
 
     let futures: Vec<_> = candidates
         .into_iter()
         .map(|candidate| {
             let sem = sem.clone();
+            let probe_timeout = probe_timeout;
             async move {
                 let _permit = sem.acquire().await.ok();
-                let (include, state, reason, error) = normalize_discovery_state(&candidate);
+                let (include, state, reason, error) =
+                    probe_discovery_state_with_timeout(&candidate, probe_timeout).await;
                 if !include {
                     None
                 } else {
@@ -1768,7 +1853,7 @@ pub async fn discover_all_caches_full_with_custom(
                     };
 
                     Some(build_external_cache_info(
-                        &candidate, size, false, state, reason, error,
+                        &candidate, size, false, false, state, reason, error,
                     ))
                 }
             }
@@ -1785,30 +1870,90 @@ pub async fn discover_all_caches_full_with_custom(
 /// Fast discovery: checks availability + path existence only, no size calculation.
 /// Returns instantly (~10ms) with `size_pending: true` for each provider.
 /// Use `calculate_provider_cache_size()` afterward to fill in sizes on demand.
-pub fn discover_all_caches_fast(excluded: &[String]) -> Vec<ExternalCacheInfo> {
-    discover_all_caches_fast_with_custom(excluded, &[])
+pub async fn discover_all_caches_fast(excluded: &[String]) -> Vec<ExternalCacheInfo> {
+    discover_all_caches_fast_with_custom(excluded, &[]).await
 }
 
 /// Fast discovery with custom cache entries included.
-pub fn discover_all_caches_fast_with_custom(
+pub async fn discover_all_caches_fast_with_custom(
     excluded: &[String],
     custom_entries: &[crate::config::settings::CustomCacheEntry],
 ) -> Vec<ExternalCacheInfo> {
     let candidates = collect_discovery_candidates(excluded, custom_entries);
-    let mut caches = Vec::new();
+    let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(
+        FAST_DISCOVERY_PROBE_CONCURRENCY,
+    ));
+    let probe_timeout = Duration::from_millis(FAST_DISCOVERY_PROBE_TIMEOUT_MS);
 
-    for candidate in candidates {
-        let (include, state, reason, error) = normalize_discovery_state(&candidate);
-        if !include {
-            continue;
-        }
-        caches.push(build_external_cache_info(
-            &candidate, 0, true, state, reason, error,
-        ));
-    }
+    let futures: Vec<_> = candidates
+        .into_iter()
+        .map(|candidate| {
+            let sem = sem.clone();
+            let probe_timeout = probe_timeout;
+            async move {
+                let _permit = sem.acquire().await.ok();
+                let (include, state, reason, error) =
+                    probe_discovery_state_with_timeout(&candidate, probe_timeout).await;
+                if !include {
+                    None
+                } else {
+                    Some(build_external_cache_info(
+                        &candidate, 0, true, false, state, reason, error,
+                    ))
+                }
+            }
+        })
+        .collect();
+
+    let results = futures::future::join_all(futures).await;
+    let mut caches: Vec<ExternalCacheInfo> = results.into_iter().flatten().collect();
 
     sort_external_caches(&mut caches);
     caches
+}
+
+/// Return lightweight candidate rows immediately for progressive probing.
+pub fn discover_cache_candidates_with_custom(
+    excluded: &[String],
+    custom_entries: &[crate::config::settings::CustomCacheEntry],
+) -> Vec<ExternalCacheInfo> {
+    let mut candidates = collect_discovery_candidates(excluded, custom_entries)
+        .into_iter()
+        .map(|candidate| build_probe_pending_cache_info(&candidate))
+        .collect::<Vec<_>>();
+    sort_external_caches(&mut candidates);
+    candidates
+}
+
+/// Probe a single provider candidate with bounded timeout.
+pub async fn probe_cache_provider_with_custom(
+    provider_id: &str,
+    excluded: &[String],
+    custom_entries: &[crate::config::settings::CustomCacheEntry],
+) -> CogniaResult<ExternalCacheInfo> {
+    let candidates = collect_discovery_candidates(excluded, custom_entries);
+    let Some(candidate) = candidates
+        .into_iter()
+        .find(|candidate| candidate.provider.eq_ignore_ascii_case(provider_id))
+    else {
+        return Err(CogniaError::Provider(format!(
+            "Unknown or excluded provider: {}",
+            provider_id
+        )));
+    };
+
+    let (include, state, reason, error) = probe_discovery_state_with_timeout(
+        &candidate,
+        Duration::from_millis(FAST_DISCOVERY_PROBE_TIMEOUT_MS),
+    )
+    .await;
+
+    let mut info = build_external_cache_info(&candidate, 0, include, false, state, reason, error);
+    if !include {
+        info.size_pending = false;
+    }
+
+    Ok(info)
 }
 
 fn provider_size_cache_key(provider_id: &str, cache_path: &Path) -> String {
@@ -2018,7 +2163,7 @@ pub async fn discover_all_caches_cached(excluded: &[String]) -> Vec<ExternalCach
 
     // Cache miss or stale — re-discover
     let started = Instant::now();
-    let result = discover_all_caches_fast(excluded);
+    let result = discover_all_caches_fast(excluded).await;
     log::debug!(
         "external_cache_discovery cache miss excluded={} providers={} elapsed_ms={}",
         excluded.len(),
@@ -2067,7 +2212,7 @@ pub async fn discover_all_caches_cached_with_custom(
 
     // Cache miss or stale - re-discover with custom entries
     let started = Instant::now();
-    let result = discover_all_caches_fast_with_custom(excluded, custom_entries);
+    let result = discover_all_caches_fast_with_custom(excluded, custom_entries).await;
     log::debug!(
         "external_cache_discovery_with_custom cache miss excluded={} custom={} providers={} elapsed_ms={}",
         excluded.len(),
@@ -2721,7 +2866,7 @@ mod tests {
             },
         ];
 
-        let fast = discover_all_caches_fast_with_custom(&[], &custom_entries);
+        let fast = discover_all_caches_fast_with_custom(&[], &custom_entries).await;
         let full = discover_all_caches_full_with_custom(&[], &custom_entries)
             .await
             .unwrap();
@@ -2764,7 +2909,7 @@ mod tests {
             },
         ];
 
-        let caches = discover_all_caches_fast_with_custom(&[], &custom_entries);
+        let caches = discover_all_caches_fast_with_custom(&[], &custom_entries).await;
         let ok = caches
             .iter()
             .find(|item| item.provider == "custom_ok")
@@ -2781,6 +2926,45 @@ mod tests {
             Some("path_not_directory")
         );
         assert!(broken.detection_error.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_probe_timeout_is_isolated_per_provider() {
+        let dir = tempfile::tempdir().unwrap();
+        let ok_path = dir.path().join("ok");
+        tokio::fs::create_dir_all(&ok_path).await.unwrap();
+        tokio::fs::write(ok_path.join("sample.bin"), vec![0u8; 8])
+            .await
+            .unwrap();
+
+        let timeout_candidate = ExternalDiscoveryCandidate {
+            provider: "timeout_provider__force_timeout__".to_string(),
+            display_name: "Timeout Provider".to_string(),
+            category: "devtools".to_string(),
+            cache_path: Some(ok_path.clone()),
+            is_available: true,
+            has_clean_command: false,
+            is_custom: true,
+        };
+        let ok_candidate = ExternalDiscoveryCandidate {
+            provider: "ok_provider".to_string(),
+            display_name: "OK Provider".to_string(),
+            category: "devtools".to_string(),
+            cache_path: Some(ok_path),
+            is_available: true,
+            has_clean_command: false,
+            is_custom: true,
+        };
+
+        let (timeout_result, ok_result) = tokio::join!(
+            probe_discovery_state_with_timeout(&timeout_candidate, Duration::from_millis(1)),
+            probe_discovery_state_with_timeout(&ok_candidate, Duration::from_secs(2)),
+        );
+
+        assert_eq!(timeout_result.1, ExternalCacheDetectionState::Error);
+        assert_eq!(timeout_result.2.as_deref(), Some("probe_timeout"));
+        assert_eq!(ok_result.1, ExternalCacheDetectionState::Found);
+        assert!(ok_result.2.is_none());
     }
 
     #[test]

@@ -97,6 +97,8 @@ fn normalize_git_error_message(message: String) -> String {
         || lower.contains("no clone operation in progress")
         || lower.contains("no upstream")
         || lower.contains("set-upstream")
+        || lower.contains("invalid path")
+        || lower.contains("outside repository")
     {
         "precondition"
     } else if lower.contains("conflict")
@@ -334,6 +336,7 @@ pub async fn git_get_repo_info(path: String) -> Result<GitRepoInfo, String> {
 pub async fn git_get_log(
     path: String,
     limit: Option<u32>,
+    skip: Option<u32>,
     author: Option<String>,
     since: Option<String>,
     until: Option<String>,
@@ -343,6 +346,7 @@ pub async fn git_get_log(
         .get_log(
             &path,
             limit.unwrap_or(50),
+            skip.unwrap_or(0),
             author.as_deref(),
             since.as_deref(),
             until.as_deref(),
@@ -403,11 +407,12 @@ pub async fn git_get_file_history(
     path: String,
     file: String,
     limit: Option<u32>,
+    skip: Option<u32>,
 ) -> Result<Vec<GitCommitEntry>, String> {
     get_provider()
-        .get_file_history(&path, &file, limit.unwrap_or(50))
+        .get_file_history(&path, &file, limit.unwrap_or(50), skip.unwrap_or(0))
         .await
-        .map_err(|e| e.to_string())
+        .map_err(map_git_err)
 }
 
 /// Get blame information for a file
@@ -416,7 +421,7 @@ pub async fn git_get_blame(path: String, file: String) -> Result<Vec<GitBlameEnt
     get_provider()
         .get_blame(&path, &file)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(map_git_err)
 }
 
 /// Get detailed information about a specific commit
@@ -591,11 +596,12 @@ pub async fn git_get_file_stats(
     path: String,
     file: String,
     limit: Option<u32>,
+    skip: Option<u32>,
 ) -> Result<Vec<GitFileStatEntry>, String> {
     get_provider()
-        .get_file_stats(&path, &file, limit.unwrap_or(50))
+        .get_file_stats(&path, &file, limit.unwrap_or(50), skip.unwrap_or(0))
         .await
-        .map_err(|e| e.to_string())
+        .map_err(map_git_err)
 }
 
 /// Search commits by message, author, or diff content
@@ -605,6 +611,7 @@ pub async fn git_search_commits(
     query: String,
     search_type: Option<String>,
     limit: Option<u32>,
+    skip: Option<u32>,
 ) -> Result<Vec<GitCommitEntry>, String> {
     get_provider()
         .search_commits(
@@ -612,6 +619,7 @@ pub async fn git_search_commits(
             &query,
             search_type.as_deref().unwrap_or("message"),
             limit.unwrap_or(50),
+            skip.unwrap_or(0),
         )
         .await
         .map_err(map_git_err)
@@ -1297,10 +1305,7 @@ pub async fn git_rebase_continue(path: String) -> Result<String, String> {
 
 #[tauri::command]
 pub async fn git_rebase_skip(path: String) -> Result<String, String> {
-    get_provider()
-        .rebase_skip(&path)
-        .await
-        .map_err(map_git_err)
+    get_provider().rebase_skip(&path).await.map_err(map_git_err)
 }
 
 #[tauri::command]
@@ -1357,10 +1362,7 @@ pub async fn git_resolve_file_mark(path: String, file: String) -> Result<String,
 
 #[tauri::command]
 pub async fn git_merge_abort(path: String) -> Result<String, String> {
-    get_provider()
-        .merge_abort(&path)
-        .await
-        .map_err(map_git_err)
+    get_provider().merge_abort(&path).await.map_err(map_git_err)
 }
 
 #[tauri::command]

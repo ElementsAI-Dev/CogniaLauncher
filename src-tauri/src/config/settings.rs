@@ -659,7 +659,9 @@ impl Settings {
             "open_downloads" => Ok(TrayQuickAction::OpenDownloads),
             "check_updates" => Ok(TrayQuickAction::CheckUpdates),
             "open_logs" => Ok(TrayQuickAction::OpenLogs),
-            _ => Err(CogniaError::Config("Invalid tray quick_action value".into())),
+            _ => Err(CogniaError::Config(
+                "Invalid tray quick_action value".into(),
+            )),
         }
     }
 
@@ -2734,7 +2736,9 @@ mod tests {
         assert_eq!(t.notification_level, TrayNotificationLevel::All);
         assert_eq!(t.click_behavior, TrayClickBehavior::ToggleWindow);
         assert_eq!(t.quick_action, TrayQuickAction::CheckUpdates);
-        assert!(t.notification_events.contains(&TrayNotificationEvent::Updates));
+        assert!(t
+            .notification_events
+            .contains(&TrayNotificationEvent::Updates));
         assert!(t.menu_items.contains(&TrayMenuItemId::ToggleNotifications));
         assert!(t.menu_items.contains(&TrayMenuItemId::Quit));
         assert!(t.menu_priority_items.is_empty());
@@ -2751,7 +2755,10 @@ mod tests {
             s.get_value("tray.click_behavior"),
             Some("toggle_window".into())
         );
-        assert_eq!(s.get_value("tray.quick_action"), Some("check_updates".into()));
+        assert_eq!(
+            s.get_value("tray.quick_action"),
+            Some("check_updates".into())
+        );
         assert_eq!(
             s.get_value("tray.notification_events"),
             Some(r#"["updates","downloads","errors","system"]"#.into())
@@ -2778,7 +2785,10 @@ mod tests {
         assert_eq!(s.tray.quick_action, TrayQuickAction::OpenSettings);
         assert_eq!(
             s.tray.notification_events,
-            vec![TrayNotificationEvent::Errors, TrayNotificationEvent::Updates]
+            vec![
+                TrayNotificationEvent::Errors,
+                TrayNotificationEvent::Updates
+            ]
         );
     }
 
@@ -2843,7 +2853,10 @@ mod tests {
         let mut s = Settings::default();
         s.set_value("tray.notification_events", r#"["unknown"]"#)
             .unwrap();
-        assert_eq!(s.tray.notification_events, TrayNotificationEvent::defaults());
+        assert_eq!(
+            s.tray.notification_events,
+            TrayNotificationEvent::defaults()
+        );
     }
 
     #[test]

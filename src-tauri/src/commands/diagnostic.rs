@@ -1,5 +1,5 @@
 use crate::commands::config::SharedSettings;
-use crate::platform::fs as platform_fs;
+use crate::platform::{fs as platform_fs, PlatformPaths};
 use chrono::Local;
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
@@ -404,17 +404,16 @@ pub fn install_panic_hook() {
 // ---------------------------------------------------------------------------
 
 fn get_default_export_path() -> PathBuf {
-    // Try Desktop, then Downloads, then home
+    // Try Desktop first, then shared default Downloads resolver, then home.
     if let Some(user_dirs) = directories::UserDirs::new() {
         if let Some(desktop) = user_dirs.desktop_dir() {
             return desktop.to_path_buf();
         }
-        if let Some(downloads) = user_dirs.download_dir() {
-            return downloads.to_path_buf();
-        }
-        return user_dirs.home_dir().to_path_buf();
     }
-    PathBuf::from(".")
+
+    PlatformPaths::default_download_dir()
+        .or_else(PlatformPaths::home_dir)
+        .unwrap_or_else(|| PathBuf::from("."))
 }
 
 fn get_crash_reports_dir() -> PathBuf {

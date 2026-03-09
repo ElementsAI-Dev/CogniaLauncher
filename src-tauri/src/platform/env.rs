@@ -351,7 +351,9 @@ pub fn normalize_env_var_key(key: &str) -> CogniaResult<String> {
             "Environment variable key cannot be empty".into(),
         ));
     }
-    if trimmed.chars().any(|ch| ch.is_whitespace()) || trimmed.contains('=') || trimmed.contains('\0')
+    if trimmed.chars().any(|ch| ch.is_whitespace())
+        || trimmed.contains('=')
+        || trimmed.contains('\0')
     {
         return Err(CogniaError::Config(
             "Environment variable key contains invalid characters".into(),

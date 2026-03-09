@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-03-09T00:00:00.000Z",
+  "requiredPluginIds": [
+    "com.cognia.builtin.env-provider-audit",
+    "com.cognia.builtin.pkg-update-advisor",
+    "com.cognia.builtin.file-config-assistant"
+  ],
+  "supportedSdkCapabilities": [
+    "clipboard",
+    "config",
+    "env",
+    "event",
+    "fs",
+    "http",
+    "i18n",
+    "log",
+    "notification",
+    "pkg",
+    "platform",
+    "process",
+    "ui"
+  ],
+  "plugins": [
+    {
+      "id": "com.cognia.builtin.env-provider-audit",
+      "sdkCapabilities": ["env", "platform", "event", "notification"],
+      "expectedPermissions": ["env_read", "notification"],
+      "primaryEntrypoints": ["env_provider_audit"]
+    },
+    {
+      "id": "com.cognia.builtin.pkg-update-advisor",
+      "sdkCapabilities": ["pkg", "clipboard", "notification", "event"],
+      "expectedPermissions": ["pkg_search", "clipboard", "notification"],
+      "primaryEntrypoints": ["pkg_update_advisor"]
+    },
+    {
+      "id": "com.cognia.builtin.file-config-assistant",
+      "sdkCapabilities": ["fs", "config"],
+      "expectedPermissions": ["fs_read", "fs_write", "config_read", "config_write"],
+      "primaryEntrypoints": ["file_config_assistant"]
+    }
+  ]
+}

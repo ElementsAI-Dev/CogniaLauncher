@@ -2531,7 +2531,10 @@ mod tests {
         };
         let result = validate_scaffold_config(&config);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Invalid plugin id"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid plugin id"));
     }
 
     #[test]
@@ -2666,7 +2669,10 @@ mod tests {
         assert!(!plugin_dir.join("contracts").exists());
         assert!(!plugin_dir.join("schemas").exists());
         assert!(!plugin_dir.join("docs").join("validation-guide.md").exists());
-        assert!(!plugin_dir.join("tests").join("contract-validation.test.js").exists());
+        assert!(!plugin_dir
+            .join("tests")
+            .join("contract-validation.test.js")
+            .exists());
         assert!(result
             .files_created
             .iter()
@@ -2685,7 +2691,9 @@ mod tests {
         config.lifecycle_profile = ScaffoldLifecycleProfile::BuiltIn;
         config.language = PluginLanguage::TypeScript;
 
-        let result = scaffold_plugin(&config).await.expect("scaffold built-in plugin");
+        let result = scaffold_plugin(&config)
+            .await
+            .expect("scaffold built-in plugin");
         let plugin_dir = PathBuf::from(&result.plugin_dir);
 
         assert!(plugin_dir.join("catalog-entry.sample.json").exists());

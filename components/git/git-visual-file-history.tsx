@@ -11,7 +11,13 @@ import { isTauri } from '@/lib/tauri';
 import type { GitFileStatEntry } from '@/types/tauri';
 import type { GitVisualFileHistoryProps } from '@/types/git';
 
-export function GitVisualFileHistory({ repoPath, onGetFileStats }: GitVisualFileHistoryProps) {
+const FILE_STATS_PAGE_SIZE = 50;
+
+export function GitVisualFileHistory({
+  repoPath,
+  onGetFileStats,
+  queryState,
+}: GitVisualFileHistoryProps) {
   const { t } = useLocale();
   const [filePath, setFilePath] = useState('');
   const [stats, setStats] = useState<GitFileStatEntry[]>([]);
@@ -35,12 +41,17 @@ export function GitVisualFileHistory({ repoPath, onGetFileStats }: GitVisualFile
     }
   };
 
-  const loadStats = async (file: string) => {
+  const loadStats = async (file: string, append = false) => {
     if (!file.trim()) return;
     setLoading(true);
     try {
-      const result = await onGetFileStats(file.trim(), 50);
-      setStats(result);
+      const result = await onGetFileStats({
+        file: file.trim(),
+        limit: FILE_STATS_PAGE_SIZE,
+        skip: append ? stats.length : 0,
+        append,
+      });
+      setStats((prev) => (append ? [...prev, ...result] : result));
     } finally {
       setLoading(false);
     }
@@ -66,7 +77,7 @@ export function GitVisualFileHistory({ repoPath, onGetFileStats }: GitVisualFile
             placeholder={t('git.history.selectFile')}
             value={filePath}
             onChange={(e) => setFilePath(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && loadStats(filePath)}
+            onKeyDown={(e) => e.key === 'Enter' && loadStats(filePath, false)}
             className="flex-1 font-mono text-xs h-8"
             disabled={loading}
           />
@@ -77,6 +88,11 @@ export function GitVisualFileHistory({ repoPath, onGetFileStats }: GitVisualFile
         </div>
       </CardHeader>
       <CardContent>
+        {queryState?.error && (
+          <p className="text-xs text-destructive text-center pb-2">
+            {queryState.error.message}
+          </p>
+        )}
         {loading ? (
           <div className="flex items-center justify-center py-8">
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -114,6 +130,17 @@ export function GitVisualFileHistory({ repoPath, onGetFileStats }: GitVisualFile
               </BarChart>
             </ResponsiveContainer>
           </div>
+        )}
+        {filePath && chartData.length > 0 && (queryState?.hasMore ?? stats.length >= FILE_STATS_PAGE_SIZE) && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full mt-2 text-xs"
+            onClick={() => loadStats(filePath, true)}
+            disabled={loading}
+          >
+            {t('git.history.loadMore')}
+          </Button>
         )}
       </CardContent>
     </Card>

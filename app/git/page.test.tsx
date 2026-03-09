@@ -21,6 +21,7 @@ const mockLfsRefreshFiles = jest.fn().mockResolvedValue(undefined);
 const mockStashShowDiff = jest.fn().mockResolvedValue('stash diff content');
 const mockResetHead = jest.fn().mockResolvedValue('reset');
 const mockGetAheadBehind = jest.fn().mockResolvedValue({ ahead: 0, behind: 0 });
+const mockGetCommitDetail = jest.fn().mockResolvedValue(null);
 const mockRefreshRepoInfo = jest.fn().mockResolvedValue(undefined);
 const mockRefreshStatus = jest.fn().mockResolvedValue(undefined);
 const mockRefreshBranches = jest.fn().mockResolvedValue(undefined);
@@ -86,6 +87,14 @@ jest.mock('@/hooks/use-git', () => ({
     contributors: [],
     statusFiles: [],
     lastActionResult: null,
+    historyState: {
+      log: { query: null, loading: false, empty: false, resultCount: 0, hasMore: false, error: null, updatedAt: null },
+      search: { query: null, loading: false, empty: false, resultCount: 0, hasMore: false, error: null, updatedAt: null },
+      fileHistory: { query: null, loading: false, empty: false, resultCount: 0, hasMore: false, error: null, updatedAt: null },
+      fileStats: { query: null, loading: false, empty: false, resultCount: 0, hasMore: false, error: null, updatedAt: null },
+      blame: { query: null, loading: false, empty: false, resultCount: 0, hasMore: false, error: null, updatedAt: null },
+      reflog: { query: null, loading: false, empty: false, resultCount: 0, hasMore: false, error: null, updatedAt: null },
+    },
     refreshAll: mockRefreshAll,
     refreshByScopes: mockRefreshGitByScopes,
     setRepoPath: mockSetRepoPath,
@@ -97,7 +106,7 @@ jest.mock('@/hooks/use-git', () => ({
     refreshStashes: jest.fn().mockResolvedValue(undefined),
     refreshContributors: jest.fn().mockResolvedValue(undefined),
     getAheadBehind: mockGetAheadBehind,
-    getCommitDetail: jest.fn().mockResolvedValue(null),
+    getCommitDetail: mockGetCommitDetail,
     getConfigFilePath: jest.fn().mockRejectedValue(new Error('config path unavailable in test')),
     probeConfigEditor: jest.fn().mockResolvedValue({
       available: true,
@@ -343,12 +352,15 @@ jest.mock('@/components/git', () => ({
   ),
   GitReflogCard: ({
     onResetTo,
+    onSelectCommit,
   }: {
     onResetTo?: (hash: string, mode?: string) => Promise<string>;
+    onSelectCommit?: (hash: string) => void;
   }) => (
     <div data-testid="reflog-card">
       reflog
       <button data-testid="reflog-reset" onClick={() => void onResetTo?.('def5678', 'hard')}>reset</button>
+      <button data-testid="reflog-select" onClick={() => onSelectCommit?.('abc1234')}>select</button>
     </div>
   ),
   GitRepoActionBar: () => <div data-testid="repo-action-bar">actions</div>,
@@ -485,6 +497,18 @@ describe('GitPage', () => {
     await waitFor(() => {
       expect(mockResetHead).toHaveBeenCalledWith('hard', 'def5678', true);
       expect(mockRefreshGitByScopes.mock.calls.length).toBeGreaterThan(prevRefreshScopes);
+    });
+  });
+
+  it('uses shared commit selection when reflog entry is selected', async () => {
+    const user = userEvent.setup();
+    await renderGitPage();
+
+    await user.click(screen.getByRole('tab', { name: /history/i }));
+    await user.click(screen.getByTestId('reflog-select'));
+
+    await waitFor(() => {
+      expect(mockGetCommitDetail).toHaveBeenCalledWith('abc1234');
     });
   });
 

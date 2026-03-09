@@ -136,6 +136,34 @@ describe("HealthCheckPanel", () => {
     expect(screen.getByText(/0.*environments.healthCheck.issues/)).toBeInTheDocument();
   });
 
+  it("renders scope state metadata for unavailable targets", () => {
+    mockUseHealthCheck.mockReturnValue({
+      ...defaultMock,
+      systemHealth: {
+        overall_status: "warning",
+        checked_at: new Date().toISOString(),
+        system_issues: [],
+        environments: [
+          {
+            env_type: "python",
+            provider_id: "pyenv",
+            status: "unknown",
+            scope_state: "timeout",
+            scope_reason: "health_check_timeout",
+            issues: [],
+            suggestions: [],
+          },
+        ],
+        package_managers: [],
+      },
+    });
+
+    render(<HealthCheckPanel />);
+    expect(screen.getByText("Timeout")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("python"));
+    expect(screen.getByText("Scope: Timeout (health_check_timeout)")).toBeInTheDocument();
+  });
+
   it("accepts className prop", () => {
     const { container } = render(<HealthCheckPanel className="my-custom" />);
     expect(container.querySelector(".my-custom")).toBeInTheDocument();

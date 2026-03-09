@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useRef, useState, type KeyboardEvent } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardAction } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -22,6 +22,10 @@ import { Settings2, Save, RefreshCw, Plus, Trash2, ChevronDown } from 'lucide-re
 import { toast } from 'sonner';
 import { COMMON_WSL2_SETTINGS, NETWORK_PRESETS, CONFIG_PROFILES } from '@/lib/constants/wsl';
 import { useWslStore } from '@/lib/stores/wsl';
+import {
+  normalizeWslCustomConfigInput,
+  validateWslCustomConfigInput,
+} from '@/lib/wsl/config-validation';
 import type { WslConfigCardProps } from '@/types/wsl';
 
 export function WslConfigCard({
@@ -35,40 +39,70 @@ export function WslConfigCard({
   const [editValue, setEditValue] = useState('');
   const [editSection, setEditSection] = useState('wsl2');
   const [saving, setSaving] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
   const [profileName, setProfileName] = useState('');
+  const customKeyInputRef = useRef<HTMLInputElement | null>(null);
+  const mutationInFlightRef = useRef(false);
   const { customProfiles, addCustomProfile, removeCustomProfile } = useWslStore();
 
   const wsl2Config = config?.['wsl2'] ?? {};
   const experimentalConfig = config?.['experimental'] ?? {};
 
-  const handleSave = async (section: string, key: string, value: string) => {
-    if (!key.trim() || !value.trim()) return;
+  const runWithSaving = useCallback(async (action: () => Promise<void>): Promise<boolean> => {
+    if (mutationInFlightRef.current) return false;
+    mutationInFlightRef.current = true;
     setSaving(true);
     try {
-      await onSetConfig(section, key.trim(), value.trim());
-      toast.success(t('wsl.config.saved'));
-      setEditKey('');
-      setEditValue('');
+      await action();
+      return true;
     } catch (err) {
       toast.error(String(err));
+      return false;
     } finally {
+      mutationInFlightRef.current = false;
       setSaving(false);
     }
-  };
+  }, []);
 
-  const handleRemove = async (section: string, key: string) => {
-    setSaving(true);
-    try {
-      await onSetConfig(section, key);
+  const handleSave = useCallback(
+    async (
+      section: string,
+      key: string,
+      value: string,
+      options?: { clearCustomInputs?: boolean },
+    ): Promise<boolean> => {
+      const normalized = normalizeWslCustomConfigInput({ section, key, value });
+      if (!normalized.key || !normalized.value) return false;
+
+      const saved = await runWithSaving(async () => {
+        await onSetConfig(normalized.section, normalized.key, normalized.value);
+        toast.success(t('wsl.config.saved'));
+      });
+
+      if (saved && options?.clearCustomInputs) {
+        setEditKey('');
+        setEditValue('');
+        setAddError(null);
+        requestAnimationFrame(() => {
+          customKeyInputRef.current?.focus();
+        });
+      }
+
+      return saved;
+    },
+    [onSetConfig, runWithSaving, t],
+  );
+
+  const handleRemove = useCallback(async (section: string, key: string) => {
+    const normalized = normalizeWslCustomConfigInput({ section, key });
+    if (!normalized.key) return;
+    await runWithSaving(async () => {
+      await onSetConfig(normalized.section, normalized.key);
       toast.success(t('wsl.config.removed'));
-    } catch (err) {
-      toast.error(String(err));
-    } finally {
-      setSaving(false);
-    }
-  };
+    });
+  }, [onSetConfig, runWithSaving, t]);
 
-  const handleQuickSet = async (section: string, key: string, value: string) => {
+  const handleQuickSet = useCallback(async (section: string, key: string, value: string) => {
     const setting = COMMON_WSL2_SETTINGS.find((s) => s.key === key && (s.section ?? 'wsl2') === section);
     if (setting?.validate) {
       const error = setting.validate(value);
@@ -78,27 +112,56 @@ export function WslConfigCard({
       }
     }
     await handleSave(section, key, value);
-  };
+  }, [handleSave]);
 
-  const handleApplyPreset = async (presetId: string) => {
+  const handleApplyPreset = useCallback(async (presetId: string) => {
     const preset =
       NETWORK_PRESETS.find((p) => p.id === presetId)
       ?? CONFIG_PROFILES.find((p) => p.id === presetId)
       ?? customProfiles.find((p) => p.id === presetId);
     if (!preset) return;
-    setSaving(true);
-    try {
+    await runWithSaving(async () => {
       for (const s of preset.settings) {
         await onSetConfig(s.section, s.key, s.value);
       }
       toast.success(t('wsl.config.presetApplied'));
       await onRefresh();
-    } catch (err) {
-      toast.error(String(err));
-    } finally {
-      setSaving(false);
+    });
+  }, [customProfiles, onRefresh, onSetConfig, runWithSaving, t]);
+
+  const handleAddCustom = useCallback(async () => {
+    const normalized = normalizeWslCustomConfigInput({
+      section: editSection,
+      key: editKey,
+      value: editValue,
+    });
+    const existingEntries = config?.[normalized.section] ?? null;
+    const validationMessageKey = validateWslCustomConfigInput(normalized, {
+      requireValue: true,
+      existingEntries,
+    });
+    if (validationMessageKey) {
+      setAddError(t(validationMessageKey, {
+        section: normalized.section,
+        key: normalized.key,
+      }));
+      return;
     }
-  };
+
+    setAddError(null);
+    await handleSave(normalized.section, normalized.key, normalized.value, {
+      clearCustomInputs: true,
+    });
+  }, [config, editKey, editSection, editValue, handleSave, t]);
+
+  const handleCustomInputEnter = useCallback(
+    async (event: KeyboardEvent<HTMLInputElement>) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      await handleAddCustom();
+    },
+    [handleAddCustom],
+  );
 
   if (loading && !config) {
     return (
@@ -133,7 +196,7 @@ export function WslConfigCard({
                 variant="ghost"
                 size="icon"
                 onClick={onRefresh}
-                disabled={loading}
+                disabled={loading || saving}
                 className="h-8 w-8"
               >
                 <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
@@ -151,16 +214,16 @@ export function WslConfigCard({
             {allEntries.map(({ section, key, value }) => (
               <div
                 key={`${section}-${key}`}
-                className="flex items-center justify-between rounded-md border px-3 py-2"
+                className="flex items-start justify-between gap-2 rounded-md border px-3 py-2"
               >
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1 pr-2">
                   <div className="flex items-center gap-1.5">
                     <Badge variant="outline" className="text-[10px] shrink-0">
                       {section}
                     </Badge>
                     <span className="text-sm font-medium truncate">{key}</span>
                   </div>
-                  <p className="text-xs text-muted-foreground font-mono mt-0.5 truncate">
+                  <p className="mt-0.5 break-all text-xs text-muted-foreground font-mono">
                     {value}
                   </p>
                 </div>
@@ -232,6 +295,7 @@ export function WslConfigCard({
                     size="icon"
                     className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
                     onClick={() => removeCustomProfile(profile.id)}
+                    disabled={saving}
                   >
                     <Trash2 className="h-3 w-3" />
                   </Button>
@@ -249,7 +313,7 @@ export function WslConfigCard({
                 variant="outline"
                 size="sm"
                 className="h-7 gap-1 text-xs"
-                disabled={!profileName.trim() || !config}
+                disabled={!profileName.trim() || !config || saving}
                 onClick={() => {
                   if (!profileName.trim() || !config) return;
                   const settings: { section: 'wsl2' | 'experimental'; key: string; value: string }[] = [];
@@ -334,6 +398,7 @@ export function WslConfigCard({
                             onCheckedChange={(checked) =>
                               handleQuickSet(sec, setting.key, checked ? 'true' : 'false')
                             }
+                            disabled={saving}
                           />
                           <span className="text-xs text-muted-foreground">
                             {currentValue ?? setting.placeholder}
@@ -343,6 +408,7 @@ export function WslConfigCard({
                         <Select
                           value={currentValue || ''}
                           onValueChange={(val) => handleQuickSet(sec, setting.key, val)}
+                          disabled={saving}
                         >
                           <SelectTrigger className="h-7 text-xs">
                             <SelectValue placeholder={setting.placeholder} />
@@ -361,6 +427,7 @@ export function WslConfigCard({
                             className="h-7 text-xs flex-1"
                             placeholder={currentValue || setting.placeholder}
                             defaultValue={currentValue ?? ''}
+                            disabled={saving}
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') {
                                 const input = e.target as HTMLInputElement;
@@ -377,6 +444,7 @@ export function WslConfigCard({
                             variant="outline"
                             size="icon"
                             className="h-7 w-7 shrink-0"
+                            disabled={saving}
                             onClick={async () => {
                               try {
                                 const { open } = await import('@tauri-apps/plugin-dialog');
@@ -394,6 +462,7 @@ export function WslConfigCard({
                           type={setting.type === 'number' ? 'number' : 'text'}
                           placeholder={currentValue || setting.placeholder}
                           defaultValue={currentValue ?? ''}
+                          disabled={saving}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') {
                               const input = e.target as HTMLInputElement;
@@ -426,46 +495,74 @@ export function WslConfigCard({
             <ChevronDown className="h-3.5 w-3.5 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
           </CollapsibleTrigger>
           <CollapsibleContent>
-          <div className="flex gap-2">
-            <Select value={editSection} onValueChange={setEditSection}>
-              <SelectTrigger className="w-[110px] h-8 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="wsl2">wsl2</SelectItem>
-                <SelectItem value="experimental">experimental</SelectItem>
-              </SelectContent>
-            </Select>
-            <Input
-              className="h-8 text-xs flex-1"
-              placeholder={t('wsl.config.keyPlaceholder')}
-              value={editKey}
-              onChange={(e) => setEditKey(e.target.value)}
-            />
-          </div>
-          <div className="flex gap-2">
-            <Input
-              className="h-8 text-xs flex-1"
-              placeholder={t('wsl.config.valuePlaceholder')}
-              value={editValue}
-              onChange={(e) => setEditValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && editKey && editValue) {
-                  handleSave(editSection, editKey, editValue);
-                }
-              }}
-            />
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 gap-1"
-              disabled={!editKey || !editValue || saving}
-              onClick={() => handleSave(editSection, editKey, editValue)}
+            <div
+              data-testid="wsl-config-custom-form"
+              className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-[minmax(110px,140px)_minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end"
             >
-              {saving ? <Save className="h-3.5 w-3.5 animate-pulse" /> : <Plus className="h-3.5 w-3.5" />}
-              {t('common.add')}
-            </Button>
-          </div>
+              <div className="min-w-0 space-y-1">
+                <Label className="text-xs">{t('wsl.config.sectionLabel')}</Label>
+                <Select
+                  value={editSection}
+                  onValueChange={(value) => {
+                    setEditSection(value);
+                    setAddError(null);
+                  }}
+                  disabled={saving}
+                >
+                  <SelectTrigger className="h-8 w-full text-xs" aria-label={t('wsl.config.sectionLabel')}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="wsl2">wsl2</SelectItem>
+                    <SelectItem value="experimental">experimental</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="min-w-0 space-y-1">
+                <Label className="text-xs">{t('wsl.config.keyLabel')}</Label>
+                <Input
+                  ref={customKeyInputRef}
+                  className="h-8 text-xs"
+                  placeholder={t('wsl.config.keyPlaceholder')}
+                  value={editKey}
+                  disabled={saving}
+                  onChange={(e) => {
+                    setEditKey(e.target.value);
+                    setAddError(null);
+                  }}
+                  onKeyDown={handleCustomInputEnter}
+                />
+              </div>
+              <div className="min-w-0 space-y-1">
+                <Label className="text-xs">{t('wsl.config.valueLabel')}</Label>
+                <Input
+                  className="h-8 text-xs"
+                  placeholder={t('wsl.config.valuePlaceholder')}
+                  value={editValue}
+                  disabled={saving}
+                  onChange={(e) => {
+                    setEditValue(e.target.value);
+                    setAddError(null);
+                  }}
+                  onKeyDown={handleCustomInputEnter}
+                />
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 w-full gap-1 sm:w-auto"
+                disabled={!editKey.trim() || !editValue.trim() || saving}
+                onClick={() => void handleAddCustom()}
+              >
+                {saving ? <Save className="h-3.5 w-3.5 animate-pulse" /> : <Plus className="h-3.5 w-3.5" />}
+                {t('common.add')}
+              </Button>
+            </div>
+            {addError ? (
+              <p className="mt-2 text-xs text-destructive">
+                {addError}
+              </p>
+            ) : null}
           </CollapsibleContent>
         </Collapsible>
 

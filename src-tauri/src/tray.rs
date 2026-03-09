@@ -1603,7 +1603,10 @@ mod tests {
                 TrayMenuItemId::Downloads,
             ],
         });
-        assert_eq!(normalized.items, vec![TrayMenuItemId::Settings, TrayMenuItemId::Quit]);
+        assert_eq!(
+            normalized.items,
+            vec![TrayMenuItemId::Settings, TrayMenuItemId::Quit]
+        );
         assert_eq!(normalized.priority_items, vec![TrayMenuItemId::Settings]);
     }
 
@@ -1704,7 +1707,10 @@ mod tests {
             Some(TrayActionId::OpenDownloadsPage)
         );
         assert_eq!(
-            tray_action_from_click_behavior(TrayClickBehavior::DoNothing, TrayQuickAction::OpenLogs),
+            tray_action_from_click_behavior(
+                TrayClickBehavior::DoNothing,
+                TrayQuickAction::OpenLogs
+            ),
             None
         );
     }

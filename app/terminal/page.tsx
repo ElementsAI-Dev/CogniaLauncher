@@ -108,8 +108,11 @@ export default function TerminalPage() {
         if (terminal.resourceStale.executionPolicy) terminal.fetchExecutionPolicy();
         break;
       case 'proxy':
-        if (terminal.resourceStale.proxyConfig) terminal.loadProxyConfig();
-        if (terminal.resourceStale.proxyEnvVars) terminal.fetchProxyEnvVars();
+        if (terminal.resourceStale.proxyConfig) {
+          terminal.loadProxyConfig();
+        } else if (terminal.resourceStale.proxyEnvVars) {
+          terminal.fetchProxyEnvVars();
+        }
         break;
       case 'envvars':
         if (terminal.resourceStale.shellEnvVars) terminal.fetchShellEnvVars();
@@ -355,7 +358,6 @@ export default function TerminalPage() {
             onNoProxyBlur={terminal.saveNoProxy}
             onRetrySync={() => {
               terminal.loadProxyConfig();
-              terminal.fetchProxyEnvVars();
             }}
             onClearSyncState={terminal.clearProxySyncState}
             loading={terminal.loading}

@@ -46,6 +46,7 @@ function normalizeExternalCacheInfo(cache: ExternalCacheInfo): ExternalCacheInfo
     detectionReason,
     detectionError: cache.detectionError ?? null,
     sizePending: cache.sizePending ?? false,
+    probePending: cache.probePending ?? false,
   };
 }
 
@@ -61,6 +62,39 @@ function makeFailureResult(provider: string, error: string): ExternalCacheCleanR
     freedHuman: '0 B',
     success: false,
     error,
+  };
+}
+
+function createLimiter(limit: number) {
+  let active = 0;
+  const waiters: Array<() => void> = [];
+
+  const acquire = async () => {
+    if (active < limit) {
+      active += 1;
+      return;
+    }
+    await new Promise<void>((resolve) => {
+      waiters.push(resolve);
+    });
+    active += 1;
+  };
+
+  const release = () => {
+    active = Math.max(0, active - 1);
+    const next = waiters.shift();
+    if (next) {
+      next();
+    }
+  };
+
+  return async <T>(task: () => Promise<T>) => {
+    await acquire();
+    try {
+      return await task();
+    } finally {
+      release();
+    }
   };
 }
 
@@ -93,12 +127,11 @@ export function useExternalCache({
   const fetchWaveRef = useRef(0);
   const fetchInFlightRef = useRef<Promise<void> | null>(null);
 
-  const fillSizesProgressively = useCallback(async (items: ExternalCacheInfo[], waveId: number) => {
-    const pending = items.filter((c) => c.sizePending);
-    if (pending.length === 0) return;
+  const fillSizesProgressively = useCallback(async (providers: string[], waveId: number) => {
+    if (providers.length === 0) return;
 
     const { calculateExternalCacheSize } = await import('@/lib/tauri');
-    const queue = pending.map((c) => c.provider);
+    const queue = [...providers];
 
     const CONCURRENCY = 4;
     let idx = 0;
@@ -119,6 +152,7 @@ export function useExternalCache({
                     size,
                     sizeHuman: formatBytes(size),
                     sizePending: false,
+                    probePending: false,
                     canClean: size > 0 || c.canClean,
                     detectionState: c.detectionState === 'skipped' && size > 0 ? 'found' : c.detectionState,
                     detectionError: null,
@@ -135,6 +169,7 @@ export function useExternalCache({
                   ? {
                     ...c,
                     sizePending: false,
+                    probePending: false,
                     detectionState: 'error',
                     detectionReason: c.detectionReason ?? 'size_scan_failed',
                     detectionError: String(err),
@@ -157,28 +192,123 @@ export function useExternalCache({
 
     try {
       const tauri = await import('@/lib/tauri');
-
-      // Phase 1: fast discovery (instant — no size calculation)
-      const fast = await tauri.discoverExternalCachesFast();
-      const normalizedFast = normalizeExternalCaches(fast);
-      if (abortRef.current || fetchWaveRef.current !== waveId) return;
-      setCaches(normalizedFast);
-
-      // Fetch path infos in parallel if needed (already parallelized on backend)
-      if (includePathInfos) {
+      const fetchPathInfos = () => {
+        if (!includePathInfos) return;
         tauri.getExternalCachePaths().then((paths) => {
           if (!abortRef.current && fetchWaveRef.current === waveId) {
             setPathInfos(paths);
           }
         }).catch(() => {});
+      };
+
+      const runLegacyFastFlow = async () => {
+        const fast = await tauri.discoverExternalCachesFast();
+        const normalizedFast = normalizeExternalCaches(fast).map((cache) => ({
+          ...cache,
+          probePending: false,
+        }));
+        if (abortRef.current || fetchWaveRef.current !== waveId) return;
+        setCaches(normalizedFast);
+        fetchPathInfos();
+        if (!abortRef.current && fetchWaveRef.current === waveId) {
+          setLoading(false);
+        }
+        const pendingProviders = normalizedFast
+          .filter((cache) => cache.sizePending)
+          .map((cache) => cache.provider);
+        await fillSizesProgressively(pendingProviders, waveId);
+      };
+
+      const supportsProgressiveProbing = (
+        typeof tauri.discoverExternalCacheCandidates === 'function'
+        && typeof tauri.probeExternalCacheProvider === 'function'
+      );
+
+      if (!supportsProgressiveProbing) {
+        await runLegacyFastFlow();
+        return;
       }
 
+      let candidates: ExternalCacheInfo[] = [];
+      try {
+        candidates = await tauri.discoverExternalCacheCandidates();
+      } catch (candidateErr) {
+        console.warn('Falling back to legacy external cache discovery:', candidateErr);
+        await runLegacyFastFlow();
+        return;
+      }
+
+      const normalizedCandidates = normalizeExternalCaches(candidates).map((cache) => ({
+        ...cache,
+        probePending: cache.probePending ?? true,
+      }));
+      if (abortRef.current || fetchWaveRef.current !== waveId) return;
+      setCaches(normalizedCandidates);
+      fetchPathInfos();
       if (!abortRef.current && fetchWaveRef.current === waveId) {
         setLoading(false);
       }
 
-      // Phase 2: fill in sizes progressively (4 at a time)
-      await fillSizesProgressively(normalizedFast, waveId);
+      const queue = normalizedCandidates.map((cache) => cache.provider);
+      const runSizeLimited = createLimiter(4);
+      const pendingSizeTasks: Promise<unknown>[] = [];
+      const PROBE_CONCURRENCY = 4;
+      let idx = 0;
+
+      async function probeNext(): Promise<void> {
+        while (idx < queue.length) {
+          if (abortRef.current || fetchWaveRef.current !== waveId) return;
+          const provider = queue[idx++];
+          try {
+            const probedRaw = await tauri.probeExternalCacheProvider(provider);
+            const probed = normalizeExternalCacheInfo({
+              ...probedRaw,
+              probePending: false,
+            });
+            setCaches((prev) => {
+              if (fetchWaveRef.current !== waveId) return prev;
+              const index = prev.findIndex((item) => item.provider === provider);
+              if (index === -1) {
+                return [...prev, probed];
+              }
+              const next = [...prev];
+              next[index] = {
+                ...prev[index],
+                ...probed,
+                probePending: false,
+              };
+              return next;
+            });
+
+            if (probed.sizePending) {
+              const sizeTask = runSizeLimited(async () => {
+                await fillSizesProgressively([provider], waveId);
+              });
+              pendingSizeTasks.push(sizeTask);
+            }
+          } catch (probeErr) {
+            setCaches((prev) =>
+              fetchWaveRef.current !== waveId
+                ? prev
+                : prev.map((cache) =>
+                  cache.provider === provider
+                    ? {
+                      ...cache,
+                      probePending: false,
+                      sizePending: false,
+                      detectionState: 'error',
+                      detectionReason: cache.detectionReason ?? 'probe_failed',
+                      detectionError: String(probeErr),
+                    }
+                    : cache,
+                ),
+            );
+          }
+        }
+      }
+
+      await Promise.all(Array.from({ length: PROBE_CONCURRENCY }, () => probeNext()));
+      await Promise.allSettled(pendingSizeTasks);
     } catch (err) {
       console.error('Failed to fetch external caches:', err);
       if (!abortRef.current && fetchWaveRef.current === waveId) {
@@ -356,7 +486,10 @@ export function useExternalCache({
 
   const totalSize = useMemo(() => caches.reduce((sum, cache) => sum + cache.size, 0), [caches]);
   const availableCount = useMemo(() => caches.filter((cache) => cache.isAvailable).length, [caches]);
-  const cleanableCount = useMemo(() => caches.filter((cache) => cache.canClean).length, [caches]);
+  const cleanableCount = useMemo(
+    () => caches.filter((cache) => cache.canClean && !cache.probePending).length,
+    [caches],
+  );
   const grouped = useMemo(() => groupCachesByCategory(caches, 'package_manager'), [caches]);
   const orderedCategories = useMemo(
     () => CACHE_CATEGORY_ORDER.filter((category) => grouped[category]?.length > 0),

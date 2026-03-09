@@ -11,14 +11,24 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import * as tauri from '@/lib/tauri';
 import { getLogicalEnvType, useEnvironmentStore } from '@/lib/stores/environment';
 import { useEnvironmentDetection } from '@/hooks/use-environment-detection';
-import { formatDetectionSource } from '@/lib/environment-detection';
+import { buildProviderDetectionKey, formatDetectionSource } from '@/lib/environment-detection';
 import type { DetectedEnv, EnvironmentDetectionStepProps } from '@/types/onboarding';
+
+function getDetectedRowKey(row: DetectedEnv): string {
+  if (row.detectionKey && row.detectionKey.length > 0) {
+    return row.detectionKey;
+  }
+  if (row.envType && row.envType.length > 0) {
+    return buildProviderDetectionKey(row.envType, row.providerId);
+  }
+  return row.name;
+}
 
 function mergeRetainedSystemRows(previous: DetectedEnv[], next: DetectedEnv[]): DetectedEnv[] {
   const rows = new Map<string, DetectedEnv>();
 
   for (const row of next) {
-    rows.set(row.envType ?? row.name, row);
+    rows.set(getDetectedRowKey(row), row);
   }
 
   for (const row of previous) {
@@ -26,7 +36,7 @@ function mergeRetainedSystemRows(previous: DetectedEnv[], next: DetectedEnv[]): 
       continue;
     }
 
-    const key = row.envType ?? row.name;
+    const key = getDetectedRowKey(row);
     if (!rows.has(key)) {
       rows.set(key, row);
     }
@@ -175,12 +185,16 @@ export function EnvironmentDetectionStep({
     });
   }, [detected, detectedCount, onDetectionSummaryChange]);
 
-  const handleManageEnvironment = useCallback((envType: string) => {
+  const handleManageEnvironment = useCallback((
+    envType: string,
+    providerId?: string,
+  ) => {
     const logicalEnvType = getLogicalEnvType(envType, storeProviders);
     setWorkflowContext({
       envType: logicalEnvType,
       origin: 'onboarding',
       returnHref: '/environments',
+      providerId: providerId ?? null,
       updatedAt: Date.now(),
     });
     router.push(`/environments/${logicalEnvType}`);
@@ -246,7 +260,7 @@ export function EnvironmentDetectionStep({
                   const envType = env.envType;
                   return (
                     <Card
-                      key={env.name}
+                      key={getDetectedRowKey(env)}
                       className="py-0"
                     >
                     <CardContent className="flex items-center gap-3 p-3">
@@ -257,6 +271,9 @@ export function EnvironmentDetectionStep({
                       )}
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-medium">{env.name}</div>
+                        {env.providerName && (
+                          <div className="text-xs text-muted-foreground">{env.providerName}</div>
+                        )}
                         {env.version && (
                           <div className="text-xs text-muted-foreground">{env.version}</div>
                         )}
@@ -294,7 +311,7 @@ export function EnvironmentDetectionStep({
                             variant="ghost"
                             size="sm"
                             className="h-7 px-2 text-xs"
-                            onClick={() => handleManageEnvironment(envType)}
+                            onClick={() => handleManageEnvironment(envType, env.providerId)}
                           >
                             {t('onboarding.envManageAction')}
                           </Button>

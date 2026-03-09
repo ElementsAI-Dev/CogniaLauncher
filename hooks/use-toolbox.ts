@@ -249,6 +249,7 @@ export function useToolbox() {
     searchQuery: store.searchQuery,
     activeToolId: store.activeToolId,
     toolLifecycles: store.toolLifecycles,
+    assistancePanels: store.assistancePanels,
     toggleFavorite: store.toggleFavorite,
     addRecent: store.addRecent,
     setViewMode: store.setViewMode,
@@ -257,6 +258,10 @@ export function useToolbox() {
     setActiveToolId: store.setActiveToolId,
     setToolLifecycle: store.setToolLifecycle,
     clearToolLifecycle: store.clearToolLifecycle,
+    setAssistancePanelCollapsed: store.setAssistancePanelCollapsed,
+    hideAssistancePanel: store.hideAssistancePanel,
+    restoreAssistancePanel: store.restoreAssistancePanel,
+    restoreAllAssistancePanels: store.restoreAllAssistancePanels,
   };
 }
 

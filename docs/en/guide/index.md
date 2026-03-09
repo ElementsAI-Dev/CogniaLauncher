@@ -14,3 +14,9 @@ This section provides detailed documentation for each feature module of CogniaLa
 - **[Settings & Themes](settings.md)** — Personalized configuration and appearance
 - **[Command Palette](command-palette.md)** — Global quick search
 - **[Logging System](logs.md)** — Application log viewing and analysis
+
+## Desktop-First Route Notes
+
+The app shell also includes desktop-first routes such as `/git`, `/envvar`, `/terminal`, and `/health`.
+In Web mode, these routes are expected to show fallback guidance instead of desktop-only controls.
+Keep related docs updates aligned with route behavior changes and E2E route coverage updates.

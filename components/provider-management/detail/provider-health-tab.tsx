@@ -37,7 +37,12 @@ import type {
   HealthStatus,
 } from "@/types/tauri";
 import { cn } from "@/lib/utils";
-import { getStatusIcon, getStatusColor, getStatusTextColor } from "@/lib/provider-utils";
+import {
+  getScopeStateLabel,
+  getStatusIcon,
+  getStatusColor,
+  getStatusTextColor,
+} from "@/lib/provider-utils";
 import { IssueCard } from "@/components/environments/health-check-panel";
 import { toast } from "sonner";
 
@@ -70,6 +75,8 @@ export function ProviderHealthTab({
     const lines = [
       `Provider: ${healthResult.display_name}`,
       `Status: ${healthResult.status}`,
+      `Scope: ${getScopeStateLabel(healthResult.scope_state)}`,
+      `Scope Reason: ${healthResult.scope_reason || "N/A"}`,
       `Version: ${healthResult.version || "N/A"}`,
       `Path: ${healthResult.executable_path || "N/A"}`,
       `Checked: ${new Date(healthResult.checked_at).toLocaleString()}`,
@@ -178,6 +185,11 @@ export function ProviderHealthTab({
                   >
                     {t(`providerDetail.healthStatus.${healthResult.status}`)}
                   </Badge>
+                  {(healthResult.scope_state ?? "available") !== "available" && (
+                    <Badge variant="outline" className="ml-2">
+                      {getScopeStateLabel(healthResult.scope_state)}
+                    </Badge>
+                  )}
                 </div>
               </div>
               <p className="text-xs text-muted-foreground mt-2">
@@ -215,6 +227,22 @@ export function ProviderHealthTab({
                     >
                       {healthResult.executable_path}
                     </p>
+                  </div>
+                </div>
+              )}
+              {(healthResult.scope_state ?? "available") !== "available" && (
+                <div className="flex items-start gap-3 p-3 rounded-lg border sm:col-span-2">
+                  <ShieldCheck className="h-4 w-4 mt-0.5 text-muted-foreground" />
+                  <div>
+                    <p className="text-xs text-muted-foreground">Scope</p>
+                    <p className="text-sm font-medium">
+                      {getScopeStateLabel(healthResult.scope_state)}
+                    </p>
+                    {healthResult.scope_reason && (
+                      <p className="text-xs text-muted-foreground">
+                        {healthResult.scope_reason}
+                      </p>
+                    )}
                   </div>
                 </div>
               )}

@@ -31,6 +31,7 @@ import { useHealthCheck } from "@/hooks/use-health-check";
 import type { HealthStatus } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import {
+  getScopeStateLabel,
   getStatusIcon,
   getStatusColor,
   getStatusTextColor,
@@ -191,6 +192,11 @@ export function HealthCheckPanel({ className }: HealthCheckPanelProps) {
                                 ({env.provider_id})
                               </span>
                             )}
+                            {(env.scope_state ?? "available") !== "available" && (
+                              <Badge variant="outline" className="ml-2">
+                                {getScopeStateLabel(env.scope_state)}
+                              </Badge>
+                            )}
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
@@ -217,6 +223,12 @@ export function HealthCheckPanel({ className }: HealthCheckPanelProps) {
 
                     <CollapsibleContent>
                       <div className="pl-4 pt-2 space-y-2">
+                        {(env.scope_state ?? "available") !== "available" && (
+                          <p className="text-xs text-muted-foreground">
+                            Scope: {getScopeStateLabel(env.scope_state)}
+                            {env.scope_reason ? ` (${env.scope_reason})` : ""}
+                          </p>
+                        )}
                         {/* Suggestions */}
                         {env.suggestions.length > 0 && (
                           <div className="space-y-1">
@@ -293,6 +305,11 @@ export function HealthCheckPanel({ className }: HealthCheckPanelProps) {
                                   v{pm.version}
                                 </span>
                               )}
+                              {(pm.scope_state ?? "available") !== "available" && (
+                                <Badge variant="outline" className="ml-2">
+                                  {getScopeStateLabel(pm.scope_state)}
+                                </Badge>
+                              )}
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
@@ -319,6 +336,12 @@ export function HealthCheckPanel({ className }: HealthCheckPanelProps) {
 
                       <CollapsibleContent>
                         <div className="pl-4 pt-2 space-y-2">
+                          {(pm.scope_state ?? "available") !== "available" && (
+                            <p className="text-xs text-muted-foreground">
+                              Scope: {getScopeStateLabel(pm.scope_state)}
+                              {pm.scope_reason ? ` (${pm.scope_reason})` : ""}
+                            </p>
+                          )}
                           {pm.issues.length > 0 && (
                             <div className="space-y-2">
                               {pm.issues.map((issue, idx) => (

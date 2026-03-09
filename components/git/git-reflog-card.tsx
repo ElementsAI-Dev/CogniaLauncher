@@ -18,7 +18,12 @@ import { formatRelativeDate } from '@/lib/utils/git-date';
 import type { GitReflogEntry } from '@/types/tauri';
 import type { GitReflogCardProps } from '@/types/git';
 
-export function GitReflogCard({ onGetReflog, onResetTo }: GitReflogCardProps) {
+export function GitReflogCard({
+  onGetReflog,
+  onResetTo,
+  onSelectCommit,
+  queryState,
+}: GitReflogCardProps) {
   const { t } = useLocale();
   const [entries, setEntries] = useState<GitReflogEntry[]>([]);
   const [loading, setLoading] = useState(false);
@@ -52,6 +57,11 @@ export function GitReflogCard({ onGetReflog, onResetTo }: GitReflogCardProps) {
         </div>
       </CardHeader>
       <CardContent>
+        {queryState?.error && (
+          <p className="text-xs text-destructive text-center pb-2">
+            {queryState.error.message}
+          </p>
+        )}
         {!loaded && !loading ? (
           <p className="text-xs text-muted-foreground text-center py-6">
             {t('git.reflog.empty')}
@@ -70,7 +80,10 @@ export function GitReflogCard({ onGetReflog, onResetTo }: GitReflogCardProps) {
             {entries.map((entry, i) => (
               <div
                 key={`${entry.selector}-${i}`}
-                className="flex items-center gap-2 text-xs py-1.5 px-1 rounded hover:bg-muted/50"
+                className={`flex items-center gap-2 text-xs py-1.5 px-1 rounded hover:bg-muted/50 ${
+                  onSelectCommit ? 'cursor-pointer' : ''
+                }`}
+                onClick={() => onSelectCommit?.(entry.hash)}
               >
                 <code className="font-mono text-muted-foreground shrink-0 w-14">
                   {entry.hash.slice(0, 7)}
@@ -92,6 +105,7 @@ export function GitReflogCard({ onGetReflog, onResetTo }: GitReflogCardProps) {
                               variant="ghost"
                               size="icon"
                               className="h-5 w-5 shrink-0"
+                              onClick={(e) => e.stopPropagation()}
                             >
                               <RotateCcw className="h-3 w-3" />
                             </Button>

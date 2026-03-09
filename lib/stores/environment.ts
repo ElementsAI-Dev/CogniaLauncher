@@ -235,6 +235,13 @@ export const PROVIDER_ENV_TYPE_MAP: Record<string, string> = {
   'system-dotnet': 'dotnet',
   'system-deno': 'deno',
   'system-bun': 'bun',
+  'system-c': 'c',
+  'system-cpp': 'cpp',
+  msvc: 'cpp',
+  msys2: 'cpp',
+  vcpkg: 'cpp',
+  conan: 'cpp',
+  xmake: 'cpp',
   'sdkman-kotlin': 'kotlin',
   'sdkman-scala': 'scala',
   'sdkman-gradle': 'java',
@@ -261,6 +268,28 @@ export function getLogicalEnvType(
 
 function normalizeEnvType(envType: string): string {
   return envType.trim().toLowerCase();
+}
+
+function normalizeProviderId(providerId?: string | null): string {
+  return (providerId ?? '').trim().toLowerCase();
+}
+
+function matchesEnvironmentIdentity(
+  current: Pick<EnvironmentInfo, 'env_type' | 'provider_id'>,
+  next: Pick<EnvironmentInfo, 'env_type' | 'provider_id'>,
+): boolean {
+  if (normalizeEnvType(current.env_type) !== normalizeEnvType(next.env_type)) {
+    return false;
+  }
+
+  const currentProviderId = normalizeProviderId(current.provider_id);
+  const nextProviderId = normalizeProviderId(next.provider_id);
+
+  if (currentProviderId && nextProviderId) {
+    return currentProviderId === nextProviderId;
+  }
+
+  return true;
 }
 
 type ProviderAlias = Pick<EnvironmentProviderInfo, 'id' | 'env_type'>;
@@ -477,11 +506,11 @@ export const useEnvironmentStore = create<EnvironmentState>()(
       setError: (error) => set({ error }),
       
       updateEnvironment: (env) => set((state) => {
-        const exists = state.environments.some((e) => e.env_type === env.env_type);
+        const exists = state.environments.some((e) => matchesEnvironmentIdentity(e, env));
         if (exists) {
           return {
             environments: state.environments.map((e) =>
-              e.env_type === env.env_type ? env : e
+              matchesEnvironmentIdentity(e, env) ? env : e
             ),
           };
         }

@@ -243,6 +243,7 @@ describe('Git New Cards', () => {
   });
 
   it('renders quick rebase/squash card and supports actions', async () => {
+    const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(true);
     const user = userEvent.setup();
     const onRebase = jest.fn().mockResolvedValue('ok');
     const onSquash = jest.fn().mockResolvedValue('ok');
@@ -253,14 +254,20 @@ describe('Git New Cards', () => {
       />,
     );
 
-    fireEvent.change(screen.getByPlaceholderText('git.interactiveRebase.basePlaceholder'), { target: { value: 'main' } });
-    await user.click(screen.getByRole('button', { name: 'git.quickOps.rebase' }));
-    await waitFor(() => expect(onRebase).toHaveBeenCalledWith('main'));
+    try {
+      fireEvent.change(screen.getByPlaceholderText('git.interactiveRebase.basePlaceholder'), { target: { value: 'main' } });
+      await user.click(screen.getByRole('button', { name: 'git.quickOps.rebase' }));
+      await waitFor(() => expect(onRebase).toHaveBeenCalledWith('main', true));
 
-    fireEvent.change(screen.getByPlaceholderText('git.quickOps.countPlaceholder'), { target: { value: '3' } });
-    fireEvent.change(screen.getByPlaceholderText('git.commit.messagePlaceholder'), { target: { value: 'combine commits' } });
-    await user.click(screen.getByRole('button', { name: 'git.quickOps.squash' }));
-    await waitFor(() => expect(onSquash).toHaveBeenCalledWith(3, 'combine commits'));
+      fireEvent.change(screen.getByPlaceholderText('git.quickOps.countPlaceholder'), { target: { value: '3' } });
+      fireEvent.change(screen.getByPlaceholderText('git.commit.messagePlaceholder'), { target: { value: 'combine commits' } });
+      await user.click(screen.getByRole('button', { name: 'git.quickOps.squash' }));
+      await waitFor(() => expect(onSquash).toHaveBeenCalledWith(3, 'combine commits', true));
+
+      expect(confirmSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      confirmSpy.mockRestore();
+    }
   });
 
   it('renders interactive rebase card and supports preview', async () => {

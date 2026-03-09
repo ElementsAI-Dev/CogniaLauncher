@@ -164,8 +164,11 @@ export interface EnvironmentDetectionStepProps {
 }
 
 export interface DetectedEnv {
+  detectionKey?: string;
   name: string;
   envType?: string;
+  providerId?: string;
+  providerName?: string;
   version: string;
   available: boolean;
   source?: string;

@@ -61,6 +61,16 @@ pnpm tauri dev
 - 快速导航
 - 执行常用操作
 
+### 5. 一级路由速览
+
+应用壳层包含以下一级工作流路由：
+
+- 通用工作流：`/environments`、`/packages`、`/providers`、`/downloads`、`/cache`、`/logs`、`/settings`
+- 桌面优先工作流：`/git`、`/envvar`、`/terminal`、`/health`、`/wsl`
+- 工具与信息路由：`/toolbox`、`/docs`、`/about`
+
+在 Web 模式下，桌面优先路由会展示安全的回退引导，而不是桌面专属操作按钮。
+
 ---
 
 ## 项目结构概览
@@ -73,16 +83,16 @@ CogniaLauncher/
 │   ├── dashboard/            # 仪表板组件
 │   ├── settings/             # 设置组件
 │   └── ...                   # 其他功能组件
-├── hooks/                    # React Hooks（51 个）
+├── hooks/                    # React hooks
 ├── lib/                      # 工具库与状态管理
-│   ├── stores/               # Zustand Stores（9 个）
+│   ├── stores/               # Zustand stores
 │   ├── theme/                # 主题系统
 │   ├── constants/            # 常量定义
 │   └── tauri.ts              # Tauri API 绑定
 ├── messages/                 # i18n 翻译文件
 ├── src-tauri/                # Tauri/Rust 后端
-│   ├── src/commands/         # Tauri 命令（217+）
-│   ├── src/provider/         # Provider 实现（51+）
+│   ├── src/commands/         # Tauri 命令
+│   ├── src/provider/         # Provider 实现
 │   ├── src/core/             # 核心业务逻辑
 │   └── src/cache/            # 缓存系统
 ├── types/                    # TypeScript 类型定义
@@ -94,5 +104,5 @@ CogniaLauncher/
 ## 下一步
 
 - **[配置说明](configuration.md)** — 自定义网络、代理、镜像源等
-- **[使用指南](../guide/dashboard.md)** — 深入了解每个功能模块
+- **[使用指南](../guide/index.md)** — 深入了解每个功能模块
 - **[Provider 列表](../reference/providers-list.md)** — 查看所有支持的包管理器

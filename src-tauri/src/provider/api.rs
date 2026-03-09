@@ -715,6 +715,10 @@ pub fn update_api_client_from_settings(settings: &crate::config::Settings) {
     if let Some(npm_url) = settings.get_mirror_url("npm") {
         client.set_npm_registry(&npm_url);
     }
+
+    if let Some(crates_url) = settings.get_mirror_url("crates") {
+        client.set_crates_registry(&crates_url);
+    }
 }
 
 /// Build an ApiClientConfig from Settings
@@ -727,6 +731,10 @@ pub fn config_from_settings(settings: &crate::config::Settings) -> ApiClientConf
 
     if let Some(npm_url) = settings.get_mirror_url("npm") {
         config.npm_registry_url = npm_url;
+    }
+
+    if let Some(crates_url) = settings.get_mirror_url("crates") {
+        config.crates_registry_url = crates_url;
     }
 
     config
@@ -805,5 +813,16 @@ mod tests {
             pypi_base_url_from_index_url("https://pypi.org"),
             "https://pypi.org"
         );
+    }
+
+    #[test]
+    fn config_from_settings_includes_crates_mirror() {
+        let mut settings = crate::config::Settings::default();
+        settings
+            .set_value("mirrors.crates", "https://rsproxy.cn")
+            .expect("set mirrors.crates");
+
+        let config = config_from_settings(&settings);
+        assert_eq!(config.crates_registry_url, "https://rsproxy.cn");
     }
 }

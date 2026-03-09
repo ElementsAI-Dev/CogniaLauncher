@@ -31,6 +31,29 @@ The following core pages MUST exist in both `docs/en` and `docs/zh`:
 - Reviewers verify docs impact declarations and no-doc-impact justifications.
 - CI runs documentation validation in warning mode during rollout, and will transition to enforce mode after baseline stability.
 
+## Capability Coverage Matrix
+
+The repository MUST keep `docs/documentation-coverage-matrix.json` current for required user-facing and workflow-facing capabilities.
+
+Each capability mapping MUST include:
+
+- `id`: stable kebab-case capability identifier.
+- `owner`: owning team or area.
+- `enPages`: required English docs paths.
+- `zhPages`: required Chinese docs paths.
+
+Capability selection criteria:
+
+- Add or update a capability when a feature changes user-visible behavior or developer workflow.
+- Add or update a capability when command usage, setup steps, or troubleshooting flow changes.
+- Keep capability boundaries outcome-focused (what users/developers do), not implementation-focused.
+
+Maintenance rules:
+
+- If a feature PR updates mapped docs paths, update matrix entries in the same PR.
+- If a feature PR claims no docs impact, include reviewed capability IDs and concrete rationale.
+- Validation must fail when required capability mappings are missing or unresolved.
+
 ## Validation Commands
 
 Run these checks before opening a PR:
@@ -50,7 +73,7 @@ pnpm docs:validate:warn
 A user-facing or workflow-facing change MUST include one of the following:
 
 1. Documentation updates in the same PR, or
-2. A no-doc-impact statement with concrete justification.
+2. A no-doc-impact statement with concrete justification and reviewed capability IDs from `docs/documentation-coverage-matrix.json`.
 
 ## Requirement Coverage Mapping
 
@@ -59,4 +82,6 @@ A user-facing or workflow-facing change MUST include one of the following:
 | Bilingual documentation parity for core sections | `pnpm docs:validate` parity check (`requiredCorePages`) |
 | Documentation links and references are valid | `pnpm docs:validate` internal link + anchor validation |
 | Documentation command examples are verifiable | `pnpm docs:validate` shell command policy checks |
+| Capability-to-doc coverage matrix is maintained | `pnpm docs:validate` coverage matrix structure + required capability checks (`docs/documentation-coverage-matrix.json`) |
+| Capability mappings reference resolvable docs pages | `pnpm docs:validate` mapped path existence checks for EN/ZH pages |
 | Documentation impact review is enforced for feature changes | `.github/pull_request_template.md` docs impact checklist + reviewer justification requirement |

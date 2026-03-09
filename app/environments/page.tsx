@@ -122,8 +122,19 @@ export default function EnvironmentsPage() {
 
   const getEnvByType = (envType: string | null) => {
     if (!envType) return null;
-    return environments.find((e) => e.env_type === envType) || null;
+    const selectedProvider = getSelectedProviderFromStore(envType, envType);
+    return (
+      environments.find((e) => (
+        e.env_type === envType && e.provider_id === selectedProvider
+      ))
+      || environments.find((e) => e.env_type === envType)
+      || null
+    );
   };
+
+  const getEnvironmentIdentityKey = useCallback((
+    env: (typeof environments)[number],
+  ) => `${env.env_type}:${env.provider_id || env.provider || 'unknown'}`, []);
 
   const getEnvKey = useCallback((envType: string) => {
     const provider = availableProviders.find((item) => item.id === envType);
@@ -456,10 +467,14 @@ export default function EnvironmentsPage() {
       ) : (
         <div className={viewMode === 'grid' ? 'grid gap-4 grid-cols-1 lg:grid-cols-2' : 'space-y-3'}>
           {filteredEnvironments.map((env) => (
-            <EnvironmentCardErrorBoundary key={env.env_type} envType={env.env_type} t={t}>
+            <EnvironmentCardErrorBoundary
+              key={getEnvironmentIdentityKey(env)}
+              envType={env.env_type}
+              t={t}
+            >
                 <EnvironmentCard
                   env={env}
-                  detectedVersion={getProjectDetectedForEnv(env.env_type)}
+                  detectedVersion={getProjectDetectedForEnv(env.env_type, env.provider_id)}
                   onInstall={(version, providerId) => handleInstallVersion(env.env_type, version, providerId)}
                   onUninstall={(version) => handleUninstallVersion(env.env_type, version)}
                 onSetGlobal={(version) => handleSetGlobalVersion(env.env_type, version)}

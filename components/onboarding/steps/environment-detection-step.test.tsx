@@ -226,4 +226,42 @@ describe("EnvironmentDetectionStep", () => {
       );
     });
   });
+
+  it("renders provider-distinct rows for the same logical environment", async () => {
+    mockIsTauri.mockReturnValue(true);
+    mockEnvList.mockResolvedValue([]);
+    mockEnvListProviders.mockResolvedValue([]);
+    mockBuildOnboardingDetections.mockReturnValue([
+      {
+        detectionKey: "cpp::msvc",
+        name: "C++",
+        envType: "cpp",
+        providerId: "msvc",
+        providerName: "MSVC",
+        version: "19.40",
+        available: true,
+        scope: "system" as const,
+      },
+      {
+        detectionKey: "cpp::msys2",
+        name: "C++",
+        envType: "cpp",
+        providerId: "msys2",
+        providerName: "MSYS2",
+        version: "13.2",
+        available: true,
+        scope: "system" as const,
+      },
+    ]);
+
+    render(<EnvironmentDetectionStep t={mockT} />);
+
+    await waitFor(() => {
+      expect(screen.getAllByText("C++")).toHaveLength(2);
+      expect(screen.getByText("MSVC")).toBeInTheDocument();
+      expect(screen.getByText("MSYS2")).toBeInTheDocument();
+      expect(screen.getByText("19.40")).toBeInTheDocument();
+      expect(screen.getByText("13.2")).toBeInTheDocument();
+    });
+  });
 });

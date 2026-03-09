@@ -1,4 +1,10 @@
-import { test, expect, navigateTo, CMD_PALETTE_BTN } from './fixtures/app-fixture';
+import {
+  test,
+  expect,
+  navigateTo,
+  openCommandPalette,
+  expectNoFatalOverlay,
+} from './fixtures/app-fixture';
 
 test.describe('Command Palette', () => {
   test('Ctrl+K opens command palette', async ({ appPage }) => {
@@ -9,10 +15,7 @@ test.describe('Command Palette', () => {
   });
 
   test('search filters navigation items', async ({ appPage }) => {
-    // Open palette via button
-    await appPage.locator(CMD_PALETTE_BTN).click();
-    const dialog = appPage.getByRole('dialog');
-    await expect(dialog).toBeVisible();
+    const dialog = await openCommandPalette(appPage);
 
     // Type "set" to filter
     await dialog.getByRole('combobox').fill('Settings');
@@ -21,9 +24,7 @@ test.describe('Command Palette', () => {
   });
 
   test('selecting an item navigates and closes palette', async ({ appPage }) => {
-    await appPage.locator(CMD_PALETTE_BTN).click();
-    const dialog = appPage.getByRole('dialog');
-    await expect(dialog).toBeVisible();
+    const dialog = await openCommandPalette(appPage);
 
     // Click on "About" navigation item
     await dialog.getByRole('option', { name: /about/i }).click();
@@ -46,10 +47,9 @@ test.describe('Log Drawer Shortcut', () => {
   test('Ctrl+Shift+L toggles log drawer', async ({ appPage }) => {
     // Press Ctrl+Shift+L to open log drawer
     await appPage.keyboard.press('Control+Shift+l');
-    // Wait briefly for drawer to appear
-    await appPage.waitForTimeout(300);
     // The page should still be functional (no crash)
-    await expect(appPage.locator('main')).toBeVisible();
+    await expect(appPage.locator('main').last()).toBeVisible();
+    await expectNoFatalOverlay(appPage);
   });
 });
 

@@ -51,7 +51,12 @@ describe('GitFileHistory', () => {
     fireEvent.change(input, { target: { value: 'src/main.ts' } });
     fireEvent.keyDown(input, { key: 'Enter' });
     await waitFor(() => {
-      expect(mockOnGetHistory).toHaveBeenCalledWith('src/main.ts', 50);
+      expect(mockOnGetHistory).toHaveBeenCalledWith({
+        file: 'src/main.ts',
+        limit: 50,
+        skip: 0,
+        append: false,
+      });
     });
   });
 

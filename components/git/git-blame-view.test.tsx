@@ -52,7 +52,7 @@ describe('GitBlameView', () => {
     fireEvent.change(input, { target: { value: 'src/main.ts' } });
     fireEvent.keyDown(input, { key: 'Enter' });
     await waitFor(() => {
-      expect(mockOnGetBlame).toHaveBeenCalledWith('src/main.ts');
+      expect(mockOnGetBlame).toHaveBeenCalledWith({ file: 'src/main.ts' });
     });
   });
 

@@ -1,99 +1,110 @@
-import { test, expect, navigateTo, SIDEBAR } from './fixtures/app-fixture';
+import type { Page } from '@playwright/test';
 
-// Theme and language toggles are in the header bar (app-shell.tsx), NOT inside the sidebar.
-// They use sr-only text: "Toggle theme" / "Toggle language".
-const themeToggleSelector = 'button:has(.sr-only:text-is("Toggle theme"))';
-const langToggleSelector = 'button:has(.sr-only:text-is("Toggle language"))';
+import { test, expect, navigateTo, waitForAppReady, SIDEBAR } from './fixtures/app-fixture';
+
+async function getVisibleSidebar(appPage: Page, isMobile: boolean) {
+  if (isMobile) {
+    const trigger = appPage.locator('[data-sidebar="trigger"]').first();
+    await expect(trigger).toBeVisible();
+    await trigger.click();
+    const mobileSidebar = appPage.locator('[data-sidebar="sidebar"][data-mobile="true"]').first();
+    await expect(mobileSidebar).toBeVisible();
+    return mobileSidebar;
+  }
+
+  const sidebar = appPage.locator(SIDEBAR).first();
+  await expect(sidebar).toBeVisible();
+  return sidebar;
+}
+
+function themeToggle(appPage: Page) {
+  return appPage.getByRole('button', { name: /toggle theme|切换主题/i }).first();
+}
+
+function languageToggle(appPage: Page) {
+  return appPage.getByRole('button', { name: /toggle language|切换语言/i }).first();
+}
 
 test.describe('Theme Switching', () => {
   test('switch to dark mode adds .dark class to html', async ({ appPage }) => {
-    // Click theme toggle button in the header bar
-    const themeToggle = appPage.locator(themeToggleSelector).first();
-    await themeToggle.click();
+    await themeToggle(appPage).click();
 
     // Select "Dark" from dropdown
-    await appPage.getByRole('menuitemradio', { name: /dark/i }).click();
+    await appPage.getByRole('menuitemradio', { name: /dark|深色/i }).click();
 
     // <html> should have class "dark"
     await expect(appPage.locator('html')).toHaveClass(/dark/);
   });
 
   test('switch to light mode removes .dark class', async ({ appPage }) => {
-    // First set dark
-    const themeToggle = appPage.locator(themeToggleSelector).first();
-    await themeToggle.click();
-    await appPage.getByRole('menuitemradio', { name: /dark/i }).click();
+    await themeToggle(appPage).click();
+    await appPage.getByRole('menuitemradio', { name: /dark|深色/i }).click();
     await expect(appPage.locator('html')).toHaveClass(/dark/);
 
-    // Now switch to light
-    await themeToggle.click();
-    await appPage.getByRole('menuitemradio', { name: /light/i }).click();
+    await themeToggle(appPage).click();
+    await appPage.getByRole('menuitemradio', { name: /light|浅色/i }).click();
     await expect(appPage.locator('html')).not.toHaveClass(/dark/);
   });
 
   test('theme persists across navigation', async ({ appPage }) => {
-    // Set dark theme
-    const themeToggle = appPage.locator(themeToggleSelector).first();
-    await themeToggle.click();
-    await appPage.getByRole('menuitemradio', { name: /dark/i }).click();
+    await themeToggle(appPage).click();
+    await appPage.getByRole('menuitemradio', { name: /dark|深色/i }).click();
     await expect(appPage.locator('html')).toHaveClass(/dark/);
 
-    // Navigate to settings
     await navigateTo(appPage, '/settings');
     await expect(appPage.locator('html')).toHaveClass(/dark/);
   });
 
   test('theme persists across page reload', async ({ appPage }) => {
-    // Set dark theme
-    const themeToggle = appPage.locator(themeToggleSelector).first();
-    await themeToggle.click();
-    await appPage.getByRole('menuitemradio', { name: /dark/i }).click();
+    await themeToggle(appPage).click();
+    await appPage.getByRole('menuitemradio', { name: /dark|深色/i }).click();
     await expect(appPage.locator('html')).toHaveClass(/dark/);
 
-    // Reload page
-    await appPage.reload();
-    await appPage.waitForSelector(SIDEBAR, { state: 'visible', timeout: 15_000 });
+    await appPage.reload({ waitUntil: 'domcontentloaded' });
+    await waitForAppReady(appPage);
     await expect(appPage.locator('html')).toHaveClass(/dark/);
   });
 });
 
 test.describe('Locale Switching', () => {
-  test('switch to Chinese changes sidebar labels', async ({ appPage }) => {
-    // Click language toggle button in the header bar
-    const langToggle = appPage.locator(langToggleSelector).first();
-    await langToggle.click();
-
-    // Select Chinese (中文)
+  test('switch to Chinese changes sidebar labels', async ({ appPage, isMobile }) => {
+    await languageToggle(appPage).click();
     await appPage.getByRole('menuitemradio', { name: '中文' }).click();
 
-    // Sidebar should now show Chinese labels — "仪表板" for Dashboard
-    await expect(appPage.locator(SIDEBAR).getByText('仪表板').first()).toBeVisible();
+    const sidebar = await getVisibleSidebar(appPage, isMobile);
+    await expect(sidebar.getByText('仪表盘').first()).toBeVisible();
   });
 
-  test('switch back to English reverts labels', async ({ appPage }) => {
-    // Switch to Chinese first
-    const langToggle = appPage.locator(langToggleSelector).first();
-    await langToggle.click();
+  test('switch back to English reverts labels', async ({ appPage, isMobile }) => {
+    await languageToggle(appPage).click();
     await appPage.getByRole('menuitemradio', { name: '中文' }).click();
-    await expect(appPage.locator(SIDEBAR).getByText('仪表板').first()).toBeVisible();
+    let sidebar = await getVisibleSidebar(appPage, isMobile);
+    await expect(sidebar.getByText('仪表盘').first()).toBeVisible();
 
-    // Switch back to English
-    await langToggle.click();
+    if (isMobile) {
+      const viewport = appPage.viewportSize();
+      if (viewport) {
+        await appPage.mouse.click(viewport.width - 4, 8);
+      } else {
+        await appPage.keyboard.press('Escape');
+      }
+    }
+
+    await languageToggle(appPage).click();
     await appPage.getByRole('menuitemradio', { name: 'English' }).click();
-    await expect(appPage.locator(SIDEBAR).getByText('Dashboard').first()).toBeVisible();
+    sidebar = await getVisibleSidebar(appPage, isMobile);
+    await expect(sidebar.getByText('Dashboard').first()).toBeVisible();
   });
 
-  test('locale persists across navigation', async ({ appPage }) => {
-    // Switch to Chinese
-    const langToggle = appPage.locator(langToggleSelector).first();
-    await langToggle.click();
+  test('locale persists across navigation', async ({ appPage, isMobile }) => {
+    await languageToggle(appPage).click();
     await appPage.getByRole('menuitemradio', { name: '中文' }).click();
-    await expect(appPage.locator(SIDEBAR).getByText('仪表板').first()).toBeVisible();
+    let sidebar = await getVisibleSidebar(appPage, isMobile);
+    await expect(sidebar.getByText('仪表盘').first()).toBeVisible();
 
-    // Navigate to settings
     await navigateTo(appPage, '/settings');
 
-    // Should still be in Chinese
-    await expect(appPage.locator(SIDEBAR).getByText('仪表板').first()).toBeVisible();
+    sidebar = await getVisibleSidebar(appPage, isMobile);
+    await expect(sidebar.getByText('仪表盘').first()).toBeVisible();
   });
 });

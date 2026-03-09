@@ -2,6 +2,8 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { useExternalCache } from './use-external-cache';
 
 const mockIsTauri = jest.fn();
+const mockDiscoverExternalCacheCandidates = jest.fn();
+const mockProbeExternalCacheProvider = jest.fn();
 const mockDiscoverExternalCachesFast = jest.fn();
 const mockCalculateExternalCacheSize = jest.fn();
 const mockGetExternalCachePaths = jest.fn();
@@ -30,6 +32,19 @@ const makeFastCache = (provider: string, sizePending = true) => ({
   sizePending,
 });
 
+const makeCandidate = (provider: string) => ({
+  ...makeFastCache(provider, true),
+  probePending: true,
+  detectionState: 'skipped',
+  detectionReason: 'probe_pending',
+});
+
+const makeProbed = (provider: string, sizePending = true) => ({
+  ...makeFastCache(provider, sizePending),
+  probePending: false,
+  detectionState: 'found',
+});
+
 const flushAsyncEffects = async () => {
   await Promise.resolve();
   await Promise.resolve();
@@ -37,6 +52,10 @@ const flushAsyncEffects = async () => {
 
 jest.mock('@/lib/tauri', () => ({
   isTauri: () => mockIsTauri(),
+  discoverExternalCacheCandidates: (...args: unknown[]) =>
+    mockDiscoverExternalCacheCandidates(...args),
+  probeExternalCacheProvider: (...args: unknown[]) =>
+    mockProbeExternalCacheProvider(...args),
   discoverExternalCachesFast: (...args: unknown[]) => mockDiscoverExternalCachesFast(...args),
   calculateExternalCacheSize: (...args: unknown[]) => mockCalculateExternalCacheSize(...args),
   getExternalCachePaths: (...args: unknown[]) => mockGetExternalCachePaths(...args),
@@ -63,14 +82,16 @@ describe('useExternalCache', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockIsTauri.mockReturnValue(true);
+    mockDiscoverExternalCacheCandidates.mockResolvedValue([makeCandidate('npm')]);
+    mockProbeExternalCacheProvider.mockImplementation(async (provider: string) => makeProbed(provider, true));
     mockDiscoverExternalCachesFast.mockResolvedValue([makeFastCache('npm')]);
     mockCalculateExternalCacheSize.mockResolvedValue(512);
     mockGetExternalCachePaths.mockResolvedValue([]);
   });
 
   it('coalesces overlapping fetch calls into one in-flight request', async () => {
-    const discovery = deferred<ReturnType<typeof makeFastCache>[]>();
-    mockDiscoverExternalCachesFast.mockReturnValueOnce(discovery.promise);
+    const discovery = deferred<ReturnType<typeof makeCandidate>[]>();
+    mockDiscoverExternalCacheCandidates.mockReturnValueOnce(discovery.promise);
 
     const { result } = renderHook(() =>
       useExternalCache({
@@ -87,15 +108,16 @@ describe('useExternalCache', () => {
       await flushAsyncEffects();
     });
 
-    expect(mockDiscoverExternalCachesFast).toHaveBeenCalledTimes(1);
+    expect(mockDiscoverExternalCacheCandidates).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      discovery.resolve([makeFastCache('npm')]);
+      discovery.resolve([makeCandidate('npm')]);
       await Promise.all([p1, p2]);
       await flushAsyncEffects();
     });
 
     await waitFor(() => {
+      expect(mockProbeExternalCacheProvider).toHaveBeenCalledTimes(1);
       expect(mockCalculateExternalCacheSize).toHaveBeenCalledTimes(1);
       expect(result.current.caches[0]?.provider).toBe('npm');
       expect(result.current.caches[0]?.sizePending).toBe(false);
@@ -103,10 +125,10 @@ describe('useExternalCache', () => {
   });
 
   it('runs a new wave only after the current in-flight refresh completes', async () => {
-    const firstDiscovery = deferred<ReturnType<typeof makeFastCache>[]>();
-    mockDiscoverExternalCachesFast
+    const firstDiscovery = deferred<ReturnType<typeof makeCandidate>[]>();
+    mockDiscoverExternalCacheCandidates
       .mockReturnValueOnce(firstDiscovery.promise)
-      .mockResolvedValueOnce([makeFastCache('pnpm')]);
+      .mockResolvedValueOnce([makeCandidate('pnpm')]);
 
     const { result } = renderHook(() =>
       useExternalCache({
@@ -123,10 +145,10 @@ describe('useExternalCache', () => {
       await flushAsyncEffects();
     });
 
-    expect(mockDiscoverExternalCachesFast).toHaveBeenCalledTimes(1);
+    expect(mockDiscoverExternalCacheCandidates).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      firstDiscovery.resolve([makeFastCache('npm')]);
+      firstDiscovery.resolve([makeCandidate('npm')]);
       await Promise.all([p1, p2]);
       await flushAsyncEffects();
     });
@@ -136,7 +158,7 @@ describe('useExternalCache', () => {
       await flushAsyncEffects();
     });
 
-    expect(mockDiscoverExternalCachesFast).toHaveBeenCalledTimes(2);
+    expect(mockDiscoverExternalCacheCandidates).toHaveBeenCalledTimes(2);
     await waitFor(() => {
       expect(result.current.caches[0]?.provider).toBe('pnpm');
     });
@@ -145,7 +167,8 @@ describe('useExternalCache', () => {
   it('keeps pending states visible while background size hydration is running', async () => {
     const sizeDeferred = deferred<number>();
     mockCalculateExternalCacheSize.mockReturnValueOnce(sizeDeferred.promise);
-    mockDiscoverExternalCachesFast.mockResolvedValueOnce([makeFastCache('npm', true)]);
+    mockDiscoverExternalCacheCandidates.mockResolvedValueOnce([makeCandidate('npm')]);
+    mockProbeExternalCacheProvider.mockResolvedValueOnce(makeProbed('npm', true));
 
     const { result } = renderHook(() =>
       useExternalCache({
@@ -162,6 +185,7 @@ describe('useExternalCache', () => {
     await waitFor(() => {
       expect(result.current.loading).toBe(false);
       expect(result.current.caches[0]?.provider).toBe('npm');
+      expect(result.current.caches[0]?.probePending).toBe(false);
       expect(result.current.caches[0]?.sizePending).toBe(true);
     });
 
@@ -178,7 +202,8 @@ describe('useExternalCache', () => {
   });
 
   it('marks provider as error when progressive size calculation fails', async () => {
-    mockDiscoverExternalCachesFast.mockResolvedValueOnce([makeFastCache('npm', true)]);
+    mockDiscoverExternalCacheCandidates.mockResolvedValueOnce([makeCandidate('npm')]);
+    mockProbeExternalCacheProvider.mockResolvedValueOnce(makeProbed('npm', true));
     mockCalculateExternalCacheSize.mockRejectedValueOnce(new Error('size scan failed'));
 
     const { result } = renderHook(() =>
@@ -200,11 +225,58 @@ describe('useExternalCache', () => {
     });
   });
 
+  it('shows completed providers while others remain probe-pending', async () => {
+    const slowProbe = deferred<ReturnType<typeof makeProbed>>();
+    mockDiscoverExternalCacheCandidates.mockResolvedValueOnce([
+      makeCandidate('npm'),
+      makeCandidate('pnpm'),
+    ]);
+    mockProbeExternalCacheProvider.mockImplementation((provider: string) => {
+      if (provider === 'pnpm') {
+        return slowProbe.promise;
+      }
+      return Promise.resolve(makeProbed(provider, true));
+    });
+    mockCalculateExternalCacheSize.mockResolvedValue(256);
+
+    const { result } = renderHook(() =>
+      useExternalCache({
+        t: (key) => key,
+      }),
+    );
+
+    await act(async () => {
+      void result.current.fetchExternalCaches();
+      await flushAsyncEffects();
+    });
+
+    await waitFor(() => {
+      const npm = result.current.caches.find((cache) => cache.provider === 'npm');
+      const pnpm = result.current.caches.find((cache) => cache.provider === 'pnpm');
+      expect(result.current.loading).toBe(false);
+      expect(npm?.probePending).toBe(false);
+      expect(pnpm?.probePending).toBe(true);
+    });
+
+    await act(async () => {
+      slowProbe.resolve(makeProbed('pnpm', true));
+      await flushAsyncEffects();
+    });
+
+    await waitFor(() => {
+      const pnpm = result.current.caches.find((cache) => cache.provider === 'pnpm');
+      expect(pnpm?.probePending).toBe(false);
+    });
+  });
+
   it('ignores stale path info updates from older refresh waves', async () => {
     const firstPathInfos = deferred<Array<{ provider: string; hasCleanCommand: boolean }>>();
-    mockDiscoverExternalCachesFast
-      .mockResolvedValueOnce([makeFastCache('npm')])
-      .mockResolvedValueOnce([makeFastCache('pnpm')]);
+    mockDiscoverExternalCacheCandidates
+      .mockResolvedValueOnce([makeCandidate('npm')])
+      .mockResolvedValueOnce([makeCandidate('pnpm')]);
+    mockProbeExternalCacheProvider
+      .mockResolvedValueOnce(makeProbed('npm'))
+      .mockResolvedValueOnce(makeProbed('pnpm'));
     mockGetExternalCachePaths
       .mockReturnValueOnce(firstPathInfos.promise)
       .mockResolvedValueOnce([{ provider: 'pnpm', hasCleanCommand: true }]);

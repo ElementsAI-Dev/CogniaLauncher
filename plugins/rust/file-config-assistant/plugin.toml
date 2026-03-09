@@ -1,0 +1,35 @@
+[plugin]
+id = "com.cognia.builtin.file-config-assistant"
+name = "File Config Assistant"
+version = "0.1.0"
+description = "Manage reusable profile files and active profile pointers with deterministic config and filesystem actions."
+authors = ["CogniaLauncher Team"]
+tool_contract_version = "1.0.0"
+compatible_cognia_versions = ">=0.1.0"
+
+[[tools]]
+id = "file-config-assistant"
+name_en = "File Config Assistant"
+name_zh = "文件配置助手"
+description_en = "Create/read/delete profile files and manage active profile pointers safely."
+description_zh = "安全地创建/读取/删除配置档案文件，并维护当前激活档案指针。"
+category = "developer"
+keywords = ["config", "profile", "filesystem", "state", "assistant", "automation"]
+icon = "FolderCog"
+entry = "file_config_assistant"
+
+[permissions]
+config_read = true
+config_write = true
+fs_read = ["profiles", "profiles/*"]
+fs_write = ["profiles", "profiles/*"]
+
+[locales.en]
+success = "File config assistant completed."
+invalidInput = "Input must be JSON with valid action and required fields."
+executionFailed = "File config assistant failed due to host capability error."
+
+[locales.zh]
+success = "文件配置助手执行完成。"
+invalidInput = "输入必须是包含合法 action 与必填字段的 JSON。"
+executionFailed = "文件配置助手因主机能力调用失败。"

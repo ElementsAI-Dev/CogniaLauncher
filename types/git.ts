@@ -15,6 +15,8 @@ import type {
   GitConfigEntry,
   GitContributor,
   GitDayActivity,
+  GitHistoryQuery,
+  GitHistoryQueryState,
   GitFileStatEntry,
   GitGraphEntry,
   GitHookInfo,
@@ -42,7 +44,8 @@ export interface GitActivityHeatmapProps {
 
 export interface GitBlameViewProps {
   repoPath: string | null;
-  onGetBlame: (file: string) => Promise<GitBlameEntry[]>;
+  onGetBlame: (file: string | GitHistoryQuery) => Promise<GitBlameEntry[]>;
+  queryState?: GitHistoryQueryState;
 }
 
 export interface GitBranchCardProps {
@@ -97,14 +100,10 @@ export interface GitCommitGraphProps {
 
 export interface GitCommitLogProps {
   commits: GitCommitEntry[];
-  onLoadMore?: (options?: {
-    limit?: number;
-    author?: string;
-    since?: string;
-    until?: string;
-  }) => void;
+  onLoadMore?: (options?: GitHistoryQuery) => void;
   onSelectCommit?: (hash: string) => void;
   selectedHash?: string | null;
+  queryState?: GitHistoryQueryState;
 }
 
 export interface GitConfigCardProps {
@@ -118,7 +117,13 @@ export interface GitConfigCardProps {
 }
 
 export interface GitGlobalSettingsCardProps {
-  onGetConfigValue: (key: string) => Promise<string | null>;
+  onGetConfigSnapshot: () => Promise<GitConfigSnapshotResult>;
+  onGetConfigValuesBatch: (
+    keys: string[],
+    options?: GitConfigReadBatchOptions,
+  ) => Promise<GitConfigBatchReadResult>;
+  onGetConfigFilePath?: () => Promise<string | null>;
+  onOpenConfigLocation?: () => Promise<void>;
   onSetConfig: (key: string, value: string) => Promise<void>;
   onSetConfigIfUnset?: (key: string, value: string) => Promise<boolean>;
   onApplyConfigPlan?: (
@@ -146,8 +151,10 @@ export interface GitDiffViewerProps {
 
 export interface GitFileHistoryProps {
   repoPath: string | null;
-  onGetHistory: (file: string, limit?: number) => Promise<GitCommitEntry[]>;
+  onGetHistory: (file: string | GitHistoryQuery, limit?: number) => Promise<GitCommitEntry[]>;
   onGetCommitDiff?: (hash: string, file?: string, contextLines?: number) => Promise<string>;
+  onSelectCommit?: (hash: string) => void;
+  queryState?: GitHistoryQueryState;
 }
 
 export interface GitMergeDialogProps {
@@ -159,6 +166,8 @@ export interface GitMergeDialogProps {
 export interface GitReflogCardProps {
   onGetReflog: (limit?: number) => Promise<GitReflogEntry[]>;
   onResetTo?: (hash: string, mode?: string) => Promise<string>;
+  onSelectCommit?: (hash: string) => void;
+  queryState?: GitHistoryQueryState;
 }
 
 export interface GitRemoteCardProps {
@@ -182,8 +191,9 @@ export interface GitRepoSelectorProps {
 }
 
 export interface GitSearchCommitsProps {
-  onSearch: (query: string, searchType?: string, limit?: number) => Promise<GitCommitEntry[]>;
+  onSearch: (query: string | GitHistoryQuery, searchType?: string, limit?: number) => Promise<GitCommitEntry[]>;
   onSelectCommit?: (hash: string) => void;
+  queryState?: GitHistoryQueryState;
 }
 
 export interface GitStashListProps {
@@ -227,7 +237,8 @@ export interface GitTagListProps {
 
 export interface GitVisualFileHistoryProps {
   repoPath: string | null;
-  onGetFileStats: (file: string, limit?: number) => Promise<GitFileStatEntry[]>;
+  onGetFileStats: (file: string | GitHistoryQuery, limit?: number) => Promise<GitFileStatEntry[]>;
+  queryState?: GitHistoryQueryState;
 }
 
 // ---------------------------------------------------------------------------
@@ -489,6 +500,44 @@ export interface GitConfigApplySummary {
   skipped: number;
   results: GitConfigApplyResultItem[];
 }
+
+export type GitConfigReadErrorCategory =
+  | 'timeout'
+  | 'execution_failed'
+  | 'parse_failed'
+  | 'unknown';
+
+export interface GitConfigReadFailure {
+  key: string | null;
+  category: GitConfigReadErrorCategory;
+  message: string;
+  recoverable: boolean;
+  nextSteps: string[];
+}
+
+export interface GitConfigSnapshotResult {
+  values: Record<string, string | null>;
+  failures: GitConfigReadFailure[];
+}
+
+export interface GitConfigReadBatchOptions {
+  concurrency?: number;
+}
+
+export interface GitConfigBatchReadResult {
+  values: Record<string, string | null>;
+  failures: GitConfigReadFailure[];
+}
+
+export type GitHistoryView =
+  | 'log'
+  | 'search'
+  | 'fileHistory'
+  | 'fileStats'
+  | 'blame'
+  | 'reflog';
+
+export type GitHistoryState = Record<GitHistoryView, GitHistoryQueryState>;
 
 export type GitRefreshScope =
   | 'repoInfo'

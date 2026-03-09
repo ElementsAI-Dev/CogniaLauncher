@@ -1,4 +1,12 @@
-import { getStatusColor, getAlertVariant, getActionColor, getSeverityIcon, getStatusTextColor, getStatusIcon } from './provider-utils';
+import {
+  getStatusColor,
+  getAlertVariant,
+  getActionColor,
+  getSeverityIcon,
+  getStatusTextColor,
+  getStatusIcon,
+  getScopeStateLabel,
+} from './provider-utils';
 
 describe('getStatusColor', () => {
   it('returns green classes for healthy', () => {
@@ -135,5 +143,18 @@ describe('getStatusIcon', () => {
   it('returns HelpCircle for unknown', () => {
     const icon = getStatusIcon('unknown');
     expect(icon.displayName).toBe('CircleQuestionMark');
+  });
+});
+
+describe('getScopeStateLabel', () => {
+  it('maps scope states to readable labels', () => {
+    expect(getScopeStateLabel('available')).toBe('Available');
+    expect(getScopeStateLabel('unavailable')).toBe('Unavailable');
+    expect(getScopeStateLabel('timeout')).toBe('Timeout');
+    expect(getScopeStateLabel('unsupported')).toBe('Unsupported');
+  });
+
+  it('returns Unknown for missing value', () => {
+    expect(getScopeStateLabel(undefined)).toBe('Unknown');
   });
 });

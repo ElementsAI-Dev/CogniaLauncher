@@ -630,7 +630,10 @@ export default function GitPage() {
           {git.available && (
             <>
               <GitGlobalSettingsCard
-                onGetConfigValue={git.getConfigValue}
+                onGetConfigSnapshot={git.getConfigSnapshot}
+                onGetConfigValuesBatch={git.getConfigValuesBatch}
+                onGetConfigFilePath={git.getConfigFilePath}
+                onOpenConfigLocation={handleOpenConfigLocation}
                 onSetConfig={handleSetConfig}
                 onSetConfigIfUnset={git.setConfigIfUnset}
                 onApplyConfigPlan={handleApplyConfigPlan}
@@ -935,6 +938,7 @@ export default function GitPage() {
                 onLoadMore={(opts) => git.getLog(opts)}
                 onSelectCommit={handleSelectCommit}
                 selectedHash={selectedCommitHash}
+                queryState={git.historyState.log}
               />
             </div>
             <div className="space-y-4">
@@ -962,19 +966,29 @@ export default function GitPage() {
           <GitSearchCommits
             onSearch={git.searchCommits}
             onSelectCommit={handleSelectCommit}
+            queryState={git.historyState.search}
           />
           <GitVisualFileHistory
             repoPath={git.repoPath}
             onGetFileStats={git.getFileStats}
+            queryState={git.historyState.fileStats}
           />
           <GitFileHistory
             repoPath={git.repoPath}
             onGetHistory={git.getFileHistory}
             onGetCommitDiff={git.getCommitDiff}
+            onSelectCommit={handleSelectCommit}
+            queryState={git.historyState.fileHistory}
           />
-          <GitBlameView repoPath={git.repoPath} onGetBlame={git.getBlame} />
+          <GitBlameView
+            repoPath={git.repoPath}
+            onGetBlame={git.getBlame}
+            queryState={git.historyState.blame}
+          />
           <GitReflogCard
             onGetReflog={git.getReflog}
+            onSelectCommit={handleSelectCommit}
+            queryState={git.historyState.reflog}
             onResetTo={async (hash, mode) => {
               const confirmed = window.confirm(t("git.resetAction.confirm"));
               if (!confirmed) return "";

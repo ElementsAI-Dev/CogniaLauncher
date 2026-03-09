@@ -62,6 +62,7 @@ export const DOC_NAV: DocNavItem[] = [
       { title: '添加命令', titleEn: 'Adding Commands', slug: 'development/adding-commands' },
       { title: 'Git 集成矩阵', titleEn: 'Git Integration Matrix', slug: 'development/git-integration-matrix' },
       { title: '测试指南', titleEn: 'Testing', slug: 'development/testing' },
+      { title: '文档质量与同步', titleEn: 'Documentation Quality', slug: 'development/docs-quality' },
       { title: 'CI/CD', titleEn: 'CI/CD', slug: 'development/ci-cd' },
     ],
   },

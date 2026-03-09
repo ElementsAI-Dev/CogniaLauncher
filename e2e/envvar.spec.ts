@@ -10,9 +10,10 @@ test.describe('Env Variables Page', () => {
   });
 
   test('shows fallback state in web mode', async ({ appPage }) => {
-    // In web mode (isTauri()=false), EnvVarPage shows a fallback empty state
-    // with an icon and descriptive text instead of the full variable editor
-    await expect(appPage.locator('main, [class*="p-4"]')).toBeVisible();
+    await expect(appPage.getByText(/Desktop Required|桌面版/i).first()).toBeVisible();
+    await expect(
+      appPage.getByText(/only available in the Cognia desktop application|desktop application/i).first(),
+    ).toBeVisible();
   });
 
   test('does not render desktop envvar tabs in web mode', async ({ appPage }) => {

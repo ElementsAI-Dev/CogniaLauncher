@@ -8,17 +8,35 @@ static SHARED_CLIENT: std::sync::OnceLock<RwLock<Client>> = std::sync::OnceLock:
 
 const USER_AGENT: &str = "CogniaLauncher/0.1.0";
 
-/// Build a `reqwest::Proxy` from a proxy URL string and optional no_proxy bypass list.
-///
-/// Supports http://, https://, and socks5:// URL schemes.
-/// Returns `None` if the URL is empty or invalid.
-pub fn build_proxy(proxy_url: Option<&str>, no_proxy: Option<&str>) -> Option<reqwest::Proxy> {
+fn normalize_proxy_url(proxy_url: Option<&str>) -> Option<String> {
     let url = proxy_url?.trim();
     if url.is_empty() {
         return None;
     }
 
-    match reqwest::Proxy::all(url) {
+    match reqwest::Url::parse(url) {
+        Ok(parsed) => match parsed.scheme() {
+            "http" | "https" | "socks5" | "socks5h" => Some(url.to_string()),
+            scheme => {
+                warn!("Unsupported proxy scheme '{}': {}", scheme, url);
+                None
+            }
+        },
+        Err(e) => {
+            warn!("Invalid proxy URL '{}': {}", url, e);
+            None
+        }
+    }
+}
+
+/// Build a `reqwest::Proxy` from a proxy URL string and optional no_proxy bypass list.
+///
+/// Supports http://, https://, and socks5:// URL schemes.
+/// Returns `None` if the URL is empty or invalid.
+pub fn build_proxy(proxy_url: Option<&str>, no_proxy: Option<&str>) -> Option<reqwest::Proxy> {
+    let url = normalize_proxy_url(proxy_url)?;
+
+    match reqwest::Proxy::all(&url) {
         Ok(mut proxy) => {
             if let Some(np) = no_proxy {
                 let np = np.trim();
@@ -217,6 +235,18 @@ mod tests {
     #[test]
     fn test_build_proxy_with_whitespace_no_proxy() {
         let proxy = build_proxy(Some("http://proxy.example.com:8080"), Some("   "));
+        assert!(proxy.is_some());
+    }
+
+    #[test]
+    fn test_build_proxy_rejects_unsupported_scheme() {
+        let proxy = build_proxy(Some("ftp://proxy.example.com:21"), None);
+        assert!(proxy.is_none());
+    }
+
+    #[test]
+    fn test_build_proxy_trims_url_whitespace() {
+        let proxy = build_proxy(Some("  http://proxy.example.com:8080  "), None);
         assert!(proxy.is_some());
     }
 }

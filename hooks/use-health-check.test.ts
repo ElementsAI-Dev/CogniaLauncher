@@ -333,4 +333,52 @@ describe('useHealthCheck', () => {
     expect(mockHealthCheckFix).toHaveBeenCalledWith('install-provider:fnm', true);
     expect(result.current.lastRemediationResult?.remediation_id).toBe('install-provider:fnm');
   });
+
+  it('should expose normalized scope diagnostics in summary', () => {
+    useHealthCheckStore.setState({
+      systemHealth: {
+        overall_status: 'warning',
+        environments: [
+          {
+            env_type: 'node',
+            provider_id: 'fnm',
+            status: 'unknown',
+            scope_state: 'timeout',
+            scope_reason: 'health_check_timeout',
+            issues: [],
+            suggestions: [],
+            current_version: null,
+            installed_count: null,
+            checked_at: new Date().toISOString(),
+          },
+        ],
+        package_managers: [
+          {
+            provider_id: 'npm',
+            display_name: 'npm',
+            status: 'unknown',
+            scope_state: 'unsupported',
+            scope_reason: 'platform_unsupported',
+            version: null,
+            executable_path: null,
+            issues: [],
+            install_instructions: null,
+            checked_at: new Date().toISOString(),
+          },
+        ],
+        system_issues: [],
+        skipped_providers: [],
+        checked_at: new Date().toISOString(),
+      },
+      lastCheckedAt: Date.now(),
+    });
+
+    const { result } = renderHook(() => useHealthCheck());
+
+    expect(result.current.summary.unavailableScopeCount).toBe(0);
+    expect(result.current.summary.timeoutScopeCount).toBe(1);
+    expect(result.current.summary.unsupportedScopeCount).toBe(1);
+    expect(result.current.summary.unavailableCount).toBe(1);
+    expect(result.current.summary.unavailablePackageManagerCount).toBe(1);
+  });
 });

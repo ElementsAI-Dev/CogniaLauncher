@@ -1,4 +1,9 @@
-import { test, expect, navigateTo } from './fixtures/app-fixture';
+import {
+  test,
+  expect,
+  navigateTo,
+  expectNoFatalOverlay,
+} from './fixtures/app-fixture';
 
 test.describe('About Page', () => {
   test.beforeEach(async ({ appPage }) => {
@@ -17,5 +22,17 @@ test.describe('About Page', () => {
 
   test('license section is visible', async ({ appPage }) => {
     await expect(appPage.getByText(/mit license/i).first()).toBeVisible();
+  });
+
+  test('changelog action opens dialog', async ({ appPage }) => {
+    await appPage.getByRole('button', { name: /changelog/i }).first().click();
+    await expect(appPage.getByRole('dialog')).toBeVisible();
+    await appPage.keyboard.press('Escape');
+  });
+
+  test('page remains stable when actions are triggered in web mode', async ({ appPage }) => {
+    await appPage.getByRole('button', { name: /check for updates/i }).first().click();
+    await expect(appPage.locator('main').last()).toBeVisible();
+    await expectNoFatalOverlay(appPage);
   });
 });

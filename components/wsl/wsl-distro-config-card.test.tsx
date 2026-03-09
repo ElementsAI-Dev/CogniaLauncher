@@ -3,6 +3,13 @@ import userEvent from "@testing-library/user-event";
 import { WslDistroConfigCard } from "./wsl-distro-config-card";
 import type { WslDistroConfig } from "@/types/tauri";
 
+jest.mock("sonner", () => ({
+  toast: {
+    success: jest.fn(),
+    error: jest.fn(),
+  },
+}));
+
 const mockT = (key: string) => {
   const translations: Record<string, string> = {
     "wsl.distroConfig.title": "Distribution Config",
@@ -29,8 +36,18 @@ const mockT = (key: string) => {
     "wsl.distroConfig.gpuEnabledDesc": "GPU access",
     "wsl.distroConfig.useWindowsTimezone": "Windows timezone",
     "wsl.distroConfig.useWindowsTimezoneDesc": "Sync timezone",
+    "wsl.config.sectionLabel": "Section",
+    "wsl.config.keyLabel": "Key",
+    "wsl.config.valueLabel": "Value",
     "wsl.config.keyPlaceholder": "Key",
     "wsl.config.valuePlaceholder": "Value",
+    "wsl.config.validation.sectionRequired": "Section is required.",
+    "wsl.config.validation.keyRequired": "Key is required.",
+    "wsl.config.validation.valueRequired": "Value is required.",
+    "wsl.config.validation.invalidSection": "Section can contain only letters, numbers, ., _, and -.",
+    "wsl.config.validation.invalidKey": "Key can contain only letters, numbers, ., _, and -.",
+    "wsl.config.validation.duplicateKey": "Key already exists in this section.",
+    "common.add": "Add",
     "common.delete": "Delete",
     "common.refresh": "Refresh",
   };
@@ -156,6 +173,17 @@ describe("WslDistroConfigCard", () => {
     expect(lastBtn).toBeDisabled();
   });
 
+  it("uses responsive custom form layout classes", async () => {
+    render(<WslDistroConfigCard {...defaultProps} />);
+    await waitFor(() => {
+      expect(screen.getByText(/Distribution Config/)).toBeInTheDocument();
+    });
+
+    const form = screen.getByTestId("wsl-distro-config-custom-form");
+    expect(form.className).toContain("grid-cols-1");
+    expect(form.className).toContain("sm:grid-cols-[minmax(110px,140px)_minmax(0,1fr)_minmax(0,1fr)_auto]");
+  });
+
   it("add custom setting calls setDistroConfigValue", async () => {
     const mockSetConfig = jest.fn(() => Promise.resolve());
     const mockGetConfig = jest.fn().mockResolvedValue(null);
@@ -184,5 +212,109 @@ describe("WslDistroConfigCard", () => {
         expect(mockSetConfig).toHaveBeenCalledWith("Ubuntu", "wsl2", "memory", "4GB");
       });
     }
+  });
+
+  it("blocks invalid custom key before calling setDistroConfigValue", async () => {
+    const mockSetConfig = jest.fn(() => Promise.resolve());
+    const props = {
+      ...defaultProps,
+      setDistroConfigValue: mockSetConfig,
+    };
+    render(<WslDistroConfigCard {...props} />);
+    await waitFor(() => {
+      expect(screen.getByText(/Distribution Config/)).toBeInTheDocument();
+    });
+
+    const keyInput = screen.getByPlaceholderText("Key");
+    const valueInput = screen.getByPlaceholderText("Value");
+    await userEvent.type(keyInput, "bad key");
+    await userEvent.type(valueInput, "4GB");
+
+    const addBtns = screen.getAllByRole("button", { name: /add/i });
+    const addBtn = addBtns[addBtns.length - 1];
+    if (addBtn) {
+      await userEvent.click(addBtn);
+    }
+
+    expect(mockSetConfig).not.toHaveBeenCalled();
+    expect(screen.getByText(/letters, numbers/)).toBeInTheDocument();
+  });
+
+  it("blocks duplicate custom key in the same section", async () => {
+    const mockSetConfig = jest.fn(() => Promise.resolve());
+    const props = {
+      ...defaultProps,
+      getDistroConfig: jest.fn(() => Promise.resolve({ wsl2: { memory: "4GB" } })),
+      setDistroConfigValue: mockSetConfig,
+    };
+    render(<WslDistroConfigCard {...props} />);
+    await waitFor(() => {
+      expect(screen.getByText(/Distribution Config/)).toBeInTheDocument();
+    });
+
+    const keyInput = screen.getByPlaceholderText("Key");
+    const valueInput = screen.getByPlaceholderText("Value");
+    await userEvent.type(keyInput, "memory");
+    await userEvent.type(valueInput, "8GB");
+
+    const addBtns = screen.getAllByRole("button", { name: /add/i });
+    const addBtn = addBtns[addBtns.length - 1];
+    if (addBtn) {
+      await userEvent.click(addBtn);
+    }
+
+    expect(mockSetConfig).not.toHaveBeenCalled();
+    expect(screen.getByText(/already exists/)).toBeInTheDocument();
+  });
+
+  it("submits custom setting on Enter and follows add validation", async () => {
+    const mockSetConfig = jest.fn(() => Promise.resolve());
+    const props = {
+      ...defaultProps,
+      setDistroConfigValue: mockSetConfig,
+    };
+    render(<WslDistroConfigCard {...props} />);
+    await waitFor(() => {
+      expect(screen.getByText(/Distribution Config/)).toBeInTheDocument();
+    });
+
+    const keyInput = screen.getByPlaceholderText("Key");
+    const valueInput = screen.getByPlaceholderText("Value");
+    await userEvent.type(keyInput, "swap");
+    await userEvent.type(valueInput, "4GB");
+    await userEvent.keyboard("{Enter}");
+
+    await waitFor(() => {
+      expect(mockSetConfig).toHaveBeenCalledWith("Ubuntu", "wsl2", "swap", "4GB");
+    });
+  });
+
+  it("disables add inputs and button during pending save", async () => {
+    let resolveSave: (() => void) | null = null;
+    const mockSetConfig = jest.fn(() => new Promise<void>((resolve) => { resolveSave = resolve; }));
+    const props = {
+      ...defaultProps,
+      setDistroConfigValue: mockSetConfig,
+    };
+    render(<WslDistroConfigCard {...props} />);
+    await waitFor(() => {
+      expect(screen.getByText(/Distribution Config/)).toBeInTheDocument();
+    });
+
+    const keyInput = screen.getByPlaceholderText("Key");
+    const valueInput = screen.getByPlaceholderText("Value");
+    await userEvent.type(keyInput, "swap");
+    await userEvent.type(valueInput, "4GB");
+
+    const addBtns = screen.getAllByRole("button", { name: /add/i });
+    const addBtn = addBtns[addBtns.length - 1];
+    if (addBtn) {
+      await userEvent.click(addBtn);
+      expect(addBtn).toBeDisabled();
+    }
+    expect(keyInput).toBeDisabled();
+    expect(valueInput).toBeDisabled();
+
+    resolveSave?.();
   });
 });

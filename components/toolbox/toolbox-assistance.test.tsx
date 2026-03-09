@@ -1,4 +1,5 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { ToolboxAssistance } from './toolbox-assistance';
 
 let mockToolboxState = {
@@ -6,6 +7,14 @@ let mockToolboxState = {
   recentTools: [],
   favorites: [],
   excludedTools: [],
+  assistancePanels: {
+    history: { collapsed: false, hidden: false },
+    featured: { collapsed: false, hidden: false },
+  },
+  setAssistancePanelCollapsed: jest.fn(),
+  hideAssistancePanel: jest.fn(),
+  restoreAssistancePanel: jest.fn(),
+  restoreAllAssistancePanels: jest.fn(),
   setCategory: jest.fn(),
 };
 
@@ -53,6 +62,14 @@ describe('ToolboxAssistance', () => {
       recentTools: [],
       favorites: [],
       excludedTools: [],
+      assistancePanels: {
+        history: { collapsed: false, hidden: false },
+        featured: { collapsed: false, hidden: false },
+      },
+      setAssistancePanelCollapsed: jest.fn(),
+      hideAssistancePanel: jest.fn(),
+      restoreAssistancePanel: jest.fn(),
+      restoreAllAssistancePanels: jest.fn(),
       setCategory: jest.fn(),
     };
     mockMarketplaceState = {
@@ -72,6 +89,8 @@ describe('ToolboxAssistance', () => {
 
     expect(screen.getByText('toolbox.assistance.starterTitle')).toBeInTheDocument();
     expect(screen.getAllByText('toolbox.assistance.browseMarketplace').length).toBeGreaterThan(0);
+    expect(screen.getByTestId('toolbox-assistance-history')).toBeInTheDocument();
+    expect(screen.getByTestId('toolbox-assistance-featured')).toBeInTheDocument();
   });
 
   it('renders continuation actions after marketplace install', () => {
@@ -90,5 +109,47 @@ describe('ToolboxAssistance', () => {
 
     expect(screen.getByText('toolbox.marketplace.resumeTitle')).toBeInTheDocument();
     expect(screen.getByText('toolbox.marketplace.openInstalledTool')).toBeInTheDocument();
+  });
+
+  it('toggles panel collapsed state via header control', () => {
+    render(<ToolboxAssistance />);
+
+    fireEvent.click(screen.getByTestId('toolbox-assistance-toggle-history'));
+
+    expect(mockToolboxState.setAssistancePanelCollapsed).toHaveBeenCalledWith('history', true);
+  });
+
+  it('hides featured panel via header action', () => {
+    render(<ToolboxAssistance />);
+
+    fireEvent.click(screen.getByTestId('toolbox-assistance-hide-featured'));
+
+    expect(mockToolboxState.hideAssistancePanel).toHaveBeenCalledWith('featured');
+  });
+
+  it('does not render hidden panels', () => {
+    mockToolboxState = {
+      ...mockToolboxState,
+      assistancePanels: {
+        history: { collapsed: false, hidden: true },
+        featured: { collapsed: false, hidden: false },
+      },
+    };
+
+    render(<ToolboxAssistance />);
+
+    expect(screen.queryByTestId('toolbox-assistance-history')).not.toBeInTheDocument();
+    expect(screen.getByTestId('toolbox-assistance-featured')).toBeInTheDocument();
+  });
+
+  it('supports keyboard activation on panel controls', async () => {
+    const user = userEvent.setup();
+    render(<ToolboxAssistance />);
+
+    const toggle = screen.getByTestId('toolbox-assistance-toggle-history');
+    toggle.focus();
+    await user.keyboard('{Enter}');
+
+    expect(mockToolboxState.setAssistancePanelCollapsed).toHaveBeenCalledWith('history', true);
   });
 });

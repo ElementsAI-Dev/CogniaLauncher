@@ -4,8 +4,8 @@ use crate::core::Orchestrator;
 use crate::platform::env::{current_platform, Platform};
 use crate::provider::{
     support::{
-        provider_unavailable_reason, update_support_reason, SUPPORT_STATUS_SUPPORTED,
-        SUPPORT_STATUS_UNSUPPORTED,
+        classify_provider_scope, provider_health_probe_timeout, update_support_reason,
+        ProviderAvailabilityProbe, SUPPORT_STATUS_SUPPORTED, SUPPORT_STATUS_UNSUPPORTED,
     },
     Capability, InstalledFilter, InstalledPackage, PackageInfo, PackageSummary, ProviderRegistry,
     SearchOptions,
@@ -347,12 +347,58 @@ pub struct ProviderStatusInfo {
     pub display_name: String,
     pub installed: bool,
     pub platforms: Vec<Platform>,
+    pub scope_state: String,
+    pub scope_reason: Option<String>,
     pub status: String,
     pub reason: Option<String>,
     pub reason_code: Option<String>,
     pub update_supported: bool,
     pub update_reason: Option<String>,
     pub update_reason_code: Option<String>,
+}
+
+fn build_provider_status_info(
+    info: crate::provider::ProviderInfo,
+    platform: Platform,
+    availability: ProviderAvailabilityProbe,
+) -> ProviderStatusInfo {
+    let installed = availability.is_available();
+    let supported_platforms = info.platforms.clone();
+    let capability_set = info
+        .capabilities
+        .iter()
+        .copied()
+        .collect::<std::collections::HashSet<Capability>>();
+    let update_support = update_support_reason(platform, &supported_platforms, &capability_set);
+    let (scope, runtime_reason) =
+        classify_provider_scope(platform, &supported_platforms, availability);
+
+    ProviderStatusInfo {
+        id: info.id,
+        display_name: info.display_name,
+        installed,
+        platforms: supported_platforms,
+        scope_state: scope.as_health_scope_state().to_string(),
+        scope_reason: runtime_reason.as_ref().map(|r| r.code.to_string()),
+        status: if scope.is_available() {
+            SUPPORT_STATUS_SUPPORTED.into()
+        } else {
+            SUPPORT_STATUS_UNSUPPORTED.into()
+        },
+        reason: runtime_reason.as_ref().map(|r| r.message.clone()),
+        reason_code: runtime_reason.as_ref().map(|r| r.code.to_string()),
+        update_supported: scope.is_available() && update_support.is_none(),
+        update_reason: if !scope.is_available() {
+            runtime_reason.as_ref().map(|r| r.message.clone())
+        } else {
+            update_support.as_ref().map(|r| r.message.clone())
+        },
+        update_reason_code: if !scope.is_available() {
+            runtime_reason.as_ref().map(|r| r.code.to_string())
+        } else {
+            update_support.as_ref().map(|r| r.code.to_string())
+        },
+    }
 }
 
 #[tauri::command]
@@ -381,62 +427,30 @@ pub async fn provider_status_all(
             .into_iter()
             .map(|info| {
                 let provider = reg.get(&info.id);
-                (info, provider)
+                let is_api_provider = reg.get_api_provider_config(&info.id).is_some();
+                (info, provider, is_api_provider)
             })
             .collect();
         drop(reg);
 
-        let futures = to_check.into_iter().map(|(info, provider)| async move {
-            let installed = match provider {
-                Some(p) => p.is_available().await,
-                None => false,
-            };
-            let supported_platforms = info.platforms.clone();
-            let capability_set = info
-                .capabilities
-                .iter()
-                .copied()
-                .collect::<std::collections::HashSet<Capability>>();
-            let update_support =
-                update_support_reason(platform, &supported_platforms, &capability_set);
-            let runtime_reason = if supported_platforms.contains(&platform) {
-                if installed {
-                    None
-                } else {
-                    Some(provider_unavailable_reason())
-                }
-            } else {
-                Some(crate::provider::support::SupportReason {
-                    code: crate::provider::support::REASON_PLATFORM_UNSUPPORTED,
-                    message: format!("provider not supported on {}", platform.as_str()),
-                })
-            };
-
-            ProviderStatusInfo {
-                id: info.id,
-                display_name: info.display_name,
-                installed,
-                platforms: supported_platforms,
-                status: if runtime_reason.is_none() {
-                    SUPPORT_STATUS_SUPPORTED.into()
-                } else {
-                    SUPPORT_STATUS_UNSUPPORTED.into()
-                },
-                reason: runtime_reason.as_ref().map(|r| r.message.clone()),
-                reason_code: runtime_reason.as_ref().map(|r| r.code.to_string()),
-                update_supported: update_support.is_none() && installed,
-                update_reason: if !installed {
-                    Some(provider_unavailable_reason().message)
-                } else {
-                    update_support.as_ref().map(|r| r.message.clone())
-                },
-                update_reason_code: if !installed {
-                    Some(provider_unavailable_reason().code.to_string())
-                } else {
-                    update_support.as_ref().map(|r| r.code.to_string())
-                },
-            }
-        });
+        let futures = to_check
+            .into_iter()
+            .map(|(info, provider, is_api_provider)| async move {
+                let availability = match provider {
+                    Some(p) => {
+                        let timeout_budget =
+                            provider_health_probe_timeout(&info.id, is_api_provider);
+                        match tokio::time::timeout(timeout_budget, p.is_available()).await {
+                            Ok(true) => ProviderAvailabilityProbe::Available,
+                            Ok(false) => ProviderAvailabilityProbe::Unavailable,
+                            Err(_) => ProviderAvailabilityProbe::Timeout,
+                        }
+                    }
+                    None => ProviderAvailabilityProbe::Unavailable,
+                };
+                build_provider_status_info(info, platform, availability)
+            })
+            .collect::<Vec<_>>();
         join_all(futures).await
     };
 
@@ -616,8 +630,11 @@ pub async fn provider_disable(
 
 #[cfg(test)]
 mod tests {
-    use super::dedupe_installed_packages;
-    use crate::provider::InstalledPackage;
+    use super::{build_provider_status_info, dedupe_installed_packages};
+    use crate::platform::env::Platform;
+    use crate::provider::support::ProviderAvailabilityProbe;
+    use crate::provider::support::{REASON_HEALTH_CHECK_TIMEOUT, REASON_PROVIDER_UNAVAILABLE};
+    use crate::provider::{Capability, InstalledPackage, ProviderInfo};
     use std::path::PathBuf;
 
     fn installed_pkg(provider: &str, name: &str, version: &str) -> InstalledPackage {
@@ -628,6 +645,18 @@ mod tests {
             install_path: PathBuf::from(format!("node_modules/{}", name)),
             installed_at: String::new(),
             is_global: true,
+        }
+    }
+
+    fn provider_info(id: &str, capabilities: Vec<Capability>) -> ProviderInfo {
+        ProviderInfo {
+            id: id.to_string(),
+            display_name: id.to_uppercase(),
+            capabilities,
+            platforms: vec![Platform::Windows],
+            priority: 1,
+            is_environment_provider: false,
+            enabled: true,
         }
     }
 
@@ -670,5 +699,64 @@ mod tests {
         assert_eq!(deduped.len(), 2);
         assert_eq!(deduped[0].provider, "npm");
         assert_eq!(deduped[1].provider, "yarn");
+    }
+
+    #[test]
+    fn test_build_provider_status_info_unavailable_scope() {
+        let info = provider_info("npm", vec![Capability::Update]);
+        let status = build_provider_status_info(
+            info,
+            Platform::Windows,
+            ProviderAvailabilityProbe::Unavailable,
+        );
+
+        assert!(!status.installed);
+        assert_eq!(status.scope_state, "unavailable");
+        assert_eq!(
+            status.scope_reason.as_deref(),
+            Some(REASON_PROVIDER_UNAVAILABLE)
+        );
+        assert_eq!(
+            status.reason_code.as_deref(),
+            Some(REASON_PROVIDER_UNAVAILABLE)
+        );
+        assert_eq!(status.status, "unsupported");
+        assert!(!status.update_supported);
+    }
+
+    #[test]
+    fn test_build_provider_status_info_timeout_scope() {
+        let info = provider_info("npm", vec![Capability::Update]);
+        let status =
+            build_provider_status_info(info, Platform::Windows, ProviderAvailabilityProbe::Timeout);
+
+        assert!(!status.installed);
+        assert_eq!(status.scope_state, "timeout");
+        assert_eq!(
+            status.scope_reason.as_deref(),
+            Some(REASON_HEALTH_CHECK_TIMEOUT)
+        );
+        assert_eq!(
+            status.reason_code.as_deref(),
+            Some(REASON_HEALTH_CHECK_TIMEOUT)
+        );
+        assert_eq!(status.status, "unsupported");
+        assert!(!status.update_supported);
+    }
+
+    #[test]
+    fn test_build_provider_status_info_available_supported() {
+        let info = provider_info("npm", vec![Capability::Update]);
+        let status = build_provider_status_info(
+            info,
+            Platform::Windows,
+            ProviderAvailabilityProbe::Available,
+        );
+
+        assert!(status.installed);
+        assert_eq!(status.scope_state, "available");
+        assert!(status.scope_reason.is_none());
+        assert_eq!(status.status, "supported");
+        assert!(status.update_supported);
     }
 }

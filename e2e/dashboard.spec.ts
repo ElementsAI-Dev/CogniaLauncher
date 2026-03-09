@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures/app-fixture';
+import { test, expect, expectNoFatalOverlay } from './fixtures/app-fixture';
 
 test.describe('Dashboard Page', () => {
   test('renders page title and description', async ({ appPage }) => {
@@ -12,24 +12,21 @@ test.describe('Dashboard Page', () => {
   });
 
   test('edit mode toggle shows banner', async ({ appPage }) => {
-    // Find the edit layout button (has Pencil icon)
-    const editBtn = appPage.getByRole('button', { name: /edit/i }).first();
+    const editBtn = appPage.getByTestId('dashboard-header-edit-mode');
     await editBtn.click();
 
-    // Edit mode banner should appear with dashed border
-    const banner = appPage.locator('.border-dashed.border-primary\\/50');
+    const banner = appPage.getByTestId('dashboard-edit-mode-banner');
     await expect(banner).toBeVisible();
 
-    // Click again to exit edit mode — banner disappears
-    const doneBtn = appPage.getByRole('button', { name: /done/i }).first();
-    await doneBtn.click();
+    // Click again to exit edit mode — banner disappears.
+    await editBtn.click();
     await expect(banner).not.toBeVisible();
   });
 
   test('widget grid area is present', async ({ appPage }) => {
     // The WidgetGrid renders inside the main page area
     // Even without Tauri data, the grid container should exist
-    await expect(appPage.locator('main')).toBeVisible();
+    await expect(appPage.locator('main').last()).toBeVisible();
   });
 
   test('page does not crash on interaction', async ({ appPage }) => {
@@ -41,5 +38,6 @@ test.describe('Dashboard Page', () => {
     // Close dialog
     await appPage.keyboard.press('Escape');
     await expect(dialog).not.toBeVisible();
+    await expectNoFatalOverlay(appPage);
   });
 });

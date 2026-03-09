@@ -263,6 +263,14 @@ jest.mock("@/hooks/use-settings", () => ({
         size_human: "5 MB",
         location: "/cache/downloads",
       },
+      default_downloads: {
+        entry_count: 2,
+        size: 2097152,
+        size_human: "2 MB",
+        location: "/home/user/Downloads",
+        is_available: true,
+        reason: null,
+      },
       metadata_cache: {
         entry_count: 5,
         size: 1048576,
@@ -326,6 +334,11 @@ const mockMessages = {
       locationDesc: "Cache files are stored here",
       downloadCache: "Download Cache",
       downloadCacheDesc: "Cached package downloads",
+      defaultDownloads: "Default Downloads",
+      defaultDownloadsDesc:
+        "Cognia-managed files in your OS Downloads folder",
+      defaultDownloadsUnavailable: "Default Downloads path unavailable",
+      defaultDownloadsUnavailableReason: "Unavailable reason: {reason}",
       metadataCache: "Metadata Cache",
       metadataCacheDesc: "Cached package metadata",
       entries: "{count} entries",
@@ -336,8 +349,11 @@ const mockMessages = {
       clearAllConfirmDesc:
         "This will delete all cached files. This action cannot be undone.",
       clearDownload: "Clear Download Cache",
+      clearDefaultDownloads: "Clear Default Downloads",
       clearDownloadConfirmDesc:
         "This will delete all downloaded package files.",
+      clearDefaultDownloadsConfirmDesc:
+        "This will remove Cognia-managed files from the default Downloads folder.",
       clearMetadata: "Clear Metadata Cache",
       clearMetadataConfirmDesc: "This will delete all cached metadata.",
       freed: "Freed {size}",
@@ -416,6 +432,11 @@ const mockMessages = {
       previewTitle: "Clean Preview",
       previewDesc: "The following {type} files will be cleaned",
       previewFailed: "Failed to get preview",
+      allTypes: "All Types",
+      typeDownload: "Download",
+      typeMetadata: "Metadata",
+      typeExpired: "Expired",
+      typeDefaultDownloads: "Default Downloads",
       filesToClean: "Files to Clean",
       spaceToFree: "Space to Free",
       andMore: "and {count} more files",
@@ -529,11 +550,12 @@ describe("CachePage", () => {
       });
     });
 
-    it("renders download and metadata cache cards", async () => {
+    it("renders download, default downloads, and metadata cache cards", async () => {
       renderWithProviders(<CachePage />);
 
       await waitFor(() => {
         expect(screen.getByText("Download Cache")).toBeInTheDocument();
+        expect(screen.getByText("Default Downloads")).toBeInTheDocument();
         expect(screen.getByText("Metadata Cache")).toBeInTheDocument();
       });
     });

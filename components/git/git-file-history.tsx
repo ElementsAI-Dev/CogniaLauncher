@@ -12,7 +12,15 @@ import { GitDiffViewer } from './git-diff-viewer';
 import type { GitCommitEntry } from '@/types/tauri';
 import type { GitFileHistoryProps } from '@/types/git';
 
-export function GitFileHistory({ repoPath, onGetHistory, onGetCommitDiff }: GitFileHistoryProps) {
+const FILE_HISTORY_PAGE_SIZE = 50;
+
+export function GitFileHistory({
+  repoPath,
+  onGetHistory,
+  onGetCommitDiff,
+  onSelectCommit,
+  queryState,
+}: GitFileHistoryProps) {
   const { t } = useLocale();
   const [filePath, setFilePath] = useState('');
   const [history, setHistory] = useState<GitCommitEntry[]>([]);
@@ -39,20 +47,28 @@ export function GitFileHistory({ repoPath, onGetHistory, onGetCommitDiff }: GitF
     }
   };
 
-  const loadHistory = async (file: string) => {
+  const loadHistory = async (file: string, append = false) => {
     if (!file.trim()) return;
     setLoading(true);
-    setSelectedHash(null);
-    setFileDiff('');
+    if (!append) {
+      setSelectedHash(null);
+      setFileDiff('');
+    }
     try {
-      const result = await onGetHistory(file.trim(), 50);
-      setHistory(result);
+      const result = await onGetHistory({
+        file: file.trim(),
+        limit: FILE_HISTORY_PAGE_SIZE,
+        skip: append ? history.length : 0,
+        append,
+      });
+      setHistory((prev) => (append ? [...prev, ...result] : result));
     } finally {
       setLoading(false);
     }
   };
 
   const handleSelectCommit = useCallback(async (hash: string) => {
+    onSelectCommit?.(hash);
     if (!onGetCommitDiff || !filePath.trim()) return;
     if (selectedHash === hash) {
       setSelectedHash(null);
@@ -67,7 +83,7 @@ export function GitFileHistory({ repoPath, onGetHistory, onGetCommitDiff }: GitF
     } finally {
       setDiffLoading(false);
     }
-  }, [onGetCommitDiff, filePath, selectedHash]);
+  }, [onSelectCommit, onGetCommitDiff, filePath, selectedHash]);
 
   return (
     <Card>
@@ -81,7 +97,7 @@ export function GitFileHistory({ repoPath, onGetHistory, onGetCommitDiff }: GitF
             placeholder={t('git.history.selectFile')}
             value={filePath}
             onChange={(e) => setFilePath(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && loadHistory(filePath)}
+            onKeyDown={(e) => e.key === 'Enter' && loadHistory(filePath, false)}
             className="flex-1 font-mono text-xs h-8"
             disabled={loading}
           />
@@ -92,6 +108,11 @@ export function GitFileHistory({ repoPath, onGetHistory, onGetCommitDiff }: GitF
         </div>
       </CardHeader>
       <CardContent>
+        {queryState?.error && (
+          <p className="text-xs text-destructive text-center pb-2">
+            {queryState.error.message}
+          </p>
+        )}
         {history.length === 0 ? (
           <p className="text-xs text-muted-foreground text-center py-4">
             {filePath ? t('git.history.noFileHistory') : t('git.history.selectFile')}
@@ -118,6 +139,17 @@ export function GitFileHistory({ repoPath, onGetHistory, onGetCommitDiff }: GitF
                 </span>
               </div>
             ))}
+            {filePath && (queryState?.hasMore ?? history.length >= FILE_HISTORY_PAGE_SIZE) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full mt-2 text-xs"
+                onClick={() => loadHistory(filePath, true)}
+                disabled={loading}
+              >
+                {t('git.history.loadMore')}
+              </Button>
+            )}
           </div>
         )}
         {selectedHash && onGetCommitDiff && (

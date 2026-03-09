@@ -47,6 +47,8 @@ export function CachePreviewDialog({
     ? t('cache.typeDownload')
     : previewType === 'metadata'
       ? t('cache.typeMetadata')
+      : previewType === 'default_downloads'
+        ? t('cache.typeDefaultDownloads')
       : previewType === 'expired'
         ? t('cache.typeExpired')
         : t('cache.allTypes');

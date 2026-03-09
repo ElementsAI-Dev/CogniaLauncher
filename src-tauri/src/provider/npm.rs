@@ -1,4 +1,8 @@
 use super::api::get_api_client;
+use super::node_base::{
+    normalize_node_package_name, parse_dependency_constraints_from_json_output,
+    parse_installed_packages_from_json_output, parse_outdated_packages_from_json_output,
+};
 use super::traits::*;
 use crate::error::{CogniaError, CogniaResult};
 use crate::platform::{
@@ -112,6 +116,87 @@ impl NpmProvider {
             name
         )))
     }
+
+    fn parse_dependencies_output(&self, pkg: &str, output: &str) -> CogniaResult<Vec<Dependency>> {
+        let pairs = parse_dependency_constraints_from_json_output(output).map_err(|err| {
+            CogniaError::Provider(format!(
+                "failed to parse npm dependencies for {}: {}",
+                pkg, err
+            ))
+        })?;
+
+        Ok(pairs
+            .into_iter()
+            .map(|(dep_name, constraint)| Dependency {
+                name: dep_name,
+                constraint: constraint
+                    .parse::<VersionConstraint>()
+                    .unwrap_or(VersionConstraint::Any),
+            })
+            .collect())
+    }
+
+    fn parse_installed_output(
+        &self,
+        output: &str,
+        filter: &InstalledFilter,
+    ) -> CogniaResult<Vec<InstalledPackage>> {
+        let parsed = parse_installed_packages_from_json_output(output).map_err(|err| {
+            CogniaError::Provider(format!("failed to parse npm list output: {}", err))
+        })?;
+
+        Ok(parsed
+            .into_iter()
+            .filter(|(name, _)| {
+                filter
+                    .name_filter
+                    .as_ref()
+                    .map(|needle| name.contains(needle))
+                    .unwrap_or(true)
+            })
+            .map(|(name, version)| InstalledPackage {
+                install_path: self.get_global_prefix().unwrap_or_default().join(&name),
+                name,
+                version,
+                provider: self.id().into(),
+                installed_at: String::new(),
+                is_global: true,
+            })
+            .collect())
+    }
+
+    fn parse_outdated_output(
+        &self,
+        output: &str,
+        packages: &[String],
+    ) -> CogniaResult<Vec<UpdateInfo>> {
+        let entries = parse_outdated_packages_from_json_output(output).map_err(|err| {
+            CogniaError::Provider(format!("failed to parse npm outdated output: {}", err))
+        })?;
+        let package_filter = (!packages.is_empty()).then(|| {
+            packages
+                .iter()
+                .map(|pkg| normalize_node_package_name(pkg))
+                .collect::<HashSet<_>>()
+        });
+
+        Ok(entries
+            .into_iter()
+            .filter(|entry| {
+                package_filter
+                    .as_ref()
+                    .map(|allowed| allowed.contains(&normalize_node_package_name(&entry.name)))
+                    .unwrap_or(true)
+            })
+            .filter(|entry| entry.current != entry.latest)
+            .map(|entry| UpdateInfo {
+                name: entry.name,
+                current_version: entry.current,
+                latest_version: entry.latest,
+                provider: self.id().into(),
+            })
+            .collect())
+    }
 }
 
 impl Default for NpmProvider {
@@ -214,28 +299,7 @@ impl Provider for NpmProvider {
         let out = self
             .run_npm(&["view", &pkg, "dependencies", "--json"])
             .await?;
-
-        let value: serde_json::Value =
-            serde_json::from_str(&out).unwrap_or(serde_json::Value::Null);
-        let deps = value
-            .as_object()
-            .map(|obj| {
-                obj.iter()
-                    .filter_map(|(dep_name, constraint)| {
-                        let constraint_str = constraint.as_str()?;
-                        let parsed = constraint_str
-                            .parse::<VersionConstraint>()
-                            .unwrap_or(VersionConstraint::Any);
-                        Some(Dependency {
-                            name: dep_name.to_string(),
-                            constraint: parsed,
-                        })
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        Ok(deps)
+        self.parse_dependencies_output(&pkg, &out)
     }
 
     async fn get_package_info(&self, name: &str) -> CogniaResult<PackageInfo> {
@@ -375,37 +439,13 @@ impl Provider for NpmProvider {
         let args = vec!["list", "-g", "--depth=0", "--json"];
 
         let out = self.run_npm_raw(&args).await?;
-
-        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&out) {
-            if let Some(deps) = json["dependencies"].as_object() {
-                let packages: Vec<InstalledPackage> = deps
-                    .iter()
-                    .filter_map(|(name, info)| {
-                        if let Some(name_filter) = &filter.name_filter {
-                            if !name.contains(name_filter) {
-                                return None;
-                            }
-                        }
-
-                        let version = info["version"].as_str().unwrap_or("unknown").to_string();
-                        let _resolved = info["resolved"].as_str().unwrap_or("");
-
-                        Some(InstalledPackage {
-                            name: name.clone(),
-                            version,
-                            provider: self.id().into(),
-                            install_path: self.get_global_prefix().unwrap_or_default().join(name),
-                            installed_at: String::new(),
-                            is_global: true,
-                        })
-                    })
-                    .collect();
-
-                return Ok(packages);
+        match self.parse_installed_output(&out, &filter) {
+            Ok(packages) => Ok(packages),
+            Err(err) => {
+                log::warn!("npm list installed parse failed: {}", err);
+                Ok(vec![])
             }
         }
-
-        Ok(vec![])
     }
 
     async fn check_updates(&self, packages: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
@@ -425,36 +465,13 @@ impl Provider for NpmProvider {
             Err(_) => return Ok(vec![]),
         };
 
-        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&out_str) {
-            if let Some(obj) = json.as_object() {
-                let updates: Vec<UpdateInfo> = obj
-                    .iter()
-                    .filter_map(|(name, info)| {
-                        if !packages.is_empty() && !packages.contains(name) {
-                            return None;
-                        }
-
-                        let current = info["current"].as_str()?;
-                        let latest = info["latest"].as_str()?;
-
-                        if current != latest {
-                            Some(UpdateInfo {
-                                name: name.clone(),
-                                current_version: current.into(),
-                                latest_version: latest.into(),
-                                provider: self.id().into(),
-                            })
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-
-                return Ok(updates);
+        match self.parse_outdated_output(&out_str, packages) {
+            Ok(updates) => Ok(updates),
+            Err(err) => {
+                log::warn!("npm outdated parse failed: {}", err);
+                Ok(vec![])
             }
         }
-
-        Ok(vec![])
     }
 }
 
@@ -551,5 +568,44 @@ mod tests {
                 assert!(prefix.to_string_lossy().contains("node_modules"));
             }
         }
+    }
+
+    #[test]
+    fn test_parse_dependencies_output_supports_nested_stringified_data() {
+        let provider = NpmProvider::new();
+        let output = r#"{"data":"{\"dependencies\":{\"@types/node\":\">=18.0.0\"}}"}"#;
+        let deps = provider
+            .parse_dependencies_output("@types/node@latest", output)
+            .unwrap();
+
+        assert_eq!(deps.len(), 1);
+        assert_eq!(deps[0].name, "@types/node");
+    }
+
+    #[test]
+    fn test_parse_installed_output_supports_array_shape_fixture() {
+        let provider = NpmProvider::new();
+        let output = r#"[{"dependencies":{"eslint":{"version":"9.17.0"}}}]"#;
+
+        let packages = provider
+            .parse_installed_output(output, &InstalledFilter::default())
+            .unwrap();
+
+        assert_eq!(packages.len(), 1);
+        assert_eq!(packages[0].name, "eslint");
+        assert_eq!(packages[0].version, "9.17.0");
+    }
+
+    #[test]
+    fn test_parse_outdated_output_supports_array_fixture() {
+        let provider = NpmProvider::new();
+        let output = r#"[{"name":"typescript","current":"5.0.0","latest":"5.1.0"},{"name":"jest","current":"30.0.0","latest":"30.0.0"}]"#;
+
+        let updates = provider.parse_outdated_output(output, &[]).unwrap();
+
+        assert_eq!(updates.len(), 1);
+        assert_eq!(updates[0].name, "typescript");
+        assert_eq!(updates[0].current_version, "5.0.0");
+        assert_eq!(updates[0].latest_version, "5.1.0");
     }
 }

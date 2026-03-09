@@ -15,6 +15,10 @@ const toolboxState = {
   favorites: ['plugin:p1:t1'],
   recentTools: ['plugin:p1:t1'],
   toolUseCounts: { 'plugin:p1:t1': 5 },
+  assistancePanels: {
+    history: { collapsed: false, hidden: false },
+    featured: { collapsed: true, hidden: false },
+  },
   viewMode: 'grid',
   activeToolId: null,
   toolLifecycles: {},
@@ -26,6 +30,10 @@ const toolboxState = {
   setActiveToolId: jest.fn(),
   setToolLifecycle: jest.fn(),
   clearToolLifecycle: jest.fn(),
+  setAssistancePanelCollapsed: jest.fn(),
+  hideAssistancePanel: jest.fn(),
+  restoreAssistancePanel: jest.fn(),
+  restoreAllAssistancePanels: jest.fn(),
 };
 
 const pluginState = {
@@ -155,5 +163,20 @@ describe('useToolbox', () => {
     expect(result.current.filteredTools).toHaveLength(1);
     expect(result.current.filteredTools[0].id).toBe('plugin:p1:t1');
     expect(result.current.mostUsedCount).toBe(1);
+  });
+
+  it('exposes assistance panel state and actions from store', () => {
+    const { result } = renderHook(() => useToolbox());
+
+    expect(result.current.assistancePanels.featured.collapsed).toBe(true);
+    result.current.setAssistancePanelCollapsed('history', true);
+    result.current.hideAssistancePanel('featured');
+    result.current.restoreAssistancePanel('featured');
+    result.current.restoreAllAssistancePanels();
+
+    expect(toolboxState.setAssistancePanelCollapsed).toHaveBeenCalledWith('history', true);
+    expect(toolboxState.hideAssistancePanel).toHaveBeenCalledWith('featured');
+    expect(toolboxState.restoreAssistancePanel).toHaveBeenCalledWith('featured');
+    expect(toolboxState.restoreAllAssistancePanels).toHaveBeenCalled();
   });
 });

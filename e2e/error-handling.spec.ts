@@ -1,20 +1,19 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/app-fixture';
 
 test.describe('Error Handling', () => {
-  test('navigating to non-existent route shows 404 page', async ({ page }) => {
-    await page.goto('/nonexistent-route-xyz');
+  test('navigating to non-existent route shows 404 page', async ({ appPage }) => {
+    await appPage.goto('/nonexistent-route-xyz');
     // not-found.tsx renders "404" and "Page Not Found"
-    await expect(page.getByText('404')).toBeVisible();
-    await expect(page.getByText('Page Not Found')).toBeVisible();
+    await expect(appPage.getByText('404')).toBeVisible();
+    await expect(appPage.getByText('Page Not Found')).toBeVisible();
   });
 
-  test('404 page Dashboard link navigates to /', async ({ page }) => {
-    await page.goto('/nonexistent-route-xyz');
-    await expect(page.getByText('404')).toBeVisible();
+  test('404 page Dashboard link navigates to /', async ({ appPage }) => {
+    await appPage.goto('/nonexistent-route-xyz');
+    await expect(appPage.getByText('404')).toBeVisible();
 
-    // Click "Dashboard" button (Link to /)
-    const dashboardBtn = page.getByRole('link', { name: /dashboard/i });
+    const dashboardBtn = appPage.locator('main').last().getByRole('link', { name: /^dashboard$/i });
     await dashboardBtn.click();
-    await expect(page).toHaveURL('/');
+    await expect(appPage).toHaveURL('/');
   });
 });

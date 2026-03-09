@@ -17,6 +17,10 @@ import type {
   GitGraphEntry,
   GitAheadBehind,
   GitDayActivity,
+  GitHistoryQuery,
+  GitHistoryQueryError,
+  GitHistoryQueryState,
+  GitHistorySearchType,
   GitFileStatEntry,
   GitReflogEntry,
   GitCloneOptions,
@@ -25,13 +29,155 @@ import type {
   GitConfigApplyPlanItem,
   GitConfigApplyResultItem,
   GitConfigApplySummary,
+  GitConfigBatchReadResult,
+  GitConfigReadBatchOptions,
+  GitConfigReadFailure,
+  GitConfigSnapshotResult,
   GitActionResult,
+  GitHistoryState,
+  GitHistoryView,
   GitRefreshScope,
 } from '@/types/git';
 import {
   evaluateGitGuardrail,
   executeGitOperation,
 } from '@/lib/git/operation-orchestrator';
+
+const HISTORY_VIEWS: GitHistoryView[] = [
+  'log',
+  'search',
+  'fileHistory',
+  'fileStats',
+  'blame',
+  'reflog',
+];
+
+const DEFAULT_HISTORY_LIMIT = 50;
+const DEFAULT_CONFIG_FALLBACK_CONCURRENCY = 4;
+
+function createHistoryViewState(): GitHistoryQueryState {
+  return {
+    query: null,
+    loading: false,
+    empty: false,
+    resultCount: 0,
+    hasMore: false,
+    error: null,
+    updatedAt: null,
+  };
+}
+
+function createHistoryState(): GitHistoryState {
+  return HISTORY_VIEWS.reduce((acc, view) => {
+    acc[view] = createHistoryViewState();
+    return acc;
+  }, {} as GitHistoryState);
+}
+
+function normalizeHistoryError(error: unknown): GitHistoryQueryError {
+  const message = String(error);
+  const lower = message.toLowerCase();
+  if (
+    lower.includes('outside repository')
+    || lower.includes('invalid path')
+    || lower.includes('path must be inside repository')
+  ) {
+    return {
+      category: 'invalid_path',
+      message,
+      recoverable: true,
+      nextSteps: ['Use a file path inside the current repository.'],
+    };
+  }
+  if (lower.includes('invalid') && lower.includes('query')) {
+    return {
+      category: 'invalid_query',
+      message,
+      recoverable: true,
+      nextSteps: ['Adjust the history filters and retry.'],
+    };
+  }
+  if (lower.includes('not in tauri environment') || lower.includes('no repo')) {
+    return {
+      category: 'repo_unavailable',
+      message,
+      recoverable: true,
+      nextSteps: ['Select a repository first and retry.'],
+    };
+  }
+  if (lower.includes('[git:')) {
+    return {
+      category: 'command_failed',
+      message,
+      recoverable: true,
+      nextSteps: ['Review the Git error message and retry with narrower filters.'],
+    };
+  }
+  return {
+    category: 'unknown',
+    message,
+    recoverable: false,
+    nextSteps: [],
+  };
+}
+
+function toHistoryQuery(
+  query: string | GitHistoryQuery,
+  searchType?: GitHistorySearchType,
+  limit?: number,
+): GitHistoryQuery {
+  if (typeof query === 'string') {
+    return { query, searchType, limit };
+  }
+  return query;
+}
+
+function buildConfigValueMap(entries: GitConfigEntry[]): Record<string, string | null> {
+  const map: Record<string, string | null> = {};
+  for (const entry of entries) {
+    map[entry.key] = entry.value;
+  }
+  return map;
+}
+
+function normalizeConfigReadFailure(error: unknown, key: string | null): GitConfigReadFailure {
+  const message = String(error);
+  const lower = message.toLowerCase();
+  if (lower.includes('[git:timeout]') || lower.includes('timed out') || lower.includes('timeout')) {
+    return {
+      key,
+      category: 'timeout',
+      message,
+      recoverable: true,
+      nextSteps: ['Retry reading Git settings.', 'Check whether Git command execution is slow on this machine.'],
+    };
+  }
+  if (lower.includes('parse') || lower.includes('invalid') || lower.includes('malformed')) {
+    return {
+      key,
+      category: 'parse_failed',
+      message,
+      recoverable: true,
+      nextSteps: ['Review global Git config syntax and fix invalid entries.'],
+    };
+  }
+  if (lower.includes('[git:execution]') || lower.includes('[git:') || lower.includes('provider error')) {
+    return {
+      key,
+      category: 'execution_failed',
+      message,
+      recoverable: true,
+      nextSteps: ['Retry the operation.', 'Open global Git config and verify includes/paths.'],
+    };
+  }
+  return {
+    key,
+    category: 'unknown',
+    message,
+    recoverable: false,
+    nextSteps: ['Retry the operation and inspect logs if the issue persists.'],
+  };
+}
 
 export interface UseGitReturn {
   // State
@@ -51,6 +197,7 @@ export interface UseGitReturn {
   loading: boolean;
   error: string | null;
   lastActionResult: GitActionResult | null;
+  historyState: GitHistoryState;
 
   // Actions - Git tool management
   checkAvailability: () => Promise<boolean>;
@@ -60,6 +207,11 @@ export interface UseGitReturn {
 
   // Actions - Config management
   refreshConfig: () => Promise<void>;
+  getConfigSnapshot: () => Promise<GitConfigSnapshotResult>;
+  getConfigValuesBatch: (
+    keys: string[],
+    options?: GitConfigReadBatchOptions,
+  ) => Promise<GitConfigBatchReadResult>;
   setConfigValue: (key: string, value: string) => Promise<void>;
   removeConfigKey: (key: string) => Promise<void>;
   getConfigValue: (key: string) => Promise<string | null>;
@@ -82,15 +234,9 @@ export interface UseGitReturn {
   refreshByScopes: (scopes: GitRefreshScope[]) => Promise<void>;
 
   // Actions - History & Blame
-  getLog: (options?: {
-    limit?: number;
-    author?: string;
-    since?: string;
-    until?: string;
-    file?: string;
-  }) => Promise<void>;
-  getFileHistory: (file: string, limit?: number) => Promise<GitCommitEntry[]>;
-  getBlame: (file: string) => Promise<GitBlameEntry[]>;
+  getLog: (options?: GitHistoryQuery) => Promise<void>;
+  getFileHistory: (file: string | GitHistoryQuery, limit?: number) => Promise<GitCommitEntry[]>;
+  getBlame: (file: string | GitHistoryQuery) => Promise<GitBlameEntry[]>;
 
   // Actions - Commit detail & graph
   getCommitDetail: (hash: string) => Promise<GitCommitDetail | null>;
@@ -114,8 +260,12 @@ export interface UseGitReturn {
 
   // Actions - Activity & Stats
   getActivity: (days?: number) => Promise<GitDayActivity[]>;
-  getFileStats: (file: string, limit?: number) => Promise<GitFileStatEntry[]>;
-  searchCommits: (query: string, searchType?: string, limit?: number) => Promise<GitCommitEntry[]>;
+  getFileStats: (file: string | GitHistoryQuery, limit?: number) => Promise<GitFileStatEntry[]>;
+  searchCommits: (
+    query: string | GitHistoryQuery,
+    searchType?: GitHistorySearchType,
+    limit?: number,
+  ) => Promise<GitCommitEntry[]>;
 
 
   // Actions - Write operations
@@ -184,6 +334,32 @@ export function useGit(): UseGitReturn {
   const [error, setError] = useState<string | null>(null);
   const [lastActionResult, setLastActionResult] =
     useState<GitActionResult | null>(null);
+  const [historyState, setHistoryState] = useState<GitHistoryState>(
+    createHistoryState,
+  );
+
+  const updateHistoryViewState = useCallback(
+    (
+      view: GitHistoryView,
+      patch:
+        | Partial<GitHistoryQueryState>
+        | ((prev: GitHistoryQueryState) => Partial<GitHistoryQueryState>),
+    ) => {
+      setHistoryState((prev) => {
+        const prevView = prev[view];
+        const nextPatch =
+          typeof patch === 'function' ? patch(prevView) : patch;
+        return {
+          ...prev,
+          [view]: {
+            ...prevView,
+            ...nextPatch,
+          },
+        };
+      });
+    },
+    [],
+  );
 
   const unwrapOperationPayload = useCallback(
     <T,>(operation: { result: GitActionResult; payload?: T }): T => {
@@ -264,15 +440,83 @@ export function useGit(): UseGitReturn {
     }
   }, [refreshVersion]);
 
-  const refreshConfig = useCallback(async () => {
-    if (!tauri.isTauri()) return;
+  const getConfigSnapshot = useCallback(async (): Promise<GitConfigSnapshotResult> => {
+    if (!tauri.isTauri()) {
+      return {
+        values: {},
+        failures: [normalizeConfigReadFailure('Not in Tauri environment', null)],
+      };
+    }
     try {
       const entries = await tauri.gitGetConfig();
       setConfig(entries);
+      return {
+        values: buildConfigValueMap(entries),
+        failures: [],
+      };
     } catch (e) {
-      setError(String(e));
+      const failure = normalizeConfigReadFailure(e, null);
+      setError(failure.message);
+      return {
+        values: {},
+        failures: [failure],
+      };
     }
   }, []);
+
+  const getConfigValuesBatch = useCallback(
+    async (
+      keys: string[],
+      options?: GitConfigReadBatchOptions,
+    ): Promise<GitConfigBatchReadResult> => {
+      const values: Record<string, string | null> = {};
+      for (const key of keys) {
+        values[key] = null;
+      }
+
+      if (keys.length === 0) {
+        return { values, failures: [] };
+      }
+
+      if (!tauri.isTauri()) {
+        return {
+          values,
+          failures: [normalizeConfigReadFailure('Not in Tauri environment', null)],
+        };
+      }
+
+      const failures: GitConfigReadFailure[] = [];
+      const concurrency = Math.max(
+        1,
+        Math.min(options?.concurrency ?? DEFAULT_CONFIG_FALLBACK_CONCURRENCY, keys.length),
+      );
+      let cursor = 0;
+
+      const workers = Array.from({ length: concurrency }, async () => {
+        while (cursor < keys.length) {
+          const index = cursor;
+          cursor += 1;
+          const key = keys[index];
+          try {
+            values[key] = await tauri.gitGetConfigValue(key);
+          } catch (e) {
+            failures.push(normalizeConfigReadFailure(e, key));
+          }
+        }
+      });
+
+      await Promise.all(workers);
+      if (failures.length > 0) {
+        setError(failures[0].message);
+      }
+      return { values, failures };
+    },
+    [],
+  );
+
+  const refreshConfig = useCallback(async () => {
+    await getConfigSnapshot();
+  }, [getConfigSnapshot]);
 
   const setConfigValue = useCallback(async (key: string, value: string) => {
     if (!tauri.isTauri()) return;
@@ -560,55 +804,133 @@ export function useGit(): UseGitReturn {
   }, [repoPath]);
 
   const getLog = useCallback(
-    async (options?: {
-      limit?: number;
-      author?: string;
-      since?: string;
-      until?: string;
-      file?: string;
-    }) => {
+    async (options?: GitHistoryQuery) => {
       if (!tauri.isTauri() || !repoPath) return;
+
+      const append = Boolean(options?.append);
+      const limit = options?.limit ?? DEFAULT_HISTORY_LIMIT;
+      const query: GitHistoryQuery = {
+        ...options,
+        limit,
+        skip: options?.skip ?? (append ? commits.length : 0),
+        append,
+      };
+
+      updateHistoryViewState('log', {
+        loading: true,
+        error: null,
+        query,
+      });
+
       try {
-        const data = await tauri.gitGetLog(
-          repoPath,
-          options?.limit,
-          options?.author,
-          options?.since,
-          options?.until,
-          options?.file,
-        );
-        setCommits(data);
+        const data = await tauri.gitGetLog(repoPath, query);
+        const nextCount = append ? commits.length + data.length : data.length;
+        setCommits((prev) => {
+          if (!append) {
+            return data;
+          }
+          return [...prev, ...data];
+        });
+        updateHistoryViewState('log', {
+          loading: false,
+          error: null,
+          empty: nextCount === 0,
+          resultCount: nextCount,
+          hasMore: data.length >= limit,
+          updatedAt: new Date().toISOString(),
+        });
       } catch (e) {
-        setError(String(e));
+        const normalized = normalizeHistoryError(e);
+        setError(normalized.message);
+        updateHistoryViewState('log', {
+          loading: false,
+          error: normalized,
+          empty: false,
+          hasMore: false,
+          updatedAt: new Date().toISOString(),
+        });
       }
     },
-    [repoPath],
+    [repoPath, commits.length, updateHistoryViewState],
   );
 
   const getFileHistory = useCallback(
-    async (file: string, limit?: number): Promise<GitCommitEntry[]> => {
+    async (
+      file: string | GitHistoryQuery,
+      limit?: number,
+    ): Promise<GitCommitEntry[]> => {
       if (!tauri.isTauri() || !repoPath) return [];
+      const query: GitHistoryQuery =
+        typeof file === 'string'
+          ? { file, limit: limit ?? DEFAULT_HISTORY_LIMIT }
+          : { ...file, limit: file.limit ?? limit ?? DEFAULT_HISTORY_LIMIT };
+      updateHistoryViewState('fileHistory', {
+        loading: true,
+        error: null,
+        query,
+      });
       try {
-        return await tauri.gitGetFileHistory(repoPath, file, limit);
+        const data = await tauri.gitGetFileHistory(repoPath, query);
+        updateHistoryViewState('fileHistory', {
+          loading: false,
+          error: null,
+          empty: data.length === 0,
+          resultCount: data.length,
+          hasMore: data.length >= (query.limit ?? DEFAULT_HISTORY_LIMIT),
+          updatedAt: new Date().toISOString(),
+        });
+        return data;
       } catch (e) {
-        setError(String(e));
+        const normalized = normalizeHistoryError(e);
+        setError(normalized.message);
+        updateHistoryViewState('fileHistory', {
+          loading: false,
+          error: normalized,
+          empty: false,
+          hasMore: false,
+          updatedAt: new Date().toISOString(),
+        });
         return [];
       }
     },
-    [repoPath],
+    [repoPath, updateHistoryViewState],
   );
 
   const getBlame = useCallback(
-    async (file: string): Promise<GitBlameEntry[]> => {
+    async (file: string | GitHistoryQuery): Promise<GitBlameEntry[]> => {
       if (!tauri.isTauri() || !repoPath) return [];
+      const query: GitHistoryQuery =
+        typeof file === 'string' ? { file } : file;
+      updateHistoryViewState('blame', {
+        loading: true,
+        error: null,
+        query,
+      });
       try {
-        return await tauri.gitGetBlame(repoPath, file);
+        const data = await tauri.gitGetBlame(repoPath, query);
+        updateHistoryViewState('blame', {
+          loading: false,
+          error: null,
+          empty: data.length === 0,
+          resultCount: data.length,
+          hasMore: false,
+          updatedAt: new Date().toISOString(),
+        });
+        return data;
       } catch (e) {
-        setError(String(e));
+        const normalized = normalizeHistoryError(e);
+        setError(normalized.message);
+        updateHistoryViewState('blame', {
+          loading: false,
+          error: normalized,
+          empty: false,
+          hasMore: false,
+          updatedAt: new Date().toISOString(),
+        });
         return [];
       }
     },
-    [repoPath],
+    [repoPath, updateHistoryViewState],
   );
 
   const refreshStatus = useCallback(async () => {
@@ -880,29 +1202,89 @@ export function useGit(): UseGitReturn {
   );
 
   const getFileStats = useCallback(
-    async (file: string, limit?: number): Promise<GitFileStatEntry[]> => {
+    async (
+      file: string | GitHistoryQuery,
+      limit?: number,
+    ): Promise<GitFileStatEntry[]> => {
       if (!tauri.isTauri() || !repoPath) return [];
+      const query: GitHistoryQuery =
+        typeof file === 'string'
+          ? { file, limit: limit ?? DEFAULT_HISTORY_LIMIT }
+          : { ...file, limit: file.limit ?? limit ?? DEFAULT_HISTORY_LIMIT };
+      updateHistoryViewState('fileStats', {
+        loading: true,
+        error: null,
+        query,
+      });
       try {
-        return await tauri.gitGetFileStats(repoPath, file, limit);
+        const data = await tauri.gitGetFileStats(repoPath, query);
+        updateHistoryViewState('fileStats', {
+          loading: false,
+          error: null,
+          empty: data.length === 0,
+          resultCount: data.length,
+          hasMore: data.length >= (query.limit ?? DEFAULT_HISTORY_LIMIT),
+          updatedAt: new Date().toISOString(),
+        });
+        return data;
       } catch (e) {
-        setError(String(e));
+        const normalized = normalizeHistoryError(e);
+        setError(normalized.message);
+        updateHistoryViewState('fileStats', {
+          loading: false,
+          error: normalized,
+          empty: false,
+          hasMore: false,
+          updatedAt: new Date().toISOString(),
+        });
         return [];
       }
     },
-    [repoPath],
+    [repoPath, updateHistoryViewState],
   );
 
   const searchCommits = useCallback(
-    async (query: string, searchType?: string, limit?: number): Promise<GitCommitEntry[]> => {
+    async (
+      queryInput: string | GitHistoryQuery,
+      searchType?: GitHistorySearchType,
+      limit?: number,
+    ): Promise<GitCommitEntry[]> => {
       if (!tauri.isTauri() || !repoPath) return [];
+      const query = toHistoryQuery(queryInput, searchType, limit);
+      const normalizedQuery: GitHistoryQuery = {
+        ...query,
+        limit: query.limit ?? limit ?? DEFAULT_HISTORY_LIMIT,
+      };
+      updateHistoryViewState('search', {
+        loading: true,
+        error: null,
+        query: normalizedQuery,
+      });
       try {
-        return await tauri.gitSearchCommits(repoPath, query, searchType, limit);
+        const data = await tauri.gitSearchCommits(repoPath, normalizedQuery);
+        updateHistoryViewState('search', {
+          loading: false,
+          error: null,
+          empty: data.length === 0,
+          resultCount: data.length,
+          hasMore: data.length >= (normalizedQuery.limit ?? DEFAULT_HISTORY_LIMIT),
+          updatedAt: new Date().toISOString(),
+        });
+        return data;
       } catch (e) {
-        setError(String(e));
+        const normalized = normalizeHistoryError(e);
+        setError(normalized.message);
+        updateHistoryViewState('search', {
+          loading: false,
+          error: normalized,
+          empty: false,
+          hasMore: false,
+          updatedAt: new Date().toISOString(),
+        });
         return [];
       }
     },
-    [repoPath],
+    [repoPath, updateHistoryViewState],
   );
 
   // Write operations
@@ -1234,9 +1616,37 @@ export function useGit(): UseGitReturn {
   const getReflog = useCallback(
     async (limit?: number): Promise<GitReflogEntry[]> => {
       if (!tauri.isTauri() || !repoPath) return [];
-      return await tauri.gitGetReflog(repoPath, limit);
+      const query: GitHistoryQuery = { limit: limit ?? DEFAULT_HISTORY_LIMIT };
+      updateHistoryViewState('reflog', {
+        loading: true,
+        error: null,
+        query,
+      });
+      try {
+        const data = await tauri.gitGetReflog(repoPath, limit);
+        updateHistoryViewState('reflog', {
+          loading: false,
+          error: null,
+          empty: data.length === 0,
+          resultCount: data.length,
+          hasMore: data.length >= (limit ?? DEFAULT_HISTORY_LIMIT),
+          updatedAt: new Date().toISOString(),
+        });
+        return data;
+      } catch (e) {
+        const normalized = normalizeHistoryError(e);
+        setError(normalized.message);
+        updateHistoryViewState('reflog', {
+          loading: false,
+          error: normalized,
+          empty: false,
+          hasMore: false,
+          updatedAt: new Date().toISOString(),
+        });
+        return [];
+      }
     },
-    [repoPath],
+    [repoPath, updateHistoryViewState],
   );
 
   const cleanUntracked = useCallback(
@@ -1315,11 +1725,14 @@ export function useGit(): UseGitReturn {
     loading,
     error,
     lastActionResult,
+    historyState,
     checkAvailability,
     refreshVersion,
     installGit,
     updateGit,
     refreshConfig,
+    getConfigSnapshot,
+    getConfigValuesBatch,
     setConfigValue,
     removeConfigKey,
     getConfigValue,

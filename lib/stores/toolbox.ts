@@ -5,7 +5,20 @@ import type { ToolLifecyclePhase, ToolLifecycleSnapshot } from '@/types/tool-con
 import type { ToolboxContinuationHint } from '@/types/toolbox-marketplace';
 
 const MAX_RECENT_TOOLS = 10;
-const TOOLBOX_STORE_VERSION = 4;
+const TOOLBOX_STORE_VERSION = 5;
+
+export const TOOLBOX_ASSISTANCE_PANEL_IDS = ['history', 'featured'] as const;
+export type ToolboxAssistancePanelId = (typeof TOOLBOX_ASSISTANCE_PANEL_IDS)[number];
+
+export interface ToolboxAssistancePanelPreference {
+  collapsed: boolean;
+  hidden: boolean;
+}
+
+export type ToolboxAssistancePanelsState = Record<
+  ToolboxAssistancePanelId,
+  ToolboxAssistancePanelPreference
+>;
 
 type ToolPreferencePrimitive = string | number | boolean | null;
 export type ToolPreferenceRecord = Record<string, ToolPreferencePrimitive>;
@@ -61,11 +74,44 @@ function sanitizeToolPreferencesMap(value: unknown): Record<string, ToolPreferen
   return result;
 }
 
+function createDefaultAssistancePanelsState(): ToolboxAssistancePanelsState {
+  return {
+    history: {
+      collapsed: false,
+      hidden: false,
+    },
+    featured: {
+      collapsed: false,
+      hidden: false,
+    },
+  };
+}
+
+function sanitizeAssistancePanelsState(value: unknown): ToolboxAssistancePanelsState {
+  const sanitized = createDefaultAssistancePanelsState();
+  if (!isObjectRecord(value)) return sanitized;
+
+  for (const panelId of TOOLBOX_ASSISTANCE_PANEL_IDS) {
+    const rawPanel = value[panelId];
+    if (!isObjectRecord(rawPanel)) continue;
+
+    if (typeof rawPanel.collapsed === 'boolean') {
+      sanitized[panelId].collapsed = rawPanel.collapsed;
+    }
+    if (typeof rawPanel.hidden === 'boolean') {
+      sanitized[panelId].hidden = rawPanel.hidden;
+    }
+  }
+
+  return sanitized;
+}
+
 interface ToolboxState {
   favorites: string[];
   recentTools: string[];
   toolUseCounts: Record<string, number>;
   toolPreferences: Record<string, ToolPreferenceRecord>;
+  assistancePanels: ToolboxAssistancePanelsState;
   viewMode: 'grid' | 'list';
   toolLifecycles: Record<string, ToolLifecycleSnapshot>;
   continuationHint: ToolboxContinuationHint | null;
@@ -86,6 +132,10 @@ interface ToolboxState {
   clearToolLifecycle: (toolId: string) => void;
   setContinuationHint: (hint: ToolboxContinuationHint) => void;
   clearContinuationHint: () => void;
+  setAssistancePanelCollapsed: (panelId: ToolboxAssistancePanelId, collapsed: boolean) => void;
+  hideAssistancePanel: (panelId: ToolboxAssistancePanelId) => void;
+  restoreAssistancePanel: (panelId: ToolboxAssistancePanelId) => void;
+  restoreAllAssistancePanels: () => void;
 }
 
 export const useToolboxStore = create<ToolboxState>()(
@@ -95,6 +145,7 @@ export const useToolboxStore = create<ToolboxState>()(
       recentTools: [],
       toolUseCounts: {},
       toolPreferences: {},
+      assistancePanels: createDefaultAssistancePanelsState(),
       viewMode: 'grid',
       toolLifecycles: {},
       continuationHint: null,
@@ -170,6 +221,49 @@ export const useToolboxStore = create<ToolboxState>()(
         }),
       setContinuationHint: (continuationHint) => set({ continuationHint }),
       clearContinuationHint: () => set({ continuationHint: null }),
+      setAssistancePanelCollapsed: (panelId, collapsed) =>
+        set((state) => ({
+          assistancePanels: {
+            ...state.assistancePanels,
+            [panelId]: {
+              ...state.assistancePanels[panelId],
+              collapsed,
+            },
+          },
+        })),
+      hideAssistancePanel: (panelId) =>
+        set((state) => ({
+          assistancePanels: {
+            ...state.assistancePanels,
+            [panelId]: {
+              ...state.assistancePanels[panelId],
+              hidden: true,
+            },
+          },
+        })),
+      restoreAssistancePanel: (panelId) =>
+        set((state) => ({
+          assistancePanels: {
+            ...state.assistancePanels,
+            [panelId]: {
+              ...state.assistancePanels[panelId],
+              hidden: false,
+            },
+          },
+        })),
+      restoreAllAssistancePanels: () =>
+        set((state) => ({
+          assistancePanels: {
+            history: {
+              ...state.assistancePanels.history,
+              hidden: false,
+            },
+            featured: {
+              ...state.assistancePanels.featured,
+              hidden: false,
+            },
+          },
+        })),
     }),
     {
       name: 'cognia-toolbox',
@@ -182,6 +276,7 @@ export const useToolboxStore = create<ToolboxState>()(
           recentTools: sanitizeStringArray(state.recentTools).slice(0, MAX_RECENT_TOOLS),
           toolUseCounts: sanitizeToolUseCounts(state.toolUseCounts),
           toolPreferences: sanitizeToolPreferencesMap(state.toolPreferences),
+          assistancePanels: sanitizeAssistancePanelsState(state.assistancePanels),
           viewMode: state.viewMode === 'list' ? 'list' : 'grid',
           toolLifecycles: {},
           continuationHint: state.continuationHint ?? null,
@@ -192,6 +287,7 @@ export const useToolboxStore = create<ToolboxState>()(
         recentTools: state.recentTools,
         toolUseCounts: state.toolUseCounts,
         toolPreferences: state.toolPreferences,
+        assistancePanels: state.assistancePanels,
         viewMode: state.viewMode,
         continuationHint: state.continuationHint,
       }),

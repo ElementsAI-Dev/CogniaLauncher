@@ -7,6 +7,7 @@ import {
   parseMaintainerArgs,
   printRunSummary,
   readCatalog,
+  readSdkCapabilityMatrix,
   recordRunFailure,
   recordRunSuccess,
   resolveArtifactPath,
@@ -15,6 +16,8 @@ import {
   runPluginTests,
   sha256File,
   validateCatalogShape,
+  validatePluginCapabilityMatrixEntry,
+  validateSdkCapabilityMatrixShape,
   validatePluginProjectMetadata,
 } from './lib.mjs';
 import { readFileSync } from 'node:fs';
@@ -41,6 +44,7 @@ let parsedArgs = {
 };
 let catalog;
 let summary;
+let sdkCapabilityMatrix;
 
 try {
   parsedArgs = parseMaintainerArgs(process.argv.slice(2), {
@@ -49,6 +53,8 @@ try {
   });
   catalog = readCatalog();
   validateCatalogShape(catalog);
+  sdkCapabilityMatrix = readSdkCapabilityMatrix();
+  validateSdkCapabilityMatrixShape(sdkCapabilityMatrix, catalog);
 
   const selection = resolveSelectedPlugins(catalog, parsedArgs);
   summary = createRunSummary(command, selection, { json: parsedArgs.json });
@@ -67,6 +73,11 @@ try {
       const metadataDrift = validatePluginProjectMetadata(plugin);
       if (metadataDrift.length > 0) {
         throw new Error(formatMetadataDrift(plugin, metadataDrift).join('\n'));
+      }
+
+      const capabilityDrift = validatePluginCapabilityMatrixEntry(plugin, sdkCapabilityMatrix);
+      if (capabilityDrift.length > 0) {
+        throw new Error(capabilityDrift.join('\n'));
       }
 
       if (!parsedArgs.skipBuild) {

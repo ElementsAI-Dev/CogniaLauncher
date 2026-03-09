@@ -17,11 +17,14 @@ import { useLocale } from "@/components/providers/locale-provider";
 import { formatRelativeDate } from "@/lib/utils/git-date";
 import type { GitCommitLogProps } from "@/types/git";
 
+const HISTORY_PAGE_SIZE = 50;
+
 export function GitCommitLog({
   commits,
   onLoadMore,
   onSelectCommit,
   selectedHash,
+  queryState,
 }: GitCommitLogProps) {
   const { t } = useLocale();
   const [search, setSearch] = useState("");
@@ -48,6 +51,13 @@ export function GitCommitLog({
     }
     return result;
   }, [commits, search, authorFilter]);
+
+  const pagedCommitCount = useMemo(() => {
+    if (authorFilter === "__all__") {
+      return commits.length;
+    }
+    return commits.filter((commit) => commit.authorName === authorFilter).length;
+  }, [authorFilter, commits]);
 
   return (
     <Card>
@@ -113,12 +123,20 @@ export function GitCommitLog({
                 </span>
               </div>
             ))}
-            {onLoadMore && commits.length >= 50 && (
+            {onLoadMore && (queryState?.hasMore ?? commits.length >= HISTORY_PAGE_SIZE) && (
               <Button
                 variant="ghost"
                 size="sm"
                 className="w-full text-xs mt-2"
-                onClick={() => onLoadMore({ limit: commits.length + 50 })}
+                disabled={queryState?.loading}
+                onClick={() =>
+                  onLoadMore({
+                    limit: HISTORY_PAGE_SIZE,
+                    skip: pagedCommitCount,
+                    append: true,
+                    author: authorFilter !== "__all__" ? authorFilter : undefined,
+                  })
+                }
               >
                 <ChevronDown className="h-3 w-3 mr-1" />
                 {t("git.history.loadMore")}

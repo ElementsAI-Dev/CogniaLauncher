@@ -12,6 +12,6 @@ test.describe('Git Page', () => {
   test('shows not-available fallback in web mode', async ({ appPage }) => {
     // In web mode (isTauri()=false), GitPage renders <GitNotAvailable/>
     // The page should render without crashing
-    await expect(appPage.locator('main')).toBeVisible();
+    await expect(appPage.locator('main').last()).toBeVisible();
   });
 });

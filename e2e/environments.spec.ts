@@ -9,14 +9,13 @@ test.describe('Environments Page', () => {
     await expect(appPage.getByText('Environments').first()).toBeVisible();
   });
 
-  test('toolbar with search input renders', async ({ appPage }) => {
-    // EnvironmentToolbar contains a search input
-    await expect(appPage.getByPlaceholder(/search/i).first()).toBeVisible();
+  test('shows desktop-required fallback guidance in web mode', async ({ appPage }) => {
+    await expect(appPage.getByText(/Desktop App Required|桌面应用/i).first()).toBeVisible();
+    await expect(appPage.getByText(/desktop mode only|desktop only/i).first()).toBeVisible();
   });
 
-  test('add environment button is visible', async ({ appPage }) => {
-    const addBtn = appPage.getByRole('button', { name: /add/i }).first();
-    await expect(addBtn).toBeVisible();
+  test('desktop-only actions are not exposed in web mode', async ({ appPage }) => {
+    await expect(appPage.getByRole('button', { name: /add environment|添加环境/i })).toHaveCount(0);
   });
 
   test('shows empty state or loading skeleton', async ({ appPage }) => {
@@ -25,7 +24,7 @@ test.describe('Environments Page', () => {
     // 2. Loading skeletons are shown
     // 3. Error alert is shown (Tauri IPC fails)
     // Any of these is acceptable — page should not crash
-    const main = appPage.locator('main');
+    const main = appPage.locator('main').last();
     await expect(main).toBeVisible();
   });
 });

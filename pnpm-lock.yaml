@@ -289,6 +289,19 @@ importers:
         specifier: ^0.20.0
         version: 0.20.2
 
+  plugins/typescript/env-provider-audit:
+    dependencies:
+      '@cognia/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../../plugin-sdk-ts
+    devDependencies:
+      '@extism/js-pdk':
+        specifier: ^1.1.1
+        version: 1.1.1
+      esbuild:
+        specifier: ^0.20.0
+        version: 0.20.2
+
   plugins/typescript/git-workspace-summary:
     dependencies:
       '@cognia/plugin-sdk':
@@ -303,6 +316,19 @@ importers:
         version: 0.20.2
 
   plugins/typescript/local-api-workbench:
+    dependencies:
+      '@cognia/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../../plugin-sdk-ts
+    devDependencies:
+      '@extism/js-pdk':
+        specifier: ^1.1.1
+        version: 1.1.1
+      esbuild:
+        specifier: ^0.20.0
+        version: 0.20.2
+
+  plugins/typescript/pkg-update-advisor:
     dependencies:
       '@cognia/plugin-sdk':
         specifier: workspace:*

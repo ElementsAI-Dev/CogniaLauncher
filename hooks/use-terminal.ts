@@ -944,11 +944,15 @@ export function useTerminal({ t }: UseTerminalOptions) {
     for (const [k, v] of config) {
       configMap[k] = v;
     }
+    const normalizedMode = (configMap['terminal.proxy_mode'] || 'global').trim();
+    const proxyMode: ProxyMode = normalizedMode === 'custom' || normalizedMode === 'none'
+      ? normalizedMode
+      : 'global';
     return {
-      proxyMode: (configMap['terminal.proxy_mode'] || 'global') as ProxyMode,
-      customProxy: configMap['terminal.custom_proxy'] || '',
-      noProxy: configMap['terminal.no_proxy'] || '',
-      globalProxy: configMap['network.proxy'] || '',
+      proxyMode,
+      customProxy: (configMap['terminal.custom_proxy'] || '').trim(),
+      noProxy: (configMap['terminal.no_proxy'] || '').trim(),
+      globalProxy: (configMap['network.proxy'] || '').trim(),
     };
   }, []);
 
@@ -972,30 +976,10 @@ export function useTerminal({ t }: UseTerminalOptions) {
     };
   }, [parseProxyConfigMap]);
 
-  const loadProxyConfig = useCallback(async () => {
-    if (!isTauri()) return;
-    try {
-      const result = await reloadCanonicalProxyState();
-      setState((prev) => ({
-        ...prev,
-        proxySyncState: {
-          status: 'success',
-          message: null,
-          result,
-          updatedAt: Date.now(),
-        },
-      }));
-    } catch {
-      // fallback to defaults
-    }
-  }, [reloadCanonicalProxyState]);
-
-  const updateProxyMode = useCallback(async (mode: ProxyMode) => {
-    setState((prev) => ({ ...prev, proxyMode: mode }));
-    if (!isTauri()) return;
+  const setProxySyncLoading = useCallback((saving: boolean) => {
     setState((prev) => ({
       ...prev,
-      proxyConfigSaving: true,
+      proxyConfigSaving: saving,
       proxySyncState: {
         status: 'loading',
         message: null,
@@ -1003,40 +987,70 @@ export function useTerminal({ t }: UseTerminalOptions) {
         updatedAt: Date.now(),
       },
     }));
+  }, []);
+
+  const setProxySyncResult = useCallback((
+    status: 'success' | 'error',
+    message: string | null,
+    result: UseTerminalState['proxySyncState']['result'],
+  ) => {
+    setState((prev) => ({
+      ...prev,
+      proxyConfigSaving: false,
+      proxySyncState: {
+        status,
+        message,
+        result,
+        updatedAt: Date.now(),
+      },
+    }));
+  }, []);
+
+  const finalizeProxySyncError = useCallback(async (message: string) => {
+    let recovered: UseTerminalState['proxySyncState']['result'] = null;
+    try {
+      recovered = await reloadCanonicalProxyState();
+    } catch {
+      // Keep recovered result null when canonical reload is unavailable.
+    }
+    setProxySyncResult('error', message, recovered);
+    toast.error(message);
+  }, [reloadCanonicalProxyState, setProxySyncResult]);
+
+  const loadProxyConfig = useCallback(async () => {
+    if (!isTauri()) return;
+    setProxySyncLoading(false);
+    try {
+      const result = await reloadCanonicalProxyState();
+      setProxySyncResult('success', null, result);
+    } catch (e) {
+      const message = t('terminal.toastLoadProxyVarsFailed', { error: String(e) });
+      setProxySyncResult('error', message, null);
+      toast.error(message);
+    }
+  }, [reloadCanonicalProxyState, setProxySyncLoading, setProxySyncResult, t]);
+
+  const updateProxyMode = useCallback(async (mode: ProxyMode) => {
+    setState((prev) => ({ ...prev, proxyMode: mode }));
+    if (!isTauri()) return;
+    setProxySyncLoading(true);
     try {
       await tauri.configSet('terminal.proxy_mode', mode);
       const result = await reloadCanonicalProxyState();
-      setState((prev) => ({
-        ...prev,
-        proxyConfigSaving: false,
-        proxySyncState: {
-          status: 'success',
-          message: t('terminal.toastConfigUpdated'),
-          result,
-          updatedAt: Date.now(),
-        },
-      }));
+      setProxySyncResult('success', t('terminal.toastConfigUpdated'), result);
       markResourcesStale(['proxyConfig', 'proxyEnvVars', 'shellEnvVars']);
     } catch (e) {
       const message = t('terminal.toastSetProxyModeFailed', { error: String(e) });
-      setState((prev) => ({
-        ...prev,
-        proxyConfigSaving: false,
-        proxySyncState: {
-          status: 'error',
-          message,
-          result: null,
-          updatedAt: Date.now(),
-        },
-      }));
-      try {
-        await reloadCanonicalProxyState();
-      } catch {
-        // Preserve existing error state when canonical reload fails.
-      }
-      toast.error(message);
+      await finalizeProxySyncError(message);
     }
-  }, [markResourcesStale, reloadCanonicalProxyState, t]);
+  }, [
+    finalizeProxySyncError,
+    markResourcesStale,
+    reloadCanonicalProxyState,
+    setProxySyncLoading,
+    setProxySyncResult,
+    t,
+  ]);
 
   const updateCustomProxy = useCallback(async (value: string) => {
     setState((prev) => ({ ...prev, customProxy: value }));
@@ -1044,50 +1058,25 @@ export function useTerminal({ t }: UseTerminalOptions) {
 
   const saveCustomProxy = useCallback(async () => {
     if (!isTauri()) return;
-    setState((prev) => ({
-      ...prev,
-      proxyConfigSaving: true,
-      proxySyncState: {
-        status: 'loading',
-        message: null,
-        result: null,
-        updatedAt: Date.now(),
-      },
-    }));
+    setProxySyncLoading(true);
     try {
       await tauri.configSet('terminal.custom_proxy', state.customProxy.trim());
       const result = await reloadCanonicalProxyState();
-      setState((prev) => ({
-        ...prev,
-        proxyConfigSaving: false,
-        proxySyncState: {
-          status: 'success',
-          message: t('terminal.toastConfigSaved'),
-          result,
-          updatedAt: Date.now(),
-        },
-      }));
+      setProxySyncResult('success', t('terminal.toastConfigSaved'), result);
       markResourcesStale(['proxyConfig', 'proxyEnvVars', 'shellEnvVars']);
     } catch (e) {
       const message = t('terminal.toastSaveProxyFailed', { error: String(e) });
-      setState((prev) => ({
-        ...prev,
-        proxyConfigSaving: false,
-        proxySyncState: {
-          status: 'error',
-          message,
-          result: null,
-          updatedAt: Date.now(),
-        },
-      }));
-      try {
-        await reloadCanonicalProxyState();
-      } catch {
-        // Preserve existing error state when canonical reload fails.
-      }
-      toast.error(message);
+      await finalizeProxySyncError(message);
     }
-  }, [markResourcesStale, reloadCanonicalProxyState, state.customProxy, t]);
+  }, [
+    finalizeProxySyncError,
+    markResourcesStale,
+    reloadCanonicalProxyState,
+    setProxySyncLoading,
+    setProxySyncResult,
+    state.customProxy,
+    t,
+  ]);
 
   const updateNoProxy = useCallback(async (value: string) => {
     setState((prev) => ({ ...prev, noProxy: value }));
@@ -1095,50 +1084,25 @@ export function useTerminal({ t }: UseTerminalOptions) {
 
   const saveNoProxy = useCallback(async () => {
     if (!isTauri()) return;
-    setState((prev) => ({
-      ...prev,
-      proxyConfigSaving: true,
-      proxySyncState: {
-        status: 'loading',
-        message: null,
-        result: null,
-        updatedAt: Date.now(),
-      },
-    }));
+    setProxySyncLoading(true);
     try {
-      await tauri.configSet('terminal.no_proxy', state.noProxy);
+      await tauri.configSet('terminal.no_proxy', state.noProxy.trim());
       const result = await reloadCanonicalProxyState();
-      setState((prev) => ({
-        ...prev,
-        proxyConfigSaving: false,
-        proxySyncState: {
-          status: 'success',
-          message: t('terminal.toastConfigSaved'),
-          result,
-          updatedAt: Date.now(),
-        },
-      }));
+      setProxySyncResult('success', t('terminal.toastConfigSaved'), result);
       markResourcesStale(['proxyConfig', 'proxyEnvVars', 'shellEnvVars']);
     } catch (e) {
       const message = t('terminal.toastSaveNoProxyFailed', { error: String(e) });
-      setState((prev) => ({
-        ...prev,
-        proxyConfigSaving: false,
-        proxySyncState: {
-          status: 'error',
-          message,
-          result: null,
-          updatedAt: Date.now(),
-        },
-      }));
-      try {
-        await reloadCanonicalProxyState();
-      } catch {
-        // Preserve existing error state when canonical reload fails.
-      }
-      toast.error(message);
+      await finalizeProxySyncError(message);
     }
-  }, [markResourcesStale, reloadCanonicalProxyState, state.noProxy, t]);
+  }, [
+    finalizeProxySyncError,
+    markResourcesStale,
+    reloadCanonicalProxyState,
+    setProxySyncLoading,
+    setProxySyncResult,
+    state.noProxy,
+    t,
+  ]);
 
   // Initial load
   useEffect(() => {

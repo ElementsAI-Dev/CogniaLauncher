@@ -1,5 +1,6 @@
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { GitGlobalSettingsCard } from './git-global-settings-card';
+import type { GitConfigBatchReadResult, GitConfigReadFailure } from '@/types/git';
 
 const mockToastSuccess = jest.fn();
 const mockToastError = jest.fn();
@@ -18,8 +19,23 @@ jest.mock('sonner', () => ({
   },
 }));
 
+function buildBatchResult(
+  keys: string[],
+  overrides: Record<string, string | null> = {},
+  failures: GitConfigReadFailure[] = [],
+): GitConfigBatchReadResult {
+  const values: Record<string, string | null> = {};
+  for (const key of keys) {
+    values[key] = Object.prototype.hasOwnProperty.call(overrides, key) ? overrides[key] : null;
+  }
+  return { values, failures };
+}
+
 describe('GitGlobalSettingsCard', () => {
-  const mockGetConfigValue = jest.fn().mockResolvedValue(null);
+  const mockGetConfigSnapshot = jest.fn();
+  const mockGetConfigValuesBatch = jest.fn();
+  const mockGetConfigFilePath = jest.fn().mockResolvedValue('/home/user/.gitconfig');
+  const mockOpenConfigLocation = jest.fn().mockResolvedValue(undefined);
   const mockSetConfig = jest.fn().mockResolvedValue(undefined);
   const mockSetConfigIfUnset = jest.fn().mockResolvedValue(false);
   const mockApplyConfigPlan = jest.fn().mockResolvedValue({
@@ -32,42 +48,201 @@ describe('GitGlobalSettingsCard', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockGetConfigValue.mockImplementation((key: string) => {
-      const values: Record<string, string | null> = {
+    mockGetConfigSnapshot.mockResolvedValue({
+      values: {
         'user.name': 'John Doe',
         'user.email': 'john@example.com',
         'core.autocrlf': 'true',
         'commit.gpgsign': 'true',
-      };
-      return Promise.resolve(values[key] ?? null);
+      },
+      failures: [],
     });
+    mockGetConfigValuesBatch.mockImplementation((keys: string[]) => Promise.resolve(buildBatchResult(keys)));
   });
 
-  it('loads settings on mount', async () => {
+  function renderCard() {
+    return render(
+      <GitGlobalSettingsCard
+        onGetConfigSnapshot={mockGetConfigSnapshot}
+        onGetConfigValuesBatch={mockGetConfigValuesBatch}
+        onGetConfigFilePath={mockGetConfigFilePath}
+        onOpenConfigLocation={mockOpenConfigLocation}
+        onSetConfig={mockSetConfig}
+        onSetConfigIfUnset={mockSetConfigIfUnset}
+        onApplyConfigPlan={mockApplyConfigPlan}
+      />,
+    );
+  }
+
+  it('loads settings from snapshot on mount', async () => {
     await act(async () => {
-      render(
-        <GitGlobalSettingsCard
-          onGetConfigValue={mockGetConfigValue}
-          onSetConfig={mockSetConfig}
-        />,
-      );
+      renderCard();
     });
 
     await waitFor(() => {
-      expect(mockGetConfigValue).toHaveBeenCalledWith('user.name');
-      expect(mockGetConfigValue).toHaveBeenCalledWith('user.email');
-      expect(mockGetConfigValue).toHaveBeenCalledWith('core.autocrlf');
+      expect(mockGetConfigSnapshot).toHaveBeenCalledTimes(1);
+      expect(mockGetConfigValuesBatch).not.toHaveBeenCalled();
+      expect(screen.getByDisplayValue('John Doe')).toBeInTheDocument();
+    });
+  });
+
+  it('refresh button triggers a new settings load', async () => {
+    await act(async () => {
+      renderCard();
+    });
+
+    await waitFor(() => {
+      expect(mockGetConfigSnapshot).toHaveBeenCalledTimes(1);
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'git.refresh' }));
+
+    await waitFor(() => {
+      expect(mockGetConfigSnapshot).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it('keeps interaction available while fallback reads are still pending', async () => {
+    let pendingResolve: ((value: GitConfigBatchReadResult) => void) | null = null;
+    let pendingKeys: string[] = [];
+    mockGetConfigSnapshot.mockResolvedValueOnce({
+      values: {
+        'user.name': 'John Doe',
+        'user.email': 'john@example.com',
+      },
+      failures: [{
+        key: null,
+        category: 'timeout',
+        message: 'snapshot timed out',
+        recoverable: true,
+        nextSteps: ['Retry'],
+      }],
+    });
+    mockGetConfigValuesBatch.mockImplementation((keys: string[]) => {
+      pendingKeys = keys;
+      return new Promise((resolve) => {
+        pendingResolve = resolve;
+      });
+    });
+
+    await act(async () => {
+      renderCard();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('John Doe')).toBeInTheDocument();
+      expect(screen.getByText('Load state: partial')).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      pendingResolve?.(buildBatchResult(pendingKeys));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Load state: partial')).toBeInTheDocument();
+    });
+  });
+
+  it('renders partial failure diagnostics and keeps editable fields visible', async () => {
+    mockGetConfigSnapshot.mockResolvedValueOnce({
+      values: {
+        'user.name': 'John Doe',
+        'user.email': 'john@example.com',
+      },
+      failures: [{
+        key: 'core.editor',
+        category: 'timeout',
+        message: 'settings detection timed out',
+        recoverable: true,
+        nextSteps: ['Retry'],
+      }],
+    });
+
+    await act(async () => {
+      renderCard();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Load state: partial')).toBeInTheDocument();
+      expect(screen.getByText('[timeout] core.editor: settings detection timed out')).toBeInTheDocument();
+      expect(screen.getByDisplayValue('John Doe')).toBeInTheDocument();
+    });
+  });
+
+  it('retries failed keys and clears failure diagnostics when retry succeeds', async () => {
+    mockGetConfigSnapshot
+      .mockResolvedValueOnce({
+        values: {
+          'user.name': 'John Doe',
+          'user.email': 'john@example.com',
+        },
+        failures: [{
+          key: 'core.editor',
+          category: 'timeout',
+          message: 'settings detection timed out',
+          recoverable: true,
+          nextSteps: ['Retry'],
+        }],
+      })
+      .mockResolvedValueOnce({
+        values: {
+          'user.name': 'John Doe',
+          'user.email': 'john@example.com',
+        },
+        failures: [],
+      });
+
+    mockGetConfigValuesBatch
+      .mockImplementationOnce((keys: string[]) => Promise.resolve(buildBatchResult(
+        keys,
+        {},
+        [{
+          key: 'core.editor',
+          category: 'timeout',
+          message: 'settings detection timed out',
+          recoverable: true,
+          nextSteps: ['Retry'],
+        }],
+      )))
+      .mockImplementationOnce((keys: string[]) => Promise.resolve(buildBatchResult(
+        keys,
+        { 'core.editor': 'code --wait' },
+      )));
+
+    await act(async () => {
+      renderCard();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('[timeout] core.editor: settings detection timed out')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Retry failed keys/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByText('[timeout] core.editor: settings detection timed out')).not.toBeInTheDocument();
+      expect(screen.getByText('Load state: ready')).toBeInTheDocument();
+    });
+  });
+
+  it('exposes explicit recovery action to open config location', async () => {
+    await act(async () => {
+      renderCard();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Open config location' })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open config location' }));
+    await waitFor(() => {
+      expect(mockOpenConfigLocation).toHaveBeenCalledTimes(1);
     });
   });
 
   it('renders template selector and preview actions', async () => {
     await act(async () => {
-      render(
-        <GitGlobalSettingsCard
-          onGetConfigValue={mockGetConfigValue}
-          onSetConfig={mockSetConfig}
-        />,
-      );
+      renderCard();
     });
 
     await waitFor(() => {
@@ -81,14 +256,7 @@ describe('GitGlobalSettingsCard', () => {
 
   it('applies selected template keys via onApplyConfigPlan', async () => {
     await act(async () => {
-      render(
-        <GitGlobalSettingsCard
-          onGetConfigValue={mockGetConfigValue}
-          onSetConfig={mockSetConfig}
-          onSetConfigIfUnset={mockSetConfigIfUnset}
-          onApplyConfigPlan={mockApplyConfigPlan}
-        />,
-      );
+      renderCard();
     });
 
     await waitFor(() => {
@@ -108,12 +276,7 @@ describe('GitGlobalSettingsCard', () => {
 
   it('shows validation error and blocks save for invalid email', async () => {
     await act(async () => {
-      render(
-        <GitGlobalSettingsCard
-          onGetConfigValue={mockGetConfigValue}
-          onSetConfig={mockSetConfig}
-        />,
-      );
+      renderCard();
     });
 
     await waitFor(() => {
@@ -143,13 +306,7 @@ describe('GitGlobalSettingsCard', () => {
     });
 
     await act(async () => {
-      render(
-        <GitGlobalSettingsCard
-          onGetConfigValue={mockGetConfigValue}
-          onSetConfig={mockSetConfig}
-          onApplyConfigPlan={mockApplyConfigPlan}
-        />,
-      );
+      renderCard();
     });
 
     await waitFor(() => {

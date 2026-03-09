@@ -1370,8 +1370,9 @@ impl PluginManager {
             .await
             .map_err(|e| CogniaError::Plugin(format!("Failed to create extract dir: {}", e)))?;
 
-        let archive_file = std::fs::File::open(&archive_path)
-            .map_err(|e| CogniaError::Plugin(format!("Failed to open downloaded archive: {}", e)))?;
+        let archive_file = std::fs::File::open(&archive_path).map_err(|e| {
+            CogniaError::Plugin(format!("Failed to open downloaded archive: {}", e))
+        })?;
         let mut archive = zip::ZipArchive::new(archive_file)
             .map_err(|e| CogniaError::Plugin(format!("Invalid marketplace zip file: {}", e)))?;
         archive.extract(&extract_root).map_err(|e| {
@@ -2403,28 +2404,37 @@ impl PluginManager {
                 temp_dir.path().join("plugin.wasm")
             };
             let task_id = self
-                .queue_marketplace_download(&listing, "update", &update_info.download_url, &payload_path)
+                .queue_marketplace_download(
+                    &listing,
+                    "update",
+                    &update_info.download_url,
+                    &payload_path,
+                )
                 .await?;
             download_task_id = Some(task_id);
 
             if update_info.download_url.ends_with(".zip") {
-                let archive_file = std::fs::File::open(&payload_path)
-                    .map_err(|e| CogniaError::Plugin(format!("Failed to open update archive: {}", e)))?;
+                let archive_file = std::fs::File::open(&payload_path).map_err(|e| {
+                    CogniaError::Plugin(format!("Failed to open update archive: {}", e))
+                })?;
                 let mut archive = zip::ZipArchive::new(archive_file)
                     .map_err(|e| CogniaError::Plugin(format!("Invalid zip: {}", e)))?;
                 let extract_root = temp_dir.path().join("extracted");
-                tokio::fs::create_dir_all(&extract_root).await.map_err(|e| {
-                    CogniaError::Plugin(format!("Failed to create update extract dir: {}", e))
-                })?;
+                tokio::fs::create_dir_all(&extract_root)
+                    .await
+                    .map_err(|e| {
+                        CogniaError::Plugin(format!("Failed to create update extract dir: {}", e))
+                    })?;
                 archive.extract(&extract_root).map_err(|e| {
                     CogniaError::Plugin(format!("Failed to extract update archive: {}", e))
                 })?;
-                let package_root = Self::find_plugin_package_root(&extract_root).ok_or_else(|| {
-                    CogniaError::Plugin(
-                        "Update package is missing required plugin.toml/plugin.wasm files."
-                            .to_string(),
-                    )
-                })?;
+                let package_root =
+                    Self::find_plugin_package_root(&extract_root).ok_or_else(|| {
+                        CogniaError::Plugin(
+                            "Update package is missing required plugin.toml/plugin.wasm files."
+                                .to_string(),
+                        )
+                    })?;
                 copy_dir_recursive(&package_root, temp_dir.path()).await?;
             }
         } else {

@@ -1,7 +1,15 @@
-import { test, expect, SIDEBAR } from './fixtures/app-fixture';
+import {
+  test,
+  expect,
+  SIDEBAR,
+  toggleSidebar,
+  waitForAppReady,
+} from './fixtures/app-fixture';
 
 test.describe('Responsive Layout', () => {
-  test('desktop viewport shows sidebar expanded', async ({ appPage }) => {
+  test('desktop viewport shows sidebar expanded', async ({ appPage, isMobile }) => {
+    test.skip(isMobile, 'Desktop sidebar assertion is not applicable to mobile project.');
+
     // Default appPage uses Desktop Chrome viewport (1280x720)
     const sidebar = appPage.locator(SIDEBAR);
     await expect(sidebar).toBeVisible();
@@ -16,11 +24,11 @@ test.describe('Responsive Layout', () => {
     });
     const page = await context.newPage();
     await page.goto('/');
-    await page.waitForLoadState('domcontentloaded');
+    await waitForAppReady(page);
 
     // Sidebar should not be visible on mobile (rendered as Sheet overlay)
     // The SidebarTrigger button should be visible
-    const trigger = page.locator('button.-ml-1');
+    const trigger = page.locator('[data-sidebar="trigger"]');
     await expect(trigger).toBeVisible();
 
     // Click trigger to open sidebar sheet
@@ -37,11 +45,11 @@ test.describe('Responsive Layout', () => {
     });
     const page = await context.newPage();
     await page.goto('/');
-    await page.waitForLoadState('domcontentloaded');
+    await waitForAppReady(page);
 
     // Open sidebar sheet
-    await page.locator('button.-ml-1').click();
-    await page.waitForTimeout(300);
+    await toggleSidebar(page);
+    await expect(page.getByRole('link', { name: /settings/i }).first()).toBeVisible();
 
     // Click on "Settings" link
     const settingsLink = page.getByRole('link', { name: /settings/i }).first();

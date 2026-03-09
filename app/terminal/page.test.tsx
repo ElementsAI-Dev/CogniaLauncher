@@ -231,7 +231,7 @@ describe('TerminalPage', () => {
       expect(screen.getByTestId('proxy-settings')).toBeInTheDocument();
     });
     expect(mockLoadProxyConfig).toHaveBeenCalledTimes(1);
-    expect(mockFetchProxyEnvVars).toHaveBeenCalledTimes(1);
+    expect(mockFetchProxyEnvVars).toHaveBeenCalledTimes(0);
   });
 
   it('switches to env vars tab', async () => {
@@ -251,7 +251,7 @@ describe('TerminalPage', () => {
 
     await user.click(screen.getByRole('tab', { name: /proxy/i }));
     expect(mockLoadProxyConfig).toHaveBeenCalledTimes(1);
-    expect(mockFetchProxyEnvVars).toHaveBeenCalledTimes(1);
+    expect(mockFetchProxyEnvVars).toHaveBeenCalledTimes(0);
 
     mockTerminalHookState.resourceStale = {
       ...mockTerminalHookState.resourceStale,
@@ -264,7 +264,7 @@ describe('TerminalPage', () => {
     await user.click(screen.getByRole('tab', { name: /proxy/i }));
 
     expect(mockLoadProxyConfig).toHaveBeenCalledTimes(1);
-    expect(mockFetchProxyEnvVars).toHaveBeenCalledTimes(1);
+    expect(mockFetchProxyEnvVars).toHaveBeenCalledTimes(0);
 
     mockTerminalHookState.resourceStale = {
       ...mockTerminalHookState.resourceStale,
@@ -277,7 +277,23 @@ describe('TerminalPage', () => {
     await user.click(screen.getByRole('tab', { name: /proxy/i }));
 
     expect(mockLoadProxyConfig).toHaveBeenCalledTimes(2);
-    expect(mockFetchProxyEnvVars).toHaveBeenCalledTimes(2);
+    expect(mockFetchProxyEnvVars).toHaveBeenCalledTimes(0);
+  });
+
+  it('refreshes proxy env vars independently when only proxy env is stale', async () => {
+    const user = userEvent.setup();
+    mockTerminalHookState.resourceStale = {
+      ...mockTerminalHookState.resourceStale,
+      proxyConfig: false,
+      proxyEnvVars: true,
+    };
+
+    render(<TerminalPage />);
+
+    await user.click(screen.getByRole('tab', { name: /proxy/i }));
+
+    expect(mockLoadProxyConfig).toHaveBeenCalledTimes(0);
+    expect(mockFetchProxyEnvVars).toHaveBeenCalledTimes(1);
   });
 
   it('guards tab switch when config editor is dirty until discard is confirmed', async () => {

@@ -5,6 +5,7 @@ This directory hosts first-party production plugins shipped with CogniaLauncher.
 ## Structure
 
 - `manifest.json`: Built-in plugin catalog (id/version/framework/checksum metadata).
+- `sdk-capability-matrix.json`: Capability governance for required built-ins (`sdkCapabilities`, `expectedPermissions`, `primaryEntrypoints`).
 - `rust/*`: Rust SDK built-in plugins.
 - `typescript/*`: TypeScript SDK built-in plugins.
 
@@ -51,6 +52,21 @@ Selector rules:
 - Unknown selectors fail before build, checksum, or test stages mutate anything.
 - Filtered runs report both selected and skipped plugin ids so partial coverage is explicit.
 - Filtered runs are for focused iteration only; run the canonical commands without selectors before shipping the full built-in suite.
+
+## Current Required Capability-Coverage Built-ins
+
+- `com.cognia.builtin.env-provider-audit` (`plugins/typescript/env-provider-audit`)
+  - Focus: `env`, `platform`, `event`, `notification`
+- `com.cognia.builtin.pkg-update-advisor` (`plugins/typescript/pkg-update-advisor`)
+  - Focus: `pkg`, `clipboard`, `notification`, `event`
+- `com.cognia.builtin.file-config-assistant` (`plugins/rust/file-config-assistant`)
+  - Focus: `fs`, `config`
+
+When adding or modifying required built-ins:
+
+1. Update `plugins/sdk-capability-matrix.json`.
+2. Keep `expectedPermissions` aligned with `plugin.toml` `[permissions]`.
+3. Keep `primaryEntrypoints` aligned with `[[tools]].entry` and source exports.
 
 ## Runtime Sync Behavior
 

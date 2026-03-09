@@ -1,0 +1,34 @@
+[plugin]
+id = "com.cognia.builtin.pkg-update-advisor"
+name = "Package Update Advisor"
+version = "0.1.0"
+description = "Analyze package update opportunities for a provider and generate shareable operational summaries."
+authors = ["CogniaLauncher Team"]
+tool_contract_version = "1.0.0"
+compatible_cognia_versions = ">=0.1.0"
+
+[[tools]]
+id = "pkg-update-advisor"
+name_en = "Package Update Advisor"
+name_zh = "包更新顾问"
+description_en = "Check installed packages for available updates and produce actionable summaries."
+description_zh = "检查已安装包的可用更新并输出可执行摘要。"
+category = "developer"
+keywords = ["package", "update", "advisor", "provider", "dependency", "maintenance"]
+icon = "PackageSearch"
+entry = "pkg_update_advisor"
+
+[permissions]
+pkg_search = true
+clipboard = true
+notification = true
+
+[locales.en]
+success = "Package update advisor completed."
+invalidInput = "Input must be empty or a JSON object with provider/packages/limit options."
+executionFailed = "Package update advisor failed due to host capability error."
+
+[locales.zh]
+success = "包更新顾问执行完成。"
+invalidInput = "输入必须为空，或为包含 provider/packages/limit 选项的 JSON 对象。"
+executionFailed = "包更新顾问因主机能力调用失败。"

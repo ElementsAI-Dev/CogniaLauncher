@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Globe, ShieldCheck, Info } from 'lucide-react';
+import { Globe, ShieldCheck, Info, Loader2 } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
 import type { ProxyMode } from '@/types/terminal';
 
@@ -123,10 +123,18 @@ export function TerminalProxySettings({
                   className="h-auto p-0"
                   onClick={onClearSyncState}
                 >
-                  {t('terminal.cancel')}
+                  {t('common.clear')}
                 </Button>
               )}
             </AlertDescription>
+          </Alert>
+        )}
+
+        {syncStatus === 'loading' && (
+          <Alert>
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <AlertTitle>{t('terminal.proxySettings')}</AlertTitle>
+            <AlertDescription>{t('common.loading')}</AlertDescription>
           </Alert>
         )}
 
@@ -169,6 +177,7 @@ export function TerminalProxySettings({
                 onBlur={onCustomProxyBlur}
                 placeholder="http://proxy.example.com:8080"
                 className="font-mono text-sm"
+                disabled={saving}
               />
             </div>
           </div>
@@ -184,6 +193,7 @@ export function TerminalProxySettings({
               onBlur={onNoProxyBlur}
               placeholder="localhost,127.0.0.1,.internal.com"
               className="font-mono text-sm"
+              disabled={saving}
             />
             <p className="text-xs text-muted-foreground">{t('terminal.noProxyHint')}</p>
           </div>

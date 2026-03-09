@@ -191,11 +191,15 @@ e2e/
 ├── navigation.spec.ts      # Sidebar navigation, breadcrumbs, routing
 ├── dashboard.spec.ts       # Dashboard page
 ├── environments.spec.ts    # Environment management page
+├── health.spec.ts          # Health page (Web fallback)
 ├── packages.spec.ts        # Package management page
 ├── providers.spec.ts       # Providers page
 ├── cache.spec.ts           # Cache page (overview + sub-routes)
 ├── downloads.spec.ts       # Download management page
 ├── git.spec.ts             # Git page (Web fallback)
+├── envvar.spec.ts          # Environment variables page (Web fallback)
+├── terminal.spec.ts        # Terminal page (Web fallback)
+├── toolbox.spec.ts         # Toolbox route interactions
 ├── wsl.spec.ts             # WSL page (Web fallback)
 ├── logs.spec.ts            # Logs page
 ├── settings.spec.ts        # Settings page
@@ -212,3 +216,4 @@ e2e/
 - E2E tests run in Web mode (`pnpm dev`), no Tauri desktop dependency
 - Desktop-only features (WSL, Git management, etc.) test their fallback state in Web mode
 - Configuration file: `playwright.config.ts` (project root)
+- Route ownership and scenario mapping should stay aligned with `e2e/coverage-matrix.md`

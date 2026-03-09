@@ -15,24 +15,39 @@ import {
 import { Search, Loader2 } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { formatRelativeDate } from '@/lib/utils/git-date';
+import type { GitHistorySearchType } from '@/types/tauri';
 import type { GitCommitEntry } from '@/types/tauri';
 import type { GitSearchCommitsProps } from '@/types/git';
 
-export function GitSearchCommits({ onSearch, onSelectCommit }: GitSearchCommitsProps) {
+const SEARCH_PAGE_SIZE = 50;
+
+export function GitSearchCommits({
+  onSearch,
+  onSelectCommit,
+  queryState,
+}: GitSearchCommitsProps) {
   const { t } = useLocale();
   const [query, setQuery] = useState('');
   const [searchType, setSearchType] = useState<string>('message');
   const [results, setResults] = useState<GitCommitEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
+  const hasMore = queryState?.hasMore ?? results.length >= SEARCH_PAGE_SIZE;
 
-  const handleSearch = async () => {
+  const handleSearch = async (append = false) => {
     if (!query.trim()) return;
     setLoading(true);
     setSearched(true);
     try {
-      const data = await onSearch(query.trim(), searchType, 50);
-      setResults(data);
+      const request = {
+        query: query.trim(),
+        searchType: searchType as GitHistorySearchType,
+        limit: SEARCH_PAGE_SIZE,
+        skip: append ? results.length : 0,
+        append,
+      };
+      const data = await onSearch(request);
+      setResults((prev) => (append ? [...prev, ...data] : data));
     } finally {
       setLoading(false);
     }
@@ -61,12 +76,12 @@ export function GitSearchCommits({ onSearch, onSelectCommit }: GitSearchCommitsP
               placeholder={t('git.search.placeholder')}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+              onKeyDown={(e) => e.key === 'Enter' && handleSearch(false)}
               className="h-8 text-xs"
               disabled={loading}
             />
           </div>
-          <Button size="sm" onClick={handleSearch} disabled={loading || !query.trim()}>
+          <Button size="sm" onClick={() => handleSearch(false)} disabled={loading || !query.trim()}>
             {loading ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
@@ -107,6 +122,22 @@ export function GitSearchCommits({ onSearch, onSelectCommit }: GitSearchCommitsP
                 </span>
               </div>
             ))}
+            {hasMore && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full mt-2 text-xs"
+                onClick={() => handleSearch(true)}
+                disabled={loading}
+              >
+                {loading ? (
+                  <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                ) : (
+                  <Search className="h-3.5 w-3.5 mr-1" />
+                )}
+                {t('git.history.loadMore')}
+              </Button>
+            )}
           </div>
         )}
       </CardContent>

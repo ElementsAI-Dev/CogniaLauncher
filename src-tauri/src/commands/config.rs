@@ -8,6 +8,15 @@ use tokio::sync::RwLock;
 
 pub type SharedSettings = Arc<RwLock<Settings>>;
 
+fn refresh_network_clients(settings: &Settings) {
+    crate::platform::proxy::rebuild_shared_client(settings);
+    crate::provider::api::update_api_client_from_settings(settings);
+}
+
+fn should_refresh_network_clients_for_key(key: &str) -> bool {
+    key.starts_with("network.") || key.starts_with("security.") || key.starts_with("mirrors.")
+}
+
 #[tauri::command]
 pub async fn config_get(
     key: String,
@@ -27,10 +36,8 @@ pub async fn config_set(
     s.set_value(&key, &value).map_err(|e| e.to_string())?;
     s.save().await.map_err(|e| e.to_string())?;
 
-    // Rebuild shared HTTP client when network or security settings change
-    if key.starts_with("network.") || key.starts_with("security.") {
-        crate::platform::proxy::rebuild_shared_client(&s);
-        crate::provider::api::update_api_client_from_settings(&s);
+    if should_refresh_network_clients_for_key(&key) {
+        refresh_network_clients(&s);
     }
 
     Ok(())
@@ -183,7 +190,9 @@ pub fn config_list_defaults() -> Result<Vec<(String, String)>, String> {
 pub async fn config_reset(settings: State<'_, SharedSettings>) -> Result<(), String> {
     let mut s = settings.write().await;
     *s = Settings::default();
-    s.save().await.map_err(|e| e.to_string())
+    s.save().await.map_err(|e| e.to_string())?;
+    refresh_network_clients(&s);
+    Ok(())
 }
 
 #[tauri::command]
@@ -278,7 +287,30 @@ pub async fn get_platform_info() -> Result<PlatformInfo, String> {
 #[cfg(test)]
 mod tests {
     use super::config_list_defaults;
+    use super::should_refresh_network_clients_for_key;
     use super::CONFIG_LIST_STATIC_KEYS;
+
+    #[test]
+    fn network_client_refresh_key_filter_covers_proxy_security_and_mirrors() {
+        assert!(should_refresh_network_clients_for_key("network.proxy"));
+        assert!(should_refresh_network_clients_for_key("network.no_proxy"));
+        assert!(should_refresh_network_clients_for_key(
+            "security.allow_self_signed"
+        ));
+        assert!(should_refresh_network_clients_for_key("mirrors.npm"));
+        assert!(should_refresh_network_clients_for_key("mirrors.crates"));
+    }
+
+    #[test]
+    fn network_client_refresh_key_filter_ignores_unrelated_keys() {
+        assert!(!should_refresh_network_clients_for_key("appearance.theme"));
+        assert!(!should_refresh_network_clients_for_key(
+            "terminal.proxy_mode"
+        ));
+        assert!(!should_refresh_network_clients_for_key(
+            "general.parallel_downloads"
+        ));
+    }
 
     #[test]
     fn config_list_static_keys_include_terminal_proxy_settings() {
@@ -1206,7 +1238,9 @@ pub async fn config_import(
         toml::from_str(&toml_content).map_err(|e| format!("Failed to parse config: {}", e))?;
     let mut s = settings.write().await;
     *s = parsed;
-    s.save().await.map_err(|e| e.to_string())
+    s.save().await.map_err(|e| e.to_string())?;
+    refresh_network_clients(&s);
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------

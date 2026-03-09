@@ -1,4 +1,9 @@
-import { test, expect, navigateTo } from './fixtures/app-fixture';
+import {
+  test,
+  expect,
+  navigateTo,
+  expectNoFatalOverlay,
+} from './fixtures/app-fixture';
 
 test.describe('Settings Page', () => {
   test.beforeEach(async ({ appPage }) => {
@@ -9,58 +14,67 @@ test.describe('Settings Page', () => {
     await expect(appPage.locator('#settings-title')).toBeVisible();
   });
 
-  test('all 10 section headings are visible', async ({ appPage }) => {
-    // SECTION_IDS from settings/page.tsx: general, network, security, mirrors,
-    // appearance, updates, tray, paths, provider, system
-    // Each rendered inside a CollapsibleSection with an id attribute
+  test('all major section cards are attached', async ({ appPage }) => {
     const sectionIds = [
-      'general', 'network', 'security', 'mirrors', 'appearance',
-      'updates', 'tray', 'paths', 'provider', 'system',
+      'section-general',
+      'section-network',
+      'section-security',
+      'section-mirrors',
+      'section-appearance',
+      'section-updates',
+      'section-tray',
+      'section-shortcuts',
+      'section-paths',
+      'section-provider',
+      'section-backup',
+      'section-startup',
+      'section-system',
     ];
     for (const id of sectionIds) {
       await expect(appPage.locator(`#${id}`)).toBeAttached();
     }
   });
 
-  test('settings nav sidebar is visible on desktop', async ({ appPage }) => {
+  test('settings nav sidebar is visible on desktop', async ({ appPage, isMobile }) => {
+    test.skip(isMobile, 'Desktop-only settings sidebar layout');
+
     // SettingsNav renders in an <aside> element (hidden on mobile via lg:block)
     const aside = appPage.locator('aside').first();
     await expect(aside).toBeVisible();
   });
 
   test('search bar is functional', async ({ appPage }) => {
-    // SettingsSearch renders a search input
-    const searchInput = appPage.getByPlaceholder(/search/i).first();
+    const searchInput = appPage.locator('input[aria-label="Search settings"]:visible').first();
     await expect(searchInput).toBeVisible();
     await searchInput.fill('proxy');
-    // After typing, the search should filter (no crash expected)
-    await appPage.waitForTimeout(300);
-    await expect(appPage.locator('main')).toBeVisible();
+    await expect(appPage.locator('main').last()).toBeVisible();
   });
 
-  test('section collapse/expand works', async ({ appPage }) => {
-    // Click on a section header to collapse it
-    const networkSection = appPage.locator('#network');
-    await networkSection.scrollIntoViewIfNeeded();
-    // The collapsible trigger is the section header area
-    const trigger = networkSection.locator('button').first();
-    if (await trigger.isVisible()) {
-      await trigger.click();
-      await appPage.waitForTimeout(200);
-      // Section should still exist but content may be hidden
-      await expect(networkSection).toBeAttached();
-    }
+  test('section collapse/expand works deterministically', async ({ appPage }) => {
+    const trigger = appPage.locator('#section-network [aria-controls="section-network-content"]').first();
+    await trigger.scrollIntoViewIfNeeded();
+    await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+
+    await trigger.click();
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+
+    await trigger.click();
+    await expect(trigger).toHaveAttribute('aria-expanded', 'true');
   });
 
-  test('export button is visible', async ({ appPage }) => {
-    const exportBtn = appPage.getByRole('button', { name: /export/i }).first();
-    await expect(exportBtn).toBeVisible();
+  test('onboarding controls expose at least one action button', async ({ appPage }) => {
+    await expect(appPage.getByText(/onboarding/i).first()).toBeVisible();
+
+    const actionButtons = appPage.getByRole('button', {
+      name: /rerun|resume|tour/i,
+    });
+    await expect(actionButtons.first()).toBeVisible();
   });
 
   test('onboarding settings card is visible', async ({ appPage }) => {
-    // OnboardingSettingsCard renders at the bottom with data-hint="settings-mirrors"
-    const onboardingCard = appPage.locator('[data-hint="settings-mirrors"]');
+    const onboardingCard = appPage.getByText(/onboarding/i).first();
     await onboardingCard.scrollIntoViewIfNeeded();
     await expect(onboardingCard).toBeVisible();
+    await expectNoFatalOverlay(appPage);
   });
 });

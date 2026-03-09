@@ -23,6 +23,7 @@ import {
   User,
   GitCommitHorizontal,
   Settings2,
+  RefreshCw,
   GitPullRequest,
   GitCompareArrows,
   KeyRound,
@@ -33,6 +34,7 @@ import { toast } from 'sonner';
 import type {
   GitConfigApplyPlanItem,
   GitConfigApplySummary,
+  GitConfigReadFailure,
   GitConfigTemplatePreviewItem,
   GitGlobalSettingsCardProps,
 } from '@/types/git';
@@ -49,6 +51,8 @@ interface SettingValue {
   loading: boolean;
 }
 
+type SettingsLoadState = 'loading' | 'partial' | 'ready' | 'retrying';
+
 const SETTING_KEYS = [
   'user.name', 'user.email', 'user.signingkey',
   'commit.gpgsign', 'commit.template', 'init.defaultBranch',
@@ -63,50 +67,265 @@ const SETTING_KEYS = [
 
 type SettingKey = typeof SETTING_KEYS[number];
 
+const FALLBACK_READ_CONCURRENCY = 4;
+const SNAPSHOT_READ_TIMEOUT_MS = 8_000;
+const FALLBACK_READ_TIMEOUT_MS = 8_000;
+const FALLBACK_REQUIRED_KEYS: SettingKey[] = [
+  'user.name',
+  'user.email',
+  'core.editor',
+  'pull.rebase',
+  'push.default',
+  'credential.helper',
+];
+
+function createInitialSettingsState(): Record<string, SettingValue> {
+  return SETTING_KEYS.reduce((acc, key) => {
+    acc[key] = { value: null, loading: false };
+    return acc;
+  }, {} as Record<string, SettingValue>);
+}
+
+function mergeFailures(failures: GitConfigReadFailure[]): GitConfigReadFailure[] {
+  const map = new Map<string, GitConfigReadFailure>();
+  for (const failure of failures) {
+    const id = `${failure.key ?? 'global'}::${failure.category}::${failure.message}`;
+    if (!map.has(id)) {
+      map.set(id, failure);
+    }
+  }
+  return Array.from(map.values());
+}
+
+function normalizeFailure(message: string, key: string | null): GitConfigReadFailure {
+  const lower = message.toLowerCase();
+  if (lower.includes('[git:timeout]') || lower.includes('timeout') || lower.includes('timed out')) {
+    return {
+      key,
+      category: 'timeout',
+      message,
+      recoverable: true,
+      nextSteps: ['Retry reading failed keys.'],
+    };
+  }
+  if (lower.includes('parse') || lower.includes('invalid') || lower.includes('malformed')) {
+    return {
+      key,
+      category: 'parse_failed',
+      message,
+      recoverable: true,
+      nextSteps: ['Fix invalid git config content and retry.'],
+    };
+  }
+  if (lower.includes('[git:execution]') || lower.includes('provider error') || lower.includes('git:')) {
+    return {
+      key,
+      category: 'execution_failed',
+      message,
+      recoverable: true,
+      nextSteps: ['Retry or open config file location for manual inspection.'],
+    };
+  }
+  return {
+    key,
+    category: 'unknown',
+    message,
+    recoverable: false,
+    nextSteps: ['Retry and inspect logs if the issue persists.'],
+  };
+}
+
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  timeoutMessage: string,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  try {
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        reject(new Error(timeoutMessage));
+      }, timeoutMs);
+    });
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
+}
+
 export function GitGlobalSettingsCard({
-  onGetConfigValue,
+  onGetConfigSnapshot,
+  onGetConfigValuesBatch,
+  onGetConfigFilePath,
+  onOpenConfigLocation,
   onSetConfig,
   onSetConfigIfUnset,
   onApplyConfigPlan,
 }: GitGlobalSettingsCardProps) {
   const { t } = useLocale();
-  const [settings, setSettings] = useState<Record<string, SettingValue>>({});
-  const [initialized, setInitialized] = useState(false);
+  const [settings, setSettings] = useState<Record<string, SettingValue>>(createInitialSettingsState);
+  const [loadState, setLoadState] = useState<SettingsLoadState>('loading');
+  const [loadFailures, setLoadFailures] = useState<GitConfigReadFailure[]>([]);
+  const [failedKeys, setFailedKeys] = useState<SettingKey[]>([]);
+  const [configPath, setConfigPath] = useState<string | null>(null);
   const [applyingTemplate, setApplyingTemplate] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>(GIT_SETTINGS_TEMPLATES[0]?.id ?? '');
   const [templatePreview, setTemplatePreview] = useState<GitConfigTemplatePreviewItem[]>([]);
   const [lastApplySummary, setLastApplySummary] = useState<GitConfigApplySummary | null>(null);
   const initRef = useRef(false);
   const mountedRef = useRef(true);
+  const loadRequestRef = useRef(0);
+  const failedKeysRef = useRef<SettingKey[]>([]);
 
   useEffect(() => {
     return () => { mountedRef.current = false; };
   }, []);
 
-  const loadAllSettings = useCallback(async () => {
-    const results: Record<string, SettingValue> = {};
-    const promises = SETTING_KEYS.map(async (key) => {
-      try {
-        const value = await onGetConfigValue(key);
-        results[key] = { value, loading: false };
-      } catch {
-        results[key] = { value: null, loading: false };
-      }
-    });
-    await Promise.all(promises);
-    if (mountedRef.current) {
-      setSettings(results);
-      setInitialized(true);
+  const loadSettings = useCallback(async (mode: 'full' | 'retryFailed' = 'full') => {
+    const requestId = loadRequestRef.current + 1;
+    loadRequestRef.current = requestId;
+    setLoadState(mode === 'retryFailed' ? 'retrying' : 'loading');
+    if (mode === 'full') {
+      setLoadFailures([]);
+      setFailedKeys([]);
+      failedKeysRef.current = [];
     }
-  }, [onGetConfigValue]);
+
+    const resolvedValues: Record<string, string | null> = {};
+    for (const key of SETTING_KEYS) {
+      resolvedValues[key] = null;
+    }
+
+    let snapshotValues: Record<string, string | null> = {};
+    let snapshotFailures: GitConfigReadFailure[] = [];
+    try {
+      const snapshot = await withTimeout(
+        onGetConfigSnapshot(),
+        SNAPSHOT_READ_TIMEOUT_MS,
+        'Snapshot read timed out',
+      );
+      snapshotValues = snapshot.values;
+      snapshotFailures = snapshot.failures;
+    } catch (e) {
+      snapshotFailures = [normalizeFailure(String(e), null)];
+    }
+    if (!mountedRef.current || requestId !== loadRequestRef.current) {
+      return;
+    }
+
+    for (const key of SETTING_KEYS) {
+      if (Object.prototype.hasOwnProperty.call(snapshotValues, key)) {
+        resolvedValues[key] = snapshotValues[key];
+      }
+    }
+
+    setSettings((prev) => {
+      const next = { ...prev };
+      for (const key of SETTING_KEYS) {
+        next[key] = {
+          value: resolvedValues[key],
+          loading: false,
+        };
+      }
+      return next;
+    });
+
+    const baseFailedKeys = snapshotFailures
+      .map((failure) => failure.key)
+      .filter((key): key is SettingKey => key !== null && SETTING_KEYS.includes(key as SettingKey));
+    failedKeysRef.current = Array.from(new Set(baseFailedKeys));
+    setFailedKeys(failedKeysRef.current);
+    setLoadFailures(mergeFailures(snapshotFailures));
+
+    const targetKeys = mode === 'retryFailed'
+      ? failedKeysRef.current
+      : snapshotFailures.length > 0
+        ? FALLBACK_REQUIRED_KEYS
+        : [];
+    const missingKeys = targetKeys.filter((key) => resolvedValues[key] === null);
+
+    let fallbackFailures: GitConfigReadFailure[] = [];
+    if (missingKeys.length > 0) {
+      if (mode !== 'retryFailed') {
+        setLoadState('partial');
+      }
+      try {
+        const fallback = await withTimeout(
+          onGetConfigValuesBatch(missingKeys, {
+            concurrency: FALLBACK_READ_CONCURRENCY,
+          }),
+          FALLBACK_READ_TIMEOUT_MS,
+          'Fallback read timed out',
+        );
+        if (!mountedRef.current || requestId !== loadRequestRef.current) {
+          return;
+        }
+
+        fallbackFailures = fallback.failures;
+        for (const key of missingKeys) {
+          if (Object.prototype.hasOwnProperty.call(fallback.values, key)) {
+            resolvedValues[key] = fallback.values[key];
+          }
+        }
+      } catch (e) {
+        fallbackFailures = [normalizeFailure(String(e), null)];
+      }
+
+      if (!mountedRef.current || requestId !== loadRequestRef.current) {
+        return;
+      }
+
+      setSettings((prev) => {
+        const next = { ...prev };
+        for (const key of missingKeys) {
+          next[key] = {
+            value: resolvedValues[key],
+            loading: false,
+          };
+        }
+        return next;
+      });
+    }
+
+    const mergedFailures = mergeFailures([...snapshotFailures, ...fallbackFailures]);
+    const nextFailedKeys = mergedFailures
+      .map((failure) => failure.key)
+      .filter((key): key is SettingKey => key !== null && SETTING_KEYS.includes(key as SettingKey));
+
+    failedKeysRef.current = Array.from(new Set(nextFailedKeys));
+    setFailedKeys(failedKeysRef.current);
+    setLoadFailures(mergedFailures);
+    setLoadState(mergedFailures.length === 0 ? 'ready' : 'partial');
+  }, [onGetConfigSnapshot, onGetConfigValuesBatch]);
 
   useEffect(() => {
     if (!initRef.current) {
       initRef.current = true;
       // Defer to avoid synchronous setState in effect
-      queueMicrotask(() => { loadAllSettings(); });
+      queueMicrotask(() => { void loadSettings('full'); });
     }
-  }, [loadAllSettings]);
+  }, [loadSettings]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!onGetConfigFilePath) return;
+    void onGetConfigFilePath()
+      .then((path) => {
+        if (!cancelled) {
+          setConfigPath(path);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setConfigPath(null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [onGetConfigFilePath]);
 
   const getValue = (key: SettingKey): string => {
     return settings[key]?.value ?? '';
@@ -146,9 +365,9 @@ export function GitGlobalSettingsCard({
       await onSetConfig(key, value);
     } catch {
       // revert on error
-      loadAllSettings();
+      void loadSettings('full');
     }
-  }, [onSetConfig, loadAllSettings, t]);
+  }, [onSetConfig, loadSettings, t]);
 
   const handleToggle = useCallback(async (key: SettingKey, checked: boolean) => {
     await handleChange(key, checked ? 'true' : 'false');
@@ -242,14 +461,14 @@ export function GitGlobalSettingsCard({
         ? await onApplyConfigPlan(plan)
         : await applyPlanWithLegacyActions(plan);
       setLastApplySummary(summary);
-      await loadAllSettings();
+      await loadSettings('full');
       toast.success(t('git.settings.templateApplied', { count: String(summary.succeeded) }));
     } catch (e) {
       toast.error(String(e));
     } finally {
       setApplyingTemplate(false);
     }
-  }, [applyPlanWithLegacyActions, loadAllSettings, onApplyConfigPlan, t, templatePreview]);
+  }, [applyPlanWithLegacyActions, loadSettings, onApplyConfigPlan, t, templatePreview]);
 
   useEffect(() => {
     const template = getGitSettingsTemplate(selectedTemplateId);
@@ -265,6 +484,15 @@ export function GitGlobalSettingsCard({
       prev.map((item) => (item.key === key ? { ...item, selected: checked } : item)),
     );
   }, []);
+
+  const handleRefreshAllSettings = useCallback(() => {
+    void loadSettings('full');
+  }, [loadSettings]);
+
+  const handleRetryFailedKeys = useCallback(() => {
+    if (failedKeysRef.current.length === 0) return;
+    void loadSettings('retryFailed');
+  }, [loadSettings]);
 
   const renderTextSetting = (key: SettingKey, placeholder?: string, type?: string) => (
     <div className="grid grid-cols-[180px_1fr] items-center gap-3">
@@ -329,35 +557,71 @@ export function GitGlobalSettingsCard({
     </div>
   );
 
-  if (!initialized) {
-    return (
-      <Card>
-        <CardHeader>
+  return (
+    <Card>
+      <CardHeader className="gap-3">
+        <div className="flex items-center justify-between gap-2">
           <CardTitle className="flex items-center gap-2">
             <Settings2 className="h-5 w-5" />
             {t('git.settings.title')}
           </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="h-8 bg-muted rounded animate-pulse" />
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  return (
-    <Card>
-      <CardHeader className="gap-3">
-        <CardTitle className="flex items-center gap-2">
-          <Settings2 className="h-5 w-5" />
-          {t('git.settings.title')}
-        </CardTitle>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-xs"
+            onClick={handleRefreshAllSettings}
+          >
+            <RefreshCw className="mr-1 h-3.5 w-3.5" />
+            {t('git.refresh')}
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
+        <div className="mb-4 space-y-2 rounded-md border p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs"
+              onClick={handleRefreshAllSettings}
+            >
+              {loadState === 'loading' ? 'Loading settings...' : 'Refresh settings'}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs"
+              disabled={failedKeys.length === 0 || loadState === 'retrying'}
+              onClick={handleRetryFailedKeys}
+            >
+              {loadState === 'retrying' ? 'Retrying failed keys...' : `Retry failed keys (${failedKeys.length})`}
+            </Button>
+            {onOpenConfigLocation && configPath && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs"
+                onClick={() => {
+                  void onOpenConfigLocation();
+                }}
+              >
+                Open config location
+              </Button>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Load state: {loadState}
+          </p>
+          {loadFailures.length > 0 && (
+            <div className="space-y-1 rounded-md border border-destructive/40 bg-destructive/5 p-2 text-xs">
+              {loadFailures.map((failure, index) => (
+                <p key={`${failure.key ?? 'global'}-${index}`}>
+                  [{failure.category}] {failure.key ? `${failure.key}: ` : ''}{failure.message}
+                </p>
+              ))}
+            </div>
+          )}
+        </div>
         <div className="mb-4 space-y-3 rounded-md border p-3">
           <div className="grid grid-cols-[180px_1fr] items-center gap-3">
             <Label className="text-sm font-medium">{t('git.settings.templateTitle')}</Label>

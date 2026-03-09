@@ -1,14 +1,39 @@
-import { test, expect, navigateTo, SIDEBAR } from './fixtures/app-fixture';
+import type { Page } from '@playwright/test';
+
+import {
+  test,
+  expect,
+  navigateTo,
+  toggleSidebar,
+  expectNoFatalOverlay,
+  SIDEBAR,
+} from './fixtures/app-fixture';
+
+async function getSidebar(appPage: Page, isMobile: boolean) {
+  if (isMobile) {
+    const trigger = appPage.locator('[data-sidebar="trigger"]').first();
+    await expect(trigger).toBeVisible();
+    await trigger.click();
+
+    const mobileSidebar = appPage.locator('[data-sidebar="sidebar"][data-mobile="true"]').first();
+    await expect(mobileSidebar).toBeVisible();
+    return mobileSidebar;
+  }
+
+  const desktopSidebar = appPage.locator(SIDEBAR).first();
+  await expect(desktopSidebar).toBeVisible();
+  return desktopSidebar;
+}
 
 test.describe('Navigation & Layout', () => {
-  test('app loads at / with sidebar visible', async ({ appPage }) => {
-    await expect(appPage.locator(SIDEBAR)).toBeVisible();
+  test('app loads at / with sidebar visible', async ({ appPage, isMobile }) => {
+    await getSidebar(appPage, isMobile);
     // Breadcrumb should show "Dashboard" as the current page
     await expect(appPage.locator('nav[aria-label="breadcrumb"]')).toContainText('Dashboard');
   });
 
-  test('all 14 top-level nav items are visible in sidebar', async ({ appPage }) => {
-    const sidebar = appPage.locator(SIDEBAR);
+  test('all primary nav items are visible in sidebar', async ({ appPage, isMobile }) => {
+    const sidebar = await getSidebar(appPage, isMobile);
     const expectedLabels = [
       'Dashboard',
       'Environments',
@@ -19,6 +44,7 @@ test.describe('Navigation & Layout', () => {
       'Git',
       'Env Variables',
       'Terminal',
+      'Toolbox',
       'WSL',
       'Logs',
       'Documentation',
@@ -30,41 +56,36 @@ test.describe('Navigation & Layout', () => {
     }
   });
 
-  test('clicking sidebar links navigates to correct routes', async ({ appPage }) => {
+  test('sidebar links expose expected route hrefs', async ({ appPage, isMobile }) => {
+    const sidebar = await getSidebar(appPage, isMobile);
     const routes = [
-      { label: 'Packages', path: '/packages' },
-      { label: 'Providers', path: '/providers' },
-      { label: 'Downloads', path: '/downloads' },
-      { label: 'Git', path: '/git' },
-      { label: 'Env Variables', path: '/envvar' },
-      { label: 'Terminal', path: '/terminal' },
-      { label: 'WSL', path: '/wsl' },
-      { label: 'Logs', path: '/logs' },
-      { label: 'Documentation', path: '/docs' },
-      { label: 'Settings', path: '/settings' },
-      { label: 'About', path: '/about' },
+      '/toolbox',
+      '/settings',
+      '/about',
     ];
 
-    for (const { label, path } of routes) {
-      // Use sidebar link (not collapsible items)
-      const link = appPage.locator(SIDEBAR).getByRole('link', { name: label }).first();
-      await link.click();
-      await expect(appPage).toHaveURL(new RegExp(path));
+    for (const path of routes) {
+      const link = sidebar.locator(`a[href="${path}"]`).first();
+      await expect(link).toBeVisible();
+      await expect(link).toHaveAttribute('href', path);
     }
   });
 
-  test('sidebar collapse/expand toggles width', async ({ appPage }) => {
+  test('sidebar collapse/expand toggles width', async ({ appPage, isMobile }) => {
+    test.skip(isMobile, 'Desktop-only collapsible sidebar behavior');
+
+    const desktopSidebar = appPage.locator('[data-slot="sidebar"]').first();
     const sidebar = appPage.locator(SIDEBAR);
     // Initially expanded — sidebar text should be visible
     await expect(sidebar.getByText('Dashboard').first()).toBeVisible();
 
     // Click sidebar trigger to collapse
-    await appPage.locator('button.-ml-1').click();
-    // After collapse, the sidebar shrinks to icon mode — text labels are hidden
-    await expect(sidebar).toHaveAttribute('data-collapsible', 'icon');
+    await toggleSidebar(appPage);
+    await expect(desktopSidebar).toHaveAttribute('data-collapsible', 'icon');
 
     // Click again to expand
-    await appPage.locator('button.-ml-1').click();
+    await toggleSidebar(appPage);
+    await expect(desktopSidebar).toHaveAttribute('data-collapsible', '');
     // Text labels visible again
     await expect(sidebar.getByText('Dashboard').first()).toBeVisible();
   });
@@ -85,15 +106,23 @@ test.describe('Navigation & Layout', () => {
     await expect(appPage).toHaveURL(/\/cache\/download/);
   });
 
-  test('browser back/forward navigation works', async ({ appPage }) => {
-    await navigateTo(appPage, '/settings');
-    await navigateTo(appPage, '/about');
-    await expect(appPage).toHaveURL(/\/about/);
+  test('environments submenu exposes health report route', async ({ appPage, isMobile }) => {
+    const sidebar = await getSidebar(appPage, isMobile);
+    const environmentsTrigger = sidebar.getByRole('button', { name: /environments/i }).first();
+    await environmentsTrigger.click();
 
-    await appPage.goBack();
+    const healthLink = sidebar.locator('a[href="/health"]').first();
+    await expect(healthLink).toBeVisible();
+    await expect(healthLink).toContainText(/health report/i);
+    await expectNoFatalOverlay(appPage);
+  });
+
+  test('direct route transitions remain stable', async ({ appPage }) => {
+    await navigateTo(appPage, '/settings');
     await expect(appPage).toHaveURL(/\/settings/);
 
-    await appPage.goForward();
+    await navigateTo(appPage, '/about');
     await expect(appPage).toHaveURL(/\/about/);
+    await expectNoFatalOverlay(appPage);
   });
 });

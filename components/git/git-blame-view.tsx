@@ -12,7 +12,11 @@ import { isTauri } from '@/lib/tauri';
 import type { GitBlameEntry } from '@/types/tauri';
 import type { GitBlameViewProps } from '@/types/git';
 
-export function GitBlameView({ repoPath, onGetBlame }: GitBlameViewProps) {
+export function GitBlameView({
+  repoPath,
+  onGetBlame,
+  queryState,
+}: GitBlameViewProps) {
   const { t } = useLocale();
   const [filePath, setFilePath] = useState('');
   const [entries, setEntries] = useState<GitBlameEntry[]>([]);
@@ -40,7 +44,7 @@ export function GitBlameView({ repoPath, onGetBlame }: GitBlameViewProps) {
     if (!file.trim()) return;
     setLoading(true);
     try {
-      const result = await onGetBlame(file.trim());
+      const result = await onGetBlame({ file: file.trim() });
       setEntries(result);
     } finally {
       setLoading(false);
@@ -85,6 +89,11 @@ export function GitBlameView({ repoPath, onGetBlame }: GitBlameViewProps) {
         </div>
       </CardHeader>
       <CardContent className="p-0">
+        {queryState?.error && (
+          <p className="text-xs text-destructive text-center py-2 px-4">
+            {queryState.error.message}
+          </p>
+        )}
         {loading ? (
           <div className="flex items-center justify-center py-8">
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
