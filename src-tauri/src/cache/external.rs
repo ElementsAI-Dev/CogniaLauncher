@@ -538,11 +538,32 @@ pub struct ExternalCacheInfo {
     /// When true, the size field is 0 and a separate size calculation is pending.
     #[serde(default)]
     pub size_pending: bool,
+    pub detection_state: ExternalCacheDetectionState,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detection_reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detection_error: Option<String>,
+}
+
+/// Normalized external cache detection state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExternalCacheDetectionState {
+    Found,
+    Unavailable,
+    Skipped,
+    Error,
+}
+
+#[derive(Debug, Clone)]
+struct DiscoveryCacheEntry {
+    timestamp: Instant,
+    caches: Vec<ExternalCacheInfo>,
 }
 
 /// In-memory cache for fast discovery results with TTL.
-static DISCOVERY_CACHE: Lazy<RwLock<Option<(Instant, Vec<ExternalCacheInfo>)>>> =
-    Lazy::new(|| RwLock::new(None));
+static DISCOVERY_CACHE: Lazy<RwLock<HashMap<String, DiscoveryCacheEntry>>> =
+    Lazy::new(|| RwLock::new(HashMap::new()));
 
 const DISCOVERY_CACHE_TTL_SECS: u64 = 60;
 
@@ -1464,58 +1485,291 @@ pub async fn clean_cache_contents_public(path: &Path, use_trash: bool) -> Cognia
     clean_cache_contents(path, use_trash).await
 }
 
+#[derive(Debug, Clone)]
+struct ExternalDiscoveryCandidate {
+    provider: String,
+    display_name: String,
+    category: String,
+    cache_path: Option<PathBuf>,
+    is_available: bool,
+    has_clean_command: bool,
+    is_custom: bool,
+}
+
+fn should_exclude_provider(provider_id: &str, excluded: &[String]) -> bool {
+    excluded
+        .iter()
+        .any(|item| item.eq_ignore_ascii_case(provider_id))
+}
+
+fn collect_discovery_candidates(
+    excluded: &[String],
+    custom_entries: &[crate::config::settings::CustomCacheEntry],
+) -> Vec<ExternalDiscoveryCandidate> {
+    let mut candidates = Vec::new();
+
+    for provider in ExternalCacheProvider::all() {
+        if should_exclude_provider(provider.id(), excluded) {
+            continue;
+        }
+
+        let is_available = is_provider_available_sync(provider);
+        let has_clean_command = is_available && provider.clean_command().is_some();
+        candidates.push(ExternalDiscoveryCandidate {
+            provider: provider.id().to_string(),
+            display_name: provider.display_name().to_string(),
+            category: provider.category().to_string(),
+            cache_path: provider.cache_path(),
+            is_available,
+            has_clean_command,
+            is_custom: false,
+        });
+    }
+
+    for entry in custom_entries {
+        if should_exclude_provider(&entry.id, excluded) {
+            continue;
+        }
+
+        let cache_path = if entry.path.trim().is_empty() {
+            None
+        } else {
+            Some(PathBuf::from(&entry.path))
+        };
+
+        candidates.push(ExternalDiscoveryCandidate {
+            provider: entry.id.clone(),
+            display_name: entry.display_name.clone(),
+            category: entry.category.clone(),
+            cache_path,
+            is_available: true,
+            has_clean_command: false,
+            is_custom: true,
+        });
+    }
+
+    candidates
+}
+
+fn normalize_discovery_state(
+    candidate: &ExternalDiscoveryCandidate,
+) -> (
+    bool,
+    ExternalCacheDetectionState,
+    Option<String>,
+    Option<String>,
+) {
+    let Some(path) = candidate.cache_path.as_ref() else {
+        if candidate.is_custom {
+            return (
+                true,
+                ExternalCacheDetectionState::Error,
+                Some("invalid_path".to_string()),
+                Some("Custom cache path is empty".to_string()),
+            );
+        }
+
+        if candidate.is_available {
+            return (
+                true,
+                ExternalCacheDetectionState::Skipped,
+                Some("path_unresolved".to_string()),
+                None,
+            );
+        }
+
+        return (
+            false,
+            ExternalCacheDetectionState::Unavailable,
+            Some("provider_unavailable".to_string()),
+            None,
+        );
+    };
+
+    if !path.exists() {
+        if candidate.is_available || candidate.is_custom {
+            return (
+                true,
+                ExternalCacheDetectionState::Skipped,
+                Some("path_not_found".to_string()),
+                None,
+            );
+        }
+
+        return (
+            false,
+            ExternalCacheDetectionState::Unavailable,
+            Some("provider_unavailable".to_string()),
+            None,
+        );
+    }
+
+    if !path.is_dir() {
+        return (
+            true,
+            ExternalCacheDetectionState::Error,
+            Some("path_not_directory".to_string()),
+            Some("Resolved cache path is not a directory".to_string()),
+        );
+    }
+
+    if let Err(err) = std::fs::read_dir(path) {
+        return (
+            true,
+            ExternalCacheDetectionState::Error,
+            Some("path_unreadable".to_string()),
+            Some(err.to_string()),
+        );
+    }
+
+    if candidate.is_available {
+        (true, ExternalCacheDetectionState::Found, None, None)
+    } else {
+        (
+            true,
+            ExternalCacheDetectionState::Unavailable,
+            Some("provider_unavailable".to_string()),
+            None,
+        )
+    }
+}
+
+fn build_external_cache_info(
+    candidate: &ExternalDiscoveryCandidate,
+    size: u64,
+    size_pending: bool,
+    detection_state: ExternalCacheDetectionState,
+    detection_reason: Option<String>,
+    detection_error: Option<String>,
+) -> ExternalCacheInfo {
+    let can_clean = match detection_state {
+        ExternalCacheDetectionState::Found | ExternalCacheDetectionState::Unavailable => {
+            size > 0 || candidate.has_clean_command
+        }
+        ExternalCacheDetectionState::Skipped | ExternalCacheDetectionState::Error => {
+            candidate.has_clean_command
+        }
+    };
+
+    ExternalCacheInfo {
+        provider: candidate.provider.clone(),
+        display_name: candidate.display_name.clone(),
+        cache_path: candidate
+            .cache_path
+            .as_ref()
+            .map(|p| p.display().to_string())
+            .unwrap_or_default(),
+        size,
+        size_human: format_size(size),
+        is_available: candidate.is_available,
+        can_clean,
+        category: candidate.category.clone(),
+        size_pending,
+        detection_state,
+        detection_reason,
+        detection_error,
+    }
+}
+
+fn sort_external_caches(caches: &mut [ExternalCacheInfo]) {
+    caches.sort_by(|a, b| {
+        b.size
+            .cmp(&a.size)
+            .then_with(|| a.provider.cmp(&b.provider))
+            .then_with(|| a.cache_path.cmp(&b.cache_path))
+    });
+}
+
+fn normalize_discovery_custom_path(path: &str) -> String {
+    #[cfg(windows)]
+    {
+        path.to_ascii_lowercase()
+    }
+    #[cfg(not(windows))]
+    {
+        path.to_string()
+    }
+}
+
+fn discovery_cache_key(
+    excluded: &[String],
+    custom_entries: &[crate::config::settings::CustomCacheEntry],
+) -> String {
+    let mut excluded_ids: Vec<String> = excluded
+        .iter()
+        .map(|id| id.trim().to_ascii_lowercase())
+        .collect();
+    excluded_ids.sort();
+    excluded_ids.dedup();
+
+    let mut custom_keys: Vec<String> = custom_entries
+        .iter()
+        .map(|entry| {
+            format!(
+                "{}={}",
+                entry.id.trim().to_ascii_lowercase(),
+                normalize_discovery_custom_path(entry.path.trim())
+            )
+        })
+        .collect();
+    custom_keys.sort();
+    custom_keys.dedup();
+
+    format!(
+        "excluded:{}|custom:{}",
+        excluded_ids.join(","),
+        custom_keys.join(",")
+    )
+}
+
 /// Discover all external caches on the system (parallelized with timeouts).
 /// This is the full discovery that includes size calculation — use
 /// `discover_all_caches_fast` for the quick first-pass.
 pub async fn discover_all_caches() -> CogniaResult<Vec<ExternalCacheInfo>> {
-    discover_all_caches_full(&[]).await
+    discover_all_caches_full_with_custom(&[], &[]).await
 }
 
 /// Full discovery with optional exclusion list.
 pub async fn discover_all_caches_full(excluded: &[String]) -> CogniaResult<Vec<ExternalCacheInfo>> {
-    let providers: Vec<_> = ExternalCacheProvider::all()
-        .into_iter()
-        .filter(|p| !excluded.iter().any(|ex| ex.eq_ignore_ascii_case(p.id())))
-        .collect();
+    discover_all_caches_full_with_custom(excluded, &[]).await
+}
+
+/// Full discovery with optional exclusion list and custom entries.
+pub async fn discover_all_caches_full_with_custom(
+    excluded: &[String],
+    custom_entries: &[crate::config::settings::CustomCacheEntry],
+) -> CogniaResult<Vec<ExternalCacheInfo>> {
+    let candidates = collect_discovery_candidates(excluded, custom_entries);
 
     let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(6));
 
-    let futures: Vec<_> = providers
+    let futures: Vec<_> = candidates
         .into_iter()
-        .map(|provider| {
+        .map(|candidate| {
             let sem = sem.clone();
             async move {
                 let _permit = sem.acquire().await.ok();
-                let is_available = is_provider_available_sync(provider);
-                let cache_path = provider.cache_path();
-
-                let (path_str, size) = if let Some(ref path) = cache_path {
-                    let size = if path.exists() {
-                        calculate_dir_size(path).await
+                let (include, state, reason, error) = normalize_discovery_state(&candidate);
+                if !include {
+                    None
+                } else {
+                    let size = if matches!(
+                        state,
+                        ExternalCacheDetectionState::Found
+                            | ExternalCacheDetectionState::Unavailable
+                    ) {
+                        if let Some(path) = candidate.cache_path.as_ref() {
+                            calculate_dir_size(path).await
+                        } else {
+                            0
+                        }
                     } else {
                         0
                     };
-                    (path.display().to_string(), size)
-                } else {
-                    (String::new(), 0)
-                };
 
-                let has_cache_dir = cache_path.as_ref().map(|p| p.exists()).unwrap_or(false);
-                if is_available || has_cache_dir {
-                    let has_clean_command = is_available && provider.clean_command().is_some();
-                    Some(ExternalCacheInfo {
-                        provider: provider.id().to_string(),
-                        display_name: provider.display_name().to_string(),
-                        cache_path: path_str,
-                        size,
-                        size_human: format_size(size),
-                        is_available,
-                        can_clean: size > 0 || has_clean_command,
-                        category: provider.category().to_string(),
-                        size_pending: false,
-                    })
-                } else {
-                    None
+                    Some(build_external_cache_info(
+                        &candidate, size, false, state, reason, error,
+                    ))
                 }
             }
         })
@@ -1523,9 +1777,7 @@ pub async fn discover_all_caches_full(excluded: &[String]) -> CogniaResult<Vec<E
 
     let results = futures::future::join_all(futures).await;
     let mut caches: Vec<ExternalCacheInfo> = results.into_iter().flatten().collect();
-
-    // Sort by size descending
-    caches.sort_by(|a, b| b.size.cmp(&a.size));
+    sort_external_caches(&mut caches);
 
     Ok(caches)
 }
@@ -1542,57 +1794,20 @@ pub fn discover_all_caches_fast_with_custom(
     excluded: &[String],
     custom_entries: &[crate::config::settings::CustomCacheEntry],
 ) -> Vec<ExternalCacheInfo> {
-    let providers: Vec<_> = ExternalCacheProvider::all()
-        .into_iter()
-        .filter(|p| !excluded.iter().any(|ex| ex.eq_ignore_ascii_case(p.id())))
-        .collect();
-
+    let candidates = collect_discovery_candidates(excluded, custom_entries);
     let mut caches = Vec::new();
 
-    for provider in providers {
-        let is_available = is_provider_available_sync(provider);
-        let cache_path = provider.cache_path();
-        let has_cache_dir = cache_path.as_ref().map(|p| p.exists()).unwrap_or(false);
-        let path_str = cache_path
-            .as_ref()
-            .map(|p| p.display().to_string())
-            .unwrap_or_default();
-
-        if is_available || has_cache_dir {
-            let has_clean_command = is_available && provider.clean_command().is_some();
-            caches.push(ExternalCacheInfo {
-                provider: provider.id().to_string(),
-                display_name: provider.display_name().to_string(),
-                cache_path: path_str,
-                size: 0,
-                size_human: String::new(),
-                is_available,
-                can_clean: has_clean_command,
-                category: provider.category().to_string(),
-                size_pending: true,
-            });
+    for candidate in candidates {
+        let (include, state, reason, error) = normalize_discovery_state(&candidate);
+        if !include {
+            continue;
         }
+        caches.push(build_external_cache_info(
+            &candidate, 0, true, state, reason, error,
+        ));
     }
 
-    // Append user-defined custom cache entries
-    for entry in custom_entries {
-        let path = PathBuf::from(&entry.path);
-        let exists = path.exists();
-        if exists {
-            caches.push(ExternalCacheInfo {
-                provider: entry.id.clone(),
-                display_name: entry.display_name.clone(),
-                cache_path: entry.path.clone(),
-                size: 0,
-                size_human: String::new(),
-                is_available: true,
-                can_clean: true,
-                category: entry.category.clone(),
-                size_pending: true,
-            });
-        }
-    }
-
+    sort_external_caches(&mut caches);
     caches
 }
 
@@ -1784,17 +1999,19 @@ pub async fn calculate_provider_cache_size(
 
 /// Cached fast discovery: returns cached results if still fresh, otherwise re-discovers.
 pub async fn discover_all_caches_cached(excluded: &[String]) -> Vec<ExternalCacheInfo> {
+    let cache_key = discovery_cache_key(excluded, &[]);
+
     // Check if cache is fresh
     {
         let guard = DISCOVERY_CACHE.read().await;
-        if let Some((ts, ref cached)) = *guard {
-            if ts.elapsed().as_secs() < DISCOVERY_CACHE_TTL_SECS {
+        if let Some(entry) = guard.get(&cache_key) {
+            if entry.timestamp.elapsed().as_secs() < DISCOVERY_CACHE_TTL_SECS {
                 log::debug!(
                     "external_cache_discovery cache hit excluded={} providers={}",
                     excluded.len(),
-                    cached.len()
+                    entry.caches.len()
                 );
-                return cached.clone();
+                return entry.caches.clone();
             }
         }
     }
@@ -1812,7 +2029,13 @@ pub async fn discover_all_caches_cached(excluded: &[String]) -> Vec<ExternalCach
     // Store in cache
     {
         let mut guard = DISCOVERY_CACHE.write().await;
-        *guard = Some((Instant::now(), result.clone()));
+        guard.insert(
+            cache_key,
+            DiscoveryCacheEntry {
+                timestamp: Instant::now(),
+                caches: result.clone(),
+            },
+        );
     }
 
     result
@@ -1824,18 +2047,20 @@ pub async fn discover_all_caches_cached_with_custom(
     excluded: &[String],
     custom_entries: &[crate::config::settings::CustomCacheEntry],
 ) -> Vec<ExternalCacheInfo> {
+    let cache_key = discovery_cache_key(excluded, custom_entries);
+
     // Check if cache is fresh
     {
         let guard = DISCOVERY_CACHE.read().await;
-        if let Some((ts, ref cached)) = *guard {
-            if ts.elapsed().as_secs() < DISCOVERY_CACHE_TTL_SECS {
+        if let Some(entry) = guard.get(&cache_key) {
+            if entry.timestamp.elapsed().as_secs() < DISCOVERY_CACHE_TTL_SECS {
                 log::debug!(
                     "external_cache_discovery_with_custom cache hit excluded={} custom={} providers={}",
                     excluded.len(),
                     custom_entries.len(),
-                    cached.len()
+                    entry.caches.len()
                 );
-                return cached.clone();
+                return entry.caches.clone();
             }
         }
     }
@@ -1854,7 +2079,13 @@ pub async fn discover_all_caches_cached_with_custom(
     // Store in cache
     {
         let mut guard = DISCOVERY_CACHE.write().await;
-        *guard = Some((Instant::now(), result.clone()));
+        guard.insert(
+            cache_key,
+            DiscoveryCacheEntry {
+                timestamp: Instant::now(),
+                caches: result.clone(),
+            },
+        );
     }
 
     result
@@ -1862,7 +2093,7 @@ pub async fn discover_all_caches_cached_with_custom(
 
 pub async fn invalidate_discovery_cache() {
     let mut guard = DISCOVERY_CACHE.write().await;
-    *guard = None;
+    guard.clear();
     log::debug!("external_cache_discovery invalidated");
 }
 
@@ -1965,7 +2196,16 @@ pub async fn clean_all_caches(use_trash: bool) -> CogniaResult<Vec<ExternalCache
 
 /// Get combined cache statistics (internal + external)
 pub async fn get_combined_stats(internal_size: u64) -> CogniaResult<CombinedCacheStats> {
-    let external_caches = discover_all_caches().await?;
+    get_combined_stats_with_custom(internal_size, &[], &[]).await
+}
+
+/// Get combined cache statistics (internal + external) with discovery options.
+pub async fn get_combined_stats_with_custom(
+    internal_size: u64,
+    excluded: &[String],
+    custom_entries: &[crate::config::settings::CustomCacheEntry],
+) -> CogniaResult<CombinedCacheStats> {
+    let external_caches = discover_all_caches_full_with_custom(excluded, custom_entries).await?;
     let external_size: u64 = external_caches.iter().map(|c| c.size).sum();
     let total_size = internal_size + external_size;
 
@@ -2404,8 +2644,12 @@ mod tests {
         let key_a = provider_size_cache_key("custom_a", &cache_a);
         let key_b = provider_size_cache_key("custom_b", &cache_b);
 
-        let _ = calculate_provider_cache_size("custom_a", &entries_a).await.unwrap();
-        let _ = calculate_provider_cache_size("custom_b", &entries_b).await.unwrap();
+        let _ = calculate_provider_cache_size("custom_a", &entries_a)
+            .await
+            .unwrap();
+        let _ = calculate_provider_cache_size("custom_b", &entries_b)
+            .await
+            .unwrap();
         assert_eq!(scan_count_for_key(&key_a).await, 1);
         assert_eq!(scan_count_for_key(&key_b).await, 1);
 
@@ -2416,7 +2660,9 @@ mod tests {
             assert!(guard.contains_key(&key_b));
         }
 
-        let _ = calculate_provider_cache_size("custom_a", &entries_a).await.unwrap();
+        let _ = calculate_provider_cache_size("custom_a", &entries_a)
+            .await
+            .unwrap();
         assert_eq!(
             scan_count_for_key(&key_a).await,
             2,
@@ -2449,6 +2695,92 @@ mod tests {
         let nonexistent = dir.path().join("does_not_exist");
         let size_none = calculate_dir_size(&nonexistent).await;
         assert_eq!(size_none, 0);
+    }
+
+    #[tokio::test]
+    async fn test_fast_and_full_discovery_provider_sets_are_consistent() {
+        let dir = tempfile::tempdir().unwrap();
+        let custom_existing = dir.path().join("custom-existing");
+        tokio::fs::create_dir_all(&custom_existing).await.unwrap();
+        tokio::fs::write(custom_existing.join("sample.bin"), vec![0u8; 16])
+            .await
+            .unwrap();
+
+        let custom_entries = vec![
+            CustomCacheEntry {
+                id: "custom_existing".to_string(),
+                display_name: "Custom Existing".to_string(),
+                path: custom_existing.display().to_string(),
+                category: "devtools".to_string(),
+            },
+            CustomCacheEntry {
+                id: "custom_missing".to_string(),
+                display_name: "Custom Missing".to_string(),
+                path: dir.path().join("missing-path").display().to_string(),
+                category: "devtools".to_string(),
+            },
+        ];
+
+        let fast = discover_all_caches_fast_with_custom(&[], &custom_entries);
+        let full = discover_all_caches_full_with_custom(&[], &custom_entries)
+            .await
+            .unwrap();
+
+        let mut fast_ids: Vec<String> = fast.iter().map(|item| item.provider.clone()).collect();
+        let mut full_ids: Vec<String> = full.iter().map(|item| item.provider.clone()).collect();
+        fast_ids.sort();
+        full_ids.sort();
+
+        assert_eq!(fast_ids, full_ids);
+        assert!(fast_ids.contains(&"custom_existing".to_string()));
+        assert!(fast_ids.contains(&"custom_missing".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_discovery_marks_non_directory_custom_path_as_error_without_blocking_others() {
+        let dir = tempfile::tempdir().unwrap();
+        let custom_existing = dir.path().join("custom-existing");
+        tokio::fs::create_dir_all(&custom_existing).await.unwrap();
+        tokio::fs::write(custom_existing.join("sample.bin"), vec![0u8; 16])
+            .await
+            .unwrap();
+        let non_dir_path = dir.path().join("not-a-directory.txt");
+        tokio::fs::write(&non_dir_path, b"cache file")
+            .await
+            .unwrap();
+
+        let custom_entries = vec![
+            CustomCacheEntry {
+                id: "custom_ok".to_string(),
+                display_name: "Custom OK".to_string(),
+                path: custom_existing.display().to_string(),
+                category: "devtools".to_string(),
+            },
+            CustomCacheEntry {
+                id: "custom_broken".to_string(),
+                display_name: "Custom Broken".to_string(),
+                path: non_dir_path.display().to_string(),
+                category: "devtools".to_string(),
+            },
+        ];
+
+        let caches = discover_all_caches_fast_with_custom(&[], &custom_entries);
+        let ok = caches
+            .iter()
+            .find(|item| item.provider == "custom_ok")
+            .unwrap();
+        let broken = caches
+            .iter()
+            .find(|item| item.provider == "custom_broken")
+            .unwrap();
+
+        assert_eq!(ok.detection_state, ExternalCacheDetectionState::Found);
+        assert_eq!(broken.detection_state, ExternalCacheDetectionState::Error);
+        assert_eq!(
+            broken.detection_reason.as_deref(),
+            Some("path_not_directory")
+        );
+        assert!(broken.detection_error.is_some());
     }
 
     #[test]

@@ -174,6 +174,8 @@ export function TerminalProfileDialog({
                   style={c.value ? { backgroundColor: c.value } : undefined}
                   onClick={() => setColor(c.value)}
                   title={c.label}
+                  aria-label={`${t('terminal.profileColor')}: ${c.label}`}
+                  aria-pressed={color === c.value}
                 />
               ))}
             </div>

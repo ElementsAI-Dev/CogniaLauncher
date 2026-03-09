@@ -150,4 +150,95 @@ describe('usePackageUpdates', () => {
     expect(mockSetUpdateCheckCoverage).not.toHaveBeenCalled();
     expect(mockSetLastUpdateCheck).not.toHaveBeenCalled();
   });
+
+  it('preserves provider outcome reason codes from backend summary', async () => {
+    mockCheckUpdates.mockResolvedValue({
+      updates: [],
+      total_checked: 0,
+      total_providers: 1,
+      errors: [],
+      provider_outcomes: [
+        {
+          provider: 'pip',
+          status: 'unsupported',
+          reason: null,
+          reason_code: 'missing_update_capability',
+          checked: 0,
+          updates: 0,
+          errors: 0,
+        },
+      ],
+      coverage: { supported: 0, partial: 0, unsupported: 1, error: 0 },
+    });
+
+    const { result } = renderHook(() => usePackageUpdates());
+
+    await act(async () => {
+      await result.current.checkUpdates();
+    });
+
+    expect(mockSetUpdateCheckProviderOutcomes).toHaveBeenCalledWith([
+      {
+        provider: 'pip',
+        status: 'unsupported',
+        reason: null,
+        reason_code: 'missing_update_capability',
+        checked: 0,
+        updates: 0,
+        errors: 0,
+      },
+    ]);
+  });
+
+  it('keeps partial/error/unsupported coverage semantics from backend', async () => {
+    mockCheckUpdates.mockResolvedValue({
+      updates: [],
+      total_checked: 6,
+      total_providers: 3,
+      errors: [],
+      provider_outcomes: [
+        {
+          provider: 'npm',
+          status: 'partial',
+          reason: 'native update check failed; metadata fallback applied',
+          reason_code: 'native_update_check_failed_with_fallback',
+          checked: 3,
+          updates: 1,
+          errors: 1,
+        },
+        {
+          provider: 'pip',
+          status: 'unsupported',
+          reason: 'provider executable is not available',
+          reason_code: 'provider_executable_unavailable',
+          checked: 0,
+          updates: 0,
+          errors: 0,
+        },
+        {
+          provider: 'cargo',
+          status: 'error',
+          reason: 'native update check failed',
+          reason_code: 'native_update_check_failed',
+          checked: 3,
+          updates: 0,
+          errors: 1,
+        },
+      ],
+      coverage: { supported: 0, partial: 1, unsupported: 1, error: 1 },
+    });
+
+    const { result } = renderHook(() => usePackageUpdates());
+
+    await act(async () => {
+      await result.current.checkUpdates();
+    });
+
+    expect(mockSetUpdateCheckCoverage).toHaveBeenCalledWith({
+      supported: 0,
+      partial: 1,
+      unsupported: 1,
+      error: 1,
+    });
+  });
 });

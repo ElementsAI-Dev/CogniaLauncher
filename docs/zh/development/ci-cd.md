@@ -24,9 +24,7 @@ on:
   push:
     branches: [main, develop]
   pull_request:
-    branches: [main]
-  release:
-    types: [created]
+    branches: [main, develop]
 ```
 
 ---
@@ -36,6 +34,7 @@ on:
 ### Code Quality & Security
 
 - 运行 `pnpm lint`
+- 运行 `pnpm docs:validate:warn`（迁移阶段，非阻塞）
 - 检查依赖安全漏洞
 - TypeScript 类型检查
 
@@ -106,6 +105,7 @@ concurrency:
 # 前端
 pnpm lint
 pnpm test
+pnpm docs:validate
 
 # 后端
 cargo check
@@ -122,7 +122,8 @@ pnpm build
 ### 常见 CI 失败原因
 
 1. **Lint 失败** — 运行 `pnpm lint --fix` 修复
-2. **测试失败** — 检查本地是否通过 `pnpm test`
-3. **类型错误** — 确保 `pnpm build` 本地能成功
-4. **Cargo 编译失败** — 运行 `cargo check` 检查
-5. **依赖不匹配** — 删除 `node_modules` 重新 `pnpm install`
+2. **文档校验告警/失败** — 运行 `pnpm docs:validate` 并修复对齐/链接/命令问题
+3. **测试失败** — 检查本地是否通过 `pnpm test`
+4. **类型错误** — 确保 `pnpm build` 本地能成功
+5. **Cargo 编译失败** — 运行 `cargo check` 检查
+6. **依赖不匹配** — 删除 `node_modules` 重新 `pnpm install`

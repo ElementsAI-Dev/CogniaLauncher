@@ -3,7 +3,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::{CogniaError, CogniaResult};
+use crate::error::CogniaError;
 use crate::platform::env::{self, EnvFileFormat, EnvVarScope, ShellProfileInfo};
 
 // ============================================================================
@@ -55,17 +55,20 @@ pub fn envvar_list_all() -> Result<HashMap<String, String>, CogniaError> {
 
 #[tauri::command]
 pub fn envvar_get(key: String) -> Result<Option<String>, CogniaError> {
+    let key = env::normalize_env_var_key(&key)?;
     Ok(env::get_var(&key))
 }
 
 #[tauri::command]
 pub fn envvar_set_process(key: String, value: String) -> Result<(), CogniaError> {
+    let key = env::normalize_env_var_key(&key)?;
     env::set_var(&key, &value);
     Ok(())
 }
 
 #[tauri::command]
 pub fn envvar_remove_process(key: String) -> Result<(), CogniaError> {
+    let key = env::normalize_env_var_key(&key)?;
     env::remove_var(&key);
     Ok(())
 }
@@ -84,7 +87,6 @@ pub async fn envvar_set_persistent(
     value: String,
     scope: EnvVarScope,
 ) -> Result<(), CogniaError> {
-    validate_env_key(&key)?;
     env::set_persistent_var(&key, &value, scope).await
 }
 
@@ -177,20 +179,22 @@ pub async fn envvar_import_env_file(
     let mut skipped = 0usize;
     let mut errors = Vec::new();
 
-    for (key, value) in parsed {
-        if key.is_empty() {
-            skipped += 1;
-            continue;
-        }
-        match scope {
-            EnvVarScope::Process => {
-                env::set_var(&key, &value);
-                imported += 1;
+    for (raw_key, value) in parsed {
+        let key = match env::normalize_env_var_key(&raw_key) {
+            Ok(normalized) => normalized,
+            Err(error) => {
+                skipped += 1;
+                errors.push(format_import_error(&raw_key, &error));
+                continue;
             }
-            _ => match env::set_persistent_var(&key, &value, scope).await {
-                Ok(()) => imported += 1,
-                Err(e) => errors.push(format!("{}: {}", key, e)),
-            },
+        };
+
+        match env::set_persistent_var(&key, &value, scope).await {
+            Ok(()) => imported += 1,
+            Err(error) => {
+                skipped += 1;
+                errors.push(format_import_error(&key, &error));
+            }
         }
     }
 
@@ -332,16 +336,100 @@ pub async fn envvar_deduplicate_path(scope: EnvVarScope) -> Result<usize, Cognia
 // Helpers
 // ============================================================================
 
-fn validate_env_key(key: &str) -> CogniaResult<()> {
-    if key.is_empty() {
-        return Err(CogniaError::Config(
-            "Environment variable key cannot be empty".into(),
-        ));
+fn format_import_error(key: &str, error: &CogniaError) -> String {
+    format!(
+        "{} [{}]: {}",
+        import_key_label(key),
+        import_error_kind(error),
+        error
+    )
+}
+
+fn import_key_label(key: &str) -> String {
+    let trimmed = key.trim();
+    if trimmed.is_empty() {
+        "<empty>".to_string()
+    } else {
+        trimmed.to_string()
     }
-    if key.contains('=') || key.contains('\0') {
-        return Err(CogniaError::Config(
-            "Environment variable key contains invalid characters".into(),
-        ));
+}
+
+fn import_error_kind(error: &CogniaError) -> &'static str {
+    match error {
+        CogniaError::Config(_) => "invalid_input",
+        CogniaError::PermissionDenied(_) => "permission_denied",
+        CogniaError::Io(_) => "io_error",
+        CogniaError::Internal(_) => "platform_error",
+        _ => "runtime_error",
     }
-    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn import_error_kind_maps_core_error_variants() {
+        assert_eq!(
+            import_error_kind(&CogniaError::Config("bad key".into())),
+            "invalid_input"
+        );
+        assert_eq!(
+            import_error_kind(&CogniaError::PermissionDenied("denied".into())),
+            "permission_denied"
+        );
+        assert_eq!(
+            import_error_kind(&CogniaError::Internal("broken".into())),
+            "platform_error"
+        );
+    }
+
+    #[test]
+    fn format_import_error_uses_stable_shape() {
+        let error = format_import_error("", &CogniaError::Config("bad".into()));
+        assert!(error.contains("<empty> [invalid_input]:"));
+    }
+
+    #[tokio::test]
+    async fn import_env_file_reports_invalid_key_as_skipped() {
+        let result = envvar_import_env_file("BAD KEY=1\nGOOD_KEY=2".into(), EnvVarScope::Process)
+            .await
+            .expect("import should not crash");
+        assert_eq!(result.imported, 1);
+        assert_eq!(result.skipped, 1);
+        assert_eq!(result.errors.len(), 1);
+        assert!(result.errors[0].contains("[invalid_input]"));
+
+        env::remove_var("GOOD_KEY");
+    }
+
+    #[tokio::test]
+    async fn deduplicate_path_is_idempotent() {
+        let original = env::get_persistent_path(EnvVarScope::Process)
+            .await
+            .expect("read original PATH");
+        let test_entries = vec![
+            "__COGNIA_PATH_TEST_A__".to_string(),
+            "__COGNIA_PATH_TEST_A__".to_string(),
+            "__COGNIA_PATH_TEST_B__".to_string(),
+        ];
+
+        env::set_persistent_path(&test_entries, EnvVarScope::Process)
+            .await
+            .expect("set temporary PATH");
+
+        let removed_first = envvar_deduplicate_path(EnvVarScope::Process)
+            .await
+            .expect("first dedup");
+        let removed_second = envvar_deduplicate_path(EnvVarScope::Process)
+            .await
+            .expect("second dedup");
+
+        assert_eq!(removed_first, 1);
+        assert_eq!(removed_second, 0);
+
+        env::set_persistent_path(&original, EnvVarScope::Process)
+            .await
+            .expect("restore PATH");
+    }
 }

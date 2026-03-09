@@ -1,4 +1,5 @@
 use crate::config::Settings;
+use crate::download::{DownloadManager, DownloadState, DownloadTask};
 use crate::error::{CogniaError, CogniaResult};
 use crate::plugin::contract::evaluate_manifest_compatibility;
 use crate::plugin::host_functions::HostContext;
@@ -15,6 +16,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::RwLock;
 
 // ============================================================================
@@ -106,10 +108,7 @@ impl BuiltInSyncState {
             })?;
         }
         let content = serde_json::to_string_pretty(self).map_err(|e| {
-            CogniaError::Plugin(format!(
-                "Failed to serialize built-in sync state: {}",
-                e
-            ))
+            CogniaError::Plugin(format!("Failed to serialize built-in sync state: {}", e))
         })?;
         tokio::fs::write(&path, content).await.map_err(|e| {
             CogniaError::Plugin(format!("Failed to write built-in sync state: {}", e))
@@ -164,9 +163,21 @@ struct MarketplaceCatalogListing {
 #[serde(rename_all = "camelCase")]
 struct MarketplaceCatalogSource {
     store_id: String,
+    #[serde(default)]
     plugin_dir: String,
+    #[serde(default = "default_marketplace_artifact")]
     artifact: String,
     checksum_sha256: String,
+    #[serde(default)]
+    download_url: Option<String>,
+    #[serde(default)]
+    mirror_urls: Vec<String>,
+    #[serde(default)]
+    size_bytes: Option<u64>,
+}
+
+fn default_marketplace_artifact() -> String {
+    "plugin.wasm".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -198,10 +209,19 @@ pub struct PluginUpdateInfo {
     pub changelog: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginActionReport {
+    pub plugin_id: String,
+    pub phase: String,
+    pub download_task_id: Option<String>,
+}
+
 /// Shared state references needed by the plugin system
 pub struct PluginDeps {
     pub registry: Arc<RwLock<ProviderRegistry>>,
     pub settings: Arc<RwLock<Settings>>,
+    pub download_manager: Option<Arc<RwLock<DownloadManager>>>,
 }
 
 /// Per-plugin health tracking for circuit breaker
@@ -286,6 +306,7 @@ pub struct PluginManager {
     builtin_sync: BuiltInSyncState,
     builtin_catalog_ids: HashSet<String>,
     builtin_source_override: Option<PathBuf>,
+    download_manager: Option<Arc<RwLock<DownloadManager>>>,
 }
 
 impl PluginManager {
@@ -318,6 +339,7 @@ impl PluginManager {
             builtin_sync: BuiltInSyncState::default(),
             builtin_catalog_ids: HashSet::new(),
             builtin_source_override: None,
+            download_manager: deps.download_manager,
         }
     }
 
@@ -468,13 +490,15 @@ impl PluginManager {
 
     async fn sync_builtin_plugins(&mut self) -> CogniaResult<()> {
         if !self.plugins_dir.exists() {
-            tokio::fs::create_dir_all(&self.plugins_dir).await.map_err(|e| {
-                CogniaError::Plugin(format!(
-                    "Failed to create plugins dir for built-in sync {}: {}",
-                    self.plugins_dir.display(),
-                    e
-                ))
-            })?;
+            tokio::fs::create_dir_all(&self.plugins_dir)
+                .await
+                .map_err(|e| {
+                    CogniaError::Plugin(format!(
+                        "Failed to create plugins dir for built-in sync {}: {}",
+                        self.plugins_dir.display(),
+                        e
+                    ))
+                })?;
         }
 
         let Some(source_root) = self.resolve_builtin_source_dir() else {
@@ -582,8 +606,10 @@ impl PluginManager {
             Ok(None) => {
                 return Ok((
                     "conflict".to_string(),
-                    Some("Existing plugin with same id is user-managed; built-in sync skipped."
-                        .to_string()),
+                    Some(
+                        "Existing plugin with same id is user-managed; built-in sync skipped."
+                            .to_string(),
+                    ),
                 ));
             }
             Err(e) => {
@@ -652,7 +678,9 @@ impl PluginManager {
         let staging_parent = tempfile::Builder::new()
             .prefix(".builtin-sync-")
             .tempdir_in(&self.plugins_dir)
-            .map_err(|e| CogniaError::Plugin(format!("Failed to create built-in staging dir: {}", e)))?;
+            .map_err(|e| {
+                CogniaError::Plugin(format!("Failed to create built-in staging dir: {}", e))
+            })?;
         let staging_plugin_dir = staging_parent.path().join(&plugin.id);
 
         copy_plugin_runtime_files(source_plugin_dir, &staging_plugin_dir, source_manifest).await?;
@@ -667,13 +695,15 @@ impl PluginManager {
 
         let dest_plugin_dir = self.plugins_dir.join(&plugin.id);
         if dest_plugin_dir.exists() {
-            tokio::fs::remove_dir_all(&dest_plugin_dir).await.map_err(|e| {
-                CogniaError::Plugin(format!(
-                    "Failed to remove existing built-in directory {}: {}",
-                    dest_plugin_dir.display(),
-                    e
-                ))
-            })?;
+            tokio::fs::remove_dir_all(&dest_plugin_dir)
+                .await
+                .map_err(|e| {
+                    CogniaError::Plugin(format!(
+                        "Failed to remove existing built-in directory {}: {}",
+                        dest_plugin_dir.display(),
+                        e
+                    ))
+                })?;
         }
 
         tokio::fs::rename(&staging_plugin_dir, &dest_plugin_dir)
@@ -789,13 +819,15 @@ impl PluginManager {
         let catalog_path = source_root.join(BUILTIN_CATALOG_FILE);
         ensure_file_exists(&catalog_path, "Built-in catalog file")?;
 
-        let raw = tokio::fs::read_to_string(&catalog_path).await.map_err(|e| {
-            CogniaError::Plugin(format!(
-                "Failed to read built-in catalog {}: {}",
-                catalog_path.display(),
-                e
-            ))
-        })?;
+        let raw = tokio::fs::read_to_string(&catalog_path)
+            .await
+            .map_err(|e| {
+                CogniaError::Plugin(format!(
+                    "Failed to read built-in catalog {}: {}",
+                    catalog_path.display(),
+                    e
+                ))
+            })?;
 
         let catalog: BuiltInCatalog = serde_json::from_str(&raw).map_err(|e| {
             CogniaError::Plugin(format!(
@@ -816,13 +848,15 @@ impl PluginManager {
         let catalog_path = source_root.join(MARKETPLACE_CATALOG_FILE);
         ensure_file_exists(&catalog_path, "Marketplace catalog file")?;
 
-        let raw = tokio::fs::read_to_string(&catalog_path).await.map_err(|e| {
-            CogniaError::Plugin(format!(
-                "Failed to read marketplace catalog {}: {}",
-                catalog_path.display(),
-                e
-            ))
-        })?;
+        let raw = tokio::fs::read_to_string(&catalog_path)
+            .await
+            .map_err(|e| {
+                CogniaError::Plugin(format!(
+                    "Failed to read marketplace catalog {}: {}",
+                    catalog_path.display(),
+                    e
+                ))
+            })?;
         let catalog: MarketplaceCatalog = serde_json::from_str(&raw).map_err(|e| {
             CogniaError::Plugin(format!(
                 "Invalid marketplace catalog {}: {}",
@@ -1088,12 +1122,7 @@ impl PluginManager {
         // Register in registry
         {
             let mut reg = self.registry.write().await;
-            reg.register(
-                manifest.clone(),
-                wasm_path.clone(),
-                dest_dir,
-                source,
-            );
+            reg.register(manifest.clone(), wasm_path.clone(), dest_dir, source);
         }
 
         // Register permissions
@@ -1190,7 +1219,196 @@ impl PluginManager {
         .await
     }
 
-    pub async fn install_from_marketplace(&mut self, store_id: &str) -> CogniaResult<String> {
+    async fn wait_for_download_task_completion(&self, task_id: &str) -> CogniaResult<()> {
+        let Some(download_manager) = self.download_manager.clone() else {
+            return Err(CogniaError::Plugin(
+                "Download manager is unavailable for marketplace operations.".to_string(),
+            ));
+        };
+
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(15 * 60);
+        loop {
+            if tokio::time::Instant::now() > deadline {
+                return Err(CogniaError::Plugin(format!(
+                    "Marketplace download timed out for task '{}'.",
+                    task_id
+                )));
+            }
+
+            let task = {
+                let mgr = download_manager.read().await;
+                mgr.get_task(task_id).await
+            };
+
+            let Some(task) = task else {
+                return Err(CogniaError::Plugin(format!(
+                    "Marketplace download task '{}' was not found.",
+                    task_id
+                )));
+            };
+
+            match task.state {
+                DownloadState::Completed => return Ok(()),
+                DownloadState::Cancelled => {
+                    return Err(CogniaError::Plugin(
+                        "Marketplace download cancelled by user.".to_string(),
+                    ));
+                }
+                DownloadState::Failed { error, recoverable } => {
+                    return Err(CogniaError::Plugin(format!(
+                        "Marketplace download failed (recoverable={}): {}",
+                        recoverable, error
+                    )));
+                }
+                _ => {
+                    tokio::time::sleep(Duration::from_millis(150)).await;
+                }
+            }
+        }
+    }
+
+    async fn queue_marketplace_download(
+        &self,
+        listing: &MarketplaceCatalogListing,
+        action_kind: &str,
+        download_url: &str,
+        destination: &Path,
+    ) -> CogniaResult<String> {
+        let Some(download_manager) = self.download_manager.clone() else {
+            return Err(CogniaError::Plugin(
+                "Download manager is unavailable for marketplace operations.".to_string(),
+            ));
+        };
+
+        let mut builder = DownloadTask::builder(
+            download_url.to_string(),
+            destination.to_path_buf(),
+            format!("Marketplace {} {}", action_kind, listing.id),
+        )
+        .with_priority(90)
+        .with_provider("plugin-marketplace".to_string())
+        .with_tag("plugin-marketplace".to_string())
+        .with_tag(action_kind.to_string())
+        .with_metadata("listingId".to_string(), listing.id.clone())
+        .with_metadata("pluginId".to_string(), listing.plugin_id.clone())
+        .with_metadata("actionKind".to_string(), action_kind.to_string());
+
+        if !listing.source.checksum_sha256.trim().is_empty() {
+            builder = builder.with_checksum(listing.source.checksum_sha256.clone());
+        }
+
+        if !listing.source.mirror_urls.is_empty() {
+            builder = builder.with_mirrors(listing.source.mirror_urls.clone());
+        }
+
+        let task_id = {
+            let mgr = download_manager.read().await;
+            mgr.add_task(builder.build()).await
+        };
+
+        self.wait_for_download_task_completion(&task_id).await?;
+        Ok(task_id)
+    }
+
+    fn find_plugin_package_root(root: &Path) -> Option<PathBuf> {
+        if root.join("plugin.toml").is_file() && root.join("plugin.wasm").is_file() {
+            return Some(root.to_path_buf());
+        }
+
+        let mut stack = vec![root.to_path_buf()];
+        let mut depth_map: HashMap<PathBuf, usize> = HashMap::new();
+        depth_map.insert(root.to_path_buf(), 0);
+
+        while let Some(dir) = stack.pop() {
+            let depth = depth_map.get(&dir).copied().unwrap_or(0);
+            if depth >= 4 {
+                continue;
+            }
+
+            let entries = match std::fs::read_dir(&dir) {
+                Ok(entries) => entries,
+                Err(_) => continue,
+            };
+
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if !path.is_dir() {
+                    continue;
+                }
+                if path.join("plugin.toml").is_file() && path.join("plugin.wasm").is_file() {
+                    return Some(path);
+                }
+                depth_map.insert(path.clone(), depth + 1);
+                stack.push(path);
+            }
+        }
+
+        None
+    }
+
+    async fn install_from_marketplace_remote_package(
+        &mut self,
+        listing: &MarketplaceCatalogListing,
+        download_url: &str,
+    ) -> CogniaResult<PluginActionReport> {
+        if !download_url.to_ascii_lowercase().ends_with(".zip") {
+            return Err(CogniaError::Plugin(format!(
+                "Marketplace download URL for '{}' must point to a .zip package.",
+                listing.id
+            )));
+        }
+
+        let temp_dir = tempfile::tempdir()
+            .map_err(|e| CogniaError::Plugin(format!("Failed to create temp dir: {}", e)))?;
+        let archive_path = temp_dir.path().join("marketplace-package.zip");
+        let download_task_id = self
+            .queue_marketplace_download(listing, "install", download_url, &archive_path)
+            .await?;
+
+        let extract_root = temp_dir.path().join("extracted");
+        tokio::fs::create_dir_all(&extract_root)
+            .await
+            .map_err(|e| CogniaError::Plugin(format!("Failed to create extract dir: {}", e)))?;
+
+        let archive_file = std::fs::File::open(&archive_path)
+            .map_err(|e| CogniaError::Plugin(format!("Failed to open downloaded archive: {}", e)))?;
+        let mut archive = zip::ZipArchive::new(archive_file)
+            .map_err(|e| CogniaError::Plugin(format!("Invalid marketplace zip file: {}", e)))?;
+        archive.extract(&extract_root).map_err(|e| {
+            CogniaError::Plugin(format!("Failed to extract marketplace zip package: {}", e))
+        })?;
+
+        let source_dir = Self::find_plugin_package_root(&extract_root).ok_or_else(|| {
+            CogniaError::Plugin(
+                "Marketplace package is missing required plugin.toml/plugin.wasm files."
+                    .to_string(),
+            )
+        })?;
+
+        let plugin_id = self
+            .install_from_dir(
+                &source_dir,
+                PluginSource::Store {
+                    store_id: listing.source.store_id.clone(),
+                },
+                true,
+                Some(listing.plugin_id.as_str()),
+                Some(listing.version.as_str()),
+                Some(listing.source.checksum_sha256.as_str()),
+            )
+            .await?;
+
+        Ok(PluginActionReport {
+            plugin_id,
+            phase: "completed".to_string(),
+            download_task_id: Some(download_task_id),
+        })
+    }
+
+    pub async fn install_from_marketplace_with_report(
+        &mut self,
+        store_id: &str,
+    ) -> CogniaResult<PluginActionReport> {
         let source_root = self.resolve_builtin_source_dir().ok_or_else(|| {
             CogniaError::Plugin(
                 "Marketplace catalog is unavailable because plugin source root could not be resolved."
@@ -1201,9 +1419,7 @@ impl PluginManager {
         let listing = catalog
             .listings
             .into_iter()
-            .find(|candidate| {
-                candidate.source.store_id == store_id || candidate.id == store_id
-            })
+            .find(|candidate| candidate.source.store_id == store_id || candidate.id == store_id)
             .ok_or_else(|| {
                 CogniaError::Plugin(format!(
                     "Marketplace listing '{}' was not found in catalog.",
@@ -1211,8 +1427,6 @@ impl PluginManager {
                 ))
             })?;
 
-        validate_safe_relative_path(Path::new(&listing.source.plugin_dir), "marketplace.pluginDir")?;
-        validate_safe_relative_path(Path::new(&listing.source.artifact), "marketplace.artifact")?;
         if !Self::is_valid_sha256(listing.source.checksum_sha256.as_str()) {
             return Err(CogniaError::Plugin(format!(
                 "Marketplace listing '{}' has invalid checksum '{}'.",
@@ -1220,24 +1434,57 @@ impl PluginManager {
             )));
         }
 
+        if let Some(download_url) = listing
+            .source
+            .download_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            return self
+                .install_from_marketplace_remote_package(&listing, download_url)
+                .await;
+        }
+
+        validate_safe_relative_path(
+            Path::new(&listing.source.plugin_dir),
+            "marketplace.pluginDir",
+        )?;
+        validate_safe_relative_path(Path::new(&listing.source.artifact), "marketplace.artifact")?;
+
         let source_dir = source_root.join(&listing.source.plugin_dir);
-        ensure_file_exists(&source_dir.join("plugin.toml"), "Marketplace plugin manifest")?;
+        ensure_file_exists(
+            &source_dir.join("plugin.toml"),
+            "Marketplace plugin manifest",
+        )?;
         ensure_file_exists(
             &source_dir.join(&listing.source.artifact),
             "Marketplace plugin artifact",
         )?;
 
-        self.install_from_dir(
-            &source_dir,
-            PluginSource::Store {
-                store_id: listing.source.store_id.clone(),
-            },
-            true,
-            Some(listing.plugin_id.as_str()),
-            Some(listing.version.as_str()),
-            Some(listing.source.checksum_sha256.as_str()),
-        )
-        .await
+        let plugin_id = self
+            .install_from_dir(
+                &source_dir,
+                PluginSource::Store {
+                    store_id: listing.source.store_id.clone(),
+                },
+                true,
+                Some(listing.plugin_id.as_str()),
+                Some(listing.version.as_str()),
+                Some(listing.source.checksum_sha256.as_str()),
+            )
+            .await?;
+
+        Ok(PluginActionReport {
+            plugin_id,
+            phase: "completed".to_string(),
+            download_task_id: None,
+        })
+    }
+
+    pub async fn install_from_marketplace(&mut self, store_id: &str) -> CogniaResult<String> {
+        let report = self.install_from_marketplace_with_report(store_id).await?;
+        Ok(report.plugin_id)
     }
 
     /// Uninstall a plugin
@@ -1419,10 +1666,7 @@ impl PluginManager {
                     ))
                 })?;
 
-            (
-                plugin.wasm_path.clone(),
-                tool.capabilities.clone(),
-            )
+            (plugin.wasm_path.clone(), tool.capabilities.clone())
         };
 
         self.enforce_tool_capability_handshake(plugin_id, tool_entry, &tool_capabilities)
@@ -1530,7 +1774,9 @@ impl PluginManager {
             let Some(required_capability) = permission_to_capability(&permission) else {
                 continue;
             };
-            let allowed = tool_capabilities.iter().any(|cap| cap == required_capability);
+            let allowed = tool_capabilities
+                .iter()
+                .any(|cap| cap == required_capability);
             let reason = if allowed {
                 None
             } else {
@@ -1673,7 +1919,8 @@ impl PluginManager {
                 })
                 .to_string();
 
-                let callback_output = self.loader
+                let callback_output = self
+                    .loader
                     .call_if_exists(plugin_id, "cognia_on_event", &input)
                     .await;
                 if callback_output.is_none() {
@@ -1880,14 +2127,57 @@ impl PluginManager {
                     listing.source.store_id
                 )));
             }
-            validate_safe_relative_path(
-                Path::new(&listing.source.plugin_dir),
-                "marketplace.pluginDir",
-            )?;
-            validate_safe_relative_path(
-                Path::new(&listing.source.artifact),
-                "marketplace.artifact",
-            )?;
+
+            let has_remote_download = listing
+                .source
+                .download_url
+                .as_deref()
+                .map(str::trim)
+                .is_some_and(|value| !value.is_empty());
+
+            if has_remote_download {
+                let download_url = listing.source.download_url.as_deref().unwrap_or_default();
+                if !(download_url.starts_with("https://") || download_url.starts_with("http://")) {
+                    return Err(CogniaError::Plugin(format!(
+                        "Marketplace listing '{}' has invalid source.downloadUrl '{}'.",
+                        listing.id, download_url
+                    )));
+                }
+                for mirror in &listing.source.mirror_urls {
+                    if !(mirror.starts_with("https://") || mirror.starts_with("http://")) {
+                        return Err(CogniaError::Plugin(format!(
+                            "Marketplace listing '{}' has invalid mirror URL '{}'.",
+                            listing.id, mirror
+                        )));
+                    }
+                }
+                if listing.source.size_bytes.is_some_and(|size| size == 0) {
+                    return Err(CogniaError::Plugin(format!(
+                        "Marketplace listing '{}' has invalid source.sizeBytes value 0.",
+                        listing.id
+                    )));
+                }
+            }
+
+            let has_local_source = !listing.source.plugin_dir.trim().is_empty();
+            if has_local_source {
+                validate_safe_relative_path(
+                    Path::new(&listing.source.plugin_dir),
+                    "marketplace.pluginDir",
+                )?;
+                validate_safe_relative_path(
+                    Path::new(&listing.source.artifact),
+                    "marketplace.artifact",
+                )?;
+            }
+
+            if !has_local_source && !has_remote_download {
+                return Err(CogniaError::Plugin(format!(
+                    "Marketplace listing '{}' must declare either local source.pluginDir or source.downloadUrl.",
+                    listing.id
+                )));
+            }
+
             if listing.source.artifact.trim().is_empty() {
                 return Err(CogniaError::Plugin(format!(
                     "Marketplace listing '{}' has empty artifact.",
@@ -2075,7 +2365,10 @@ impl PluginManager {
     }
 
     /// Update a plugin to the latest version from its update URL
-    pub async fn update_plugin(&mut self, plugin_id: &str) -> CogniaResult<()> {
+    pub async fn update_plugin_with_report(
+        &mut self,
+        plugin_id: &str,
+    ) -> CogniaResult<PluginActionReport> {
         let update_info = self
             .check_update(plugin_id)
             .await?
@@ -2087,31 +2380,78 @@ impl PluginManager {
         // Download and install the update
         let temp_dir = tempfile::tempdir()
             .map_err(|e| CogniaError::Plugin(format!("Failed to create temp dir: {}", e)))?;
+        let mut download_task_id: Option<String> = None;
 
-        let client = reqwest::Client::new();
-        let response = client
-            .get(&update_info.download_url)
-            .send()
-            .await
-            .map_err(|e| CogniaError::Plugin(format!("Failed to download update: {}", e)))?;
+        if self.download_manager.is_some() {
+            let listing = MarketplaceCatalogListing {
+                id: update_info.plugin_id.clone(),
+                plugin_id: update_info.plugin_id.clone(),
+                version: update_info.latest_version.clone(),
+                source: MarketplaceCatalogSource {
+                    store_id: update_info.plugin_id.clone(),
+                    plugin_dir: String::new(),
+                    artifact: "plugin.wasm".to_string(),
+                    checksum_sha256: String::new(),
+                    download_url: Some(update_info.download_url.clone()),
+                    mirror_urls: Vec::new(),
+                    size_bytes: None,
+                },
+            };
+            let payload_path = if update_info.download_url.ends_with(".zip") {
+                temp_dir.path().join("plugin-update.zip")
+            } else {
+                temp_dir.path().join("plugin.wasm")
+            };
+            let task_id = self
+                .queue_marketplace_download(&listing, "update", &update_info.download_url, &payload_path)
+                .await?;
+            download_task_id = Some(task_id);
 
-        let bytes = response
-            .bytes()
-            .await
-            .map_err(|e| CogniaError::Plugin(format!("Failed to read update: {}", e)))?;
-
-        // Extract to temp dir
-        if update_info.download_url.ends_with(".zip") {
-            let cursor = std::io::Cursor::new(&bytes);
-            let mut archive = zip::ZipArchive::new(cursor)
-                .map_err(|e| CogniaError::Plugin(format!("Invalid zip: {}", e)))?;
-            archive
-                .extract(temp_dir.path())
-                .map_err(|e| CogniaError::Plugin(format!("Failed to extract: {}", e)))?;
+            if update_info.download_url.ends_with(".zip") {
+                let archive_file = std::fs::File::open(&payload_path)
+                    .map_err(|e| CogniaError::Plugin(format!("Failed to open update archive: {}", e)))?;
+                let mut archive = zip::ZipArchive::new(archive_file)
+                    .map_err(|e| CogniaError::Plugin(format!("Invalid zip: {}", e)))?;
+                let extract_root = temp_dir.path().join("extracted");
+                tokio::fs::create_dir_all(&extract_root).await.map_err(|e| {
+                    CogniaError::Plugin(format!("Failed to create update extract dir: {}", e))
+                })?;
+                archive.extract(&extract_root).map_err(|e| {
+                    CogniaError::Plugin(format!("Failed to extract update archive: {}", e))
+                })?;
+                let package_root = Self::find_plugin_package_root(&extract_root).ok_or_else(|| {
+                    CogniaError::Plugin(
+                        "Update package is missing required plugin.toml/plugin.wasm files."
+                            .to_string(),
+                    )
+                })?;
+                copy_dir_recursive(&package_root, temp_dir.path()).await?;
+            }
         } else {
-            tokio::fs::write(temp_dir.path().join("plugin.wasm"), &bytes)
+            let client = reqwest::Client::new();
+            let response = client
+                .get(&update_info.download_url)
+                .send()
                 .await
-                .map_err(|e| CogniaError::Plugin(format!("Failed to write wasm: {}", e)))?;
+                .map_err(|e| CogniaError::Plugin(format!("Failed to download update: {}", e)))?;
+
+            let bytes = response
+                .bytes()
+                .await
+                .map_err(|e| CogniaError::Plugin(format!("Failed to read update: {}", e)))?;
+
+            if update_info.download_url.ends_with(".zip") {
+                let cursor = std::io::Cursor::new(&bytes);
+                let mut archive = zip::ZipArchive::new(cursor)
+                    .map_err(|e| CogniaError::Plugin(format!("Invalid zip: {}", e)))?;
+                archive
+                    .extract(temp_dir.path())
+                    .map_err(|e| CogniaError::Plugin(format!("Failed to extract: {}", e)))?;
+            } else {
+                tokio::fs::write(temp_dir.path().join("plugin.wasm"), &bytes)
+                    .await
+                    .map_err(|e| CogniaError::Plugin(format!("Failed to write wasm: {}", e)))?;
+            }
         }
 
         // Get the plugin's install directory
@@ -2157,6 +2497,15 @@ impl PluginManager {
             update_info.current_version,
             update_info.latest_version
         );
+        Ok(PluginActionReport {
+            plugin_id: plugin_id.to_string(),
+            phase: "completed".to_string(),
+            download_task_id,
+        })
+    }
+
+    pub async fn update_plugin(&mut self, plugin_id: &str) -> CogniaResult<()> {
+        let _ = self.update_plugin_with_report(plugin_id).await?;
         Ok(())
     }
 
@@ -2226,6 +2575,7 @@ mod tests {
         let deps = PluginDeps {
             registry: Arc::new(RwLock::new(ProviderRegistry::new())),
             settings: Arc::new(RwLock::new(Settings::default())),
+            download_manager: None,
         };
         PluginManager::new(temp_root, deps)
     }
@@ -2408,7 +2758,9 @@ mod tests {
         manager.builtin_source_override = Some(builtin_root);
 
         let runtime_plugin_dir = temp_dir.path().join("plugins").join(plugin_id);
-        tokio::fs::create_dir_all(&runtime_plugin_dir).await.unwrap();
+        tokio::fs::create_dir_all(&runtime_plugin_dir)
+            .await
+            .unwrap();
         tokio::fs::write(
             runtime_plugin_dir.join("plugin.toml"),
             format!(
@@ -2432,7 +2784,11 @@ mod tests {
 
         let entry = manager.builtin_sync.entries.get(plugin_id).unwrap();
         assert_eq!(entry.status, "conflict");
-        assert!(entry.message.clone().unwrap_or_default().contains("user-managed"));
+        assert!(entry
+            .message
+            .clone()
+            .unwrap_or_default()
+            .contains("user-managed"));
     }
 
     #[tokio::test]
@@ -2478,7 +2834,10 @@ mod tests {
         let mut manager = make_test_manager(temp_dir.path());
 
         manager
-            .dispatch_event("unit.event.no_listeners", &serde_json::json!({ "ok": true }))
+            .dispatch_event(
+                "unit.event.no_listeners",
+                &serde_json::json!({ "ok": true }),
+            )
             .await;
     }
 
@@ -2589,7 +2948,9 @@ mod tests {
         )
         .await
         .unwrap();
-        tokio::fs::write(src.join("plugin.wasm"), b"\0asm").await.unwrap();
+        tokio::fs::write(src.join("plugin.wasm"), b"\0asm")
+            .await
+            .unwrap();
         tokio::fs::write(src.join("node_modules").join("pkg").join("index.js"), "x")
             .await
             .unwrap();
@@ -2631,7 +2992,9 @@ mod tests {
         let src = temp_dir.path().join("src");
         let nested_dst = src.join("nested").join("dst");
         tokio::fs::create_dir_all(&src).await.unwrap();
-        tokio::fs::write(src.join("plugin.toml"), "x").await.unwrap();
+        tokio::fs::write(src.join("plugin.toml"), "x")
+            .await
+            .unwrap();
 
         let err = copy_dir_recursive(&src, &nested_dst).await.unwrap_err();
         assert!(err.to_string().contains("inside source"));
@@ -2763,7 +3126,8 @@ async fn copy_plugin_runtime_files(
 
         if let Some(ui_parent) = ui_entry.parent() {
             if !ui_parent.as_os_str().is_empty() {
-                copy_dir_recursive(&source_root.join(ui_parent), &dest_root.join(ui_parent)).await?;
+                copy_dir_recursive(&source_root.join(ui_parent), &dest_root.join(ui_parent))
+                    .await?;
             }
         }
     }
@@ -2831,11 +3195,7 @@ async fn copy_required_relative_file(
     let dst = dest_root.join(relative_path);
     if let Some(parent) = dst.parent() {
         tokio::fs::create_dir_all(parent).await.map_err(|e| {
-            CogniaError::Plugin(format!(
-                "Failed to create dir {}: {}",
-                parent.display(),
-                e
-            ))
+            CogniaError::Plugin(format!("Failed to create dir {}: {}", parent.display(), e))
         })?;
     }
 
@@ -2897,11 +3257,7 @@ fn copy_dir_recursive_impl<'a>(
             let file_name = entry.file_name();
             let dst_path = dst.join(&file_name);
             let file_type = entry.file_type().await.map_err(|e| {
-                CogniaError::Plugin(format!(
-                    "Failed to inspect {}: {}",
-                    src_path.display(),
-                    e
-                ))
+                CogniaError::Plugin(format!("Failed to inspect {}: {}", src_path.display(), e))
             })?;
 
             if file_type.is_symlink() {

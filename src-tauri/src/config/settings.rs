@@ -1,6 +1,9 @@
 use crate::error::{CogniaError, CogniaResult};
 use crate::platform::fs;
-use crate::tray::{TrayClickBehavior, TrayMenuItemId, TrayNotificationLevel};
+use crate::tray::{
+    TrayClickBehavior, TrayMenuItemId, TrayNotificationEvent, TrayNotificationLevel,
+    TrayQuickAction,
+};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -61,8 +64,14 @@ pub struct TraySettings {
     pub notification_level: TrayNotificationLevel,
     /// Left-click behavior for tray icon
     pub click_behavior: TrayClickBehavior,
+    /// Action to run when click behavior is set to quick_action
+    pub quick_action: TrayQuickAction,
+    /// Notification event categories enabled for tray notifications
+    pub notification_events: Vec<TrayNotificationEvent>,
     /// Ordered list of tray menu items
     pub menu_items: Vec<TrayMenuItemId>,
+    /// Priority menu items that should be shown before other enabled items
+    pub menu_priority_items: Vec<TrayMenuItemId>,
 }
 
 impl Default for TraySettings {
@@ -73,6 +82,8 @@ impl Default for TraySettings {
             show_notifications: true,
             notification_level: TrayNotificationLevel::All,
             click_behavior: TrayClickBehavior::ToggleWindow,
+            quick_action: TrayQuickAction::CheckUpdates,
+            notification_events: TrayNotificationEvent::defaults(),
             menu_items: vec![
                 TrayMenuItemId::ShowHide,
                 TrayMenuItemId::QuickNav,
@@ -85,6 +96,7 @@ impl Default for TraySettings {
                 TrayMenuItemId::Autostart,
                 TrayMenuItemId::Quit,
             ],
+            menu_priority_items: Vec::new(),
         }
     }
 }
@@ -572,6 +584,85 @@ impl Settings {
         Ok(items)
     }
 
+    fn parse_tray_menu_priority_items(value: &str) -> CogniaResult<Vec<TrayMenuItemId>> {
+        let mut priority = Vec::new();
+        for item in Self::parse_tray_menu_items(value)? {
+            if item == TrayMenuItemId::Quit {
+                continue;
+            }
+            if !priority.contains(&item) {
+                priority.push(item);
+            }
+        }
+        Ok(priority)
+    }
+
+    fn parse_tray_notification_events(value: &str) -> CogniaResult<Vec<TrayNotificationEvent>> {
+        fn parse_item(item: &str) -> Option<TrayNotificationEvent> {
+            match item {
+                "updates" => Some(TrayNotificationEvent::Updates),
+                "downloads" => Some(TrayNotificationEvent::Downloads),
+                "errors" => Some(TrayNotificationEvent::Errors),
+                "system" => Some(TrayNotificationEvent::System),
+                _ => None,
+            }
+        }
+
+        let mut events = if value.trim().starts_with('[') {
+            let raw: Vec<String> = serde_json::from_str(value).map_err(|_| {
+                CogniaError::Config("Invalid tray notification_events JSON array".into())
+            })?;
+            let mut parsed = Vec::with_capacity(raw.len());
+            for item in raw {
+                if let Some(parsed_item) = parse_item(item.trim()) {
+                    parsed.push(parsed_item);
+                }
+            }
+            parsed
+        } else {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                Vec::new()
+            } else {
+                let mut parsed = Vec::new();
+                for item in trimmed
+                    .split(',')
+                    .map(|s| s.trim())
+                    .filter(|s| !s.is_empty())
+                {
+                    if let Some(parsed_item) = parse_item(item) {
+                        parsed.push(parsed_item);
+                    }
+                }
+                parsed
+            }
+        };
+
+        let mut deduped = Vec::with_capacity(events.len());
+        for event in events {
+            if !deduped.contains(&event) {
+                deduped.push(event);
+            }
+        }
+        events = deduped;
+
+        if events.is_empty() {
+            return Ok(TrayNotificationEvent::defaults());
+        }
+
+        Ok(events)
+    }
+
+    fn parse_tray_quick_action(value: &str) -> CogniaResult<TrayQuickAction> {
+        match value {
+            "open_settings" => Ok(TrayQuickAction::OpenSettings),
+            "open_downloads" => Ok(TrayQuickAction::OpenDownloads),
+            "check_updates" => Ok(TrayQuickAction::CheckUpdates),
+            "open_logs" => Ok(TrayQuickAction::OpenLogs),
+            _ => Err(CogniaError::Config("Invalid tray quick_action value".into())),
+        }
+    }
+
     fn normalize_proxy_mode(value: &str) -> CogniaResult<String> {
         let normalized = value.trim().to_lowercase();
         if !["global", "none", "custom"].contains(&normalized.as_str()) {
@@ -721,13 +812,31 @@ impl Settings {
                     TrayClickBehavior::ToggleWindow => "toggle_window",
                     TrayClickBehavior::ShowMenu => "show_menu",
                     TrayClickBehavior::CheckUpdates => "check_updates",
+                    TrayClickBehavior::QuickAction => "quick_action",
                     TrayClickBehavior::DoNothing => "do_nothing",
                 }
                 .to_string(),
             ),
+            ["tray", "quick_action"] => Some(
+                match self.tray.quick_action {
+                    TrayQuickAction::OpenSettings => "open_settings",
+                    TrayQuickAction::OpenDownloads => "open_downloads",
+                    TrayQuickAction::CheckUpdates => "check_updates",
+                    TrayQuickAction::OpenLogs => "open_logs",
+                }
+                .to_string(),
+            ),
+            ["tray", "notification_events"] => Some(
+                serde_json::to_string(&self.tray.notification_events)
+                    .unwrap_or_else(|_| "[]".into()),
+            ),
             ["tray", "menu_items"] => {
                 Some(serde_json::to_string(&self.tray.menu_items).unwrap_or_else(|_| "[]".into()))
             }
+            ["tray", "menu_priority_items"] => Some(
+                serde_json::to_string(&self.tray.menu_priority_items)
+                    .unwrap_or_else(|_| "[]".into()),
+            ),
             ["terminal", "default_shell"] => Some(self.terminal.default_shell.clone()),
             ["terminal", "default_profile_id"] => self
                 .terminal
@@ -1110,6 +1219,7 @@ impl Settings {
                     "toggle_window" => TrayClickBehavior::ToggleWindow,
                     "show_menu" => TrayClickBehavior::ShowMenu,
                     "check_updates" => TrayClickBehavior::CheckUpdates,
+                    "quick_action" => TrayClickBehavior::QuickAction,
                     "do_nothing" => TrayClickBehavior::DoNothing,
                     _ => {
                         return Err(CogniaError::Config(
@@ -1118,8 +1228,17 @@ impl Settings {
                     }
                 };
             }
+            ["tray", "quick_action"] => {
+                self.tray.quick_action = Self::parse_tray_quick_action(value)?;
+            }
+            ["tray", "notification_events"] => {
+                self.tray.notification_events = Self::parse_tray_notification_events(value)?;
+            }
             ["tray", "menu_items"] => {
                 self.tray.menu_items = Self::parse_tray_menu_items(value)?;
+            }
+            ["tray", "menu_priority_items"] => {
+                self.tray.menu_priority_items = Self::parse_tray_menu_priority_items(value)?;
             }
             ["terminal", "default_shell"] => {
                 self.terminal.default_shell = value.to_string();
@@ -2614,8 +2733,11 @@ mod tests {
         assert!(t.show_notifications);
         assert_eq!(t.notification_level, TrayNotificationLevel::All);
         assert_eq!(t.click_behavior, TrayClickBehavior::ToggleWindow);
+        assert_eq!(t.quick_action, TrayQuickAction::CheckUpdates);
+        assert!(t.notification_events.contains(&TrayNotificationEvent::Updates));
         assert!(t.menu_items.contains(&TrayMenuItemId::ToggleNotifications));
         assert!(t.menu_items.contains(&TrayMenuItemId::Quit));
+        assert!(t.menu_priority_items.is_empty());
     }
 
     #[test]
@@ -2629,13 +2751,20 @@ mod tests {
             s.get_value("tray.click_behavior"),
             Some("toggle_window".into())
         );
+        assert_eq!(s.get_value("tray.quick_action"), Some("check_updates".into()));
+        assert_eq!(
+            s.get_value("tray.notification_events"),
+            Some(r#"["updates","downloads","errors","system"]"#.into())
+        );
 
         s.set_value("tray.minimize_to_tray", "false").unwrap();
         s.set_value("tray.start_minimized", "true").unwrap();
         s.set_value("tray.show_notifications", "false").unwrap();
         s.set_value("tray.notification_level", "important_only")
             .unwrap();
-        s.set_value("tray.click_behavior", "check_updates")
+        s.set_value("tray.click_behavior", "check_updates").unwrap();
+        s.set_value("tray.quick_action", "open_settings").unwrap();
+        s.set_value("tray.notification_events", r#"["errors","updates"]"#)
             .unwrap();
 
         assert!(!s.tray.minimize_to_tray);
@@ -2646,6 +2775,11 @@ mod tests {
             TrayNotificationLevel::ImportantOnly
         );
         assert_eq!(s.tray.click_behavior, TrayClickBehavior::CheckUpdates);
+        assert_eq!(s.tray.quick_action, TrayQuickAction::OpenSettings);
+        assert_eq!(
+            s.tray.notification_events,
+            vec![TrayNotificationEvent::Errors, TrayNotificationEvent::Updates]
+        );
     }
 
     #[test]
@@ -2691,13 +2825,34 @@ mod tests {
     }
 
     #[test]
+    fn test_set_tray_menu_priority_items_filters_and_dedupes() {
+        let mut s = Settings::default();
+        s.set_value(
+            "tray.menu_priority_items",
+            r#"["downloads","quit","downloads","unknown","settings"]"#,
+        )
+        .unwrap();
+        assert_eq!(
+            s.tray.menu_priority_items,
+            vec![TrayMenuItemId::Downloads, TrayMenuItemId::Settings]
+        );
+    }
+
+    #[test]
+    fn test_set_tray_notification_events_fallbacks_to_defaults_when_invalid() {
+        let mut s = Settings::default();
+        s.set_value("tray.notification_events", r#"["unknown"]"#)
+            .unwrap();
+        assert_eq!(s.tray.notification_events, TrayNotificationEvent::defaults());
+    }
+
+    #[test]
     fn test_set_invalid_updates_or_tray_values() {
         let mut s = Settings::default();
         assert!(s.set_value("updates.check_on_start", "yes").is_err());
         assert!(s.set_value("tray.click_behavior", "invalid").is_err());
-        assert!(s
-            .set_value("tray.notification_level", "sometimes")
-            .is_err());
+        assert!(s.set_value("tray.notification_level", "sometimes").is_err());
+        assert!(s.set_value("tray.quick_action", "invalid").is_err());
         // unknown items are ignored and default mandatory items are restored
         assert!(s.set_value("tray.menu_items", r#"["unknown"]"#).is_ok());
         assert_eq!(s.tray.menu_items, vec![TrayMenuItemId::Quit]);

@@ -31,6 +31,19 @@ export interface LogCleanupPreviewSummary extends LogMutationSummary {
   protectedCount: number;
 }
 
+interface QueryLogFileOptions {
+  fileName?: string;
+  levelFilter?: string[];
+  target?: string;
+  search?: string;
+  useRegex?: boolean;
+  startTime?: number | null;
+  endTime?: number | null;
+  limit?: number;
+  offset?: number;
+  maxScanLines?: number;
+}
+
 function toLogErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message.trim()) {
     return error.message;
@@ -61,6 +74,37 @@ function normalizeOperationStatus(status?: LogOperationStatus): LogOperationStat
     return status;
   }
   return 'success';
+}
+
+function normalizeQueryLogFileOptions(options: QueryLogFileOptions): QueryLogFileOptions {
+  const normalizedFileName = options.fileName?.trim();
+  const normalizedTarget = options.target?.trim();
+  const normalizedSearch = options.search?.trim();
+  const normalizedLevels = options.levelFilter
+    ?.map((level) => level.trim())
+    .filter((level) => level.length > 0);
+  const normalizedLimit = typeof options.limit === 'number' && Number.isFinite(options.limit)
+    ? Math.max(1, Math.floor(options.limit))
+    : undefined;
+  const normalizedOffset = typeof options.offset === 'number' && Number.isFinite(options.offset)
+    ? Math.max(0, Math.floor(options.offset))
+    : undefined;
+  const normalizedScanLines = typeof options.maxScanLines === 'number' && Number.isFinite(options.maxScanLines)
+    ? Math.max(1, Math.floor(options.maxScanLines))
+    : undefined;
+
+  return {
+    fileName: normalizedFileName && normalizedFileName.length > 0 ? normalizedFileName : undefined,
+    levelFilter: normalizedLevels && normalizedLevels.length > 0 ? normalizedLevels : undefined,
+    target: normalizedTarget && normalizedTarget.length > 0 ? normalizedTarget : undefined,
+    search: normalizedSearch && normalizedSearch.length > 0 ? normalizedSearch : undefined,
+    useRegex: options.useRegex,
+    startTime: options.startTime ?? undefined,
+    endTime: options.endTime ?? undefined,
+    limit: normalizedLimit,
+    offset: normalizedOffset,
+    maxScanLines: normalizedScanLines,
+  };
 }
 
 /**
@@ -116,24 +160,13 @@ export function useLogs() {
   }, [setLogFiles]);
 
   // Query log file
-  const queryLogFile = useCallback(async (options: {
-    fileName?: string;
-    levelFilter?: string[];
-    target?: string;
-    search?: string;
-    useRegex?: boolean;
-    startTime?: number | null;
-    endTime?: number | null;
-    limit?: number;
-    offset?: number;
-    maxScanLines?: number;
-  }) => {
+  const queryLogFile = useCallback(async (options: QueryLogFileOptions) => {
     if (!isTauri()) {
       return { ok: false, error: 'Log querying is available in desktop mode only' } satisfies LogActionResult<never>;
     }
 
     try {
-      const result = await logQuery(options);
+      const result = await logQuery(normalizeQueryLogFileOptions(options));
       return { ok: true, data: result } satisfies LogActionResult<typeof result>;
     } catch (error) {
       console.error('Failed to query log file:', error);

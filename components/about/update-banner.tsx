@@ -52,47 +52,47 @@ export function UpdateBanner({
 
   return (
     <Card
-      className="border-blue-200 bg-blue-50 dark:bg-blue-950/50 dark:border-blue-800"
+      className="border-primary/30 bg-primary/5"
       role="alert"
       aria-live="polite"
     >
-      <CardHeader>
+      <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-base">
           <Download
-            className="h-5 w-5 text-blue-600 dark:text-blue-400"
+            className="h-5 w-5 text-primary"
             aria-hidden="true"
           />
-          <span className="text-blue-900 dark:text-blue-100">
+          <span>
             {updateStatus === "error"
               ? t("about.errorTitle")
               : t("about.updateAvailable")}
           </span>
-          <Badge variant="secondary" className="bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 border-transparent">
+          <Badge variant="secondary">
             v{updateInfo?.latest_version || updateInfo?.current_version}
           </Badge>
         </CardTitle>
-        <CardDescription className="text-blue-700 dark:text-blue-300">
+        <CardDescription>
           {description}
         </CardDescription>
       </CardHeader>
 
-      <CardContent className="space-y-4">
+      <CardContent className="flex flex-col gap-3">
         {updateInfo?.release_notes && (
           <ScrollArea className="max-h-48" aria-label={t("about.releaseNotes")}>
-            <div className="text-sm text-blue-800 dark:text-blue-200 bg-white/50 dark:bg-black/20 p-3 rounded-lg border border-blue-200 dark:border-blue-700">
+            <div className="rounded-lg border bg-background/70 p-3 text-sm">
               <MarkdownRenderer content={updateInfo.release_notes} className="prose-sm" />
             </div>
           </ScrollArea>
         )}
 
         {isActiveProgress && (
-          <div className="space-y-2">
+          <div className="flex flex-col gap-2">
             <Progress
               value={updateProgress}
               className="h-2"
               aria-label={t("about.downloadProgress")}
             />
-            <span className="text-xs text-blue-700 dark:text-blue-300">
+            <span className="text-xs text-muted-foreground">
               {t(statusLabelKey)}{" "}
               {updateProgress > 0 ? `${updateProgress}%` : "..."}
             </span>
@@ -104,6 +104,7 @@ export function UpdateBanner({
           onClick={onUpdate}
           disabled={isActiveProgress || !isDesktop}
           aria-describedby="update-description"
+          className="w-fit"
         >
           <Download className="h-4 w-4 mr-2" aria-hidden="true" />
           {isActiveProgress ? t("about.downloading") : t("common.update")}

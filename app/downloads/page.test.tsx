@@ -72,6 +72,9 @@ const mockMessages = {
       noHistory: 'No download history',
       noHistoryDesc: 'Completed downloads will be recorded here',
       addDownload: 'Add Download',
+      batchImport: 'Batch Import',
+      fromGitHub: 'From GitHub',
+      fromGitLab: 'From GitLab',
       url: 'URL',
       destination: 'Destination',
       name: 'Name',
@@ -418,6 +421,29 @@ describe('DownloadsPage', () => {
     expect(screen.getByRole('tab', { name: /paused/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /cancelled/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /extracting/i })).toBeInTheDocument();
+  });
+
+  it('keeps queue/settings sections in stable order for responsive layout', () => {
+    renderWithProviders(<DownloadsPage />);
+
+    const queueLayout = screen.getByTestId('downloads-queue-layout');
+    const queueCard = screen.getByTestId('downloads-queue-card');
+    const settingsRegion = screen.getByTestId('downloads-settings-region');
+
+    expect(queueLayout).toBeInTheDocument();
+    expect(
+      queueCard.compareDocumentPosition(settingsRegion) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('keeps source actions discoverable and opens provider dialogs', async () => {
+    renderWithProviders(<DownloadsPage />);
+
+    await userEvent.click(screen.getByRole('button', { name: /from github/i }));
+    await userEvent.click(screen.getByRole('button', { name: /from gitlab/i }));
+
+    expect(screen.getByTestId('mock-github-dialog')).toBeInTheDocument();
+    expect(screen.getByTestId('mock-gitlab-dialog')).toBeInTheDocument();
   });
 
   it('filters tasks by search query', async () => {

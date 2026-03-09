@@ -17,70 +17,108 @@ jest.mock("@/components/providers/locale-provider", () => ({
 const mockAddWidget = jest.fn();
 const mockResetToDefault = jest.fn();
 
+let mockWidgets: Array<{ id: string; type: string; size: string; visible: boolean }> = [
+  { id: "w-1", type: "stats-overview", size: "full", visible: true },
+  { id: "w-2", type: "environment-chart", size: "md", visible: true },
+];
+
 jest.mock("@/lib/stores/dashboard", () => {
-  const store = {
-    widgets: [
-      { id: "w-1", type: "stats-overview", size: "full", visible: true },
-    ],
-    addWidget: (...args: unknown[]) => mockAddWidget(...args),
-    removeWidget: jest.fn(),
-    resetToDefault: (...args: unknown[]) => mockResetToDefault(...args),
-  };
-  return {
-    useDashboardStore: (selector: (s: typeof store) => unknown) => selector(store),
-    WIDGET_DEFINITIONS: {
-      "stats-overview": {
-        type: "stats-overview",
-        titleKey: "dashboard.widgets.statsOverview",
-        descriptionKey: "dashboard.widgets.statsOverviewDesc",
-        icon: "BarChart3",
-        defaultSize: "full",
-        minSize: "full",
-        category: "overview",
-      },
-      "environment-chart": {
-        type: "environment-chart",
-        titleKey: "dashboard.widgets.environmentChart",
-        descriptionKey: "dashboard.widgets.environmentChartDesc",
-        icon: "PieChart",
-        defaultSize: "md",
-        minSize: "sm",
-        category: "charts",
-      },
-      "quick-search": {
-        type: "quick-search",
-        titleKey: "dashboard.widgets.quickSearch",
-        descriptionKey: "dashboard.widgets.quickSearchDesc",
-        icon: "Search",
-        defaultSize: "full",
-        minSize: "lg",
-        category: "tools",
-      },
-      "environment-list": {
-        type: "environment-list",
-        titleKey: "dashboard.widgets.environmentList",
-        descriptionKey: "dashboard.widgets.environmentListDesc",
-        icon: "Layers",
-        defaultSize: "md",
-        minSize: "sm",
-        category: "lists",
-      },
-      "toolbox-favorites": {
-        type: "toolbox-favorites",
-        titleKey: "dashboard.widgets.toolboxFavorites",
-        descriptionKey: "dashboard.widgets.toolboxFavoritesDesc",
-        icon: "Wrench",
-        defaultSize: "md",
-        minSize: "sm",
-        category: "tools",
-      },
+  const mockDefinitions = {
+    "stats-overview": {
+      type: "stats-overview",
+      titleKey: "dashboard.widgets.statsOverview",
+      descriptionKey: "dashboard.widgets.statsOverviewDesc",
+      icon: "BarChart3",
+      defaultSize: "full",
+      minSize: "full",
+      category: "overview",
+      allowMultiple: false,
+      required: false,
+      defaultVisible: true,
+      maxInstances: 1,
     },
+    "environment-chart": {
+      type: "environment-chart",
+      titleKey: "dashboard.widgets.environmentChart",
+      descriptionKey: "dashboard.widgets.environmentChartDesc",
+      icon: "PieChart",
+      defaultSize: "md",
+      minSize: "sm",
+      category: "charts",
+      allowMultiple: true,
+      required: false,
+      defaultVisible: true,
+    },
+    "quick-search": {
+      type: "quick-search",
+      titleKey: "dashboard.widgets.quickSearch",
+      descriptionKey: "dashboard.widgets.quickSearchDesc",
+      icon: "Search",
+      defaultSize: "full",
+      minSize: "lg",
+      category: "tools",
+      allowMultiple: false,
+      required: false,
+      defaultVisible: true,
+      maxInstances: 1,
+    },
+    "environment-list": {
+      type: "environment-list",
+      titleKey: "dashboard.widgets.environmentList",
+      descriptionKey: "dashboard.widgets.environmentListDesc",
+      icon: "Layers",
+      defaultSize: "md",
+      minSize: "sm",
+      category: "lists",
+      allowMultiple: true,
+      required: false,
+      defaultVisible: true,
+    },
+    "toolbox-favorites": {
+      type: "toolbox-favorites",
+      titleKey: "dashboard.widgets.toolboxFavorites",
+      descriptionKey: "dashboard.widgets.toolboxFavoritesDesc",
+      icon: "Wrench",
+      defaultSize: "md",
+      minSize: "sm",
+      category: "tools",
+      allowMultiple: true,
+      required: false,
+      defaultVisible: true,
+    },
+  };
+
+  return {
+    useDashboardStore: (selector: (s: Record<string, unknown>) => unknown) =>
+      selector({
+        widgets: mockWidgets,
+        addWidget: (...args: unknown[]) => mockAddWidget(...args),
+        resetToDefault: (...args: unknown[]) => mockResetToDefault(...args),
+      }),
+    WIDGET_DEFINITIONS: mockDefinitions,
+    canAddWidgetType: (
+      widgets: Array<{ type: string }>,
+      type: string,
+    ) => {
+      const def = mockDefinitions[type as keyof typeof mockDefinitions];
+      const count = widgets.filter((widget) => widget.type === type).length;
+      const max = def.maxInstances ?? (def.allowMultiple ? Number.POSITIVE_INFINITY : 1);
+      return count < max;
+    },
+    getWidgetTypeCount: (
+      widgets: Array<{ type: string }>,
+      type: string,
+    ) => widgets.filter((widget) => widget.type === type).length,
   };
 });
 
 describe("CustomizeDialog", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockWidgets = [
+      { id: "w-1", type: "stats-overview", size: "full", visible: true },
+      { id: "w-2", type: "environment-chart", size: "md", visible: true },
+    ];
   });
 
   it("renders dialog title when open", () => {
@@ -97,22 +135,12 @@ describe("CustomizeDialog", () => {
     expect(screen.queryByText("dashboard.widgets.customizeTitle")).not.toBeInTheDocument();
   });
 
-  it("renders dialog description", () => {
+  it("renders current layout summary", () => {
     render(
       <CustomizeDialog open={true} onOpenChange={jest.fn()} />,
     );
-    expect(screen.getByText("dashboard.widgets.customizeDesc")).toBeInTheDocument();
-  });
-
-  it("renders category filter toggle group", () => {
-    render(
-      <CustomizeDialog open={true} onOpenChange={jest.fn()} />,
-    );
-    expect(screen.getByText("dashboard.widgets.allCategories")).toBeInTheDocument();
-    expect(screen.getByText("dashboard.widgets.categoryOverview")).toBeInTheDocument();
-    expect(screen.getByText("dashboard.widgets.categoryCharts")).toBeInTheDocument();
-    expect(screen.getByText("dashboard.widgets.categoryLists")).toBeInTheDocument();
-    expect(screen.getByText("dashboard.widgets.categoryTools")).toBeInTheDocument();
+    expect(screen.getByTestId("dashboard-customize-summary")).toBeInTheDocument();
+    expect(screen.getByText("dashboard.widgets.currentLayoutSummary")).toBeInTheDocument();
   });
 
   it("renders all widget definitions with titles and descriptions", () => {
@@ -127,28 +155,35 @@ describe("CustomizeDialog", () => {
     expect(screen.getByText("dashboard.widgets.toolboxFavorites")).toBeInTheDocument();
   });
 
-  it("shows 'addAnother' label for already-added widget types", () => {
+  it("shows disabled limit state when widget type reached max instances", () => {
     render(
       <CustomizeDialog open={true} onOpenChange={jest.fn()} />,
     );
-    // stats-overview is in widgets[], so its button should say "addAnother"
-    expect(screen.getByText("dashboard.widgets.addAnother")).toBeInTheDocument();
-    // other types should say "common.add"
-    const addButtons = screen.getAllByText("common.add");
-    expect(addButtons.length).toBe(4);
+
+    const singleButton = screen.getByTestId("dashboard-customize-add-stats-overview");
+    expect(singleButton).toBeDisabled();
+    expect(screen.getByText("dashboard.widgets.limitReached")).toBeInTheDocument();
   });
 
-  it("calls addWidget when add button is clicked", async () => {
+  it("shows count badge for existing widget type", () => {
+    render(
+      <CustomizeDialog open={true} onOpenChange={jest.fn()} />,
+    );
+
+    expect(screen.getByTestId("dashboard-customize-count-stats-overview")).toBeInTheDocument();
+    expect(screen.getByTestId("dashboard-customize-count-environment-chart")).toBeInTheDocument();
+  });
+
+  it("calls addWidget when addable button is clicked", async () => {
     const user = userEvent.setup();
     render(
       <CustomizeDialog open={true} onOpenChange={jest.fn()} />,
     );
 
-    // Click the first "common.add" button (environment-chart)
-    const addButtons = screen.getAllByText("common.add");
-    await user.click(addButtons[0]);
+    await user.click(screen.getByTestId("dashboard-customize-add-environment-list"));
 
     expect(mockAddWidget).toHaveBeenCalledTimes(1);
+    expect(mockAddWidget).toHaveBeenCalledWith("environment-list");
   });
 
   it("calls resetToDefault and closes dialog on reset click", async () => {
@@ -158,7 +193,7 @@ describe("CustomizeDialog", () => {
       <CustomizeDialog open={true} onOpenChange={mockOnOpenChange} />,
     );
 
-    await user.click(screen.getByText("dashboard.widgets.resetDefault"));
+    await user.click(screen.getByTestId("dashboard-customize-reset"));
 
     expect(mockResetToDefault).toHaveBeenCalledTimes(1);
     expect(mockOnOpenChange).toHaveBeenCalledWith(false);
@@ -182,10 +217,8 @@ describe("CustomizeDialog", () => {
       <CustomizeDialog open={true} onOpenChange={jest.fn()} />,
     );
 
-    // Click "Charts" category
     await user.click(screen.getByText("dashboard.widgets.categoryCharts"));
 
-    // Should show environment-chart (charts) but not stats-overview (overview)
     expect(screen.getByText("dashboard.widgets.environmentChart")).toBeInTheDocument();
     expect(screen.queryByText("dashboard.widgets.statsOverview")).not.toBeInTheDocument();
     expect(screen.queryByText("dashboard.widgets.quickSearch")).not.toBeInTheDocument();

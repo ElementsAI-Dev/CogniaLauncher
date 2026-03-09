@@ -34,6 +34,11 @@ import {
   isTauri,
   openExternal,
   advancedSearch,
+  envvarListAll,
+  envvarSetProcess,
+  envvarGetPath,
+  envvarImportEnvFile,
+  envvarDetectConflicts,
 } from './tauri';
 
 describe('Tauri Utility Functions', () => {
@@ -242,6 +247,45 @@ describe('Advanced Search Payload Mapping', () => {
         },
       },
     });
+  });
+});
+
+describe('Envvar Bridge Contract', () => {
+  beforeEach(() => {
+    mockInvoke.mockReset();
+  });
+
+  it('maps envvar list to expected invoke command', async () => {
+    mockInvoke.mockResolvedValueOnce({});
+    await envvarListAll();
+    expect(mockInvoke).toHaveBeenCalledWith('envvar_list_all');
+  });
+
+  it('maps process set to expected invoke command and payload', async () => {
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await envvarSetProcess('FOO', 'bar');
+    expect(mockInvoke).toHaveBeenCalledWith('envvar_set_process', { key: 'FOO', value: 'bar' });
+  });
+
+  it('maps PATH retrieval to expected invoke command and payload', async () => {
+    mockInvoke.mockResolvedValueOnce([]);
+    await envvarGetPath('user');
+    expect(mockInvoke).toHaveBeenCalledWith('envvar_get_path', { scope: 'user' });
+  });
+
+  it('maps import payload to expected invoke command and payload', async () => {
+    mockInvoke.mockResolvedValueOnce({ imported: 0, skipped: 0, errors: [] });
+    await envvarImportEnvFile('FOO=bar', 'process');
+    expect(mockInvoke).toHaveBeenCalledWith('envvar_import_env_file', {
+      content: 'FOO=bar',
+      scope: 'process',
+    });
+  });
+
+  it('maps conflict detection to expected invoke command', async () => {
+    mockInvoke.mockResolvedValueOnce([]);
+    await envvarDetectConflicts();
+    expect(mockInvoke).toHaveBeenCalledWith('envvar_detect_conflicts');
   });
 });
 

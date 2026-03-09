@@ -5,12 +5,14 @@ const mockIsTauri = jest.fn(() => true);
 const mockWslIsAvailable = jest.fn();
 const mockWslListDistros = jest.fn();
 const mockWslGetStatus = jest.fn();
+const mockWslGetCapabilities = jest.fn();
 
 jest.mock('@/lib/tauri', () => ({
   isTauri: () => mockIsTauri(),
   wslIsAvailable: (...args: unknown[]) => mockWslIsAvailable(...args),
   wslListDistros: (...args: unknown[]) => mockWslListDistros(...args),
   wslGetStatus: (...args: unknown[]) => mockWslGetStatus(...args),
+  wslGetCapabilities: (...args: unknown[]) => mockWslGetCapabilities(...args),
 }));
 
 describe('useWslStatus', () => {
@@ -22,6 +24,17 @@ describe('useWslStatus', () => {
       { name: 'Debian', state: 'Stopped' },
     ]);
     mockWslGetStatus.mockResolvedValue({ wslVersion: '2.2.0' });
+    mockWslGetCapabilities.mockResolvedValue({
+      manage: true,
+      move: true,
+      resize: true,
+      setSparse: true,
+      setDefaultUser: true,
+      mountOptions: true,
+      shutdownForce: true,
+      exportFormat: true,
+      importInPlace: true,
+    });
   });
 
   it('loads availability and distro/status data in tauri mode', async () => {
@@ -31,6 +44,7 @@ describe('useWslStatus', () => {
     expect(result.current.distros).toHaveLength(2);
     expect(result.current.runningCount).toBe(1);
     expect(result.current.status).toEqual({ wslVersion: '2.2.0' });
+    expect(result.current.completeness.state).toBe('ready');
   });
 
   it('returns unavailable when not in tauri mode', async () => {
@@ -40,4 +54,3 @@ describe('useWslStatus', () => {
     expect(mockWslIsAvailable).not.toHaveBeenCalled();
   });
 });
-

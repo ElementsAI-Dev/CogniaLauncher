@@ -3,6 +3,7 @@
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -115,9 +116,15 @@ export function TerminalProxySettings({
             <AlertDescription className="flex items-center justify-between gap-2">
               <span>{syncMessage}</span>
               {onClearSyncState && (
-                <button type="button" className="underline underline-offset-2" onClick={onClearSyncState}>
+                <Button
+                  type="button"
+                  variant="link"
+                  size="sm"
+                  className="h-auto p-0"
+                  onClick={onClearSyncState}
+                >
                   {t('terminal.cancel')}
-                </button>
+                </Button>
               )}
             </AlertDescription>
           </Alert>
@@ -130,9 +137,15 @@ export function TerminalProxySettings({
             <AlertDescription className="flex items-center justify-between gap-2">
               <span>{syncMessage}</span>
               {onRetrySync && (
-                <button type="button" className="underline underline-offset-2" onClick={onRetrySync}>
+                <Button
+                  type="button"
+                  variant="link"
+                  size="sm"
+                  className="h-auto p-0"
+                  onClick={onRetrySync}
+                >
                   {t('common.refresh')}
-                </button>
+                </Button>
               )}
             </AlertDescription>
           </Alert>

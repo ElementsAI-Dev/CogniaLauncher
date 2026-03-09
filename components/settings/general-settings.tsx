@@ -17,7 +17,7 @@ export function GeneralSettings({
   t,
 }: GeneralSettingsProps) {
   return (
-    <div className="space-y-1">
+    <div className="flex flex-col gap-1">
         <SettingItem
           id="parallel-downloads"
           label={t("settings.parallelDownloads")}

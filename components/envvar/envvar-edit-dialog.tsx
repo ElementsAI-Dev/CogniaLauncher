@@ -132,8 +132,10 @@ function EnvVarEditDialogContent({
           <div className="flex items-center justify-between">
             <Label htmlFor="envvar-value">{t('envvar.table.value')}</Label>
             {isPathLike && (
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="sm"
                 onClick={() => {
                   if (!splitView) {
                     setValue(value.split(sep).join('\n'));
@@ -142,11 +144,12 @@ function EnvVarEditDialogContent({
                   }
                   setSplitView(!splitView);
                 }}
-                className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                className="h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
+                aria-label={splitView ? t('envvar.actions.joinView') : t('envvar.actions.splitView')}
               >
                 <SplitSquareHorizontal className="h-3 w-3" />
                 {splitView ? t('envvar.actions.joinView') || 'Join' : t('envvar.actions.splitView') || 'Split'}
-              </button>
+              </Button>
             )}
           </div>
           {useTextarea || splitView ? (
@@ -155,7 +158,7 @@ function EnvVarEditDialogContent({
               value={value}
               onChange={(e) => setValue(e.target.value)}
               placeholder="/usr/local/bin"
-              className="font-mono text-xs min-h-[120px] resize-y"
+              className="font-mono text-xs min-h-30 resize-y"
             />
           ) : (
             <Input
@@ -189,8 +192,8 @@ function EnvVarEditDialogContent({
         <Alert className="border-dashed" data-testid="envvar-edit-context">
           <AlertDescription className="text-xs">
             {scope === 'process'
-              ? 'Process scope applies to current app session only.'
-              : 'Persistent scope changes apply outside current session and may require reopening terminals.'}
+              ? t('envvar.editDialog.processScopeHint')
+              : t('envvar.editDialog.persistentScopeHint')}
           </AlertDescription>
         </Alert>
 

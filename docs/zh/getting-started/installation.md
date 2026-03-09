@@ -8,7 +8,8 @@
 - **pnpm** 8.x 或更高版本（推荐）
 
 ```bash
-npm install -g pnpm
+corepack enable
+corepack prepare pnpm@latest --activate
 ```
 
 ### 桌面应用开发（额外要求）

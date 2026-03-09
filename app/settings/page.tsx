@@ -25,7 +25,13 @@ import { Progress } from "@/components/ui/progress";
 import { useSettings } from "@/hooks/use-settings";
 import { useLocale } from "@/components/providers/locale-provider";
 import { useTheme } from "next-themes";
-import { useAppearanceStore, type AccentColor } from "@/lib/stores/appearance";
+import {
+  DEFAULT_APPEARANCE_PRESET_ID,
+  useAppearanceStore,
+  type AccentColor,
+  type AppearancePreset,
+  type AppearancePresetConfig,
+} from "@/lib/stores/appearance";
 import { useSettingsStore, type AppSettings } from "@/lib/stores/settings";
 import { isTauri } from "@/lib/tauri";
 import {
@@ -58,6 +64,7 @@ import {
   SecuritySettings,
   MirrorsSettings,
   AppearanceSettings,
+  AppearanceWorkbench,
   UpdateSettings,
   TraySettings,
   SidebarOrderCustomizer,
@@ -75,6 +82,13 @@ import { SettingsNav } from "@/components/settings/settings-nav";
 import { CollapsibleSection } from "@/components/settings/collapsible-section";
 import { PageHeader } from "@/components/layout/page-header";
 import { Separator } from "@/components/ui/separator";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 import {
   AlertCircle,
@@ -85,6 +99,7 @@ import {
   ClipboardPaste,
   Copy,
   ChevronDown,
+  PanelLeft,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -101,7 +116,6 @@ import {
   APP_SETTINGS_CONFIG_KEY_MAP,
   appSettingKeyToConfigKey,
   appSettingValueToConfigValue,
-  configToAppSettings,
 } from "@/lib/settings/app-settings-mapping";
 import {
   DEFAULT_SIDEBAR_ITEM_ORDER,
@@ -111,45 +125,42 @@ import {
   type PrimarySidebarItemId,
   type SecondarySidebarItemId,
 } from "@/lib/sidebar/order";
-import { syncAppearanceConfigValue } from "@/lib/theme/appearance-sync";
+import {
+  syncAppearanceConfigValue,
+  syncAppearancePresetConfig,
+} from "@/lib/theme/appearance-sync";
+import {
+  buildImportDiffSummary,
+  validateImportPayload,
+  type ImportDiffSummary,
+  type SettingsImportPayload,
+} from "@/lib/settings/import-validation";
+import {
+  applySectionReset,
+  buildAppSettingsFromConfigSnapshot,
+  clearSectionValidationErrors,
+} from "@/lib/settings/reset-mapping";
+import {
+  getAffectedSections,
+  getSectionForConfigKey,
+  SETTINGS_SECTION_CONFIG_PREFIXES,
+  SETTINGS_SECTION_IDS,
+} from "@/lib/settings/section-utils";
 
 interface SaveProgress {
   current: number;
   total: number;
 }
 
-// Section IDs in order
-const SECTION_IDS: SettingsSection[] = [
-  "general",
-  "network",
-  "security",
-  "mirrors",
-  "appearance",
-  "updates",
-  "tray",
-  "shortcuts",
-  "paths",
-  "provider",
-  "backup",
-  "startup",
-  "system",
-];
+interface PendingSaveSnapshot {
+  entries: Array<[string, string]>;
+  source: "all" | "retry";
+}
 
-const SECTION_CONFIG_PREFIXES: Record<SettingsSection, string[]> = {
-  general: ["general."],
-  network: ["network."],
-  security: ["security."],
-  mirrors: ["mirrors."],
-  appearance: ["appearance."],
-  updates: ["updates."],
-  tray: ["tray."],
-  shortcuts: ["shortcuts."],
-  paths: ["paths."],
-  provider: ["provider_settings."],
-  backup: ["backup."],
-  startup: ["startup."],
-  system: [],
-};
+interface ImportPreviewState {
+  payload: SettingsImportPayload;
+  diff: ImportDiffSummary;
+}
 
 const RUNTIME_TRAY_MANAGED_APP_SETTING_KEYS = new Set<keyof AppSettings>([
   "minimizeToTray",
@@ -214,8 +225,20 @@ export default function SettingsPage() {
     setInterfaceDensity,
     reducedMotion,
     setReducedMotion,
+    backgroundEnabled,
+    backgroundOpacity,
+    backgroundBlur,
+    backgroundFit,
     windowEffect,
     setWindowEffect,
+    presets,
+    activePresetId,
+    createPreset,
+    renamePreset,
+    deletePreset,
+    setActivePresetId,
+    applyPreset,
+    replacePresetCollection,
     reset: resetAppearance,
   } = useAppearanceStore();
   const [localConfig, setLocalConfig] = useState<Record<string, string>>({});
@@ -227,10 +250,21 @@ export default function SettingsPage() {
   >({});
   const [saving, setSaving] = useState(false);
   const [saveProgress, setSaveProgress] = useState<SaveProgress | null>(null);
+  const [pendingSaveSnapshot, setPendingSaveSnapshot] =
+    useState<PendingSaveSnapshot | null>(null);
+  const [failedSaveKeys, setFailedSaveKeys] = useState<string[]>([]);
+  const [failedSaveMessages, setFailedSaveMessages] = useState<
+    Record<string, string>
+  >({});
+  const [draftConflictKeys, setDraftConflictKeys] = useState<string[]>([]);
+  const [importPreview, setImportPreview] = useState<ImportPreviewState | null>(
+    null,
+  );
   const [initialLoadComplete, setInitialLoadComplete] = useState(false);
   const [collapsedSections, setCollapsedSections] = useState<
     Set<SettingsSection>
   >(new Set());
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const localConfigRef = useRef<Record<string, string>>(localConfig);
@@ -245,9 +279,9 @@ export default function SettingsPage() {
 
   // Section navigation
   const { activeSection, setActiveSection, scrollToSection } =
-    useActiveSection(SECTION_IDS);
+    useActiveSection(SETTINGS_SECTION_IDS);
   const { navigateSection, jumpToSection } = useSectionNavigation({
-    sectionIds: SECTION_IDS,
+    sectionIds: SETTINGS_SECTION_IDS,
     activeSection,
     setActiveSection,
   });
@@ -289,7 +323,12 @@ export default function SettingsPage() {
         appKey,
         configKey,
         value: configValue,
-        section: configKey.startsWith("updates.") ? "updates" : "tray",
+        section:
+          appKey === "sidebarItemOrder"
+            ? "appearance"
+            : configKey.startsWith("updates.")
+              ? "updates"
+              : "tray",
       });
     }
 
@@ -297,11 +336,19 @@ export default function SettingsPage() {
   }, [appSettings, localConfig, originalConfig]);
 
   const hasChanges = hasConfigDraftChanges || appSettingsDiffEntries.length > 0;
+  const conflictSections = useMemo(
+    () => getAffectedSections(draftConflictKeys),
+    [draftConflictKeys],
+  );
+  const failedSaveSections = useMemo(
+    () => getAffectedSections(failedSaveKeys),
+    [failedSaveKeys],
+  );
 
   // Track which sections have changes
   const sectionHasChanges = useCallback(
     (sectionId: SettingsSection): boolean => {
-      const prefixes = SECTION_CONFIG_PREFIXES[sectionId] || [];
+      const prefixes = SETTINGS_SECTION_CONFIG_PREFIXES[sectionId] || [];
       const hasConfigSectionDiff = configDiffKeys.some((key) =>
         prefixes.some((prefix) => key.startsWith(prefix)),
       );
@@ -311,6 +358,17 @@ export default function SettingsPage() {
       return hasConfigSectionDiff || hasAppSettingsSectionDiff;
     },
     [configDiffKeys, appSettingsDiffEntries],
+  );
+
+  const sectionHasConflict = useCallback(
+    (sectionId: SettingsSection): boolean => conflictSections.includes(sectionId),
+    [conflictSections],
+  );
+
+  const sectionHasDraftState = useCallback(
+    (sectionId: SettingsSection): boolean =>
+      sectionHasChanges(sectionId) || sectionHasConflict(sectionId),
+    [sectionHasChanges, sectionHasConflict],
   );
 
   useUnsavedChanges("settings-page", hasChanges);
@@ -340,9 +398,26 @@ export default function SettingsPage() {
       localConfigRef.current,
       originalConfigRef.current,
     );
+    const changedBaselineKeys = getConfigDiffEntries(
+      config,
+      originalConfigRef.current,
+    ).map(([key]) => key);
     setOriginalConfig(config);
     if (!saving && !hadDrafts) {
       setLocalConfig(config);
+      setDraftConflictKeys([]);
+      setFailedSaveKeys([]);
+      setFailedSaveMessages({});
+      return;
+    }
+
+    if (!saving && hadDrafts) {
+      const conflictKeys = changedBaselineKeys.filter((key) => {
+        const draftValue = localConfigRef.current[key] ?? "";
+        const nextBaselineValue = config[key] ?? "";
+        return draftValue !== nextBaselineValue;
+      });
+      setDraftConflictKeys(conflictKeys);
     }
   }, [config, saving]);
 
@@ -386,59 +461,97 @@ export default function SettingsPage() {
     return !hasErrors;
   }, [localConfig, t]);
 
-  const handleSave = useCallback(async () => {
-    if (!validateAllFields()) {
-      toast.error(t("settings.validationError"));
-      return;
-    }
-
-    const pendingChanges = new Map<string, string>();
-    for (const [key, value] of configDiffEntries) {
-      pendingChanges.set(key, value);
-    }
-    for (const entry of appSettingsDiffEntries) {
-      pendingChanges.set(entry.configKey, entry.value);
-    }
-
-    const changedKeys = Array.from(pendingChanges.entries());
-
-    if (changedKeys.length === 0) {
-      toast.info(t("settings.noChanges"));
-      return;
-    }
-
-    setSaving(true);
-    setSaveProgress({ current: 0, total: changedKeys.length });
-
-    const errors: string[] = [];
-
-    for (let i = 0; i < changedKeys.length; i++) {
-      const [key, value] = changedKeys[i];
-      try {
-        await updateConfigValue(key, value);
-        setSaveProgress({ current: i + 1, total: changedKeys.length });
-      } catch (err) {
-        errors.push(`${key}: ${err}`);
+  const handleSave = useCallback(
+    async (retryFailedOnly = false) => {
+      if (!validateAllFields()) {
+        toast.error(t("settings.validationError"));
+        return;
       }
-    }
 
-    setSaving(false);
-    setSaveProgress(null);
+      const pendingChanges = new Map<string, string>();
+      for (const [key, value] of configDiffEntries) {
+        if (retryFailedOnly && !failedSaveKeys.includes(key)) continue;
+        pendingChanges.set(key, value);
+      }
+      for (const entry of appSettingsDiffEntries) {
+        if (retryFailedOnly && !failedSaveKeys.includes(entry.configKey)) {
+          continue;
+        }
+        pendingChanges.set(entry.configKey, entry.value);
+      }
 
-    if (errors.length === 0) {
-      toast.success(t("settings.settingsSaved"));
-    } else if (errors.length < changedKeys.length) {
-      toast.warning(t("settings.partialSaveError", { count: errors.length }));
-    } else {
-      toast.error(t("settings.saveFailed"));
-    }
-  }, [
-    configDiffEntries,
-    appSettingsDiffEntries,
-    updateConfigValue,
-    validateAllFields,
-    t,
-  ]);
+      const changedKeys = Array.from(pendingChanges.entries());
+      if (changedKeys.length === 0) {
+        toast.info(t("settings.noChanges"));
+        return;
+      }
+
+      setSaving(true);
+      setPendingSaveSnapshot({
+        entries: changedKeys,
+        source: retryFailedOnly ? "retry" : "all",
+      });
+      setSaveProgress({ current: 0, total: changedKeys.length });
+
+      const failed: Record<string, string> = {};
+      const succeeded: Array<[string, string]> = [];
+
+      for (let i = 0; i < changedKeys.length; i++) {
+        const [key, value] = changedKeys[i];
+        try {
+          await updateConfigValue(key, value);
+          succeeded.push([key, value]);
+        } catch (err) {
+          failed[key] = err instanceof Error ? err.message : String(err);
+        } finally {
+          setSaveProgress({ current: i + 1, total: changedKeys.length });
+        }
+      }
+
+      if (succeeded.length > 0) {
+        setOriginalConfig((prev) => {
+          const next = { ...prev };
+          for (const [key, value] of succeeded) {
+            next[key] = value;
+          }
+          return next;
+        });
+      }
+
+      const nextFailedKeys = Object.keys(failed);
+      setFailedSaveKeys(nextFailedKeys);
+      setFailedSaveMessages(failed);
+      setDraftConflictKeys((prev) =>
+        prev.filter((key) => nextFailedKeys.includes(key)),
+      );
+
+      setSaving(false);
+      setPendingSaveSnapshot(null);
+      setSaveProgress(null);
+
+      if (nextFailedKeys.length === 0) {
+        toast.success(t("settings.settingsSaved"));
+      } else if (nextFailedKeys.length < changedKeys.length) {
+        toast.warning(
+          t("settings.partialSaveError", { count: nextFailedKeys.length }),
+        );
+      } else {
+        toast.error(t("settings.saveFailed"));
+      }
+    },
+    [
+      validateAllFields,
+      configDiffEntries,
+      failedSaveKeys,
+      appSettingsDiffEntries,
+      updateConfigValue,
+      t,
+    ],
+  );
+
+  const handleRetryFailedSaves = useCallback(() => {
+    void handleSave(true);
+  }, [handleSave]);
 
   const handleReset = useCallback(async () => {
     try {
@@ -455,6 +568,28 @@ export default function SettingsPage() {
       setInterfaceDensity(parsedAppearance.interfaceDensity);
       setReducedMotion(parsedAppearance.reducedMotion);
       setWindowEffect(parsedAppearance.windowEffect);
+      replacePresetCollection(
+        [
+          {
+            id: DEFAULT_APPEARANCE_PRESET_ID,
+            name: "Default",
+            config: {
+              theme: parsedAppearance.theme,
+              accentColor: parsedAppearance.accentColor,
+              chartColorTheme: parsedAppearance.chartColorTheme,
+              interfaceRadius: parsedAppearance.interfaceRadius,
+              interfaceDensity: parsedAppearance.interfaceDensity,
+              reducedMotion: parsedAppearance.reducedMotion,
+              backgroundEnabled: false,
+              backgroundOpacity: 20,
+              backgroundBlur: 0,
+              backgroundFit: "cover",
+              windowEffect: parsedAppearance.windowEffect,
+            },
+          },
+        ],
+        DEFAULT_APPEARANCE_PRESET_ID,
+      );
 
       if (isTauri()) {
         try {
@@ -467,8 +602,16 @@ export default function SettingsPage() {
 
       setOriginalConfig(resetSnapshot);
       setLocalConfig(resetSnapshot);
-      setAppSettings(configToAppSettings(resetSnapshot, appSettings));
+      setAppSettings(
+        buildAppSettingsFromConfigSnapshot({
+          configSnapshot: resetSnapshot,
+          currentAppSettings: appSettings,
+        }),
+      );
       setValidationErrors({});
+      setDraftConflictKeys([]);
+      setFailedSaveKeys([]);
+      setFailedSaveMessages({});
       toast.success(t("settings.settingsReset"));
     } catch (err) {
       toast.error(`${t("settings.resetFailed")}: ${err}`);
@@ -485,6 +628,7 @@ export default function SettingsPage() {
     setInterfaceDensity,
     setReducedMotion,
     setWindowEffect,
+    replacePresetCollection,
     setAppSettings,
     appSettings,
     t,
@@ -501,6 +645,8 @@ export default function SettingsPage() {
         exportedAt: new Date().toISOString(),
         backendConfig: tomlContent,
         appSettings,
+        appearancePresets: presets,
+        appearanceActivePresetId: activePresetId,
       };
     }
     return {
@@ -508,8 +654,10 @@ export default function SettingsPage() {
       exportedAt: new Date().toISOString(),
       settings: localConfig,
       appSettings,
+      appearancePresets: presets,
+      appearanceActivePresetId: activePresetId,
     };
-  }, [localConfig, appSettings]);
+  }, [localConfig, appSettings, presets, activePresetId]);
 
   const normalizeImportedAppSettings = useCallback(
     (value: unknown): Partial<AppSettings> | null => {
@@ -534,6 +682,7 @@ export default function SettingsPage() {
         raw.trayClickBehavior === "toggle_window" ||
         raw.trayClickBehavior === "show_menu" ||
         raw.trayClickBehavior === "check_updates" ||
+        raw.trayClickBehavior === "quick_action" ||
         raw.trayClickBehavior === "do_nothing"
       ) {
         normalized.trayClickBehavior = raw.trayClickBehavior;
@@ -562,59 +711,157 @@ export default function SettingsPage() {
     [],
   );
 
-  const applyImportedSettings = useCallback(
-    async (content: string) => {
-      const data = JSON.parse(content);
+  const buildFallbackPresetConfig = useCallback(
+    (settingsSnapshot: Record<string, string>): AppearancePresetConfig => {
+      const parsed = parseAppearanceConfig(settingsSnapshot);
+      return {
+        theme: parsed.theme,
+        accentColor: parsed.accentColor,
+        chartColorTheme: parsed.chartColorTheme,
+        interfaceRadius: parsed.interfaceRadius,
+        interfaceDensity: parsed.interfaceDensity,
+        reducedMotion: parsed.reducedMotion,
+        backgroundEnabled,
+        backgroundOpacity,
+        backgroundBlur,
+        backgroundFit,
+        windowEffect: parsed.windowEffect,
+      };
+    },
+    [
+      backgroundEnabled,
+      backgroundOpacity,
+      backgroundBlur,
+      backgroundFit,
+    ],
+  );
 
-      // v2.0 format: full backend TOML config
-      if (data.version === "2.0" && data.backendConfig && isTauri()) {
+  const applyImportedPresetCollection = useCallback(
+    (
+      presetsValue: unknown,
+      activePresetValue: unknown,
+      fallbackSnapshot: Record<string, string>,
+    ) => {
+      if (Array.isArray(presetsValue) && presetsValue.length > 0) {
+        replacePresetCollection(
+          presetsValue as AppearancePreset[],
+          typeof activePresetValue === "string" ? activePresetValue : undefined,
+        );
+        return;
+      }
+
+      const fallbackPreset = buildFallbackPresetConfig(fallbackSnapshot);
+      replacePresetCollection(
+        [
+          {
+            id: DEFAULT_APPEARANCE_PRESET_ID,
+            name: "Default",
+            config: fallbackPreset,
+          },
+        ],
+        DEFAULT_APPEARANCE_PRESET_ID,
+      );
+    },
+    [buildFallbackPresetConfig, replacePresetCollection],
+  );
+
+  const applyImportedSettings = useCallback(
+    async (payload: SettingsImportPayload) => {
+      if ("version" in payload && payload.version === "2.0") {
         const { configImport } = await import("@/lib/tauri");
-        await configImport(data.backendConfig);
+        await configImport(payload.backendConfig);
         const importedAppSettings = normalizeImportedAppSettings(
-          data.appSettings,
+          payload.appSettings,
         );
         if (
-          importedAppSettings &&
-          Object.keys(importedAppSettings).length > 0
+          importedAppSettings
+          && Object.keys(importedAppSettings).length > 0
         ) {
           setAppSettings(importedAppSettings);
         }
-        // Refresh config from backend
         const refreshedConfig = await fetchConfig();
+        applyImportedPresetCollection(
+          payload.appearancePresets,
+          payload.appearanceActivePresetId,
+          refreshedConfig,
+        );
         setLocalConfig(refreshedConfig);
         setOriginalConfig(refreshedConfig);
         setValidationErrors({});
+        setDraftConflictKeys([]);
+        setFailedSaveKeys([]);
+        setFailedSaveMessages({});
         toast.success(t("settings.importSuccess"));
         return;
       }
 
-      // v1.0 format: frontend JSON settings map (legacy / web fallback)
-      if (!data.settings || typeof data.settings !== "object") {
-        toast.error(t("settings.importInvalidFormat"));
-        return;
-      }
-
-      setLocalConfig((prev) => ({ ...prev, ...data.settings }));
-
-      const importedAppSettings = normalizeImportedAppSettings(
-        data.appSettings,
+      const mergedSettings = {
+        ...localConfigRef.current,
+        ...payload.settings,
+      };
+      applyImportedPresetCollection(
+        payload.appearancePresets,
+        payload.appearanceActivePresetId,
+        mergedSettings,
       );
+
+      setLocalConfig((prev) => ({ ...prev, ...payload.settings }));
+
+      const importedAppSettings = normalizeImportedAppSettings(payload.appSettings);
       if (importedAppSettings && Object.keys(importedAppSettings).length > 0) {
         setAppSettings(importedAppSettings);
       }
 
       const errors: Record<string, string | null> = {};
-      for (const [key, value] of Object.entries(data.settings)) {
-        if (typeof value === "string") {
-          errors[key] = validateField(key, value, t);
-        }
+      for (const [key, value] of Object.entries(payload.settings)) {
+        errors[key] = validateField(key, value, t);
       }
       setValidationErrors((prev) => ({ ...prev, ...errors }));
-
+      setFailedSaveKeys([]);
+      setFailedSaveMessages({});
       toast.success(t("settings.importSuccess"));
     },
-    [normalizeImportedAppSettings, setAppSettings, fetchConfig, t],
+    [
+      normalizeImportedAppSettings,
+      setAppSettings,
+      fetchConfig,
+      applyImportedPresetCollection,
+      t,
+    ],
   );
+
+  const queueImportPreview = useCallback(
+    (content: string) => {
+      const validationResult = validateImportPayload(content, {
+        isTauri: isTauri(),
+      });
+      if (!validationResult.valid || !validationResult.payload) {
+        const issueMessage = validationResult.issues[0]?.message;
+        toast.error(issueMessage ?? t("settings.importInvalidFormat"));
+        return;
+      }
+
+      const diff = buildImportDiffSummary(
+        validationResult.payload,
+        localConfigRef.current,
+      );
+      setImportPreview({
+        payload: validationResult.payload,
+        diff,
+      });
+    },
+    [t],
+  );
+
+  const handleConfirmImport = useCallback(async () => {
+    if (!importPreview) return;
+    try {
+      await applyImportedSettings(importPreview.payload);
+      setImportPreview(null);
+    } catch {
+      toast.error(t("settings.importFailed"));
+    }
+  }, [applyImportedSettings, importPreview, t]);
 
   const handleExport = useCallback(async () => {
     try {
@@ -655,7 +902,7 @@ export default function SettingsPage() {
       reader.onload = async (e) => {
         try {
           const content = e.target?.result as string;
-          await applyImportedSettings(content);
+          queueImportPreview(content);
         } catch {
           toast.error(t("settings.importFailed"));
         }
@@ -666,7 +913,7 @@ export default function SettingsPage() {
         fileInputRef.current.value = "";
       }
     },
-    [applyImportedSettings, t],
+    [queueImportPreview, t],
   );
 
   const handleImportFromClipboard = useCallback(async () => {
@@ -676,16 +923,24 @@ export default function SettingsPage() {
         toast.error(t("settings.clipboardEmpty"));
         return;
       }
-      await applyImportedSettings(text);
+      queueImportPreview(text);
     } catch {
       toast.error(t("settings.importFailed"));
     }
-  }, [applyImportedSettings, t]);
+  }, [queueImportPreview, t]);
 
   const handleDiscardChanges = useCallback(() => {
     setLocalConfig(originalConfig);
-    setAppSettings(configToAppSettings(originalConfig, appSettings));
+    setAppSettings(
+      buildAppSettingsFromConfigSnapshot({
+        configSnapshot: originalConfig,
+        currentAppSettings: appSettings,
+      }),
+    );
     setValidationErrors({});
+    setDraftConflictKeys([]);
+    setFailedSaveKeys([]);
+    setFailedSaveMessages({});
   }, [originalConfig, setAppSettings, appSettings]);
 
   // Appearance settings handlers with shared write + readback reconciliation
@@ -931,6 +1186,137 @@ export default function SettingsPage() {
     [setWindowEffect, syncAppearanceSetting],
   );
 
+  const updateLocalConfigFromPreset = useCallback(
+    (preset: AppearancePresetConfig) => {
+      setLocalConfig((prev) => ({
+        ...prev,
+        "appearance.theme": preset.theme,
+        "appearance.accent_color": preset.accentColor,
+        "appearance.chart_color_theme": preset.chartColorTheme,
+        "appearance.interface_radius": String(preset.interfaceRadius),
+        "appearance.interface_density": preset.interfaceDensity,
+        "appearance.reduced_motion": String(preset.reducedMotion),
+        "appearance.window_effect": preset.windowEffect,
+      }));
+    },
+    [],
+  );
+
+  const buildPresetFromCurrentState = useCallback((): AppearancePresetConfig => {
+    return {
+      theme: normalizeThemeMode(theme),
+      accentColor: normalizeAccentColor(accentColor),
+      chartColorTheme: normalizeChartColorTheme(chartColorTheme),
+      interfaceRadius: normalizeInterfaceRadius(interfaceRadius),
+      interfaceDensity: normalizeInterfaceDensity(interfaceDensity),
+      reducedMotion: normalizeReducedMotion(reducedMotion),
+      backgroundEnabled,
+      backgroundOpacity,
+      backgroundBlur,
+      backgroundFit,
+      windowEffect: normalizeWindowEffect(windowEffect),
+    };
+  }, [
+    theme,
+    accentColor,
+    chartColorTheme,
+    interfaceRadius,
+    interfaceDensity,
+    reducedMotion,
+    backgroundEnabled,
+    backgroundOpacity,
+    backgroundBlur,
+    backgroundFit,
+    windowEffect,
+  ]);
+
+  const handleApplyAppearancePreset = useCallback(
+    async (presetId: string) => {
+      const selected = presets.find((preset) => preset.id === presetId);
+      const appliedPreset = applyPreset(presetId);
+      if (!selected || !appliedPreset) return;
+
+      let canonicalPreset = appliedPreset;
+      setTheme(appliedPreset.theme);
+
+      if (isTauri()) {
+        canonicalPreset = await syncAppearancePresetConfig({
+          preset: appliedPreset,
+          updateConfigValue,
+          fetchConfig,
+        });
+      }
+
+      setTheme(normalizeThemeMode(canonicalPreset.theme));
+      setAccentColor(normalizeAccentColor(canonicalPreset.accentColor));
+      setChartColorTheme(normalizeChartColorTheme(canonicalPreset.chartColorTheme));
+      setInterfaceRadius(normalizeInterfaceRadius(canonicalPreset.interfaceRadius));
+      setInterfaceDensity(normalizeInterfaceDensity(canonicalPreset.interfaceDensity));
+      setReducedMotion(normalizeReducedMotion(canonicalPreset.reducedMotion));
+      setWindowEffect(normalizeWindowEffect(canonicalPreset.windowEffect));
+      updateLocalConfigFromPreset(canonicalPreset);
+
+      if (isTauri()) {
+        try {
+          const { windowEffectApply } = await import("@/lib/tauri");
+          await windowEffectApply(canonicalPreset.windowEffect);
+        } catch (err) {
+          console.error("Failed to apply preset window effect:", err);
+        }
+      }
+
+      toast.success(
+        t("settings.customizationPresetApplied", { name: selected.name }),
+      );
+    },
+    [
+      presets,
+      applyPreset,
+      setTheme,
+      updateConfigValue,
+      fetchConfig,
+      setAccentColor,
+      setChartColorTheme,
+      setInterfaceRadius,
+      setInterfaceDensity,
+      setReducedMotion,
+      setWindowEffect,
+      updateLocalConfigFromPreset,
+      t,
+    ],
+  );
+
+  const handleSaveAppearancePreset = useCallback(
+    (name: string) => {
+      const trimmedName = name.trim();
+      if (!trimmedName) return;
+      const id = createPreset(trimmedName, buildPresetFromCurrentState());
+      setActivePresetId(id);
+      toast.success(t("settings.customizationPresetSaved", { name: trimmedName }));
+    },
+    [createPreset, buildPresetFromCurrentState, setActivePresetId, t],
+  );
+
+  const handleRenameAppearancePreset = useCallback(
+    (presetId: string, name: string) => {
+      const trimmedName = name.trim();
+      if (!trimmedName || presetId === DEFAULT_APPEARANCE_PRESET_ID) return;
+      renamePreset(presetId, trimmedName);
+      toast.success(t("settings.customizationPresetRenamed", { name: trimmedName }));
+    },
+    [renamePreset, t],
+  );
+
+  const handleDeleteAppearancePreset = useCallback(
+    (presetId: string) => {
+      const preset = presets.find((candidate) => candidate.id === presetId);
+      if (!preset || presetId === DEFAULT_APPEARANCE_PRESET_ID) return;
+      deletePreset(presetId);
+      toast.success(t("settings.customizationPresetDeleted", { name: preset.name }));
+    },
+    [deletePreset, presets, t],
+  );
+
   // Focus search handler
   const handleFocusSearch = useCallback(() => {
     searchInputRef.current?.focus();
@@ -970,8 +1356,34 @@ export default function SettingsPage() {
           "appearance.language": APPEARANCE_DEFAULTS.locale,
           "appearance.window_effect": APPEARANCE_DEFAULTS.windowEffect,
         };
+        const customPresets = presets.filter(
+          (preset) => preset.id !== DEFAULT_APPEARANCE_PRESET_ID,
+        );
 
         resetAppearance();
+        replacePresetCollection(
+          [
+            {
+              id: DEFAULT_APPEARANCE_PRESET_ID,
+              name: "Default",
+              config: {
+                theme: APPEARANCE_DEFAULTS.theme,
+                accentColor: APPEARANCE_DEFAULTS.accentColor,
+                chartColorTheme: APPEARANCE_DEFAULTS.chartColorTheme,
+                interfaceRadius: APPEARANCE_DEFAULTS.interfaceRadius,
+                interfaceDensity: APPEARANCE_DEFAULTS.interfaceDensity,
+                reducedMotion: APPEARANCE_DEFAULTS.reducedMotion,
+                backgroundEnabled: false,
+                backgroundOpacity: 20,
+                backgroundBlur: 0,
+                backgroundFit: "cover",
+                windowEffect: APPEARANCE_DEFAULTS.windowEffect,
+              },
+            },
+            ...customPresets,
+          ],
+          DEFAULT_APPEARANCE_PRESET_ID,
+        );
 
         setLocalConfig((prev) => ({
           ...prev,
@@ -1011,26 +1423,34 @@ export default function SettingsPage() {
         return;
       }
 
-      const prefixes = SECTION_CONFIG_PREFIXES[sectionId] || [];
-
-      // Reset local config for this section to original values
-      setLocalConfig((prev) => {
-        const next = { ...prev };
-        for (const key of Object.keys(next)) {
-          if (prefixes.some((prefix) => key.startsWith(prefix))) {
-            next[key] = originalConfig[key] ?? "";
-          }
-        }
-        return next;
+      const sectionResetResult = applySectionReset({
+        sectionId,
+        draft: localConfig,
+        baseline: originalConfig,
       });
-
-      // Clear validation errors for this section
-      setValidationErrors((prev) => {
+      setLocalConfig(sectionResetResult.nextDraft);
+      setValidationErrors((prev) =>
+        clearSectionValidationErrors({
+          errors: prev,
+          resetKeys: sectionResetResult.resetKeys,
+        }),
+      );
+      setAppSettings(
+        buildAppSettingsFromConfigSnapshot({
+          configSnapshot: sectionResetResult.nextDraft,
+          currentAppSettings: appSettings,
+        }),
+      );
+      setDraftConflictKeys((prev) =>
+        prev.filter((key) => !sectionResetResult.resetKeys.includes(key)),
+      );
+      setFailedSaveKeys((prev) =>
+        prev.filter((key) => !sectionResetResult.resetKeys.includes(key)),
+      );
+      setFailedSaveMessages((prev) => {
         const next = { ...prev };
-        for (const key of Object.keys(next)) {
-          if (prefixes.some((prefix) => key.startsWith(prefix))) {
-            next[key] = null;
-          }
+        for (const key of sectionResetResult.resetKeys) {
+          delete next[key];
         }
         return next;
       });
@@ -1041,7 +1461,17 @@ export default function SettingsPage() {
         }),
       );
     },
-    [originalConfig, resetAppearance, resetAppearanceControl, t],
+    [
+      originalConfig,
+      localConfig,
+      appSettings,
+      presets,
+      resetAppearance,
+      replacePresetCollection,
+      resetAppearanceControl,
+      setAppSettings,
+      t,
+    ],
   );
 
   const focusSearchTarget = useCallback(
@@ -1094,6 +1524,14 @@ export default function SettingsPage() {
     [focusSearchTarget, scrollToSection, search],
   );
 
+  const handleMobileSectionSelect = useCallback(
+    (section: SettingsSection) => {
+      scrollToSection(section);
+      setMobileNavOpen(false);
+    },
+    [scrollToSection],
+  );
+
   useSettingsShortcuts({
     onSave: handleSave,
     onReset: handleReset,
@@ -1126,8 +1564,20 @@ export default function SettingsPage() {
 
       try {
         await updateConfigValue(configKey, configValue);
+        setFailedSaveKeys((prev) => prev.filter((candidate) => candidate !== configKey));
+        setFailedSaveMessages((prev) => {
+          if (!(configKey in prev)) return prev;
+          const next = { ...prev };
+          delete next[configKey];
+          return next;
+        });
       } catch (err) {
-        toast.error(`${t("settings.saveFailed")}: ${err}`);
+        const message = err instanceof Error ? err.message : String(err);
+        setFailedSaveKeys((prev) =>
+          prev.includes(configKey) ? prev : [...prev, configKey],
+        );
+        setFailedSaveMessages((prev) => ({ ...prev, [configKey]: message }));
+        toast.error(`${t("settings.saveFailed")}: ${message}`);
       }
     },
     [setAppSettings, updateConfigValue, t],
@@ -1168,6 +1618,30 @@ export default function SettingsPage() {
     setAppSettings({ sidebarItemOrder: [...DEFAULT_SIDEBAR_ITEM_ORDER] });
     toast.success(t("settings.sidebarOrderResetSuccess"));
   }, [setAppSettings, t]);
+
+  const handleCancelImportPreview = useCallback(() => {
+    setImportPreview(null);
+  }, []);
+
+  const conflictSectionSummary = useMemo(
+    () => conflictSections.map((section) => t(`settings.sections.${section}`)).join(", "),
+    [conflictSections, t],
+  );
+
+  const failedSectionSummary = useMemo(
+    () => failedSaveSections.map((section) => t(`settings.sections.${section}`)).join(", "),
+    [failedSaveSections, t],
+  );
+
+  const failedSaveDetails = useMemo(
+    () =>
+      failedSaveKeys.map((key) => ({
+        key,
+        section: getSectionForConfigKey(key),
+        error: failedSaveMessages[key] ?? t("settings.saveFailed"),
+      })),
+    [failedSaveKeys, failedSaveMessages, t],
+  );
 
   const canSave = hasChanges && !loading && !saving && !hasValidationErrors();
   const canReset = !loading && !saving;
@@ -1252,13 +1726,60 @@ export default function SettingsPage() {
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
-            <Button onClick={handleSave} disabled={!canSave}>
+            <Button onClick={() => void handleSave(false)} disabled={!canSave}>
               <Save className="h-4 w-4 mr-2" aria-hidden="true" />
               {saving ? t("settings.saving") : t("settings.saveChanges")}
             </Button>
           </>
         }
       />
+
+      <AlertDialog
+        open={Boolean(importPreview)}
+        onOpenChange={(open) => {
+          if (!open) handleCancelImportPreview();
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("settings.importPreviewTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("settings.importPreviewDesc")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {importPreview && (
+            <div className="space-y-3 text-sm">
+              <p className="text-muted-foreground">
+                {t("settings.importPreviewChangedCount", {
+                  count: importPreview.diff.changedKeys.length,
+                })}
+              </p>
+              {importPreview.diff.affectedSections.length > 0 && (
+                <p className="text-muted-foreground">
+                  {t("settings.importPreviewAffectedSections")}:{" "}
+                  {importPreview.diff.affectedSections
+                    .map((section) => t(`settings.sections.${section}`))
+                    .join(", ")}
+                </p>
+              )}
+              {importPreview.diff.changedKeys.length > 0 && (
+                <div className="rounded-md border bg-muted/40 p-2 text-xs">
+                  {importPreview.diff.changedKeys.slice(0, 6).join(", ")}
+                  {importPreview.diff.changedKeys.length > 6 ? ", ..." : ""}
+                </div>
+              )}
+            </div>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleCancelImportPreview}>
+              {t("common.cancel")}
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmImport}>
+              {t("settings.importConfirmApply")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {saveProgress && (
         <div className="space-y-2" role="status" aria-live="polite">
@@ -1273,6 +1794,13 @@ export default function SettingsPage() {
               {Math.round((saveProgress.current / saveProgress.total) * 100)}%
             </span>
           </div>
+          {pendingSaveSnapshot && (
+            <p className="text-xs text-muted-foreground">
+              {t("settings.pendingSaveItems", {
+                count: pendingSaveSnapshot.entries.length,
+              })}
+            </p>
+          )}
           <Progress value={(saveProgress.current / saveProgress.total) * 100} />
         </div>
       )}
@@ -1296,32 +1824,110 @@ export default function SettingsPage() {
         </Alert>
       )}
 
+      {draftConflictKeys.length > 0 && (
+        <Alert role="status">
+          <AlertCircle className="h-4 w-4" aria-hidden="true" />
+          <AlertDescription>
+            {t("settings.refreshConflictDetected", {
+              count: draftConflictKeys.length,
+            })}
+            {conflictSectionSummary ? (
+              <span className="text-muted-foreground ml-2">
+                ({conflictSectionSummary})
+              </span>
+            ) : null}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {failedSaveKeys.length > 0 && (
+        <Alert variant="destructive" role="alert">
+          <AlertCircle className="h-4 w-4" aria-hidden="true" />
+          <AlertDescription className="space-y-2">
+            <p>
+              {t("settings.saveRetryHint", { count: failedSaveKeys.length })}
+              {failedSectionSummary ? (
+                <span className="text-destructive/80 ml-2">
+                  ({failedSectionSummary})
+                </span>
+              ) : null}
+            </p>
+            <div className="rounded-md border border-destructive/30 bg-destructive/10 p-2 text-xs space-y-1">
+              {failedSaveDetails.slice(0, 6).map((detail) => (
+                <p key={detail.key}>
+                  {detail.key}: {detail.error}
+                </p>
+              ))}
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={handleRetryFailedSaves}
+              disabled={saving}
+            >
+              {t("settings.retryFailedOnly")}
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+
       {!initialLoadComplete ? (
         <SettingsSkeleton loadingLabel={t("settings.loading")} />
       ) : (
-        <div className="flex gap-6">
+        <div className="flex flex-col gap-6 lg:flex-row">
           {/* Sidebar Navigation - Hidden on mobile */}
-          <aside className="hidden lg:block w-56 shrink-0">
+          <aside className="hidden w-56 shrink-0 lg:block">
             <SettingsNav
               activeSection={activeSection}
               onSectionClick={scrollToSection}
               matchingSections={search.matchingSections}
               isSearching={search.isSearching}
               collapsedSections={collapsedSections}
-              sectionHasChanges={sectionHasChanges}
+              sectionHasChanges={sectionHasDraftState}
               t={t}
             />
           </aside>
 
           {/* Main Content */}
-          <div className="flex-1 space-y-6 min-w-0">
-            {/* Search Bar */}
-            <SettingsSearch
-              search={search}
-              onNavigateToSetting={handleNavigateToSetting}
-              inputRef={searchInputRef}
-              t={t}
-            />
+          <div className="min-w-0 flex-1 flex flex-col gap-6">
+            {/* Search & Mobile Navigation */}
+            <div className="flex flex-col gap-3">
+              <div className="lg:hidden">
+                <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+                  <SheetTrigger asChild>
+                    <Button type="button" variant="outline" size="sm">
+                      <PanelLeft className="mr-2 h-4 w-4" />
+                      {t("settings.nav.title")}
+                    </Button>
+                  </SheetTrigger>
+                  <SheetContent side="left" className="w-[320px] p-0">
+                    <SheetHeader className="border-b px-4 py-3">
+                      <SheetTitle>{t("settings.nav.title")}</SheetTitle>
+                    </SheetHeader>
+                    <div className="px-3 py-3">
+                      <SettingsNav
+                        activeSection={activeSection}
+                        onSectionClick={handleMobileSectionSelect}
+                        matchingSections={search.matchingSections}
+                        isSearching={search.isSearching}
+                        collapsedSections={collapsedSections}
+                        sectionHasChanges={sectionHasDraftState}
+                        t={t}
+                        className="top-0"
+                      />
+                    </div>
+                  </SheetContent>
+                </Sheet>
+              </div>
+
+              <SettingsSearch
+                search={search}
+                onNavigateToSetting={handleNavigateToSetting}
+                inputRef={searchInputRef}
+                t={t}
+              />
+            </div>
 
             {/* Settings Sections */}
             <CollapsibleSection
@@ -1330,7 +1936,7 @@ export default function SettingsPage() {
               description={t("settings.generalDesc")}
               icon="Settings2"
               open={!collapsedSections.has("general")}
-              hasChanges={sectionHasChanges("general")}
+              hasChanges={sectionHasDraftState("general")}
               onResetSection={handleResetSection}
               onOpenChange={handleSectionOpenChange}
               t={t}
@@ -1349,7 +1955,7 @@ export default function SettingsPage() {
               description={t("settings.networkDesc")}
               icon="Network"
               open={!collapsedSections.has("network")}
-              hasChanges={sectionHasChanges("network")}
+              hasChanges={sectionHasDraftState("network")}
               onResetSection={handleResetSection}
               onOpenChange={handleSectionOpenChange}
               t={t}
@@ -1368,7 +1974,7 @@ export default function SettingsPage() {
               description={t("settings.securityDesc")}
               icon="Shield"
               open={!collapsedSections.has("security")}
-              hasChanges={sectionHasChanges("security")}
+              hasChanges={sectionHasDraftState("security")}
               onResetSection={handleResetSection}
               onOpenChange={handleSectionOpenChange}
               t={t}
@@ -1386,7 +1992,7 @@ export default function SettingsPage() {
               description={t("settings.mirrorsDesc")}
               icon="Server"
               open={!collapsedSections.has("mirrors")}
-              hasChanges={sectionHasChanges("mirrors")}
+              hasChanges={sectionHasDraftState("mirrors")}
               onResetSection={handleResetSection}
               onOpenChange={handleSectionOpenChange}
               t={t}
@@ -1406,30 +2012,52 @@ export default function SettingsPage() {
               description={t("settings.appearanceDesc")}
               icon="Palette"
               open={!collapsedSections.has("appearance")}
-              hasChanges={sectionHasChanges("appearance")}
+              hasChanges={sectionHasDraftState("appearance")}
               onResetSection={handleResetSection}
               onOpenChange={handleSectionOpenChange}
               t={t}
             >
-              <AppearanceSettings
-                theme={theme}
-                setTheme={handleThemeChange}
-                locale={locale}
-                setLocale={handleLocaleChange}
-                accentColor={accentColor}
-                setAccentColor={handleAccentColorChange}
-                chartColorTheme={chartColorTheme}
-                setChartColorTheme={handleChartColorThemeChange}
-                interfaceRadius={interfaceRadius}
-                setInterfaceRadius={handleInterfaceRadiusChange}
-                interfaceDensity={interfaceDensity}
-                setInterfaceDensity={handleInterfaceDensityChange}
-                reducedMotion={reducedMotion}
-                setReducedMotion={handleReducedMotionChange}
-                windowEffect={windowEffect}
-                setWindowEffect={handleWindowEffectChange}
+              <AppearanceWorkbench
+                presets={presets}
+                activePresetId={activePresetId}
+                hasAppearanceChanges={sectionHasDraftState("appearance")}
+                onSelectPreset={setActivePresetId}
+                onApplyPreset={handleApplyAppearancePreset}
+                onSavePreset={handleSaveAppearancePreset}
+                onRenamePreset={handleRenameAppearancePreset}
+                onDeletePreset={handleDeleteAppearancePreset}
+                onResetAppearance={() => handleResetSection("appearance")}
                 t={t}
-              />
+              >
+                <AppearanceSettings
+                  theme={theme}
+                  setTheme={handleThemeChange}
+                  locale={locale}
+                  setLocale={handleLocaleChange}
+                  accentColor={accentColor}
+                  setAccentColor={handleAccentColorChange}
+                  chartColorTheme={chartColorTheme}
+                  setChartColorTheme={handleChartColorThemeChange}
+                  interfaceRadius={interfaceRadius}
+                  setInterfaceRadius={handleInterfaceRadiusChange}
+                  interfaceDensity={interfaceDensity}
+                  setInterfaceDensity={handleInterfaceDensityChange}
+                  reducedMotion={reducedMotion}
+                  setReducedMotion={handleReducedMotionChange}
+                  windowEffect={windowEffect}
+                  setWindowEffect={handleWindowEffectChange}
+                  t={t}
+                />
+                <Separator />
+                <SidebarOrderCustomizer
+                  t={t}
+                  primaryOrder={sidebarOrder.primary}
+                  secondaryOrder={sidebarOrder.secondary}
+                  onMovePrimary={handleMovePrimarySidebarItem}
+                  onMoveSecondary={handleMoveSecondarySidebarItem}
+                  onReset={handleResetSidebarOrder}
+                />
+              </AppearanceWorkbench>
             </CollapsibleSection>
 
             <CollapsibleSection
@@ -1438,7 +2066,7 @@ export default function SettingsPage() {
               description={t("settings.updatesDesc")}
               icon="RefreshCw"
               open={!collapsedSections.has("updates")}
-              hasChanges={sectionHasChanges("updates")}
+              hasChanges={sectionHasDraftState("updates")}
               onOpenChange={handleSectionOpenChange}
               t={t}
             >
@@ -1455,7 +2083,7 @@ export default function SettingsPage() {
               description={t("settings.trayDesc")}
               icon="Monitor"
               open={!collapsedSections.has("tray")}
-              hasChanges={sectionHasChanges("tray")}
+              hasChanges={sectionHasDraftState("tray")}
               onOpenChange={handleSectionOpenChange}
               t={t}
             >
@@ -1466,22 +2094,13 @@ export default function SettingsPage() {
               />
             </CollapsibleSection>
 
-            <SidebarOrderCustomizer
-              t={t}
-              primaryOrder={sidebarOrder.primary}
-              secondaryOrder={sidebarOrder.secondary}
-              onMovePrimary={handleMovePrimarySidebarItem}
-              onMoveSecondary={handleMoveSecondarySidebarItem}
-              onReset={handleResetSidebarOrder}
-            />
-
             <CollapsibleSection
               id="shortcuts"
               title={t("settings.shortcuts")}
               description={t("settings.shortcutsDesc")}
               icon="Keyboard"
               open={!collapsedSections.has("shortcuts")}
-              hasChanges={sectionHasChanges("shortcuts")}
+              hasChanges={sectionHasDraftState("shortcuts")}
               onResetSection={handleResetSection}
               onOpenChange={handleSectionOpenChange}
               t={t}
@@ -1500,7 +2119,7 @@ export default function SettingsPage() {
               description={t("settings.pathsDesc")}
               icon="FolderOpen"
               open={!collapsedSections.has("paths")}
-              hasChanges={sectionHasChanges("paths")}
+              hasChanges={sectionHasDraftState("paths")}
               onResetSection={handleResetSection}
               onOpenChange={handleSectionOpenChange}
               t={t}
@@ -1519,7 +2138,7 @@ export default function SettingsPage() {
               description={t("settings.providerSettingsDesc")}
               icon="Package"
               open={!collapsedSections.has("provider")}
-              hasChanges={sectionHasChanges("provider")}
+              hasChanges={sectionHasDraftState("provider")}
               onResetSection={handleResetSection}
               onOpenChange={handleSectionOpenChange}
               t={t}
@@ -1538,7 +2157,7 @@ export default function SettingsPage() {
               description={t("backup.description")}
               icon="Archive"
               open={!collapsedSections.has("backup")}
-              hasChanges={sectionHasChanges("backup")}
+              hasChanges={sectionHasDraftState("backup")}
               onResetSection={handleResetSection}
               onOpenChange={handleSectionOpenChange}
               t={t}
@@ -1559,7 +2178,7 @@ export default function SettingsPage() {
               description={t("settings.startupDesc")}
               icon="Zap"
               open={!collapsedSections.has("startup")}
-              hasChanges={sectionHasChanges("startup")}
+              hasChanges={sectionHasDraftState("startup")}
               onResetSection={handleResetSection}
               onOpenChange={handleSectionOpenChange}
               t={t}
@@ -1604,16 +2223,19 @@ function OnboardingSettingsCard({ t }: { t: (key: string) => string }) {
     mode,
     completed,
     skipped,
+    sessionState,
+    canResume,
     tourCompleted,
     dismissedHints,
     hintsEnabled,
     resetOnboarding,
+    resumeOnboarding,
     startTour,
     resetHints,
     setHintsEnabled,
     dismissAllHints,
   } = useOnboardingStore();
-  const hasBeenThrough = completed || skipped;
+  const hasBeenThrough = completed || skipped || sessionState === "paused";
   const modeLabel = mode
     ? t(
         mode === "quick"
@@ -1632,6 +2254,16 @@ function OnboardingSettingsCard({ t }: { t: (key: string) => string }) {
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex flex-col sm:flex-row gap-3">
+          {canResume && !completed && !skipped && (
+            <Button
+              onClick={() => {
+                resumeOnboarding();
+                toast.info(t("settings.onboardingResumeSuccess"));
+              }}
+            >
+              {t("settings.onboardingResume")}
+            </Button>
+          )}
           <Button
             variant="outline"
             onClick={() => {
@@ -1661,8 +2293,13 @@ function OnboardingSettingsCard({ t }: { t: (key: string) => string }) {
           <p className="text-xs text-muted-foreground">
             {completed
               ? t("settings.onboardingStatusCompleted")
-              : t("settings.onboardingStatusSkipped")}
+              : skipped
+                ? t("settings.onboardingStatusSkipped")
+                : t("settings.onboardingStatusPaused")}
             {modeLabel ? ` · ${modeLabel}` : ""}
+            {canResume && !completed && !skipped
+              ? ` · ${t("settings.onboardingStatusResumable")}`
+              : ""}
             {tourCompleted ? ` · ${t("settings.onboardingTourDone")}` : ""}
           </p>
         )}

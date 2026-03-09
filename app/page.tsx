@@ -5,6 +5,7 @@ import { PageHeader } from '@/components/layout/page-header';
 import { WidgetGrid } from '@/components/dashboard/widget-grid';
 import { CustomizeDialog } from '@/components/dashboard/customize-dialog';
 import { Button } from '@/components/ui/button';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { useEnvironments } from '@/hooks/use-environments';
 import { usePackages } from '@/hooks/use-packages';
@@ -21,25 +22,25 @@ import { Settings2, Pencil, Check, AlertCircle, X, RefreshCw } from 'lucide-reac
 
 export default function DashboardPage() {
   const { environments, fetchEnvironments, loading: envsLoading, error: envsError } = useEnvironments();
-  const { 
-    installedPackages, 
-    fetchInstalledPackages, 
-    fetchProviders, 
+  const {
+    installedPackages,
+    fetchInstalledPackages,
+    fetchProviders,
     providers,
     loading: pkgsLoading,
     error: pkgsError,
   } = usePackages();
-  const { 
-    cacheInfo, 
-    fetchCacheInfo, 
-    platformInfo, 
+  const {
+    cacheInfo,
+    fetchCacheInfo,
+    platformInfo,
     fetchPlatformInfo,
     cogniaDir,
     loading: settingsLoading,
     error: settingsError,
   } = useSettings();
   const { t } = useLocale();
-  
+
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [dismissedErrorSignature, setDismissedErrorSignature] = useState<string | null>(null);
@@ -126,6 +127,33 @@ export default function DashboardPage() {
     }
   }, [fetchEnvironments, fetchInstalledPackages, fetchProviders, fetchCacheInfo, fetchPlatformInfo]);
 
+  const handleToggleEditMode = useCallback(() => {
+    const next = !isEditMode;
+    setIsEditMode(next);
+
+    // Keep dialog/edit states coherent: closing edit mode closes dialog too.
+    if (!next && isCustomizing) {
+      setIsCustomizing(false);
+    }
+  }, [isCustomizing, isEditMode, setIsCustomizing, setIsEditMode]);
+
+  const handleOpenCustomize = useCallback(() => {
+    if (!isEditMode) {
+      setIsEditMode(true);
+    }
+    setIsCustomizing(true);
+  }, [isEditMode, setIsCustomizing, setIsEditMode]);
+
+  const handleCustomizeDialogChange = useCallback(
+    (open: boolean) => {
+      if (open && !isEditMode) {
+        setIsEditMode(true);
+      }
+      setIsCustomizing(open);
+    },
+    [isEditMode, setIsCustomizing, setIsEditMode],
+  );
+
   const combinedError = envsError || pkgsError || settingsError;
   const errorSignature = [envsError ?? '', pkgsError ?? '', settingsError ?? ''].join('|');
   const activeError = combinedError && dismissedErrorSignature !== errorSignature
@@ -145,14 +173,14 @@ export default function DashboardPage() {
 
   return (
     <TooltipProvider delayDuration={200}>
-      <div className="p-4 md:p-6 space-y-6">
+      <div className="space-y-5 p-4 md:space-y-6 md:p-6">
         {/* Header with Customize Controls */}
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <PageHeader 
-            title={t('dashboard.title')} 
-            description={t('dashboard.description')} 
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <PageHeader
+            title={t('dashboard.title')}
+            description={t('dashboard.description')}
           />
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 sm:justify-start xl:justify-end">
             <Button
               variant="outline"
               size="sm"
@@ -165,10 +193,11 @@ export default function DashboardPage() {
               <span className="hidden sm:inline">{t('dashboard.quickActions.refreshAll')}</span>
             </Button>
             <Button
-              variant={isEditMode ? "default" : "outline"}
+              variant={isEditMode ? 'default' : 'outline'}
               size="sm"
-              onClick={() => setIsEditMode(!isEditMode)}
+              onClick={handleToggleEditMode}
               className="gap-2"
+              data-testid="dashboard-header-edit-mode"
             >
               {isEditMode ? (
                 <>
@@ -185,9 +214,10 @@ export default function DashboardPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setIsCustomizing(true)}
+              onClick={handleOpenCustomize}
               className="gap-2"
               data-hint="dashboard-customize"
+              data-testid="dashboard-header-customize"
             >
               <Settings2 className="h-4 w-4" />
               <span className="hidden sm:inline">{t('dashboard.widgets.customize')}</span>
@@ -197,25 +227,30 @@ export default function DashboardPage() {
 
         {/* Error Banner */}
         {activeError && (
-          <div className="rounded-lg border border-destructive/50 bg-destructive/5 p-3 flex items-center gap-3">
-            <AlertCircle className="h-4 w-4 text-destructive shrink-0" />
-            <span className="text-sm text-destructive flex-1">{activeError}</span>
-            <button
-              type="button"
-              aria-label={t('common.close')}
-              onClick={() => setDismissedErrorSignature(errorSignature)}
-              className="text-destructive/70 hover:text-destructive"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
+          <Alert variant="destructive" className="border-destructive/50 bg-destructive/5">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription className="flex items-center gap-2">
+              <span className="flex-1">{activeError}</span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label={t('common.close')}
+                onClick={() => setDismissedErrorSignature(errorSignature)}
+                className="h-6 w-6 text-destructive/70 hover:text-destructive"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </AlertDescription>
+          </Alert>
         )}
 
         {/* Edit Mode Banner */}
         {isEditMode && (
-          <div className="rounded-lg border border-dashed border-primary/50 bg-primary/5 p-3 text-center text-sm text-primary">
-            {t('dashboard.widgets.editModeHint')}
-          </div>
+          <Alert className="border-dashed border-primary/50 bg-primary/5 text-primary">
+            <Pencil className="h-4 w-4" />
+            <AlertDescription>{t('dashboard.widgets.editModeHint')}</AlertDescription>
+          </Alert>
         )}
 
         {/* Customizable Widget Grid */}
@@ -241,7 +276,7 @@ export default function DashboardPage() {
         {/* Customize Dialog */}
         <CustomizeDialog
           open={isCustomizing}
-          onOpenChange={setIsCustomizing}
+          onOpenChange={handleCustomizeDialogChange}
         />
       </div>
     </TooltipProvider>

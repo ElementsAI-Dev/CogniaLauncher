@@ -3,11 +3,13 @@
 import { useMemo, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   getDiagnosticSummaryLabel,
   TerminalConfigEditorDiagnosticsPanel,
 } from "./diagnostics-panel";
 import { TerminalConfigEditorDiffPreview } from "./diff-preview";
+import { TerminalConfigStructuredEditor } from "./structured-editor";
 import { TerminalConfigEditorToolbar } from "./editor-toolbar";
 import type {
   TerminalConfigEditorView,
@@ -22,8 +24,11 @@ export function TerminalConfigEditorWorkspace({
   fingerprint = null,
   language,
   onChange,
+  onStructuredEntriesChange,
   shellType = null,
   snapshotPath = null,
+  structuredEntries = null,
+  structuredFallbackReason = null,
   value,
 }: TerminalConfigEditorWorkspaceProps) {
   const lineCount = useMemo(
@@ -32,10 +37,17 @@ export function TerminalConfigEditorWorkspace({
   );
   const hasDiagnostics = diagnostics.length > 0;
   const hasPendingChanges = baselineValue != null && value !== baselineValue;
+  const hasStructuredEntries =
+    Boolean(structuredEntries) && typeof onStructuredEntriesChange === "function";
+  const structuredFallback = structuredFallbackReason ?? null;
   const [requestedView, setRequestedView] =
     useState<TerminalConfigEditorView>("editor");
 
   const activeView = useMemo<TerminalConfigEditorView>(() => {
+    if (requestedView === "structured" && (!hasStructuredEntries || structuredFallback)) {
+      return "editor";
+    }
+
     if (requestedView === "diagnostics" && !hasDiagnostics) {
       return "editor";
     }
@@ -45,7 +57,13 @@ export function TerminalConfigEditorWorkspace({
     }
 
     return requestedView;
-  }, [hasDiagnostics, hasPendingChanges, requestedView]);
+  }, [
+    hasDiagnostics,
+    hasPendingChanges,
+    hasStructuredEntries,
+    requestedView,
+    structuredFallback,
+  ]);
 
   return (
     <Card data-testid="terminal-config-editor-workspace">
@@ -62,9 +80,12 @@ export function TerminalConfigEditorWorkspace({
         />
 
         {hasDiagnostics && (
-          <p className="text-sm font-medium text-destructive">
-            {getDiagnosticSummaryLabel(diagnostics.length)}
-          </p>
+          <Alert variant="destructive">
+            <AlertTitle>{getDiagnosticSummaryLabel(diagnostics.length)}</AlertTitle>
+            <AlertDescription>
+              Review diagnostics before applying terminal config changes.
+            </AlertDescription>
+          </Alert>
         )}
 
         <Tabs
@@ -73,8 +94,13 @@ export function TerminalConfigEditorWorkspace({
             setRequestedView(nextValue as TerminalConfigEditorView)
           }
         >
-          <TabsList>
+          <TabsList className="w-full justify-start overflow-x-auto whitespace-nowrap">
             <TabsTrigger value="editor">Editor</TabsTrigger>
+            {hasStructuredEntries && (
+              <TabsTrigger value="structured" disabled={Boolean(structuredFallback)}>
+                Structured
+              </TabsTrigger>
+            )}
             {hasDiagnostics && (
               <TabsTrigger value="diagnostics">Diagnostics</TabsTrigger>
             )}
@@ -91,6 +117,16 @@ export function TerminalConfigEditorWorkspace({
               onChange={onChange}
             />
           </TabsContent>
+
+          {hasStructuredEntries && structuredEntries && onStructuredEntriesChange && (
+            <TabsContent value="structured">
+              <TerminalConfigStructuredEditor
+                entries={structuredEntries}
+                onChange={onStructuredEntriesChange}
+                fallbackReason={structuredFallback}
+              />
+            </TabsContent>
+          )}
 
           {hasDiagnostics && (
             <TabsContent value="diagnostics">

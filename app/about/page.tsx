@@ -12,6 +12,7 @@ import {
   VersionCards,
   UpdateBanner,
   SystemInfoCard,
+  AboutInsightsCard,
   BuildDepsCard,
   LicenseCard,
   ActionsCard,
@@ -34,9 +35,12 @@ export default function AboutPage() {
     systemError,
     systemInfo,
     systemLoading,
+    aboutInsights,
+    insightsLoading,
     isDesktop,
     checkForUpdate,
     reloadSystemInfo,
+    reloadAboutInsights,
     handleUpdate,
     clearError,
     exportDiagnostics,
@@ -64,7 +68,7 @@ export default function AboutPage() {
   });
 
   return (
-    <main className="p-6 space-y-6" aria-labelledby="about-page-title">
+    <main className="p-4 md:p-6 space-y-6" aria-labelledby="about-page-title">
       <PageHeader
         title={<span id="about-page-title">{t('about.pageTitle')}</span>}
         description={t('about.pageDescription')}
@@ -78,54 +82,90 @@ export default function AboutPage() {
         t={t} 
       />
 
-      {/* Version Cards Row */}
-      <section aria-label={t('about.versionInfo')}>
+      {/* Summary Section */}
+      <section
+        aria-labelledby="about-summary-heading"
+        className="space-y-4"
+        data-testid="about-summary-section"
+      >
+        <h2 id="about-summary-heading" className="sr-only">{t("about.versionInfo")}</h2>
         <VersionCards loading={loading} updateInfo={updateInfo} t={t} />
-      </section>
-
-      {/* Update Available Banner */}
-      <UpdateBanner
-        updateInfo={updateInfo}
-        updating={updating}
-        updateProgress={updateProgress}
-        updateStatus={updateStatus}
-        isDesktop={isDesktop}
-        onUpdate={() => handleUpdate(t)}
-        t={t}
-      />
-
-      {/* System Information Card */}
-      <section aria-label={t('about.systemInfo')}>
-        <SystemInfoCard
-          systemInfo={systemInfo}
-          systemLoading={systemLoading}
+        <UpdateBanner
           updateInfo={updateInfo}
-          systemError={systemError}
-          onRetry={reloadSystemInfo}
-          t={t}
-        />
-      </section>
-
-      {/* Build Dependencies Card */}
-      <section aria-label={t('about.buildDependencies')}>
-        <BuildDepsCard t={t} />
-      </section>
-
-      {/* License & Certificates Card */}
-      <section aria-label={t('about.licenseCertificates')}>
-        <LicenseCard t={t} />
-      </section>
-
-      {/* Actions Card */}
-      <section aria-label={t('about.actions')}>
-        <ActionsCard
-          loading={loading}
+          updating={updating}
+          updateProgress={updateProgress}
+          updateStatus={updateStatus}
           isDesktop={isDesktop}
-          onCheckUpdate={checkForUpdate}
-          onOpenChangelog={() => setChangelogOpen(true)}
-          onExportDiagnostics={() => exportDiagnostics(t)}
+          onUpdate={() => handleUpdate(t)}
           t={t}
         />
+      </section>
+
+      {/* Diagnostics Section */}
+      <section
+        aria-labelledby="about-diagnostics-heading"
+        className="space-y-4"
+        data-testid="about-diagnostics-section"
+      >
+        <h2 id="about-diagnostics-heading" className="sr-only">
+          {t("about.systemInfo")} / {t("about.insightsTitle")}
+        </h2>
+        <div
+          className="grid grid-cols-1 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-4 items-start"
+          data-testid="about-diagnostics-grid"
+        >
+          <section aria-label={t('about.systemInfo')}>
+            <SystemInfoCard
+              systemInfo={systemInfo}
+              systemLoading={systemLoading}
+              aboutInsights={aboutInsights}
+              updateInfo={updateInfo}
+              systemError={systemError}
+              onRetry={reloadSystemInfo}
+              t={t}
+            />
+          </section>
+          <section aria-label={t("about.insightsTitle")}>
+            <AboutInsightsCard
+              insights={aboutInsights}
+              insightsLoading={insightsLoading}
+              onRetry={reloadAboutInsights}
+              t={t}
+            />
+          </section>
+        </div>
+      </section>
+
+      {/* Reference And Actions Section */}
+      <section
+        aria-labelledby="about-reference-heading"
+        className="space-y-4"
+        data-testid="about-reference-section"
+      >
+        <h2 id="about-reference-heading" className="sr-only">
+          {t("about.buildDependencies")} / {t("about.licenseCertificates")} / {t("about.actions")}
+        </h2>
+        <div
+          className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start"
+          data-testid="about-reference-grid"
+        >
+          <section aria-label={t('about.buildDependencies')}>
+            <BuildDepsCard t={t} />
+          </section>
+          <section aria-label={t('about.licenseCertificates')}>
+            <LicenseCard t={t} />
+          </section>
+        </div>
+        <section aria-label={t('about.actions')}>
+          <ActionsCard
+            loading={loading}
+            isDesktop={isDesktop}
+            onCheckUpdate={checkForUpdate}
+            onOpenChangelog={() => setChangelogOpen(true)}
+            onExportDiagnostics={() => exportDiagnostics(t)}
+            t={t}
+          />
+        </section>
       </section>
 
       {/* Changelog Dialog */}

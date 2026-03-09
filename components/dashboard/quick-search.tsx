@@ -90,7 +90,7 @@ export function QuickSearch({
         </div>
 
         {showDropdown && (
-          <CommandList className="absolute top-full left-0 right-0 mt-1 z-50 rounded-lg border bg-popover shadow-lg max-h-[320px]">
+          <CommandList className="absolute top-full left-0 right-0 mt-1 z-50 rounded-lg border bg-popover shadow-lg max-h-80">
             {query.trim() ? (
               <>
                 {!hasResults && (

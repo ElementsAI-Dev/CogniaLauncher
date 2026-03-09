@@ -51,6 +51,7 @@ jest.mock('@/lib/errors', () => ({
 describe('useEnvVar', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockEnvvarGetPath.mockResolvedValue([]);
   });
 
   it('should initialize with empty state', () => {
@@ -250,6 +251,7 @@ describe('useEnvVar', () => {
 
     expect(removed).toBe(3);
     expect(mockEnvvarDeduplicatePath).toHaveBeenCalledWith('user');
+    expect(mockEnvvarGetPath).toHaveBeenCalledWith('user');
   });
 
   it('should handle fetchPersistentVars error', async () => {
@@ -437,6 +439,7 @@ describe('useEnvVar', () => {
     expect(addSuccess).toBe(true);
     expect(removeSuccess).toBe(true);
     expect(reorderSuccess).toBe(true);
+    expect(mockEnvvarGetPath).toHaveBeenCalledTimes(3);
   });
 
   it('should handle removePathEntry error', async () => {

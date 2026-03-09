@@ -73,8 +73,8 @@ export function MirrorsSettings({
   };
 
   return (
-    <div className="space-y-1">
-      <div className="flex justify-end mb-3">
+    <div className="flex flex-col gap-1">
+      <div className="mb-3 flex justify-end">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm">

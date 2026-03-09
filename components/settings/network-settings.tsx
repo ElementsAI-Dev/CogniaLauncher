@@ -31,7 +31,7 @@ export function NetworkSettings({
   } = useProxyTools({ localConfig, onValueChange, t });
 
   return (
-    <div className="space-y-1">
+    <div className="flex flex-col gap-1">
         <SettingItem
           id="network-timeout"
           label={t("settings.timeout")}

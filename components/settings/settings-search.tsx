@@ -5,6 +5,19 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  Command,
+  CommandGroup,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import { Kbd } from "@/components/ui/kbd";
 import { Search, X, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -79,7 +92,7 @@ export function SettingsSearch({
   );
 
   return (
-    <div className={cn("space-y-3", className)}>
+    <div className={cn("flex flex-col gap-3", className)}>
       {/* Search Input */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -95,6 +108,7 @@ export function SettingsSearch({
         <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
           {isSearching && (
             <Button
+              type="button"
               variant="ghost"
               size="icon"
               className="h-6 w-6"
@@ -112,72 +126,79 @@ export function SettingsSearch({
       {isSearching && (
         <Card className="shadow-sm">
           <CardContent className="p-3">
-          {totalResults > 0 ? (
-            <>
-              <div className="mb-2 flex items-center justify-between text-sm text-muted-foreground">
-                <span>
-                  {t("settings.search.resultsCount", { count: totalResults })}
-                </span>
-              </div>
-              <ul
-                className="space-y-1"
-                role="listbox"
-                aria-label={t("settings.search.results")}
+            {totalResults > 0 ? (
+              <Command
+                shouldFilter={false}
+                className="rounded-none border-0 bg-transparent"
               >
-                {results.slice(0, 8).map((result) => (
-                  <li key={result.setting.key}>
-                    <Button
-                      variant="ghost"
-                      className="flex w-full items-center justify-between h-auto px-3 py-2 font-normal"
-                      onClick={() => handleResultClick(result)}
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium">
+                <div className="mb-2 flex items-center justify-between text-sm text-muted-foreground">
+                  <span>
+                    {t("settings.search.resultsCount", { count: totalResults })}
+                  </span>
+                </div>
+                <CommandList
+                  role="listbox"
+                  aria-label={t("settings.search.results")}
+                  className="max-h-none overflow-visible"
+                >
+                  <CommandGroup className="flex flex-col gap-1 p-0">
+                    {results.slice(0, 8).map((result) => (
+                      <CommandItem
+                        key={result.setting.key}
+                        value={result.setting.key}
+                        onSelect={() => handleResultClick(result)}
+                        className="h-auto items-start justify-between rounded-md px-3 py-2"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">
+                              <HighlightedText
+                                text={t(result.setting.labelKey)}
+                                highlightText={highlightText}
+                              />
+                            </span>
+                            {result.setting.advanced && (
+                              <Badge variant="outline" className="text-xs">
+                                {t("settings.search.advanced")}
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="mt-0.5 truncate text-sm text-muted-foreground">
                             <HighlightedText
-                              text={t(result.setting.labelKey)}
+                              text={t(result.setting.descKey)}
                               highlightText={highlightText}
                             />
-                          </span>
-                          {result.setting.advanced && (
-                            <Badge variant="outline" className="text-xs">
-                              {t("settings.search.advanced")}
-                            </Badge>
-                          )}
+                          </p>
                         </div>
-                        <p className="mt-0.5 truncate text-sm text-muted-foreground">
-                          <HighlightedText
-                            text={t(result.setting.descKey)}
-                            highlightText={highlightText}
-                          />
-                        </p>
-                      </div>
-                      <div className="ml-2 flex items-center gap-2">
-                        <Badge
-                          variant="secondary"
-                          className="text-xs capitalize"
-                        >
-                          {t(`settings.sections.${result.setting.section}`)}
-                        </Badge>
-                        <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                      </div>
-                    </Button>
-                  </li>
-                ))}
+                        <div className="ml-2 flex items-center gap-2">
+                          <Badge variant="secondary" className="text-xs capitalize">
+                            {t(`settings.sections.${result.setting.section}`)}
+                          </Badge>
+                          <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </CommandList>
                 {totalResults > 8 && (
-                  <li className="px-3 py-2 text-center text-sm text-muted-foreground">
+                  <p className="px-3 py-2 text-center text-sm text-muted-foreground">
                     {t("settings.search.moreResults", {
                       count: totalResults - 8,
                     })}
-                  </li>
+                  </p>
                 )}
-              </ul>
-            </>
-          ) : (
-            <div className="py-4 text-center text-sm text-muted-foreground">
-              {t("settings.search.noResults")}
-            </div>
-          )}
+              </Command>
+            ) : (
+              <Empty className="min-h-[140px] gap-3 border border-dashed p-6">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <Search />
+                  </EmptyMedia>
+                  <EmptyTitle className="text-base">{t("settings.search.label")}</EmptyTitle>
+                  <EmptyDescription>{t("settings.search.noResults")}</EmptyDescription>
+                </EmptyHeader>
+              </Empty>
+            )}
           </CardContent>
         </Card>
       )}
@@ -209,4 +230,3 @@ function HighlightedText({ text, highlightText }: HighlightedTextProps) {
     </>
   );
 }
-

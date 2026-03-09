@@ -87,6 +87,7 @@ export default function WslPage() {
     onlineDistros,
     status,
     capabilities,
+    completeness,
     loading,
     error,
     checkAvailability,
@@ -183,6 +184,8 @@ export default function WslPage() {
   const filteredDistros = activeTagFilter
     ? distros.filter((d) => (distroTags[d.name] ?? []).includes(activeTagFilter))
     : distros;
+  const completenessHint =
+    completeness.state === 'degraded' ? completeness.degradedReasons[0] ?? null : null;
   const runtimeAssistanceActions = getAssistanceActions('runtime');
 
   const assistanceActionById = runtimeAssistanceActions.reduce<Record<string, WslAssistanceActionDescriptor>>(
@@ -843,6 +846,12 @@ export default function WslPage() {
               </div>
             )}
           </AlertDescription>
+        </Alert>
+      )}
+
+      {!error && available === true && completenessHint && (
+        <Alert>
+          <AlertDescription>{completenessHint}</AlertDescription>
         </Alert>
       )}
 

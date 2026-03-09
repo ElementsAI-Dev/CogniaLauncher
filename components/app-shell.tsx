@@ -232,10 +232,13 @@ export function AppShell({ children }: AppShellProps) {
               isFirstStep={onboarding.isFirstStep}
               isLastStep={onboarding.isLastStep}
               tourCompleted={onboarding.tourCompleted}
+              sessionSummary={onboarding.sessionSummary}
+              nextActions={onboarding.nextActions}
               onNext={onboarding.next}
               onPrev={onboarding.prev}
               onGoTo={onboarding.goTo}
               onSelectMode={onboarding.selectMode}
+              onUpdateSummary={onboarding.updateSummary}
               onComplete={onboarding.complete}
               onSkip={onboarding.skip}
               onStartTour={onboarding.startTour}

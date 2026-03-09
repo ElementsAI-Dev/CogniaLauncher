@@ -4,7 +4,6 @@ import { useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardAction, CardFooter } from '@/components/ui/card';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { useLocale } from '@/components/providers/locale-provider';
 import { useHealthCheck } from '@/hooks/use-health-check';
 import { isTauri } from '@/lib/tauri';
@@ -16,6 +15,11 @@ import {
 import Link from 'next/link';
 import { HEALTH_STATUS_CONFIG } from '@/lib/constants/dashboard';
 import type { HealthStatus } from '@/types/tauri';
+import {
+  DashboardMetricGrid,
+  DashboardMetricItem,
+  DashboardStatusBadge,
+} from '@/components/dashboard/dashboard-primitives';
 
 interface HealthCheckWidgetProps {
   className?: string;
@@ -98,24 +102,28 @@ export function HealthCheckWidget({ className }: HealthCheckWidgetProps) {
 
         {/* Environment Breakdown */}
         {envCount > 0 && (
-          <div className="grid grid-cols-2 gap-2 mb-3 md:grid-cols-4">
-            <div className="text-center rounded-md border p-2">
-              <div className="text-lg font-bold text-green-600">{healthyCount}</div>
-              <div className="text-[10px] text-muted-foreground">{t('dashboard.widgets.healthHealthy')}</div>
-            </div>
-            <div className="text-center rounded-md border p-2">
-              <div className="text-lg font-bold text-yellow-600">{warningCount}</div>
-              <div className="text-[10px] text-muted-foreground">{t('dashboard.widgets.healthWarnings')}</div>
-            </div>
-            <div className="text-center rounded-md border p-2">
-              <div className="text-lg font-bold text-red-600">{errorCount}</div>
-              <div className="text-[10px] text-muted-foreground">{t('dashboard.widgets.healthErrors')}</div>
-            </div>
-            <div className="text-center rounded-md border p-2">
-              <div className="text-lg font-bold text-slate-600">{unavailableCount}</div>
-              <div className="text-[10px] text-muted-foreground">{t('dashboard.widgets.healthUnavailable')}</div>
-            </div>
-          </div>
+          <DashboardMetricGrid columns={4} className="mb-3">
+            <DashboardMetricItem
+              label={t('dashboard.widgets.healthHealthy')}
+              value={healthyCount}
+              valueClassName="text-lg text-green-600"
+            />
+            <DashboardMetricItem
+              label={t('dashboard.widgets.healthWarnings')}
+              value={warningCount}
+              valueClassName="text-lg text-yellow-600"
+            />
+            <DashboardMetricItem
+              label={t('dashboard.widgets.healthErrors')}
+              value={errorCount}
+              valueClassName="text-lg text-red-600"
+            />
+            <DashboardMetricItem
+              label={t('dashboard.widgets.healthUnavailable')}
+              value={unavailableCount}
+              valueClassName="text-lg text-slate-600"
+            />
+          </DashboardMetricGrid>
         )}
 
         {/* Top Issues */}
@@ -123,12 +131,16 @@ export function HealthCheckWidget({ className }: HealthCheckWidgetProps) {
           <div className="space-y-1.5 mb-3">
             {systemHealth.system_issues.slice(0, 3).map((issue, i) => (
               <div key={i} className="flex items-start gap-2 text-xs">
-                <Badge
-                  variant={issue.severity === 'critical' || issue.severity === 'error' ? 'destructive' : 'secondary'}
-                  className="text-[10px] shrink-0"
+                <DashboardStatusBadge
+                  tone={issue.severity === 'critical' || issue.severity === 'error'
+                    ? 'danger'
+                    : issue.severity === 'warning'
+                      ? 'warning'
+                      : 'muted'}
+                  className="shrink-0"
                 >
                   {issue.severity}
-                </Badge>
+                </DashboardStatusBadge>
                 <span className="text-muted-foreground line-clamp-1">{issue.message}</span>
               </div>
             ))}

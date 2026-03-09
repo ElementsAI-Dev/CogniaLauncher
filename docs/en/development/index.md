@@ -11,3 +11,4 @@ This section is for contributors who want to participate in CogniaLauncher devel
 - **[Git Integration Matrix](git-integration-matrix.md)** — Command → invoke → hook → page/component wiring baseline
 - **[Testing Guide](testing.md)** — Testing strategies and tools
 - **[CI/CD](ci-cd.md)** — Continuous integration and deployment pipeline
+- **[Documentation Quality](docs-quality.md)** — Parity policy, docs validation, and review gates

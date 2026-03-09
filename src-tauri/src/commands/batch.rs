@@ -3,8 +3,14 @@ use crate::core::{
     BatchInstallRequest, BatchManager, BatchProgress, BatchResult, HistoryAction, HistoryManager,
     HistoryQuery, PackageSpec,
 };
-use crate::platform::env::{current_platform, Platform};
-use crate::provider::{Capability, ProviderRegistry};
+use crate::platform::current_platform;
+use crate::provider::support::{
+    provider_unavailable_reason, update_support_reason, SupportReason,
+    REASON_INSTALLED_PACKAGE_ENUMERATION_FAILED, REASON_NATIVE_UPDATE_FAILED,
+    REASON_NATIVE_UPDATE_FAILED_WITH_FALLBACK, REASON_NO_MATCHING_INSTALLED_PACKAGES,
+    SUPPORT_STATUS_ERROR, SUPPORT_STATUS_PARTIAL, SUPPORT_STATUS_SUPPORTED, SUPPORT_STATUS_UNSUPPORTED,
+};
+use crate::provider::ProviderRegistry;
 use crate::resolver::{Dependency, Package, Resolver, Version, VersionConstraint};
 use futures::future::{join_all, BoxFuture};
 use serde::{Deserialize, Serialize};
@@ -441,6 +447,7 @@ pub struct UpdateCheckProviderOutcome {
     pub provider: String,
     pub status: String, // supported | partial | unsupported | error
     pub reason: Option<String>,
+    pub reason_code: Option<String>,
     pub checked: usize,
     pub updates: usize,
     pub errors: usize,
@@ -454,10 +461,10 @@ pub struct UpdateCheckCoverage {
     pub error: usize,
 }
 
-const UPDATE_OUTCOME_SUPPORTED: &str = "supported";
-const UPDATE_OUTCOME_PARTIAL: &str = "partial";
-const UPDATE_OUTCOME_UNSUPPORTED: &str = "unsupported";
-const UPDATE_OUTCOME_ERROR: &str = "error";
+const UPDATE_OUTCOME_SUPPORTED: &str = SUPPORT_STATUS_SUPPORTED;
+const UPDATE_OUTCOME_PARTIAL: &str = SUPPORT_STATUS_PARTIAL;
+const UPDATE_OUTCOME_UNSUPPORTED: &str = SUPPORT_STATUS_UNSUPPORTED;
+const UPDATE_OUTCOME_ERROR: &str = SUPPORT_STATUS_ERROR;
 
 fn classify_update_type(current: &str, latest: &str) -> String {
     match (current.parse::<Version>(), latest.parse::<Version>()) {
@@ -498,27 +505,12 @@ fn to_update_check_result(
     }
 }
 
-fn provider_unsupported_reason(provider: &Arc<dyn crate::provider::Provider>) -> Option<String> {
+fn provider_unsupported_reason(
+    provider: &Arc<dyn crate::provider::Provider>,
+) -> Option<SupportReason> {
     let supported_platforms = provider.supported_platforms();
     let capabilities = provider.capabilities();
     update_support_reason(current_platform(), &supported_platforms, &capabilities)
-}
-
-fn update_support_reason(
-    platform: Platform,
-    supported_platforms: &[Platform],
-    capabilities: &std::collections::HashSet<Capability>,
-) -> Option<String> {
-    if !supported_platforms.contains(&platform) {
-        return Some(format!("provider not supported on {}", platform.as_str()));
-    }
-
-    if !capabilities.contains(&Capability::Update) && !capabilities.contains(&Capability::Upgrade)
-    {
-        return Some("provider does not declare update capability".into());
-    }
-
-    None
 }
 
 fn summarize_coverage(outcomes: &[UpdateCheckProviderOutcome]) -> UpdateCheckCoverage {
@@ -737,206 +729,213 @@ pub async fn check_updates(
     let providers = Arc::new(providers);
 
     stream::iter(providers.iter().cloned())
-        .for_each_concurrent(
-            max_concurrent,
-            |(provider_id, provider)| {
-                let app_handle = &app_handle;
-                let updates = Arc::clone(&updates);
-                let errors = Arc::clone(&errors);
-                let outcomes = Arc::clone(&outcomes);
-                let package_filter = Arc::clone(&package_filter);
-                let installed_by_provider = Arc::clone(&installed_by_provider);
-                let found_updates = Arc::clone(&found_updates);
-                let error_count = Arc::clone(&error_count);
-                let checked_count = Arc::clone(&checked_count);
-                let processed_providers = Arc::clone(&processed_providers);
-                let provider_total = total_providers;
-                let use_cache = used_cache;
+        .for_each_concurrent(max_concurrent, |(provider_id, provider)| {
+            let app_handle = &app_handle;
+            let updates = Arc::clone(&updates);
+            let errors = Arc::clone(&errors);
+            let outcomes = Arc::clone(&outcomes);
+            let package_filter = Arc::clone(&package_filter);
+            let installed_by_provider = Arc::clone(&installed_by_provider);
+            let found_updates = Arc::clone(&found_updates);
+            let error_count = Arc::clone(&error_count);
+            let checked_count = Arc::clone(&checked_count);
+            let processed_providers = Arc::clone(&processed_providers);
+            let provider_total = total_providers;
+            let use_cache = used_cache;
 
-                async move {
-                    if let Some(reason) = provider_unsupported_reason(&provider) {
+            async move {
+                if let Some(reason) = provider_unsupported_reason(&provider) {
+                    outcomes.lock().await.push(UpdateCheckProviderOutcome {
+                        provider: provider_id.clone(),
+                        status: UPDATE_OUTCOME_UNSUPPORTED.into(),
+                        reason: Some(reason.message),
+                        reason_code: Some(reason.code.into()),
+                        checked: 0,
+                        updates: 0,
+                        errors: 0,
+                    });
+                } else if !provider.is_available().await {
+                    let reason = provider_unavailable_reason();
+                    outcomes.lock().await.push(UpdateCheckProviderOutcome {
+                        provider: provider_id.clone(),
+                        status: UPDATE_OUTCOME_UNSUPPORTED.into(),
+                        reason: Some(reason.message),
+                        reason_code: Some(reason.code.into()),
+                        checked: 0,
+                        updates: 0,
+                        errors: 0,
+                    });
+                } else {
+                    let mut installed = if use_cache {
+                        installed_by_provider
+                            .get(&provider_id)
+                            .cloned()
+                            .unwrap_or_default()
+                    } else {
+                        match provider
+                            .list_installed(crate::provider::InstalledFilter::default())
+                            .await
+                        {
+                            Ok(values) => values,
+                            Err(e) => {
+                                let error = UpdateCheckError {
+                                    provider: provider_id.clone(),
+                                    package: None,
+                                    message: format!("failed to list installed packages: {}", e),
+                                };
+                                error_count.fetch_add(1, Ordering::Relaxed);
+                                errors.lock().await.push(error);
+                                outcomes.lock().await.push(UpdateCheckProviderOutcome {
+                                    provider: provider_id.clone(),
+                                    status: UPDATE_OUTCOME_ERROR.into(),
+                                    reason: Some(
+                                        "failed to enumerate installed packages".to_string(),
+                                    ),
+                                    reason_code: Some(
+                                        REASON_INSTALLED_PACKAGE_ENUMERATION_FAILED.to_string(),
+                                    ),
+                                    checked: 0,
+                                    updates: 0,
+                                    errors: 1,
+                                });
+                                let processed =
+                                    processed_providers.fetch_add(1, Ordering::Relaxed) + 1;
+                                emit_update_check_progress(
+                                    app_handle,
+                                    &UpdateCheckProgress {
+                                        phase: "checking".into(),
+                                        current: processed,
+                                        total: provider_total,
+                                        current_package: None,
+                                        current_provider: Some(provider_id.clone()),
+                                        found_updates: found_updates.load(Ordering::Relaxed),
+                                        errors: error_count.load(Ordering::Relaxed),
+                                    },
+                                );
+                                return;
+                            }
+                        }
+                    };
+
+                    if let Some(filter) = package_filter.as_ref() {
+                        installed.retain(|pkg| filter.contains(&pkg.name.to_ascii_lowercase()));
+                    }
+
+                    let mut seen_names = std::collections::HashSet::new();
+                    installed.retain(|pkg| seen_names.insert(pkg.name.to_ascii_lowercase()));
+
+                    if installed.is_empty() {
                         outcomes.lock().await.push(UpdateCheckProviderOutcome {
                             provider: provider_id.clone(),
                             status: UPDATE_OUTCOME_UNSUPPORTED.into(),
-                            reason: Some(reason),
-                            checked: 0,
-                            updates: 0,
-                            errors: 0,
-                        });
-                    } else if !provider.is_available().await {
-                        outcomes.lock().await.push(UpdateCheckProviderOutcome {
-                            provider: provider_id.clone(),
-                            status: UPDATE_OUTCOME_UNSUPPORTED.into(),
-                            reason: Some("provider executable is not available".into()),
+                            reason: Some("no matching installed packages (skipped)".into()),
+                            reason_code: Some(REASON_NO_MATCHING_INSTALLED_PACKAGES.into()),
                             checked: 0,
                             updates: 0,
                             errors: 0,
                         });
                     } else {
-                        let mut installed = if use_cache {
-                            installed_by_provider
-                                .get(&provider_id)
-                                .cloned()
-                                .unwrap_or_default()
-                        } else {
-                            match provider
-                                .list_installed(crate::provider::InstalledFilter::default())
-                                .await
-                            {
-                                Ok(values) => values,
-                                Err(e) => {
-                                    let error = UpdateCheckError {
-                                        provider: provider_id.clone(),
-                                        package: None,
-                                        message: format!("failed to list installed packages: {}", e),
-                                    };
-                                    error_count.fetch_add(1, Ordering::Relaxed);
-                                    errors.lock().await.push(error);
-                                    outcomes.lock().await.push(UpdateCheckProviderOutcome {
-                                        provider: provider_id.clone(),
-                                        status: UPDATE_OUTCOME_ERROR.into(),
-                                        reason: Some(
-                                            "failed to enumerate installed packages".to_string(),
-                                        ),
-                                        checked: 0,
-                                        updates: 0,
-                                        errors: 1,
-                                    });
-                                    let processed =
-                                        processed_providers.fetch_add(1, Ordering::Relaxed) + 1;
-                                    emit_update_check_progress(
-                                        app_handle,
-                                        &UpdateCheckProgress {
-                                            phase: "checking".into(),
-                                            current: processed,
-                                            total: provider_total,
-                                            current_package: None,
-                                            current_provider: Some(provider_id.clone()),
-                                            found_updates: found_updates.load(Ordering::Relaxed),
-                                            errors: error_count.load(Ordering::Relaxed),
-                                        },
-                                    );
-                                    return;
-                                }
+                        let checked = installed.len();
+                        let package_names: Vec<String> =
+                            installed.iter().map(|pkg| pkg.name.clone()).collect();
+                        let installed_names: std::collections::HashSet<String> = installed
+                            .iter()
+                            .map(|pkg| pkg.name.to_ascii_lowercase())
+                            .collect();
+
+                        checked_count.fetch_add(checked, Ordering::Relaxed);
+
+                        match provider.check_updates(&package_names).await {
+                            Ok(native_updates) => {
+                                let normalized = normalize_provider_updates(
+                                    &provider_id,
+                                    native_updates,
+                                    &installed_names,
+                                );
+                                let update_count = normalized.len();
+                                found_updates.fetch_add(update_count, Ordering::Relaxed);
+                                updates.lock().await.extend(normalized);
+                                outcomes.lock().await.push(UpdateCheckProviderOutcome {
+                                    provider: provider_id.clone(),
+                                    status: UPDATE_OUTCOME_SUPPORTED.into(),
+                                    reason: None,
+                                    reason_code: None,
+                                    checked,
+                                    updates: update_count,
+                                    errors: 0,
+                                });
                             }
-                        };
+                            Err(native_err) => {
+                                let mut provider_errors = vec![UpdateCheckError {
+                                    provider: provider_id.clone(),
+                                    package: None,
+                                    message: format!("native update check failed: {}", native_err),
+                                }];
 
-                        if let Some(filter) = package_filter.as_ref() {
-                            installed.retain(|pkg| filter.contains(&pkg.name.to_ascii_lowercase()));
-                        }
-
-                        let mut seen_names = std::collections::HashSet::new();
-                        installed.retain(|pkg| seen_names.insert(pkg.name.to_ascii_lowercase()));
-
-                        if installed.is_empty() {
-                            outcomes.lock().await.push(UpdateCheckProviderOutcome {
-                                provider: provider_id.clone(),
-                                status: UPDATE_OUTCOME_UNSUPPORTED.into(),
-                                reason: Some("no matching installed packages (skipped)".into()),
-                                checked: 0,
-                                updates: 0,
-                                errors: 0,
-                            });
-                        } else {
-                            let checked = installed.len();
-                            let package_names: Vec<String> =
-                                installed.iter().map(|pkg| pkg.name.clone()).collect();
-                            let installed_names: std::collections::HashSet<String> = installed
-                                .iter()
-                                .map(|pkg| pkg.name.to_ascii_lowercase())
-                                .collect();
-
-                            checked_count.fetch_add(checked, Ordering::Relaxed);
-
-                            match provider.check_updates(&package_names).await {
-                                Ok(native_updates) => {
-                                    let normalized = normalize_provider_updates(
+                                let (fallback_updates, fallback_errors) =
+                                    fallback_check_updates_with_versions(
+                                        &provider,
                                         &provider_id,
-                                        native_updates,
-                                        &installed_names,
-                                    );
-                                    let update_count = normalized.len();
-                                    found_updates.fetch_add(update_count, Ordering::Relaxed);
-                                    updates.lock().await.extend(normalized);
-                                    outcomes.lock().await.push(UpdateCheckProviderOutcome {
-                                        provider: provider_id.clone(),
-                                        status: UPDATE_OUTCOME_SUPPORTED.into(),
-                                        reason: None,
-                                        checked,
-                                        updates: update_count,
-                                        errors: 0,
-                                    });
+                                        &installed,
+                                    )
+                                    .await;
+
+                                provider_errors.extend(fallback_errors);
+
+                                let provider_error_count = provider_errors.len();
+                                let fallback_count = fallback_updates.len();
+
+                                if provider_error_count > 0 {
+                                    error_count.fetch_add(provider_error_count, Ordering::Relaxed);
+                                    errors.lock().await.extend(provider_errors);
                                 }
-                                Err(native_err) => {
-                                    let mut provider_errors = vec![UpdateCheckError {
-                                        provider: provider_id.clone(),
-                                        package: None,
-                                        message: format!(
-                                            "native update check failed: {}",
-                                            native_err
-                                        ),
-                                    }];
-
-                                    let (fallback_updates, fallback_errors) =
-                                        fallback_check_updates_with_versions(
-                                            &provider,
-                                            &provider_id,
-                                            &installed,
-                                        )
-                                        .await;
-
-                                    provider_errors.extend(fallback_errors);
-
-                                    let provider_error_count = provider_errors.len();
-                                    let fallback_count = fallback_updates.len();
-
-                                    if provider_error_count > 0 {
-                                        error_count.fetch_add(provider_error_count, Ordering::Relaxed);
-                                        errors.lock().await.extend(provider_errors);
-                                    }
-                                    if fallback_count > 0 {
-                                        found_updates.fetch_add(fallback_count, Ordering::Relaxed);
-                                        updates.lock().await.extend(fallback_updates);
-                                    }
-
-                                    outcomes.lock().await.push(UpdateCheckProviderOutcome {
-                                        provider: provider_id.clone(),
-                                        status: if fallback_count > 0 {
-                                            UPDATE_OUTCOME_PARTIAL.into()
-                                        } else {
-                                            UPDATE_OUTCOME_ERROR.into()
-                                        },
-                                        reason: Some(if fallback_count > 0 {
-                                            "native update check failed; metadata fallback applied"
-                                                .into()
-                                        } else {
-                                            "native update check failed".into()
-                                        }),
-                                        checked,
-                                        updates: fallback_count,
-                                        errors: provider_error_count,
-                                    });
+                                if fallback_count > 0 {
+                                    found_updates.fetch_add(fallback_count, Ordering::Relaxed);
+                                    updates.lock().await.extend(fallback_updates);
                                 }
+
+                                outcomes.lock().await.push(UpdateCheckProviderOutcome {
+                                    provider: provider_id.clone(),
+                                    status: if fallback_count > 0 {
+                                        UPDATE_OUTCOME_PARTIAL.into()
+                                    } else {
+                                        UPDATE_OUTCOME_ERROR.into()
+                                    },
+                                    reason: Some(if fallback_count > 0 {
+                                        "native update check failed; metadata fallback applied"
+                                            .into()
+                                    } else {
+                                        "native update check failed".into()
+                                    }),
+                                    reason_code: Some(if fallback_count > 0 {
+                                        REASON_NATIVE_UPDATE_FAILED_WITH_FALLBACK.into()
+                                    } else {
+                                        REASON_NATIVE_UPDATE_FAILED.into()
+                                    }),
+                                    checked,
+                                    updates: fallback_count,
+                                    errors: provider_error_count,
+                                });
                             }
                         }
                     }
-
-                    let processed = processed_providers.fetch_add(1, Ordering::Relaxed) + 1;
-                    emit_update_check_progress(
-                        app_handle,
-                        &UpdateCheckProgress {
-                            phase: "checking".into(),
-                            current: processed,
-                            total: provider_total,
-                            current_package: None,
-                            current_provider: Some(provider_id),
-                            found_updates: found_updates.load(Ordering::Relaxed),
-                            errors: error_count.load(Ordering::Relaxed),
-                        },
-                    );
                 }
-            },
-        )
+
+                let processed = processed_providers.fetch_add(1, Ordering::Relaxed) + 1;
+                emit_update_check_progress(
+                    app_handle,
+                    &UpdateCheckProgress {
+                        phase: "checking".into(),
+                        current: processed,
+                        total: provider_total,
+                        current_package: None,
+                        current_provider: Some(provider_id),
+                        found_updates: found_updates.load(Ordering::Relaxed),
+                        errors: error_count.load(Ordering::Relaxed),
+                    },
+                );
+            }
+        })
         .await;
 
     let final_updates = Arc::try_unwrap(updates).unwrap().into_inner();
@@ -1115,8 +1114,14 @@ pub async fn package_rollback(
 
     match install_result {
         Ok(_) => {
-            let _ =
-                HistoryManager::record_rollback(package_name, &to_version, &provider_id, true, None).await;
+            let _ = HistoryManager::record_rollback(
+                package_name,
+                &to_version,
+                &provider_id,
+                true,
+                None,
+            )
+            .await;
             // Invalidate package caches after successful rollback
             crate::commands::package::invalidate_package_caches(settings.inner()).await;
             Ok(())
@@ -1172,8 +1177,8 @@ pub async fn get_install_history(
         action: action_filter,
         success,
     })
-        .await
-        .map_err(|e| e.to_string())?;
+    .await
+    .map_err(|e| e.to_string())?;
 
     Ok(to_install_history_entries(entries))
 }
@@ -1205,8 +1210,8 @@ pub async fn get_package_history(
         action: action_filter,
         success,
     })
-        .await
-        .map_err(|e| e.to_string())?;
+    .await
+    .map_err(|e| e.to_string())?;
 
     Ok(to_install_history_entries(entries))
 }
@@ -1269,6 +1274,7 @@ mod tests {
                 provider: "npm".into(),
                 status: UPDATE_OUTCOME_SUPPORTED.into(),
                 reason: None,
+                reason_code: None,
                 checked: 10,
                 updates: 2,
                 errors: 0,
@@ -1277,6 +1283,7 @@ mod tests {
                 provider: "pip".into(),
                 status: UPDATE_OUTCOME_PARTIAL.into(),
                 reason: None,
+                reason_code: None,
                 checked: 5,
                 updates: 1,
                 errors: 1,
@@ -1285,6 +1292,7 @@ mod tests {
                 provider: "winget".into(),
                 status: UPDATE_OUTCOME_UNSUPPORTED.into(),
                 reason: Some("not available".into()),
+                reason_code: Some("provider_executable_unavailable".into()),
                 checked: 0,
                 updates: 0,
                 errors: 0,
@@ -1293,6 +1301,7 @@ mod tests {
                 provider: "cargo".into(),
                 status: UPDATE_OUTCOME_ERROR.into(),
                 reason: Some("native failed".into()),
+                reason_code: Some("native_update_check_failed".into()),
                 checked: 3,
                 updates: 0,
                 errors: 1,
@@ -1340,26 +1349,89 @@ mod tests {
     }
 
     #[test]
-    fn update_support_reason_requires_platform_compatibility() {
-        let capabilities = std::collections::HashSet::from([Capability::Update]);
-        let reason = update_support_reason(Platform::Windows, &[Platform::Linux], &capabilities);
-        assert!(reason.is_some());
-        assert!(reason.unwrap().contains("windows"));
+    fn summarize_coverage_handles_representative_provider_categories() {
+        let outcomes = vec![
+            UpdateCheckProviderOutcome {
+                provider: "apt".into(),
+                status: UPDATE_OUTCOME_UNSUPPORTED.into(),
+                reason: Some("provider executable is not available".into()),
+                reason_code: Some("provider_executable_unavailable".into()),
+                checked: 0,
+                updates: 0,
+                errors: 0,
+            },
+            UpdateCheckProviderOutcome {
+                provider: "npm".into(),
+                status: UPDATE_OUTCOME_SUPPORTED.into(),
+                reason: None,
+                reason_code: None,
+                checked: 12,
+                updates: 2,
+                errors: 0,
+            },
+            UpdateCheckProviderOutcome {
+                provider: "rustup".into(),
+                status: UPDATE_OUTCOME_PARTIAL.into(),
+                reason: Some("native update check failed; metadata fallback applied".into()),
+                reason_code: Some("native_update_check_failed_with_fallback".into()),
+                checked: 4,
+                updates: 1,
+                errors: 1,
+            },
+        ];
+
+        let coverage = summarize_coverage(&outcomes);
+        assert_eq!(coverage.supported, 1);
+        assert_eq!(coverage.partial, 1);
+        assert_eq!(coverage.unsupported, 1);
+        assert_eq!(coverage.error, 0);
     }
 
     #[test]
-    fn update_support_reason_requires_update_capability() {
-        let capabilities = std::collections::HashSet::from([Capability::Install]);
-        let reason = update_support_reason(current_platform(), &[current_platform()], &capabilities);
-        assert_eq!(
-            reason,
-            Some("provider does not declare update capability".into())
-        );
+    fn summarize_coverage_handles_language_matrix_semantics() {
+        let outcomes = vec![
+            UpdateCheckProviderOutcome {
+                provider: "npm".into(),
+                status: UPDATE_OUTCOME_SUPPORTED.into(),
+                reason: None,
+                reason_code: None,
+                checked: 8,
+                updates: 2,
+                errors: 0,
+            },
+            UpdateCheckProviderOutcome {
+                provider: "pip".into(),
+                status: UPDATE_OUTCOME_UNSUPPORTED.into(),
+                reason: Some("provider executable is not available".into()),
+                reason_code: Some("provider_executable_unavailable".into()),
+                checked: 0,
+                updates: 0,
+                errors: 0,
+            },
+            UpdateCheckProviderOutcome {
+                provider: "cargo".into(),
+                status: UPDATE_OUTCOME_PARTIAL.into(),
+                reason: Some("native update check failed; metadata fallback applied".into()),
+                reason_code: Some("native_update_check_failed_with_fallback".into()),
+                checked: 4,
+                updates: 1,
+                errors: 1,
+            },
+        ];
+
+        let coverage = summarize_coverage(&outcomes);
+        assert_eq!(coverage.supported, 1);
+        assert_eq!(coverage.partial, 1);
+        assert_eq!(coverage.unsupported, 1);
+        assert_eq!(coverage.error, 0);
     }
 
     #[test]
     fn parse_package_scope_key_extracts_provider_and_name() {
-        assert_eq!(parse_package_scope_key("npm:typescript"), (Some("npm"), "typescript"));
+        assert_eq!(
+            parse_package_scope_key("npm:typescript"),
+            (Some("npm"), "typescript")
+        );
         assert_eq!(parse_package_scope_key("typescript"), (None, "typescript"));
     }
 }

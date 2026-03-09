@@ -21,6 +21,12 @@ CogniaLauncher 包含 29 个自定义 React Hooks，封装业务逻辑和 Tauri 
 | `useAutoVersion` | `use-auto-version.ts` | 自动版本检测和切换 |
 | `useRustup` | `use-rustup.ts` | Rustup 工具链/组件/目标管理 |
 
+## 环境变量
+
+| Hook | 文件 | 用途 |
+|------|------|------|
+| `useEnvVar` | `use-envvar.ts` | 环境变量读取/变更、PATH 编辑、冲突检测与导入导出流程 |
+
 ## 包管理
 
 | Hook | 文件 | 用途 |

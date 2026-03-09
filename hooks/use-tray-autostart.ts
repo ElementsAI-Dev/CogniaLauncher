@@ -2,15 +2,26 @@
 
 import { useEffect, useState, useCallback } from "react";
 import type { AppSettings } from "@/lib/stores/settings";
-import type { TrayClickBehavior, TrayNotificationLevel } from "@/lib/tauri";
+import type {
+  TrayClickBehavior,
+  TrayNotificationEvent,
+  TrayNotificationLevel,
+  TrayQuickAction,
+} from "@/lib/tauri";
 import {
   isTauri,
   trayIsAutostartEnabled,
   trayEnableAutostart,
   trayDisableAutostart,
   traySetClickBehavior,
+  traySetQuickAction,
+  trayGetAvailableQuickActions,
   traySetShowNotifications,
   traySetNotificationLevel,
+  traySetNotificationEvents,
+  trayGetAvailableNotificationEvents,
+  listenTrayNotificationEventsChanged,
+  trayGetState,
   traySetMinimizeToTray,
   traySetStartMinimized,
 } from "@/lib/tauri";
@@ -30,8 +41,17 @@ export interface UseTrayAutostartReturn {
   handleStartMinimizedChange: (checked: boolean) => Promise<void>;
   handleAutostartChange: (checked: boolean) => Promise<void>;
   handleClickBehaviorChange: (value: string) => Promise<void>;
+  quickAction: TrayQuickAction;
+  availableQuickActions: TrayQuickAction[];
+  handleQuickActionChange: (value: string) => Promise<void>;
   handleShowNotificationsChange: (checked: boolean) => Promise<void>;
   handleNotificationLevelChange: (value: string) => Promise<void>;
+  notificationEvents: TrayNotificationEvent[];
+  availableNotificationEvents: TrayNotificationEvent[];
+  handleNotificationEventToggle: (
+    event: TrayNotificationEvent,
+    enabled: boolean,
+  ) => Promise<void>;
 }
 
 /**
@@ -43,12 +63,53 @@ export function useTrayAutostart({
 }: UseTrayAutostartOptions): UseTrayAutostartReturn {
   const [autostartEnabled, setAutostartEnabled] = useState(false);
   const [autostartLoading, setAutostartLoading] = useState(false);
+  const [quickAction, setQuickAction] =
+    useState<TrayQuickAction>("check_updates");
+  const [availableQuickActions, setAvailableQuickActions] = useState<
+    TrayQuickAction[]
+  >(["open_settings", "open_downloads", "check_updates", "open_logs"]);
+  const [notificationEvents, setNotificationEvents] = useState<
+    TrayNotificationEvent[]
+  >(["updates", "downloads", "errors", "system"]);
+  const [availableNotificationEvents, setAvailableNotificationEvents] =
+    useState<TrayNotificationEvent[]>([
+      "updates",
+      "downloads",
+      "errors",
+      "system",
+    ]);
 
   // Sync autostart state from backend on mount
   useEffect(() => {
     if (!isTauri()) return;
 
+    let unlistenEvents: (() => void) | undefined;
+
     trayIsAutostartEnabled().then(setAutostartEnabled).catch(console.error);
+    Promise.all([
+      trayGetState(),
+      trayGetAvailableQuickActions(),
+      trayGetAvailableNotificationEvents(),
+    ])
+      .then(([state, quickActions, notificationEventOptions]) => {
+        setQuickAction(state.quickAction);
+        setNotificationEvents(state.notificationEvents);
+        setAvailableQuickActions(quickActions);
+        setAvailableNotificationEvents(notificationEventOptions);
+      })
+      .catch(console.error);
+
+    listenTrayNotificationEventsChanged((events) => {
+      setNotificationEvents(events);
+    })
+      .then((fn) => {
+        unlistenEvents = fn;
+      })
+      .catch(console.error);
+
+    return () => {
+      unlistenEvents?.();
+    };
   }, []);
 
   const handleMinimizeToTrayChange = useCallback(
@@ -121,6 +182,18 @@ export function useTrayAutostart({
     [onValueChange],
   );
 
+  const handleQuickActionChange = useCallback(async (value: string) => {
+    if (!isTauri()) return;
+
+    try {
+      const action = value as TrayQuickAction;
+      await traySetQuickAction(action);
+      setQuickAction(action);
+    } catch (error) {
+      console.error("Failed to set tray quick action:", error);
+    }
+  }, []);
+
   const handleNotificationLevelChange = useCallback(
     async (value: string) => {
       if (!isTauri()) return;
@@ -135,6 +208,23 @@ export function useTrayAutostart({
     [onValueChange],
   );
 
+  const handleNotificationEventToggle = useCallback(
+    async (event: TrayNotificationEvent, enabled: boolean) => {
+      if (!isTauri()) return;
+
+      try {
+        const next = enabled
+          ? Array.from(new Set([...notificationEvents, event]))
+          : notificationEvents.filter((item) => item !== event);
+        await traySetNotificationEvents(next);
+        setNotificationEvents(next);
+      } catch (error) {
+        console.error("Failed to set tray notification events:", error);
+      }
+    },
+    [notificationEvents],
+  );
+
   return {
     autostartEnabled,
     autostartLoading,
@@ -142,7 +232,13 @@ export function useTrayAutostart({
     handleStartMinimizedChange,
     handleAutostartChange,
     handleClickBehaviorChange,
+    quickAction,
+    availableQuickActions,
+    handleQuickActionChange,
     handleShowNotificationsChange,
     handleNotificationLevelChange,
+    notificationEvents,
+    availableNotificationEvents,
+    handleNotificationEventToggle,
   };
 }

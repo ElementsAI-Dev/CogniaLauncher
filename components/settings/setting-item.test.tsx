@@ -196,6 +196,12 @@ describe("SettingItem", () => {
     expect(screen.getByRole("textbox")).toHaveAttribute("aria-invalid", "true");
   });
 
+  it("should expose field invalid semantics when error is provided", () => {
+    render(<SettingItem {...defaultProps} error="This is an error" />);
+
+    expect(screen.getByRole("group")).toHaveAttribute("data-invalid", "true");
+  });
+
   it("should have proper accessibility attributes", () => {
     render(<SettingItem {...defaultProps} />);
 

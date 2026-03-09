@@ -344,6 +344,27 @@ pub fn get_var(key: &str) -> Option<String> {
     env::var(key).ok()
 }
 
+pub fn normalize_env_var_key(key: &str) -> CogniaResult<String> {
+    let trimmed = key.trim();
+    if trimmed.is_empty() {
+        return Err(CogniaError::Config(
+            "Environment variable key cannot be empty".into(),
+        ));
+    }
+    if trimmed.chars().any(|ch| ch.is_whitespace()) || trimmed.contains('=') || trimmed.contains('\0')
+    {
+        return Err(CogniaError::Config(
+            "Environment variable key contains invalid characters".into(),
+        ));
+    }
+    Ok(trimmed.to_string())
+}
+
+pub fn validate_env_var_key(key: &str) -> CogniaResult<()> {
+    let _ = normalize_env_var_key(key)?;
+    Ok(())
+}
+
 pub fn set_var(key: &str, value: &str) {
     env::set_var(key, value);
 }
@@ -435,31 +456,36 @@ pub fn get_all_vars() -> HashMap<String, String> {
 // ============================================================================
 
 pub async fn get_persistent_var(key: &str, scope: EnvVarScope) -> CogniaResult<Option<String>> {
+    let key = normalize_env_var_key(key)?;
     match scope {
-        EnvVarScope::Process => Ok(env::var(key).ok()),
-        EnvVarScope::User | EnvVarScope::System => get_persistent_var_platform(key, scope).await,
+        EnvVarScope::Process => Ok(env::var(&key).ok()),
+        EnvVarScope::User | EnvVarScope::System => get_persistent_var_platform(&key, scope).await,
     }
 }
 
 pub async fn set_persistent_var(key: &str, value: &str, scope: EnvVarScope) -> CogniaResult<()> {
+    let key = normalize_env_var_key(key)?;
     match scope {
         EnvVarScope::Process => {
-            env::set_var(key, value);
+            env::set_var(&key, value);
             Ok(())
         }
         EnvVarScope::User | EnvVarScope::System => {
-            set_persistent_var_platform(key, value, scope).await
+            set_persistent_var_platform(&key, value, scope).await
         }
     }
 }
 
 pub async fn remove_persistent_var(key: &str, scope: EnvVarScope) -> CogniaResult<()> {
+    let key = normalize_env_var_key(key)?;
     match scope {
         EnvVarScope::Process => {
-            env::remove_var(key);
+            env::remove_var(&key);
             Ok(())
         }
-        EnvVarScope::User | EnvVarScope::System => remove_persistent_var_platform(key, scope).await,
+        EnvVarScope::User | EnvVarScope::System => {
+            remove_persistent_var_platform(&key, scope).await
+        }
     }
 }
 
@@ -940,8 +966,11 @@ fn run_windows_env_operation_elevated(action: ElevatedWindowsEnvAction<'_>) -> C
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or_default();
-    let script_path =
-        env::temp_dir().join(format!("cognia-env-elevate-{}-{}.ps1", std::process::id(), unique));
+    let script_path = env::temp_dir().join(format!(
+        "cognia-env-elevate-{}-{}.ps1",
+        std::process::id(),
+        unique
+    ));
 
     std::fs::write(&script_path, WINDOWS_ENV_ELEVATION_SCRIPT).map_err(CogniaError::Io)?;
 
@@ -2191,6 +2220,28 @@ mod tests {
         // Remove it
         remove_var(key);
         assert!(get_var(key).is_none());
+    }
+
+    #[test]
+    fn test_normalize_env_var_key_trims_and_validates() {
+        assert_eq!(
+            normalize_env_var_key("  COGNIA_TRIMMED_KEY  ").expect("valid key"),
+            "COGNIA_TRIMMED_KEY"
+        );
+        assert!(matches!(
+            normalize_env_var_key("BAD KEY"),
+            Err(CogniaError::Config(_))
+        ));
+        assert!(matches!(
+            normalize_env_var_key("BAD=KEY"),
+            Err(CogniaError::Config(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_set_persistent_var_rejects_invalid_key() {
+        let result = set_persistent_var("BAD KEY", "value", EnvVarScope::Process).await;
+        assert!(matches!(result, Err(CogniaError::Config(_))));
     }
 
     #[test]

@@ -6,6 +6,7 @@ import { isTauri } from "@/lib/platform";
 import { APP_VERSION } from "@/lib/app-version";
 import { toast } from "sonner";
 import type {
+  AboutInsights,
   SystemInfo,
   SystemSubsystem,
   UpdateErrorCategory,
@@ -26,6 +27,7 @@ import {
   buildSystemSectionSummary,
   buildWebDiagnosticsReport,
 } from "@/lib/about-diagnostics";
+import { formatBytes } from "@/lib/utils";
 
 export type { SystemInfo, UpdateStatus };
 
@@ -41,9 +43,12 @@ export interface UseAboutDataReturn {
   systemError: string | null;
   systemInfo: SystemInfo | null;
   systemLoading: boolean;
+  aboutInsights: AboutInsights | null;
+  insightsLoading: boolean;
   isDesktop: boolean;
   checkForUpdate: () => Promise<void>;
   reloadSystemInfo: () => Promise<void>;
+  reloadAboutInsights: () => Promise<void>;
   handleUpdate: (t: (key: string) => string) => Promise<void>;
   clearError: () => void;
   exportDiagnostics: (t: (key: string) => string) => Promise<void>;
@@ -66,6 +71,8 @@ export function useAboutData(locale: string): UseAboutDataReturn {
   const [systemError, setSystemError] = useState<string | null>(null);
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const [systemLoading, setSystemLoading] = useState(true);
+  const [aboutInsights, setAboutInsights] = useState<AboutInsights | null>(null);
+  const [insightsLoading, setInsightsLoading] = useState(true);
   const isDesktop = isTauri();
 
   const checkForUpdate = useCallback(async () => {
@@ -324,6 +331,108 @@ export function useAboutData(locale: string): UseAboutDataReturn {
     }
   }, [locale]);
 
+  const loadAboutInsights = useCallback(async () => {
+    if (!tauri.isTauri()) {
+      setAboutInsights({
+        runtimeMode: "web",
+        providerSummary: {
+          total: 0,
+          installed: 0,
+          supported: 0,
+          unsupported: 0,
+        },
+        storageSummary: {
+          cacheTotalSizeHuman: "0 B",
+          logTotalSizeBytes: null,
+          logTotalSizeHuman: null,
+        },
+        sections: {
+          providers: "unavailable",
+          logs: "unavailable",
+          cache: "unavailable",
+        },
+        generatedAt: new Date().toISOString(),
+      });
+      setInsightsLoading(false);
+      return;
+    }
+
+    setInsightsLoading(true);
+    try {
+      const [providersResult, logSizeResult, cacheStatsResult] =
+        await Promise.allSettled([
+          tauri.providerStatusAll(),
+          tauri.logGetTotalSize(),
+          tauri.getCombinedCacheStats(),
+        ]);
+
+      const providerList =
+        providersResult.status === "fulfilled" ? providersResult.value : [];
+      const providerSummary = {
+        total: providerList.length,
+        installed: providerList.filter((provider) => provider.installed).length,
+        supported: providerList.filter(
+          (provider) => provider.status !== "unsupported",
+        ).length,
+        unsupported: providerList.filter(
+          (provider) => provider.status === "unsupported",
+        ).length,
+      };
+
+      const logTotalSizeBytes =
+        logSizeResult.status === "fulfilled" ? logSizeResult.value : null;
+      const logTotalSizeHuman =
+        typeof logTotalSizeBytes === "number"
+          ? formatBytes(Math.max(0, logTotalSizeBytes))
+          : null;
+      const cacheTotalSizeHuman =
+        cacheStatsResult.status === "fulfilled"
+          ? cacheStatsResult.value.totalSizeHuman
+          : "0 B";
+
+      setAboutInsights({
+        runtimeMode: "desktop",
+        providerSummary,
+        storageSummary: {
+          cacheTotalSizeHuman,
+          logTotalSizeBytes,
+          logTotalSizeHuman,
+        },
+        sections: {
+          providers:
+            providersResult.status === "fulfilled" ? "ok" : "failed",
+          logs: logSizeResult.status === "fulfilled" ? "ok" : "failed",
+          cache: cacheStatsResult.status === "fulfilled" ? "ok" : "failed",
+        },
+        generatedAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.error("Failed to load about insights:", err);
+      setAboutInsights({
+        runtimeMode: "desktop",
+        providerSummary: {
+          total: 0,
+          installed: 0,
+          supported: 0,
+          unsupported: 0,
+        },
+        storageSummary: {
+          cacheTotalSizeHuman: "0 B",
+          logTotalSizeBytes: null,
+          logTotalSizeHuman: null,
+        },
+        sections: {
+          providers: "failed",
+          logs: "failed",
+          cache: "failed",
+        },
+        generatedAt: new Date().toISOString(),
+      });
+    } finally {
+      setInsightsLoading(false);
+    }
+  }, []);
+
   // Check for updates only once on mount (not affected by locale changes)
   useEffect(() => {
     checkForUpdate();
@@ -332,8 +441,8 @@ export function useAboutData(locale: string): UseAboutDataReturn {
 
   // Load system info when locale changes
   useEffect(() => {
-    loadSystemInfo();
-  }, [loadSystemInfo]);
+    void Promise.all([loadSystemInfo(), loadAboutInsights()]);
+  }, [loadSystemInfo, loadAboutInsights]);
 
   useEffect(() => {
     if (!tauri.isTauri()) return;
@@ -341,14 +450,14 @@ export function useAboutData(locale: string): UseAboutDataReturn {
     const dispose = subscribeInvalidation(
       "about_cache_stats",
       withThrottle(() => {
-        void loadSystemInfo();
+        void Promise.all([loadSystemInfo(), loadAboutInsights()]);
       }, 500),
     );
 
     return () => {
       dispose();
     };
-  }, [loadSystemInfo]);
+  }, [loadAboutInsights, loadSystemInfo]);
 
   const handleUpdate = useCallback(async (t: (key: string) => string) => {
     if (!tauri.isTauri()) {
@@ -484,6 +593,7 @@ export function useAboutData(locale: string): UseAboutDataReturn {
       try {
         const report = buildWebDiagnosticsReport({
           systemInfo,
+          aboutInsights,
           updateInfo,
           updateStatus,
           updateErrorCategory,
@@ -566,6 +676,7 @@ export function useAboutData(locale: string): UseAboutDataReturn {
       updateErrorMessage,
       updateInfo,
       updateStatus,
+      aboutInsights,
       systemInfo,
     ],
   );
@@ -582,9 +693,12 @@ export function useAboutData(locale: string): UseAboutDataReturn {
     systemError,
     systemInfo,
     systemLoading,
+    aboutInsights,
+    insightsLoading,
     isDesktop,
     checkForUpdate,
     reloadSystemInfo: loadSystemInfo,
+    reloadAboutInsights: loadAboutInsights,
     handleUpdate,
     clearError,
     exportDiagnostics,

@@ -72,6 +72,7 @@ describe('EnvVarShellProfiles', () => {
 
   it('renders profile cards with shell names', () => {
     render(<EnvVarShellProfiles {...defaultProps} />);
+    expect(screen.getByTestId('envvar-shell-profiles-panel')).toBeInTheDocument();
     expect(screen.getByText('bash')).toBeInTheDocument();
     expect(screen.getByText('zsh')).toBeInTheDocument();
     expect(screen.getByText('fish')).toBeInTheDocument();

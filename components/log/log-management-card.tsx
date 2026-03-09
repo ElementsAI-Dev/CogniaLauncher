@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Separator } from "@/components/ui/separator";
 import { useLocale } from "@/components/providers/locale-provider";
 import { isTauri, configGet, configSet } from "@/lib/tauri";
 import type {
@@ -168,7 +169,7 @@ export function LogManagementCard({
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Overview stats */}
-        <div className="grid grid-cols-2 gap-3">
+        <section className="grid grid-cols-2 gap-3" aria-label="Log storage status">
           <div className="rounded-lg border p-3">
             <p className="text-xs text-muted-foreground">{t("logs.totalFiles")}</p>
             <p className="text-lg font-semibold tabular-nums">{fileCount}</p>
@@ -177,10 +178,12 @@ export function LogManagementCard({
             <p className="text-xs text-muted-foreground">{t("logs.totalSize")}</p>
             <p className="text-lg font-semibold tabular-nums">{formatBytes(totalSize)}</p>
           </div>
-        </div>
+        </section>
+
+        <Separator />
 
         {/* Retention settings */}
-        <div className="space-y-3">
+        <section className="space-y-3" aria-label="Log cleanup configuration">
           <div className="space-y-1.5">
             <Label htmlFor="retention-days" className="text-sm">
               {t("logs.retentionDays")}
@@ -266,10 +269,10 @@ export function LogManagementCard({
               {t("logs.logLevelDescription")}
             </p>
           </div>
-        </div>
+        </section>
 
         {previewResult && (
-          <div className="rounded-lg border border-dashed p-3 space-y-1">
+          <section className="rounded-lg border border-dashed p-3 space-y-1" aria-label="Cleanup preview">
             <p className="text-xs text-muted-foreground">
               {t("logs.previewSummary")}
             </p>
@@ -282,36 +285,38 @@ export function LogManagementCard({
             <p className="text-xs text-muted-foreground">
               {t("logs.previewProtected", { count: previewResult.protectedCount })}
             </p>
-          </div>
+          </section>
         )}
 
-        <Button
-          variant="outline"
-          className="w-full"
-          onClick={handlePreviewCleanup}
-          disabled={previewing || cleaning || fileCount <= 1}
-        >
-          {previewing ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          ) : (
-            <Trash2 className="mr-2 h-4 w-4" />
-          )}
-          {t("logs.previewCleanup")}
-        </Button>
+        <section className="space-y-2" role="group" aria-label="Log cleanup actions">
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={handlePreviewCleanup}
+            disabled={previewing || cleaning || fileCount <= 1}
+          >
+            {previewing ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Trash2 className="mr-2 h-4 w-4" />
+            )}
+            {t("logs.previewCleanup")}
+          </Button>
 
-        <Button
-          variant="outline"
-          className="w-full"
-          onClick={handleCleanup}
-          disabled={cleaning || fileCount <= 1 || !previewResult}
-        >
-          {cleaning ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          ) : (
-            <Trash2 className="mr-2 h-4 w-4" />
-          )}
-          {t("logs.manualCleanupConfirm")}
-        </Button>
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={handleCleanup}
+            disabled={cleaning || fileCount <= 1 || !previewResult}
+          >
+            {cleaning ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Trash2 className="mr-2 h-4 w-4" />
+            )}
+            {t("logs.manualCleanupConfirm")}
+          </Button>
+        </section>
       </CardContent>
     </Card>
   );

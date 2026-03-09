@@ -46,7 +46,11 @@ export function QuickActions({
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="flex flex-wrap items-center gap-2">
+        <div
+          className="flex flex-wrap items-center gap-2 md:gap-2.5"
+          role="group"
+          aria-label={t("dashboard.quickActions.title")}
+        >
           <Button
             variant="default"
             size="sm"
@@ -85,7 +89,12 @@ export function QuickActions({
           {/* Secondary Actions Dropdown */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-2"
+                aria-label={t("dashboard.quickActions.moreActions")}
+              >
                 <MoreHorizontal className="h-4 w-4" />
                 <span className="sr-only">
                   {t("dashboard.quickActions.moreActions")}

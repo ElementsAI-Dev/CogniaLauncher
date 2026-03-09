@@ -21,6 +21,11 @@ import {
   getGradientId,
 } from "@/lib/theme/chart-utils";
 import { Download, CheckCircle2, XCircle, Clock } from "lucide-react";
+import {
+  DashboardMetricGrid,
+  DashboardMetricItem,
+  DashboardSectionLabel,
+} from "@/components/dashboard/dashboard-primitives";
 
 interface DownloadStatsWidgetProps {
   className?: string;
@@ -82,46 +87,38 @@ export function DownloadStatsWidget({ className }: DownloadStatsWidgetProps) {
           {t("dashboard.widgets.downloadStatsDesc")}
         </CardDescription>
       </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-2 gap-3 mb-4">
-          <div className="flex items-center gap-2 rounded-lg border p-2.5">
-            <Download className="h-4 w-4 text-blue-500" />
-            <div>
-              <div className="text-lg font-bold">{summaryStats.active}</div>
-              <div className="text-xs text-muted-foreground">{t("dashboard.widgets.dlActive")}</div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 rounded-lg border p-2.5">
-            <CheckCircle2 className="h-4 w-4 text-green-500" />
-            <div>
-              <div className="text-lg font-bold">{summaryStats.completed}</div>
-              <div className="text-xs text-muted-foreground">{t("dashboard.widgets.dlCompleted")}</div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 rounded-lg border p-2.5">
-            <XCircle className="h-4 w-4 text-red-500" />
-            <div>
-              <div className="text-lg font-bold">{summaryStats.failed}</div>
-              <div className="text-xs text-muted-foreground">{t("dashboard.widgets.dlFailed")}</div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 rounded-lg border p-2.5">
-            <Clock className="h-4 w-4 text-yellow-500" />
-            <div>
-              <div className="text-lg font-bold">{summaryStats.paused}</div>
-              <div className="text-xs text-muted-foreground">{t("dashboard.widgets.dlPaused")}</div>
-            </div>
-          </div>
-        </div>
+      <CardContent className="space-y-4">
+        <DashboardMetricGrid columns={4}>
+          <DashboardMetricItem
+            label={t("dashboard.widgets.dlActive")}
+            value={summaryStats.active}
+            icon={<Download className="h-3.5 w-3.5 text-blue-500" />}
+          />
+          <DashboardMetricItem
+            label={t("dashboard.widgets.dlCompleted")}
+            value={summaryStats.completed}
+            icon={<CheckCircle2 className="h-3.5 w-3.5 text-green-500" />}
+          />
+          <DashboardMetricItem
+            label={t("dashboard.widgets.dlFailed")}
+            value={summaryStats.failed}
+            icon={<XCircle className="h-3.5 w-3.5 text-red-500" />}
+          />
+          <DashboardMetricItem
+            label={t("dashboard.widgets.dlPaused")}
+            value={summaryStats.paused}
+            icon={<Clock className="h-3.5 w-3.5 text-yellow-500" />}
+          />
+        </DashboardMetricGrid>
 
         {stats && (
-          <div className="text-center text-xs text-muted-foreground mb-2">
+          <div className="text-center text-xs text-muted-foreground">
             {t("dashboard.widgets.overallProgress")}: {Math.round(stats.overallProgress)}%
           </div>
         )}
 
         {chartData.length > 0 && (
-          <ChartContainer config={chartConfig} className="h-[120px] w-full aspect-auto">
+          <ChartContainer config={chartConfig} className="h-30 w-full aspect-auto">
             <BarChart data={chartData} margin={{ left: 0, right: 0 }}>
               <CartesianGrid vertical={false} {...getChartGridStyle()} />
               <XAxis
@@ -138,11 +135,11 @@ export function DownloadStatsWidget({ className }: DownloadStatsWidgetProps) {
         )}
 
         {speedChartData.length > 1 && (
-          <>
-            <p className="text-xs text-muted-foreground mt-4 mb-1">
+          <div className="space-y-2">
+            <DashboardSectionLabel>
               {t("dashboard.widgets.speedChart")}
-            </p>
-            <ChartContainer config={speedChartConfig} className="h-[80px] w-full aspect-auto">
+            </DashboardSectionLabel>
+            <ChartContainer config={speedChartConfig} className="h-20 w-full aspect-auto">
               <AreaChart data={speedChartData} margin={{ left: 0, right: 0, top: 4, bottom: 0 }}>
                 <defs>
                   <linearGradient
@@ -179,7 +176,7 @@ export function DownloadStatsWidget({ className }: DownloadStatsWidgetProps) {
                 />
               </AreaChart>
             </ChartContainer>
-          </>
+          </div>
         )}
       </CardContent>
     </Card>

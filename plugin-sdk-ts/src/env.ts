@@ -1,5 +1,10 @@
 import { callHost, callHostJson } from './host';
-import type { EnvDetectResult, EnvEntry, EnvVersionEntry } from './types';
+import type {
+  EnvDetectResult,
+  EnvEntry,
+  EnvVersionEntry,
+  ProviderInfo,
+} from './types';
 
 /**
  * List all available environment providers.
@@ -13,8 +18,8 @@ export function list(): EnvEntry[] {
  * List all available package/environment providers with full info.
  * Requires: env_read permission.
  */
-export function providerList(): unknown {
-  return callHostJson<unknown>('cognia_provider_list', '');
+export function providerList(): ProviderInfo[] {
+  return callHostJson<ProviderInfo[]>('cognia_provider_list', '');
 }
 
 /**

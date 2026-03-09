@@ -17,6 +17,21 @@ This directory hosts first-party production plugins shipped with CogniaLauncher.
 3. Validate built-in release readiness against existing artifacts, metadata, checksums, and tests:
    - `pnpm plugins:validate`
 
+## Scaffold Handoff Contract
+
+When creating a built-in plugin from Toolbox > Plugins > Create Plugin with lifecycle `builtin`:
+
+- Output directory must be the `plugins/` workspace root.
+- The scaffold generates:
+  - `catalog-entry.sample.json`
+  - `cognia.scaffold.json`
+  - lifecycle handoff metadata for catalog/checksum/validation steps
+- Standard onboarding commands remain:
+  - `pnpm plugins:checksums`
+  - `pnpm plugins:validate`
+
+For external scaffolds, follow build -> validate -> import workflow first; built-in onboarding starts after the artifact is generated and validated.
+
 ## Targeted Maintainer Runs
 
 The canonical maintainer commands support additive selectors so you can work on a subset of the catalog without changing the default full-suite behavior.

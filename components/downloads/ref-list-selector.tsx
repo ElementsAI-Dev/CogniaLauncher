@@ -4,6 +4,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 
 export interface RefItem {
   name: string;
@@ -42,32 +43,38 @@ export function RefListSelector({
           onValueChange={onSelect}
           className="p-2"
         >
-          {items.map((item) => (
-            <div
-              key={item.name}
-              className="flex items-center space-x-2 p-2 rounded hover:bg-muted"
-            >
-              <RadioGroupItem
-                value={item.name}
-                id={`${idPrefix}-${item.name}`}
-              />
-              <Label
-                htmlFor={`${idPrefix}-${item.name}`}
-                className="flex-1 cursor-pointer flex items-center justify-between"
-              >
-                <span className="font-mono">{item.name}</span>
-                {item.badges && item.badges.length > 0 && (
-                  <div className="flex gap-1">
-                    {item.badges.map((badge) => (
-                      <Badge key={badge.label} variant={badge.variant}>
-                        {badge.label}
-                      </Badge>
-                    ))}
-                  </div>
+          {items.map((item) => {
+            const isSelected = selectedValue === item.name;
+            const optionId = `${idPrefix}-${item.name}`;
+            return (
+              <div
+                key={item.name}
+                className={cn(
+                  "flex items-center space-x-2 rounded-md border p-2 transition-colors",
+                  isSelected
+                    ? "border-primary bg-primary/10"
+                    : "border-transparent hover:border-border hover:bg-muted",
                 )}
-              </Label>
-            </div>
-          ))}
+              >
+                <RadioGroupItem value={item.name} id={optionId} />
+                <Label
+                  htmlFor={optionId}
+                  className="flex flex-1 cursor-pointer items-center justify-between"
+                >
+                  <span className="font-mono">{item.name}</span>
+                  {item.badges && item.badges.length > 0 && (
+                    <div className="flex gap-1">
+                      {item.badges.map((badge) => (
+                        <Badge key={badge.label} variant={badge.variant}>
+                          {badge.label}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                </Label>
+              </div>
+            );
+          })}
         </RadioGroup>
       )}
     </ScrollArea>

@@ -34,12 +34,15 @@ import { isTauri } from "@/lib/tauri";
 import { GITHUB_ARCHIVE_FORMATS } from "@/lib/constants/downloads";
 import { runDownloadPreflightWithUi } from "@/lib/downloads";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
 import { RepoValidationInput } from "./repo-validation-input";
 import { DestinationPicker } from "./destination-picker";
 import { RefListSelector, type RefItem } from "./ref-list-selector";
 import { ArchiveFormatSelector } from "./archive-format-selector";
 import { AuthSection } from "./auth-section";
+import {
+  SelectableCardButton,
+  selectableCheckboxRowClass,
+} from "./selectable-list-patterns";
 import {
   Github,
   Loader2,
@@ -255,7 +258,7 @@ export function GitHubDownloadDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
+      <DialogContent className="max-h-[85dvh] w-[calc(100vw-1.5rem)] max-w-2xl flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Github className="h-5 w-5" />
@@ -341,7 +344,7 @@ export function GitHubDownloadDialog({
               onValueChange={(v) => setSourceType(v as GitHubSourceType)}
               className="flex-1 flex flex-col overflow-hidden"
             >
-              <TabsList className="grid w-full grid-cols-3">
+              <TabsList className="grid h-auto w-full grid-cols-1 sm:grid-cols-3">
                 <TabsTrigger value="release" className="gap-2">
                   <Package className="h-4 w-4" />
                   {t("downloads.github.releases")}
@@ -378,7 +381,7 @@ export function GitHubDownloadDialog({
                     value="release"
                     className="flex-1 overflow-hidden mt-2"
                   >
-                    <ScrollArea className="h-[200px] border rounded-md">
+                    <ScrollArea className="h-50 border rounded-md">
                       {releases.length === 0 ? (
                         <div className="p-4 text-center text-muted-foreground">
                           {t("downloads.github.noReleases")}
@@ -386,14 +389,9 @@ export function GitHubDownloadDialog({
                       ) : (
                         <div className="p-2 space-y-1">
                           {releases.map((release) => (
-                            <div
+                            <SelectableCardButton
                               key={release.id}
-                              className={cn(
-                                "p-3 rounded-md cursor-pointer transition-colors",
-                                selectedRelease === release.tagName
-                                  ? "bg-primary/10 border border-primary"
-                                  : "hover:bg-muted",
-                              )}
+                              selected={selectedRelease === release.tagName}
                               onClick={() => {
                                 setSelectedRelease(release.tagName);
                                 setSelectedAssets([]);
@@ -434,7 +432,7 @@ export function GitHubDownloadDialog({
                                 {release.assets.length}{" "}
                                 {t("downloads.github.assets")}
                               </div>
-                            </div>
+                            </SelectableCardButton>
                           ))}
                         </div>
                       )}
@@ -449,7 +447,7 @@ export function GitHubDownloadDialog({
                           {t("downloads.github.releaseNotes")}
                         </CollapsibleTrigger>
                         <CollapsibleContent>
-                          <pre className="text-xs whitespace-pre-wrap max-h-[120px] overflow-auto p-2 bg-muted rounded-md mt-1">
+                          <pre className="text-xs whitespace-pre-wrap max-h-30 overflow-auto p-2 bg-muted rounded-md mt-1">
                             {currentRelease.body}
                           </pre>
                         </CollapsibleContent>
@@ -479,7 +477,7 @@ export function GitHubDownloadDialog({
                             </div>
                           )}
                         </div>
-                        <ScrollArea className="h-[140px] border rounded-md">
+                        <ScrollArea className="h-35 border rounded-md">
                           <div className="p-2 space-y-1">
                             {parsedAssets.map(
                               ({
@@ -495,14 +493,13 @@ export function GitHubDownloadDialog({
                                 return (
                                   <label
                                     key={asset.id}
-                                    className={cn(
-                                      "flex items-center gap-2 p-2 rounded cursor-pointer transition-colors",
-                                      isSelected
-                                        ? "bg-primary/10 border border-primary"
-                                        : isRecommended
-                                          ? "bg-green-500/5 hover:bg-green-500/10 border border-green-500/20"
-                                          : "hover:bg-muted",
-                                    )}
+                                    className={selectableCheckboxRowClass({
+                                      selected: isSelected || isRecommended,
+                                      tone: isRecommended ? "success" : "default",
+                                      className: isSelected
+                                        ? "border-primary bg-primary/10 hover:bg-primary/15"
+                                        : undefined,
+                                    })}
                                   >
                                     <Checkbox
                                       checked={isSelected}
@@ -512,15 +509,15 @@ export function GitHubDownloadDialog({
                                     />
                                     <div className="flex items-center gap-2 flex-1 min-w-0">
                                       {isRecommended ? (
-                                        <Star className="h-4 w-4 text-green-500 flex-shrink-0" />
+                                        <Star className="h-4 w-4 text-green-500 shrink-0" />
                                       ) : (
-                                        <FileArchive className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                                        <FileArchive className="h-4 w-4 text-muted-foreground shrink-0" />
                                       )}
                                       <span className="text-sm font-mono truncate">
                                         {asset.name}
                                       </span>
                                     </div>
-                                    <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                                    <div className="flex items-center gap-2 shrink-0 ml-2">
                                       {platform !== "unknown" && (
                                         <Badge
                                           variant="outline"

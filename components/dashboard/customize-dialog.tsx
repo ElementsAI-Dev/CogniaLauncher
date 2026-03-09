@@ -9,7 +9,6 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -38,7 +37,10 @@ import { cn } from "@/lib/utils";
 import {
   useDashboardStore,
   WIDGET_DEFINITIONS,
+  canAddWidgetType,
+  getWidgetTypeCount,
 } from "@/lib/stores/dashboard";
+import { DashboardStatusBadge } from "@/components/dashboard/dashboard-primitives";
 
 const ICON_MAP: Record<string, React.ReactNode> = {
   BarChart3: <BarChart3 className="h-5 w-5" />,
@@ -89,8 +91,8 @@ export function CustomizeDialog({ open, onOpenChange }: CustomizeDialogProps) {
     return defs.filter((d) => d.category === selectedCategory);
   }, [selectedCategory]);
 
-  const existingTypes = useMemo(
-    () => new Set(widgets.map((w) => w.type)),
+  const uniqueTypeCount = useMemo(
+    () => new Set(widgets.map((widget) => widget.type)).size,
     [widgets],
   );
 
@@ -108,6 +110,16 @@ export function CustomizeDialog({ open, onOpenChange }: CustomizeDialogProps) {
             {t("dashboard.widgets.customizeDesc")}
           </DialogDescription>
         </DialogHeader>
+
+        <div
+          className="rounded-md border border-border/60 bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
+          data-testid="dashboard-customize-summary"
+        >
+          {t("dashboard.widgets.currentLayoutSummary", {
+            total: widgets.length,
+            types: uniqueTypeCount,
+          })}
+        </div>
 
         <ToggleGroup
           type="single"
@@ -128,13 +140,17 @@ export function CustomizeDialog({ open, onOpenChange }: CustomizeDialogProps) {
 
         <Separator />
 
-        <ScrollArea className="h-[360px] pr-4">
-          <div className="space-y-2">
+        <ScrollArea className="h-90 pr-4">
+          <div className="space-y-2" role="list" aria-label={t("dashboard.widgets.customizeTitle")}>
             {filteredDefinitions.map((def) => {
-              const isAdded = existingTypes.has(def.type);
+              const instanceCount = getWidgetTypeCount(widgets, def.type);
+              const isAdded = instanceCount > 0;
+              const canAdd = canAddWidgetType(widgets, def.type);
+
               return (
                 <div
                   key={def.type}
+                  role="listitem"
                   className={cn(
                     "flex items-center gap-3 rounded-lg border p-3 transition-colors",
                     isAdded ? "bg-muted/50" : "hover:bg-accent/50",
@@ -148,9 +164,14 @@ export function CustomizeDialog({ open, onOpenChange }: CustomizeDialogProps) {
                       <span className="font-medium text-sm">
                         {t(def.titleKey)}
                       </span>
-                      <Badge variant="secondary" className="text-[10px]">
+                      <DashboardStatusBadge tone="muted">
                         {t(`dashboard.widgets.category_${def.category}`)}
-                      </Badge>
+                      </DashboardStatusBadge>
+                      {instanceCount > 0 && (
+                        <DashboardStatusBadge data-testid={`dashboard-customize-count-${def.type}`}>
+                          x{instanceCount}
+                        </DashboardStatusBadge>
+                      )}
                     </div>
                     <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
                       {t(def.descriptionKey)}
@@ -161,11 +182,15 @@ export function CustomizeDialog({ open, onOpenChange }: CustomizeDialogProps) {
                     size="sm"
                     onClick={() => addWidget(def.type)}
                     className="shrink-0"
+                    disabled={!canAdd}
+                    data-testid={`dashboard-customize-add-${def.type}`}
                   >
                     <Plus className="h-4 w-4 mr-1" />
-                    {isAdded
-                      ? t("dashboard.widgets.addAnother")
-                      : t("common.add")}
+                    {!canAdd
+                      ? t("dashboard.widgets.limitReached")
+                      : isAdded
+                        ? t("dashboard.widgets.addAnother")
+                        : t("common.add")}
                   </Button>
                 </div>
               );
@@ -176,7 +201,7 @@ export function CustomizeDialog({ open, onOpenChange }: CustomizeDialogProps) {
         <Separator />
 
         <div className="flex items-center justify-between">
-          <Button variant="outline" size="sm" onClick={handleReset}>
+          <Button variant="outline" size="sm" onClick={handleReset} data-testid="dashboard-customize-reset">
             <RotateCcw className="h-4 w-4 mr-1" />
             {t("dashboard.widgets.resetDefault")}
           </Button>

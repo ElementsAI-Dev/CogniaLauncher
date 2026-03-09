@@ -21,6 +21,12 @@ CogniaLauncher includes 29 custom React Hooks that encapsulate business logic an
 | `useAutoVersion` | `use-auto-version.ts` | Auto version detection and switching |
 | `useRustup` | `use-rustup.ts` | Rustup toolchain/component/target management |
 
+## Environment Variables
+
+| Hook | File | Purpose |
+|------|------|------|
+| `useEnvVar` | `use-envvar.ts` | Environment variable list/mutation, PATH editing, conflict detection, and import/export flows |
+
 ## Package Management
 
 | Hook | File | Purpose |

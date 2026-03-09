@@ -35,7 +35,7 @@ export function SpeedChart({ className, t }: SpeedChartProps) {
       <p className="text-xs text-muted-foreground mb-1">
         {t("downloads.settings.speedChart")}
       </p>
-      <ChartContainer config={chartConfig} className="h-[80px] w-full aspect-auto">
+      <ChartContainer config={chartConfig} className="h-20 w-full aspect-auto">
         <AreaChart data={data} margin={{ left: 0, right: 0, top: 4, bottom: 0 }}>
           <defs>
             <linearGradient id="dlSpeedFill" x1="0" y1="0" x2="0" y2="1">

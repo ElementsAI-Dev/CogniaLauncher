@@ -3,6 +3,14 @@
 import Link from 'next/link';
 import { useLocale } from '@/components/providers/locale-provider';
 import { DOC_NAV, slugToArray } from '@/lib/docs/navigation';
+import { Badge } from '@/components/ui/badge';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import {
   BookOpen,
   Rocket,
@@ -45,7 +53,7 @@ export function DocsHomeCards({ className }: DocsHomeCardsProps) {
   const sections = DOC_NAV.filter((item) => item.children && item.children.length > 0);
 
   return (
-    <div className={cn('grid grid-cols-1 sm:grid-cols-2 gap-4 mt-8', className)}>
+    <div className={cn('mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2', className)}>
       {sections.map((section) => {
         const Icon = SECTION_ICONS[section.title] ?? BookOpen;
         const desc = SECTION_DESCRIPTIONS[section.title];
@@ -63,26 +71,31 @@ export function DocsHomeCards({ className }: DocsHomeCardsProps) {
           <Link
             key={section.title}
             href={href}
-            className="group rounded-lg border border-border bg-card p-4 hover:border-primary/40 hover:bg-accent/30 transition-all"
+            className="group block h-full rounded-xl focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
-            <div className="flex items-start gap-3">
-              <div className="rounded-md bg-primary/10 p-2 shrink-0">
-                <Icon className="h-5 w-5 text-primary" />
-              </div>
-              <div className="min-w-0">
-                <h3 className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors">
-                  {title}
-                </h3>
-                {description && (
-                  <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
-                    {description}
-                  </p>
-                )}
-                <span className="text-xs text-muted-foreground/60 mt-2 inline-block">
-                  {childCount} {locale === 'en' ? 'pages' : '篇'}
+            <Card className="h-full gap-4 border-border/80 py-0 transition-colors group-hover:border-primary/40 group-hover:bg-accent/20">
+              <CardHeader className="grid grid-cols-[auto_1fr_auto] items-start gap-3 px-4 pt-4">
+                <span className="rounded-md bg-primary/10 p-2 text-primary">
+                  <Icon className="h-5 w-5" />
                 </span>
-              </div>
-            </div>
+                <div className="min-w-0">
+                  <CardTitle className="truncate text-sm transition-colors group-hover:text-primary">
+                    {title}
+                  </CardTitle>
+                  {description && (
+                    <CardDescription className="mt-1 line-clamp-2 text-xs">
+                      {description}
+                    </CardDescription>
+                  )}
+                </div>
+                <Badge variant="secondary" className="mt-0.5 whitespace-nowrap text-[11px]">
+                  {childCount} {locale === 'en' ? 'pages' : '篇'}
+                </Badge>
+              </CardHeader>
+              <CardContent className="px-4 pb-4 text-xs text-muted-foreground">
+                {locale === 'en' ? 'Browse section' : '浏览章节'}
+              </CardContent>
+            </Card>
           </Link>
         );
       })}

@@ -67,7 +67,10 @@ fn command_exists(command: &str) -> bool {
         cmd
     };
 
-    probe.status().map(|status| status.success()).unwrap_or(false)
+    probe
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
 }
 
 fn open_with_command(path: &str, command: Option<&str>) -> Result<(), String> {
@@ -77,6 +80,45 @@ fn open_with_command(path: &str, command: Option<&str>) -> Result<(), String> {
 
 fn get_provider() -> GitProvider {
     GitProvider::new()
+}
+
+fn normalize_git_error_message(message: String) -> String {
+    if message.starts_with("[git:") {
+        return message;
+    }
+
+    let lower = message.to_lowercase();
+    let category = if lower.contains("cancelled")
+        || lower.contains("canceled")
+        || lower.contains("terminated by signal")
+    {
+        "cancelled"
+    } else if lower.contains("no repo")
+        || lower.contains("no clone operation in progress")
+        || lower.contains("no upstream")
+        || lower.contains("set-upstream")
+    {
+        "precondition"
+    } else if lower.contains("conflict")
+        || lower.contains("merge in progress")
+        || lower.contains("rebase in progress")
+        || lower.contains("resolve conflicts")
+    {
+        "conflict"
+    } else if lower.contains("not a git repository")
+        || lower.contains("git is not recognized")
+        || lower.contains("not in tauri environment")
+    {
+        "environment"
+    } else {
+        "execution"
+    };
+
+    format!("[git:{}] {}", category, message)
+}
+
+fn map_git_err<E: ToString>(error: E) -> String {
+    normalize_git_error_message(error.to_string())
 }
 
 /// Check if git is installed and available
@@ -307,7 +349,7 @@ pub async fn git_get_log(
             file.as_deref(),
         )
         .await
-        .map_err(|e| e.to_string())
+        .map_err(map_git_err)
 }
 
 /// Get branches for a repository
@@ -413,7 +455,7 @@ pub async fn git_get_graph_log(
             branch.as_deref(),
         )
         .await
-        .map_err(|e| e.to_string())
+        .map_err(map_git_err)
 }
 
 /// Get ahead/behind counts for a branch
@@ -505,7 +547,7 @@ pub async fn git_stash_save(
             include_untracked.unwrap_or(false),
         )
         .await
-        .map_err(|e| e.to_string())
+        .map_err(map_git_err)
 }
 
 /// Create a tag
@@ -572,7 +614,7 @@ pub async fn git_search_commits(
             limit.unwrap_or(50),
         )
         .await
-        .map_err(|e| e.to_string())
+        .map_err(map_git_err)
 }
 
 // ============================================================================
@@ -633,7 +675,7 @@ pub async fn git_commit(
             no_verify.unwrap_or(false),
         )
         .await
-        .map_err(|e| e.to_string())
+        .map_err(map_git_err)
 }
 
 #[tauri::command]
@@ -655,7 +697,7 @@ pub async fn git_push(
             set_upstream.unwrap_or(false),
         )
         .await
-        .map_err(|e| e.to_string())
+        .map_err(map_git_err)
 }
 
 #[tauri::command]
@@ -675,7 +717,7 @@ pub async fn git_pull(
             autostash.unwrap_or(false),
         )
         .await
-        .map_err(|e| e.to_string())
+        .map_err(map_git_err)
 }
 
 #[tauri::command]
@@ -693,7 +735,7 @@ pub async fn git_fetch(
             all.unwrap_or(false),
         )
         .await
-        .map_err(|e| e.to_string())
+        .map_err(map_git_err)
 }
 
 #[tauri::command]
@@ -723,7 +765,7 @@ pub async fn git_clone(
             cancel_rx,
         )
         .await
-        .map_err(|e| e.to_string());
+        .map_err(map_git_err);
 
     {
         let mut guard = clone_cancel().lock().await;
@@ -740,7 +782,7 @@ pub async fn git_cancel_clone() -> Result<(), String> {
         let _ = tx.send(true);
         Ok(())
     } else {
-        Err("No clone operation in progress".to_string())
+        Err(map_git_err("No clone operation in progress"))
     }
 }
 
@@ -817,7 +859,7 @@ pub async fn git_merge(
     get_provider()
         .merge_branch(&path, &branch, no_ff.unwrap_or(false))
         .await
-        .map_err(|e| e.to_string())
+        .map_err(map_git_err)
 }
 
 #[tauri::command]
@@ -829,7 +871,7 @@ pub async fn git_revert(
     get_provider()
         .revert_commit(&path, &hash, no_commit.unwrap_or(false))
         .await
-        .map_err(|e| e.to_string())
+        .map_err(map_git_err)
 }
 
 #[tauri::command]
@@ -837,7 +879,7 @@ pub async fn git_cherry_pick(path: String, hash: String) -> Result<String, Strin
     get_provider()
         .cherry_pick(&path, &hash)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(map_git_err)
 }
 
 #[tauri::command]
@@ -849,7 +891,7 @@ pub async fn git_reset(
     get_provider()
         .reset_head(&path, mode.as_deref().unwrap_or("mixed"), target.as_deref())
         .await
-        .map_err(|e| e.to_string())
+        .map_err(map_git_err)
 }
 
 // ============================================================================
@@ -960,7 +1002,7 @@ pub async fn git_clean(path: String, directories: Option<bool>) -> Result<String
     get_provider()
         .clean_untracked(&path, directories.unwrap_or(false))
         .await
-        .map_err(|e| e.to_string())
+        .map_err(map_git_err)
 }
 
 #[tauri::command]
@@ -971,7 +1013,7 @@ pub async fn git_clean_dry_run(
     get_provider()
         .clean_dry_run(&path, directories.unwrap_or(false))
         .await
-        .map_err(|e| e.to_string())
+        .map_err(map_git_err)
 }
 
 #[tauri::command]
@@ -1234,7 +1276,7 @@ pub async fn git_rebase(path: String, onto: String) -> Result<String, String> {
     get_provider()
         .rebase(&path, &onto)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(map_git_err)
 }
 
 #[tauri::command]
@@ -1242,7 +1284,7 @@ pub async fn git_rebase_abort(path: String) -> Result<String, String> {
     get_provider()
         .rebase_abort(&path)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(map_git_err)
 }
 
 #[tauri::command]
@@ -1250,7 +1292,7 @@ pub async fn git_rebase_continue(path: String) -> Result<String, String> {
     get_provider()
         .rebase_continue(&path)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(map_git_err)
 }
 
 #[tauri::command]
@@ -1258,7 +1300,7 @@ pub async fn git_rebase_skip(path: String) -> Result<String, String> {
     get_provider()
         .rebase_skip(&path)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(map_git_err)
 }
 
 #[tauri::command]
@@ -1266,7 +1308,7 @@ pub async fn git_squash(path: String, count: u32, message: String) -> Result<Str
     get_provider()
         .squash_last_n(&path, count, &message)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(map_git_err)
 }
 
 // ============================================================================
@@ -1318,7 +1360,7 @@ pub async fn git_merge_abort(path: String) -> Result<String, String> {
     get_provider()
         .merge_abort(&path)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(map_git_err)
 }
 
 #[tauri::command]
@@ -1326,7 +1368,7 @@ pub async fn git_merge_continue(path: String) -> Result<String, String> {
     get_provider()
         .merge_continue(&path)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(map_git_err)
 }
 
 // ============================================================================
@@ -1338,7 +1380,7 @@ pub async fn git_cherry_pick_abort(path: String) -> Result<String, String> {
     get_provider()
         .cherry_pick_abort(&path)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(map_git_err)
 }
 
 #[tauri::command]
@@ -1346,7 +1388,7 @@ pub async fn git_cherry_pick_continue(path: String) -> Result<String, String> {
     get_provider()
         .cherry_pick_continue(&path)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(map_git_err)
 }
 
 #[tauri::command]
@@ -1354,7 +1396,7 @@ pub async fn git_revert_abort(path: String) -> Result<String, String> {
     get_provider()
         .revert_abort(&path)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(map_git_err)
 }
 
 // ============================================================================
@@ -1696,4 +1738,48 @@ pub async fn git_apply_mailbox(path: String, patch_path: String) -> Result<Strin
         .apply_mailbox(&path, &patch_path)
         .await
         .map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_git_error_message;
+
+    #[test]
+    fn normalize_git_error_preserves_existing_tag() {
+        let message = "[git:conflict] merge conflict".to_string();
+        assert_eq!(normalize_git_error_message(message.clone()), message);
+    }
+
+    #[test]
+    fn normalize_git_error_maps_precondition() {
+        let normalized = normalize_git_error_message(
+            "fatal: no upstream configured for branch 'main'".to_string(),
+        );
+        assert!(normalized.starts_with("[git:precondition]"));
+    }
+
+    #[test]
+    fn normalize_git_error_maps_conflict() {
+        let normalized =
+            normalize_git_error_message("Automatic merge failed; fix conflicts".to_string());
+        assert!(normalized.starts_with("[git:conflict]"));
+    }
+
+    #[test]
+    fn normalize_git_error_maps_cancelled() {
+        let normalized = normalize_git_error_message("process terminated by signal".to_string());
+        assert!(normalized.starts_with("[git:cancelled]"));
+    }
+
+    #[test]
+    fn normalize_git_error_maps_environment() {
+        let normalized = normalize_git_error_message("fatal: not a git repository".to_string());
+        assert!(normalized.starts_with("[git:environment]"));
+    }
+
+    #[test]
+    fn normalize_git_error_defaults_execution() {
+        let normalized = normalize_git_error_message("fatal: remote error".to_string());
+        assert!(normalized.starts_with("[git:execution]"));
+    }
 }

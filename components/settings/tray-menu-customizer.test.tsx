@@ -31,6 +31,7 @@ const mockT = (key: string) => {
     "settings.trayMenu.openLogs": "Open Logs",
     "settings.trayMenu.alwaysOnTop": "Always on Top",
     "settings.trayMenu.autostart": "Autostart",
+    "settings.trayMenu.priority": "Mark as Priority",
     "settings.trayMenu.quit": "Quit",
     "common.reset": "Reset",
   };
@@ -48,6 +49,7 @@ describe("TrayMenuCustomizer", () => {
     ]);
     mockTrayGetMenuConfig.mockResolvedValue({
       items: ["show_hide", "settings", "quit"],
+      priorityItems: ["settings"],
     });
     mockTraySetMenuConfig.mockResolvedValue(undefined);
     mockTrayResetMenuConfig.mockResolvedValue(undefined);
@@ -127,6 +129,7 @@ describe("TrayMenuCustomizer", () => {
     mockTrayResetMenuConfig.mockResolvedValue(undefined);
     mockTrayGetMenuConfig.mockResolvedValue({
       items: ["show_hide", "settings", "quit"],
+      priorityItems: [],
     });
 
     await act(async () => {

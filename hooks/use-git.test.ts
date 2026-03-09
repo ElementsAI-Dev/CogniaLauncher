@@ -340,7 +340,7 @@ describe('useGit', () => {
     const { result } = renderHook(() => useGit());
     await act(async () => { await result.current.setRepoPath('/repo'); });
     await act(async () => {
-      await result.current.push('origin', 'main', undefined, true);
+      await result.current.push('origin', 'main', undefined, true, undefined, true);
     });
     expect(tauri.gitPush).toHaveBeenCalledWith('/repo', 'origin', 'main', undefined, true, undefined);
   });
@@ -443,7 +443,7 @@ describe('useGit', () => {
     const { result } = renderHook(() => useGit());
     await act(async () => { await result.current.setRepoPath('/repo'); });
     await act(async () => {
-      await result.current.resetHead('hard', 'HEAD~1');
+      await result.current.resetHead('hard', 'HEAD~1', true);
     });
     expect(tauri.gitReset).toHaveBeenCalledWith('/repo', 'hard', 'HEAD~1');
     expect(tauri.gitGetStatus).toHaveBeenCalled();
@@ -557,10 +557,64 @@ describe('useGit', () => {
     const { result } = renderHook(() => useGit());
     await act(async () => { await result.current.setRepoPath('/repo'); });
     await act(async () => {
-      await result.current.cleanUntracked(true);
+      await result.current.cleanUntracked(true, true);
     });
     expect(tauri.gitClean).toHaveBeenCalledWith('/repo', true);
     expect(tauri.gitGetStatus).toHaveBeenCalled();
+  });
+
+  it('blocks force push without explicit confirmation', async () => {
+    const { result } = renderHook(() => useGit());
+    await act(async () => { await result.current.setRepoPath('/repo'); });
+    let error: unknown;
+    await act(async () => {
+      try {
+        await result.current.push('origin', 'main', true, undefined, undefined);
+      } catch (e) {
+        error = e;
+      }
+    });
+    expect(String(error)).toContain('Force push rewrites remote history');
+    expect(tauri.gitPush).not.toHaveBeenCalled();
+    expect(result.current.lastActionResult).toMatchObject({
+      operation: 'push',
+      status: 'blocked',
+      guardrail: { level: 'warn' },
+      error: { category: 'precondition', recoverable: true },
+    });
+  });
+
+  it('stores cancelled result when clone is cancelled', async () => {
+    tauri.gitClone.mockRejectedValueOnce('[git:cancelled] git clone cancelled by user');
+    const { result } = renderHook(() => useGit());
+    let error: unknown;
+    await act(async () => {
+      try {
+        await result.current.cloneRepo('https://example.com/repo.git', '/dest');
+      } catch (e) {
+        error = e;
+      }
+    });
+    expect(String(error)).toContain('git clone cancelled by user');
+    expect(result.current.lastActionResult).toMatchObject({
+      operation: 'clone',
+      status: 'cancelled',
+      error: { category: 'cancelled', recoverable: true },
+    });
+  });
+
+  it('refreshByScopes deduplicates repeated refresh scopes', async () => {
+    const { result } = renderHook(() => useGit());
+    await act(async () => { await result.current.setRepoPath('/repo'); });
+    tauri.gitGetStatus.mockClear();
+    tauri.gitGetLog.mockClear();
+
+    await act(async () => {
+      await result.current.refreshByScopes(['status', 'status', 'log']);
+    });
+
+    expect(tauri.gitGetStatus).toHaveBeenCalledTimes(1);
+    expect(tauri.gitGetLog).toHaveBeenCalledTimes(1);
   });
 
   // ===== NEW: Config value operations =====

@@ -71,13 +71,22 @@ Closes #42
 
 1. Fork the repository and create a feature branch
 2. Develop on the branch, keep commits atomic
-3. Ensure `pnpm lint` and `pnpm test` pass
+3. Ensure `pnpm lint`, `pnpm test`, and `pnpm docs:validate` pass
 4. Backend changes must pass `cargo check`
 5. Submit a PR including:
    - Brief description of change scope and intent
    - Screenshots for UI changes
    - Validation steps
+   - Docs impact declaration (`docs updated` or `no docs impact` with reason)
 6. Wait for code review
+
+---
+
+## Documentation Quality Policy
+
+- Follow the baseline in [Documentation Quality & Sync](docs-quality.md).
+- Keep required EN/ZH core pages in sync for user and developer guidance.
+- For user-facing or workflow changes, update docs in the same PR or provide an explicit no-doc-impact justification.
 
 ---
 

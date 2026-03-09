@@ -77,6 +77,16 @@ describe("LogToolbar", () => {
     expect(screen.getByPlaceholderText("Search logs...")).toBeInTheDocument();
   });
 
+  it("exposes grouped primary controls with semantic search input", () => {
+    render(<LogToolbar />);
+    expect(
+      screen.getByRole("group", { name: "Primary log controls" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("searchbox", { name: /search logs/i }),
+    ).toBeInTheDocument();
+  });
+
   it("renders filter button", () => {
     render(<LogToolbar />);
     expect(screen.getByRole("button", { name: /filter/i })).toBeInTheDocument();
@@ -90,6 +100,17 @@ describe("LogToolbar", () => {
   it("renders export button", () => {
     render(<LogToolbar />);
     expect(screen.getByRole("button", { name: /export/i })).toBeInTheDocument();
+  });
+
+  it("renders semantic toolbar sections", async () => {
+    const user = userEvent.setup();
+    render(<LogToolbar showQueryScanLimit />);
+
+    expect(screen.getByTestId("log-toolbar-shell")).toBeInTheDocument();
+    expect(screen.getByTestId("log-toolbar-primary-row")).toBeInTheDocument();
+
+    await user.click(screen.getByText("Advanced"));
+    expect(screen.getByTestId("log-toolbar-advanced-row")).toBeInTheDocument();
   });
 
   it("shows export format menu", async () => {
@@ -258,14 +279,18 @@ describe("LogToolbar", () => {
       const user = userEvent.setup();
       render(<LogToolbar showQueryScanLimit />);
       await user.click(screen.getByText("Advanced"));
-      expect(screen.getByLabelText(/max scan lines/i)).toBeInTheDocument();
+      expect(
+        screen.getByRole("spinbutton", { name: /max scan lines/i }),
+      ).toBeInTheDocument();
     });
 
     it("hides max scan lines input by default", async () => {
       const user = userEvent.setup();
       render(<LogToolbar />);
       await user.click(screen.getByText("Advanced"));
-      expect(screen.queryByLabelText(/max scan lines/i)).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("spinbutton", { name: /max scan lines/i }),
+      ).not.toBeInTheDocument();
     });
   });
 
@@ -335,7 +360,7 @@ describe("LogToolbar", () => {
       const user = userEvent.setup();
       render(<LogToolbar />);
       await user.click(screen.getByText("Advanced"));
-      const regexSwitch = screen.getByLabelText("Regex");
+      const regexSwitch = screen.getByRole("switch", { name: "Regex" });
       await user.click(regexSwitch);
       expect(useLogStore.getState().filter.useRegex).toBe(true);
     });
@@ -363,7 +388,9 @@ describe("LogToolbar", () => {
       const user = userEvent.setup();
       render(<LogToolbar showQueryScanLimit />);
       await user.click(screen.getByText("Advanced"));
-      const maxScanLinesInput = screen.getByLabelText(/max scan lines/i);
+      const maxScanLinesInput = screen.getByRole("spinbutton", {
+        name: /max scan lines/i,
+      });
       fireEvent.change(maxScanLinesInput, { target: { value: "5000" } });
       expect(useLogStore.getState().filter.maxScanLines).toBe(5000);
     });
@@ -372,7 +399,9 @@ describe("LogToolbar", () => {
       const user = userEvent.setup();
       render(<LogToolbar showQueryScanLimit />);
       await user.click(screen.getByText("Advanced"));
-      const maxScanLinesInput = screen.getByLabelText(/max scan lines/i);
+      const maxScanLinesInput = screen.getByRole("spinbutton", {
+        name: /max scan lines/i,
+      });
       fireEvent.change(maxScanLinesInput, { target: { value: "999999" } });
       expect(useLogStore.getState().filter.maxScanLines).toBe(200000);
     });
@@ -388,7 +417,9 @@ describe("LogToolbar", () => {
       });
       render(<LogToolbar showQueryScanLimit />);
       await user.click(screen.getByText("Advanced"));
-      const maxScanLinesInput = screen.getByLabelText(/max scan lines/i);
+      const maxScanLinesInput = screen.getByRole("spinbutton", {
+        name: /max scan lines/i,
+      });
       fireEvent.change(maxScanLinesInput, { target: { value: "" } });
       expect(useLogStore.getState().filter.maxScanLines).toBeNull();
     });
@@ -517,7 +548,7 @@ describe("LogToolbar", () => {
       });
 
       await user.click(screen.getByText("Advanced"));
-      await user.click(screen.getByLabelText("Regex"));
+      await user.click(screen.getByRole("switch", { name: "Regex" }));
       expect(onFilterChange).toHaveBeenCalledWith({ useRegex: true });
       expect(screen.queryByLabelText(/bookmarks only/i)).not.toBeInTheDocument();
     });

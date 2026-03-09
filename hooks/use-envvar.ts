@@ -382,6 +382,8 @@ export function useEnvVar() {
     setError(null);
     try {
       await tauri.envvarAddPathEntry(path, scope, position);
+      const pathEntries = await tauri.envvarGetPath(scope);
+      setState((s) => ({ ...s, pathEntries }));
       invalidateDetectionCache(scope);
       return true;
     } catch (err) {
@@ -397,6 +399,8 @@ export function useEnvVar() {
     setError(null);
     try {
       await tauri.envvarRemovePathEntry(path, scope);
+      const pathEntries = await tauri.envvarGetPath(scope);
+      setState((s) => ({ ...s, pathEntries }));
       invalidateDetectionCache(scope);
       return true;
     } catch (err) {
@@ -412,6 +416,8 @@ export function useEnvVar() {
     setError(null);
     try {
       await tauri.envvarReorderPath(entries, scope);
+      const pathEntries = await tauri.envvarGetPath(scope);
+      setState((s) => ({ ...s, pathEntries }));
       invalidateDetectionCache(scope);
       return true;
     } catch (err) {
@@ -509,9 +515,9 @@ export function useEnvVar() {
     setError(null);
     try {
       const removed = await tauri.envvarDeduplicatePath(scope);
-      if (removed > 0) {
-        invalidateDetectionCache(scope);
-      }
+      const pathEntries = await tauri.envvarGetPath(scope);
+      setState((s) => ({ ...s, pathEntries }));
+      invalidateDetectionCache(scope);
       return removed;
     } catch (err) {
       setError(formatError(err));

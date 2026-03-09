@@ -72,6 +72,9 @@ function LogEntryComponent({
   );
   const [expanded, setExpanded] = useState(false);
   const style = LEVEL_STYLES[entry.level];
+  const entrySemanticsLabel = entry.target
+    ? `${LEVEL_LABELS[entry.level]} ${entry.target}`
+    : LEVEL_LABELS[entry.level];
   const isExpandable =
     allowCollapse &&
     !singleLine &&
@@ -140,11 +143,12 @@ function LogEntryComponent({
   }, [entry.id, entry.message, highlightRegex, highlightText]);
 
   return (
-    <div
+    <article
       className={cn(
         "group relative flex items-start gap-3 px-4 py-2.5 font-mono text-xs transition-colors",
         "hover:bg-muted/40 dark:hover:bg-muted/20",
       )}
+      aria-label={entrySemanticsLabel}
     >
       {/* Level indicator bar */}
       <div
@@ -174,7 +178,7 @@ function LogEntryComponent({
 
       {/* Target/Source */}
       {showTarget && entry.target && (
-        <span className="shrink-0 text-muted-foreground/60 text-[11px] max-w-[140px] truncate pt-0.5">
+        <span className="shrink-0 text-muted-foreground/60 text-[11px] max-w-35 truncate pt-0.5">
           {entry.target}
         </span>
       )}
@@ -186,13 +190,13 @@ function LogEntryComponent({
           "flex-1 min-w-0 leading-relaxed text-foreground/90",
           singleLine
             ? "overflow-hidden text-ellipsis whitespace-nowrap"
-            : "break-words whitespace-pre-wrap",
+            : "wrap-break-word whitespace-pre-wrap",
           isExpandable &&
             !expanded &&
-            "max-h-[3.5rem] overflow-hidden relative",
+            "max-h-14 overflow-hidden relative",
           isExpandable &&
             !expanded &&
-            "after:absolute after:bottom-0 after:left-0 after:right-0 after:h-4 after:bg-gradient-to-t after:from-background/80 after:to-transparent",
+            "after:absolute after:bottom-0 after:left-0 after:right-0 after:h-4 after:bg-linear-to-t after:from-background/80 after:to-transparent",
         )}
       >
         {highlightNodes}
@@ -208,7 +212,11 @@ function LogEntryComponent({
       </div>
 
       {/* Action buttons */}
-      <div className="shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div
+        className="shrink-0 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+        role="group"
+        aria-label="Log entry actions"
+      >
         {isExpandable && (
           <Tooltip>
             <TooltipTrigger asChild>
@@ -262,7 +270,7 @@ function LogEntryComponent({
           <TooltipContent>{t("logs.copyEntry")}</TooltipContent>
         </Tooltip>
       </div>
-    </div>
+    </article>
   );
 }
 

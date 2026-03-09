@@ -124,6 +124,30 @@ describe('EnvVarPage', () => {
     });
   });
 
+  it('keeps variables/path/shell tab content available with stable shells', async () => {
+    mockIsTauri = true;
+    hookState.pathEntries = [
+      { path: '/usr/bin', exists: true, isDirectory: true, isDuplicate: false },
+    ] as never[];
+    hookState.shellProfiles = [
+      { shell: 'bash', configPath: '/home/user/.bashrc', exists: true, isCurrent: true },
+    ] as never[];
+    hookState.detectionState = 'showing-fresh';
+    mockReadShellProfile.mockResolvedValue('export PATH=/usr/bin');
+
+    render(<EnvVarPage />);
+
+    expect(screen.getByTestId('envvar-variables-content')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('tab', { name: 'envvar.tabs.pathEditor' }));
+    expect(screen.getByTestId('envvar-path-content')).toBeInTheDocument();
+    expect(screen.getByTestId('envvar-path-editor')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('tab', { name: 'envvar.tabs.shellProfiles' }));
+    expect(screen.getByTestId('envvar-shells-content')).toBeInTheDocument();
+    expect(screen.getByTestId('envvar-shell-profiles-panel')).toBeInTheDocument();
+  });
+
   it('renders compact conflict summary on narrow viewport', async () => {
     mockIsTauri = true;
     hookState.conflicts = [
@@ -367,5 +391,6 @@ describe('EnvVarPage', () => {
     await waitFor(() => {
       expect(screen.getByTestId('envvar-operation-error')).toBeInTheDocument();
     });
+    expect(screen.getByTestId('envvar-operation-error')).toHaveTextContent('envvar.actions.add');
   });
 });

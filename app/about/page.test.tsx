@@ -138,6 +138,22 @@ const mockMessages = {
       downloadProgress: "Download progress",
       releaseNotes: "Release Notes",
       systemInfo: "System Information",
+      insightsTitle: "Runtime Insights",
+      insightsDesc: "Support-facing runtime summary",
+      insightsRuntimeMode: "Runtime Mode",
+      insightsRuntimeDesktop: "Desktop",
+      insightsRuntimeWeb: "Web",
+      insightsProviderSummary: "Providers (installed/total)",
+      insightsLogsSize: "Log Size",
+      insightsCacheSize: "Cache Size",
+      insightsGroupProviders: "Providers",
+      insightsGroupLogs: "Logs",
+      insightsGroupCache: "Cache",
+      insightsStatusLoading: "Loading",
+      insightsStatusOk: "OK",
+      insightsStatusFailed: "Failed",
+      insightsStatusUnavailable: "Unavailable",
+      insightsRetry: "Refresh insights",
       operatingSystem: "Operating System",
       architecture: "Architecture",
       kernelVersion: "Kernel Version",
@@ -248,6 +264,105 @@ describe("About Page", () => {
         expect(screen.getByRole("main")).toBeInTheDocument();
       });
     });
+
+    it("renders deterministic section landmarks in summary-diagnostics-reference order", async () => {
+      const { container } = renderWithProviders(<AboutPage />);
+
+      await waitFor(() => {
+        const sections = Array.from(
+          container.querySelectorAll("main > section[aria-labelledby]"),
+        ).map((node) => node.getAttribute("aria-labelledby"));
+
+        expect(sections).toEqual([
+          "about-summary-heading",
+          "about-diagnostics-heading",
+          "about-reference-heading",
+        ]);
+      });
+    });
+
+    it("keeps diagnostics and actions content reachable in semantic order", async () => {
+      renderWithProviders(<AboutPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText("System Information")).toBeInTheDocument();
+        expect(screen.getByText("Runtime Insights")).toBeInTheDocument();
+        expect(screen.getByText("Build Dependencies")).toBeInTheDocument();
+        expect(screen.getByText("Actions")).toBeInTheDocument();
+      });
+    });
+
+    it("renders deterministic section grouping order", async () => {
+      renderWithProviders(<AboutPage />);
+
+      const summaryHeading = await screen.findByRole("heading", {
+        level: 2,
+        name: /version information/i,
+      });
+      const diagnosticsHeading = screen.getByRole("heading", {
+        level: 2,
+        name: /system information \/ runtime insights/i,
+      });
+      const referenceHeading = screen.getByRole("heading", {
+        level: 2,
+        name: /build dependencies \/ license & certificates \/ actions/i,
+      });
+
+      expect(
+        summaryHeading.compareDocumentPosition(diagnosticsHeading) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(
+        diagnosticsHeading.compareDocumentPosition(referenceHeading) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
+
+    it("keeps named section landmarks for summary, diagnostics, and references", async () => {
+      renderWithProviders(<AboutPage />);
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole("region", { name: /version information/i }),
+        ).toBeInTheDocument();
+        expect(
+          screen.getByRole("region", {
+            name: /system information \/ runtime insights/i,
+          }),
+        ).toBeInTheDocument();
+        expect(
+          screen.getByRole("region", {
+            name: /build dependencies \/ license & certificates \/ actions/i,
+          }),
+        ).toBeInTheDocument();
+      });
+    });
+
+    it("keeps responsive grid fallback classes for diagnostics and reference groups", async () => {
+      renderWithProviders(<AboutPage />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId("about-diagnostics-grid")).toHaveClass("grid-cols-1");
+        expect(screen.getByTestId("about-reference-grid")).toHaveClass("grid-cols-1");
+      });
+    });
+
+    it("shows insights section with graceful fallback in web mode", async () => {
+      const tauriMock = jest.requireMock("@/lib/tauri");
+      const platformMock = jest.requireMock("@/lib/platform");
+      tauriMock.isTauri.mockReturnValue(false);
+      platformMock.isTauri.mockReturnValue(false);
+
+      renderWithProviders(<AboutPage />);
+
+      await waitFor(() => {
+        expect(screen.getAllByText("Runtime Insights").length).toBeGreaterThanOrEqual(1);
+      });
+      expect(screen.getAllByText("Unavailable").length).toBeGreaterThanOrEqual(1);
+
+      tauriMock.isTauri.mockReturnValue(true);
+      platformMock.isTauri.mockReturnValue(true);
+    });
   });
 
   describe("Version Information", () => {
@@ -300,6 +415,14 @@ describe("About Page", () => {
 
       await waitFor(() => {
         expect(screen.getByText("Intel Core i7-12700K")).toBeInTheDocument();
+      });
+    });
+
+    it("displays runtime insights section", async () => {
+      renderWithProviders(<AboutPage />);
+
+      await waitFor(() => {
+        expect(screen.getAllByText("Runtime Insights").length).toBeGreaterThanOrEqual(1);
       });
     });
   });
@@ -406,7 +529,7 @@ describe("About Page", () => {
       renderWithProviders(<AboutPage />);
 
       await waitFor(() => {
-        expect(screen.getByText(/build dependencies/i)).toBeInTheDocument();
+        expect(screen.getAllByText(/build dependencies/i).length).toBeGreaterThanOrEqual(1);
       });
     });
 

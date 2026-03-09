@@ -16,7 +16,11 @@ pub type SharedSettings = Arc<RwLock<Settings>>;
 const INSTALLED_CACHE_TTL: i64 = 60;
 
 fn installed_lookup_key(provider: &str, name: &str) -> String {
-    format!("{}:{}", provider.to_ascii_lowercase(), name.to_ascii_lowercase())
+    format!(
+        "{}:{}",
+        provider.to_ascii_lowercase(),
+        name.to_ascii_lowercase()
+    )
 }
 
 fn compare_versions(left: &str, right: &str) -> Option<Ordering> {
@@ -54,7 +58,10 @@ fn matches_metadata_filters(
         let Some(actual_version) = latest_version else {
             return false;
         };
-        if matches!(compare_versions(actual_version, min_version), Some(Ordering::Less)) {
+        if matches!(
+            compare_versions(actual_version, min_version),
+            Some(Ordering::Less)
+        ) {
             return false;
         }
     }
@@ -63,7 +70,10 @@ fn matches_metadata_filters(
         let Some(actual_version) = latest_version else {
             return false;
         };
-        if matches!(compare_versions(actual_version, max_version), Some(Ordering::Greater)) {
+        if matches!(
+            compare_versions(actual_version, max_version),
+            Some(Ordering::Greater)
+        ) {
             return false;
         }
     }
@@ -103,10 +113,8 @@ async fn get_installed_set(
                     .await
                 {
                     for pkg in installed {
-                        installed_set.insert(
-                            installed_lookup_key(&pkg.provider, &pkg.name),
-                            pkg.version,
-                        );
+                        installed_set
+                            .insert(installed_lookup_key(&pkg.provider, &pkg.name), pkg.version);
                     }
                 }
             }
@@ -170,11 +178,7 @@ fn has_newer_version(current: &str, latest: &str) -> bool {
     }
 }
 
-fn matches_filters(
-    filters: Option<&SearchFilters>,
-    is_installed: bool,
-    has_update: bool,
-) -> bool {
+fn matches_filters(filters: Option<&SearchFilters>, is_installed: bool, has_update: bool) -> bool {
     if let Some(filters) = filters {
         if filters.installed_only.unwrap_or(false) && !is_installed {
             return false;
@@ -259,8 +263,10 @@ pub async fn advanced_search(
 
                     // Check if installed
                     let is_installed = installed_set.contains_key(&installed_key);
-                    let has_update = match (installed_set.get(&installed_key), pkg.latest_version.as_ref())
-                    {
+                    let has_update = match (
+                        installed_set.get(&installed_key),
+                        pkg.latest_version.as_ref(),
+                    ) {
                         (Some(current), Some(latest)) => has_newer_version(current, latest),
                         _ => false,
                     };

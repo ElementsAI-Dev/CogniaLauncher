@@ -89,6 +89,30 @@ function normalizeTools(value: unknown): ToolboxMarketplaceListing['tools'] {
     }));
 }
 
+function normalizeMarketplaceSource(
+  listing: Record<string, unknown>,
+): ToolboxMarketplaceListing['source'] {
+  const source = (
+    listing.source !== null && typeof listing.source === 'object'
+      ? listing.source
+      : {}
+  ) as Record<string, unknown>;
+
+  return {
+    type: 'store',
+    storeId:
+      typeof source.storeId === 'string'
+        ? source.storeId
+        : `store.${typeof listing.id === 'string' ? listing.id : 'unknown'}`,
+    pluginDir: typeof source.pluginDir === 'string' ? source.pluginDir : '',
+    artifact: typeof source.artifact === 'string' ? source.artifact : 'plugin.wasm',
+    checksumSha256: typeof source.checksumSha256 === 'string' ? source.checksumSha256 : '',
+    downloadUrl: normalizeOptionalText(source.downloadUrl),
+    mirrorUrls: normalizeStringArray(source.mirrorUrls),
+    sizeBytes: normalizeNonNegativeNumber(source.sizeBytes),
+  };
+}
+
 export function normalizeMarketplaceCatalog(raw: unknown): ToolboxMarketplaceCatalog {
   const input = (raw ?? {}) as Record<string, unknown>;
   const rawListings = Array.isArray(input.listings) ? input.listings : [];
@@ -118,25 +142,7 @@ export function normalizeMarketplaceCatalog(raw: unknown): ToolboxMarketplaceCat
           typeof listing.minimumHostVersion === 'string' ? listing.minimumHostVersion : null,
         toolContractVersion:
           typeof listing.toolContractVersion === 'string' ? listing.toolContractVersion : null,
-        source: {
-          type: 'store',
-          storeId:
-            typeof (listing.source as Record<string, unknown> | undefined)?.storeId === 'string'
-              ? ((listing.source as Record<string, unknown>).storeId as string)
-              : `store.${typeof listing.id === 'string' ? listing.id : 'unknown'}`,
-          pluginDir:
-            typeof (listing.source as Record<string, unknown> | undefined)?.pluginDir === 'string'
-              ? ((listing.source as Record<string, unknown>).pluginDir as string)
-              : '',
-          artifact:
-            typeof (listing.source as Record<string, unknown> | undefined)?.artifact === 'string'
-              ? ((listing.source as Record<string, unknown>).artifact as string)
-              : 'plugin.wasm',
-          checksumSha256:
-            typeof (listing.source as Record<string, unknown> | undefined)?.checksumSha256 === 'string'
-              ? ((listing.source as Record<string, unknown>).checksumSha256 as string)
-              : '',
-        },
+        source: normalizeMarketplaceSource(listing),
         permissions: normalizeStringArray(listing.permissions),
         capabilities: normalizeStringArray(listing.capabilities),
         tools: normalizeTools(listing.tools),
@@ -243,12 +249,14 @@ export function filterMarketplaceListings(
       const leftUpdated = left.updatedAt ? Date.parse(left.updatedAt) : 0;
       const rightUpdated = right.updatedAt ? Date.parse(right.updatedAt) : 0;
       if (leftUpdated !== rightUpdated) return rightUpdated - leftUpdated;
-      return left.name.localeCompare(right.name);
+      const nameOrder = left.name.localeCompare(right.name);
+      return nameOrder !== 0 ? nameOrder : left.id.localeCompare(right.id);
     }
 
     const leftCount = left.installCount ?? -1;
     const rightCount = right.installCount ?? -1;
     if (leftCount !== rightCount) return rightCount - leftCount;
-    return left.name.localeCompare(right.name);
+    const nameOrder = left.name.localeCompare(right.name);
+    return nameOrder !== 0 ? nameOrder : left.id.localeCompare(right.id);
   });
 }

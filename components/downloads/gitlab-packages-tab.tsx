@@ -8,7 +8,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Label } from "@/components/ui/label";
-import { cn, formatBytes } from "@/lib/utils";
+import { formatBytes } from "@/lib/utils";
+import { selectableCheckboxRowClass, SelectableCardButton } from "./selectable-list-patterns";
 import type { GitLabPackageInfo, GitLabPackageFileInfo } from "@/types/gitlab";
 
 interface GitLabPackagesTabProps {
@@ -83,7 +84,7 @@ export function GitLabPackagesTab({
         </Button>
       </div>
 
-      <ScrollArea className="h-[140px] border rounded-md">
+      <ScrollArea className="h-35 border rounded-md">
         {packages.length === 0 ? (
           <div className="p-4 text-center text-muted-foreground">
             {t("downloads.gitlab.noPackages")}
@@ -91,15 +92,9 @@ export function GitLabPackagesTab({
         ) : (
           <div className="p-2 space-y-1">
             {packages.map((pkg) => (
-              <button
-                type="button"
+              <SelectableCardButton
                 key={pkg.id}
-                className={cn(
-                  "w-full text-left p-2 rounded-md border transition-colors",
-                  selectedPackageId === pkg.id
-                    ? "bg-primary/10 border-primary"
-                    : "hover:bg-muted border-transparent",
-                )}
+                selected={selectedPackageId === pkg.id}
                 onClick={() => onSelectPackage(pkg.id)}
               >
                 <div className="flex items-center justify-between gap-2">
@@ -113,14 +108,14 @@ export function GitLabPackagesTab({
                 <div className="text-xs text-muted-foreground mt-1">
                   v{pkg.version}
                 </div>
-              </button>
+              </SelectableCardButton>
             ))}
           </div>
         )}
       </ScrollArea>
 
       <Label>{t("downloads.gitlab.packageFiles")}</Label>
-      <ScrollArea className="h-[160px] border rounded-md">
+      <ScrollArea className="h-40 border rounded-md">
         {packageFilesLoading ? (
           <div className="p-4 space-y-2">
             {[1, 2, 3].map((i) => (
@@ -142,12 +137,9 @@ export function GitLabPackagesTab({
               return (
                 <label
                   key={file.id}
-                  className={cn(
-                    "flex items-center gap-2 p-2 rounded-md border",
-                    checked
-                      ? "bg-primary/10 border-primary"
-                      : "border-transparent hover:bg-muted",
-                  )}
+                  className={selectableCheckboxRowClass({
+                    selected: checked,
+                  })}
                 >
                   <Checkbox
                     checked={checked}

@@ -13,13 +13,20 @@ import { isTauri } from '@/lib/tauri';
 import { SHELL_OPTIONS } from '@/lib/constants/onboarding';
 import type { ShellInitStepProps, ShellType } from '@/types/onboarding';
 
-export function ShellInitStep({ t, mode = 'quick' }: ShellInitStepProps) {
+export function ShellInitStep({ t, mode = 'quick', onSummaryChange }: ShellInitStepProps) {
   const [selectedShell, setSelectedShell] = useState<ShellType>(isWindowsOS() ? 'powershell' : 'bash');
   const [copied, setCopied] = useState(false);
   const [pathConfigured, setPathConfigured] = useState<boolean | null>(null);
   const [autoSetupLoading, setAutoSetupLoading] = useState(false);
 
   const currentShell = SHELL_OPTIONS.find((s) => s.value === selectedShell)!;
+
+  useEffect(() => {
+    onSummaryChange?.({
+      shellType: selectedShell,
+      shellConfigured: pathConfigured,
+    });
+  }, [onSummaryChange, pathConfigured, selectedShell]);
 
   useEffect(() => {
     if (!isTauri()) return;

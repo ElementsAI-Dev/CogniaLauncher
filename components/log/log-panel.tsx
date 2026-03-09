@@ -9,6 +9,7 @@ import {
   EmptyTitle,
   EmptyDescription,
 } from "@/components/ui/empty";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { LogEntry } from "./log-entry";
 import { LogToolbar } from "./log-toolbar";
 import { useLogStore } from "@/lib/stores/log";
@@ -105,49 +106,57 @@ export function LogPanel({
   }, [filteredLogs.length, autoScroll, totalHeight]);
 
   return (
-    <div
+    <Card
       className={cn(
-        "flex flex-col overflow-hidden rounded-lg border bg-card",
+        "flex min-h-0 flex-1 flex-col overflow-hidden gap-0 rounded-lg py-0",
         className,
       )}
       style={{ maxHeight }}
     >
-      {showToolbar && <LogToolbar />}
-
-      {filteredLogs.length === 0 ? (
-        <div className="flex-1 min-h-0">
-          <EmptyState />
-        </div>
-      ) : (
-        <div
-          ref={scrollRef}
-          data-testid="log-panel-scroll-container"
-          className="flex-1 min-h-0 overflow-auto"
-          onScroll={handleScroll}
-        >
-          <div style={{ height: totalHeight, position: "relative" }}>
-            {visibleLogs.map((entry, i) => (
-              <div
-                key={entry.id}
-                data-testid="log-panel-virtual-row"
-                style={{
-                  position: "absolute",
-                  top: (startIdx + i) * ROW_HEIGHT,
-                  height: ROW_HEIGHT,
-                  width: "100%",
-                }}
-              >
-                <LogEntry
-                  entry={entry}
-                  highlightText={filter.search}
-                  highlightRegex={Boolean(filter.useRegex)}
-                  singleLine
-                />
-              </div>
-            ))}
-          </div>
-        </div>
+      {showToolbar && (
+        <CardHeader className="shrink-0 border-b p-0">
+          <LogToolbar />
+        </CardHeader>
       )}
-    </div>
+
+      <CardContent className="min-h-0 flex-1 p-0">
+        {filteredLogs.length === 0 ? (
+          <section role="status" aria-live="polite" className="flex h-full min-h-0">
+            <EmptyState />
+          </section>
+        ) : (
+          <div
+            role="region"
+            aria-label="Realtime log entries"
+            ref={scrollRef}
+            data-testid="log-panel-scroll-container"
+            className="flex-1 min-h-0 overflow-auto"
+            onScroll={handleScroll}
+          >
+            <div style={{ height: totalHeight, position: "relative" }}>
+              {visibleLogs.map((entry, i) => (
+                <div
+                  key={entry.id}
+                  data-testid="log-panel-virtual-row"
+                  style={{
+                    position: "absolute",
+                    top: (startIdx + i) * ROW_HEIGHT,
+                    height: ROW_HEIGHT,
+                    width: "100%",
+                  }}
+                >
+                  <LogEntry
+                    entry={entry}
+                    highlightText={filter.search}
+                    highlightRegex={Boolean(filter.useRegex)}
+                    singleLine
+                  />
+                </div>
+                ))}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

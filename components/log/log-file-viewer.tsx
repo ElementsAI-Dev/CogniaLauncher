@@ -35,7 +35,7 @@ const PAGE_SIZE = 200;
 const FOLLOW_MODE_MAX_SCAN_LINES = 20_000;
 const VIRTUAL_ESTIMATED_ROW_HEIGHT = 56;
 const VIRTUAL_OVERSCAN_PX = 640;
-const SCROLL_ADJUSTMENT_RETRIES = 4;
+const SCROLL_ADJUSTMENT_RETRIES = 6;
 const DEFAULT_HISTORICAL_FILTER: LogFilter = {
   levels: ["info", "warn", "error"],
   search: "",
@@ -580,7 +580,6 @@ export function LogFileViewer({
     pendingScrollIntentRef.current = nextIntent;
   }, [
     entries,
-    following,
     getScrollViewport,
     open,
     rowOffsets,
@@ -643,9 +642,12 @@ export function LogFileViewer({
 
         <div
           data-testid="log-file-viewer-body"
-          className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden px-4 py-3 sm:px-6 sm:py-4"
+          className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border bg-card"
         >
-          <section aria-labelledby={controlsRegionId} className="shrink-0">
+          <section
+            aria-labelledby={controlsRegionId}
+            className="shrink-0 border-b p-3 sm:p-4"
+          >
             <h2 id={controlsRegionId} className="sr-only">
               {t("logs.filter")}
             </h2>
@@ -670,31 +672,37 @@ export function LogFileViewer({
             role="status"
             aria-live="polite"
             aria-atomic="true"
-            className="shrink-0 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground"
+            className="shrink-0 border-b px-3 py-2 text-xs text-muted-foreground sm:px-4"
           >
-            <span>{t("logs.fileEntries", { count: totalCount })}</span>
-            <div className="flex flex-wrap items-center gap-1">
-              {selectedLogPath && (
-                <Button variant="ghost" size="sm" onClick={handleCopyFilePath}>
-                  {t("logs.copyFilePath")}
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span>{t("logs.fileEntries", { count: totalCount })}</span>
+              <div
+                className="flex flex-wrap items-center gap-1"
+                role="group"
+                aria-label="Historical viewer actions"
+              >
+                {selectedLogPath && (
+                  <Button variant="ghost" size="sm" onClick={handleCopyFilePath}>
+                    {t("logs.copyFilePath")}
+                  </Button>
+                )}
+                {isCurrentSession && (
+                  <Toggle
+                    pressed={following}
+                    onPressedChange={handleFollowingChange}
+                    size="sm"
+                    className="h-8 gap-1 px-2"
+                    aria-label={t("logs.follow")}
+                  >
+                    <ArrowDownToLine className={cn("h-3 w-3", following && "text-primary")} />
+                    <span className="text-xs">{t("logs.follow")}</span>
+                  </Toggle>
+                )}
+                <Button variant="ghost" size="sm" onClick={handleRefresh}>
+                  <RefreshCw className="mr-2 h-3 w-3" />
+                  {t("common.refresh")}
                 </Button>
-              )}
-              {isCurrentSession && (
-                <Toggle
-                  pressed={following}
-                  onPressedChange={handleFollowingChange}
-                  size="sm"
-                  className="h-8 gap-1 px-2"
-                  aria-label={t("logs.follow")}
-                >
-                  <ArrowDownToLine className={cn("h-3 w-3", following && "text-primary")} />
-                  <span className="text-xs">{t("logs.follow")}</span>
-                </Toggle>
-              )}
-              <Button variant="ghost" size="sm" onClick={handleRefresh}>
-                <RefreshCw className="mr-2 h-3 w-3" />
-                {t("common.refresh")}
-              </Button>
+              </div>
             </div>
           </section>
 
@@ -702,7 +710,7 @@ export function LogFileViewer({
             role="region"
             aria-label={primaryContentRegionLabel}
             aria-describedby={contentRegionDescriptionId}
-            className="min-h-0 flex-1"
+            className="min-h-0 flex-1 p-3 sm:p-4"
           >
             <p id={contentRegionDescriptionId} className="sr-only">
               {fileName ? `${fileName}. ` : ""}
@@ -711,7 +719,7 @@ export function LogFileViewer({
             <ScrollArea
               ref={scrollAreaRef}
               data-testid="log-file-viewer-scroll-area"
-              className="h-full min-h-0 flex-1 rounded-lg border"
+              className="h-full min-h-0 flex-1 rounded-md"
             >
               {loading && entries.length === 0 ? (
                 <div className="divide-y divide-border/50 p-1">

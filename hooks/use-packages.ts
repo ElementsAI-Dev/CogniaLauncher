@@ -325,6 +325,8 @@ export function usePackages() {
 
         if (event.domain === 'package_data') {
           usePackageStore.getState().setLastScanTimestamp(null);
+          providerCacheTimestampRef.current = null;
+          void fetchProviders(true);
           void fetchInstalledPackages(undefined, true);
         }
       }, 500),

@@ -24,9 +24,7 @@ on:
   push:
     branches: [main, develop]
   pull_request:
-    branches: [main]
-  release:
-    types: [created]
+    branches: [main, develop]
 ```
 
 ---
@@ -36,6 +34,7 @@ on:
 ### Code Quality & Security
 
 - Run `pnpm lint`
+- Run `pnpm docs:validate:warn` (rollout stage, non-blocking)
 - Check dependency security vulnerabilities
 - TypeScript type checking
 
@@ -106,6 +105,7 @@ Run locally before submitting a PR:
 # Frontend
 pnpm lint
 pnpm test
+pnpm docs:validate
 
 # Backend
 cargo check
@@ -122,7 +122,8 @@ pnpm build
 ### Common CI Failure Causes
 
 1. **Lint failure** — Run `pnpm lint --fix` to fix
-2. **Test failure** — Check if `pnpm test` passes locally
-3. **Type error** — Ensure `pnpm build` succeeds locally
-4. **Cargo compilation failure** — Run `cargo check` to check
-5. **Dependency mismatch** — Delete `node_modules` and re-run `pnpm install`
+2. **Docs validation warning/failure** — Run `pnpm docs:validate` and fix parity/link/command issues
+3. **Test failure** — Check if `pnpm test` passes locally
+4. **Type error** — Ensure `pnpm build` succeeds locally
+5. **Cargo compilation failure** — Run `cargo check` to check
+6. **Dependency mismatch** — Delete `node_modules` and re-run `pnpm install`

@@ -8,6 +8,7 @@ import { PageHeader } from '@/components/layout/page-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useLocale } from '@/components/providers/locale-provider';
 import { useToolboxMarketplace } from '@/hooks/use-toolbox-marketplace';
 import { MarketplaceListingCard } from '@/components/toolbox/marketplace-listing-card';
@@ -53,7 +54,11 @@ export default function ToolboxMarketplacePage() {
     syncState,
     lastSyncedAt,
     lastError,
+    lastActionError,
+    lastActionProgress,
+    clearMarketplaceActionError,
     refreshCatalog,
+    getListingById,
     installListing,
     updateListing,
   } = useToolboxMarketplace(filters);
@@ -82,6 +87,22 @@ export default function ToolboxMarketplacePage() {
     && filters.installState === 'all'
     && filters.sort === 'relevance'
   );
+
+  const retryLastAction = async () => {
+    if (!lastActionError?.retryable) return;
+    const listing = getListingById(lastActionError.listingId);
+    if (!listing) {
+      await refreshCatalog();
+      return;
+    }
+
+    if (lastActionError.kind === 'marketplace-install') {
+      await installListing(listing);
+      return;
+    }
+
+    await updateListing(listing);
+  };
 
   return (
     <div className="space-y-6 p-4 md:p-6">
@@ -171,6 +192,54 @@ export default function ToolboxMarketplacePage() {
         </CardContent>
       </Card>
 
+      {lastActionError && (
+        <Alert>
+          <AlertTitle>{t('common.error')}</AlertTitle>
+          <AlertDescription>
+            <div className="space-y-3">
+              <p className="text-sm">{lastActionError.message}</p>
+              <div className="flex flex-wrap gap-2">
+                {lastActionError.retryable && (
+                  <Button size="sm" variant="outline" onClick={() => void retryLastAction()}>
+                    {t('common.retry')}
+                  </Button>
+                )}
+                {(lastActionError.category === 'source_unavailable'
+                  || lastActionError.category === 'install_execution_failed') && (
+                  <Button size="sm" variant="outline" onClick={() => void refreshCatalog()}>
+                    {t('toolbox.marketplace.refresh')}
+                  </Button>
+                )}
+                {(lastActionError.category === 'compatibility_blocked'
+                  || lastActionError.category === 'validation_failed') && (
+                  <Button size="sm" variant="outline" asChild>
+                    <Link href={`/toolbox/market/${encodeURIComponent(lastActionError.listingId)}`}>
+                      {t('toolbox.marketplace.details')}
+                    </Link>
+                  </Button>
+                )}
+                <Button size="sm" variant="ghost" onClick={clearMarketplaceActionError}>
+                  {t('common.close')}
+                </Button>
+              </div>
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {lastActionProgress && lastActionProgress.phase !== 'completed' && (
+        <Alert>
+          <AlertTitle>{t('toolbox.marketplace.title')}</AlertTitle>
+          <AlertDescription>
+            {`Action: ${lastActionProgress.kind} · Phase: ${lastActionProgress.phase}${
+              lastActionProgress.downloadTaskId
+                ? ` · Task: ${lastActionProgress.downloadTaskId}`
+                : ''
+            }`}
+          </AlertDescription>
+        </Alert>
+      )}
+
       {showCollections && featuredListings.length > 0 && (
         <Card>
           <CardHeader className="pb-3">
@@ -182,6 +251,7 @@ export default function ToolboxMarketplacePage() {
               <MarketplaceListingCard
                 key={`featured-${listing.id}`}
                 listing={listing}
+                busy={lastActionProgress?.listingId === listing.id && lastActionProgress.phase !== 'completed' && lastActionProgress.phase !== 'failed'}
                 onInstall={installListing}
                 onUpdate={updateListing}
               />
@@ -201,6 +271,7 @@ export default function ToolboxMarketplacePage() {
               <MarketplaceListingCard
                 key={`recent-${listing.id}`}
                 listing={listing}
+                busy={lastActionProgress?.listingId === listing.id && lastActionProgress.phase !== 'completed' && lastActionProgress.phase !== 'failed'}
                 onInstall={installListing}
                 onUpdate={updateListing}
               />
@@ -221,6 +292,7 @@ export default function ToolboxMarketplacePage() {
             <MarketplaceListingCard
               key={listing.id}
               listing={listing}
+              busy={lastActionProgress?.listingId === listing.id && lastActionProgress.phase !== 'completed' && lastActionProgress.phase !== 'failed'}
               onInstall={installListing}
               onUpdate={updateListing}
             />

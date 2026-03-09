@@ -74,7 +74,7 @@ export function SettingsNav({
         </h2>
       </div>
       <ScrollArea className="h-[calc(100vh-12rem)]">
-        <div className="space-y-1 pr-2">
+        <div className="flex flex-col gap-1 pr-2">
           {sortedSections.map((section) => {
             const Icon = SECTION_ICONS[section.icon] || Settings2;
             const isActive = activeSection === section.id;
@@ -88,6 +88,7 @@ export function SettingsNav({
             return (
               <Button
                 key={section.id}
+                type="button"
                 ref={isActive ? activeItemRef : undefined}
                 variant={isActive ? "secondary" : "ghost"}
                 size="sm"
@@ -128,17 +129,17 @@ export function SettingsNav({
       </ScrollArea>
 
       {/* Keyboard navigation hint */}
-      <div className="mt-4 border-t pt-3 px-2">
+      <div className="mt-4 border-t px-2 pt-3">
         <p className="text-xs text-muted-foreground">
           {t("settings.nav.hint")}
         </p>
-        <div className="mt-2 flex flex-wrap gap-1 items-center">
+        <div className="mt-2 flex items-center gap-1">
           <Kbd>/</Kbd>
           <span className="text-xs text-muted-foreground">
             {t("settings.nav.hintSearch")}
           </span>
         </div>
-        <div className="mt-1 flex flex-wrap gap-1 items-center">
+        <div className="mt-1 flex items-center gap-1">
           <Kbd>↑↓</Kbd>
           <span className="text-xs text-muted-foreground">
             {t("settings.nav.hintNavigate")}

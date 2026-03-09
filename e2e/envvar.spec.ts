@@ -15,6 +15,10 @@ test.describe('Env Variables Page', () => {
     await expect(appPage.locator('main, [class*="p-4"]')).toBeVisible();
   });
 
+  test('does not render desktop envvar tabs in web mode', async ({ appPage }) => {
+    await expect(appPage.getByTestId('envvar-tabs')).toHaveCount(0);
+  });
+
   test('page does not crash without Tauri backend', async ({ appPage }) => {
     // The page should render without errors in web mode
     const body = appPage.locator('body');

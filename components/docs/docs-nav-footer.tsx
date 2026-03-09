@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
+import { Separator } from '@/components/ui/separator';
 import { useLocale } from '@/components/providers/locale-provider';
 import { ChevronLeft, ChevronRight, Pencil } from 'lucide-react';
 import { slugToArray } from '@/lib/docs/navigation';
@@ -31,22 +32,20 @@ export function DocsNavFooter({ prev, next, slug }: DocsNavFooterProps) {
     : undefined;
 
   return (
-    <div className="mt-12 border-t pt-6 space-y-4">
+    <footer className="mt-12 space-y-4" aria-label="Page navigation">
+      <Separator />
       {editUrl && (
         <div className="flex justify-end">
-          <a
-            href={editUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <Pencil className="h-3 w-3" />
-            {t('docs.editOnGithub')}
-          </a>
+          <Button variant="ghost" size="sm" asChild className="h-8 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground">
+            <a href={editUrl} target="_blank" rel="noopener noreferrer">
+              <Pencil className="h-3 w-3" />
+              {t('docs.editOnGithub')}
+            </a>
+          </Button>
         </div>
       )}
       {(prev || next) && (
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+        <nav className="flex flex-col items-stretch justify-between gap-3 sm:flex-row sm:items-center" aria-label="Adjacent pages">
           {prev ? (
             <Button variant="outline" asChild className="gap-2 max-w-full sm:max-w-[48%] justify-start">
               <Link href={getHref(prev.slug)}>
@@ -58,7 +57,7 @@ export function DocsNavFooter({ prev, next, slug }: DocsNavFooterProps) {
               </Link>
             </Button>
           ) : (
-            <div />
+            <span className="hidden sm:block" aria-hidden="true" />
           )}
           {next ? (
             <Button variant="outline" asChild className="gap-2 max-w-full sm:max-w-[48%] justify-end sm:ml-auto">
@@ -71,10 +70,10 @@ export function DocsNavFooter({ prev, next, slug }: DocsNavFooterProps) {
               </Link>
             </Button>
           ) : (
-            <div />
+            <span className="hidden sm:block" aria-hidden="true" />
           )}
-        </div>
+        </nav>
       )}
-    </div>
+    </footer>
   );
 }

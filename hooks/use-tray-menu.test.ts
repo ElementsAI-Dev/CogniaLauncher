@@ -20,7 +20,7 @@ describe('useTrayMenu', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockTrayGetAvailableMenuItems.mockResolvedValue(['show', 'settings', 'quit']);
-    mockTrayGetMenuConfig.mockResolvedValue({ items: ['show', 'quit'] });
+    mockTrayGetMenuConfig.mockResolvedValue({ items: ['show', 'quit'], priorityItems: [] });
     mockTraySetMenuConfig.mockResolvedValue(undefined);
     mockTrayResetMenuConfig.mockResolvedValue(undefined);
   });
@@ -49,4 +49,3 @@ describe('useTrayMenu', () => {
     expect(result.current.enabledItems).toContain('quit');
   });
 });
-

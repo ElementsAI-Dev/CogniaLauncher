@@ -317,9 +317,8 @@ impl MsvcProvider {
             }
         }
 
-        Err(best_issue.unwrap_or_else(|| {
-            MsvcDetectionIssue::new(MsvcDetectionReason::NoVcInstance)
-        }))
+        Err(best_issue
+            .unwrap_or_else(|| MsvcDetectionIssue::new(MsvcDetectionReason::NoVcInstance)))
     }
 
     async fn resolve_usable_toolchain(&self) -> Result<ResolvedMsvcToolchain, MsvcDetectionIssue> {
@@ -529,8 +528,7 @@ impl Provider for MsvcProvider {
                         display_name: Some(validated.instance.display_name.clone()),
                         description: Some(format!(
                             "Visual Studio {} ({})",
-                            validated.instance.installation_version,
-                            validated.instance.instance_id
+                            validated.instance.installation_version, validated.instance.instance_id
                         )),
                         homepage: Some(
                             "https://visualstudio.microsoft.com/vs/features/cplusplus/".to_string(),
@@ -768,8 +766,14 @@ mod tests {
             "vswhere-missing"
         );
         assert_eq!(MsvcDetectionReason::NoVcInstance.code(), "no-vc-instance");
-        assert_eq!(MsvcDetectionReason::ToolsetMissing.code(), "toolset-missing");
-        assert_eq!(MsvcDetectionReason::CompilerMissing.code(), "compiler-missing");
+        assert_eq!(
+            MsvcDetectionReason::ToolsetMissing.code(),
+            "toolset-missing"
+        );
+        assert_eq!(
+            MsvcDetectionReason::CompilerMissing.code(),
+            "compiler-missing"
+        );
         assert_eq!(
             MsvcDetectionReason::CompilerNotRunnable.code(),
             "compiler-not-runnable"

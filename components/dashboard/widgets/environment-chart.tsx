@@ -23,6 +23,11 @@ import {
 } from "@/lib/theme/chart-utils";
 import type { EnvironmentInfo } from "@/lib/tauri";
 import { WidgetEmptyCard } from "@/components/dashboard/widgets/widget-empty-card";
+import {
+  DashboardMetricGrid,
+  DashboardMetricItem,
+  DashboardSectionLabel,
+} from "@/components/dashboard/dashboard-primitives";
 
 interface EnvironmentChartProps {
   environments: EnvironmentInfo[];
@@ -72,6 +77,9 @@ export function EnvironmentChart({ environments, className }: EnvironmentChartPr
     );
   }
 
+  const availableCount = environments.filter((env) => env.available).length;
+  const unavailableCount = environments.length - availableCount;
+
   return (
     <Card className={className}>
       <CardHeader className="pb-3">
@@ -83,11 +91,22 @@ export function EnvironmentChart({ environments, className }: EnvironmentChartPr
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        <DashboardMetricGrid>
+          <DashboardMetricItem
+            label={t("dashboard.widgets.available")}
+            value={availableCount}
+          />
+          <DashboardMetricItem
+            label={t("dashboard.widgets.unavailable")}
+            value={unavailableCount}
+          />
+        </DashboardMetricGrid>
+
         {/* Status Pie Chart */}
         <div>
-          <p className="text-xs font-medium text-muted-foreground mb-2">
+          <DashboardSectionLabel>
             {t("dashboard.widgets.statusDistribution")}
-          </p>
+          </DashboardSectionLabel>
           <ChartContainer config={chartConfig} className="h-[160px] w-full aspect-auto">
             <PieChart>
               <defs>
@@ -135,9 +154,9 @@ export function EnvironmentChart({ environments, className }: EnvironmentChartPr
         {/* Versions Bar Chart */}
         {barData.length > 0 && (
           <div>
-            <p className="text-xs font-medium text-muted-foreground mb-2">
+            <DashboardSectionLabel>
               {t("dashboard.widgets.installedVersions")}
-            </p>
+            </DashboardSectionLabel>
             <ChartContainer config={chartConfig} className="h-[160px] w-full aspect-auto">
               <BarChart data={barData} layout="vertical" margin={{ left: 0, right: 12 }}>
                 <defs>

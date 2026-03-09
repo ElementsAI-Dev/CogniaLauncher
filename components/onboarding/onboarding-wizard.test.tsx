@@ -98,7 +98,13 @@ jest.mock('./steps/shell-init-step', () => ({
 }));
 
 jest.mock('./steps/complete-step', () => ({
-  CompleteStep: ({ mode }: { mode: 'quick' | 'detailed' }) => <div>Complete Step {mode}</div>,
+  CompleteStep: ({
+    mode,
+    actions,
+  }: {
+    mode: 'quick' | 'detailed';
+    actions: Array<{ id: string }>;
+  }) => <div>Complete Step {mode} ({actions.length})</div>,
 }));
 
 const quickStepIds = [
@@ -132,10 +138,23 @@ const defaultProps = {
   isFirstStep: true,
   isLastStep: false,
   tourCompleted: false,
+  sessionSummary: {
+    mode: null,
+    locale: null,
+    theme: null,
+    mirrorPreset: 'default',
+    detectedCount: 0,
+    primaryEnvironment: null,
+    manageableEnvironments: [],
+    shellType: null,
+    shellConfigured: null,
+  },
+  nextActions: [],
   onNext: jest.fn(),
   onPrev: jest.fn(),
   onGoTo: jest.fn(),
   onSelectMode: jest.fn(),
+  onUpdateSummary: jest.fn(),
   onComplete: jest.fn(),
   onSkip: jest.fn(),
   onStartTour: jest.fn(),
@@ -216,7 +235,7 @@ describe('OnboardingWizard', () => {
       />,
     );
 
-    expect(screen.getByText('Complete Step quick')).toBeInTheDocument();
+    expect(screen.getByText('Complete Step quick (0)')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Finish' })).toBeInTheDocument();
   });
 
@@ -328,6 +347,6 @@ describe('OnboardingWizard', () => {
 
     await userEvent.keyboard('{Escape}');
 
-    expect(defaultProps.onSkip).toHaveBeenCalled();
+    expect(defaultProps.onClose).toHaveBeenCalled();
   });
 });

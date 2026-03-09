@@ -1,6 +1,6 @@
 "use client";
 
-import { GripVertical, RotateCcw } from "lucide-react";
+import { GripVertical, RotateCcw, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -34,9 +34,11 @@ export function TrayMenuCustomizer({ t }: TrayMenuCustomizerProps) {
   const {
     allItems,
     enabledItems,
+    priorityItems,
     loading,
     dragIndex,
     handleToggle,
+    handlePriorityToggle,
     handleDragStart,
     handleDragOver,
     handleDragEnd,
@@ -52,7 +54,7 @@ export function TrayMenuCustomizer({ t }: TrayMenuCustomizerProps) {
   }
 
   return (
-    <div className="px-1 py-3 space-y-3">
+    <div className="flex flex-col gap-3 px-1 py-3">
       <div className="flex items-center justify-between">
         <div id="tray-menu-customize">
           <Label className="text-sm">{t("settings.trayMenuCustomize")}</Label>
@@ -71,11 +73,12 @@ export function TrayMenuCustomizer({ t }: TrayMenuCustomizerProps) {
         </Button>
       </div>
 
-      <div className="space-y-0.5 rounded-md border">
+      <div className="flex flex-col gap-0.5 rounded-md border">
         {allItems.map((id) => {
           const isEnabled = enabledItems.includes(id);
           const enabledIndex = enabledItems.indexOf(id);
           const isQuit = id === "quit";
+          const isPriority = priorityItems.includes(id);
 
           return (
             <div
@@ -102,6 +105,21 @@ export function TrayMenuCustomizer({ t }: TrayMenuCustomizerProps) {
                 )}
               />
               <span className="flex-1">{getMenuItemLabel(id, t)}</span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => handlePriorityToggle(id, !isPriority)}
+                disabled={!isEnabled || isQuit}
+                className={cn(
+                  "size-6",
+                  isPriority && "text-amber-500",
+                )}
+                aria-label={t("settings.trayMenu.priority")}
+                title={t("settings.trayMenu.priority")}
+              >
+                <Star className={cn("h-3.5 w-3.5", isPriority && "fill-current")} />
+              </Button>
               <Switch
                 checked={isEnabled}
                 onCheckedChange={(checked) => handleToggle(id, checked)}

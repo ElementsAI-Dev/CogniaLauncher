@@ -24,6 +24,8 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
+import { Card, CardContent } from '@/components/ui/card';
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import {
   Terminal,
   GitBranch,
@@ -144,9 +146,16 @@ export function TerminalTemplatePicker({
 
           <ScrollArea className="max-h-[55vh] pr-2">
             {grouped.length === 0 ? (
-              <p className="py-8 text-center text-sm text-muted-foreground">
-                {t('terminal.noTemplates')}
-              </p>
+              <Empty className="border-none py-8">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <Terminal />
+                  </EmptyMedia>
+                  <EmptyTitle className="text-sm font-normal text-muted-foreground">
+                    {t('terminal.noTemplates')}
+                  </EmptyTitle>
+                </EmptyHeader>
+              </Empty>
             ) : (
               <div className="space-y-5">
                 {grouped.map(({ category, items }) => (
@@ -156,37 +165,47 @@ export function TerminalTemplatePicker({
                     </h4>
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                       {items.map((tpl) => (
-                        <button
+                        <Card
                           key={tpl.id}
-                          type="button"
-                          className="group flex items-start gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          role="button"
+                          tabIndex={0}
+                          className="group cursor-pointer border transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                           onClick={() => handleSelect(tpl)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault();
+                              handleSelect(tpl);
+                            }
+                          }}
                         >
-                          <div className="mt-0.5 shrink-0 text-muted-foreground group-hover:text-accent-foreground">
-                            {ICON_MAP[tpl.icon] ?? <Terminal className="h-5 w-5" />}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-medium truncate">{tpl.name}</span>
-                              <Badge variant={getCategoryVariant(tpl.category)} className="shrink-0 text-[10px] px-1.5 py-0">
-                                {getCategoryLabel(tpl.category, t)}
-                              </Badge>
+                          <CardContent className="flex items-start gap-3 p-3">
+                            <div className="mt-0.5 shrink-0 text-muted-foreground group-hover:text-accent-foreground">
+                              {ICON_MAP[tpl.icon] ?? <Terminal className="h-5 w-5" />}
                             </div>
-                            <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">
-                              {tpl.description}
-                            </p>
-                          </div>
-                          {!tpl.isBuiltin && onDelete && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 shrink-0 opacity-0 group-hover:opacity-100 text-destructive"
-                              onClick={(e) => { e.stopPropagation(); setDeleteId(tpl.id); }}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          )}
-                        </button>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-medium truncate">{tpl.name}</span>
+                                <Badge variant={getCategoryVariant(tpl.category)} className="shrink-0 text-[10px] px-1.5 py-0">
+                                  {getCategoryLabel(tpl.category, t)}
+                                </Badge>
+                              </div>
+                              <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">
+                                {tpl.description}
+                              </p>
+                            </div>
+                            {!tpl.isBuiltin && onDelete && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 shrink-0 opacity-0 group-hover:opacity-100 text-destructive"
+                                aria-label={t('terminal.deleteTemplate')}
+                                onClick={(e) => { e.stopPropagation(); setDeleteId(tpl.id); }}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            )}
+                          </CardContent>
+                        </Card>
                       ))}
                     </div>
                     <Separator className="mt-4" />

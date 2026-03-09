@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -20,6 +20,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import { Blocks, Puzzle, RefreshCw, ExternalLink, Palette, FileText, Sparkles, Plug, Terminal, FolderOpen, HardDrive, Trash2, ScanSearch } from 'lucide-react';
 import type { ShellInfo, ShellType, ShellFrameworkInfo, ShellPlugin, FrameworkCategory, FrameworkCacheInfo } from '@/types/tauri';
 import { useLocale } from '@/components/providers/locale-provider';
@@ -101,11 +102,9 @@ export function TerminalShellFramework({
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="text-base">{t('terminal.frameworks')}</CardTitle>
-            <CardDescription>{t('terminal.frameworksDesc')}</CardDescription>
-          </div>
+        <CardTitle className="text-base">{t('terminal.frameworks')}</CardTitle>
+        <CardDescription>{t('terminal.frameworksDesc')}</CardDescription>
+        <CardAction>
           <Button
             size="sm"
             variant="outline"
@@ -115,7 +114,7 @@ export function TerminalShellFramework({
             <RefreshCw className={`h-3.5 w-3.5 mr-1 ${detecting ? 'animate-spin' : ''}`} />
             {t('terminal.detectFrameworks')}
           </Button>
-        </div>
+        </CardAction>
       </CardHeader>
       <CardContent className="space-y-4">
         {loading || detecting ? (
@@ -131,9 +130,16 @@ export function TerminalShellFramework({
             ))}
           </div>
         ) : frameworks.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-4 text-center">
-            {t('terminal.noFrameworks')}
-          </p>
+          <Empty className="border-dashed py-6">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <Blocks />
+              </EmptyMedia>
+              <EmptyTitle className="text-sm font-normal text-muted-foreground">
+                {t('terminal.noFrameworks')}
+              </EmptyTitle>
+            </EmptyHeader>
+          </Empty>
         ) : (
           <div className="space-y-3">
             {frameworks.map((fw) => {
@@ -142,11 +148,20 @@ export function TerminalShellFramework({
               return (
                 <div
                   key={`${fw.name}-${fw.shellType}`}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`${t('terminal.frameworks')}: ${fw.name}`}
                   className={cn(
                     'flex items-center justify-between rounded-lg border p-3 cursor-pointer transition-colors hover:bg-accent/50',
                     selectedFramework?.name === fw.name && selectedFramework?.shellType === fw.shellType && 'border-primary bg-accent/30'
                   )}
                   onClick={() => handleSelectFramework(fw)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      void handleSelectFramework(fw);
+                    }
+                  }}
                 >
                   <div className="flex items-center gap-3">
                     <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary/10">
@@ -274,9 +289,16 @@ export function TerminalShellFramework({
         )}
 
         {selectedFramework && plugins.length === 0 && (
-          <p className="text-sm text-muted-foreground text-center py-2">
-            {t('terminal.noPlugins')}
-          </p>
+          <Empty className="border-dashed py-4">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <Puzzle />
+              </EmptyMedia>
+              <EmptyTitle className="text-sm font-normal text-muted-foreground">
+                {t('terminal.noPlugins')}
+              </EmptyTitle>
+            </EmptyHeader>
+          </Empty>
         )}
 
         {/* Framework Cache Section */}
@@ -307,9 +329,16 @@ export function TerminalShellFramework({
                 <Skeleton className="h-10 w-full" />
               </div>
             ) : !frameworkCacheStats || frameworkCacheStats.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-3">
-                {t('terminal.noCacheData')}
-              </p>
+              <Empty className="border-none py-3">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <HardDrive />
+                  </EmptyMedia>
+                  <EmptyTitle className="text-sm font-normal text-muted-foreground">
+                    {t('terminal.noCacheData')}
+                  </EmptyTitle>
+                </EmptyHeader>
+              </Empty>
             ) : (
               <div className="rounded-md border divide-y">
                 {frameworkCacheStats.map((cache) => (

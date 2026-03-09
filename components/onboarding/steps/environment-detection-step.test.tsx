@@ -193,4 +193,37 @@ describe("EnvironmentDetectionStep", () => {
       expect(screen.getByText("Use source and scope details to plan your next step.")).toBeInTheDocument();
     });
   });
+
+  it("emits detection summary updates when results are available", async () => {
+    mockIsTauri.mockReturnValue(true);
+    mockEnvList.mockResolvedValue([]);
+    mockEnvListProviders.mockResolvedValue([]);
+    mockBuildOnboardingDetections.mockReturnValue([
+      {
+        name: "Node.js",
+        envType: "node",
+        version: "20.10.0",
+        available: true,
+        scope: "system" as const,
+      },
+    ]);
+    const onDetectionSummaryChange = jest.fn();
+
+    render(
+      <EnvironmentDetectionStep
+        t={mockT}
+        onDetectionSummaryChange={onDetectionSummaryChange}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(onDetectionSummaryChange).toHaveBeenCalledWith(
+        expect.objectContaining({
+          detectedCount: 1,
+          primaryEnvironment: "node",
+          manageableEnvironments: ["node"],
+        }),
+      );
+    });
+  });
 });

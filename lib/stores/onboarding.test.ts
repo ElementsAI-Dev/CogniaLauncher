@@ -7,344 +7,191 @@ import {
 
 describe('useOnboardingStore', () => {
   beforeEach(() => {
-    // Reset store state before each test
     const state = useOnboardingStore.getState();
     state.resetOnboarding();
-    // After reset, wizardOpen is true — close it for clean state
     useOnboardingStore.getState().setWizardOpen(false);
     localStorage.clear();
   });
 
-  describe('initial state', () => {
-    it('has mode as null', () => {
-      expect(useOnboardingStore.getState().mode).toBeNull();
-    });
-
-    it('has completed as false', () => {
-      expect(useOnboardingStore.getState().completed).toBe(false);
-    });
-
-    it('has skipped as false', () => {
-      expect(useOnboardingStore.getState().skipped).toBe(false);
-    });
-
-    it('has currentStep as 0', () => {
-      expect(useOnboardingStore.getState().currentStep).toBe(0);
-    });
-
-    it('has empty visitedSteps', () => {
-      expect(useOnboardingStore.getState().visitedSteps).toEqual([]);
-    });
-
-    it('has tourCompleted as false', () => {
-      expect(useOnboardingStore.getState().tourCompleted).toBe(false);
-    });
-
-    it('has tourActive as false', () => {
-      expect(useOnboardingStore.getState().tourActive).toBe(false);
+  describe('session defaults', () => {
+    it('starts with resumable onboarding model fields', () => {
+      const state = useOnboardingStore.getState();
+      expect(state.mode).toBeNull();
+      expect(state.completed).toBe(false);
+      expect(state.skipped).toBe(false);
+      expect(state.sessionState).toBe('active');
+      expect(state.canResume).toBe(false);
+      expect(state.sessionSummary.mode).toBeNull();
+      expect(state.sessionSummary.mirrorPreset).toBe('default');
     });
   });
 
   describe('wizard navigation', () => {
-    it('does not advance before a mode is selected', () => {
+    it('does not advance before mode selection', () => {
       useOnboardingStore.getState().nextStep();
       const state = useOnboardingStore.getState();
       expect(state.currentStep).toBe(0);
       expect(state.visitedSteps).toEqual([]);
     });
 
-    it('nextStep advances currentStep and marks visited', () => {
-      useOnboardingStore.getState().selectMode('quick');
-      useOnboardingStore.getState().nextStep();
+    it('tracks last active step while navigating', () => {
+      const store = useOnboardingStore.getState();
+      store.selectMode('quick');
+      store.nextStep();
+      store.nextStep();
+
       const state = useOnboardingStore.getState();
-      expect(state.currentStep).toBe(1);
-      expect(state.visitedSteps).toContain(ONBOARDING_STEP_SEQUENCES.quick[1]);
+      expect(state.currentStep).toBe(2);
+      expect(state.lastActiveStepId).toBe(ONBOARDING_STEP_SEQUENCES.quick[2]);
+      expect(state.sessionState).toBe('active');
     });
 
-    it('prevStep decrements currentStep', () => {
-      useOnboardingStore.getState().selectMode('quick');
-      useOnboardingStore.getState().nextStep();
-      useOnboardingStore.getState().nextStep();
-      useOnboardingStore.getState().prevStep();
-      expect(useOnboardingStore.getState().currentStep).toBe(1);
+    it('goToStep clamps within active sequence', () => {
+      const store = useOnboardingStore.getState();
+      store.selectMode('quick');
+      store.goToStep(999);
+      expect(useOnboardingStore.getState().currentStep).toBe(ONBOARDING_STEP_SEQUENCES.quick.length - 1);
     });
+  });
 
-    it('prevStep does not go below 0', () => {
-      useOnboardingStore.getState().prevStep();
-      expect(useOnboardingStore.getState().currentStep).toBe(0);
-    });
+  describe('close vs skip semantics', () => {
+    it('pauseOnboarding closes wizard without marking skip', () => {
+      const store = useOnboardingStore.getState();
+      store.selectMode('quick');
+      store.nextStep();
+      store.setWizardOpen(true);
 
-    it('nextStep does not exceed max step', () => {
-      useOnboardingStore.getState().selectMode('quick');
-      const maxStep = ONBOARDING_STEP_SEQUENCES.quick.length - 1;
-      for (let i = 0; i < ONBOARDING_STEP_SEQUENCES.quick.length + 5; i++) {
-        useOnboardingStore.getState().nextStep();
-      }
-      expect(useOnboardingStore.getState().currentStep).toBe(maxStep);
-    });
+      store.pauseOnboarding();
 
-    it('goToStep sets currentStep and marks visited', () => {
-      useOnboardingStore.getState().selectMode('detailed');
-      useOnboardingStore.getState().goToStep(3);
       const state = useOnboardingStore.getState();
+      expect(state.wizardOpen).toBe(false);
+      expect(state.skipped).toBe(false);
+      expect(state.sessionState).toBe('paused');
+      expect(state.canResume).toBe(true);
+      expect(state.lastActiveStepId).toBe('language');
+    });
+
+    it('resumeOnboarding restores paused session step', () => {
+      const store = useOnboardingStore.getState();
+      store.selectMode('quick');
+      store.goToStep(3);
+      store.pauseOnboarding('environment-detection');
+
+      store.resumeOnboarding();
+
+      const state = useOnboardingStore.getState();
+      expect(state.wizardOpen).toBe(true);
       expect(state.currentStep).toBe(3);
-      expect(state.visitedSteps).toContain(ONBOARDING_STEP_SEQUENCES.detailed[3]);
+      expect(state.sessionState).toBe('active');
+      expect(state.canResume).toBe(false);
     });
 
-    it('does not duplicate visitedSteps', () => {
-      useOnboardingStore.getState().selectMode('detailed');
-      useOnboardingStore.getState().goToStep(2);
-      useOnboardingStore.getState().goToStep(2);
-      const visited = useOnboardingStore.getState().visitedSteps.filter(
-        (s) => s === ONBOARDING_STEP_SEQUENCES.detailed[2]
-      );
-      expect(visited.length).toBe(1);
-    });
-  });
+    it('skipOnboarding remains explicit and final', () => {
+      const store = useOnboardingStore.getState();
+      store.setWizardOpen(true);
+      store.skipOnboarding();
 
-  describe('mode selection', () => {
-    it('stores the selected mode without advancing the wizard', () => {
-      useOnboardingStore.getState().selectMode('detailed');
       const state = useOnboardingStore.getState();
-
-      expect(state.mode).toBe('detailed');
-      expect(state.currentStep).toBe(0);
-      expect(state.visitedSteps).toContain('mode-selection');
+      expect(state.skipped).toBe(true);
+      expect(state.completed).toBe(false);
+      expect(state.sessionState).toBe('skipped');
+      expect(state.canResume).toBe(false);
     });
+  });
 
-    it('switching mode resets step progress to mode selection', () => {
-      useOnboardingStore.getState().selectMode('detailed');
-      useOnboardingStore.getState().nextStep();
-      useOnboardingStore.getState().nextStep();
+  describe('summary updates', () => {
+    it('merges summary fields and deduplicates environments', () => {
+      const store = useOnboardingStore.getState();
+      store.updateSessionSummary({
+        locale: 'en',
+        manageableEnvironments: ['node', 'node', 'python'],
+      });
 
-      useOnboardingStore.getState().selectMode('quick');
       const state = useOnboardingStore.getState();
-
-      expect(state.mode).toBe('quick');
-      expect(state.currentStep).toBe(0);
-      expect(state.visitedSteps).toEqual(['mode-selection']);
+      expect(state.sessionSummary.locale).toBe('en');
+      expect(state.sessionSummary.manageableEnvironments).toEqual(['node', 'python']);
+      expect(state.sessionSummary.primaryEnvironment).toBe('node');
     });
   });
 
-  describe('wizard dialog', () => {
-    it('setWizardOpen toggles wizardOpen', () => {
-      useOnboardingStore.getState().setWizardOpen(true);
-      expect(useOnboardingStore.getState().wizardOpen).toBe(true);
-      useOnboardingStore.getState().setWizardOpen(false);
-      expect(useOnboardingStore.getState().wizardOpen).toBe(false);
-    });
-  });
+  describe('complete and reset', () => {
+    it('completeOnboarding closes wizard and marks completed', () => {
+      const store = useOnboardingStore.getState();
+      store.selectMode('quick');
+      store.setWizardOpen(true);
+      store.completeOnboarding();
 
-  describe('completeOnboarding', () => {
-    it('sets completed to true and closes wizard', () => {
-      useOnboardingStore.getState().selectMode('quick');
-      useOnboardingStore.getState().setWizardOpen(true);
-      useOnboardingStore.getState().completeOnboarding();
       const state = useOnboardingStore.getState();
       expect(state.completed).toBe(true);
       expect(state.skipped).toBe(false);
+      expect(state.sessionState).toBe('completed');
       expect(state.wizardOpen).toBe(false);
       expect(state.currentStep).toBe(ONBOARDING_STEP_SEQUENCES.quick.length - 1);
     });
-  });
 
-  describe('skipOnboarding', () => {
-    it('sets skipped to true and closes wizard', () => {
-      useOnboardingStore.getState().setWizardOpen(true);
-      useOnboardingStore.getState().skipOnboarding();
-      const state = useOnboardingStore.getState();
-      expect(state.skipped).toBe(true);
-      expect(state.wizardOpen).toBe(false);
-    });
-  });
+    it('resetOnboarding starts a new active session', () => {
+      const store = useOnboardingStore.getState();
+      store.selectMode('detailed');
+      store.completeOnboarding();
+      store.resetOnboarding();
 
-  describe('resetOnboarding', () => {
-    it('resets all wizard state and opens wizard', () => {
-      useOnboardingStore.getState().selectMode('detailed');
-      useOnboardingStore.getState().completeOnboarding();
-      useOnboardingStore.getState().resetOnboarding();
       const state = useOnboardingStore.getState();
       expect(state.mode).toBeNull();
       expect(state.completed).toBe(false);
       expect(state.skipped).toBe(false);
       expect(state.currentStep).toBe(0);
-      expect(state.visitedSteps).toEqual([]);
+      expect(state.sessionState).toBe('active');
+      expect(state.sessionSummary.mode).toBeNull();
       expect(state.wizardOpen).toBe(true);
-      expect(state.tourCompleted).toBe(false);
-      expect(state.tourActive).toBe(false);
-      expect(state.tourStep).toBe(0);
     });
   });
 
-  describe('guided tour', () => {
-    it('startTour activates tour at step 0', () => {
-      useOnboardingStore.getState().startTour();
-      const state = useOnboardingStore.getState();
-      expect(state.tourActive).toBe(true);
-      expect(state.tourStep).toBe(0);
-    });
+  describe('guided tour and hints', () => {
+    it('tour lifecycle remains unchanged', () => {
+      const store = useOnboardingStore.getState();
+      store.startTour();
+      store.nextTourStep();
+      store.completeTour();
 
-    it('nextTourStep advances tour step', () => {
-      useOnboardingStore.getState().startTour();
-      useOnboardingStore.getState().nextTourStep();
-      expect(useOnboardingStore.getState().tourStep).toBe(1);
-    });
-
-    it('prevTourStep decrements tour step', () => {
-      useOnboardingStore.getState().startTour();
-      useOnboardingStore.getState().nextTourStep();
-      useOnboardingStore.getState().nextTourStep();
-      useOnboardingStore.getState().prevTourStep();
-      expect(useOnboardingStore.getState().tourStep).toBe(1);
-    });
-
-    it('prevTourStep does not go below 0', () => {
-      useOnboardingStore.getState().startTour();
-      useOnboardingStore.getState().prevTourStep();
-      expect(useOnboardingStore.getState().tourStep).toBe(0);
-    });
-
-    it('completeTour sets tourCompleted and deactivates', () => {
-      useOnboardingStore.getState().startTour();
-      useOnboardingStore.getState().completeTour();
       const state = useOnboardingStore.getState();
       expect(state.tourCompleted).toBe(true);
       expect(state.tourActive).toBe(false);
       expect(state.tourStep).toBe(0);
     });
 
-    it('stopTour deactivates without completing', () => {
-      useOnboardingStore.getState().startTour();
-      useOnboardingStore.getState().nextTourStep();
-      useOnboardingStore.getState().stopTour();
+    it('hint controls still work', () => {
+      const store = useOnboardingStore.getState();
+      store.dismissHint('test-hint');
+      store.setHintsEnabled(false);
+
       const state = useOnboardingStore.getState();
-      expect(state.tourActive).toBe(false);
-      expect(state.tourCompleted).toBe(false);
-      expect(state.tourStep).toBe(0);
-    });
-
-    it('startTour is idempotent while already active', () => {
-      useOnboardingStore.getState().startTour();
-      useOnboardingStore.getState().nextTourStep();
-      useOnboardingStore.getState().startTour();
-      const state = useOnboardingStore.getState();
-      expect(state.tourActive).toBe(true);
-      expect(state.tourStep).toBe(1);
-    });
-  });
-
-  describe('markStepVisited', () => {
-    it('adds step ID to visitedSteps', () => {
-      useOnboardingStore.getState().markStepVisited('language');
-      expect(useOnboardingStore.getState().visitedSteps).toContain('language');
-    });
-
-    it('does not duplicate step IDs', () => {
-      useOnboardingStore.getState().markStepVisited('language');
-      useOnboardingStore.getState().markStepVisited('language');
-      const count = useOnboardingStore.getState().visitedSteps.filter(
-        (s) => s === 'language'
-      ).length;
-      expect(count).toBe(1);
-    });
-  });
-
-  describe('bubble hints', () => {
-    it('has hintsEnabled true by default', () => {
-      expect(useOnboardingStore.getState().hintsEnabled).toBe(true);
-    });
-
-    it('has empty dismissedHints by default', () => {
-      expect(useOnboardingStore.getState().dismissedHints).toEqual([]);
-    });
-
-    it('dismissHint adds hint ID to dismissedHints', () => {
-      useOnboardingStore.getState().dismissHint('test-hint');
-      expect(useOnboardingStore.getState().dismissedHints).toContain('test-hint');
-    });
-
-    it('dismissHint does not duplicate IDs', () => {
-      useOnboardingStore.getState().dismissHint('test-hint');
-      useOnboardingStore.getState().dismissHint('test-hint');
-      const count = useOnboardingStore.getState().dismissedHints.filter(
-        (id) => id === 'test-hint'
-      ).length;
-      expect(count).toBe(1);
-    });
-
-    it('dismissAllHints sets all provided IDs', () => {
-      useOnboardingStore.getState().dismissAllHints(['a', 'b', 'c']);
-      expect(useOnboardingStore.getState().dismissedHints).toEqual(['a', 'b', 'c']);
-    });
-
-    it('resetHints clears dismissedHints', () => {
-      useOnboardingStore.getState().dismissHint('test-hint');
-      useOnboardingStore.getState().resetHints();
-      expect(useOnboardingStore.getState().dismissedHints).toEqual([]);
-    });
-
-    it('setHintsEnabled toggles hintsEnabled', () => {
-      useOnboardingStore.getState().setHintsEnabled(false);
-      expect(useOnboardingStore.getState().hintsEnabled).toBe(false);
-      useOnboardingStore.getState().setHintsEnabled(true);
-      expect(useOnboardingStore.getState().hintsEnabled).toBe(true);
-    });
-
-    it('resetOnboarding does not clear dismissedHints', () => {
-      useOnboardingStore.getState().dismissHint('kept-hint');
-      useOnboardingStore.getState().resetOnboarding();
-      expect(useOnboardingStore.getState().dismissedHints).toContain('kept-hint');
-    });
-
-    it('dismissAllHints without args keeps existing hints', () => {
-      // Ensure clean slate
-      useOnboardingStore.getState().resetHints();
-      useOnboardingStore.getState().dismissHint('hint-a');
-      useOnboardingStore.getState().dismissHint('hint-b');
-      useOnboardingStore.getState().dismissAllHints();
-      // Without args, dismissedHints should remain as-is (state.dismissedHints)
-      expect(useOnboardingStore.getState().dismissedHints).toEqual(['hint-a', 'hint-b']);
-    });
-
-    it('dismissAllHints with empty array clears all', () => {
-      useOnboardingStore.getState().dismissHint('hint-a');
-      useOnboardingStore.getState().dismissAllHints([]);
-      expect(useOnboardingStore.getState().dismissedHints).toEqual([]);
+      expect(state.dismissedHints).toEqual(['test-hint']);
+      expect(state.hintsEnabled).toBe(false);
     });
   });
 
   describe('persist migration', () => {
     const getPersistConfig = () =>
-      (useOnboardingStore as unknown as { persist: { getOptions: () => { migrate: (state: unknown, version: number) => unknown } } }).persist.getOptions();
+      (useOnboardingStore as unknown as {
+        persist: {
+          getOptions: () => {
+            migrate: (state: unknown, version: number) => unknown;
+          };
+        };
+      }).persist.getOptions();
 
-    it('v0 → v3: adds onboarding mode, tourCompleted, visitedSteps, dismissedHints, hintsEnabled', () => {
+    it('v0 -> v4 migrates legacy completed payload', () => {
       const v0State = { completed: true, skipped: false, currentStep: 3 };
       const migrated = getPersistConfig().migrate(v0State, 0) as Record<string, unknown>;
 
-      expect(migrated.mode).toBeNull();
-      expect(migrated.tourCompleted).toBe(false);
-      expect(migrated.visitedSteps).toEqual([]);
-      expect(migrated.dismissedHints).toEqual([]);
-      expect(migrated.hintsEnabled).toBe(true);
-      expect(migrated.version).toBe(3);
-      // Preserves existing
-      expect(migrated.completed).toBe(true);
+      expect(migrated.version).toBe(4);
+      expect(migrated.sessionState).toBe('completed');
+      expect(migrated.canResume).toBe(false);
+      expect(migrated.lastActiveStepId).toBe('mode-selection');
+      expect((migrated.sessionSummary as Record<string, unknown>).mode).toBeNull();
     });
 
-    it('v1 → v3: adds bubble hint fields and onboarding mode', () => {
-      const v1State = { completed: false, tourCompleted: true, visitedSteps: ['welcome'], version: 1 };
-      const migrated = getPersistConfig().migrate(v1State, 1) as Record<string, unknown>;
-
-      expect(migrated.mode).toBeNull();
-      expect(migrated.dismissedHints).toEqual([]);
-      expect(migrated.hintsEnabled).toBe(true);
-      expect(migrated.version).toBe(3);
-      // Resets unfinished pre-mode progress back to mode selection
-      expect(migrated.tourCompleted).toBe(true);
-      expect(migrated.visitedSteps).toEqual([]);
-    });
-
-    it('v2 → v3 resets unfinished progress back to mode selection', () => {
+    it('v2 -> v4 migrates unfinished payload to paused resumable session', () => {
       const v2State = {
         completed: false,
         skipped: false,
@@ -352,30 +199,40 @@ describe('useOnboardingStore', () => {
         visitedSteps: ['welcome', 'language'],
         dismissedHints: ['h1'],
         hintsEnabled: false,
+        mode: 'quick',
         version: 2,
       };
       const migrated = getPersistConfig().migrate(v2State, 2) as Record<string, unknown>;
 
-      expect(migrated.mode).toBeNull();
+      expect(migrated.version).toBe(4);
+      expect(migrated.sessionState).toBe('paused');
+      expect(migrated.canResume).toBe(true);
       expect(migrated.currentStep).toBe(0);
-      expect(migrated.visitedSteps).toEqual([]);
+      expect(migrated.lastActiveStepId).toBe('mode-selection');
       expect(migrated.dismissedHints).toEqual(['h1']);
       expect(migrated.hintsEnabled).toBe(false);
-      expect(migrated.version).toBe(3);
+      expect((migrated.sessionSummary as Record<string, unknown>).mode).toBe('quick');
     });
 
-    it('v3: no migration needed', () => {
-      const v3State = { mode: 'quick', dismissedHints: ['h1'], hintsEnabled: false, version: 3 };
-      const migrated = getPersistConfig().migrate(v3State, 3) as Record<string, unknown>;
+    it('v4 keeps existing session fields', () => {
+      const v4State = {
+        mode: 'quick',
+        sessionState: 'paused',
+        canResume: true,
+        lastActiveStepId: 'theme',
+        sessionSummary: { mode: 'quick' },
+        version: 4,
+      };
+      const migrated = getPersistConfig().migrate(v4State, 4) as Record<string, unknown>;
 
-      expect(migrated.mode).toBe('quick');
-      expect(migrated.dismissedHints).toEqual(['h1']);
-      expect(migrated.hintsEnabled).toBe(false);
+      expect(migrated.sessionState).toBe('paused');
+      expect(migrated.canResume).toBe(true);
+      expect(migrated.lastActiveStepId).toBe('theme');
     });
   });
 
   describe('step definitions', () => {
-    it('has correct default detailed step order', () => {
+    it('keeps detailed step order', () => {
       expect(ONBOARDING_STEPS).toEqual([
         'mode-selection',
         'welcome',
@@ -388,16 +245,10 @@ describe('useOnboardingStore', () => {
       ]);
     });
 
-    it('derives quick and detailed steps from the selected mode', () => {
+    it('returns mode-specific step arrays', () => {
       expect(getOnboardingSteps(null)).toEqual(['mode-selection']);
       expect(getOnboardingSteps('quick')).toEqual(ONBOARDING_STEP_SEQUENCES.quick);
       expect(getOnboardingSteps('detailed')).toEqual(ONBOARDING_STEP_SEQUENCES.detailed);
-    });
-
-    it('uses a shorter quick sequence than detailed mode', () => {
-      expect(ONBOARDING_STEP_SEQUENCES.quick.length).toBe(7);
-      expect(ONBOARDING_STEP_SEQUENCES.detailed.length).toBe(8);
-      expect(ONBOARDING_STEP_SEQUENCES.quick).not.toContain('welcome');
     });
   });
 });

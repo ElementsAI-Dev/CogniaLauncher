@@ -526,9 +526,9 @@ fn migrate_legacy_marker_into_pending() -> Result<(), String> {
         fs::read_to_string(&marker).map_err(|e| format!("Failed to read crash marker: {e}"))?;
     let mut pending = read_pending_crashes()?;
     if let Some(record) = parse_legacy_crash_marker(&content) {
-        let duplicate = pending
-            .iter()
-            .any(|item| item.report_path == record.report_path && item.timestamp == record.timestamp);
+        let duplicate = pending.iter().any(|item| {
+            item.report_path == record.report_path && item.timestamp == record.timestamp
+        });
         if !duplicate {
             pending.push(record);
             write_pending_crashes(&pending)?;
@@ -1059,8 +1059,15 @@ mod tests {
             extra: None,
         };
 
-        let result = build_zip_bundle(&output, Some(&log_dir), Some(config), Some(&ctx), None, None)
-            .unwrap();
+        let result = build_zip_bundle(
+            &output,
+            Some(&log_dir),
+            Some(config),
+            Some(&ctx),
+            None,
+            None,
+        )
+        .unwrap();
 
         // system-info + config + error-context + environment + 2 logs = 6
         assert_eq!(result.file_count, 6);
@@ -1188,7 +1195,11 @@ mod tests {
                 timestamp: format!("2026-02-25T00:00:{i:02}Z"),
                 level: "info".into(),
                 target: "runtime".into(),
-                message: if i == 119 { "x".repeat(5000) } else { format!("m-{i}") },
+                message: if i == 119 {
+                    "x".repeat(5000)
+                } else {
+                    format!("m-{i}")
+                },
             });
         }
 

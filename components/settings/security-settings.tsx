@@ -19,7 +19,7 @@ export function SecuritySettings({
   const allowHttp = localConfig["security.allow_http"] === "true";
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-3">
         <SwitchSettingItem
           id="allow-http"
           label={t("settings.allowHttp")}

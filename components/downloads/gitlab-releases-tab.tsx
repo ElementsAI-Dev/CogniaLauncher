@@ -6,7 +6,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Calendar, FileArchive } from "lucide-react";
-import { cn } from "@/lib/utils";
+import {
+  SelectableCardButton,
+  selectableCheckboxRowClass,
+} from "./selectable-list-patterns";
 import type { GitLabReleaseInfo, GitLabAssetInfo } from "@/types/gitlab";
 
 interface GitLabReleasesTabProps {
@@ -32,7 +35,7 @@ export function GitLabReleasesTab({
 
   return (
     <>
-      <ScrollArea className="h-[200px] border rounded-md">
+      <ScrollArea className="h-50 border rounded-md">
         {releases.length === 0 ? (
           <div className="p-4 text-center text-muted-foreground">
             {t("downloads.gitlab.noReleases")}
@@ -40,14 +43,9 @@ export function GitLabReleasesTab({
         ) : (
           <div className="p-2 space-y-1">
             {releases.map((release) => (
-              <div
+              <SelectableCardButton
                 key={release.tagName}
-                className={cn(
-                  "p-3 rounded-md cursor-pointer transition-colors",
-                  selectedRelease === release.tagName
-                    ? "bg-primary/10 border border-primary"
-                    : "hover:bg-muted",
-                )}
+                selected={selectedRelease === release.tagName}
                 onClick={() => onSelectRelease(release.tagName)}
               >
                 <div className="flex items-center justify-between">
@@ -93,7 +91,7 @@ export function GitLabReleasesTab({
                       {release.description}
                     </p>
                   )}
-              </div>
+              </SelectableCardButton>
             ))}
           </div>
         )}
@@ -103,7 +101,7 @@ export function GitLabReleasesTab({
       {currentRelease && currentRelease.assets.length > 0 && (
         <div className="mt-3">
           <Label>{t("downloads.gitlab.selectAssets")}</Label>
-          <ScrollArea className="h-[140px] border rounded-md mt-2">
+          <ScrollArea className="h-35 border rounded-md mt-2">
             <div className="p-2 space-y-1">
               {currentRelease.assets.map((asset) => {
                 const isSelected = !!selectedAssets.find(
@@ -112,12 +110,9 @@ export function GitLabReleasesTab({
                 return (
                   <label
                     key={asset.id}
-                    className={cn(
-                      "flex items-center gap-2 p-2 rounded cursor-pointer transition-colors",
-                      isSelected
-                        ? "bg-primary/10 border border-primary"
-                        : "hover:bg-muted",
-                    )}
+                    className={selectableCheckboxRowClass({
+                      selected: isSelected,
+                    })}
                   >
                     <Checkbox
                       checked={isSelected}
@@ -126,7 +121,7 @@ export function GitLabReleasesTab({
                       }
                     />
                     <div className="flex items-center gap-2 flex-1 min-w-0">
-                      <FileArchive className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                      <FileArchive className="h-4 w-4 text-muted-foreground shrink-0" />
                       <span className="text-sm font-mono truncate">
                         {asset.name}
                       </span>

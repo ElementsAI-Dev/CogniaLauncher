@@ -2,8 +2,19 @@
 
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Input } from '@/components/ui/input';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  Command,
+  CommandEmpty,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
+import { Kbd } from '@/components/ui/kbd';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import { useLocale } from '@/components/providers/locale-provider';
 import { searchDocs, type DocSearchResult } from '@/lib/docs/search';
 import type { DocSearchEntry } from '@/lib/docs/content';
@@ -21,22 +32,9 @@ export function DocsSearch({ className, searchIndex }: DocsSearchProps) {
   const router = useRouter();
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
-  const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
 
   const results = useMemo(() => searchDocs(query, locale, searchIndex), [query, locale, searchIndex]);
-
-  // Close on outside click
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
 
   // Global keyboard shortcut: "/" or Ctrl/Cmd+K to focus search
   useEffect(() => {
@@ -46,12 +44,20 @@ export function DocsSearch({ className, searchIndex }: DocsSearchProps) {
 
       if ((e.key === 'k' && (e.metaKey || e.ctrlKey)) || (e.key === '/' && !isInput)) {
         e.preventDefault();
-        inputRef.current?.focus();
+        setOpen(true);
       }
     }
     document.addEventListener('keydown', handleGlobalKeyDown);
     return () => document.removeEventListener('keydown', handleGlobalKeyDown);
   }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const timer = window.setTimeout(() => {
+      inputRef.current?.focus();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [open]);
 
   const navigateToResult = useCallback((result: DocSearchResult) => {
     const slugArr = slugToArray(result.slug);
@@ -61,97 +67,77 @@ export function DocsSearch({ className, searchIndex }: DocsSearchProps) {
     router.push(href);
     setQuery('');
     setOpen(false);
-    setSelectedIndex(0);
   }, [router]);
-
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (!open || results.length === 0) return;
-
-    switch (e.key) {
-      case 'ArrowDown':
-        e.preventDefault();
-        setSelectedIndex((prev) => (prev + 1) % results.length);
-        break;
-      case 'ArrowUp':
-        e.preventDefault();
-        setSelectedIndex((prev) => (prev - 1 + results.length) % results.length);
-        break;
-      case 'Enter':
-        e.preventDefault();
-        navigateToResult(results[selectedIndex]);
-        break;
-      case 'Escape':
-        setOpen(false);
-        setSelectedIndex(0);
-        inputRef.current?.blur();
-        break;
-    }
-  }, [open, results, selectedIndex, navigateToResult]);
 
   const getTitle = (item: DocSearchResult) =>
     locale === 'en' ? (item.titleEn ?? item.title) : item.title;
 
   return (
-    <div ref={containerRef} className={cn('relative', className)}>
-      <div className="relative">
-        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-        <Input
-          ref={inputRef}
-          type="search"
-          placeholder={t('docs.searchPlaceholder')}
-          value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setSelectedIndex(0);
-            setOpen(e.target.value.length > 0);
-          }}
-          onFocus={() => query.length > 0 && setOpen(true)}
-          onKeyDown={handleKeyDown}
-          className="pl-8 pr-10 h-8 text-sm"
-        />
-        <kbd className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none hidden sm:inline-flex h-5 items-center rounded border border-border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
-          /
-        </kbd>
-      </div>
+    <Popover open={open} onOpenChange={setOpen}>
+      <div className={cn('relative', className)}>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            className="inline-flex h-8 w-full items-center gap-2 rounded-md border border-input bg-background px-2.5 text-sm text-left shadow-xs transition-colors hover:bg-accent/30 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label={t('docs.searchPlaceholder')}
+          >
+            <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <span className="truncate text-muted-foreground">{t('docs.searchPlaceholder')}</span>
+            <Kbd className="ml-auto hidden sm:inline-flex">/</Kbd>
+          </button>
+        </PopoverTrigger>
 
-      {open && query.length > 0 && (
-        <div className="absolute top-full left-0 right-0 z-50 mt-1 rounded-md border border-border bg-popover shadow-md">
-          {results.length === 0 ? (
-            <div className="px-3 py-4 text-center text-sm text-muted-foreground">
-              {t('docs.searchNoResults')}
-            </div>
-          ) : (
-            <ScrollArea className="max-h-64">
-              <div className="p-1">
-                {results.map((result, i) => (
-                  <button
-                    key={`${result.slug}#${result.anchorId ?? ''}`}
-                    className={cn(
-                      'flex w-full items-start gap-2 rounded-sm px-2 py-1.5 text-sm text-left transition-colors',
-                      i === selectedIndex
-                        ? 'bg-accent text-accent-foreground'
-                        : 'text-foreground hover:bg-accent/50'
-                    )}
-                    onClick={() => navigateToResult(result)}
-                    onMouseEnter={() => setSelectedIndex(i)}
-                  >
-                    <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground mt-0.5" />
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate font-medium">{getTitle(result)}</div>
-                      {result.snippet !== getTitle(result) && (
-                        <div className="truncate text-xs text-muted-foreground">{result.snippet}</div>
-                      )}
-                    </div>
-                    <span className="text-xs text-muted-foreground truncate max-w-[100px] shrink-0 mt-0.5">
-                      {result.slug}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </ScrollArea>
-          )}
-        </div>
-      )}
-    </div>
+        <PopoverContent align="start" sideOffset={6} className="w-[var(--radix-popover-trigger-width)] p-0">
+          <Command shouldFilter={false}>
+            <CommandInput
+              ref={inputRef}
+              value={query}
+              onValueChange={setQuery}
+              placeholder={t('docs.searchPlaceholder')}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  e.preventDefault();
+                  setOpen(false);
+                  setQuery('');
+                }
+              }}
+            />
+            <CommandList className="max-h-72">
+              {query.trim().length === 0 ? (
+                <div className="px-3 py-4 text-center text-sm text-muted-foreground">
+                  {t('docs.searchPlaceholder')}
+                </div>
+              ) : (
+                <>
+                  <CommandEmpty>{t('docs.searchNoResults')}</CommandEmpty>
+                  {results.map((result) => {
+                    const title = getTitle(result);
+                    return (
+                      <CommandItem
+                        key={`${result.slug}#${result.anchorId ?? ''}`}
+                        value={`${title} ${result.snippet} ${result.slug}`}
+                        onSelect={() => navigateToResult(result)}
+                        className="items-start gap-2 py-2"
+                      >
+                        <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate font-medium">{title}</div>
+                          {result.snippet !== title && (
+                            <div className="truncate text-xs text-muted-foreground">{result.snippet}</div>
+                          )}
+                        </div>
+                        <span className="mt-0.5 max-w-[120px] shrink-0 truncate text-xs text-muted-foreground">
+                          {result.slug}
+                        </span>
+                      </CommandItem>
+                    );
+                  })}
+                </>
+              )}
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </div>
+    </Popover>
   );
 }

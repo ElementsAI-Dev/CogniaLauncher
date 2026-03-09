@@ -59,13 +59,13 @@ export function AccentColorPicker({
               value={color}
               aria-label={getAriaLabel(color)}
               className={cn(
-                "relative h-8 w-8 rounded-full p-0 transition-transform hover:scale-110 data-[state=on]:ring-2 data-[state=on]:ring-offset-2 data-[state=on]:ring-offset-background data-[state=on]:ring-foreground",
+                "relative size-8 rounded-full p-0 transition-transform hover:scale-110 data-[state=on]:ring-2 data-[state=on]:ring-offset-2 data-[state=on]:ring-offset-background data-[state=on]:ring-foreground",
                 ACCENT_COLOR_CSS_CLASSES[color],
                 "hover:bg-transparent data-[state=on]:bg-transparent",
               )}
             >
               {accentColor === color && (
-                <Check className="absolute inset-0 m-auto h-4 w-4 text-white drop-shadow-sm" />
+                <Check className="absolute inset-0 m-auto size-4 text-white drop-shadow-sm" />
               )}
             </ToggleGroupItem>
           </TooltipTrigger>

@@ -19,6 +19,8 @@ jest.mock("@/lib/stores/dashboard", () => ({
       updateWidget: jest.fn(),
       reorderWidgets: jest.fn(),
     }),
+  canRemoveWidgetById: () => true,
+  canToggleWidgetVisibilityById: () => true,
   WIDGET_DEFINITIONS: [],
 }));
 
@@ -132,6 +134,11 @@ describe("WidgetGrid", () => {
   it("renders without crashing with no widgets", () => {
     const { container } = render(<WidgetGrid {...defaultProps} />);
     expect(container).toBeInTheDocument();
+  });
+
+  it("renders grid container as an accessible list", () => {
+    render(<WidgetGrid {...defaultProps} />);
+    expect(screen.getByRole("list", { name: "dashboard.title" })).toBeInTheDocument();
   });
 
   it("renders stats-overview loading skeletons when isLoading", () => {

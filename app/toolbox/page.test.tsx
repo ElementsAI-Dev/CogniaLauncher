@@ -223,7 +223,7 @@ describe('ToolboxPage plugin bootstrap', () => {
     expect(screen.queryByTestId('empty-state')).not.toBeInTheDocument();
   });
 
-  it('navigates tool open action to canonical toolbox detail route', () => {
+  it('navigates tool open action to static-export-safe toolbox detail route', () => {
     const addRecent = jest.fn();
     mockToolboxState = createToolboxState({
       filteredTools: [createTool(1)],
@@ -234,7 +234,7 @@ describe('ToolboxPage plugin bootstrap', () => {
 
     fireEvent.click(screen.getByTestId('open-first-tool'));
 
-    expect(mockPush).toHaveBeenCalledWith('/toolbox/builtin%3Atool-1');
+    expect(mockPush).toHaveBeenCalledWith('/toolbox/tool?id=builtin%3Atool-1');
     expect(addRecent).not.toHaveBeenCalled();
   });
 });

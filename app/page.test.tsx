@@ -29,9 +29,13 @@ const mockFetchInstalledPackages = jest.fn().mockResolvedValue(undefined);
 const mockFetchProviders = jest.fn().mockResolvedValue(undefined);
 const mockFetchCacheInfo = jest.fn().mockResolvedValue(undefined);
 const mockFetchPlatformInfo = jest.fn().mockResolvedValue(undefined);
+const mockSetIsCustomizing = jest.fn();
+const mockSetIsEditMode = jest.fn();
 let mockEnvsError: string | null = null;
 let mockPkgsError: string | null = null;
 let mockSettingsError: string | null = null;
+let mockDashboardIsCustomizing = false;
+let mockDashboardIsEditMode = false;
 
 // Mock hooks used by the dashboard page
 jest.mock("@/hooks/use-environments", () => ({
@@ -93,10 +97,10 @@ jest.mock("@/lib/stores/dashboard", () => {
     ...actual,
     useDashboardStore: (selector: (s: Record<string, unknown>) => unknown) => {
       const state = {
-        isCustomizing: false,
-        isEditMode: false,
-        setIsCustomizing: jest.fn(),
-        setIsEditMode: jest.fn(),
+        isCustomizing: mockDashboardIsCustomizing,
+        isEditMode: mockDashboardIsEditMode,
+        setIsCustomizing: (...args: unknown[]) => mockSetIsCustomizing(...args),
+        setIsEditMode: (...args: unknown[]) => mockSetIsEditMode(...args),
         widgets: [
           { id: 'w-stats', type: 'stats-overview', size: 'full', visible: true },
           { id: 'w-search', type: 'quick-search', size: 'full', visible: true },
@@ -229,6 +233,8 @@ describe("Dashboard Page", () => {
     mockEnvsError = null;
     mockPkgsError = null;
     mockSettingsError = null;
+    mockDashboardIsCustomizing = false;
+    mockDashboardIsEditMode = false;
   });
 
   it("renders the dashboard title", async () => {
@@ -407,6 +413,34 @@ describe("Dashboard Page", () => {
       expect(mockFetchCacheInfo).toHaveBeenCalled();
       expect(mockFetchPlatformInfo).toHaveBeenCalled();
     });
+  });
+
+  it("opens customize flow and enables edit mode from header button", async () => {
+    renderWithProviders(<DashboardPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("dashboard-header-customize")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId("dashboard-header-customize"));
+
+    expect(mockSetIsEditMode).toHaveBeenCalledWith(true);
+    expect(mockSetIsCustomizing).toHaveBeenCalledWith(true);
+  });
+
+  it("closes customize dialog when turning off edit mode", async () => {
+    mockDashboardIsCustomizing = true;
+    mockDashboardIsEditMode = true;
+    renderWithProviders(<DashboardPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("dashboard-header-edit-mode")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId("dashboard-header-edit-mode"));
+
+    expect(mockSetIsEditMode).toHaveBeenCalledWith(false);
+    expect(mockSetIsCustomizing).toHaveBeenCalledWith(false);
   });
 
   it("shows new errors after a previously dismissed error", async () => {

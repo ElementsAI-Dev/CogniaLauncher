@@ -71,13 +71,22 @@ Closes #42
 
 1. Fork 仓库并创建功能分支
 2. 在分支上开发，保持提交原子性
-3. 确保通过 `pnpm lint` 和 `pnpm test`
+3. 确保通过 `pnpm lint`、`pnpm test` 与 `pnpm docs:validate`
 4. 后端改动需通过 `cargo check`
 5. 提交 PR，包含：
    - 简要描述变更范围和意图
    - UI 变更附截图
    - 验证步骤
+   - 文档影响声明（`已更新文档` 或 `no docs impact` 并附理由）
 6. 等待代码审查
+
+---
+
+## 文档质量策略
+
+- 遵循 [文档质量与同步](docs-quality.md) 中定义的基线要求。
+- 用户与开发者核心路径文档需保持 EN/ZH 同步。
+- 对用户行为或开发流程有影响的变更，必须同 PR 更新文档，或提供明确的 no-doc-impact 说明。
 
 ---
 

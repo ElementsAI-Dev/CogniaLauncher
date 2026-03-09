@@ -103,11 +103,11 @@ describe('ToolDetailPanel', () => {
     expect(screen.getByText('Open Full Page')).toBeInTheDocument();
   });
 
-  it('routes Open Full Page action to canonical tool detail path', () => {
+  it('routes Open Full Page action to static-export-safe tool detail path', () => {
     render(<ToolDetailPanel tool={mockTool} open={true} onOpenChange={jest.fn()} />);
     expect(screen.getByRole('link', { name: 'Open Full Page' })).toHaveAttribute(
       'href',
-      '/toolbox/builtin%3Ajson-formatter',
+      '/toolbox/tool?id=builtin%3Ajson-formatter',
     );
   });
 

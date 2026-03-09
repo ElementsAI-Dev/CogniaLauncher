@@ -3,7 +3,12 @@
 import { useEffect, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ToolDetailPageClient } from '@/components/toolbox/tool-detail-page-client';
-import { decodeToolIdFromPath, getToolboxDetailPath } from '@/lib/toolbox-route';
+import {
+  decodeToolIdFromPath,
+  getToolboxDetailPath,
+  isBuiltInToolId,
+  isPluginToolId,
+} from '@/lib/toolbox-route';
 
 export default function LegacyToolDetailPage() {
   const router = useRouter();
@@ -18,8 +23,12 @@ export default function LegacyToolDetailPage() {
       return;
     }
 
+    if (isPluginToolId(toolId) || isBuiltInToolId(toolId)) {
+      return;
+    }
+
     router.replace(getToolboxDetailPath(toolId));
   }, [router, toolId]);
 
-  return <ToolDetailPageClient toolId="" />;
+  return <ToolDetailPageClient toolId={toolId} />;
 }

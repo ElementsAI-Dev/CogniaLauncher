@@ -6,7 +6,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Label } from "@/components/ui/label";
-import { cn } from "@/lib/utils";
+import { selectableCheckboxRowClass, SelectableCardButton } from "./selectable-list-patterns";
 import type { GitLabPipelineInfo, GitLabJobInfo } from "@/types/gitlab";
 
 interface GitLabPipelinesTabProps {
@@ -52,7 +52,7 @@ export function GitLabPipelinesTab({
         </Button>
       </div>
 
-      <ScrollArea className="h-[140px] border rounded-md">
+      <ScrollArea className="h-35 border rounded-md">
         {pipelines.length === 0 ? (
           <div className="p-4 text-center text-muted-foreground">
             {t("downloads.gitlab.noPipelines")}
@@ -60,15 +60,9 @@ export function GitLabPipelinesTab({
         ) : (
           <div className="p-2 space-y-1">
             {pipelines.map((pipeline) => (
-              <button
-                type="button"
+              <SelectableCardButton
                 key={pipeline.id}
-                className={cn(
-                  "w-full text-left p-2 rounded-md border transition-colors",
-                  selectedPipelineId === pipeline.id
-                    ? "bg-primary/10 border-primary"
-                    : "hover:bg-muted border-transparent",
-                )}
+                selected={selectedPipelineId === pipeline.id}
                 onClick={() => onSelectPipeline(pipeline.id)}
               >
                 <div className="flex items-center justify-between gap-2">
@@ -80,14 +74,14 @@ export function GitLabPipelinesTab({
                 <div className="text-xs text-muted-foreground mt-1">
                   {pipeline.refName || "—"}
                 </div>
-              </button>
+              </SelectableCardButton>
             ))}
           </div>
         )}
       </ScrollArea>
 
       <Label>{t("downloads.gitlab.jobs")}</Label>
-      <ScrollArea className="h-[160px] border rounded-md">
+      <ScrollArea className="h-40 border rounded-md">
         {jobsLoading ? (
           <div className="p-4 space-y-2">
             {[1, 2, 3].map((i) => (
@@ -109,13 +103,10 @@ export function GitLabPipelinesTab({
               return (
                 <label
                   key={job.id}
-                  className={cn(
-                    "flex items-center gap-2 p-2 rounded-md border",
-                    checked
-                      ? "bg-primary/10 border-primary"
-                      : "border-transparent hover:bg-muted",
-                    !job.hasArtifacts && "opacity-60",
-                  )}
+                  className={selectableCheckboxRowClass({
+                    selected: checked,
+                    disabled: !job.hasArtifacts,
+                  })}
                 >
                   <Checkbox
                     checked={checked}

@@ -439,7 +439,7 @@ export function GitLabDownloadDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
+      <DialogContent className="max-h-[85dvh] w-[calc(100vw-1.5rem)] max-w-2xl flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Gitlab className="h-5 w-5" />
@@ -514,7 +514,7 @@ export function GitLabDownloadDialog({
               onValueChange={(v) => setSourceType(v as GitLabSourceType)}
               className="flex-1 flex flex-col overflow-hidden"
             >
-              <TabsList className="grid w-full grid-cols-5">
+              <TabsList className="grid h-auto w-full grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
                 <TabsTrigger value="release" className="gap-2">
                   <Package className="h-4 w-4" />
                   {t("downloads.gitlab.releases")}

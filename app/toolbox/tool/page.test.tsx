@@ -25,17 +25,17 @@ describe("LegacyToolDetailPage", () => {
     jest.clearAllMocks();
   });
 
-  it("redirects encoded legacy id to canonical toolbox route", async () => {
+  it("keeps built-in tool ids on legacy query route", async () => {
     mockGet.mockImplementation((key: string) =>
       key === "id" ? "builtin%3Ajson-formatter" : null,
     );
     render(<LegacyToolDetailPage />);
 
-    await waitFor(() => {
-      expect(mockReplace).toHaveBeenCalledWith(
-        "/toolbox/builtin%3Ajson-formatter",
-      );
-    });
+    expect(screen.getByTestId("tool-detail-page-client")).toHaveAttribute(
+      "data-tool-id",
+      "builtin:json-formatter",
+    );
+    expect(mockReplace).not.toHaveBeenCalled();
   });
 
   it("redirects unknown id to canonical route semantics", async () => {
@@ -56,6 +56,19 @@ describe("LegacyToolDetailPage", () => {
     expect(screen.getByTestId("tool-detail-page-client")).toHaveAttribute(
       "data-tool-id",
       "",
+    );
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it("keeps plugin tool ids on legacy query route", async () => {
+    mockGet.mockImplementation((key: string) =>
+      key === "id" ? "plugin%3Acom.example%3Ainspect" : null,
+    );
+    render(<LegacyToolDetailPage />);
+
+    expect(screen.getByTestId("tool-detail-page-client")).toHaveAttribute(
+      "data-tool-id",
+      "plugin:com.example:inspect",
     );
     expect(mockReplace).not.toHaveBeenCalled();
   });

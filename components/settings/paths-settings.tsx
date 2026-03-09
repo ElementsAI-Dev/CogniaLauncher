@@ -72,7 +72,7 @@ export function PathsSettings({
   );
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4">
         <PathInputItem
           id="paths-root"
           label={t("settings.pathRoot")}
@@ -234,7 +234,7 @@ function PathInputItem({
               />
             </TooltipTrigger>
             <TooltipContent side="top" className="max-w-xs">
-              <ul className="text-xs space-y-0.5">
+              <ul className="flex flex-col gap-0.5 text-xs">
                 {displayWarnings.map((w, i) => (
                   <li key={i} className="flex items-start gap-1">
                     <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />
@@ -258,8 +258,8 @@ function PathInputItem({
   };
 
   return (
-      <div className="space-y-2 py-2">
-        <div className="space-y-0.5">
+      <div className="flex flex-col gap-2 py-2">
+        <div className="flex flex-col gap-0.5">
           <Label htmlFor={id} className="flex items-center gap-1.5">
             {label}
             {validation?.hasTraversal && (

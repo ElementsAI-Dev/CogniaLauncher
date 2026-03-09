@@ -42,6 +42,7 @@ describe('GitRepoActionBar', () => {
   });
 
   it('passes push options through', async () => {
+    const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(true);
     const onPush = jest.fn().mockResolvedValue('pushed');
     render(<GitRepoActionBar {...baseProps} onPush={onPush} />);
 
@@ -53,8 +54,16 @@ describe('GitRepoActionBar', () => {
     fireEvent.click(screen.getByText('git.actions.push'));
 
     await waitFor(() => {
-      expect(onPush).toHaveBeenCalledWith('upstream', 'release/1.0', true, true, true);
+      expect(onPush).toHaveBeenCalledWith(
+        'upstream',
+        'release/1.0',
+        true,
+        true,
+        true,
+        true,
+      );
     });
+    confirmSpy.mockRestore();
   });
 
   it('passes pull options through', async () => {
@@ -102,7 +111,7 @@ describe('GitRepoActionBar', () => {
 
     await waitFor(() => {
       expect(onCleanPreview).toHaveBeenCalledWith(true);
-      expect(onClean).toHaveBeenCalledWith(true);
+      expect(onClean).toHaveBeenCalledWith(true, true);
     });
     confirmSpy.mockRestore();
   });

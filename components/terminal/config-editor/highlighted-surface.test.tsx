@@ -1,8 +1,8 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { TerminalConfigEditorHighlighted } from './terminal-config-editor-highlighted';
+import { TerminalConfigEditorHighlighted } from './highlighted-surface';
 
 describe('TerminalConfigEditorHighlighted', () => {
-  it('renders highlighted editor surface with gutter and preview', () => {
+  it('renders editor and highlight preview surfaces', () => {
     const { container } = render(
       <TerminalConfigEditorHighlighted
         value={'export FOO=1\nexport BAR=2'}
@@ -11,9 +11,10 @@ describe('TerminalConfigEditorHighlighted', () => {
       />,
     );
 
+    expect(screen.getByText('Editor')).toBeInTheDocument();
+    expect(screen.getByText('Highlight Preview')).toBeInTheDocument();
     expect(screen.getByTestId('terminal-config-editor-highlighted')).toBeInTheDocument();
     expect(container.querySelectorAll('.border-r > div')).toHaveLength(2);
-    expect(screen.getByText('Highlight Preview')).toBeInTheDocument();
   });
 
   it('marks diagnostic lines in the gutter', () => {

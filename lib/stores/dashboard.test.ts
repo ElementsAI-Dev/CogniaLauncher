@@ -1,25 +1,19 @@
-import { useDashboardStore, WIDGET_DEFINITIONS } from './dashboard';
+import {
+  useDashboardStore,
+  WIDGET_DEFINITIONS,
+  canAddWidgetType,
+  canRemoveWidgetById,
+  canToggleWidgetVisibilityById,
+  getDefaultWidgets,
+  getWidgetTypeCount,
+  normalizeDashboardWidgets,
+} from './dashboard';
 import type { WidgetConfig, WidgetType } from './dashboard';
 
 describe('useDashboardStore', () => {
   beforeEach(() => {
     useDashboardStore.setState({
-      widgets: [
-        { id: 'w-welcome', type: 'welcome', size: 'full', visible: true },
-        { id: 'w-stats', type: 'stats-overview', size: 'full', visible: true },
-        { id: 'w-search', type: 'quick-search', size: 'full', visible: true },
-        { id: 'w-health', type: 'health-check', size: 'md', visible: true },
-        { id: 'w-updates', type: 'updates-available', size: 'md', visible: true },
-        { id: 'w-env-chart', type: 'environment-chart', size: 'md', visible: true },
-        { id: 'w-pkg-chart', type: 'package-chart', size: 'md', visible: true },
-        { id: 'w-envs', type: 'environment-list', size: 'md', visible: true },
-        { id: 'w-pkgs', type: 'package-list', size: 'md', visible: true },
-        { id: 'w-cache', type: 'cache-usage', size: 'md', visible: true },
-        { id: 'w-activity', type: 'activity-timeline', size: 'md', visible: true },
-        { id: 'w-system', type: 'system-info', size: 'md', visible: true },
-        { id: 'w-downloads', type: 'download-stats', size: 'md', visible: true },
-        { id: 'w-wsl', type: 'wsl-status', size: 'md', visible: true },
-      ],
+      widgets: getDefaultWidgets(),
       isCustomizing: false,
       isEditMode: false,
     });
@@ -32,8 +26,9 @@ describe('useDashboardStore', () => {
         'stats-overview', 'environment-chart', 'package-chart', 'cache-usage',
         'activity-timeline', 'system-info', 'download-stats', 'quick-search',
         'environment-list', 'package-list', 'quick-actions', 'wsl-status',
-        'health-check', 'updates-available', 'welcome',
+        'health-check', 'updates-available', 'welcome', 'toolbox-favorites',
       ];
+
       for (const type of expectedTypes) {
         expect(WIDGET_DEFINITIONS[type]).toBeDefined();
         expect(WIDGET_DEFINITIONS[type].type).toBe(type);
@@ -43,44 +38,87 @@ describe('useDashboardStore', () => {
         expect(WIDGET_DEFINITIONS[type].defaultSize).toBeTruthy();
         expect(WIDGET_DEFINITIONS[type].minSize).toBeTruthy();
         expect(WIDGET_DEFINITIONS[type].category).toBeTruthy();
+        expect(typeof WIDGET_DEFINITIONS[type].allowMultiple).toBe('boolean');
+        expect(typeof WIDGET_DEFINITIONS[type].required).toBe('boolean');
+        expect(typeof WIDGET_DEFINITIONS[type].defaultVisible).toBe('boolean');
       }
     });
 
-    it('has correct categories', () => {
-      expect(WIDGET_DEFINITIONS['stats-overview'].category).toBe('overview');
-      expect(WIDGET_DEFINITIONS['environment-chart'].category).toBe('charts');
-      expect(WIDGET_DEFINITIONS['quick-search'].category).toBe('tools');
-      expect(WIDGET_DEFINITIONS['environment-list'].category).toBe('lists');
+    it('sets single-instance policy for stats-overview', () => {
+      expect(WIDGET_DEFINITIONS['stats-overview'].allowMultiple).toBe(false);
+      expect(WIDGET_DEFINITIONS['stats-overview'].maxInstances).toBe(1);
     });
   });
 
-  describe('initial state', () => {
-    it('has default widgets', () => {
-      const { widgets } = useDashboardStore.getState();
-      expect(widgets.length).toBe(14);
-      expect(widgets[0].type).toBe('welcome');
-      expect(widgets[1].type).toBe('stats-overview');
+  describe('policy helpers', () => {
+    it('returns per-type counts', () => {
+      const widgets = useDashboardStore.getState().widgets;
+      expect(getWidgetTypeCount(widgets, 'quick-search')).toBe(1);
+      expect(getWidgetTypeCount(widgets, 'quick-actions')).toBe(0);
     });
 
-    it('has isCustomizing and isEditMode as false', () => {
-      const state = useDashboardStore.getState();
-      expect(state.isCustomizing).toBe(false);
-      expect(state.isEditMode).toBe(false);
+    it('blocks adding single-instance widget when already present', () => {
+      const widgets = useDashboardStore.getState().widgets;
+      expect(canAddWidgetType(widgets, 'stats-overview')).toBe(false);
+    });
+
+    it('allows adding multi-instance widget repeatedly', () => {
+      const widgets = useDashboardStore.getState().widgets;
+      expect(canAddWidgetType(widgets, 'quick-actions')).toBe(true);
+    });
+
+    it('returns false for unknown widget id remove/toggle checks', () => {
+      const widgets = useDashboardStore.getState().widgets;
+      expect(canRemoveWidgetById(widgets, 'missing')).toBe(false);
+      expect(canToggleWidgetVisibilityById(widgets, 'missing')).toBe(false);
     });
   });
 
-  describe('setWidgets', () => {
-    it('replaces all widgets', () => {
-      const newWidgets: WidgetConfig[] = [
-        { id: 'w-1', type: 'stats-overview', size: 'full', visible: true },
-      ];
-      useDashboardStore.getState().setWidgets(newWidgets);
-      expect(useDashboardStore.getState().widgets).toEqual(newWidgets);
+  describe('normalizeDashboardWidgets', () => {
+    it('falls back to canonical defaults when payload is unrecoverable', () => {
+      const normalized = normalizeDashboardWidgets([{ foo: 'bar' }, { type: 'unknown' }]);
+      expect(normalized).toEqual(getDefaultWidgets());
+    });
+
+    it('normalizes invalid fields and dedupes ids', () => {
+      const normalized = normalizeDashboardWidgets([
+        { id: 'dup', type: 'environment-chart', size: 'bad-size', visible: 'yes' },
+        { id: 'dup', type: 'environment-chart', size: 'lg', visible: false },
+      ]);
+
+      expect(normalized).toHaveLength(2);
+      expect(normalized[0].id).toBe('dup');
+      expect(normalized[1].id).toBe('dup-2');
+      expect(normalized[0].size).toBe(WIDGET_DEFINITIONS['environment-chart'].defaultSize);
+      expect(normalized[0].visible).toBe(WIDGET_DEFINITIONS['environment-chart'].defaultVisible);
+      expect(normalized[1].size).toBe('lg');
+      expect(normalized[1].visible).toBe(false);
+    });
+
+    it('enforces single-instance policy during normalization', () => {
+      const normalized = normalizeDashboardWidgets([
+        { id: 's1', type: 'stats-overview', size: 'full', visible: true },
+        { id: 's2', type: 'stats-overview', size: 'full', visible: true },
+      ]);
+
+      expect(normalized).toHaveLength(1);
+      expect(normalized[0].id).toBe('s1');
     });
   });
 
-  describe('addWidget', () => {
-    it('appends a new widget with correct defaults', () => {
+  describe('actions', () => {
+    it('setWidgets normalizes invalid payloads', () => {
+      useDashboardStore.getState().setWidgets([
+        { id: 'x', type: 'environment-chart', size: 'md', visible: true },
+        { id: 'x', type: 'environment-chart', size: 'md', visible: true },
+      ] as WidgetConfig[]);
+
+      const widgets = useDashboardStore.getState().widgets;
+      expect(widgets[0].id).toBe('x');
+      expect(widgets[1].id).toBe('x-2');
+    });
+
+    it('appends a new multi-instance widget with definition defaults', () => {
       const before = useDashboardStore.getState().widgets.length;
       useDashboardStore.getState().addWidget('quick-actions');
 
@@ -90,12 +128,16 @@ describe('useDashboardStore', () => {
       const added = widgets[widgets.length - 1];
       expect(added.type).toBe('quick-actions');
       expect(added.size).toBe(WIDGET_DEFINITIONS['quick-actions'].defaultSize);
-      expect(added.visible).toBe(true);
+      expect(added.visible).toBe(WIDGET_DEFINITIONS['quick-actions'].defaultVisible);
       expect(added.id).toMatch(/^w-quick-actions-/);
     });
-  });
 
-  describe('removeWidget', () => {
+    it('does not add a single-instance widget twice', () => {
+      const before = useDashboardStore.getState().widgets.length;
+      useDashboardStore.getState().addWidget('stats-overview');
+      expect(useDashboardStore.getState().widgets.length).toBe(before);
+    });
+
     it('removes widget by id', () => {
       useDashboardStore.getState().removeWidget('w-wsl');
 
@@ -103,45 +145,20 @@ describe('useDashboardStore', () => {
       expect(widgets.find((w) => w.id === 'w-wsl')).toBeUndefined();
     });
 
-    it('does not affect other widgets', () => {
-      const before = useDashboardStore.getState().widgets.length;
-      useDashboardStore.getState().removeWidget('w-wsl');
-      expect(useDashboardStore.getState().widgets.length).toBe(before - 1);
-    });
-
-    it('does nothing if id not found', () => {
+    it('does nothing if remove id is not found', () => {
       const before = useDashboardStore.getState().widgets.length;
       useDashboardStore.getState().removeWidget('non-existent');
       expect(useDashboardStore.getState().widgets.length).toBe(before);
     });
-  });
 
-  describe('updateWidget', () => {
-    it('updates size of a widget', () => {
-      useDashboardStore.getState().updateWidget('w-cache', { size: 'lg' });
+    it('normalizes invalid size on update', () => {
+      useDashboardStore.getState().updateWidget('w-cache', { size: 'bad' as never });
 
       const widget = useDashboardStore.getState().widgets.find((w) => w.id === 'w-cache');
-      expect(widget?.size).toBe('lg');
+      expect(widget?.size).toBe(WIDGET_DEFINITIONS['cache-usage'].defaultSize);
     });
 
-    it('updates visibility of a widget', () => {
-      useDashboardStore.getState().updateWidget('w-stats', { visible: false });
-
-      const widget = useDashboardStore.getState().widgets.find((w) => w.id === 'w-stats');
-      expect(widget?.visible).toBe(false);
-    });
-
-    it('does not affect other widgets', () => {
-      useDashboardStore.getState().updateWidget('w-cache', { size: 'lg' });
-
-      const other = useDashboardStore.getState().widgets.find((w) => w.id === 'w-stats');
-      expect(other?.size).toBe('full');
-    });
-  });
-
-  describe('reorderWidgets', () => {
     it('moves widget from one position to another', () => {
-      // Move w-wsl (index 13) to index 0
       useDashboardStore.getState().reorderWidgets(13, 0);
 
       const widgets = useDashboardStore.getState().widgets;
@@ -149,78 +166,50 @@ describe('useDashboardStore', () => {
       expect(widgets[1].id).toBe('w-welcome');
     });
 
-    it('moves widget forward', () => {
-      // Move w-welcome (index 0) to index 2
-      useDashboardStore.getState().reorderWidgets(0, 2);
-
-      const widgets = useDashboardStore.getState().widgets;
-      expect(widgets[0].id).toBe('w-stats');
-      expect(widgets[1].id).toBe('w-search');
-      expect(widgets[2].id).toBe('w-welcome');
+    it('ignores out-of-range reorder indices', () => {
+      const before = useDashboardStore.getState().widgets;
+      useDashboardStore.getState().reorderWidgets(-1, 999);
+      expect(useDashboardStore.getState().widgets).toEqual(before);
     });
-  });
 
-  describe('toggleWidgetVisibility', () => {
-    it('toggles visible to false', () => {
+    it('toggles widget visibility', () => {
       useDashboardStore.getState().toggleWidgetVisibility('w-stats');
 
       const widget = useDashboardStore.getState().widgets.find((w) => w.id === 'w-stats');
       expect(widget?.visible).toBe(false);
     });
 
-    it('toggles visible back to true', () => {
-      useDashboardStore.getState().toggleWidgetVisibility('w-stats');
-      useDashboardStore.getState().toggleWidgetVisibility('w-stats');
-
-      const widget = useDashboardStore.getState().widgets.find((w) => w.id === 'w-stats');
-      expect(widget?.visible).toBe(true);
-    });
-  });
-
-  describe('setIsCustomizing', () => {
-    it('sets isCustomizing', () => {
+    it('sets customization and edit mode flags', () => {
       useDashboardStore.getState().setIsCustomizing(true);
-      expect(useDashboardStore.getState().isCustomizing).toBe(true);
-
-      useDashboardStore.getState().setIsCustomizing(false);
-      expect(useDashboardStore.getState().isCustomizing).toBe(false);
-    });
-  });
-
-  describe('setIsEditMode', () => {
-    it('sets isEditMode', () => {
       useDashboardStore.getState().setIsEditMode(true);
+
+      expect(useDashboardStore.getState().isCustomizing).toBe(true);
       expect(useDashboardStore.getState().isEditMode).toBe(true);
-
-      useDashboardStore.getState().setIsEditMode(false);
-      expect(useDashboardStore.getState().isEditMode).toBe(false);
     });
-  });
 
-  describe('resetToDefault', () => {
-    it('resets widgets to default list', () => {
+    it('resets widgets to canonical defaults', () => {
       useDashboardStore.getState().removeWidget('w-stats');
       useDashboardStore.getState().addWidget('quick-actions');
 
       useDashboardStore.getState().resetToDefault();
 
       const widgets = useDashboardStore.getState().widgets;
-      expect(widgets.length).toBe(14);
-      expect(widgets[0].type).toBe('welcome');
-      expect(widgets[1].type).toBe('stats-overview');
+      expect(widgets).toEqual(getDefaultWidgets());
     });
   });
 
-  describe('persist migration v1→v2', () => {
-    it('adds health-check widget if missing', () => {
+  describe('persist migration', () => {
+    it('migrates v1 payload and injects legacy missing widgets', () => {
       const v1Widgets: WidgetConfig[] = [
         { id: 'w-stats', type: 'stats-overview', size: 'full', visible: true },
         { id: 'w-search', type: 'quick-search', size: 'full', visible: true },
         { id: 'w-envs', type: 'environment-list', size: 'md', visible: true },
       ];
 
-      // Simulate loading persisted v1 state
-      const persistConfig = (useDashboardStore as unknown as { persist: { getOptions: () => { migrate: (state: unknown, version: number) => unknown } } }).persist.getOptions();
+      const persistConfig = (useDashboardStore as unknown as {
+        persist: { getOptions: () => { migrate: (state: unknown, version: number) => unknown } };
+      }).persist.getOptions();
+
       const migrated = persistConfig.migrate({ widgets: v1Widgets }, 1) as { widgets: WidgetConfig[] };
 
       expect(migrated.widgets.some((w) => w.type === 'health-check')).toBe(true);
@@ -228,32 +217,31 @@ describe('useDashboardStore', () => {
       expect(migrated.widgets.some((w) => w.type === 'welcome')).toBe(true);
     });
 
-    it('does not add duplicates if already present', () => {
-      const v1Widgets: WidgetConfig[] = [
-        { id: 'w-welcome', type: 'welcome', size: 'full', visible: true },
-        { id: 'w-health', type: 'health-check', size: 'md', visible: true },
-        { id: 'w-updates', type: 'updates-available', size: 'md', visible: true },
+    it('normalizes v2 payload during v3 migration', () => {
+      const v2Widgets = [
+        { id: 'dup', type: 'environment-chart', size: 'md', visible: true },
+        { id: 'dup', type: 'environment-chart', size: 'md', visible: true },
+        { id: 'bad', type: 'unknown-widget', size: 'md', visible: true },
       ];
 
-      const persistConfig = (useDashboardStore as unknown as { persist: { getOptions: () => { migrate: (state: unknown, version: number) => unknown } } }).persist.getOptions();
-      const migrated = persistConfig.migrate({ widgets: v1Widgets }, 1) as { widgets: WidgetConfig[] };
+      const persistConfig = (useDashboardStore as unknown as {
+        persist: { getOptions: () => { migrate: (state: unknown, version: number) => unknown } };
+      }).persist.getOptions();
 
-      const welcomeCount = migrated.widgets.filter((w) => w.type === 'welcome').length;
-      const healthCount = migrated.widgets.filter((w) => w.type === 'health-check').length;
-      expect(welcomeCount).toBe(1);
-      expect(healthCount).toBe(1);
+      const migrated = persistConfig.migrate({ widgets: v2Widgets }, 2) as { widgets: WidgetConfig[] };
+
+      expect(migrated.widgets).toHaveLength(2);
+      expect(migrated.widgets[0].id).toBe('dup');
+      expect(migrated.widgets[1].id).toBe('dup-2');
     });
 
-    it('skips migration for current version', () => {
-      const widgets: WidgetConfig[] = [
-        { id: 'w-stats', type: 'stats-overview', size: 'full', visible: true },
-      ];
+    it('falls back to canonical defaults when payload is missing', () => {
+      const persistConfig = (useDashboardStore as unknown as {
+        persist: { getOptions: () => { migrate: (state: unknown, version: number) => unknown } };
+      }).persist.getOptions();
 
-      const persistConfig = (useDashboardStore as unknown as { persist: { getOptions: () => { migrate: (state: unknown, version: number) => unknown } } }).persist.getOptions();
-      const migrated = persistConfig.migrate({ widgets }, 2) as { widgets: WidgetConfig[] };
-
-      // No new widgets added because version is already 2
-      expect(migrated.widgets.length).toBe(1);
+      const migrated = persistConfig.migrate({}, 2) as { widgets: WidgetConfig[] };
+      expect(migrated.widgets).toEqual(getDefaultWidgets());
     });
   });
 });

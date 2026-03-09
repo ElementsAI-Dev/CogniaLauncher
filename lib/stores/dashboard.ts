@@ -28,7 +28,14 @@ export type WidgetType =
   | 'welcome'
   | 'toolbox-favorites';
 
-export interface WidgetDefinition {
+interface WidgetPolicy {
+  allowMultiple: boolean;
+  required: boolean;
+  defaultVisible: boolean;
+  maxInstances?: number;
+}
+
+export interface WidgetDefinition extends WidgetPolicy {
   type: WidgetType;
   titleKey: string;
   descriptionKey: string;
@@ -37,6 +44,19 @@ export interface WidgetDefinition {
   minSize: WidgetSize;
   category: 'overview' | 'charts' | 'lists' | 'tools';
 }
+
+const SINGLE_INSTANCE_POLICY: WidgetPolicy = {
+  allowMultiple: false,
+  required: false,
+  defaultVisible: true,
+  maxInstances: 1,
+};
+
+const MULTI_INSTANCE_POLICY: WidgetPolicy = {
+  allowMultiple: true,
+  required: false,
+  defaultVisible: true,
+};
 
 export const WIDGET_DEFINITIONS: Record<WidgetType, WidgetDefinition> = {
   'stats-overview': {
@@ -47,6 +67,7 @@ export const WIDGET_DEFINITIONS: Record<WidgetType, WidgetDefinition> = {
     defaultSize: 'full',
     minSize: 'full',
     category: 'overview',
+    ...SINGLE_INSTANCE_POLICY,
   },
   'environment-chart': {
     type: 'environment-chart',
@@ -56,6 +77,7 @@ export const WIDGET_DEFINITIONS: Record<WidgetType, WidgetDefinition> = {
     defaultSize: 'md',
     minSize: 'sm',
     category: 'charts',
+    ...MULTI_INSTANCE_POLICY,
   },
   'package-chart': {
     type: 'package-chart',
@@ -65,6 +87,7 @@ export const WIDGET_DEFINITIONS: Record<WidgetType, WidgetDefinition> = {
     defaultSize: 'md',
     minSize: 'sm',
     category: 'charts',
+    ...MULTI_INSTANCE_POLICY,
   },
   'cache-usage': {
     type: 'cache-usage',
@@ -74,6 +97,7 @@ export const WIDGET_DEFINITIONS: Record<WidgetType, WidgetDefinition> = {
     defaultSize: 'md',
     minSize: 'sm',
     category: 'charts',
+    ...MULTI_INSTANCE_POLICY,
   },
   'activity-timeline': {
     type: 'activity-timeline',
@@ -83,6 +107,7 @@ export const WIDGET_DEFINITIONS: Record<WidgetType, WidgetDefinition> = {
     defaultSize: 'md',
     minSize: 'sm',
     category: 'charts',
+    ...MULTI_INSTANCE_POLICY,
   },
   'system-info': {
     type: 'system-info',
@@ -92,6 +117,7 @@ export const WIDGET_DEFINITIONS: Record<WidgetType, WidgetDefinition> = {
     defaultSize: 'md',
     minSize: 'sm',
     category: 'overview',
+    ...SINGLE_INSTANCE_POLICY,
   },
   'download-stats': {
     type: 'download-stats',
@@ -101,6 +127,7 @@ export const WIDGET_DEFINITIONS: Record<WidgetType, WidgetDefinition> = {
     defaultSize: 'md',
     minSize: 'sm',
     category: 'charts',
+    ...MULTI_INSTANCE_POLICY,
   },
   'quick-search': {
     type: 'quick-search',
@@ -110,6 +137,7 @@ export const WIDGET_DEFINITIONS: Record<WidgetType, WidgetDefinition> = {
     defaultSize: 'full',
     minSize: 'lg',
     category: 'tools',
+    ...SINGLE_INSTANCE_POLICY,
   },
   'environment-list': {
     type: 'environment-list',
@@ -119,6 +147,7 @@ export const WIDGET_DEFINITIONS: Record<WidgetType, WidgetDefinition> = {
     defaultSize: 'md',
     minSize: 'sm',
     category: 'lists',
+    ...MULTI_INSTANCE_POLICY,
   },
   'package-list': {
     type: 'package-list',
@@ -128,6 +157,7 @@ export const WIDGET_DEFINITIONS: Record<WidgetType, WidgetDefinition> = {
     defaultSize: 'md',
     minSize: 'sm',
     category: 'lists',
+    ...MULTI_INSTANCE_POLICY,
   },
   'quick-actions': {
     type: 'quick-actions',
@@ -137,6 +167,7 @@ export const WIDGET_DEFINITIONS: Record<WidgetType, WidgetDefinition> = {
     defaultSize: 'full',
     minSize: 'lg',
     category: 'tools',
+    ...MULTI_INSTANCE_POLICY,
   },
   'wsl-status': {
     type: 'wsl-status',
@@ -146,6 +177,7 @@ export const WIDGET_DEFINITIONS: Record<WidgetType, WidgetDefinition> = {
     defaultSize: 'md',
     minSize: 'sm',
     category: 'overview',
+    ...SINGLE_INSTANCE_POLICY,
   },
   'health-check': {
     type: 'health-check',
@@ -155,6 +187,7 @@ export const WIDGET_DEFINITIONS: Record<WidgetType, WidgetDefinition> = {
     defaultSize: 'md',
     minSize: 'sm',
     category: 'overview',
+    ...SINGLE_INSTANCE_POLICY,
   },
   'updates-available': {
     type: 'updates-available',
@@ -164,6 +197,7 @@ export const WIDGET_DEFINITIONS: Record<WidgetType, WidgetDefinition> = {
     defaultSize: 'md',
     minSize: 'sm',
     category: 'overview',
+    ...SINGLE_INSTANCE_POLICY,
   },
   'welcome': {
     type: 'welcome',
@@ -173,6 +207,7 @@ export const WIDGET_DEFINITIONS: Record<WidgetType, WidgetDefinition> = {
     defaultSize: 'full',
     minSize: 'lg',
     category: 'overview',
+    ...SINGLE_INSTANCE_POLICY,
   },
   'toolbox-favorites': {
     type: 'toolbox-favorites',
@@ -182,10 +217,11 @@ export const WIDGET_DEFINITIONS: Record<WidgetType, WidgetDefinition> = {
     defaultSize: 'md',
     minSize: 'sm',
     category: 'tools',
+    ...MULTI_INSTANCE_POLICY,
   },
 };
 
-const DEFAULT_WIDGETS: WidgetConfig[] = [
+export const DEFAULT_WIDGETS: WidgetConfig[] = [
   { id: 'w-welcome', type: 'welcome', size: 'full', visible: true },
   { id: 'w-stats', type: 'stats-overview', size: 'full', visible: true },
   { id: 'w-search', type: 'quick-search', size: 'full', visible: true },
@@ -219,48 +255,274 @@ interface DashboardState {
   resetToDefault: () => void;
 }
 
+type PersistedDashboardState = {
+  widgets?: unknown;
+};
+
+const WIDGET_SIZE_SET = new Set<WidgetSize>(['sm', 'md', 'lg', 'full']);
+
 let widgetCounter = 0;
+
+function cloneWidget(widget: WidgetConfig): WidgetConfig {
+  return { ...widget };
+}
+
+export function getDefaultWidgets(): WidgetConfig[] {
+  return DEFAULT_WIDGETS.map(cloneWidget);
+}
+
+function getWidgetDefinition(type: WidgetType): WidgetDefinition {
+  return WIDGET_DEFINITIONS[type];
+}
+
+function isWidgetSize(value: unknown): value is WidgetSize {
+  return typeof value === 'string' && WIDGET_SIZE_SET.has(value as WidgetSize);
+}
+
+function isWidgetType(value: unknown): value is WidgetType {
+  return typeof value === 'string' && value in WIDGET_DEFINITIONS;
+}
+
+function ensureUniqueId(id: string, usedIds: Set<string>): string {
+  if (!usedIds.has(id)) {
+    usedIds.add(id);
+    return id;
+  }
+
+  let next = 2;
+  let candidate = `${id}-${next}`;
+  while (usedIds.has(candidate)) {
+    next += 1;
+    candidate = `${id}-${next}`;
+  }
+  usedIds.add(candidate);
+  return candidate;
+}
+
+function normalizeLegacyWidgetsV1(rawWidgets: unknown): unknown[] {
+  if (!Array.isArray(rawWidgets)) {
+    return [];
+  }
+
+  const widgets = [...rawWidgets];
+  const existingTypes = new Set(
+    widgets
+      .map((item) => (item && typeof item === 'object' ? (item as { type?: unknown }).type : undefined))
+      .filter((type): type is WidgetType => isWidgetType(type)),
+  );
+
+  if (!existingTypes.has('health-check')) {
+    widgets.splice(3, 0, { id: 'w-health', type: 'health-check', size: 'md', visible: true });
+  }
+  if (!existingTypes.has('updates-available')) {
+    widgets.splice(4, 0, { id: 'w-updates', type: 'updates-available', size: 'md', visible: true });
+  }
+  if (!existingTypes.has('welcome')) {
+    widgets.unshift({ id: 'w-welcome', type: 'welcome', size: 'full', visible: true });
+  }
+
+  return widgets;
+}
+
+function withPolicyConstraints(widgets: WidgetConfig[]): WidgetConfig[] {
+  const constrained: WidgetConfig[] = [];
+  const typeCounts = new Map<WidgetType, number>();
+
+  for (const widget of widgets) {
+    const def = getWidgetDefinition(widget.type);
+    const count = typeCounts.get(widget.type) ?? 0;
+    const maxInstances = def.maxInstances ?? (def.allowMultiple ? Number.POSITIVE_INFINITY : 1);
+    if (count >= maxInstances) {
+      continue;
+    }
+    constrained.push(widget);
+    typeCounts.set(widget.type, count + 1);
+  }
+
+  for (const def of Object.values(WIDGET_DEFINITIONS)) {
+    if (!def.required) {
+      continue;
+    }
+
+    const requiredCount = typeCounts.get(def.type) ?? 0;
+    if (requiredCount > 0) {
+      continue;
+    }
+
+    const fallback = DEFAULT_WIDGETS.find((widget) => widget.type === def.type);
+    const restored = fallback
+      ? cloneWidget(fallback)
+      : {
+          id: `w-${def.type}-required`,
+          type: def.type,
+          size: def.defaultSize,
+          visible: def.defaultVisible,
+        };
+
+    restored.id = ensureUniqueId(restored.id, new Set(constrained.map((item) => item.id)));
+    constrained.push(restored);
+    typeCounts.set(def.type, 1);
+  }
+
+  return constrained;
+}
+
+export function normalizeDashboardWidgets(rawWidgets: unknown): WidgetConfig[] {
+  if (!Array.isArray(rawWidgets)) {
+    return getDefaultWidgets();
+  }
+
+  const normalized: WidgetConfig[] = [];
+  const usedIds = new Set<string>();
+
+  rawWidgets.forEach((item, index) => {
+    if (!item || typeof item !== 'object') {
+      return;
+    }
+
+    const raw = item as Record<string, unknown>;
+    if (!isWidgetType(raw.type)) {
+      return;
+    }
+
+    const def = getWidgetDefinition(raw.type);
+
+    const baseId = typeof raw.id === 'string' && raw.id.trim().length > 0
+      ? raw.id.trim()
+      : `w-${raw.type}-restored-${index + 1}`;
+
+    normalized.push({
+      id: ensureUniqueId(baseId, usedIds),
+      type: raw.type,
+      size: isWidgetSize(raw.size) ? raw.size : def.defaultSize,
+      visible: typeof raw.visible === 'boolean' ? raw.visible : def.defaultVisible,
+    });
+  });
+
+  const constrained = withPolicyConstraints(normalized);
+  if (constrained.length === 0) {
+    return getDefaultWidgets();
+  }
+
+  return constrained;
+}
 
 function generateWidgetId(type: WidgetType): string {
   widgetCounter += 1;
   return `w-${type}-${Date.now()}-${widgetCounter}`;
 }
 
+export function getWidgetTypeCount(widgets: readonly WidgetConfig[], type: WidgetType): number {
+  return widgets.reduce((count, widget) => (widget.type === type ? count + 1 : count), 0);
+}
+
+export function canAddWidgetType(widgets: readonly WidgetConfig[], type: WidgetType): boolean {
+  const def = getWidgetDefinition(type);
+  const count = getWidgetTypeCount(widgets, type);
+  const maxInstances = def.maxInstances ?? (def.allowMultiple ? Number.POSITIVE_INFINITY : 1);
+  return count < maxInstances;
+}
+
+export function canRemoveWidgetById(widgets: readonly WidgetConfig[], id: string): boolean {
+  const target = widgets.find((widget) => widget.id === id);
+  if (!target) {
+    return false;
+  }
+
+  const def = getWidgetDefinition(target.type);
+  if (!def.required) {
+    return true;
+  }
+
+  return getWidgetTypeCount(widgets, target.type) > 1;
+}
+
+export function canToggleWidgetVisibilityById(widgets: readonly WidgetConfig[], id: string): boolean {
+  const target = widgets.find((widget) => widget.id === id);
+  if (!target) {
+    return false;
+  }
+
+  const def = getWidgetDefinition(target.type);
+  if (!def.required) {
+    return true;
+  }
+
+  if (!target.visible) {
+    return true;
+  }
+
+  const visibleCount = widgets.filter((widget) => widget.type === target.type && widget.visible).length;
+  return visibleCount > 1;
+}
+
 export const useDashboardStore = create<DashboardState>()(
   persist(
     (set) => ({
-      widgets: DEFAULT_WIDGETS,
+      widgets: getDefaultWidgets(),
       isCustomizing: false,
       isEditMode: false,
 
-      setWidgets: (widgets) => set({ widgets }),
+      setWidgets: (widgets) => set({ widgets: normalizeDashboardWidgets(widgets) }),
 
       addWidget: (type) =>
         set((state) => {
-          const def = WIDGET_DEFINITIONS[type];
+          if (!canAddWidgetType(state.widgets, type)) {
+            return state;
+          }
+
+          const def = getWidgetDefinition(type);
           const newWidget: WidgetConfig = {
             id: generateWidgetId(type),
             type,
             size: def.defaultSize,
-            visible: true,
+            visible: def.defaultVisible,
           };
+
           return { widgets: [...state.widgets, newWidget] };
         }),
 
       removeWidget: (id) =>
-        set((state) => ({
-          widgets: state.widgets.filter((w) => w.id !== id),
-        })),
+        set((state) => {
+          if (!canRemoveWidgetById(state.widgets, id)) {
+            return state;
+          }
+
+          return {
+            widgets: state.widgets.filter((widget) => widget.id !== id),
+          };
+        }),
 
       updateWidget: (id, updates) =>
         set((state) => ({
-          widgets: state.widgets.map((w) =>
-            w.id === id ? { ...w, ...updates } : w,
-          ),
+          widgets: state.widgets.map((widget) => {
+            if (widget.id !== id) {
+              return widget;
+            }
+
+            const next: WidgetConfig = {
+              ...widget,
+              ...updates,
+            };
+
+            if (!isWidgetSize(next.size)) {
+              next.size = getWidgetDefinition(widget.type).defaultSize;
+            }
+
+            if (typeof next.visible !== 'boolean') {
+              next.visible = widget.visible;
+            }
+
+            return next;
+          }),
         })),
 
       reorderWidgets: (oldIndex, newIndex) =>
         set((state) => {
+          if (oldIndex < 0 || newIndex < 0 || oldIndex >= state.widgets.length || newIndex >= state.widgets.length) {
+            return state;
+          }
+
           const newWidgets = [...state.widgets];
           const [removed] = newWidgets.splice(oldIndex, 1);
           newWidgets.splice(newIndex, 0, removed);
@@ -268,38 +530,37 @@ export const useDashboardStore = create<DashboardState>()(
         }),
 
       toggleWidgetVisibility: (id) =>
-        set((state) => ({
-          widgets: state.widgets.map((w) =>
-            w.id === id ? { ...w, visible: !w.visible } : w,
-          ),
-        })),
+        set((state) => {
+          if (!canToggleWidgetVisibilityById(state.widgets, id)) {
+            return state;
+          }
+
+          return {
+            widgets: state.widgets.map((widget) =>
+              widget.id === id ? { ...widget, visible: !widget.visible } : widget,
+            ),
+          };
+        }),
 
       setIsCustomizing: (isCustomizing) => set({ isCustomizing }),
 
       setIsEditMode: (isEditMode) => set({ isEditMode }),
 
-      resetToDefault: () => set({ widgets: DEFAULT_WIDGETS }),
+      resetToDefault: () => set({ widgets: getDefaultWidgets() }),
     }),
     {
       name: 'cognia-dashboard',
       storage: createJSONStorage(() => localStorage),
-      version: 2,
+      version: 3,
       migrate: (persistedState, version) => {
-        if (version < 2) {
-          // Add new widgets that didn't exist in v1
-          const state = persistedState as { widgets: WidgetConfig[] };
-          const existingTypes = new Set(state.widgets.map((w) => w.type));
-          if (!existingTypes.has('health-check')) {
-            state.widgets.splice(3, 0, { id: 'w-health', type: 'health-check', size: 'md', visible: true });
-          }
-          if (!existingTypes.has('updates-available')) {
-            state.widgets.splice(4, 0, { id: 'w-updates', type: 'updates-available', size: 'md', visible: true });
-          }
-          if (!existingTypes.has('welcome')) {
-            state.widgets.unshift({ id: 'w-welcome', type: 'welcome', size: 'full', visible: true });
-          }
-        }
-        return persistedState as DashboardState;
+        const state = (persistedState ?? {}) as PersistedDashboardState;
+        const widgetsSource = version < 2
+          ? normalizeLegacyWidgetsV1(state.widgets)
+          : state.widgets;
+
+        return {
+          widgets: normalizeDashboardWidgets(widgetsSource),
+        } as DashboardState;
       },
       partialize: (state) => ({
         widgets: state.widgets,

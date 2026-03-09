@@ -17,6 +17,7 @@ import type { ToolboxMarketplaceResolvedListing } from "@/types/toolbox-marketpl
 
 interface MarketplaceListingCardProps {
   listing: ToolboxMarketplaceResolvedListing;
+  busy?: boolean;
   onInstall: (
     listing: ToolboxMarketplaceResolvedListing,
   ) => void | Promise<unknown>;
@@ -27,6 +28,7 @@ interface MarketplaceListingCardProps {
 
 export function MarketplaceListingCard({
   listing,
+  busy = false,
   onInstall,
   onUpdate,
 }: MarketplaceListingCardProps) {
@@ -125,8 +127,8 @@ export function MarketplaceListingCard({
           </Button>
         ) : listing.installState === "update-available" ? (
           <>
-            <Button size="sm" onClick={() => void onUpdate(listing)}>
-              {t("toolbox.marketplace.update")}
+            <Button size="sm" disabled={busy} onClick={() => void onUpdate(listing)}>
+              {busy ? "Working..." : t("toolbox.marketplace.update")}
             </Button>
             <Button size="sm" variant="outline" asChild>
               <Link href="/toolbox/plugins">
@@ -156,8 +158,8 @@ export function MarketplaceListingCard({
             </Button>
           </>
         ) : (
-          <Button size="sm" onClick={() => void onInstall(listing)}>
-            {t("toolbox.marketplace.install")}
+          <Button size="sm" disabled={busy} onClick={() => void onInstall(listing)}>
+            {busy ? "Working..." : t("toolbox.marketplace.install")}
           </Button>
         )}
       </CardFooter>

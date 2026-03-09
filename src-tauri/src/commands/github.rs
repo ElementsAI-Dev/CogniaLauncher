@@ -7,9 +7,7 @@ use crate::provider::github::{
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use super::download::{
-    download_add, DownloadRequest, SharedDownloadManager, SharedSettings,
-};
+use super::download::{download_add, DownloadRequest, SharedDownloadManager, SharedSettings};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

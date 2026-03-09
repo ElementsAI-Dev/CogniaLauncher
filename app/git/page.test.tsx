@@ -4,6 +4,8 @@ import GitPage from './page';
 
 const mockRefreshAll = jest.fn().mockResolvedValue(undefined);
 const mockSetRepoPath = jest.fn().mockResolvedValue(undefined);
+const mockRefreshGitByScopes = jest.fn().mockResolvedValue(undefined);
+const mockRefreshAdvancedByScopes = jest.fn().mockResolvedValue(undefined);
 const mockRefreshSubmodules = jest.fn().mockResolvedValue(undefined);
 const mockRefreshWorktrees = jest.fn().mockResolvedValue(undefined);
 const mockRefreshHooks = jest.fn().mockResolvedValue(undefined);
@@ -83,7 +85,9 @@ jest.mock('@/hooks/use-git', () => ({
     commits: [],
     contributors: [],
     statusFiles: [],
+    lastActionResult: null,
     refreshAll: mockRefreshAll,
+    refreshByScopes: mockRefreshGitByScopes,
     setRepoPath: mockSetRepoPath,
     refreshRepoInfo: mockRefreshRepoInfo,
     refreshStatus: mockRefreshStatus,
@@ -185,6 +189,8 @@ jest.mock('@/hooks/use-git-advanced', () => ({
     bisectState: { active: false, currentHash: null, stepsTaken: 0, remainingEstimate: null },
     sparsePatterns: [],
     isSparseCheckout: false,
+    lastActionResult: null,
+    refreshByScopes: mockRefreshAdvancedByScopes,
     refreshSubmodules: mockRefreshSubmodules,
     addSubmodule: jest.fn().mockResolvedValue('ok'),
     updateSubmodules: jest.fn().mockResolvedValue('ok'),
@@ -361,8 +367,8 @@ jest.mock('@/components/git', () => ({
     onRebase,
     onSquash,
   }: {
-    onRebase?: (onto: string) => Promise<string>;
-    onSquash?: (count: number, message: string) => Promise<string>;
+    onRebase?: (onto: string, confirmRisk?: boolean) => Promise<string>;
+    onSquash?: (count: number, message: string, confirmRisk?: boolean) => Promise<string>;
   }) => (
     <div data-testid="rebase-squash-card">
       <button data-testid="quick-rebase" onClick={() => void onRebase?.('main')}>rebase</button>
@@ -378,6 +384,11 @@ jest.mock('@/components/git', () => ({
 describe('GitPage', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.spyOn(window, 'confirm').mockReturnValue(true);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   const renderGitPage = async () => {
@@ -459,24 +470,21 @@ describe('GitPage', () => {
     await user.click(screen.getByTestId('reset-from-graph'));
 
     await waitFor(() => {
-      expect(mockResetHead).toHaveBeenCalledWith('mixed', 'abc1234');
+      expect(mockResetHead).toHaveBeenCalledWith('mixed', 'abc1234', true);
     });
   });
 
   it('wires reflog reset action and refreshes graph-related data', async () => {
     const user = userEvent.setup();
     await renderGitPage();
+    const prevRefreshScopes = mockRefreshGitByScopes.mock.calls.length;
 
     await user.click(screen.getByRole('tab', { name: /history/i }));
     await user.click(screen.getByTestId('reflog-reset'));
 
     await waitFor(() => {
-      expect(mockResetHead).toHaveBeenCalledWith('hard', 'def5678');
-      expect(mockRefreshRepoInfo).toHaveBeenCalled();
-      expect(mockRefreshStatus).toHaveBeenCalled();
-      expect(mockRefreshBranches).toHaveBeenCalled();
-      expect(mockRefreshTags).toHaveBeenCalled();
-      expect(mockGetLog).toHaveBeenCalledWith({ limit: 50 });
+      expect(mockResetHead).toHaveBeenCalledWith('hard', 'def5678', true);
+      expect(mockRefreshGitByScopes.mock.calls.length).toBeGreaterThan(prevRefreshScopes);
     });
   });
 
@@ -489,52 +497,40 @@ describe('GitPage', () => {
     await user.click(screen.getByTestId('quick-squash'));
 
     await waitFor(() => {
-      expect(mockQuickRebase).toHaveBeenCalledWith('main');
-      expect(mockQuickSquash).toHaveBeenCalledWith(3, 'squash message');
+      expect(mockQuickRebase).toHaveBeenCalledWith('main', undefined);
+      expect(mockQuickSquash).toHaveBeenCalledWith(3, 'squash message', undefined);
     });
   });
 
   it('wires merge action and refreshes graph-related data', async () => {
     const user = userEvent.setup();
     await renderGitPage();
-    const prevRepoInfo = mockRefreshRepoInfo.mock.calls.length;
-    const prevStatus = mockRefreshStatus.mock.calls.length;
-    const prevBranches = mockRefreshBranches.mock.calls.length;
-    const prevTags = mockRefreshTags.mock.calls.length;
-    const prevGetLog = mockGetLog.mock.calls.length;
+    const prevRefreshScopes = mockRefreshGitByScopes.mock.calls.length;
+    const prevAdvancedScopes = mockRefreshAdvancedByScopes.mock.calls.length;
 
     await user.click(screen.getByRole('tab', { name: /repository/i }));
     await user.click(screen.getByTestId('merge-action'));
 
     await waitFor(() => {
       expect(mockMerge).toHaveBeenCalledWith('feature/demo', true);
-      expect(mockRefreshRepoInfo.mock.calls.length).toBeGreaterThan(prevRepoInfo);
-      expect(mockRefreshStatus.mock.calls.length).toBeGreaterThan(prevStatus);
-      expect(mockRefreshBranches.mock.calls.length).toBeGreaterThan(prevBranches);
-      expect(mockRefreshTags.mock.calls.length).toBeGreaterThan(prevTags);
-      expect(mockGetLog.mock.calls.length).toBeGreaterThan(prevGetLog);
+      expect(mockRefreshGitByScopes.mock.calls.length).toBeGreaterThan(prevRefreshScopes);
+      expect(mockRefreshAdvancedByScopes.mock.calls.length).toBeGreaterThan(prevAdvancedScopes);
     });
   });
 
   it('wires commit action and refreshes graph-related data', async () => {
     const user = userEvent.setup();
     await renderGitPage();
-    const prevRepoInfo = mockRefreshRepoInfo.mock.calls.length;
-    const prevStatus = mockRefreshStatus.mock.calls.length;
-    const prevBranches = mockRefreshBranches.mock.calls.length;
-    const prevTags = mockRefreshTags.mock.calls.length;
-    const prevGetLog = mockGetLog.mock.calls.length;
+    const prevRefreshScopes = mockRefreshGitByScopes.mock.calls.length;
+    const prevAdvancedScopes = mockRefreshAdvancedByScopes.mock.calls.length;
 
     await user.click(screen.getByRole('tab', { name: /changes/i }));
     await user.click(screen.getByTestId('commit-action'));
 
     await waitFor(() => {
       expect(mockCommit).toHaveBeenCalledWith('feat: commit', false, false, false, false);
-      expect(mockRefreshRepoInfo.mock.calls.length).toBeGreaterThan(prevRepoInfo);
-      expect(mockRefreshStatus.mock.calls.length).toBeGreaterThan(prevStatus);
-      expect(mockRefreshBranches.mock.calls.length).toBeGreaterThan(prevBranches);
-      expect(mockRefreshTags.mock.calls.length).toBeGreaterThan(prevTags);
-      expect(mockGetLog.mock.calls.length).toBeGreaterThan(prevGetLog);
+      expect(mockRefreshGitByScopes.mock.calls.length).toBeGreaterThan(prevRefreshScopes);
+      expect(mockRefreshAdvancedByScopes.mock.calls.length).toBeGreaterThan(prevAdvancedScopes);
     });
   });
 });

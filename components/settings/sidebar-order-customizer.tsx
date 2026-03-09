@@ -37,9 +37,9 @@ function SidebarOrderGroup<T extends PrimarySidebarItemId | SecondarySidebarItem
   t: (key: string) => string;
 }) {
   return (
-    <div className="space-y-2">
+    <div className="flex flex-col gap-2">
       <p className="text-sm font-medium">{title}</p>
-      <div className="space-y-1 rounded-md border">
+      <div className="flex flex-col gap-1 rounded-md border">
         {itemOrder.map((itemId, index) => (
           <div
             key={itemId}
@@ -99,7 +99,7 @@ export function SidebarOrderCustomizer({
           </Button>
         </div>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="flex flex-col gap-3">
         <SidebarOrderGroup
           title={t("settings.sidebarOrderMainGroup")}
           itemOrder={primaryOrder}

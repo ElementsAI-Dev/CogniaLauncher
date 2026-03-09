@@ -12,7 +12,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
   Dialog,
@@ -99,28 +99,24 @@ export function TerminalPsModulesTable({
     <>
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="text-base">{t('terminal.psModulesScripts')}</CardTitle>
-              <CardDescription>{t('terminal.psModulesScriptsDesc')}</CardDescription>
-            </div>
-            <div className="flex items-center gap-2">
-              {onInstallModule && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setInstallDialogOpen(true)}
-                >
-                  <Package className="h-3.5 w-3.5 mr-1" />
-                  {t('terminal.installModule')}
-                </Button>
-              )}
-              <Button size="sm" variant="outline" onClick={handleRefresh}>
-                <RefreshCw className="h-3.5 w-3.5 mr-1" />
-                {t('common.refresh')}
+          <CardTitle className="text-base">{t('terminal.psModulesScripts')}</CardTitle>
+          <CardDescription>{t('terminal.psModulesScriptsDesc')}</CardDescription>
+          <CardAction className="flex items-center gap-2">
+            {onInstallModule && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setInstallDialogOpen(true)}
+              >
+                <Package className="h-3.5 w-3.5 mr-1" />
+                {t('terminal.installModule')}
               </Button>
-            </div>
-          </div>
+            )}
+            <Button size="sm" variant="outline" onClick={handleRefresh}>
+              <RefreshCw className="h-3.5 w-3.5 mr-1" />
+              {t('common.refresh')}
+            </Button>
+          </CardAction>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="relative">
@@ -177,6 +173,14 @@ export function TerminalPsModulesTable({
                             key={`${mod.name}-${mod.version}`}
                             className="cursor-pointer"
                             onClick={() => setSelectedModule(mod)}
+                            tabIndex={0}
+                            aria-label={`${t('terminal.moduleDetail')}: ${mod.name}`}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault();
+                                setSelectedModule(mod);
+                              }
+                            }}
                           >
                             <TableCell>
                               <div className="flex items-center gap-2 min-w-0">
@@ -209,6 +213,7 @@ export function TerminalPsModulesTable({
                                         variant="ghost"
                                         className="h-7 w-7"
                                         title={t('terminal.updateModule')}
+                                        aria-label={`${t('terminal.updateModule')} ${mod.name}`}
                                         onClick={(e) => { e.stopPropagation(); onUpdateModule(mod.name); }}
                                       >
                                         <ArrowUpCircle className="h-3.5 w-3.5" />
@@ -225,6 +230,7 @@ export function TerminalPsModulesTable({
                                         variant="ghost"
                                         className="h-7 w-7 text-destructive"
                                         title={t('terminal.uninstallModule')}
+                                        aria-label={`${t('terminal.uninstallModule')} ${mod.name}`}
                                         onClick={(e) => { e.stopPropagation(); setUninstallTarget(mod.name); }}
                                       >
                                         <Trash2 className="h-3.5 w-3.5" />

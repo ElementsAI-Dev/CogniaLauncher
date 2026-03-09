@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useLocale } from '@/components/providers/locale-provider';
@@ -490,104 +490,117 @@ export default function DownloadsPage() {
             t={t}
           />
 
-          <Card>
-            <CardHeader className="pb-2">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <CardTitle>{t('downloads.queue')}</CardTitle>
-                  <CardDescription>
-                    {t('downloads.progress.percent')}: {queueStats.overallProgress.toFixed(1)}%
-                    {filteredTasks.length !== tasks.length && (
-                      <span className="ml-2">({filteredTasks.length} / {tasks.length})</span>
-                    )}
-                  </CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {filteredTasks.length === 0 ? (
-                <DownloadEmptyState
-                  hasFilters={hasQueueFilters}
-                  onClearFilters={handleClearQueueFilters}
-                  t={t}
-                />
-              ) : (
-                <ScrollArea className="h-[420px]">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-10">
-                          <Checkbox
-                            checked={
-                              allVisibleSelected
-                                ? true
-                                : selectedVisibleCount > 0
-                                  ? 'indeterminate'
-                                  : false
-                            }
-                            onCheckedChange={(checked) =>
-                              handleToggleSelectAllVisible(checked === true)
-                            }
-                            aria-label="Select all visible tasks"
-                          />
-                        </TableHead>
-                        <TableHead>{t('downloads.name')}</TableHead>
-                        <TableHead>{t('downloads.provider')}</TableHead>
-                        <TableHead>{t('downloads.status')}</TableHead>
-                        <TableHead>{t('downloads.progress.percent')}</TableHead>
-                        <TableHead>{t('downloads.progress.speed')}</TableHead>
-                        <TableHead>{t('downloads.progress.eta')}</TableHead>
-                        <TableHead className="text-right">{t('common.actions')}</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredTasks.map((task) => (
-                        <DownloadTaskRow
-                          key={task.id}
-                          task={task}
-                          selected={selectedTaskIds.has(task.id)}
-                          onSelectedChange={(selected) => {
-                            if (selected) {
-                              selectTask(task.id);
-                            } else {
-                              deselectTask(task.id);
-                            }
-                          }}
-                          onPause={pauseDownload}
-                          onResume={resumeDownload}
-                          onCancel={cancelDownload}
-                          onRemove={removeDownload}
-                          onOpen={openFile}
-                          onReveal={revealFile}
-                          onDetail={(task) => {
-                            setDetailTask(task);
-                            setDetailOpen(true);
-                          }}
-                          t={t}
-                        />
-                      ))}
-                    </TableBody>
-                  </Table>
-                </ScrollArea>
-              )}
-            </CardContent>
-          </Card>
+          <div
+            data-testid="downloads-queue-layout"
+            className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]"
+          >
+            <div className="space-y-6">
+              <Card data-testid="downloads-queue-card">
+                <CardHeader className="pb-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <CardTitle>{t('downloads.queue')}</CardTitle>
+                      <CardDescription>
+                        {t('downloads.progress.percent')}: {queueStats.overallProgress.toFixed(1)}%
+                        {filteredTasks.length !== tasks.length && (
+                          <span className="ml-2">({filteredTasks.length} / {tasks.length})</span>
+                        )}
+                      </CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {filteredTasks.length === 0 ? (
+                    <DownloadEmptyState
+                      hasFilters={hasQueueFilters}
+                      onClearFilters={handleClearQueueFilters}
+                      t={t}
+                    />
+                  ) : (
+                    <ScrollArea className="h-[420px] w-full">
+                      <Table className="min-w-[920px]">
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-10">
+                              <Checkbox
+                                checked={
+                                  allVisibleSelected
+                                    ? true
+                                    : selectedVisibleCount > 0
+                                      ? 'indeterminate'
+                                      : false
+                                }
+                                onCheckedChange={(checked) =>
+                                  handleToggleSelectAllVisible(checked === true)
+                                }
+                                aria-label="Select all visible tasks"
+                              />
+                            </TableHead>
+                            <TableHead>{t('downloads.name')}</TableHead>
+                            <TableHead>{t('downloads.provider')}</TableHead>
+                            <TableHead>{t('downloads.status')}</TableHead>
+                            <TableHead>{t('downloads.progress.percent')}</TableHead>
+                            <TableHead>{t('downloads.progress.speed')}</TableHead>
+                            <TableHead>{t('downloads.progress.eta')}</TableHead>
+                            <TableHead className="text-right">{t('common.actions')}</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {filteredTasks.map((task) => (
+                            <DownloadTaskRow
+                              key={task.id}
+                              task={task}
+                              selected={selectedTaskIds.has(task.id)}
+                              onSelectedChange={(selected) => {
+                                if (selected) {
+                                  selectTask(task.id);
+                                } else {
+                                  deselectTask(task.id);
+                                }
+                              }}
+                              onPause={pauseDownload}
+                              onResume={resumeDownload}
+                              onCancel={cancelDownload}
+                              onRemove={removeDownload}
+                              onOpen={openFile}
+                              onReveal={revealFile}
+                              onDetail={(task) => {
+                                setDetailTask(task);
+                                setDetailOpen(true);
+                              }}
+                              t={t}
+                            />
+                          ))}
+                        </TableBody>
+                      </Table>
+                      <ScrollBar orientation="horizontal" />
+                    </ScrollArea>
+                  )}
+                </CardContent>
+              </Card>
 
-          <SpeedChart t={t} />
+              <SpeedChart t={t} />
+            </div>
 
-          <DownloadSettingsCard
-            speedLimitInput={speedLimitInput}
-            onSpeedLimitChange={setSpeedLimitInput}
-            speedUnit={speedUnit}
-            onSpeedUnitChange={setSpeedUnit}
-            maxConcurrentInput={maxConcurrentInput}
-            onMaxConcurrentChange={setMaxConcurrentInput}
-            onApply={handleApplySettings}
-            disabled={!isDesktop}
-            clipboardMonitor={clipboardMonitor}
-            onClipboardMonitorChange={setClipboardMonitor}
-            t={t}
-          />
+            <div
+              data-testid="downloads-settings-region"
+              className="xl:sticky xl:top-6 xl:self-start"
+            >
+              <DownloadSettingsCard
+                speedLimitInput={speedLimitInput}
+                onSpeedLimitChange={setSpeedLimitInput}
+                speedUnit={speedUnit}
+                onSpeedUnitChange={setSpeedUnit}
+                maxConcurrentInput={maxConcurrentInput}
+                onMaxConcurrentChange={setMaxConcurrentInput}
+                onApply={handleApplySettings}
+                disabled={!isDesktop}
+                clipboardMonitor={clipboardMonitor}
+                onClipboardMonitorChange={setClipboardMonitor}
+                t={t}
+              />
+            </div>
+          </div>
         </TabsContent>
 
         <TabsContent value="history" className="space-y-6">

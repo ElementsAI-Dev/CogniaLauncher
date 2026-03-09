@@ -28,6 +28,19 @@ pub enum BackupContentType {
 }
 
 impl BackupContentType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Config => "config",
+            Self::TerminalProfiles => "terminal_profiles",
+            Self::EnvironmentProfiles => "environment_profiles",
+            Self::CacheDatabase => "cache_database",
+            Self::DownloadHistory => "download_history",
+            Self::CleanupHistory => "cleanup_history",
+            Self::CustomDetectionRules => "custom_detection_rules",
+            Self::EnvironmentSettings => "environment_settings",
+        }
+    }
+
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "config" => Some(Self::Config),
@@ -95,10 +108,33 @@ pub struct BackupInfo {
     pub size_human: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BackupOperationStatus {
+    Success,
+    Partial,
+    Skipped,
+    Failed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupOperationIssue {
+    pub code: String,
+    pub message: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_type: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BackupResult {
     pub success: bool,
+    pub status: BackupOperationStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason_code: Option<String>,
+    #[serde(default)]
+    pub issues: Vec<BackupOperationIssue>,
     pub path: String,
     pub manifest: BackupManifest,
     pub duration_ms: u64,
@@ -109,6 +145,11 @@ pub struct BackupResult {
 #[serde(rename_all = "camelCase")]
 pub struct RestoreResult {
     pub success: bool,
+    pub status: BackupOperationStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason_code: Option<String>,
+    #[serde(default)]
+    pub issues: Vec<BackupOperationIssue>,
     pub restored: Vec<String>,
     pub skipped: Vec<RestoreSkipped>,
     pub error: Option<String>,
@@ -125,10 +166,85 @@ pub struct RestoreSkipped {
 #[serde(rename_all = "camelCase")]
 pub struct BackupValidationResult {
     pub valid: bool,
+    pub status: BackupOperationStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason_code: Option<String>,
+    #[serde(default)]
+    pub issues: Vec<BackupOperationIssue>,
     pub manifest: Option<BackupManifest>,
     pub missing_files: Vec<String>,
     pub checksum_mismatches: Vec<String>,
     pub errors: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupDeleteResult {
+    pub success: bool,
+    pub status: BackupOperationStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason_code: Option<String>,
+    #[serde(default)]
+    pub issues: Vec<BackupOperationIssue>,
+    pub deleted: bool,
+    pub path: String,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupExportResult {
+    pub success: bool,
+    pub status: BackupOperationStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason_code: Option<String>,
+    #[serde(default)]
+    pub issues: Vec<BackupOperationIssue>,
+    pub bytes: u64,
+    pub backup_path: String,
+    pub dest_path: String,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupImportResult {
+    pub success: bool,
+    pub status: BackupOperationStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason_code: Option<String>,
+    #[serde(default)]
+    pub issues: Vec<BackupOperationIssue>,
+    pub zip_path: String,
+    pub info: Option<BackupInfo>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupCleanupResult {
+    pub success: bool,
+    pub status: BackupOperationStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason_code: Option<String>,
+    #[serde(default)]
+    pub issues: Vec<BackupOperationIssue>,
+    pub deleted: u32,
+    pub max_count: u32,
+    pub max_age_days: u32,
+    pub error: Option<String>,
+}
+
+fn issue(
+    code: &str,
+    message: impl Into<String>,
+    content_type: Option<String>,
+) -> BackupOperationIssue {
+    BackupOperationIssue {
+        code: code.to_string(),
+        message: message.into(),
+        content_type,
+    }
 }
 
 // ============================================================================
@@ -160,6 +276,7 @@ pub async fn create_backup(
     let mut file_checksums: HashMap<String, String> = HashMap::new();
     let mut actual_contents: Vec<BackupContentType> = Vec::new();
     let mut total_size: u64 = 0;
+    let mut issues = Vec::new();
 
     let cache_dir = settings.get_cache_dir();
     let state_dir = settings.get_state_dir();
@@ -186,9 +303,16 @@ pub async fn create_backup(
             }
             Err(e) => {
                 log::warn!("Backup of {:?} failed, skipping: {}", content_type, e);
+                issues.push(issue(
+                    "content_backup_failed",
+                    e.to_string(),
+                    Some(content_type.as_str().to_string()),
+                ));
             }
         }
     }
+
+    let has_successful_content = !actual_contents.is_empty();
 
     let hostname = sysinfo::System::host_name().unwrap_or_else(|| "unknown".to_string());
 
@@ -213,12 +337,34 @@ pub async fn create_backup(
 
     let duration_ms = start.elapsed().as_millis() as u64;
 
+    let (status, reason_code, error) = if !has_successful_content {
+        (
+            BackupOperationStatus::Failed,
+            Some("backup_no_content_succeeded".to_string()),
+            Some("No backup content could be created".to_string()),
+        )
+    } else if issues.is_empty() {
+        (BackupOperationStatus::Success, None, None)
+    } else {
+        (
+            BackupOperationStatus::Partial,
+            Some("backup_partial_content_failure".to_string()),
+            Some(format!(
+                "{} content type(s) failed while creating backup",
+                issues.len()
+            )),
+        )
+    };
+
     Ok(BackupResult {
-        success: true,
+        success: has_successful_content,
+        status,
+        reason_code,
+        issues,
         path: backup_dir.display().to_string(),
         manifest,
         duration_ms,
-        error: None,
+        error,
     })
 }
 
@@ -369,8 +515,27 @@ pub async fn restore_backup(
     // First validate the backup
     let validation = validate_backup(backup_path).await?;
     if !validation.valid {
+        let mut issues = validation.issues.clone();
+        for name in &validation.missing_files {
+            issues.push(issue(
+                "restore_missing_file",
+                format!("Missing required file in backup: {}", name),
+                None,
+            ));
+        }
+        for name in &validation.checksum_mismatches {
+            issues.push(issue(
+                "restore_checksum_mismatch",
+                format!("Checksum mismatch in backup file: {}", name),
+                None,
+            ));
+        }
+
         return Ok(RestoreResult {
             success: false,
+            status: BackupOperationStatus::Failed,
+            reason_code: Some("restore_validation_failed".to_string()),
+            issues,
             restored: vec![],
             skipped: vec![],
             error: Some(validation.errors.join("; ")),
@@ -382,6 +547,7 @@ pub async fn restore_backup(
 
     let mut restored = Vec::new();
     let mut skipped = Vec::new();
+    let mut issues = Vec::new();
 
     for content_type in contents {
         match restore_content(
@@ -397,13 +563,18 @@ pub async fn restore_backup(
         .await
         {
             Ok(()) => {
-                restored.push(format!("{:?}", content_type).to_lowercase());
+                restored.push(content_type.as_str().to_string());
             }
             Err(e) => {
                 skipped.push(RestoreSkipped {
-                    content_type: format!("{:?}", content_type).to_lowercase(),
+                    content_type: content_type.as_str().to_string(),
                     reason: e.to_string(),
                 });
+                issues.push(issue(
+                    "content_restore_failed",
+                    e.to_string(),
+                    Some(content_type.as_str().to_string()),
+                ));
             }
         }
     }
@@ -411,11 +582,36 @@ pub async fn restore_backup(
     // Save settings after restore
     settings.save().await?;
 
+    let (status, reason_code, error) = if restored.is_empty() && !skipped.is_empty() {
+        (
+            BackupOperationStatus::Failed,
+            Some("restore_no_content_restored".to_string()),
+            Some(format!(
+                "Restore failed for all requested content types ({} skipped)",
+                skipped.len()
+            )),
+        )
+    } else if skipped.is_empty() {
+        (BackupOperationStatus::Success, None, None)
+    } else {
+        (
+            BackupOperationStatus::Partial,
+            Some("restore_partial_content_failure".to_string()),
+            Some(format!(
+                "Restore completed with {} skipped content type(s)",
+                skipped.len()
+            )),
+        )
+    };
+
     Ok(RestoreResult {
         success: skipped.is_empty(),
+        status,
+        reason_code,
+        issues,
         restored,
         skipped,
-        error: None,
+        error,
     })
 }
 
@@ -635,6 +831,9 @@ pub async fn validate_backup(backup_path: &Path) -> CogniaResult<BackupValidatio
         errors.push("manifest.json not found".to_string());
         return Ok(BackupValidationResult {
             valid: false,
+            status: BackupOperationStatus::Failed,
+            reason_code: Some("manifest_missing".to_string()),
+            issues: vec![issue("manifest_missing", "manifest.json not found", None)],
             manifest: None,
             missing_files,
             checksum_mismatches,
@@ -650,6 +849,13 @@ pub async fn validate_backup(backup_path: &Path) -> CogniaResult<BackupValidatio
             errors.push(format!("Invalid manifest.json: {}", e));
             return Ok(BackupValidationResult {
                 valid: false,
+                status: BackupOperationStatus::Failed,
+                reason_code: Some("manifest_invalid".to_string()),
+                issues: vec![issue(
+                    "manifest_invalid",
+                    format!("Invalid manifest.json: {}", e),
+                    None,
+                )],
                 manifest: None,
                 missing_files,
                 checksum_mismatches,
@@ -687,9 +893,42 @@ pub async fn validate_backup(backup_path: &Path) -> CogniaResult<BackupValidatio
     }
 
     let valid = errors.is_empty() && missing_files.is_empty() && checksum_mismatches.is_empty();
+    let mut issues = Vec::new();
+    for err in &errors {
+        issues.push(issue("validation_error", err.clone(), None));
+    }
+    for name in &missing_files {
+        issues.push(issue(
+            "validation_missing_file",
+            format!("Missing backup file: {}", name),
+            None,
+        ));
+    }
+    for name in &checksum_mismatches {
+        issues.push(issue(
+            "validation_checksum_mismatch",
+            format!("Checksum mismatch: {}", name),
+            None,
+        ));
+    }
 
     Ok(BackupValidationResult {
         valid,
+        status: if valid {
+            BackupOperationStatus::Success
+        } else {
+            BackupOperationStatus::Failed
+        },
+        reason_code: if valid {
+            None
+        } else if !errors.is_empty() {
+            Some("validation_errors".to_string())
+        } else if !missing_files.is_empty() {
+            Some("validation_missing_files".to_string())
+        } else {
+            Some("validation_checksum_mismatch".to_string())
+        },
+        issues,
         manifest: Some(manifest),
         missing_files,
         checksum_mismatches,
@@ -999,6 +1238,133 @@ pub async fn cleanup_old_backups(
     Ok(deleted)
 }
 
+pub async fn delete_backup_with_result(backup_path: &Path) -> BackupDeleteResult {
+    match delete_backup(backup_path).await {
+        Ok(deleted) if deleted => BackupDeleteResult {
+            success: true,
+            status: BackupOperationStatus::Success,
+            reason_code: None,
+            issues: vec![],
+            deleted: true,
+            path: backup_path.display().to_string(),
+            error: None,
+        },
+        Ok(_) => BackupDeleteResult {
+            success: false,
+            status: BackupOperationStatus::Skipped,
+            reason_code: Some("backup_not_found".to_string()),
+            issues: vec![issue(
+                "backup_not_found",
+                "Backup path does not exist",
+                None,
+            )],
+            deleted: false,
+            path: backup_path.display().to_string(),
+            error: Some("Backup path does not exist".to_string()),
+        },
+        Err(e) => BackupDeleteResult {
+            success: false,
+            status: BackupOperationStatus::Failed,
+            reason_code: Some("backup_delete_failed".to_string()),
+            issues: vec![issue("backup_delete_failed", e.to_string(), None)],
+            deleted: false,
+            path: backup_path.display().to_string(),
+            error: Some(e.to_string()),
+        },
+    }
+}
+
+pub async fn export_backup_with_result(backup_path: &Path, dest_path: &Path) -> BackupExportResult {
+    match export_backup(backup_path, dest_path).await {
+        Ok(bytes) => BackupExportResult {
+            success: true,
+            status: BackupOperationStatus::Success,
+            reason_code: None,
+            issues: vec![],
+            bytes,
+            backup_path: backup_path.display().to_string(),
+            dest_path: dest_path.display().to_string(),
+            error: None,
+        },
+        Err(e) => BackupExportResult {
+            success: false,
+            status: BackupOperationStatus::Failed,
+            reason_code: Some("backup_export_failed".to_string()),
+            issues: vec![issue("backup_export_failed", e.to_string(), None)],
+            bytes: 0,
+            backup_path: backup_path.display().to_string(),
+            dest_path: dest_path.display().to_string(),
+            error: Some(e.to_string()),
+        },
+    }
+}
+
+pub async fn import_backup_with_result(zip_path: &Path, settings: &Settings) -> BackupImportResult {
+    match import_backup(zip_path, settings).await {
+        Ok(info) => BackupImportResult {
+            success: true,
+            status: BackupOperationStatus::Success,
+            reason_code: None,
+            issues: vec![],
+            zip_path: zip_path.display().to_string(),
+            info: Some(info),
+            error: None,
+        },
+        Err(e) => BackupImportResult {
+            success: false,
+            status: BackupOperationStatus::Failed,
+            reason_code: Some("backup_import_failed".to_string()),
+            issues: vec![issue("backup_import_failed", e.to_string(), None)],
+            zip_path: zip_path.display().to_string(),
+            info: None,
+            error: Some(e.to_string()),
+        },
+    }
+}
+
+pub async fn cleanup_old_backups_with_result(
+    settings: &Settings,
+    max_count: u32,
+    max_age_days: u32,
+) -> BackupCleanupResult {
+    match cleanup_old_backups(settings, max_count, max_age_days).await {
+        Ok(deleted) if deleted > 0 => BackupCleanupResult {
+            success: true,
+            status: BackupOperationStatus::Success,
+            reason_code: None,
+            issues: vec![],
+            deleted,
+            max_count,
+            max_age_days,
+            error: None,
+        },
+        Ok(_) => BackupCleanupResult {
+            success: false,
+            status: BackupOperationStatus::Skipped,
+            reason_code: Some("cleanup_no_backups_deleted".to_string()),
+            issues: vec![issue(
+                "cleanup_no_backups_deleted",
+                "No backups matched cleanup policy",
+                None,
+            )],
+            deleted: 0,
+            max_count,
+            max_age_days,
+            error: Some("No backups matched cleanup policy".to_string()),
+        },
+        Err(e) => BackupCleanupResult {
+            success: false,
+            status: BackupOperationStatus::Failed,
+            reason_code: Some("backup_cleanup_failed".to_string()),
+            issues: vec![issue("backup_cleanup_failed", e.to_string(), None)],
+            deleted: 0,
+            max_count,
+            max_age_days,
+            error: Some(e.to_string()),
+        },
+    }
+}
+
 async fn dir_size_async(path: &Path) -> u64 {
     let path = path.to_path_buf();
     tokio::task::spawn_blocking(move || dir_size_sync(&path))
@@ -1042,6 +1408,11 @@ mod tests {
             Some(BackupContentType::CacheDatabase)
         );
         assert_eq!(BackupContentType::from_str("invalid"), None);
+        assert_eq!(BackupContentType::Config.as_str(), "config");
+        assert_eq!(
+            BackupContentType::EnvironmentSettings.as_str(),
+            "environment_settings"
+        );
     }
 
     #[test]
@@ -1075,6 +1446,16 @@ mod tests {
         let nonexistent = dir.path().join("does_not_exist");
         let result = delete_backup(&nonexistent).await.unwrap();
         assert!(!result);
+    }
+
+    #[tokio::test]
+    async fn test_delete_backup_with_result_nonexistent_backup() {
+        let dir = tempfile::tempdir().unwrap();
+        let nonexistent = dir.path().join("does_not_exist");
+        let result = delete_backup_with_result(&nonexistent).await;
+        assert!(!result.success);
+        assert_eq!(result.status, BackupOperationStatus::Skipped);
+        assert_eq!(result.reason_code.as_deref(), Some("backup_not_found"));
     }
 
     #[tokio::test]
@@ -1231,6 +1612,9 @@ mod tests {
     fn test_backup_result_serde_roundtrip() {
         let result = BackupResult {
             success: true,
+            status: BackupOperationStatus::Success,
+            reason_code: None,
+            issues: vec![],
             path: "/tmp/backup".to_string(),
             manifest: BackupManifest {
                 format_version: 1,
@@ -1259,6 +1643,13 @@ mod tests {
     fn test_restore_result_serde_roundtrip() {
         let result = RestoreResult {
             success: false,
+            status: BackupOperationStatus::Partial,
+            reason_code: Some("restore_partial_content_failure".to_string()),
+            issues: vec![BackupOperationIssue {
+                code: "content_restore_failed".to_string(),
+                message: "file missing".to_string(),
+                content_type: Some("cache_database".to_string()),
+            }],
             restored: vec!["config".to_string()],
             skipped: vec![RestoreSkipped {
                 content_type: "cache_database".to_string(),
@@ -1279,6 +1670,13 @@ mod tests {
     fn test_backup_validation_result_serde_roundtrip() {
         let result = BackupValidationResult {
             valid: false,
+            status: BackupOperationStatus::Failed,
+            reason_code: Some("validation_errors".to_string()),
+            issues: vec![BackupOperationIssue {
+                code: "validation_error".to_string(),
+                message: "checksum mismatch".to_string(),
+                content_type: None,
+            }],
             manifest: None,
             missing_files: vec!["config.toml".to_string()],
             checksum_mismatches: vec!["cache.db".to_string()],
@@ -1440,6 +1838,19 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_export_backup_with_result_no_manifest() {
+        let dir = tempfile::tempdir().unwrap();
+        let empty_dir = dir.path().join("empty");
+        tokio::fs::create_dir(&empty_dir).await.unwrap();
+        let dest = dir.path().join("out.zip");
+
+        let result = export_backup_with_result(&empty_dir, &dest).await;
+        assert!(!result.success);
+        assert_eq!(result.status, BackupOperationStatus::Failed);
+        assert_eq!(result.reason_code.as_deref(), Some("backup_export_failed"));
+    }
+
+    #[tokio::test]
     async fn test_export_import_roundtrip() {
         let dir = tempfile::tempdir().unwrap();
 
@@ -1546,6 +1957,22 @@ mod tests {
 
         let deleted = cleanup_old_backups(&settings, 5, 30).await.unwrap();
         assert_eq!(deleted, 0);
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_with_result_empty_backups() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut settings = Settings::default();
+        settings.paths.root = Some(dir.path().to_path_buf());
+
+        let result = cleanup_old_backups_with_result(&settings, 5, 30).await;
+        assert!(!result.success);
+        assert_eq!(result.deleted, 0);
+        assert_eq!(result.status, BackupOperationStatus::Skipped);
+        assert_eq!(
+            result.reason_code.as_deref(),
+            Some("cleanup_no_backups_deleted")
+        );
     }
 
     #[tokio::test]

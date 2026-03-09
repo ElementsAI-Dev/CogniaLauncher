@@ -11,3 +11,4 @@
 - **[Git 接入矩阵](git-integration-matrix.md)** — command → invoke → hook → page/component 链路基线
 - **[测试指南](testing.md)** — 测试策略与工具
 - **[CI/CD](ci-cd.md)** — 持续集成与部署流水线
+- **[文档质量与同步](docs-quality.md)** — 对齐策略、文档校验与评审门禁

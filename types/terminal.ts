@@ -4,6 +4,7 @@ import type {
   ShellStartupMeasurement,
   ShellHealthResult,
   TerminalConfigMutationResult,
+  TerminalConfigRestoreResult,
   TerminalProfile,
   TerminalProfileTemplate,
   PSProfileInfo,
@@ -16,6 +17,23 @@ import type {
 
 export type ProxyMode = 'global' | 'custom' | 'none';
 export type TerminalActionStatus = 'idle' | 'loading' | 'success' | 'error';
+export type TerminalConfigActionResult =
+  | TerminalConfigMutationResult
+  | TerminalConfigRestoreResult;
+export type TerminalResourceKey =
+  | 'profiles'
+  | 'templates'
+  | 'configEntries'
+  | 'configMetadata'
+  | 'proxyConfig'
+  | 'proxyEnvVars'
+  | 'shellEnvVars'
+  | 'psProfiles'
+  | 'psModules'
+  | 'psScripts'
+  | 'executionPolicy';
+
+export type TerminalResourceState = Record<TerminalResourceKey, boolean>;
 
 export interface TerminalActionState<T> {
   status: TerminalActionStatus;
@@ -53,7 +71,7 @@ export interface UseTerminalState {
   noProxy: string;
   globalProxy: string;
   proxyConfigSaving: boolean;
-  configMutationState: TerminalActionState<TerminalConfigMutationResult>;
+  configMutationState: TerminalActionState<TerminalConfigActionResult>;
   proxySyncState: TerminalActionState<{
     proxyMode: ProxyMode;
     customProxy: string;
@@ -61,6 +79,7 @@ export interface UseTerminalState {
     globalProxy: string;
     proxyEnvVars: [string, string][];
   }>;
+  resourceStale: TerminalResourceState;
   shellsLoading: boolean;
   profilesLoading: boolean;
   psLoading: boolean;

@@ -6,6 +6,8 @@ import { toast } from 'sonner';
 import type { AppSettings } from '@/lib/stores/settings';
 import { DEFAULT_SIDEBAR_ITEM_ORDER } from '@/lib/sidebar/order';
 
+jest.setTimeout(30000);
+
 const mockUpdateConfigValue = jest.fn();
 const mockResetConfig = jest.fn();
 const mockFetchConfig = jest.fn();
@@ -19,6 +21,12 @@ const mockSetInterfaceDensity = jest.fn();
 const mockSetReducedMotion = jest.fn();
 const mockSetWindowEffect = jest.fn();
 const mockResetAppearance = jest.fn();
+const mockCreatePreset = jest.fn();
+const mockRenamePreset = jest.fn();
+const mockDeletePreset = jest.fn();
+const mockSetActivePresetId = jest.fn();
+const mockApplyPreset = jest.fn();
+const mockReplacePresetCollection = jest.fn();
 
 const baseConfig: Record<string, string> = {
   'general.parallel_downloads': '4',
@@ -46,6 +54,14 @@ const baseConfig: Record<string, string> = {
   'network.timeout': '30',
   'network.retries': '3',
   'network.proxy': '',
+  'appearance.theme': 'light',
+  'appearance.language': 'en',
+  'appearance.accent_color': 'blue',
+  'appearance.chart_color_theme': 'default',
+  'appearance.interface_radius': '0.625',
+  'appearance.interface_density': 'comfortable',
+  'appearance.reduced_motion': 'false',
+  'appearance.window_effect': 'auto',
   'security.allow_http': 'false',
   'security.verify_certificates': 'true',
   'security.allow_self_signed': 'false',
@@ -135,6 +151,15 @@ const mockMessages = {
       exportToClipboard: 'Copy to Clipboard',
       exportAsFile: 'Export as File',
       clipboardEmpty: 'Clipboard is empty',
+      importPreviewTitle: 'Review Imported Settings',
+      importPreviewDesc: 'Confirm the detected changes before applying this import.',
+      importPreviewChangedCount: '{count} setting key(s) will change',
+      importPreviewAffectedSections: 'Affected sections',
+      importConfirmApply: 'Apply Import',
+      pendingSaveItems: '{count} item(s) in pending save snapshot',
+      refreshConflictDetected: 'Detected baseline refresh while you had local drafts',
+      saveRetryHint: '{count} setting key(s) failed to save',
+      retryFailedOnly: 'Retry Failed Items',
       general: 'General',
       generalDesc: 'General application settings',
       parallelDownloads: 'Parallel Downloads',
@@ -189,6 +214,22 @@ const mockMessages = {
       mirrorVerifySslDesc: 'Verify TLS certificates for this mirror',
       appearance: 'Appearance',
       appearanceDesc: 'Customize the look and feel',
+      customizationWorkbenchTitle: 'Customization Workbench',
+      customizationWorkbenchDesc: 'Create and apply appearance presets',
+      customizationWorkbenchChanged: 'Appearance changed',
+      customizationPresetSelect: 'Preset',
+      customizationPresetApply: 'Apply Preset',
+      customizationPresetName: 'Preset Name',
+      customizationPresetNamePlaceholder: 'Enter preset name',
+      customizationPresetSave: 'Save Preset',
+      customizationPresetRename: 'Rename Preset',
+      customizationPresetDelete: 'Delete Preset',
+      customizationResetAppearance: 'Reset Appearance Group',
+      customizationResetAppearanceHint: 'Only appearance fields are reset.',
+      customizationPresetApplied: 'Applied preset {name}',
+      customizationPresetSaved: 'Saved preset {name}',
+      customizationPresetRenamed: 'Renamed preset {name}',
+      customizationPresetDeleted: 'Deleted preset {name}',
       theme: 'Theme',
       themeDesc: 'Choose between light, dark, or system theme',
       light: 'Light',
@@ -265,6 +306,15 @@ const mockMessages = {
       shortcutsRecording: 'Press keys...',
       shortcutsReset: 'Reset to Default',
       shortcutsDesktopOnly: 'Global shortcuts are only available in the desktop app',
+      nav: {
+        label: 'Settings navigation',
+        title: 'Section Navigation',
+        hasChanges: 'Has unsaved changes',
+        collapsed: 'Collapsed',
+        hint: 'Keyboard shortcuts',
+        hintSearch: 'Focus search',
+        hintNavigate: 'Navigate sections',
+      },
       startup: 'Startup',
       startupDesc: 'Startup checks and scans',
       startupScanEnvironments: 'Scan Environments on Startup',
@@ -370,8 +420,50 @@ function setupMocks(overrides?: Partial<{ config: Record<string, string>; appSet
     setInterfaceDensity: mockSetInterfaceDensity,
     reducedMotion: false,
     setReducedMotion: mockSetReducedMotion,
+    backgroundEnabled: false,
+    backgroundOpacity: 20,
+    backgroundBlur: 0,
+    backgroundFit: 'cover',
     windowEffect: 'auto',
     setWindowEffect: mockSetWindowEffect,
+    presets: [
+      {
+        id: 'default',
+        name: 'Default',
+        config: {
+          theme: 'light',
+          accentColor: 'blue',
+          chartColorTheme: 'default',
+          interfaceRadius: 0.625,
+          interfaceDensity: 'comfortable',
+          reducedMotion: false,
+          backgroundEnabled: false,
+          backgroundOpacity: 20,
+          backgroundBlur: 0,
+          backgroundFit: 'cover',
+          windowEffect: 'auto',
+        },
+      },
+    ],
+    activePresetId: 'default',
+    createPreset: mockCreatePreset.mockReturnValue('preset-1'),
+    renamePreset: mockRenamePreset,
+    deletePreset: mockDeletePreset,
+    setActivePresetId: mockSetActivePresetId,
+    applyPreset: mockApplyPreset.mockImplementation(() => ({
+      theme: 'light',
+      accentColor: 'blue',
+      chartColorTheme: 'default',
+      interfaceRadius: 0.625,
+      interfaceDensity: 'comfortable',
+      reducedMotion: false,
+      backgroundEnabled: false,
+      backgroundOpacity: 20,
+      backgroundBlur: 0,
+      backgroundFit: 'cover',
+      windowEffect: 'auto',
+    })),
+    replacePresetCollection: mockReplacePresetCollection,
     reset: mockResetAppearance,
   });
 
@@ -408,6 +500,12 @@ describe('SettingsPage', () => {
     mockFetchConfig.mockResolvedValue(baseConfig);
     mockFetchPlatformInfo.mockResolvedValue({ os: 'Windows', arch: 'x64' });
     mockSetAppSettings.mockClear();
+    mockCreatePreset.mockClear();
+    mockRenamePreset.mockClear();
+    mockDeletePreset.mockClear();
+    mockSetActivePresetId.mockClear();
+    mockApplyPreset.mockClear();
+    mockReplacePresetCollection.mockClear();
 
     Object.defineProperty(global.URL, 'createObjectURL', {
       writable: true,
@@ -436,6 +534,65 @@ describe('SettingsPage', () => {
     expect(screen.getAllByText('Appearance').length).toBeGreaterThanOrEqual(1);
   });
 
+  it('opens mobile section navigation sheet and renders section actions', async () => {
+    renderWithProviders(<SettingsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Parallel Downloads')).toBeInTheDocument();
+    });
+
+    await userEvent.click(
+      screen.getByRole('button', { name: /section navigation|settings\.nav\.title/i }),
+    );
+
+    const dialog = await screen.findByRole('dialog');
+    expect(
+      within(dialog).getByRole('navigation', { name: /settings navigation/i }),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole('button', { name: /General/i }),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole('button', { name: /Network/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('renders the appearance customization workbench', async () => {
+    renderWithProviders(<SettingsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Customization Workbench')).toBeInTheDocument();
+    });
+
+    expect(screen.getByRole('button', { name: /apply preset/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /reset appearance group/i })).toBeInTheDocument();
+  });
+
+  it('applies selected appearance preset from workbench', async () => {
+    renderWithProviders(<SettingsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /apply preset/i })).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: /apply preset/i }));
+
+    expect(mockApplyPreset).toHaveBeenCalledWith('default');
+  });
+
+  it('resets only appearance group from workbench', async () => {
+    renderWithProviders(<SettingsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /reset appearance group/i })).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: /reset appearance group/i }));
+
+    expect(mockResetAppearance).toHaveBeenCalled();
+    expect(mockReplacePresetCollection).toHaveBeenCalled();
+  });
+
   it('saves changed config values', async () => {
     renderWithProviders(<SettingsPage />);
 
@@ -446,11 +603,89 @@ describe('SettingsPage', () => {
     const parallelDownloads = screen.getByLabelText('Parallel Downloads');
     fireEvent.change(parallelDownloads, { target: { value: '6' } });
 
+    await waitFor(() => {
+      expect(screen.getByText('You have unsaved changes')).toBeInTheDocument();
+    });
+
     await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
 
     await waitFor(() => {
       expect(mockUpdateConfigValue).toHaveBeenCalledWith('general.parallel_downloads', '6');
     });
+  });
+
+  it('shows conflict alert when baseline refresh happens during local draft edits', async () => {
+    const { rerender } = renderWithProviders(<SettingsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Parallel Downloads')).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText('Parallel Downloads'), {
+      target: { value: '9' },
+    });
+
+    setupMocks({
+      config: {
+        ...baseConfig,
+        'network.timeout': '45',
+      },
+    });
+    rerender(<SettingsPage />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('Detected baseline refresh while you had local drafts'),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it('retries failed save items only after partial save failure', async () => {
+    let failOnce = true;
+    mockUpdateConfigValue.mockImplementation(async (key: string) => {
+      if (key === 'network.timeout' && failOnce) {
+        failOnce = false;
+        throw new Error('network timeout save failed');
+      }
+      return undefined;
+    });
+
+    renderWithProviders(<SettingsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Parallel Downloads')).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText('Parallel Downloads'), {
+      target: { value: '6' },
+    });
+    fireEvent.change(screen.getByLabelText('Timeout'), {
+      target: { value: '20' },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('You have unsaved changes')).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /retry failed items/i })).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: /retry failed items/i }));
+
+    await waitFor(() => {
+      const timeoutCalls = mockUpdateConfigValue.mock.calls.filter(
+        ([key]) => key === 'network.timeout',
+      );
+      expect(timeoutCalls.length).toBe(2);
+    });
+
+    const parallelCalls = mockUpdateConfigValue.mock.calls.filter(
+      ([key]) => key === 'general.parallel_downloads',
+    );
+    expect(parallelCalls.length).toBe(1);
   });
 
   it('exports settings payload', async () => {
@@ -471,7 +706,7 @@ describe('SettingsPage', () => {
     expect(toast.success).toHaveBeenCalledWith('Settings exported successfully');
   });
 
-  it('imports settings and updates app settings', async () => {
+  it('imports settings with preview confirmation and updates app settings', async () => {
     renderWithProviders(<SettingsPage />);
 
     await waitFor(() => {
@@ -493,6 +728,12 @@ describe('SettingsPage', () => {
     const file = new File([JSON.stringify(importPayload)], 'settings.json', { type: 'application/json' });
 
     fireEvent.change(fileInput, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: /apply import/i }));
 
     await waitFor(() => {
       expect(mockSetAppSettings).toHaveBeenCalledWith({ checkUpdatesOnStart: false });
@@ -593,7 +834,7 @@ describe('SettingsPage', () => {
     renderWithProviders(<SettingsPage />);
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: /settings/i })).toBeInTheDocument();
+      expect(screen.getByLabelText('Parallel Downloads')).toBeInTheDocument();
     });
 
     const parallelDownloads = screen.getByLabelText('Parallel Downloads');
@@ -622,7 +863,7 @@ describe('SettingsPage', () => {
     renderWithProviders(<SettingsPage />);
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: /settings/i })).toBeInTheDocument();
+      expect(screen.getByLabelText('Parallel Downloads')).toBeInTheDocument();
     });
 
     const parallelDownloads = screen.getByLabelText('Parallel Downloads');

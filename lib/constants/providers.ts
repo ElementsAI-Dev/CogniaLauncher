@@ -8,8 +8,43 @@ export const SYSTEM_PROVIDER_IDS = new Set([
 ]);
 
 export const PACKAGE_MANAGER_IDS = new Set([
-  'npm', 'pnpm', 'yarn', 'pip', 'uv', 'cargo', 'vcpkg', 'docker', 'podman', 'psgallery', 'github',
+  // Language ecosystem package managers
+  'npm', 'pnpm', 'yarn', 'bun',
+  'pip', 'uv', 'poetry', 'conda', 'pipx',
+  'cargo', 'go',
+  'composer', 'bundler', 'gem',
+  'dotnet', 'deno', 'luarocks', 'pub',
+  // General package/distribution providers
+  'vcpkg', 'conan', 'xmake',
+  'docker', 'podman', 'psgallery',
+  // Registry/source-backed package providers
+  'github', 'gitlab',
 ]);
+
+const PACKAGE_PROVIDER_CAPABILITIES = new Set([
+  'search',
+  'install',
+  'uninstall',
+  'update',
+  'upgrade',
+  'list',
+  'info',
+]);
+
+type ProviderCategorySource = {
+  id: string;
+  capabilities: string[];
+  is_environment_provider?: boolean;
+};
+
+export function isPackageManagerProvider(provider: ProviderCategorySource): boolean {
+  if (provider.is_environment_provider) return false;
+  if (SYSTEM_PROVIDER_IDS.has(provider.id)) return false;
+  if (PACKAGE_MANAGER_IDS.has(provider.id)) return true;
+  return provider.capabilities.some((capability) =>
+    PACKAGE_PROVIDER_CAPABILITIES.has(capability.toLowerCase()),
+  );
+}
 
 /**
  * All known provider IDs for static route generation.

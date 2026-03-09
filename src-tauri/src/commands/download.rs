@@ -369,7 +369,11 @@ pub async fn setup_download_manager(
                                     task.provider.as_deref(),
                                 );
                                 match dl_cache
-                                    .add_file_with_source(&dest, checksum_val, Some(&source_identity))
+                                    .add_file_with_source(
+                                        &dest,
+                                        checksum_val,
+                                        Some(&source_identity),
+                                    )
                                     .await
                                 {
                                     Ok(cached_path) => {
@@ -516,7 +520,10 @@ pub async fn download_add(
                         );
                     }
                     Err(error) => {
-                        log::warn!("Cache hit validation failed (falling back to download): {}", error);
+                        log::warn!(
+                            "Cache hit validation failed (falling back to download): {}",
+                            error
+                        );
                     }
                 }
             }

@@ -10,6 +10,7 @@ import rehypeRaw from 'rehype-raw';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Check, Copy } from 'lucide-react';
 import { useState } from 'react';
 import { handleAnchorClick } from '@/lib/docs/scroll';
@@ -194,14 +195,17 @@ export function MarkdownRenderer({ content, className, basePath }: MarkdownRende
             }
 
             if (calloutType) {
+              const calloutLabel = `${calloutType.type.charAt(0).toUpperCase()}${calloutType.type.slice(1)}`;
               return (
-                <div className={`docs-callout docs-callout-${calloutType.type}`} role="note">
-                  <div className="docs-callout-title">
-                    <span className="docs-callout-icon">{getCalloutIcon(calloutType.type)}</span>
-                    <span>{calloutType.type.charAt(0).toUpperCase() + calloutType.type.slice(1)}</span>
-                  </div>
-                  <div className="docs-callout-content">{children}</div>
-                </div>
+                <Alert role="note" aria-label={calloutLabel} className={`docs-callout docs-callout-${calloutType.type}`}>
+                  <AlertTitle className="docs-callout-title">
+                    <span className="docs-callout-icon" aria-hidden="true">{getCalloutIcon(calloutType.type)}</span>
+                    <span>{calloutLabel}</span>
+                  </AlertTitle>
+                  <AlertDescription className="docs-callout-content">
+                    {children}
+                  </AlertDescription>
+                </Alert>
               );
             }
 
@@ -211,11 +215,15 @@ export function MarkdownRenderer({ content, className, basePath }: MarkdownRende
             // eslint-disable-next-line @next/next/no-img-element
             <img alt={alt || ''} className="docs-img" {...props} />
           ),
-          details: ({ children, ...props }: ComponentPropsWithoutRef<'details'>) => (
-            <details className="docs-details" {...props}>{children}</details>
+          details: ({ children, className, ...props }: ComponentPropsWithoutRef<'details'>) => (
+            <details className={cn('docs-details rounded-lg border border-border bg-card/20', className)} {...props}>
+              {children}
+            </details>
           ),
-          summary: ({ children, ...props }: ComponentPropsWithoutRef<'summary'>) => (
-            <summary className="docs-summary" {...props}>{children}</summary>
+          summary: ({ children, className, ...props }: ComponentPropsWithoutRef<'summary'>) => (
+            <summary className={cn('docs-summary', className)} {...props}>
+              {children}
+            </summary>
           ),
         }}
       >

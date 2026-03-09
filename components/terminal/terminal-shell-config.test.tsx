@@ -18,12 +18,14 @@ const mockTerminalConfigEditor = jest.fn(
     baselineValue,
     configPath,
     shellType,
+    onChange,
   }: {
     language: string;
     diagnostics?: unknown[];
     baselineValue?: string | null;
     configPath?: string | null;
     shellType?: string;
+    onChange?: (value: string) => void;
   }) => (
     <div data-testid="terminal-config-editor">
       <span data-testid="terminal-config-editor-language">{language}</span>
@@ -31,6 +33,9 @@ const mockTerminalConfigEditor = jest.fn(
       <span data-testid="terminal-config-editor-baseline">{baselineValue ?? ''}</span>
       <span data-testid="terminal-config-editor-config-path">{configPath ?? ''}</span>
       <span data-testid="terminal-config-editor-shell-type">{shellType ?? ''}</span>
+      <button type="button" onClick={() => onChange?.('modified draft')}>
+        edit-draft
+      </button>
     </div>
   ),
 );
@@ -42,6 +47,7 @@ jest.mock('./terminal-config-editor', () => ({
     baselineValue?: string | null;
     configPath?: string | null;
     shellType?: string;
+    onChange?: (value: string) => void;
   }) =>
     mockTerminalConfigEditor(props),
 }));
@@ -434,7 +440,8 @@ describe('TerminalShellConfig', () => {
     expect(clearsAfterLoad).toBeGreaterThanOrEqual(1);
 
     await user.click(screen.getByRole('button', { name: /terminal\.editConfig/i }));
-    await user.click(screen.getByRole('button', { name: /terminal\.cancel/i }));
+    const cancelButtons = screen.getAllByRole('button', { name: /terminal\.cancel/i });
+    await user.click(cancelButtons[cancelButtons.length - 1]);
 
     expect(onClearMutationState.mock.calls.length).toBeGreaterThan(clearsAfterLoad);
     expect(screen.queryByTestId('terminal-config-editor')).not.toBeInTheDocument();
@@ -517,5 +524,60 @@ describe('TerminalShellConfig', () => {
 
     expect(onRestoreConfigSnapshot).toHaveBeenCalledWith('/home/user/.bashrc');
     expect(onReadConfig).toHaveBeenCalledTimes(2);
+  });
+
+  it('emits dirty-state changes and shows explicit unsaved-draft actions when switching target', async () => {
+    const user = userEvent.setup();
+    const onReadConfig = jest.fn().mockResolvedValue('export TEST=1');
+    const onFetchConfigEntries = jest.fn().mockResolvedValue(mockEntries);
+    const onDirtyChange = jest.fn();
+    const onRequestDiscard = jest.fn();
+    const shellsWithTwoConfigs: ShellInfo[] = [
+      {
+        ...shells[0],
+        configFiles: [
+          { path: '/home/user/.bashrc', exists: true, sizeBytes: 1024 },
+          { path: '/home/user/.bash_profile', exists: true, sizeBytes: 512 },
+        ],
+      },
+    ];
+
+    render(
+      <TerminalShellConfig
+        shells={shellsWithTwoConfigs}
+        onReadConfig={onReadConfig}
+        onFetchConfigEntries={onFetchConfigEntries}
+        onBackupConfig={jest.fn()}
+        onWriteConfig={jest.fn()}
+        onDirtyChange={onDirtyChange}
+        onRequestDiscard={onRequestDiscard}
+      />,
+    );
+
+    const [, configSelect] = screen.getAllByRole('combobox');
+    await user.click(configSelect);
+    await user.click(await screen.findByRole('option', { name: /\/home\/user\/\.bashrc/i }));
+
+    await user.click(screen.getByRole('button', { name: /terminal\.loadConfig/i }));
+    await screen.findByRole('button', { name: /terminal\.editConfig/i });
+    await user.click(screen.getByRole('button', { name: /terminal\.editConfig/i }));
+    await user.click(screen.getByRole('button', { name: /edit-draft/i }));
+
+    expect(onDirtyChange).toHaveBeenCalledWith(true);
+
+    await user.click(screen.getAllByRole('combobox')[1]);
+    await user.click(await screen.findByRole('option', { name: /\/home\/user\/\.bash_profile/i }));
+
+    expect(onRequestDiscard).not.toHaveBeenCalled();
+    expect(screen.getByRole('heading', { name: /Unsaved Draft/i })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /Stay/i }));
+    expect(screen.queryByRole('heading', { name: /Unsaved Draft/i })).not.toBeInTheDocument();
+
+    await user.click(screen.getAllByRole('combobox')[1]);
+    await user.click(await screen.findByRole('option', { name: /\/home\/user\/\.bash_profile/i }));
+    await user.click(screen.getByRole('button', { name: /Discard and Switch/i }));
+
+    expect(screen.queryByTestId('terminal-config-editor')).not.toBeInTheDocument();
   });
 });

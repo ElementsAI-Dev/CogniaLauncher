@@ -1,6 +1,10 @@
 import type { LucideIcon } from 'lucide-react';
 import type { Locale } from '@/types/i18n';
-import type { OnboardingMode, OnboardingStepId } from '@/lib/stores/onboarding';
+import type {
+  OnboardingMode,
+  OnboardingStepId,
+  OnboardingSessionSummary,
+} from '@/lib/stores/onboarding';
 
 // ============================================================================
 // Bubble Hint Types
@@ -78,6 +82,17 @@ export interface TargetRect {
 // Onboarding Wizard Types
 // ============================================================================
 
+export type OnboardingNextActionKind = 'tour' | 'route' | 'environment';
+
+export interface OnboardingNextAction {
+  id: string;
+  kind: OnboardingNextActionKind;
+  labelKey: string;
+  descriptionKey?: string;
+  route?: string;
+  envType?: string;
+}
+
 export interface OnboardingWizardProps {
   open: boolean;
   currentStep: number;
@@ -88,10 +103,13 @@ export interface OnboardingWizardProps {
   isFirstStep: boolean;
   isLastStep: boolean;
   tourCompleted: boolean;
+  sessionSummary: OnboardingSessionSummary;
+  nextActions: OnboardingNextAction[];
   onNext: () => void;
   onPrev: () => void;
   onGoTo: (step: number) => void;
   onSelectMode: (mode: OnboardingMode) => void;
+  onUpdateSummary: (summary: Partial<OnboardingSessionSummary>) => void;
   onComplete: () => void;
   onSkip: () => void;
   onStartTour: () => void;
@@ -142,6 +160,7 @@ export interface ThemeOption {
 export interface EnvironmentDetectionStepProps {
   mode?: OnboardingMode;
   t: (key: string, params?: Record<string, string | number>) => string;
+  onDetectionSummaryChange?: (summary: Pick<OnboardingSessionSummary, 'detectedCount' | 'primaryEnvironment' | 'manageableEnvironments'>) => void;
 }
 
 export interface DetectedEnv {
@@ -163,6 +182,7 @@ export interface MirrorsStepProps {
 export interface ShellInitStepProps {
   mode?: OnboardingMode;
   t: (key: string) => string;
+  onSummaryChange?: (summary: Pick<OnboardingSessionSummary, 'shellType' | 'shellConfigured'>) => void;
 }
 
 export type ShellType = 'powershell' | 'bash' | 'zsh' | 'fish';
@@ -178,5 +198,8 @@ export interface CompleteStepProps {
   mode?: OnboardingMode;
   t: (key: string) => string;
   onStartTour: () => void;
+  onRunAction: (action: OnboardingNextAction) => void;
   tourCompleted: boolean;
+  summary: OnboardingSessionSummary;
+  actions: OnboardingNextAction[];
 }

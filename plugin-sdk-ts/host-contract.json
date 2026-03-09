@@ -1,0 +1,164 @@
+{
+  "version": 1,
+  "runtimeSource": "../src-tauri/src/plugin/host_functions.rs",
+  "declarationSource": "./cognia.d.ts",
+  "wrapperSourceGlob": "./src/**/*.ts",
+  "functions": [
+    {
+      "name": "cognia_cache_info",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_clipboard_read",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_clipboard_write",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_config_get",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_config_set",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_env_detect",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_env_get_current",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_env_install_version",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_env_list",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_env_list_versions",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_env_set_version",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_event_emit",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_fs_delete",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_fs_exists",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_fs_list_dir",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_fs_mkdir",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_fs_read",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_fs_write",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_get_locale",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_get_plugin_id",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_http_get",
+      "stability": "compat",
+      "preferred": "cognia_http_request",
+      "note": "Compatibility alias for simple GET requests."
+    },
+    {
+      "name": "cognia_http_post",
+      "stability": "compat",
+      "preferred": "cognia_http_request",
+      "note": "Compatibility alias for simple POST requests."
+    },
+    {
+      "name": "cognia_http_request",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_i18n_get_all",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_i18n_translate",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_log",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_notification_send",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_pkg_check_updates",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_pkg_dependencies",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_pkg_info",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_pkg_install",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_pkg_list_installed",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_pkg_search",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_pkg_uninstall",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_pkg_versions",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_platform_info",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_process_exec",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_provider_list",
+      "stability": "stable"
+    }
+  ]
+}

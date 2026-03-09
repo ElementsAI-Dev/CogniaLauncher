@@ -3,7 +3,6 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardAction, CardFooter } from '@/components/ui/card';
 import { Alert, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { useLocale } from '@/components/providers/locale-provider';
 import { useUpdateCheck } from '@/hooks/use-update-check';
@@ -16,6 +15,10 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import Link from 'next/link';
+import {
+  DashboardEmptyState,
+  DashboardStatusBadge,
+} from '@/components/dashboard/dashboard-primitives';
 
 interface UpdatesWidgetProps {
   className?: string;
@@ -92,13 +95,13 @@ export function UpdatesWidget({ className }: UpdatesWidgetProps) {
                     <span className="font-medium truncate">{update.name}</span>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
-                    <Badge variant="outline" className="font-mono text-[10px]">
+                    <DashboardStatusBadge className="font-mono">
                       {update.current_version}
-                    </Badge>
+                    </DashboardStatusBadge>
                     <span className="text-muted-foreground text-xs">→</span>
-                    <Badge variant="default" className="font-mono text-[10px]">
+                    <DashboardStatusBadge tone="success" className="font-mono">
                       {update.latest_version}
-                    </Badge>
+                    </DashboardStatusBadge>
                   </div>
                 </div>
               ))}
@@ -113,10 +116,11 @@ export function UpdatesWidget({ className }: UpdatesWidgetProps) {
 
         {/* No updates */}
         {!isCheckingUpdates && availableUpdates.length === 0 && lastUpdateCheck && (
-          <div className="flex flex-col items-center gap-2 py-4">
-            <CheckCircle2 className="h-8 w-8 text-green-500" />
-            <p className="text-sm text-muted-foreground">{t('dashboard.widgets.updatesUpToDate')}</p>
-          </div>
+          <DashboardEmptyState
+            className="py-4"
+            icon={<CheckCircle2 className="h-8 w-8 text-green-500" />}
+            message={t('dashboard.widgets.updatesUpToDate')}
+          />
         )}
 
         {/* Error */}

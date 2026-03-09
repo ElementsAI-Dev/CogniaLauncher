@@ -40,7 +40,7 @@ export function TerminalConfigEditorDiagnosticsPanel({
       </Alert>
 
       <div className="rounded-md border">
-        <ScrollArea className="max-h-[260px]">
+        <ScrollArea className="max-h-65">
           <div className="space-y-2 p-3">
             {diagnostics.map((diagnostic, index) => {
               const location = formatDiagnosticLocation(diagnostic);

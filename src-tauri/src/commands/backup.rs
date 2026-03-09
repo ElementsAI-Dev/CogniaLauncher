@@ -3,11 +3,57 @@ use crate::commands::config::SharedSettings;
 use crate::commands::custom_detection::SharedCustomDetectionManager;
 use crate::commands::terminal::SharedTerminalProfileManager;
 use crate::core::backup::{
-    self, BackupContentType, BackupInfo, BackupResult, BackupValidationResult, RestoreResult,
+    self, BackupCleanupResult, BackupContentType, BackupDeleteResult, BackupExportResult,
+    BackupImportResult, BackupInfo, BackupManifest, BackupOperationIssue, BackupOperationStatus,
+    BackupResult, BackupValidationResult, RestoreResult,
 };
 use crate::core::profiles::SharedProfileManager;
+use chrono::Utc;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use tauri::State;
+
+fn parse_content_types(contents: &[String]) -> (Vec<BackupContentType>, Vec<String>) {
+    if contents.is_empty() {
+        return (BackupContentType::all(), vec![]);
+    }
+
+    let mut parsed = Vec::new();
+    let mut invalid = Vec::new();
+    for item in contents {
+        match BackupContentType::from_str(item) {
+            Some(kind) => parsed.push(kind),
+            None => invalid.push(item.clone()),
+        }
+    }
+    (parsed, invalid)
+}
+
+fn invalid_content_issues(invalid_contents: &[String]) -> Vec<BackupOperationIssue> {
+    invalid_contents
+        .iter()
+        .map(|value| BackupOperationIssue {
+            code: "invalid_content_type".to_string(),
+            message: format!("Unsupported backup content type: {}", value),
+            content_type: Some(value.clone()),
+        })
+        .collect()
+}
+
+fn empty_manifest(note: Option<String>) -> BackupManifest {
+    BackupManifest {
+        format_version: 1,
+        app_version: env!("CARGO_PKG_VERSION").to_string(),
+        created_at: Utc::now().to_rfc3339(),
+        platform: std::env::consts::OS.to_string(),
+        hostname: "unknown".to_string(),
+        contents: vec![],
+        file_checksums: HashMap::new(),
+        total_size: 0,
+        note,
+        auto_generated: false,
+    }
+}
 
 #[tauri::command]
 pub async fn backup_create(
@@ -18,17 +64,22 @@ pub async fn backup_create(
     profile_manager: State<'_, SharedProfileManager>,
     custom_detection_manager: State<'_, SharedCustomDetectionManager>,
 ) -> Result<BackupResult, String> {
-    let content_types: Vec<BackupContentType> = if contents.is_empty() {
-        BackupContentType::all()
-    } else {
-        contents
-            .iter()
-            .filter_map(|s| BackupContentType::from_str(s))
-            .collect()
-    };
-
-    if content_types.is_empty() {
-        return Err("No valid content types specified".to_string());
+    let (content_types, invalid_contents) = parse_content_types(&contents);
+    if !invalid_contents.is_empty() {
+        let msg = format!(
+            "Unsupported backup content types: {}",
+            invalid_contents.join(", ")
+        );
+        return Ok(BackupResult {
+            success: false,
+            status: BackupOperationStatus::Failed,
+            reason_code: Some("invalid_content_types".to_string()),
+            issues: invalid_content_issues(&invalid_contents),
+            path: String::new(),
+            manifest: empty_manifest(note.clone()),
+            duration_ms: 0,
+            error: Some(msg),
+        });
     }
 
     let s = settings.read().await;
@@ -36,9 +87,23 @@ pub async fn backup_create(
     let pm = profile_manager.read().await;
     let cdm = custom_detection_manager.read().await;
 
-    backup::create_backup(&s, &content_types, note.as_deref(), &tm, &pm, &cdm)
-        .await
-        .map_err(|e| e.to_string())
+    match backup::create_backup(&s, &content_types, note.as_deref(), &tm, &pm, &cdm).await {
+        Ok(result) => Ok(result),
+        Err(e) => Ok(BackupResult {
+            success: false,
+            status: BackupOperationStatus::Failed,
+            reason_code: Some("backup_create_failed".to_string()),
+            issues: vec![BackupOperationIssue {
+                code: "backup_create_failed".to_string(),
+                message: e.to_string(),
+                content_type: None,
+            }],
+            path: String::new(),
+            manifest: empty_manifest(note),
+            duration_ms: 0,
+            error: Some(e.to_string()),
+        }),
+    }
 }
 
 #[tauri::command]
@@ -50,21 +115,28 @@ pub async fn backup_restore(
     profile_manager: State<'_, SharedProfileManager>,
     custom_detection_manager: State<'_, SharedCustomDetectionManager>,
 ) -> Result<RestoreResult, String> {
-    let content_types: Vec<BackupContentType> = if contents.is_empty() {
-        BackupContentType::all()
-    } else {
-        contents
-            .iter()
-            .filter_map(|s| BackupContentType::from_str(s))
-            .collect()
-    };
+    let (content_types, invalid_contents) = parse_content_types(&contents);
+    if !invalid_contents.is_empty() {
+        return Ok(RestoreResult {
+            success: false,
+            status: BackupOperationStatus::Failed,
+            reason_code: Some("invalid_content_types".to_string()),
+            issues: invalid_content_issues(&invalid_contents),
+            restored: vec![],
+            skipped: vec![],
+            error: Some(format!(
+                "Unsupported backup content types: {}",
+                invalid_contents.join(", ")
+            )),
+        });
+    }
 
     let mut s = settings.write().await;
     let mut tm = terminal_manager.write().await;
     let mut pm = profile_manager.write().await;
     let mut cdm = custom_detection_manager.write().await;
 
-    backup::restore_backup(
+    match backup::restore_backup(
         &PathBuf::from(&backup_path),
         &content_types,
         &mut s,
@@ -73,7 +145,22 @@ pub async fn backup_restore(
         &mut cdm,
     )
     .await
-    .map_err(|e| e.to_string())
+    {
+        Ok(result) => Ok(result),
+        Err(e) => Ok(RestoreResult {
+            success: false,
+            status: BackupOperationStatus::Failed,
+            reason_code: Some("backup_restore_failed".to_string()),
+            issues: vec![BackupOperationIssue {
+                code: "backup_restore_failed".to_string(),
+                message: e.to_string(),
+                content_type: None,
+            }],
+            restored: vec![],
+            skipped: vec![],
+            error: Some(e.to_string()),
+        }),
+    }
 }
 
 #[tauri::command]
@@ -83,35 +170,50 @@ pub async fn backup_list(settings: State<'_, SharedSettings>) -> Result<Vec<Back
 }
 
 #[tauri::command]
-pub async fn backup_delete(backup_path: String) -> Result<bool, String> {
-    backup::delete_backup(&PathBuf::from(&backup_path))
-        .await
-        .map_err(|e| e.to_string())
+pub async fn backup_delete(backup_path: String) -> Result<BackupDeleteResult, String> {
+    let result = backup::delete_backup_with_result(&PathBuf::from(&backup_path)).await;
+    Ok(result)
 }
 
 #[tauri::command]
 pub async fn backup_validate(backup_path: String) -> Result<BackupValidationResult, String> {
-    backup::validate_backup(&PathBuf::from(&backup_path))
-        .await
-        .map_err(|e| e.to_string())
+    match backup::validate_backup(&PathBuf::from(&backup_path)).await {
+        Ok(result) => Ok(result),
+        Err(e) => Ok(BackupValidationResult {
+            valid: false,
+            status: BackupOperationStatus::Failed,
+            reason_code: Some("backup_validate_failed".to_string()),
+            issues: vec![BackupOperationIssue {
+                code: "backup_validate_failed".to_string(),
+                message: e.to_string(),
+                content_type: None,
+            }],
+            manifest: None,
+            missing_files: vec![],
+            checksum_mismatches: vec![],
+            errors: vec![e.to_string()],
+        }),
+    }
 }
 
 #[tauri::command]
-pub async fn backup_export(backup_path: String, dest_path: String) -> Result<u64, String> {
-    backup::export_backup(&PathBuf::from(&backup_path), &PathBuf::from(&dest_path))
-        .await
-        .map_err(|e| e.to_string())
+pub async fn backup_export(
+    backup_path: String,
+    dest_path: String,
+) -> Result<BackupExportResult, String> {
+    Ok(
+        backup::export_backup_with_result(&PathBuf::from(&backup_path), &PathBuf::from(&dest_path))
+            .await,
+    )
 }
 
 #[tauri::command]
 pub async fn backup_import(
     zip_path: String,
     settings: State<'_, SharedSettings>,
-) -> Result<BackupInfo, String> {
+) -> Result<BackupImportResult, String> {
     let s = settings.read().await;
-    backup::import_backup(&PathBuf::from(&zip_path), &s)
-        .await
-        .map_err(|e| e.to_string())
+    Ok(backup::import_backup_with_result(&PathBuf::from(&zip_path), &s).await)
 }
 
 #[tauri::command]
@@ -119,11 +221,9 @@ pub async fn backup_cleanup(
     max_count: u32,
     max_age_days: u32,
     settings: State<'_, SharedSettings>,
-) -> Result<u32, String> {
+) -> Result<BackupCleanupResult, String> {
     let s = settings.read().await;
-    backup::cleanup_old_backups(&s, max_count, max_age_days)
-        .await
-        .map_err(|e| e.to_string())
+    Ok(backup::cleanup_old_backups_with_result(&s, max_count, max_age_days).await)
 }
 
 #[tauri::command]

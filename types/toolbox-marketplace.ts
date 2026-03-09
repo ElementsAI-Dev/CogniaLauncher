@@ -1,4 +1,8 @@
-import type { PluginInfo, PluginUpdateInfo } from '@/types/plugin';
+import type {
+  PluginInfo,
+  PluginMarketplaceActionPhase,
+  PluginUpdateInfo,
+} from '@/types/plugin';
 
 export interface ToolboxMarketplaceToolPreview {
   toolId: string;
@@ -34,6 +38,9 @@ export interface ToolboxMarketplaceSource {
   pluginDir: string;
   artifact: string;
   checksumSha256: string;
+  downloadUrl: string | null;
+  mirrorUrls: string[];
+  sizeBytes: number | null;
 }
 
 export interface ToolboxMarketplaceListing {
@@ -95,8 +102,36 @@ export interface ToolboxMarketplaceFilters {
   sort: 'relevance' | 'name' | 'updated' | 'popular';
 }
 
+export type ToolboxMarketplaceActionKind = 'marketplace-install' | 'marketplace-update';
+
+export type ToolboxMarketplaceActionErrorCategory =
+  | 'compatibility_blocked'
+  | 'source_unavailable'
+  | 'validation_failed'
+  | 'install_execution_failed';
+
+export interface ToolboxMarketplaceActionError {
+  kind: ToolboxMarketplaceActionKind;
+  category: ToolboxMarketplaceActionErrorCategory;
+  listingId: string;
+  pluginId: string;
+  toolId: string | null;
+  message: string;
+  retryable: boolean;
+  timestamp: number;
+}
+
+export interface ToolboxMarketplaceActionProgress {
+  kind: ToolboxMarketplaceActionKind;
+  listingId: string;
+  pluginId: string;
+  phase: PluginMarketplaceActionPhase;
+  downloadTaskId: string | null;
+  timestamp: number;
+}
+
 export interface ToolboxContinuationHint {
-  kind: 'marketplace-install' | 'marketplace-update';
+  kind: ToolboxMarketplaceActionKind;
   listingId: string;
   pluginId: string;
   toolId: string | null;

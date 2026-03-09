@@ -16,7 +16,7 @@ export function UpdateSettings({
   t,
 }: UpdateSettingsProps) {
   return (
-    <div className="space-y-1">
+    <div className="flex flex-col gap-1">
         <SwitchSettingItem
           id="check-updates-on-start"
           label={t("settings.checkUpdatesOnStart")}

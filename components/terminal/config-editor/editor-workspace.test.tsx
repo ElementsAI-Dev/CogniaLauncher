@@ -88,4 +88,56 @@ describe('TerminalConfigEditorWorkspace', () => {
     expect(screen.queryByRole('tab', { name: /changes/i })).not.toBeInTheDocument();
     expect(screen.getByTestId('terminal-config-editor-surface')).toBeInTheDocument();
   });
+
+  it('supports structured editing view when structured entries are provided', async () => {
+    const user = userEvent.setup();
+    const onStructuredEntriesChange = jest.fn();
+
+    render(
+      <TerminalConfigEditorWorkspace
+        SurfaceComponent={StubSurface}
+        value={'alias ll="ls -la"'}
+        baselineValue={'alias ll="ls -la"'}
+        language="bash"
+        diagnostics={[]}
+        structuredEntries={{
+          aliases: [['ll', 'ls -la']],
+          exports: [],
+          sources: [],
+        }}
+        onStructuredEntriesChange={onStructuredEntriesChange}
+        onChange={jest.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole('tab', { name: /structured/i }));
+    expect(screen.getByTestId('terminal-config-editor-structured')).toBeInTheDocument();
+
+    const addButtons = screen.getAllByRole('button', { name: /^add$/i });
+    await user.click(addButtons[0]);
+    expect(onStructuredEntriesChange).toHaveBeenCalled();
+  });
+
+  it('falls back to text editor when structured view is limited', () => {
+    render(
+      <TerminalConfigEditorWorkspace
+        SurfaceComponent={StubSurface}
+        value={'if [ -f ~/.zshrc ]; then source ~/.zshrc; fi'}
+        baselineValue={'if [ -f ~/.zshrc ]; then source ~/.zshrc; fi'}
+        language="bash"
+        diagnostics={[]}
+        structuredEntries={{
+          aliases: [],
+          exports: [],
+          sources: [],
+        }}
+        structuredFallbackReason="advanced syntax detected"
+        onStructuredEntriesChange={jest.fn()}
+        onChange={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('tab', { name: /structured/i })).toBeDisabled();
+    expect(screen.getByTestId('terminal-config-editor-surface')).toBeInTheDocument();
+  });
 });

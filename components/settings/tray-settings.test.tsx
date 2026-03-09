@@ -9,6 +9,19 @@ const mockTraySetMinimizeToTray = jest.fn().mockResolvedValue(undefined);
 const mockTraySetStartMinimized = jest.fn().mockResolvedValue(undefined);
 const mockTraySetShowNotifications = jest.fn().mockResolvedValue(undefined);
 const mockTraySetNotificationLevel = jest.fn().mockResolvedValue(undefined);
+const mockTraySetQuickAction = jest.fn().mockResolvedValue(undefined);
+const mockTrayGetAvailableQuickActions = jest.fn().mockResolvedValue([
+  "open_settings",
+  "check_updates",
+]);
+const mockTraySetNotificationEvents = jest.fn().mockResolvedValue(undefined);
+const mockTrayGetAvailableNotificationEvents = jest
+  .fn()
+  .mockResolvedValue(["updates", "errors"]);
+const mockTrayGetState = jest.fn().mockResolvedValue({
+  quickAction: "check_updates",
+  notificationEvents: ["updates", "errors"],
+});
 
 jest.mock("@/lib/tauri", () => ({
   isTauri: () => mockIsTauri(),
@@ -16,8 +29,14 @@ jest.mock("@/lib/tauri", () => ({
   trayEnableAutostart: jest.fn().mockResolvedValue(undefined),
   trayDisableAutostart: jest.fn().mockResolvedValue(undefined),
   traySetClickBehavior: jest.fn().mockResolvedValue(undefined),
+  traySetQuickAction: (v: string) => mockTraySetQuickAction(v),
+  trayGetAvailableQuickActions: () => mockTrayGetAvailableQuickActions(),
   traySetShowNotifications: (v: boolean) => mockTraySetShowNotifications(v),
   traySetNotificationLevel: (v: string) => mockTraySetNotificationLevel(v),
+  traySetNotificationEvents: (v: string[]) => mockTraySetNotificationEvents(v),
+  trayGetAvailableNotificationEvents: () => mockTrayGetAvailableNotificationEvents(),
+  trayGetState: () => mockTrayGetState(),
+  listenTrayNotificationEventsChanged: jest.fn().mockResolvedValue(() => {}),
   traySetMinimizeToTray: (v: boolean) => mockTraySetMinimizeToTray(v),
   traySetStartMinimized: (v: boolean) => mockTraySetStartMinimized(v),
   trayGetAvailableMenuItems: jest.fn().mockResolvedValue(["show_hide", "quit"]),
@@ -49,7 +68,17 @@ const mockT = (key: string) => {
     "settings.trayClickToggle": "Toggle Window",
     "settings.trayClickMenu": "Show Menu",
     "settings.trayClickCheckUpdates": "Check Updates",
+    "settings.trayClickQuickAction": "Quick Action",
     "settings.trayClickNothing": "Do Nothing",
+    "settings.trayQuickAction": "Quick Action Mapping",
+    "settings.trayQuickActionDesc": "Action for quick action mode",
+    "settings.trayQuickActionOption.open_settings": "Open Settings",
+    "settings.trayQuickActionOption.check_updates": "Check Updates",
+    "settings.trayNotificationEvents": "Notification Event Filters",
+    "settings.trayNotificationEventsDesc": "Event-level controls",
+    "settings.trayNotificationEventOption.updates": "Update Events",
+    "settings.trayNotificationEventOption.errors": "Error Events",
+    "settings.trayNotificationEventItemDesc": "Toggle this category",
   };
   return translations[key] || key;
 };

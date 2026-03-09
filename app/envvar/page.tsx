@@ -3,6 +3,16 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { PageHeader } from '@/components/layout/page-header';
 import {
   EnvVarTable,
@@ -168,6 +178,38 @@ export default function EnvVarPage() {
     }
   }, [activeAction, t]);
 
+  const getActionLabel = useCallback((action: Exclude<EnvVarAction, null>) => {
+    switch (action) {
+      case 'refresh':
+        return t('envvar.actions.refresh');
+      case 'add':
+        return t('envvar.actions.add');
+      case 'edit':
+        return t('envvar.actions.edit');
+      case 'delete':
+        return t('envvar.actions.delete');
+      case 'import':
+        return t('envvar.importExport.import');
+      case 'export':
+        return t('envvar.importExport.export');
+      case 'path-add':
+        return t('envvar.pathEditor.add');
+      case 'path-remove':
+        return t('envvar.pathEditor.remove');
+      case 'path-reorder':
+        return t('envvar.pathEditor.title');
+      case 'path-deduplicate':
+        return t('envvar.pathEditor.deduplicate');
+      default:
+        return t('common.error');
+    }
+  }, [t]);
+
+  const formatActionError = useCallback(
+    (action: Exclude<EnvVarAction, null>, message: string) => `${getActionLabel(action)}: ${message}`,
+    [getActionLabel],
+  );
+
   const detectionStatusText = useMemo(() => {
     switch (detectionState) {
       case 'loading-no-cache':
@@ -274,7 +316,7 @@ export default function EnvVarPage() {
     try {
       const ok = await mutate();
       if (!ok) {
-        setActionError(t('common.error'));
+        setActionError(formatActionError(action, t('common.error')));
         return false;
       }
       await refreshVariables(resolveRefreshScope(scope), { forceRefresh: true });
@@ -282,13 +324,13 @@ export default function EnvVarPage() {
       return true;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      setActionError(msg);
+      setActionError(formatActionError(action, msg));
       toast.error(msg);
       return false;
     } finally {
       setActiveAction(null);
     }
-  }, [refreshVariables, resolveRefreshScope, t]);
+  }, [formatActionError, refreshVariables, resolveRefreshScope, t]);
 
   const handleEdit = useCallback((key: string, value: string, scope: EnvVarScope) => {
     void runVarMutation('edit', scope, () => setVar(key, value, scope), t('common.saved'));
@@ -323,17 +365,17 @@ export default function EnvVarPage() {
     try {
       const ok = await mutation();
       if (!ok) {
-        setActionError(t('common.error'));
+        setActionError(formatActionError(action, t('common.error')));
       }
       return ok;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      setActionError(msg);
+      setActionError(formatActionError(action, msg));
       return false;
     } finally {
       setActiveAction(null);
     }
-  }, [t]);
+  }, [formatActionError, t]);
 
   const handlePathDeduplicate = useCallback(async () => {
     setActionError(null);
@@ -542,14 +584,18 @@ export default function EnvVarPage() {
               </div>
             </Alert>
 
-            <EnvVarToolbar
-              searchQuery={searchQuery}
-              onSearchChange={setSearchQuery}
-              scopeFilter={scopeFilter}
-              onScopeFilterChange={handleScopeFilterChange}
-              disabled={variableBusy}
-              t={t}
-            />
+            <Card className="shrink-0 gap-0 py-0" data-testid="envvar-toolbar-shell">
+              <CardContent className="px-3 py-3 sm:px-4">
+                <EnvVarToolbar
+                  searchQuery={searchQuery}
+                  onSearchChange={setSearchQuery}
+                  scopeFilter={scopeFilter}
+                  onScopeFilterChange={handleScopeFilterChange}
+                  disabled={variableBusy}
+                  t={t}
+                />
+              </CardContent>
+            </Card>
             {scopeFilter === 'all' && conflictsPanelDismissed ? (
               <div className="shrink-0">
                 <Button
@@ -565,43 +611,42 @@ export default function EnvVarPage() {
               </div>
             ) : null}
             {scopeFilter === 'all' && !conflictsPanelDismissed && (
-              <div className="shrink-0 space-y-3 rounded-md border bg-muted/30 px-3 py-3" data-testid="envvar-conflicts-summary">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="text-sm font-medium">{t('envvar.conflicts.title')}</div>
-                  <div className="flex items-center gap-1">
-                    {visibleConflicts.length > 0 && (
-                      <span
-                        className="rounded-full bg-background px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
-                        data-testid="envvar-conflicts-count"
+              <Card className="shrink-0 gap-0 py-0" data-testid="envvar-conflicts-summary">
+                <CardHeader className="border-b px-3 py-3 sm:px-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <CardTitle className="text-sm">{t('envvar.conflicts.title')}</CardTitle>
+                    <div className="flex items-center gap-1">
+                      {visibleConflicts.length > 0 && (
+                        <Badge variant="outline" className="text-[11px] text-muted-foreground" data-testid="envvar-conflicts-count">
+                          {visibleConflicts.length}
+                        </Badge>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        onClick={() => setConflictsPanelCollapsed((prev) => !prev)}
+                        aria-label={conflictsPanelCollapsed ? t('envvar.conflicts.show') : t('envvar.conflicts.hide')}
+                        data-testid="envvar-conflicts-toggle"
                       >
-                        {visibleConflicts.length}
-                      </span>
-                    )}
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      onClick={() => setConflictsPanelCollapsed((prev) => !prev)}
-                      aria-label={conflictsPanelCollapsed ? t('envvar.conflicts.show') : t('envvar.conflicts.hide')}
-                      data-testid="envvar-conflicts-toggle"
-                    >
-                      {conflictsPanelCollapsed ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      onClick={() => setConflictsPanelDismissed(true)}
-                      aria-label={t('envvar.conflicts.dismiss')}
-                      data-testid="envvar-conflicts-dismiss"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </Button>
+                        {conflictsPanelCollapsed ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        onClick={() => setConflictsPanelDismissed(true)}
+                        aria-label={t('envvar.conflicts.dismiss')}
+                        data-testid="envvar-conflicts-dismiss"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
                   </div>
-                </div>
+                </CardHeader>
 
                 {!conflictsPanelCollapsed && (
-                  <>
+                  <CardContent className="space-y-3 px-3 py-3 sm:px-4">
                     <div className="space-y-2 rounded-md border bg-background/70 p-2.5" data-testid="envvar-conflicts-ignore-settings">
                       <p className="text-xs text-muted-foreground">
                         {t('envvar.conflicts.ignoreDefaults', { keys: defaultIgnoredConflictKeys.join(', ') })}
@@ -611,14 +656,16 @@ export default function EnvVarPage() {
                           {customIgnoredConflictKeys.map((key) => (
                             <span key={key} className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px]">
                               <span className="font-mono">{key}</span>
-                              <button
+                              <Button
                                 type="button"
-                                className="text-muted-foreground hover:text-foreground"
+                                variant="ghost"
+                                size="icon"
+                                className="h-4 w-4 text-muted-foreground hover:text-foreground"
                                 onClick={() => handleRemoveIgnoredConflictKey(key)}
                                 aria-label={`${t('common.delete')} ${key}`}
                               >
                                 <X className="h-3 w-3" />
-                              </button>
+                              </Button>
                             </span>
                           ))}
                         </div>
@@ -699,74 +746,83 @@ export default function EnvVarPage() {
                               ))}
                             </div>
                           ) : (
-                            <div className="overflow-x-auto" data-testid="envvar-conflicts-table">
-                              <table className="w-full table-fixed text-xs">
-                                <thead>
-                                  <tr className="border-b text-muted-foreground">
-                                    <th className="w-28 py-1.5 pr-3 text-left font-medium">{t('envvar.conflicts.key')}</th>
-                                    <th className="py-1.5 pr-3 text-left font-medium">{t('envvar.conflicts.userValue')}</th>
-                                    <th className="py-1.5 pr-3 text-left font-medium">{t('envvar.conflicts.systemValue')}</th>
-                                    <th className="py-1.5 text-left font-medium">{t('envvar.conflicts.effectiveValue')}</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
+                            <div data-testid="envvar-conflicts-table">
+                              <Table className="table-fixed text-xs">
+                                <TableHeader>
+                                  <TableRow className="text-muted-foreground hover:bg-transparent">
+                                    <TableHead className="w-28 pr-3">{t('envvar.conflicts.key')}</TableHead>
+                                    <TableHead className="pr-3">{t('envvar.conflicts.userValue')}</TableHead>
+                                    <TableHead className="pr-3">{t('envvar.conflicts.systemValue')}</TableHead>
+                                    <TableHead>{t('envvar.conflicts.effectiveValue')}</TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
                                   {visibleConflicts.map((conflict) => (
-                                    <tr key={conflict.key} className="border-b align-top last:border-b-0">
-                                      <td className="py-2 pr-3 font-mono font-medium">{conflict.key}</td>
-                                      <td className="py-2 pr-3 font-mono break-all text-muted-foreground">{conflict.userValue}</td>
-                                      <td className="py-2 pr-3 font-mono break-all text-muted-foreground">{conflict.systemValue}</td>
-                                      <td className="py-2">
+                                    <TableRow key={conflict.key} className="align-top">
+                                      <TableCell className="pr-3 font-mono font-medium">{conflict.key}</TableCell>
+                                      <TableCell className="pr-3 font-mono break-all text-muted-foreground">{conflict.userValue}</TableCell>
+                                      <TableCell className="pr-3 font-mono break-all text-muted-foreground">{conflict.systemValue}</TableCell>
+                                      <TableCell>
                                         <span className="font-mono font-semibold text-foreground break-all" data-testid="envvar-conflict-effective-value">
                                           {conflict.effectiveValue}
                                         </span>
-                                      </td>
-                                    </tr>
+                                      </TableCell>
+                                    </TableRow>
                                   ))}
-                                </tbody>
-                              </table>
+                                </TableBody>
+                              </Table>
                             </div>
                           )}
                         </div>
                       </>
                     )}
-                  </>
+                  </CardContent>
                 )}
-              </div>
+              </Card>
             )}
-            <div className="min-h-0 flex-1" data-testid="envvar-variables-list-shell">
-              <EnvVarTable
-                rows={envRows}
-                scopeFilter={scopeFilter}
-                searchQuery={searchQuery}
-                onEdit={handleEdit}
-                onDelete={handleDelete}
-                busy={variableBusy}
+            <Card className="min-h-0 flex-1 gap-0 py-0" data-testid="envvar-variables-list-shell">
+              <CardHeader className="border-b px-3 py-3 sm:px-4">
+                <CardTitle className="text-sm">{t('envvar.tabs.variables')}</CardTitle>
+              </CardHeader>
+              <CardContent className="min-h-0 flex-1 p-0">
+                <EnvVarTable
+                  rows={envRows}
+                  scopeFilter={scopeFilter}
+                  searchQuery={searchQuery}
+                  onEdit={handleEdit}
+                  onDelete={handleDelete}
+                  busy={variableBusy}
+                  t={t}
+                />
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="path" className="mt-3 flex min-h-0 flex-1 flex-col sm:mt-4" data-testid="envvar-path-content">
+            <div className="min-h-0 flex-1">
+              <EnvVarPathEditor
+                pathEntries={pathEntries}
+                pathScope={pathScope}
+                onPathScopeChange={handlePathScopeChange}
+                onAdd={(path, position) => runPathMutation('path-add', () => addPathEntry(path, pathScope, position))}
+                onRemove={(path) => runPathMutation('path-remove', () => removePathEntry(path, pathScope))}
+                onReorder={(entries) => runPathMutation('path-reorder', () => reorderPath(entries, pathScope))}
+                onDeduplicate={handlePathDeduplicate}
+                onRefresh={() => fetchPath(pathScope)}
+                loading={pathBusy}
                 t={t}
               />
             </div>
           </TabsContent>
 
-          <TabsContent value="path" className="mt-3 min-h-0 flex-1 overflow-auto sm:mt-4">
-            <EnvVarPathEditor
-              pathEntries={pathEntries}
-              pathScope={pathScope}
-              onPathScopeChange={handlePathScopeChange}
-              onAdd={(path, position) => runPathMutation('path-add', () => addPathEntry(path, pathScope, position))}
-              onRemove={(path) => runPathMutation('path-remove', () => removePathEntry(path, pathScope))}
-              onReorder={(entries) => runPathMutation('path-reorder', () => reorderPath(entries, pathScope))}
-              onDeduplicate={handlePathDeduplicate}
-              onRefresh={() => fetchPath(pathScope)}
-              loading={pathBusy}
-              t={t}
-            />
-          </TabsContent>
-
-          <TabsContent value="shells" className="mt-3 min-h-0 flex-1 overflow-auto sm:mt-4">
-            <EnvVarShellProfiles
-              profiles={shellProfiles}
-              onReadProfile={readShellProfile}
-              t={t}
-            />
+          <TabsContent value="shells" className="mt-3 flex min-h-0 flex-1 flex-col sm:mt-4" data-testid="envvar-shells-content">
+            <div className="min-h-0 flex-1">
+              <EnvVarShellProfiles
+                profiles={shellProfiles}
+                onReadProfile={readShellProfile}
+                t={t}
+              />
+            </div>
           </TabsContent>
         </Tabs>
       </div>
@@ -793,11 +849,11 @@ export default function EnvVarPage() {
             if (result) {
               await refreshVariables(resolveRefreshScope(scope), { forceRefresh: true });
             } else {
-              setActionError(t('common.error'));
+              setActionError(formatActionError('import', t('common.error')));
             }
             return result;
           } catch (err) {
-            setActionError(err instanceof Error ? err.message : String(err));
+            setActionError(formatActionError('import', err instanceof Error ? err.message : String(err)));
             return null;
           } finally {
             setActiveAction(null);
@@ -809,11 +865,11 @@ export default function EnvVarPage() {
           try {
             const result = await exportEnvFile(scope, format);
             if (!result) {
-              setActionError(t('common.error'));
+              setActionError(formatActionError('export', t('common.error')));
             }
             return result;
           } catch (err) {
-            setActionError(err instanceof Error ? err.message : String(err));
+            setActionError(formatActionError('export', err instanceof Error ? err.message : String(err)));
             return null;
           } finally {
             setActiveAction(null);

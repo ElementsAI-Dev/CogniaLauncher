@@ -66,6 +66,27 @@ tool_contract_version = "1.0.0"
 compatible_cognia_versions = ">=0.1.0"
 ```
 
+### Scaffold Lifecycle and Output Rules
+
+Scaffold behavior is determined by both `language` and `lifecycleProfile`:
+
+| Lifecycle | Language Support | Output Directory Expectation | Next Step |
+|---|---|---|---|
+| `external` | `rust`, `javascript`, `typescript` | Any writable directory | Build `plugin.wasm`, validate locally, import plugin |
+| `builtin` | `rust`, `typescript` | Point to `plugins/` workspace root | Add catalog entry, run checksums, run validate |
+
+Notes:
+- `builtin` with `javascript` is rejected.
+- For built-ins, do not target `plugins/rust` or `plugins/typescript` directly as output root.
+
+### Scaffold Import-Readiness Contract
+
+Scaffolded projects should be validated before import:
+
+- If `plugin.wasm` is missing, validation returns `buildRequired = true` and blocks import.
+- `missingArtifactPath` reports where `plugin.wasm` is expected.
+- After build output exists and manifest checks pass, import can proceed.
+
 ### tsconfig.json
 
 ```json
@@ -137,6 +158,9 @@ import { cognia } from '@cognia/plugin-sdk';
 | `installVersion(envType, version)` | pkg_install | Install a version |
 | `setVersion(envType, version)` | pkg_install | Switch to a version |
 
+`providerList()` now returns a typed `ProviderInfo[]` payload:
+`{ id, displayName, capabilities, platforms, priority, isEnvironmentProvider, enabled }`.
+
 ### cognia.pkg
 
 | Function | Permission | Description |
@@ -165,8 +189,9 @@ import { cognia } from '@cognia/plugin-sdk';
 
 | Function | Permission | Description |
 |----------|-----------|-------------|
-| `get(url)` | http | HTTP GET request |
-| `post(url, body, contentType?)` | http | HTTP POST request |
+| `request(input)` | http | Normalized HTTP request (recommended) |
+| `get(url)` | http | Compatibility helper for HTTP GET |
+| `post(url, body, contentType?)` | http | Compatibility helper for HTTP POST |
 
 ### cognia.clipboard
 
@@ -277,6 +302,18 @@ const blocks = [
 
 Host.outputString(cognia.ui.render(blocks));
 ```
+
+## Host Contract Compatibility
+
+The SDK includes an explicit host contract inventory at `host-contract.json` and
+an executable parity check:
+
+```bash
+pnpm --dir plugin-sdk-ts run check:contract
+```
+
+For HTTP calls, `request()` is the recommended stable path. `get()` and `post()`
+remain supported as compatibility helpers and map to the same host capability set.
 
 ## Rust SDK Comparison
 

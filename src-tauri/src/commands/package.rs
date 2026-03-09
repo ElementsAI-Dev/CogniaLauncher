@@ -1,9 +1,14 @@
 use crate::cache::MetadataCache;
 use crate::config::Settings;
 use crate::core::Orchestrator;
-use crate::platform::env::Platform;
+use crate::platform::env::{current_platform, Platform};
 use crate::provider::{
-    InstalledFilter, InstalledPackage, PackageInfo, PackageSummary, ProviderRegistry, SearchOptions,
+    support::{
+        provider_unavailable_reason, update_support_reason, SUPPORT_STATUS_SUPPORTED,
+        SUPPORT_STATUS_UNSUPPORTED,
+    },
+    Capability, InstalledFilter, InstalledPackage, PackageInfo, PackageSummary, ProviderRegistry,
+    SearchOptions,
 };
 use futures::future::join_all;
 use std::collections::HashSet;
@@ -342,6 +347,12 @@ pub struct ProviderStatusInfo {
     pub display_name: String,
     pub installed: bool,
     pub platforms: Vec<Platform>,
+    pub status: String,
+    pub reason: Option<String>,
+    pub reason_code: Option<String>,
+    pub update_supported: bool,
+    pub update_reason: Option<String>,
+    pub update_reason_code: Option<String>,
 }
 
 #[tauri::command]
@@ -365,6 +376,7 @@ pub async fn provider_status_all(
     let results = {
         let reg = registry.read().await;
         let providers = reg.list_all_info();
+        let platform = current_platform();
         let to_check: Vec<_> = providers
             .into_iter()
             .map(|info| {
@@ -379,11 +391,50 @@ pub async fn provider_status_all(
                 Some(p) => p.is_available().await,
                 None => false,
             };
+            let supported_platforms = info.platforms.clone();
+            let capability_set = info
+                .capabilities
+                .iter()
+                .copied()
+                .collect::<std::collections::HashSet<Capability>>();
+            let update_support =
+                update_support_reason(platform, &supported_platforms, &capability_set);
+            let runtime_reason = if supported_platforms.contains(&platform) {
+                if installed {
+                    None
+                } else {
+                    Some(provider_unavailable_reason())
+                }
+            } else {
+                Some(crate::provider::support::SupportReason {
+                    code: crate::provider::support::REASON_PLATFORM_UNSUPPORTED,
+                    message: format!("provider not supported on {}", platform.as_str()),
+                })
+            };
+
             ProviderStatusInfo {
                 id: info.id,
                 display_name: info.display_name,
                 installed,
-                platforms: info.platforms,
+                platforms: supported_platforms,
+                status: if runtime_reason.is_none() {
+                    SUPPORT_STATUS_SUPPORTED.into()
+                } else {
+                    SUPPORT_STATUS_UNSUPPORTED.into()
+                },
+                reason: runtime_reason.as_ref().map(|r| r.message.clone()),
+                reason_code: runtime_reason.as_ref().map(|r| r.code.to_string()),
+                update_supported: update_support.is_none() && installed,
+                update_reason: if !installed {
+                    Some(provider_unavailable_reason().message)
+                } else {
+                    update_support.as_ref().map(|r| r.message.clone())
+                },
+                update_reason_code: if !installed {
+                    Some(provider_unavailable_reason().code.to_string())
+                } else {
+                    update_support.as_ref().map(|r| r.code.to_string())
+                },
             }
         });
         join_all(futures).await

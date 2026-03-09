@@ -57,6 +57,7 @@ let mockSearchResults: Array<{
     provider: string;
     status: 'supported' | 'partial' | 'unsupported' | 'error';
     reason: string | null;
+    reason_code?: string | null;
     checked: number;
     updates: number;
     errors: number;
@@ -165,6 +166,7 @@ jest.mock('@/components/providers/locale-provider', () => ({
         'packages.historyClearFailed': `Failed to clear history: ${params?.error ?? ''}`,
         'packages.updatesFound': `${params?.count ?? 0} updates found`,
         'packages.updateCheckCoverage': `${params?.supported ?? 0}/${params?.partial ?? 0}/${params?.unsupported ?? 0}/${params?.error ?? 0}`,
+        'packages.updateCheckPartial': `${params?.count ?? 0} providers partially supported`,
         'packages.updateCheckUnsupported': `${params?.count ?? 0} providers unsupported`,
         'packages.dependencyResolveFailedFor': `Failed to resolve dependencies for ${params?.name ?? ""}: ${params?.error ?? ""}`,
         'packages.dependencyResolveFailedWithManualHint': `Failed to resolve dependencies for ${params?.name ?? ""}: ${params?.error ?? ""}`,
@@ -539,6 +541,35 @@ describe('PackagesPage', () => {
     await waitFor(() => {
       expect(screen.getByText('1 providers unsupported')).toBeInTheDocument();
       expect(screen.getByText('1/0/1/0')).toBeInTheDocument();
+    });
+  });
+
+  it('shows partial provider summary separately from unsupported/errors', async () => {
+    mockPackageStoreState.updateCheckProviderOutcomes = [
+      {
+        provider: 'npm',
+        status: 'partial',
+        reason: null,
+        reason_code: 'native_update_check_failed_with_fallback',
+        checked: 10,
+        updates: 3,
+        errors: 1,
+      },
+    ];
+    mockPackageStoreState.updateCheckCoverage = {
+      supported: 0,
+      partial: 1,
+      unsupported: 0,
+      error: 0,
+    };
+
+    const user = userEvent.setup();
+    render(<PackagesPage />);
+    await user.click(screen.getByText(/Updates/));
+
+    await waitFor(() => {
+      expect(screen.getByText('1 providers partially supported')).toBeInTheDocument();
+      expect(screen.getByText('0/1/0/0')).toBeInTheDocument();
     });
   });
 

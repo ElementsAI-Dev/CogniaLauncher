@@ -393,6 +393,40 @@ The scaffold system (`plugin_scaffold` command) supports three languages:
 - **JavaScript** — Raw JS with `Host.getFunctions()`, compiles with `extism-js`
 - **TypeScript** (recommended) — Uses `@cognia/plugin-sdk`, bundles with esbuild + `extism-js`
 
+### Scaffold Lifecycle Matrix
+
+The scaffold contract also depends on lifecycle profile:
+
+| Lifecycle | Supported Languages | Output Directory Rule | Handoff Focus |
+|---|---|---|---|
+| `external` | Rust / JavaScript / TypeScript | Any writable target directory | Build `plugin.wasm`, validate, then import local plugin |
+| `builtin` | Rust / TypeScript | Must point to `plugins/` workspace root (not `plugins/rust` or `plugins/typescript`) | Built-in catalog onboarding (`plugins/manifest.json`, checksums, validate) |
+
+`builtin + javascript` is rejected by validation.
+
+### Scaffold Template Option Effects
+
+`templateOptions` controls optional scaffold artifacts:
+
+- `includeUnifiedContractSamples = true` adds:
+  - `contracts/unified-tool-contract.sample.json`
+  - `schemas/input.schema.json`
+  - `schemas/output.schema.json`
+  - `schemas/action-envelope.schema.json`
+- `includeValidationGuidance = true` (with unified contract samples enabled) adds:
+  - `docs/validation-guide.md`
+- `includeStarterTests = true` adds contract starter tests in `tests/`
+
+### Import Readiness Validation
+
+`plugin_validate` treats missing `plugin.wasm` as build prerequisite:
+
+- `buildRequired = true`
+- `canImport = false`
+- `missingArtifactPath` points to the expected `plugin.wasm`
+
+This allows scaffold flows to guide users to build before import, instead of failing at install time.
+
 ## UI Modes
 
 Plugins can declare one of three UI rendering modes per tool via `ui_mode` in `plugin.toml`:

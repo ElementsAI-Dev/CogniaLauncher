@@ -6,6 +6,7 @@ import { useLocale } from "@/components/providers/locale-provider";
 import { cn, formatBytes } from "@/lib/utils";
 import type { PlatformInfo } from "@/lib/tauri";
 import { WidgetEmptyCard } from "@/components/dashboard/widgets/widget-empty-card";
+import { DashboardMetricItem } from "@/components/dashboard/dashboard-primitives";
 
 interface SystemInfoWidgetProps {
   platformInfo: PlatformInfo | null;
@@ -73,22 +74,16 @@ export function SystemInfoWidget({ platformInfo, cogniaDir, className }: SystemI
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="space-y-3">
+        <div className="space-y-2.5">
           {infoItems.map((item) => (
-            <div
+            <DashboardMetricItem
               key={item.label}
-              className="flex items-center gap-3 rounded-lg border p-3"
-            >
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted">
-                {item.icon}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-xs text-muted-foreground">{item.label}</div>
-                <div className={cn("text-sm font-medium", item.truncate && "truncate")} title={item.value}>
-                  {item.value}
-                </div>
-              </div>
-            </div>
+              className="py-3"
+              icon={<span className="text-muted-foreground">{item.icon}</span>}
+              label={item.label}
+              value={<span className={cn(item.truncate && "truncate")} title={item.value}>{item.value}</span>}
+              valueClassName="mt-1 text-sm font-medium"
+            />
           ))}
         </div>
       </CardContent>

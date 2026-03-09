@@ -2,9 +2,17 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { TerminalProfileList } from './terminal-profile-list';
 import type { LaunchResult, TerminalProfile } from '@/types/tauri';
+import { toast } from 'sonner';
 
 jest.mock('@/components/providers/locale-provider', () => ({
   useLocale: () => ({ t: (key: string) => key }),
+}));
+
+jest.mock('sonner', () => ({
+  toast: {
+    error: jest.fn(),
+    success: jest.fn(),
+  },
 }));
 
 function makeProfile(partial: Partial<TerminalProfile>): TerminalProfile {
@@ -26,6 +34,31 @@ function makeProfile(partial: Partial<TerminalProfile>): TerminalProfile {
 }
 
 describe('TerminalProfileList', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  function mockFilePickerWith(file: File) {
+    const originalCreateElement = document.createElement.bind(document);
+    jest.spyOn(document, 'createElement').mockImplementation((tagName: string) => {
+      const element = originalCreateElement(tagName);
+      if (tagName.toLowerCase() === 'input') {
+        const input = element as HTMLInputElement;
+        Object.defineProperty(input, 'files', {
+          configurable: true,
+          get: () => [file],
+        });
+        input.click = () => {
+          input.onchange?.({
+            target: { files: [file] },
+          } as unknown as Event);
+        };
+        return input;
+      }
+      return element;
+    });
+  }
+
   it('renders latest launch result and supports clearing', () => {
     const onClearLaunchResult = jest.fn();
     const lastResult: LaunchResult = {
@@ -147,7 +180,7 @@ describe('TerminalProfileList', () => {
     );
 
     // Open dropdown menu
-    const menuTrigger = screen.getByRole('button', { name: '' });
+    const menuTrigger = screen.getByRole('button', { name: /actions/i });
     await user.click(menuTrigger);
 
     // Click edit
@@ -186,7 +219,7 @@ describe('TerminalProfileList', () => {
     );
 
     // Open dropdown to find set-default
-    const menuTrigger = screen.getByRole('button', { name: '' });
+    const menuTrigger = screen.getByRole('button', { name: /actions/i });
     await user.click(menuTrigger);
 
     await waitFor(() => {
@@ -213,5 +246,82 @@ describe('TerminalProfileList', () => {
     expect(screen.getByText('terminal.exportProfiles')).toBeInTheDocument();
     expect(screen.getByText('terminal.importProfiles')).toBeInTheDocument();
   });
-});
 
+  it('previews import and confirms with merge strategy by default', async () => {
+    const user = userEvent.setup();
+    const onImport = jest.fn().mockResolvedValue(1);
+    const payload = JSON.stringify([{ id: 'profile-2', name: 'Imported', shellId: 'bash' }]);
+    mockFilePickerWith(new File([payload], 'profiles.json', { type: 'application/json' }));
+
+    render(
+      <TerminalProfileList
+        profiles={[makeProfile({ id: 'profile-1' })]}
+        onLaunch={jest.fn()}
+        onEdit={jest.fn()}
+        onDelete={jest.fn()}
+        onSetDefault={jest.fn()}
+        onCreateNew={jest.fn()}
+        onImport={onImport}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: /terminal\.importProfiles/i }));
+    await screen.findByText('terminal.importPreviewTitle');
+    await user.click(screen.getByRole('button', { name: /terminal\.importConfirm/i }));
+
+    await waitFor(() => {
+      expect(onImport).toHaveBeenCalledWith(payload, true);
+    });
+  });
+
+  it('does not mutate profiles when import confirmation is cancelled', async () => {
+    const user = userEvent.setup();
+    const onImport = jest.fn().mockResolvedValue(1);
+    const payload = JSON.stringify([{ id: 'profile-2', name: 'Imported', shellId: 'bash' }]);
+    mockFilePickerWith(new File([payload], 'profiles.json', { type: 'application/json' }));
+
+    render(
+      <TerminalProfileList
+        profiles={[makeProfile({ id: 'profile-1' })]}
+        onLaunch={jest.fn()}
+        onEdit={jest.fn()}
+        onDelete={jest.fn()}
+        onSetDefault={jest.fn()}
+        onCreateNew={jest.fn()}
+        onImport={onImport}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: /terminal\.importProfiles/i }));
+    await screen.findByText('terminal.importPreviewTitle');
+    await user.click(screen.getByRole('button', { name: /terminal\.cancel/i }));
+
+    expect(onImport).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid import payload before opening confirmation dialog', async () => {
+    const user = userEvent.setup();
+    const onImport = jest.fn();
+    mockFilePickerWith(new File(['{invalid-json'], 'profiles.json', { type: 'application/json' }));
+
+    render(
+      <TerminalProfileList
+        profiles={[makeProfile({ id: 'profile-1' })]}
+        onLaunch={jest.fn()}
+        onEdit={jest.fn()}
+        onDelete={jest.fn()}
+        onSetDefault={jest.fn()}
+        onCreateNew={jest.fn()}
+        onImport={onImport}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: /terminal\.importProfiles/i }));
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith('terminal.importValidationInvalidJson');
+    });
+    expect(screen.queryByText('terminal.importPreviewTitle')).not.toBeInTheDocument();
+    expect(onImport).not.toHaveBeenCalled();
+  });
+});

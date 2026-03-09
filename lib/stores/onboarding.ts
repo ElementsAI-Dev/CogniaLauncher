@@ -13,6 +13,25 @@ export type OnboardingStepId =
   | 'shell-init'
   | 'complete';
 
+export type OnboardingSessionState =
+  | 'idle'
+  | 'active'
+  | 'paused'
+  | 'completed'
+  | 'skipped';
+
+export interface OnboardingSessionSummary {
+  mode: OnboardingMode | null;
+  locale: string | null;
+  theme: string | null;
+  mirrorPreset: string | null;
+  detectedCount: number;
+  primaryEnvironment: string | null;
+  manageableEnvironments: string[];
+  shellType: string | null;
+  shellConfigured: boolean | null;
+}
+
 export const ONBOARDING_STEP_SEQUENCES: Record<OnboardingMode, OnboardingStepId[]> = {
   quick: [
     'mode-selection',
@@ -43,6 +62,20 @@ export function getOnboardingSteps(mode: OnboardingMode | null | undefined): Onb
   return mode ? ONBOARDING_STEP_SEQUENCES[mode] : MODE_SELECTION_STEPS;
 }
 
+function buildDefaultSessionSummary(mode: OnboardingMode | null): OnboardingSessionSummary {
+  return {
+    mode,
+    locale: null,
+    theme: null,
+    mirrorPreset: 'default',
+    detectedCount: 0,
+    primaryEnvironment: null,
+    manageableEnvironments: [],
+    shellType: null,
+    shellConfigured: null,
+  };
+}
+
 function clampStepIndex(step: number, steps: OnboardingStepId[]): number {
   if (steps.length === 0) {
     return 0;
@@ -59,6 +92,44 @@ function addVisitedStep(visitedSteps: string[], stepId?: string): string[] {
   return [...visitedSteps, stepId];
 }
 
+function normalizeOnboardingMode(mode: unknown): OnboardingMode | null {
+  return mode === 'quick' || mode === 'detailed' ? mode : null;
+}
+
+function normalizeSessionSummary(
+  rawSummary: unknown,
+  mode: OnboardingMode | null,
+): OnboardingSessionSummary {
+  const defaults = buildDefaultSessionSummary(mode);
+  if (!rawSummary || typeof rawSummary !== 'object') {
+    return defaults;
+  }
+
+  const summary = rawSummary as Record<string, unknown>;
+  const manageableEnvironments = Array.isArray(summary.manageableEnvironments)
+    ? Array.from(new Set(summary.manageableEnvironments.filter((env): env is string => typeof env === 'string' && env.length > 0)))
+    : defaults.manageableEnvironments;
+
+  const primaryEnvironment = typeof summary.primaryEnvironment === 'string'
+    ? summary.primaryEnvironment
+    : manageableEnvironments[0] ?? null;
+
+  return {
+    mode,
+    locale: typeof summary.locale === 'string' ? summary.locale : defaults.locale,
+    theme: typeof summary.theme === 'string' ? summary.theme : defaults.theme,
+    mirrorPreset: typeof summary.mirrorPreset === 'string' ? summary.mirrorPreset : defaults.mirrorPreset,
+    detectedCount: typeof summary.detectedCount === 'number' ? Math.max(0, summary.detectedCount) : defaults.detectedCount,
+    primaryEnvironment,
+    manageableEnvironments,
+    shellType: typeof summary.shellType === 'string' ? summary.shellType : defaults.shellType,
+    shellConfigured:
+      typeof summary.shellConfigured === 'boolean'
+        ? summary.shellConfigured
+        : defaults.shellConfigured,
+  };
+}
+
 export interface OnboardingState {
   mode: OnboardingMode | null;
   completed: boolean;
@@ -70,6 +141,11 @@ export interface OnboardingState {
   tourActive: boolean;
   tourStep: number;
   version: number;
+  sessionState: OnboardingSessionState;
+  lastActiveStepId: OnboardingStepId | null;
+  lastActiveAt: number | null;
+  canResume: boolean;
+  sessionSummary: OnboardingSessionSummary;
   dismissedHints: string[];
   hintsEnabled: boolean;
   setWizardOpen: (open: boolean) => void;
@@ -78,6 +154,9 @@ export interface OnboardingState {
   nextStep: () => void;
   prevStep: () => void;
   markStepVisited: (stepId: string) => void;
+  pauseOnboarding: (stepId?: OnboardingStepId) => void;
+  resumeOnboarding: () => void;
+  updateSessionSummary: (summary: Partial<OnboardingSessionSummary>) => void;
   completeOnboarding: () => void;
   skipOnboarding: () => void;
   resetOnboarding: () => void;
@@ -104,25 +183,55 @@ export const useOnboardingStore = create<OnboardingState>()(
       tourCompleted: false,
       tourActive: false,
       tourStep: 0,
-      version: 3,
+      version: 4,
+      sessionState: 'idle',
+      lastActiveStepId: null,
+      lastActiveAt: null,
+      canResume: false,
+      sessionSummary: buildDefaultSessionSummary(null),
       dismissedHints: [],
       hintsEnabled: true,
 
-      setWizardOpen: (wizardOpen) => set({ wizardOpen }),
+      setWizardOpen: (wizardOpen) =>
+        set((state) => ({
+          wizardOpen,
+          sessionState:
+            wizardOpen && !state.completed && !state.skipped
+              ? 'active'
+              : state.sessionState,
+        })),
 
       selectMode: (mode) =>
         set((state) => {
           if (state.mode === mode) {
+            const now = Date.now();
             return {
               mode,
               visitedSteps: addVisitedStep(state.visitedSteps, 'mode-selection'),
+              sessionState: 'active' as OnboardingSessionState,
+              canResume: false,
+              lastActiveStepId: 'mode-selection' as OnboardingStepId,
+              lastActiveAt: now,
+              sessionSummary: {
+                ...state.sessionSummary,
+                mode,
+              },
             };
           }
 
+          const now = Date.now();
           return {
             mode,
             currentStep: 0,
             visitedSteps: ['mode-selection'],
+            sessionState: 'active' as OnboardingSessionState,
+            canResume: false,
+            lastActiveStepId: 'mode-selection' as OnboardingStepId,
+            lastActiveAt: now,
+            sessionSummary: {
+              ...state.sessionSummary,
+              mode,
+            },
           };
         }),
 
@@ -131,10 +240,17 @@ export const useOnboardingStore = create<OnboardingState>()(
           const steps = getOnboardingSteps(state.mode);
           const nextStep = clampStepIndex(step, steps);
           const stepId = steps[nextStep];
+          const now = Date.now();
 
           return {
             currentStep: nextStep,
             visitedSteps: addVisitedStep(state.visitedSteps, stepId),
+            lastActiveStepId: stepId,
+            lastActiveAt: now,
+            sessionState:
+              state.completed || state.skipped
+                ? state.sessionState
+                : ('active' as OnboardingSessionState),
           };
         }),
 
@@ -147,22 +263,116 @@ export const useOnboardingStore = create<OnboardingState>()(
 
           const nextStep = clampStepIndex(state.currentStep + 1, steps);
           const stepId = steps[nextStep];
+          const now = Date.now();
 
           return {
             currentStep: nextStep,
             visitedSteps: addVisitedStep(state.visitedSteps, stepId),
+            lastActiveStepId: stepId,
+            lastActiveAt: now,
+            sessionState: 'active' as OnboardingSessionState,
           };
         }),
 
       prevStep: () =>
-        set((state) => ({
-          currentStep: Math.max(state.currentStep - 1, 0),
-        })),
+        set((state) => {
+          const steps = getOnboardingSteps(state.mode);
+          const nextStep = clampStepIndex(state.currentStep - 1, steps);
+          const stepId = steps[nextStep] ?? state.lastActiveStepId;
+          return {
+            currentStep: nextStep,
+            lastActiveStepId: stepId,
+            lastActiveAt: Date.now(),
+            sessionState:
+              state.completed || state.skipped
+                ? state.sessionState
+                : ('active' as OnboardingSessionState),
+          };
+        }),
 
       markStepVisited: (stepId) =>
         set((state) => ({
           visitedSteps: addVisitedStep(state.visitedSteps, stepId),
+          lastActiveStepId:
+            (getOnboardingSteps(state.mode).includes(stepId as OnboardingStepId)
+              ? (stepId as OnboardingStepId)
+              : state.lastActiveStepId),
+          lastActiveAt: Date.now(),
         })),
+
+      pauseOnboarding: (stepId) =>
+        set((state) => {
+          if (state.completed || state.skipped) {
+            return {
+              wizardOpen: false,
+            };
+          }
+
+          const steps = getOnboardingSteps(state.mode);
+          const resolvedStepId =
+            stepId
+            ?? steps[clampStepIndex(state.currentStep, steps)]
+            ?? state.lastActiveStepId
+            ?? 'mode-selection';
+
+          return {
+            wizardOpen: false,
+            sessionState: 'paused' as OnboardingSessionState,
+            canResume: true,
+            lastActiveStepId: resolvedStepId,
+            lastActiveAt: Date.now(),
+          };
+        }),
+
+      resumeOnboarding: () =>
+        set((state) => {
+          if (state.completed || state.skipped) {
+            return state;
+          }
+
+          const steps = getOnboardingSteps(state.mode);
+          const indexedStep = state.lastActiveStepId
+            ? steps.indexOf(state.lastActiveStepId)
+            : -1;
+          const nextStep = indexedStep >= 0
+            ? indexedStep
+            : clampStepIndex(state.currentStep, steps);
+          const stepId = steps[nextStep] ?? 'mode-selection';
+
+          return {
+            wizardOpen: true,
+            currentStep: nextStep,
+            visitedSteps: addVisitedStep(state.visitedSteps, stepId),
+            sessionState: 'active' as OnboardingSessionState,
+            canResume: false,
+            lastActiveStepId: stepId,
+            lastActiveAt: Date.now(),
+          };
+        }),
+
+      updateSessionSummary: (summary) =>
+        set((state) => {
+          const merged = {
+            ...state.sessionSummary,
+            ...summary,
+            mode: summary.mode ?? state.sessionSummary.mode ?? state.mode,
+          };
+
+          const manageableEnvironments = Array.isArray(merged.manageableEnvironments)
+            ? Array.from(new Set(merged.manageableEnvironments.filter(Boolean)))
+            : [];
+          const primaryEnvironment = merged.primaryEnvironment
+            ?? manageableEnvironments[0]
+            ?? null;
+
+          return {
+            sessionSummary: {
+              ...merged,
+              manageableEnvironments,
+              primaryEnvironment,
+            },
+          };
+        }),
 
       completeOnboarding: () =>
         set((state) => ({
@@ -170,13 +380,30 @@ export const useOnboardingStore = create<OnboardingState>()(
           skipped: false,
           wizardOpen: false,
           currentStep: getOnboardingSteps(state.mode).length - 1,
+          sessionState: 'completed',
+          canResume: false,
+          lastActiveStepId:
+            getOnboardingSteps(state.mode)[getOnboardingSteps(state.mode).length - 1]
+            ?? state.lastActiveStepId,
+          lastActiveAt: Date.now(),
+          sessionSummary: {
+            ...state.sessionSummary,
+            mode: state.mode,
+          },
         })),
 
       skipOnboarding: () =>
-        set({
+        set((state) => ({
           skipped: true,
+          completed: false,
           wizardOpen: false,
-        }),
+          sessionState: 'skipped',
+          canResume: false,
+          lastActiveStepId:
+            getOnboardingSteps(state.mode)[clampStepIndex(state.currentStep, getOnboardingSteps(state.mode))]
+            ?? state.lastActiveStepId,
+          lastActiveAt: Date.now(),
+        })),
 
       resetOnboarding: () =>
         set({
@@ -189,6 +416,11 @@ export const useOnboardingStore = create<OnboardingState>()(
           tourCompleted: false,
           tourActive: false,
           tourStep: 0,
+          sessionState: 'active',
+          canResume: false,
+          lastActiveStepId: 'mode-selection',
+          lastActiveAt: Date.now(),
+          sessionSummary: buildDefaultSessionSummary(null),
         }),
 
       startTour: () =>
@@ -245,7 +477,7 @@ export const useOnboardingStore = create<OnboardingState>()(
     {
       name: 'cognia-onboarding',
       storage: createJSONStorage(() => localStorage),
-      version: 3,
+      version: 4,
       migrate: (persistedState, version) => {
         const state = (persistedState ?? {}) as Record<string, unknown>;
 
@@ -274,6 +506,31 @@ export const useOnboardingStore = create<OnboardingState>()(
           state.version = 3;
         }
 
+        if (version < 4) {
+          const mode = normalizeOnboardingMode(state.mode);
+          const steps = getOnboardingSteps(mode);
+          const currentStep = clampStepIndex(
+            typeof state.currentStep === 'number' ? state.currentStep : 0,
+            steps,
+          );
+          const completed = Boolean(state.completed);
+          const skipped = Boolean(state.skipped);
+          const defaultStepId = steps[currentStep] ?? 'mode-selection';
+
+          state.mode = mode;
+          state.currentStep = currentStep;
+          state.lastActiveStepId = defaultStepId;
+          state.lastActiveAt = typeof state.lastActiveAt === 'number' ? state.lastActiveAt : null;
+          state.sessionState = completed
+            ? 'completed'
+            : skipped
+              ? 'skipped'
+              : 'paused';
+          state.canResume = !completed && !skipped;
+          state.sessionSummary = normalizeSessionSummary(state.sessionSummary, mode);
+          state.version = 4;
+        }
+
         return state as unknown as OnboardingState;
       },
       partialize: (state) => ({
@@ -286,6 +543,11 @@ export const useOnboardingStore = create<OnboardingState>()(
         dismissedHints: state.dismissedHints,
         hintsEnabled: state.hintsEnabled,
         version: state.version,
+        sessionState: state.sessionState,
+        lastActiveStepId: state.lastActiveStepId,
+        lastActiveAt: state.lastActiveAt,
+        canResume: state.canResume,
+        sessionSummary: state.sessionSummary,
       }),
     },
   ),

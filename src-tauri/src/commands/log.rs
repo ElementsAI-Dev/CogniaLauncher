@@ -655,6 +655,10 @@ fn build_query_result_from_window(
     offset: usize,
     limit: usize,
 ) -> LogQueryResult {
+    // Query contract:
+    // - `offset` is counted from the newest matching entry toward older entries.
+    // - Each page is returned in chronological order (older -> newer) for stable rendering.
+    // - `has_more` indicates whether there are older matching entries beyond this page.
     if total_count <= offset {
         return LogQueryResult {
             entries: Vec::new(),
@@ -979,10 +983,7 @@ pub async fn log_delete_batch(
 
     for name in &file_names {
         if current_log.as_deref() == Some(name.as_str()) {
-            warnings.push(format!(
-                "Skipped current session log file: {}",
-                name
-            ));
+            warnings.push(format!("Skipped current session log file: {}", name));
             continue; // Skip current session log
         }
         let path = log_dir.join(name);
@@ -1219,6 +1220,13 @@ pub async fn cleanup_preview_with_policy(
 mod tests {
     use super::*;
 
+    fn collect_messages(entries: &[LogEntry]) -> Vec<String> {
+        entries
+            .iter()
+            .map(|entry| entry.message.clone())
+            .collect::<Vec<_>>()
+    }
+
     #[test]
     fn parse_new_structured_log_line() {
         let line = "[2026-02-25 20:33:49.472][DEBUG][sqlx::query] query finished";
@@ -1335,6 +1343,91 @@ mod tests {
     }
 
     #[test]
+    fn query_from_cached_lines_uses_newest_window_without_overlap_between_pages() {
+        let lines = (1..=12)
+            .map(|i| format!("[2026-03-04 08:00:{i:02}.000][INFO][app] msg-{i}"))
+            .collect::<Vec<_>>();
+        let options = LogQueryOptions {
+            file_name: None,
+            level_filter: None,
+            target: None,
+            search: None,
+            use_regex: Some(false),
+            start_time: None,
+            end_time: None,
+            limit: None,
+            offset: None,
+            max_scan_lines: None,
+        };
+
+        let newest_page = query_from_cached_lines(&lines, &options, None, false, 0, 3);
+        let older_page = query_from_cached_lines(&lines, &options, None, false, 3, 3);
+
+        assert_eq!(newest_page.total_count, 12);
+        assert!(newest_page.has_more);
+        assert_eq!(
+            collect_messages(&newest_page.entries),
+            vec![
+                "msg-10".to_string(),
+                "msg-11".to_string(),
+                "msg-12".to_string(),
+            ]
+        );
+
+        assert_eq!(older_page.total_count, 12);
+        assert!(older_page.has_more);
+        assert_eq!(
+            collect_messages(&older_page.entries),
+            vec!["msg-7".to_string(), "msg-8".to_string(), "msg-9".to_string(),]
+        );
+
+        let newest_set = newest_page
+            .entries
+            .iter()
+            .map(|entry| entry.line_number)
+            .collect::<std::collections::HashSet<_>>();
+        let older_set = older_page
+            .entries
+            .iter()
+            .map(|entry| entry.line_number)
+            .collect::<std::collections::HashSet<_>>();
+        assert!(newest_set.is_disjoint(&older_set));
+    }
+
+    #[test]
+    fn filtered_query_respects_tail_scan_window_for_pagination() {
+        let lines = (1..=20)
+            .map(|i| format!("[2026-03-04 08:00:{i:02}.000][INFO][app] tail-msg-{i}"))
+            .collect::<Vec<_>>();
+        let options = LogQueryOptions {
+            file_name: None,
+            level_filter: Some(vec!["INFO".to_string()]),
+            target: Some("app".to_string()),
+            search: Some("tail-msg".to_string()),
+            use_regex: Some(false),
+            start_time: None,
+            end_time: None,
+            limit: None,
+            offset: None,
+            max_scan_lines: Some(6),
+        };
+
+        let newest_page = query_from_cached_lines(&lines, &options, None, true, 0, 2);
+        let older_page = query_from_cached_lines(&lines, &options, None, true, 2, 2);
+
+        assert_eq!(newest_page.total_count, 6);
+        assert!(newest_page.has_more);
+        assert_eq!(
+            collect_messages(&newest_page.entries),
+            vec!["tail-msg-19".to_string(), "tail-msg-20".to_string()]
+        );
+        assert_eq!(
+            collect_messages(&older_page.entries),
+            vec!["tail-msg-17".to_string(), "tail-msg-18".to_string()]
+        );
+    }
+
+    #[test]
     fn push_tail_line_keeps_latest_window() {
         let mut tail: VecDeque<(usize, String)> = VecDeque::new();
         for i in 1..=5 {
@@ -1361,7 +1454,10 @@ mod tests {
 
     #[test]
     fn cap_max_scan_lines_enforces_upper_bound() {
-        assert_eq!(cap_max_scan_lines(Some(MAX_SCAN_LINES_LIMIT + 123)), Some(MAX_SCAN_LINES_LIMIT));
+        assert_eq!(
+            cap_max_scan_lines(Some(MAX_SCAN_LINES_LIMIT + 123)),
+            Some(MAX_SCAN_LINES_LIMIT)
+        );
         assert_eq!(cap_max_scan_lines(Some(10_000)), Some(10_000));
         assert_eq!(cap_max_scan_lines(None), None);
     }

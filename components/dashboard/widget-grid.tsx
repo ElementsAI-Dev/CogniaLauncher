@@ -15,7 +15,13 @@ import {
   sortableKeyboardCoordinates,
   rectSortingStrategy,
 } from "@dnd-kit/sortable";
-import { useDashboardStore, type WidgetSize, type WidgetType } from "@/lib/stores/dashboard";
+import {
+  useDashboardStore,
+  canRemoveWidgetById,
+  canToggleWidgetVisibilityById,
+  type WidgetSize,
+  type WidgetType,
+} from "@/lib/stores/dashboard";
 import { WidgetWrapper } from "@/components/dashboard/widget-wrapper";
 import { StatsCard, StatsCardSkeleton } from "@/components/dashboard/stats-card";
 import { QuickSearch } from "@/components/dashboard/quick-search";
@@ -34,6 +40,7 @@ import { WelcomeWidget } from "@/components/dashboard/widgets/welcome-widget";
 import { ToolboxFavoritesWidget } from "@/components/dashboard/widgets/toolbox-favorites-widget";
 import { QuickActions } from "@/components/dashboard/quick-actions";
 import { useLocale } from "@/components/providers/locale-provider";
+import { cn } from "@/lib/utils";
 import { Layers, Package, HardDrive, Activity } from "lucide-react";
 import type { EnvironmentInfo, InstalledPackage, CacheInfo, PlatformInfo, ProviderInfo } from "@/lib/tauri";
 
@@ -177,6 +184,26 @@ export function WidgetGrid({
     [updateWidget],
   );
 
+  const handleRemove = useCallback(
+    (id: string) => {
+      if (!canRemoveWidgetById(widgets, id)) {
+        return;
+      }
+      removeWidget(id);
+    },
+    [widgets, removeWidget],
+  );
+
+  const handleToggleVisibility = useCallback(
+    (id: string) => {
+      if (!canToggleWidgetVisibilityById(widgets, id)) {
+        return;
+      }
+      toggleWidgetVisibility(id);
+    },
+    [widgets, toggleWidgetVisibility],
+  );
+
   const activeEnvs = environments.filter((e) => e.available).length;
   const totalVersions = environments.reduce((acc, e) => acc + e.installed_versions.length, 0);
 
@@ -213,14 +240,26 @@ export function WidgetGrid({
       onDragEnd={handleDragEnd}
     >
       <SortableContext items={widgetIds} strategy={rectSortingStrategy}>
-        <div className="grid gap-4 grid-cols-1 lg:grid-cols-2" data-tour="dashboard-widgets" data-hint="dashboard-drag">
+        <div
+          className={cn(
+            "grid grid-cols-1 gap-4 lg:grid-cols-2",
+            isEditMode && "rounded-xl border border-dashed border-primary/40 bg-primary/2 p-2",
+          )}
+          data-tour="dashboard-widgets"
+          data-hint="dashboard-drag"
+          role="list"
+          aria-label={t("dashboard.title")}
+          aria-live={isEditMode ? "polite" : "off"}
+        >
           {widgets.map((widget) => (
             <WidgetWrapper
               key={widget.id}
               widget={widget}
               isEditMode={isEditMode}
-              onRemove={removeWidget}
-              onToggleVisibility={toggleWidgetVisibility}
+              canRemove={canRemoveWidgetById(widgets, widget.id)}
+              canToggleVisibility={canToggleWidgetVisibilityById(widgets, widget.id)}
+              onRemove={handleRemove}
+              onToggleVisibility={handleToggleVisibility}
               onResize={handleResize}
             >
               {renderWidgetContent(widget.type)}

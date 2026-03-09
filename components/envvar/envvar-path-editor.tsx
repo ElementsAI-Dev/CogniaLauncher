@@ -21,6 +21,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Select,
   SelectContent,
@@ -177,117 +178,149 @@ export function EnvVarPathEditor({
   }, [pathEntries, onReorder, onRefresh]);
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-2">
-        <Select value={pathScope} onValueChange={(v) => onPathScopeChange(v as EnvVarScope)}>
-          <SelectTrigger className="w-[140px] h-9">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="process">{t('envvar.scopes.process')}</SelectItem>
-            <SelectItem value="user">{t('envvar.scopes.user')}</SelectItem>
-            <SelectItem value="system">{t('envvar.scopes.system')}</SelectItem>
-          </SelectContent>
-        </Select>
-        <span className="text-sm text-muted-foreground">
-          {pathEntries.length} {t('envvar.pathEditor.title').toLowerCase()}
-        </span>
-        {missingCount > 0 && (
-          <Badge variant="destructive" className="text-[10px] gap-1">
-            <XCircle className="h-3 w-3" />
-            {t('envvar.pathEditor.missingCount', { count: missingCount })}
-          </Badge>
-        )}
-        {duplicateCount > 0 && (
-          <Badge variant="outline" className="text-[10px] gap-1 bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20">
-            {t('envvar.pathEditor.duplicateCount', { count: duplicateCount })}
-          </Badge>
-        )}
-        {duplicateCount > 0 && (
-          <Button variant="outline" size="sm" onClick={handleDeduplicate} disabled={loading} className="gap-1.5 ml-auto">
-            <Copy className="h-3.5 w-3.5" />
-            {t('envvar.pathEditor.deduplicate')}
-          </Button>
-        )}
-      </div>
+    <div className="flex min-h-0 flex-1 flex-col gap-3" data-testid="envvar-path-editor">
+      <Card className="gap-0 py-0" data-testid="envvar-path-summary">
+        <CardContent className="px-3 py-3 sm:px-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <Select value={pathScope} onValueChange={(v) => onPathScopeChange(v as EnvVarScope)}>
+              <SelectTrigger className="h-9 w-35" aria-label={t('envvar.table.scope')}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="process">{t('envvar.scopes.process')}</SelectItem>
+                <SelectItem value="user">{t('envvar.scopes.user')}</SelectItem>
+                <SelectItem value="system">{t('envvar.scopes.system')}</SelectItem>
+              </SelectContent>
+            </Select>
+            <span className="text-sm text-muted-foreground">
+              {pathEntries.length} {t('envvar.pathEditor.title').toLowerCase()}
+            </span>
+            {missingCount > 0 && (
+              <Badge variant="destructive" className="gap-1 text-[10px]">
+                <XCircle className="h-3 w-3" />
+                {t('envvar.pathEditor.missingCount', { count: missingCount })}
+              </Badge>
+            )}
+            {duplicateCount > 0 && (
+              <Badge
+                variant="outline"
+                className="gap-1 border-amber-500/20 bg-amber-500/10 text-[10px] text-amber-600 dark:text-amber-400"
+              >
+                {t('envvar.pathEditor.duplicateCount', { count: duplicateCount })}
+              </Badge>
+            )}
+            {duplicateCount > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleDeduplicate}
+                disabled={loading}
+                className="ml-auto gap-1.5"
+              >
+                <Copy className="h-3.5 w-3.5" />
+                {t('envvar.pathEditor.deduplicate')}
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
-      {/* Add new entry */}
-      <div className="flex gap-2">
-        <Input
-          value={newPath}
-          onChange={(e) => setNewPath(e.target.value)}
-          placeholder={t('envvar.pathEditor.addPlaceholder')}
-          className="h-9"
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') handleAdd();
-          }}
-        />
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button variant="outline" size="icon" className="h-9 w-9 shrink-0" onClick={handleBrowseFolder}>
-              <FolderOpen className="h-3.5 w-3.5" />
+      <Card className="gap-0 py-0" data-testid="envvar-path-controls">
+        <CardHeader className="border-b px-3 py-3 sm:px-4">
+          <CardTitle className="text-sm">{t('envvar.pathEditor.add')}</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 px-3 py-3 sm:px-4">
+          <div className="flex gap-2">
+            <Input
+              value={newPath}
+              onChange={(e) => setNewPath(e.target.value)}
+              placeholder={t('envvar.pathEditor.addPlaceholder')}
+              aria-label={t('envvar.pathEditor.add')}
+              className="h-9"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleAdd();
+              }}
+            />
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-9 w-9 shrink-0"
+                  onClick={handleBrowseFolder}
+                  aria-label={t('envvar.pathEditor.browse')}
+                >
+                  <FolderOpen className="h-3.5 w-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">{t('envvar.pathEditor.browse')}</TooltipContent>
+            </Tooltip>
+            <Button size="sm" onClick={handleAdd} disabled={!newPath.trim() || loading} className="shrink-0 gap-1.5">
+              <Plus className="h-3.5 w-3.5" />
+              {t('envvar.pathEditor.add')}
             </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top">{t('envvar.pathEditor.browse') || 'Browse'}</TooltipContent>
-        </Tooltip>
-        <Button size="sm" onClick={handleAdd} disabled={!newPath.trim() || loading} className="gap-1.5 shrink-0">
-          <Plus className="h-3.5 w-3.5" />
-          {t('envvar.pathEditor.add')}
-        </Button>
-      </div>
+          </div>
 
-      {/* Search PATH entries */}
-      {pathEntries.length > 5 && (
-        <div className="relative max-w-xs">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-          <Input
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={t('envvar.pathEditor.searchPlaceholder') || 'Search paths...'}
-            className="h-8 pl-8 text-xs"
-          />
-        </div>
-      )}
+          {pathEntries.length > 5 && (
+            <div className="relative max-w-xs">
+              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder={t('envvar.pathEditor.searchPlaceholder')}
+                aria-label={t('envvar.pathEditor.searchPlaceholder')}
+                className="h-8 pl-8 text-xs"
+              />
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
-      {/* Entries list */}
-      {filteredEntries.length === 0 ? (
-        <Empty className="border-none py-8">
-          <EmptyHeader>
-            <EmptyMedia variant="icon">
-              <Route />
-            </EmptyMedia>
-            <EmptyTitle className="text-sm font-normal text-muted-foreground">
-              {searchQuery ? t('envvar.pathEditor.noSearchResults') || 'No matching paths' : t('envvar.pathEditor.empty')}
-            </EmptyTitle>
-          </EmptyHeader>
-        </Empty>
-      ) : (
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
-            <ScrollArea className="max-h-[480px]">
-              <div className="space-y-1">
-                {filteredEntries.map((entry, index) => {
-                  const realIndex = pathEntries.indexOf(entry);
-                  return (
-                    <SortablePathEntry
-                      key={sortableIds[realIndex] ?? `${entry.path}-${index}`}
-                      id={sortableIds[realIndex] ?? `${entry.path}-${index}`}
-                      entry={entry}
-                      index={realIndex}
-                      totalCount={pathEntries.length}
-                      onOpenFolder={handleOpenFolder}
-                      onMove={handleMove}
-                      onRemove={handleRemove}
-                      searchQuery={searchQuery}
-                      t={t}
-                    />
-                  );
-                })}
-              </div>
-            </ScrollArea>
-          </SortableContext>
-        </DndContext>
-      )}
+      <Card className="min-h-0 flex-1 gap-0 py-0" data-testid="envvar-path-list-card">
+        <CardHeader className="border-b px-3 py-3 sm:px-4">
+          <CardTitle className="text-sm">{t('envvar.pathEditor.title')}</CardTitle>
+        </CardHeader>
+        <CardContent className="min-h-0 flex-1 px-0 py-0">
+          {filteredEntries.length === 0 ? (
+            <Empty className="border-none py-10">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <Route />
+                </EmptyMedia>
+                <EmptyTitle className="text-sm font-normal text-muted-foreground">
+                  {searchQuery ? t('envvar.pathEditor.noSearchResults') : t('envvar.pathEditor.empty')}
+                </EmptyTitle>
+              </EmptyHeader>
+            </Empty>
+          ) : (
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
+                <ScrollArea className="h-full max-h-120 min-h-0">
+                  <div className="space-y-1 p-2">
+                    {filteredEntries.map((entry, index) => {
+                      const realIndex = pathEntries.indexOf(entry);
+                      return (
+                        <SortablePathEntry
+                          key={sortableIds[realIndex] ?? `${entry.path}-${index}`}
+                          id={sortableIds[realIndex] ?? `${entry.path}-${index}`}
+                          entry={entry}
+                          index={realIndex}
+                          totalCount={pathEntries.length}
+                          onOpenFolder={handleOpenFolder}
+                          onMove={handleMove}
+                          onRemove={handleRemove}
+                          searchQuery={searchQuery}
+                          t={t}
+                        />
+                      );
+                    })}
+                  </div>
+                </ScrollArea>
+              </SortableContext>
+            </DndContext>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -347,7 +380,7 @@ function SortablePathEntry({
       ref={setNodeRef}
       style={style}
       className={cn(
-        'flex items-center gap-2 px-3 py-2 rounded-md bg-muted/50 group hover:bg-muted',
+        'group flex items-center gap-2 rounded-md bg-muted/50 px-3 py-2 hover:bg-muted focus-within:bg-muted',
         isDragging && 'opacity-50 shadow-lg ring-2 ring-primary/20',
       )}
     >
@@ -356,6 +389,7 @@ function SortablePathEntry({
         className="touch-none cursor-grab active:cursor-grabbing"
         {...attributes}
         {...listeners}
+        aria-label={t('envvar.pathEditor.dragHint')}
       >
         <GripVertical className="h-4 w-4 text-muted-foreground/50 shrink-0" />
       </button>
@@ -389,7 +423,7 @@ function SortablePathEntry({
         </Badge>
       )}
 
-      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+      <div className="shrink-0 flex items-center gap-0.5 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
         {entry.exists && entry.isDirectory && (
           <Tooltip>
             <TooltipTrigger asChild>
@@ -398,6 +432,7 @@ function SortablePathEntry({
                 size="icon"
                 className="h-6 w-6"
                 onClick={() => onOpenFolder(entry.path)}
+                aria-label={t('envvar.pathEditor.openFolder')}
               >
                 <FolderOpen className="h-3 w-3" />
               </Button>
@@ -413,6 +448,7 @@ function SortablePathEntry({
               className="h-6 w-6"
               disabled={index === 0}
               onClick={() => onMove(index, 'up')}
+              aria-label={t('envvar.pathEditor.moveUp')}
             >
               <ArrowUp className="h-3 w-3" />
             </Button>
@@ -427,6 +463,7 @@ function SortablePathEntry({
               className="h-6 w-6"
               disabled={index === totalCount - 1}
               onClick={() => onMove(index, 'down')}
+              aria-label={t('envvar.pathEditor.moveDown')}
             >
               <ArrowDown className="h-3 w-3" />
             </Button>
@@ -437,7 +474,12 @@ function SortablePathEntry({
           <Tooltip>
             <TooltipTrigger asChild>
               <AlertDialogTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 text-destructive"
+                  aria-label={t('envvar.pathEditor.remove')}
+                >
                   <Trash2 className="h-3 w-3" />
                 </Button>
               </AlertDialogTrigger>

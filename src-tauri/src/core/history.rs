@@ -844,9 +844,9 @@ mod tests {
             !created.is_empty(),
             "expected at least one quarantined corrupt history file"
         );
-        assert!(created.iter().all(|file| {
-            file.starts_with("history.corrupt.") && file.ends_with(".json")
-        }));
+        assert!(created
+            .iter()
+            .all(|file| { file.starts_with("history.corrupt.") && file.ends_with(".json") }));
 
         for file in created {
             let _ = crate::platform::fs::remove_file(parent.join(file)).await;

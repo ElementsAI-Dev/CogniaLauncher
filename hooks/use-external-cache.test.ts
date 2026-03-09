@@ -177,6 +177,29 @@ describe('useExternalCache', () => {
     });
   });
 
+  it('marks provider as error when progressive size calculation fails', async () => {
+    mockDiscoverExternalCachesFast.mockResolvedValueOnce([makeFastCache('npm', true)]);
+    mockCalculateExternalCacheSize.mockRejectedValueOnce(new Error('size scan failed'));
+
+    const { result } = renderHook(() =>
+      useExternalCache({
+        t: (key) => key,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.fetchExternalCaches();
+      await flushAsyncEffects();
+    });
+
+    await waitFor(() => {
+      expect(result.current.caches[0]?.provider).toBe('npm');
+      expect(result.current.caches[0]?.sizePending).toBe(false);
+      expect(result.current.caches[0]?.detectionState).toBe('error');
+      expect(result.current.caches[0]?.detectionError).toContain('size scan failed');
+    });
+  });
+
   it('ignores stale path info updates from older refresh waves', async () => {
     const firstPathInfos = deferred<Array<{ provider: string; hasCleanCommand: boolean }>>();
     mockDiscoverExternalCachesFast

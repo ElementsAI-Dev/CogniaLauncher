@@ -193,6 +193,46 @@ describe("CacheDetailExternal", () => {
     ).toBeInTheDocument();
   });
 
+  it("renders skipped/error detection badges when provided by backend", async () => {
+    mockIsTauri = true;
+    mockDiscoverExternalCachesFast.mockResolvedValue([
+      {
+        provider: "custom_missing",
+        displayName: "Custom Missing",
+        cachePath: "/missing/path",
+        size: 0,
+        sizeHuman: "0 B",
+        sizePending: false,
+        isAvailable: true,
+        canClean: false,
+        category: "other",
+        detectionState: "skipped",
+        detectionReason: "path_not_found",
+      },
+      {
+        provider: "broken",
+        displayName: "Broken Cache",
+        cachePath: "/broken",
+        size: 0,
+        sizeHuman: "0 B",
+        sizePending: false,
+        isAvailable: true,
+        canClean: false,
+        category: "other",
+        detectionState: "error",
+        detectionReason: "path_unreadable",
+        detectionError: "permission denied",
+      },
+    ]);
+
+    await act(async () => {
+      render(<CacheDetailExternalView />);
+    });
+
+    expect(screen.getByText("cache.detail.externalSkipped")).toBeInTheDocument();
+    expect(screen.getByText("cache.detail.externalError")).toBeInTheDocument();
+  });
+
   it("shows cache sizes", async () => {
     mockIsTauri = true;
     mockDiscoverExternalCachesFast.mockResolvedValue(mockCaches);

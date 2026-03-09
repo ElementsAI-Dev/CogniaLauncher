@@ -26,14 +26,14 @@ export function VersionCards({ loading, updateInfo, t }: VersionCardsProps) {
     >
       {/* Current Version Card */}
       <Card>
-        <CardHeader>
+        <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-sm">
-            <Package className="h-5 w-5 text-blue-500" aria-hidden="true" />
+            <Package className="h-5 w-5 text-foreground" aria-hidden="true" />
             <span id="current-version-label">{t("about.currentVersion")}</span>
           </CardTitle>
           <CardDescription>{t("about.versionInfoDesc")}</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="flex flex-col gap-3">
           {loading ? (
             <Skeleton className="h-10 w-32" aria-label={t("common.loading")} />
           ) : (
@@ -47,7 +47,6 @@ export function VersionCards({ loading, updateInfo, t }: VersionCardsProps) {
               {updateInfo?.update_available === false && (
                 <Badge
                   variant="secondary"
-                  className="bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 border-transparent"
                   role="status"
                   aria-live="polite"
                 >
@@ -62,16 +61,17 @@ export function VersionCards({ loading, updateInfo, t }: VersionCardsProps) {
 
       {/* Latest Version Card */}
       <Card>
-        <CardHeader>
+        <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-sm">
             <CloudDownload
-              className="h-5 w-5 text-purple-500"
+              className="h-5 w-5 text-foreground"
               aria-hidden="true"
             />
             <span id="latest-version-label">{t("about.latestVersion")}</span>
           </CardTitle>
+          <CardDescription>{t("about.versionInfoDesc")}</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="flex flex-col gap-3">
           {loading ? (
             <Skeleton className="h-10 w-32" aria-label={t("common.loading")} />
           ) : (
@@ -83,10 +83,7 @@ export function VersionCards({ loading, updateInfo, t }: VersionCardsProps) {
                 v{latestVersion}
               </span>
               {updateInfo?.update_available && (
-                <Badge
-                  variant="secondary"
-                  className="bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 border-transparent"
-                >
+                <Badge variant="secondary">
                   {t("about.updateAvailable")}
                 </Badge>
               )}

@@ -105,6 +105,79 @@ fn map_capabilities(capabilities: WslCapabilities) -> WslCapabilitiesDto {
     }
 }
 
+fn classify_wsl_error_category(message: &str) -> &'static str {
+    let lower = message.to_lowercase();
+    if lower.contains("[wsl_unsupported")
+        || lower.contains("unsupported")
+        || lower.contains("not supported")
+        || lower.contains("未识别")
+        || lower.contains("不支持")
+    {
+        return "unsupported";
+    }
+    if lower.contains("access is denied")
+        || lower.contains("permission denied")
+        || lower.contains("administrator")
+        || lower.contains("elevation")
+    {
+        return "permission";
+    }
+    if lower.contains("wsl is unavailable")
+        || lower.contains("distribution")
+        || lower.contains("not running")
+        || lower.contains("kernel")
+        || lower.contains("timeout")
+    {
+        return "runtime";
+    }
+    "operation"
+}
+
+fn normalize_wsl_error(message: String) -> String {
+    if message.starts_with("[WSL_") {
+        return message;
+    }
+    let category = classify_wsl_error_category(&message).to_uppercase();
+    format!("[WSL_{}] {}", category, message)
+}
+
+fn unsupported_feature_error(feature: &str, version: Option<&str>) -> String {
+    let suffix = version.map(|v| format!(" (WSL {})", v)).unwrap_or_default();
+    format!(
+        "[WSL_UNSUPPORTED:{}] Feature is unavailable on this runtime{}.",
+        feature, suffix
+    )
+}
+
+async fn ensure_runtime_available(provider: &WslProvider, feature: &str) -> Result<(), String> {
+    use crate::provider::traits::Provider;
+    if !provider.is_available().await {
+        return Err(unsupported_feature_error(feature, None));
+    }
+    Ok(())
+}
+
+async fn ensure_wsl_capability<F>(
+    provider: &WslProvider,
+    feature: &str,
+    check: F,
+) -> Result<(), String>
+where
+    F: Fn(&WslCapabilities) -> bool,
+{
+    let capabilities = provider
+        .get_capabilities()
+        .await
+        .map_err(|e| normalize_wsl_error(e.to_string()))?;
+    if !check(&capabilities) {
+        return Err(unsupported_feature_error(
+            feature,
+            capabilities.version.as_deref(),
+        ));
+    }
+    Ok(())
+}
+
 /// Diagnostic command: returns step-by-step WSL detection info for debugging.
 /// This helps identify exactly where detection fails on a given system.
 #[tauri::command]
@@ -217,7 +290,7 @@ pub async fn wsl_list_distros() -> Result<Vec<WslDistroStatus>, String> {
     let out = provider
         .run_wsl_lenient(&["--list", "--verbose"])
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| normalize_wsl_error(e.to_string()))?;
 
     let distros = WslProvider::parse_list_verbose(&out);
 
@@ -239,7 +312,7 @@ pub async fn wsl_list_online() -> Result<Vec<(String, String)>, String> {
     let out = provider
         .run_wsl_lenient(&["--list", "--online"])
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| normalize_wsl_error(e.to_string()))?;
 
     Ok(WslProvider::parse_list_online(&out))
 }
@@ -285,7 +358,7 @@ pub async fn wsl_get_version_info() -> Result<WslVersionInfoDto, String> {
     let info = provider
         .get_full_version_info()
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| normalize_wsl_error(e.to_string()))?;
     Ok(WslVersionInfoDto {
         wsl_version: info.wsl_version,
         kernel_version: info.kernel_version,
@@ -304,7 +377,7 @@ pub async fn wsl_get_capabilities() -> Result<WslCapabilitiesDto, String> {
     let capabilities = provider
         .get_capabilities()
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| normalize_wsl_error(e.to_string()))?;
     Ok(map_capabilities(capabilities))
 }
 
@@ -315,14 +388,17 @@ pub async fn wsl_terminate(name: String) -> Result<(), String> {
     provider
         .terminate_distro(&name)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| normalize_wsl_error(e.to_string()))
 }
 
 /// Shutdown all running WSL instances
 #[tauri::command]
 pub async fn wsl_shutdown() -> Result<(), String> {
     let provider = get_provider();
-    provider.shutdown_all().await.map_err(|e| e.to_string())
+    provider
+        .shutdown_all()
+        .await
+        .map_err(|e| normalize_wsl_error(e.to_string()))
 }
 
 /// Set the default WSL distribution
@@ -332,7 +408,7 @@ pub async fn wsl_set_default(name: String) -> Result<(), String> {
     provider
         .set_default_distro(&name)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| normalize_wsl_error(e.to_string()))
 }
 
 /// Set WSL version (1 or 2) for a distribution
@@ -345,7 +421,7 @@ pub async fn wsl_set_version(name: String, version: u8) -> Result<(), String> {
     provider
         .set_distro_version(&name, version)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| normalize_wsl_error(e.to_string()))
 }
 
 /// Set the default WSL version for new installations
@@ -358,7 +434,7 @@ pub async fn wsl_set_default_version(version: u8) -> Result<(), String> {
     provider
         .set_default_version(version)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| normalize_wsl_error(e.to_string()))
 }
 
 /// Move a WSL distribution's disk to a new location.
@@ -368,7 +444,7 @@ pub async fn wsl_move_distro(name: String, location: String) -> Result<String, S
     provider
         .move_distro(&name, &location)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| normalize_wsl_error(e.to_string()))
 }
 
 /// Resize a WSL distribution's disk.
@@ -378,7 +454,7 @@ pub async fn wsl_resize_distro(name: String, size: String) -> Result<String, Str
     provider
         .resize_distro(&name, &size)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| normalize_wsl_error(e.to_string()))
 }
 
 /// Export a WSL distribution to a file (tar or vhdx)
@@ -392,7 +468,7 @@ pub async fn wsl_export(
     provider
         .export_distro(&name, &file_path, as_vhd.unwrap_or(false))
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| normalize_wsl_error(e.to_string()))
 }
 
 /// Import a WSL distribution from a file
@@ -408,14 +484,17 @@ pub async fn wsl_import(options: WslImportOptions) -> Result<(), String> {
             options.as_vhd,
         )
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| normalize_wsl_error(e.to_string()))
 }
 
 /// Update the WSL kernel
 #[tauri::command]
 pub async fn wsl_update() -> Result<String, String> {
     let provider = get_provider();
-    provider.update_wsl().await.map_err(|e| e.to_string())
+    provider
+        .update_wsl()
+        .await
+        .map_err(|e| normalize_wsl_error(e.to_string()))
 }
 
 /// Launch/start a WSL distribution
@@ -425,14 +504,17 @@ pub async fn wsl_launch(name: String, user: Option<String>) -> Result<(), String
     provider
         .launch_distro(&name, user.as_deref())
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| normalize_wsl_error(e.to_string()))
 }
 
 /// List currently running WSL distributions
 #[tauri::command]
 pub async fn wsl_list_running() -> Result<Vec<String>, String> {
     let provider = get_provider();
-    provider.list_running().await.map_err(|e| e.to_string())
+    provider
+        .list_running()
+        .await
+        .map_err(|e| normalize_wsl_error(e.to_string()))
 }
 
 /// Check if WSL is available on this system
@@ -454,7 +536,7 @@ pub async fn wsl_exec(
     let (stdout, stderr, exit_code) = provider
         .exec_command(&distro, &command, user.as_deref())
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| normalize_wsl_error(e.to_string()))?;
     Ok(WslExecResult {
         stdout,
         stderr,
@@ -473,13 +555,13 @@ pub async fn wsl_convert_path(
     provider
         .convert_path(&path, distro.as_deref(), to_windows)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| normalize_wsl_error(e.to_string()))
 }
 
 /// Read the global .wslconfig file
 #[tauri::command]
 pub async fn wsl_get_config() -> Result<HashMap<String, HashMap<String, String>>, String> {
-    WslProvider::read_wslconfig().map_err(|e| e.to_string())
+    WslProvider::read_wslconfig().map_err(|e| normalize_wsl_error(e.to_string()))
 }
 
 /// Write a setting to the global .wslconfig file
@@ -490,11 +572,12 @@ pub async fn wsl_set_config(
     value: Option<String>,
 ) -> Result<(), String> {
     if let Some(val) = value {
-        WslProvider::write_wslconfig(&section, &key, &val).map_err(|e| e.to_string())
+        WslProvider::write_wslconfig(&section, &key, &val)
+            .map_err(|e| normalize_wsl_error(e.to_string()))
     } else {
         WslProvider::remove_wslconfig_key(&section, &key)
             .map(|_| ())
-            .map_err(|e| e.to_string())
+            .map_err(|e| normalize_wsl_error(e.to_string()))
     }
 }
 
@@ -505,7 +588,7 @@ pub async fn wsl_disk_usage(name: String) -> Result<WslDiskUsage, String> {
     let (total_bytes, used_bytes) = provider
         .get_disk_usage(&name)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| normalize_wsl_error(e.to_string()))?;
     Ok(WslDiskUsage {
         total_bytes,
         used_bytes,
@@ -530,16 +613,28 @@ pub struct WslMountOptions {
 #[tauri::command]
 pub async fn wsl_import_in_place(name: String, vhdx_path: String) -> Result<(), String> {
     let provider = get_provider();
+    ensure_runtime_available(&provider, "runtime.importInPlace").await?;
+    ensure_wsl_capability(&provider, "runtime.importInPlace", |caps| {
+        caps.import_in_place
+    })
+    .await?;
     provider
         .import_distro_in_place(&name, &vhdx_path)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| normalize_wsl_error(e.to_string()))
 }
 
 /// Mount a physical or virtual disk in WSL2
 #[tauri::command]
 pub async fn wsl_mount(options: WslMountOptions) -> Result<String, String> {
     let provider = get_provider();
+    ensure_runtime_available(&provider, "runtime.mount").await?;
+    if options.mount_options.is_some() {
+        ensure_wsl_capability(&provider, "runtime.mountWithOptions", |caps| {
+            caps.mount_options
+        })
+        .await?;
+    }
     provider
         .mount_disk(
             &options.disk_path,
@@ -551,7 +646,7 @@ pub async fn wsl_mount(options: WslMountOptions) -> Result<String, String> {
             options.bare,
         )
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| normalize_wsl_error(e.to_string()))
 }
 
 /// Unmount a previously mounted disk (or all if no path given)
@@ -561,7 +656,7 @@ pub async fn wsl_unmount(disk_path: Option<String>) -> Result<(), String> {
     provider
         .unmount_disk(disk_path.as_deref())
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| normalize_wsl_error(e.to_string()))
 }
 
 /// Get the IP address of a WSL distribution
@@ -571,7 +666,7 @@ pub async fn wsl_get_ip(distro: Option<String>) -> Result<String, String> {
     provider
         .get_ip_address(distro.as_deref())
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| normalize_wsl_error(e.to_string()))
 }
 
 /// Change the default user for a distribution
@@ -581,7 +676,7 @@ pub async fn wsl_change_default_user(distro: String, username: String) -> Result
     provider
         .change_default_user(&distro, &username)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| normalize_wsl_error(e.to_string()))
 }
 
 /// Read the per-distro /etc/wsl.conf file
@@ -593,24 +688,29 @@ pub async fn wsl_get_distro_config(
     provider
         .read_distro_config(&distro)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| normalize_wsl_error(e.to_string()))
 }
 
 /// Set sparse VHD mode for a WSL distribution
 #[tauri::command]
 pub async fn wsl_set_sparse(distro: String, enabled: bool) -> Result<(), String> {
     let provider = get_provider();
+    ensure_runtime_available(&provider, "distro.setSparse").await?;
+    ensure_wsl_capability(&provider, "distro.setSparse", |caps| caps.set_sparse).await?;
     provider
         .set_sparse_vhd(&distro, enabled)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| normalize_wsl_error(e.to_string()))
 }
 
 /// Install WSL engine only, without a default distribution
 #[tauri::command]
 pub async fn wsl_install_wsl_only() -> Result<String, String> {
     let provider = get_provider();
-    provider.install_wsl_only().await.map_err(|e| e.to_string())
+    provider
+        .install_wsl_only()
+        .await
+        .map_err(|e| normalize_wsl_error(e.to_string()))
 }
 
 /// Install a distribution to a custom location
@@ -620,7 +720,7 @@ pub async fn wsl_install_with_location(name: String, location: String) -> Result
     provider
         .install_with_location(&name, &location)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| normalize_wsl_error(e.to_string()))
 }
 
 /// Write a setting to the per-distro /etc/wsl.conf file
@@ -636,13 +736,13 @@ pub async fn wsl_set_distro_config(
         provider
             .write_distro_config(&distro, &section, &key, &val)
             .await
-            .map_err(|e| e.to_string())
+            .map_err(|e| normalize_wsl_error(e.to_string()))
     } else {
         provider
             .remove_distro_config_key(&distro, &section, &key)
             .await
             .map(|_| ())
-            .map_err(|e| e.to_string())
+            .map_err(|e| normalize_wsl_error(e.to_string()))
     }
 }
 
@@ -661,7 +761,7 @@ pub async fn wsl_detect_distro_env(
     provider
         .detect_distro_environment(&distro)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| normalize_wsl_error(e.to_string()))
 }
 
 /// Get live resource usage (memory, swap, CPU, load) from a running WSL distribution.
@@ -671,7 +771,7 @@ pub async fn wsl_get_distro_resources(distro: String) -> Result<WslDistroResourc
     provider
         .get_distro_resources(&distro)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| normalize_wsl_error(e.to_string()))
 }
 
 /// List non-system users in a WSL distribution.
@@ -681,7 +781,7 @@ pub async fn wsl_list_users(distro: String) -> Result<Vec<WslUser>, String> {
     provider
         .list_users(&distro)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| normalize_wsl_error(e.to_string()))
 }
 
 /// Update or upgrade packages in a WSL distribution.
@@ -697,7 +797,7 @@ pub async fn wsl_update_distro_packages(
     provider
         .update_distro_packages(&distro, &mode)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| normalize_wsl_error(e.to_string()))
 }
 
 /// Open a WSL distribution's filesystem in Windows Explorer.
@@ -750,7 +850,7 @@ pub async fn wsl_open_in_terminal(name: String) -> Result<(), String> {
 /// Returns (total_bytes, per-distro breakdown).
 #[tauri::command]
 pub async fn wsl_total_disk_usage() -> Result<(u64, Vec<(String, u64)>), String> {
-    WslProvider::get_total_disk_usage().map_err(|e| e.to_string())
+    WslProvider::get_total_disk_usage().map_err(|e| normalize_wsl_error(e.to_string()))
 }
 
 /// Clone a WSL distribution by exporting to a temp tar and re-importing under a new name.
@@ -764,7 +864,7 @@ pub async fn wsl_clone_distro(
     provider
         .clone_distro(&name, &new_name, &location)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| normalize_wsl_error(e.to_string()))
 }
 
 /// Launch multiple WSL distributions in parallel.
@@ -793,7 +893,7 @@ pub async fn wsl_backup_distro(
     provider
         .backup_distro(&name, &dest_dir)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| normalize_wsl_error(e.to_string()))
 }
 
 /// List WSL backup files in a directory.
@@ -815,13 +915,14 @@ pub async fn wsl_restore_backup(
     provider
         .restore_backup(&backup_path, &name, &install_location)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| normalize_wsl_error(e.to_string()))
 }
 
 /// Delete a WSL backup file.
 #[tauri::command]
 pub async fn wsl_delete_backup(backup_path: String) -> Result<(), String> {
-    crate::provider::wsl::WslProvider::delete_backup(&backup_path).map_err(|e| e.to_string())
+    crate::provider::wsl::WslProvider::delete_backup(&backup_path)
+        .map_err(|e| normalize_wsl_error(e.to_string()))
 }
 
 /// Run a health check on a WSL distribution.
@@ -830,10 +931,11 @@ pub async fn wsl_distro_health_check(
     distro: String,
 ) -> Result<crate::provider::wsl::WslDistroHealthResult, String> {
     let provider = get_provider();
+    ensure_runtime_available(&provider, "distro.healthCheck").await?;
     provider
         .distro_health_check(&distro)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| normalize_wsl_error(e.to_string()))
 }
 
 /// List all Windows port forwarding rules (netsh interface portproxy).
@@ -841,10 +943,11 @@ pub async fn wsl_distro_health_check(
 pub async fn wsl_list_port_forwards() -> Result<Vec<crate::provider::wsl::PortForwardRule>, String>
 {
     let provider = get_provider();
+    ensure_runtime_available(&provider, "network.portForward").await?;
     provider
         .list_port_forwards()
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| normalize_wsl_error(e.to_string()))
 }
 
 /// Add a port forwarding rule (netsh interface portproxy add v4tov4).
@@ -856,10 +959,11 @@ pub async fn wsl_add_port_forward(
     connect_address: String,
 ) -> Result<(), String> {
     let provider = get_provider();
+    ensure_runtime_available(&provider, "network.portForward").await?;
     provider
         .add_port_forward(listen_port, connect_port, &connect_address)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| normalize_wsl_error(e.to_string()))
 }
 
 /// Remove a port forwarding rule (netsh interface portproxy delete v4tov4).
@@ -867,8 +971,43 @@ pub async fn wsl_add_port_forward(
 #[tauri::command]
 pub async fn wsl_remove_port_forward(listen_port: u16) -> Result<(), String> {
     let provider = get_provider();
+    ensure_runtime_available(&provider, "network.portForward").await?;
     provider
         .remove_port_forward(listen_port)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| normalize_wsl_error(e.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{classify_wsl_error_category, normalize_wsl_error, unsupported_feature_error};
+
+    #[test]
+    fn classify_error_category_detects_unsupported() {
+        assert_eq!(
+            classify_wsl_error_category("[WSL_UNSUPPORTED:runtime.mount] not supported"),
+            "unsupported"
+        );
+    }
+
+    #[test]
+    fn classify_error_category_detects_permission() {
+        assert_eq!(
+            classify_wsl_error_category("Access is denied"),
+            "permission"
+        );
+    }
+
+    #[test]
+    fn normalize_wsl_error_prefixes_category() {
+        let normalized = normalize_wsl_error("Some runtime timeout".to_string());
+        assert!(normalized.starts_with("[WSL_RUNTIME]"));
+    }
+
+    #[test]
+    fn unsupported_feature_error_contains_feature_id() {
+        let message = unsupported_feature_error("runtime.importInPlace", Some("2.4.0"));
+        assert!(message.contains("[WSL_UNSUPPORTED:runtime.importInPlace]"));
+        assert!(message.contains("WSL 2.4.0"));
+    }
 }

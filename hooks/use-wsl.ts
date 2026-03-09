@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import * as tauri from '@/lib/tauri';
 import type {
   WslDistroStatus,
@@ -24,7 +24,15 @@ import type {
   WslAssistanceSuggestion,
   WslAssistanceSummary,
   WslAssistanceScope,
+  WslCompletenessSnapshot,
+  WslOperationFailure,
+  WslOperationId,
 } from '@/types/wsl';
+import {
+  buildWslFailure,
+  deriveWslCompleteness,
+  resolveWslOperationGate,
+} from '@/lib/wsl/completeness';
 
 export interface UseWslReturn {
   // State
@@ -35,6 +43,8 @@ export interface UseWslReturn {
   runningDistros: string[];
   config: WslConfig | null;
   capabilities: WslCapabilities | null;
+  completeness: WslCompletenessSnapshot;
+  lastFailure: WslOperationFailure | null;
   loading: boolean;
   error: string | null;
 
@@ -155,6 +165,28 @@ export function useWsl(): UseWslReturn {
   const [capabilities, setCapabilities] = useState<WslCapabilities | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastFailure, setLastFailure] = useState<WslOperationFailure | null>(null);
+
+  const clearWslFailure = useCallback(() => {
+    setError(null);
+    setLastFailure(null);
+  }, []);
+
+  const recordWslFailure = useCallback((err: unknown): never => {
+    const failure = buildWslFailure(err);
+    setError(failure.message);
+    setLastFailure(failure);
+    throw new Error(failure.message);
+  }, []);
+
+  const assertOperationSupported = useCallback((operationId: WslOperationId) => {
+    const gate = resolveWslOperationGate(operationId, available, capabilities);
+    if (gate.supported) {
+      return;
+    }
+    const raw = `[WSL_UNSUPPORTED:${operationId}] ${gate.reason ?? 'Operation is unsupported in current runtime.'}`;
+    recordWslFailure(raw);
+  }, [available, capabilities, recordWslFailure]);
 
   const checkAvailability = useCallback(async (): Promise<boolean> => {
     if (!tauri.isTauri()) {
@@ -450,25 +482,28 @@ export function useWsl(): UseWslReturn {
   const importInPlace = useCallback(async (name: string, vhdxPath: string) => {
     if (!tauri.isTauri()) return;
     try {
-      setError(null);
+      clearWslFailure();
+      assertOperationSupported('runtime.importInPlace');
       await tauri.wslImportInPlace(name, vhdxPath);
       await refreshDistros();
     } catch (err) {
-      setError(String(err));
-      throw err;
+      recordWslFailure(err);
     }
-  }, [refreshDistros]);
+  }, [assertOperationSupported, clearWslFailure, recordWslFailure, refreshDistros]);
 
   const mountDisk = useCallback(async (options: WslMountOptions): Promise<string> => {
     if (!tauri.isTauri()) return '';
     try {
-      setError(null);
+      clearWslFailure();
+      assertOperationSupported('runtime.mount');
+      if (options.mountOptions) {
+        assertOperationSupported('runtime.mountWithOptions');
+      }
       return await tauri.wslMount(options);
     } catch (err) {
-      setError(String(err));
-      throw err;
+      recordWslFailure(err);
     }
-  }, []);
+  }, [assertOperationSupported, clearWslFailure, recordWslFailure]);
 
   const unmountDisk = useCallback(async (diskPath?: string) => {
     if (!tauri.isTauri()) return;
@@ -548,14 +583,14 @@ export function useWsl(): UseWslReturn {
   const setSparse = useCallback(async (distro: string, enabled: boolean) => {
     if (!tauri.isTauri()) return;
     try {
-      setError(null);
+      clearWslFailure();
+      assertOperationSupported('distro.setSparse');
       await tauri.wslSetSparse(distro, enabled);
       await refreshInventoryState();
     } catch (err) {
-      setError(String(err));
-      throw err;
+      recordWslFailure(err);
     }
-  }, [refreshInventoryState]);
+  }, [assertOperationSupported, clearWslFailure, recordWslFailure, refreshInventoryState]);
 
   const moveDistro = useCallback(async (name: string, location: string): Promise<string> => {
     if (!tauri.isTauri()) return '';
@@ -695,6 +730,11 @@ export function useWsl(): UseWslReturn {
     };
   }, [autoRefreshEnabled]);
 
+  const completeness = useMemo(
+    () => deriveWslCompleteness(available, distros, status, capabilities),
+    [available, capabilities, distros, status]
+  );
+
   const openInExplorer = useCallback(async (name: string): Promise<void> => {
     if (!tauri.isTauri()) return;
     try {
@@ -759,46 +799,46 @@ export function useWsl(): UseWslReturn {
   const healthCheck = useCallback(async (distro: string) => {
     if (!tauri.isTauri()) throw new Error('Not in Tauri environment');
     try {
-      setError(null);
+      clearWslFailure();
+      assertOperationSupported('distro.healthCheck');
       return await tauri.wslDistroHealthCheck(distro);
     } catch (err) {
-      setError(String(err));
-      throw err;
+      recordWslFailure(err);
     }
-  }, []);
+  }, [assertOperationSupported, clearWslFailure, recordWslFailure]);
 
   const listPortForwards = useCallback(async () => {
     if (!tauri.isTauri()) return [];
     try {
-      setError(null);
+      clearWslFailure();
+      assertOperationSupported('network.portForward');
       return await tauri.wslListPortForwards();
     } catch (err) {
-      setError(String(err));
-      throw err;
+      recordWslFailure(err);
     }
-  }, []);
+  }, [assertOperationSupported, clearWslFailure, recordWslFailure]);
 
   const addPortForward = useCallback(async (listenPort: number, connectPort: number, connectAddress: string) => {
     if (!tauri.isTauri()) throw new Error('Not in Tauri environment');
     try {
-      setError(null);
+      clearWslFailure();
+      assertOperationSupported('network.portForward');
       await tauri.wslAddPortForward(listenPort, connectPort, connectAddress);
     } catch (err) {
-      setError(String(err));
-      throw err;
+      recordWslFailure(err);
     }
-  }, []);
+  }, [assertOperationSupported, clearWslFailure, recordWslFailure]);
 
   const removePortForward = useCallback(async (listenPort: number) => {
     if (!tauri.isTauri()) throw new Error('Not in Tauri environment');
     try {
-      setError(null);
+      clearWslFailure();
+      assertOperationSupported('network.portForward');
       await tauri.wslRemovePortForward(listenPort);
     } catch (err) {
-      setError(String(err));
-      throw err;
+      recordWslFailure(err);
     }
-  }, []);
+  }, [assertOperationSupported, clearWslFailure, recordWslFailure]);
 
   const backupDistro = useCallback(async (name: string, destDir: string) => {
     if (!tauri.isTauri()) throw new Error('Not in Tauri environment');
@@ -1418,6 +1458,8 @@ export function useWsl(): UseWslReturn {
     runningDistros,
     config,
     capabilities,
+    completeness,
+    lastFailure,
     loading,
     error,
     checkAvailability,

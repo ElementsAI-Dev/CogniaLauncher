@@ -90,15 +90,15 @@ impl HostRuntimeBridge {
     fn capture() -> Result<Self, ExtismError> {
         let captured_runtime = match tokio::runtime::Handle::try_current() {
             Ok(handle) => match handle.runtime_flavor() {
-                tokio::runtime::RuntimeFlavor::CurrentThread => Some(CapturedRuntime::CurrentThread),
+                tokio::runtime::RuntimeFlavor::CurrentThread => {
+                    Some(CapturedRuntime::CurrentThread)
+                }
                 _ => Some(CapturedRuntime::MultiThread(handle)),
             },
             Err(_) => None,
         };
 
-        Ok(Self {
-            captured_runtime,
-        })
+        Ok(Self { captured_runtime })
     }
 
     #[track_caller]
@@ -108,9 +108,10 @@ impl HostRuntimeBridge {
     {
         match &self.captured_runtime {
             Some(CapturedRuntime::MultiThread(handle)) => {
-                let boundary_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    tokio::task::block_in_place(|| handle.block_on(fut))
-                }));
+                let boundary_result =
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        tokio::task::block_in_place(|| handle.block_on(fut))
+                    }));
                 match boundary_result {
                     Ok(result) => result,
                     Err(_) => Err(log_boundary_error(
@@ -242,8 +243,10 @@ async fn perform_http_request(
     check_http_access(&perms, &plugin_id, &req.url)?;
     drop(perms);
 
-    let method = reqwest::Method::from_bytes(req.method.trim().to_uppercase().as_bytes())
-        .map_err(|e| ExtismError::msg(format!("Unsupported HTTP method '{}': {}", req.method, e)))?;
+    let method =
+        reqwest::Method::from_bytes(req.method.trim().to_uppercase().as_bytes()).map_err(|e| {
+            ExtismError::msg(format!("Unsupported HTTP method '{}': {}", req.method, e))
+        })?;
 
     let client = reqwest::Client::new();
     let mut request = client
@@ -2329,4 +2332,3 @@ mod tests {
             .contains("missing current plugin execution context"));
     }
 }
-

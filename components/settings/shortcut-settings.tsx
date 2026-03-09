@@ -1,9 +1,13 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
+import {
+  Field,
+  FieldDescription,
+  FieldLabel,
+} from "@/components/ui/field";
 import { Separator } from "@/components/ui/separator";
 import { SwitchSettingItem } from "./setting-item";
-import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -124,17 +128,17 @@ function ShortcutItem({
 
   return (
     <div className="flex items-center justify-between py-3">
-      <div className="space-y-0.5 flex-1 mr-4">
-        <Label htmlFor={id} className="font-medium flex items-center gap-2">
+      <Field className="mr-4 flex-1 gap-1">
+        <FieldLabel htmlFor={id} className="font-medium flex items-center gap-2">
           {label}
           {!isDefault && (
             <Badge variant="secondary" className="text-xs">
               {t("settings.section.modified")}
             </Badge>
           )}
-        </Label>
-        <p className="text-sm text-muted-foreground">{description}</p>
-      </div>
+        </FieldLabel>
+        <FieldDescription>{description}</FieldDescription>
+      </Field>
       <div className="flex items-center gap-2">
         <Input
           ref={inputRef}
@@ -156,7 +160,7 @@ function ShortcutItem({
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8 shrink-0"
+            className="size-8 shrink-0"
             onClick={handleReset}
             title={t("settings.shortcutsReset")}
           >
@@ -182,7 +186,7 @@ export function ShortcutSettings({
   }
 
   return (
-    <div className="space-y-1">
+    <div className="flex flex-col gap-1">
       <SwitchSettingItem
         id="shortcuts-enabled"
         label={t("settings.shortcutsEnabled")}

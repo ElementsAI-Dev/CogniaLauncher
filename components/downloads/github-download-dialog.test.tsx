@@ -169,6 +169,20 @@ describe("GitHubDownloadDialog", () => {
     expect(screen.getByText("downloads.github.draft")).toBeInTheDocument();
   });
 
+  it("uses semantic selected state for release options", () => {
+    renderDialog({
+      parsedRepo: { owner: "test", repo: "repo", fullName: "test/repo" },
+      isValid: true,
+      releases: [testRelease],
+    });
+
+    const releaseButton = screen.getByRole("button", { name: /v1\.0\.0/i });
+    expect(releaseButton).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(releaseButton);
+    expect(releaseButton).toHaveAttribute("aria-pressed", "true");
+  });
+
   it("shows select recommended button when release is selected with assets", () => {
     mockParseAssets.mockReturnValue([
       {

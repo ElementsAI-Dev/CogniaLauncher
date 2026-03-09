@@ -58,6 +58,19 @@ const mockTerminalHookState = {
   proxyConfigSaving: false,
   configMutationState: { status: 'idle', message: null, result: null, updatedAt: null },
   proxySyncState: { status: 'idle', message: null, result: null, updatedAt: null },
+  resourceStale: {
+    profiles: false,
+    templates: false,
+    configEntries: false,
+    configMetadata: false,
+    proxyConfig: true,
+    proxyEnvVars: true,
+    shellEnvVars: true,
+    psProfiles: true,
+    psModules: true,
+    psScripts: true,
+    executionPolicy: true,
+  },
   detectShells: jest.fn(),
   measureStartup: jest.fn(),
   checkShellHealth: jest.fn(),
@@ -103,6 +116,8 @@ const mockTerminalHookState = {
   saveCustomProxy: jest.fn(),
   updateNoProxy: jest.fn(),
   saveNoProxy: jest.fn(),
+  markResourcesStale: jest.fn(),
+  markResourcesFresh: jest.fn(),
   fetchTemplates: jest.fn(),
   createCustomTemplate: jest.fn(),
   deleteCustomTemplate: jest.fn(),
@@ -121,7 +136,13 @@ jest.mock('@/components/terminal', () => ({
   ),
   TerminalProfileList: () => <div data-testid="profile-list">Profiles</div>,
   TerminalProfileDialog: () => null,
-  TerminalShellConfig: () => <div data-testid="shell-config">Shell Config</div>,
+  TerminalShellConfig: ({ onDirtyChange, onRequestDiscard }: { onDirtyChange?: (value: boolean) => void; onRequestDiscard?: () => void }) => (
+    <div data-testid="shell-config">
+      <button type="button" onClick={() => onDirtyChange?.(true)}>set-config-dirty</button>
+      <button type="button" onClick={() => onRequestDiscard?.()}>request-config-discard</button>
+      Shell Config
+    </div>
+  ),
   TerminalShellFramework: () => <div data-testid="shell-framework">Frameworks</div>,
   TerminalPsManagement: () => <div data-testid="ps-management">PS Management</div>,
   TerminalPsModulesTable: () => <div data-testid="ps-modules">PS Modules</div>,
@@ -135,6 +156,19 @@ describe('TerminalPage', () => {
     jest.clearAllMocks();
     mockTerminalHookState.configMutationState = { status: 'idle', message: null, result: null, updatedAt: null };
     mockTerminalHookState.proxySyncState = { status: 'idle', message: null, result: null, updatedAt: null };
+    mockTerminalHookState.resourceStale = {
+      profiles: false,
+      templates: false,
+      configEntries: false,
+      configMetadata: false,
+      proxyConfig: true,
+      proxyEnvVars: true,
+      shellEnvVars: true,
+      psProfiles: true,
+      psModules: true,
+      psScripts: true,
+      executionPolicy: true,
+    };
   });
 
   it('renders page title and description', () => {
@@ -152,6 +186,14 @@ describe('TerminalPage', () => {
     expect(screen.getByRole('tab', { name: /powershell/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /proxy/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /env vars/i })).toBeInTheDocument();
+  });
+
+  it('uses scrollable tablist layout for compact viewports', () => {
+    render(<TerminalPage />);
+
+    const tablist = screen.getByRole('tablist');
+    expect(tablist.className).toContain('overflow-x-auto');
+    expect(screen.getByRole('tab', { name: /shells/i }).className).toContain('flex-none');
   });
 
   it('shows shells tab content by default', () => {
@@ -203,7 +245,7 @@ describe('TerminalPage', () => {
     expect(mockFetchShellEnvVars).toHaveBeenCalledTimes(1);
   });
 
-  it('refreshes invalidated proxy tab after proxy sync success', async () => {
+  it('refreshes proxy tab only when proxy resources are stale', async () => {
     const user = userEvent.setup();
     const { rerender } = render(<TerminalPage />);
 
@@ -211,11 +253,23 @@ describe('TerminalPage', () => {
     expect(mockLoadProxyConfig).toHaveBeenCalledTimes(1);
     expect(mockFetchProxyEnvVars).toHaveBeenCalledTimes(1);
 
-    mockTerminalHookState.proxySyncState = {
-      status: 'success',
-      message: 'ok',
-      result: null,
-      updatedAt: Date.now(),
+    mockTerminalHookState.resourceStale = {
+      ...mockTerminalHookState.resourceStale,
+      proxyConfig: false,
+      proxyEnvVars: false,
+    };
+    rerender(<TerminalPage />);
+
+    await user.click(screen.getByRole('tab', { name: /shells/i }));
+    await user.click(screen.getByRole('tab', { name: /proxy/i }));
+
+    expect(mockLoadProxyConfig).toHaveBeenCalledTimes(1);
+    expect(mockFetchProxyEnvVars).toHaveBeenCalledTimes(1);
+
+    mockTerminalHookState.resourceStale = {
+      ...mockTerminalHookState.resourceStale,
+      proxyConfig: true,
+      proxyEnvVars: true,
     };
     rerender(<TerminalPage />);
 
@@ -224,5 +278,30 @@ describe('TerminalPage', () => {
 
     expect(mockLoadProxyConfig).toHaveBeenCalledTimes(2);
     expect(mockFetchProxyEnvVars).toHaveBeenCalledTimes(2);
+  });
+
+  it('guards tab switch when config editor is dirty until discard is confirmed', async () => {
+    const user = userEvent.setup();
+    render(<TerminalPage />);
+
+    await user.click(screen.getByRole('tab', { name: /config/i }));
+    await waitFor(() => {
+      expect(screen.getByTestId('shell-config')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: /set-config-dirty/i }));
+    await user.click(screen.getByRole('tab', { name: /profiles/i }));
+
+    expect(screen.getByText('terminal.unsavedChangesTitle')).toBeInTheDocument();
+    expect(screen.queryByTestId('profile-list')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /terminal\.cancel/i }));
+    expect(screen.queryByTestId('profile-list')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('tab', { name: /profiles/i }));
+    await user.click(screen.getByRole('button', { name: /terminal\.discardAndContinue/i }));
+    await waitFor(() => {
+      expect(screen.getByTestId('profile-list')).toBeInTheDocument();
+    });
   });
 });

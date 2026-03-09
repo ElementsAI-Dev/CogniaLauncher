@@ -99,7 +99,11 @@ export function GitRepoActionBar({
     const shouldClean = window.confirm(t('git.actions.cleanConfirm'));
     if (!shouldClean) return;
 
-    await runAction('clean', () => onClean(cleanDirectories), 'git.cleanAction.success');
+    await runAction(
+      'clean',
+      () => onClean(cleanDirectories, true),
+      'git.cleanAction.success',
+    );
   };
 
   return (
@@ -113,17 +117,26 @@ export function GitRepoActionBar({
               size="sm"
               className="h-7 text-xs"
               disabled={disabled || busyAction !== null}
-              onClick={() => runAction(
-                'push',
-                () => onPush(
-                  remote.trim() ? remote.trim() : undefined,
-                  branch.trim() ? branch.trim() : undefined,
-                  pushForce,
-                  pushForceLease,
-                  pushSetUpstream,
-                ),
-                'git.pushAction.success',
-              )}
+              onClick={async () => {
+                const requiresRiskConfirm = pushForce || pushForceLease;
+                if (requiresRiskConfirm) {
+                  const confirmed = window.confirm(t('git.actions.pushConfirm'));
+                  if (!confirmed) return;
+                }
+                await runAction(
+                  'push',
+                  () =>
+                    onPush(
+                      remote.trim() ? remote.trim() : undefined,
+                      branch.trim() ? branch.trim() : undefined,
+                      pushForce,
+                      pushForceLease,
+                      pushSetUpstream,
+                      requiresRiskConfirm,
+                    ),
+                  'git.pushAction.success',
+                );
+              }}
             >
               <ArrowUpFromLine className="h-3.5 w-3.5 mr-1" />
               {t('git.actions.push')}

@@ -2,12 +2,15 @@ import { renderHook, act } from '@testing-library/react';
 import { usePlugins } from '@/hooks/use-plugins';
 import { usePluginStore } from '@/lib/stores/plugin';
 import { useToolboxStore } from '@/lib/stores/toolbox';
+import type { PluginMarketplaceActionResult } from '@/types/plugin';
 
 jest.mock('@/lib/tauri', () => ({
   isTauri: jest.fn(() => false),
   pluginList: jest.fn(),
   pluginListAllTools: jest.fn(),
   pluginInstall: jest.fn(),
+  pluginInstallMarketplace: jest.fn(),
+  pluginInstallMarketplaceWithResult: jest.fn(),
   pluginImportLocal: jest.fn(),
   pluginUninstall: jest.fn(),
   pluginEnable: jest.fn(),
@@ -25,6 +28,7 @@ jest.mock('@/lib/tauri', () => ({
   pluginValidate: jest.fn(),
   pluginCheckUpdate: jest.fn(),
   pluginUpdate: jest.fn(),
+  pluginUpdateWithResult: jest.fn(),
   pluginGetHealth: jest.fn(),
   pluginGetAllHealth: jest.fn(),
   pluginResetHealth: jest.fn(),
@@ -75,6 +79,8 @@ describe('usePlugins', () => {
     const { result } = renderHook(() => usePlugins());
     expect(typeof result.current.fetchPlugins).toBe('function');
     expect(typeof result.current.installPlugin).toBe('function');
+    expect(typeof result.current.installMarketplacePlugin).toBe('function');
+    expect(typeof result.current.installMarketplacePluginWithResult).toBe('function');
     expect(typeof result.current.importLocalPlugin).toBe('function');
     expect(typeof result.current.uninstallPlugin).toBe('function');
     expect(typeof result.current.enablePlugin).toBe('function');
@@ -92,6 +98,7 @@ describe('usePlugins', () => {
     expect(typeof result.current.validatePlugin).toBe('function');
     expect(typeof result.current.checkUpdate).toBe('function');
     expect(typeof result.current.updatePlugin).toBe('function');
+    expect(typeof result.current.updatePluginWithResult).toBe('function');
     expect(typeof result.current.getHealth).toBe('function');
     expect(typeof result.current.getAllHealth).toBe('function');
     expect(typeof result.current.resetHealth).toBe('function');
@@ -129,6 +136,77 @@ describe('usePlugins', () => {
       await result.current.installPlugin('https://example.com/plugin.zip');
     });
     expect(tauri.pluginInstall).not.toHaveBeenCalled();
+  });
+
+  it('returns actionable result when marketplace install is unavailable outside desktop runtime', async () => {
+    tauri.isTauri.mockReturnValue(false);
+    const { result } = renderHook(() => usePlugins());
+
+    let actionResult: PluginMarketplaceActionResult | null = null;
+    await act(async () => {
+      actionResult = await result.current.installMarketplacePluginWithResult('hello-world-rust');
+    });
+
+    expect(actionResult).toEqual({
+      ok: false,
+      action: 'install',
+      pluginId: null,
+      phase: 'failed',
+      downloadTaskId: null,
+      error: {
+        category: 'source_unavailable',
+        message: 'Marketplace install requires desktop runtime.',
+        retryable: false,
+      },
+    });
+  });
+
+  it('normalizes marketplace install errors into actionable categories', async () => {
+    tauri.isTauri.mockReturnValue(true);
+    tauri.pluginInstallMarketplaceWithResult.mockRejectedValue(new Error('network timeout'));
+    const { result } = renderHook(() => usePlugins());
+
+    let actionResult: PluginMarketplaceActionResult | null = null;
+    await act(async () => {
+      actionResult = await result.current.installMarketplacePluginWithResult('hello-world-rust');
+    });
+
+    expect(actionResult).toEqual({
+      ok: false,
+      action: 'install',
+      pluginId: null,
+      phase: 'failed',
+      downloadTaskId: null,
+      error: {
+        category: 'source_unavailable',
+        message: 'network timeout',
+        retryable: true,
+      },
+    });
+  });
+
+  it('normalizes marketplace update errors into validation category', async () => {
+    tauri.isTauri.mockReturnValue(true);
+    tauri.pluginUpdateWithResult.mockRejectedValue(new Error('checksum mismatch in artifact'));
+    const { result } = renderHook(() => usePlugins());
+
+    let actionResult: PluginMarketplaceActionResult | null = null;
+    await act(async () => {
+      actionResult = await result.current.updatePluginWithResult('com.cognia.hello-world');
+    });
+
+    expect(actionResult).toEqual({
+      ok: false,
+      action: 'update',
+      pluginId: 'com.cognia.hello-world',
+      phase: 'failed',
+      downloadTaskId: null,
+      error: {
+        category: 'validation_failed',
+        message: 'checksum mismatch in artifact',
+        retryable: false,
+      },
+    });
   });
 
   it('clears marketplace continuation after uninstalling a store plugin', async () => {

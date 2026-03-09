@@ -1,5 +1,10 @@
 "use client";
 
+import {
+  FieldDescription,
+  FieldLegend,
+  FieldSet,
+} from "@/components/ui/field";
 import { Separator } from "@/components/ui/separator";
 import { SwitchSettingItem, SelectSettingItem } from "./setting-item";
 import { TrayMenuCustomizer } from "./tray-menu-customizer";
@@ -28,12 +33,18 @@ export function TraySettings({
     handleStartMinimizedChange,
     handleAutostartChange,
     handleClickBehaviorChange,
+    quickAction,
+    availableQuickActions,
+    handleQuickActionChange,
     handleShowNotificationsChange,
     handleNotificationLevelChange,
+    notificationEvents,
+    availableNotificationEvents,
+    handleNotificationEventToggle,
   } = useTrayAutostart({ appSettings, onValueChange });
 
   return (
-    <div className="space-y-1">
+    <div className="flex flex-col gap-1">
         <SwitchSettingItem
           id="minimize-to-tray"
           label={t("settings.minimizeToTray")}
@@ -92,11 +103,54 @@ export function TraySettings({
             { value: "toggle_window", label: t("settings.trayClickToggle") },
             { value: "show_menu", label: t("settings.trayClickMenu") },
             { value: "check_updates", label: t("settings.trayClickCheckUpdates") },
+            { value: "quick_action", label: t("settings.trayClickQuickAction") },
             { value: "do_nothing", label: t("settings.trayClickNothing") },
           ]}
           disabled={!isTauri()}
           triggerClassName="w-[180px]"
         />
+        {isTauri() && (
+          <>
+            <Separator />
+            <SelectSettingItem
+              id="tray-quick-action"
+              label={t("settings.trayQuickAction")}
+              description={t("settings.trayQuickActionDesc")}
+              value={quickAction}
+              onValueChange={handleQuickActionChange}
+              options={availableQuickActions.map((value) => ({
+                value,
+                label: t(`settings.trayQuickActionOption.${value}`),
+              }))}
+              disabled={appSettings.trayClickBehavior !== "quick_action"}
+              triggerClassName="w-[220px]"
+            />
+            <Separator />
+            <FieldSet className="gap-1 px-1 py-2">
+              <FieldLegend variant="label" className="mb-0 text-sm font-medium">
+                {t("settings.trayNotificationEvents")}
+              </FieldLegend>
+              <FieldDescription className="text-xs">
+                {t("settings.trayNotificationEventsDesc")}
+              </FieldDescription>
+              <div className="flex flex-col gap-1 pt-1">
+                {availableNotificationEvents.map((event) => (
+                  <SwitchSettingItem
+                    key={event}
+                    id={`tray-notification-event-${event}`}
+                    label={t(`settings.trayNotificationEventOption.${event}`)}
+                    description={t("settings.trayNotificationEventItemDesc")}
+                    checked={notificationEvents.includes(event)}
+                    disabled={!appSettings.showNotifications}
+                    onCheckedChange={(checked) =>
+                      handleNotificationEventToggle(event, checked)
+                    }
+                  />
+                ))}
+              </div>
+            </FieldSet>
+          </>
+        )}
         {isTauri() && (
           <>
             <Separator />

@@ -113,6 +113,9 @@ describe("LogPanel", () => {
 
     expect(screen.getByText("Test message 1")).toBeInTheDocument();
     expect(screen.getByText("Test message 2")).toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: "Realtime log entries" }),
+    ).toBeInTheDocument();
   });
 
   it("filters logs based on level filter", () => {

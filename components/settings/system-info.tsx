@@ -70,25 +70,25 @@ export function SystemInfo({ loading, platformInfo, cogniaDir, t }: SystemInfoPr
   ];
 
   return (
-    <div>
-        <Table>
-          <TableBody>
-            {rows.map((row) => (
-              <TableRow key={row.label}>
-                <TableCell className="text-muted-foreground font-normal w-1/3">
-                  {row.label}
-                </TableCell>
-                <TableCell className="font-medium">
-                  {loading ? (
-                    <Skeleton className="h-4 w-40" />
-                  ) : (
-                    row.value || unknown
-                  )}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+    <div className="flex flex-col gap-2">
+      <Table>
+        <TableBody>
+          {rows.map((row) => (
+            <TableRow key={row.label}>
+              <TableCell className="w-1/3 font-normal text-muted-foreground">
+                {row.label}
+              </TableCell>
+              <TableCell className="font-medium">
+                {loading ? (
+                  <Skeleton className="h-4 w-40" />
+                ) : (
+                  row.value || unknown
+                )}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
     </div>
   );
 }

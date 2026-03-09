@@ -172,11 +172,15 @@ pub fn run() {
                     let settings_guard = settings.read().await;
                     let mut tray_guard = tray_state.write().await;
                     tray_guard.click_behavior = settings_guard.tray.click_behavior;
+                    tray_guard.quick_action = settings_guard.tray.quick_action;
                     tray_guard.minimize_to_tray = settings_guard.tray.minimize_to_tray;
                     tray_guard.start_minimized = settings_guard.tray.start_minimized;
                     tray_guard.show_notifications = settings_guard.tray.show_notifications;
                     tray_guard.notification_level = settings_guard.tray.notification_level;
+                    tray_guard.notification_events = settings_guard.tray.notification_events.clone();
                     tray_guard.menu_config.items = settings_guard.tray.menu_items.clone();
+                    tray_guard.menu_config.priority_items =
+                        settings_guard.tray.menu_priority_items.clone();
                     tray_guard.language = if settings_guard.appearance.language == "zh" {
                         TrayLanguage::Zh
                     } else {
@@ -249,6 +253,7 @@ pub fn run() {
             let plugin_deps = plugin::PluginDeps {
                 registry: registry.clone(),
                 settings: settings.clone(),
+                download_manager: Some(download_mgr.clone()),
             };
             let plugin_mgr: SharedPluginManager = Arc::new(RwLock::new(
                 plugin::PluginManager::new(&cognia_dir_for_plugins, plugin_deps),
@@ -795,8 +800,12 @@ pub fn run() {
             tray::tray_set_has_error,
             tray::tray_set_language,
             tray::tray_set_click_behavior,
+            tray::tray_set_quick_action,
+            tray::tray_get_available_quick_actions,
             tray::tray_set_show_notifications,
             tray::tray_set_notification_level,
+            tray::tray_set_notification_events,
+            tray::tray_get_available_notification_events,
             tray::tray_get_state,
             tray::tray_is_autostart_enabled,
             tray::tray_enable_autostart,
@@ -1209,6 +1218,7 @@ pub fn run() {
             commands::plugin::plugin_import_local,
             commands::plugin::plugin_install,
             commands::plugin::plugin_install_marketplace,
+            commands::plugin::plugin_install_marketplace_with_result,
             commands::plugin::plugin_uninstall,
             commands::plugin::plugin_enable,
             commands::plugin::plugin_disable,
@@ -1226,6 +1236,7 @@ pub fn run() {
             commands::plugin::plugin_validate,
             commands::plugin::plugin_check_update,
             commands::plugin::plugin_update,
+            commands::plugin::plugin_update_with_result,
             commands::plugin::plugin_get_ui_entry,
             commands::plugin::plugin_get_ui_asset,
             commands::plugin::plugin_get_health,
@@ -1452,7 +1463,10 @@ async fn cache_cleanup_task(settings: SharedSettings, app: tauri::AppHandle) {
         // Clean download cache if over size limit
         if let Ok(mut download_cache) = DownloadCache::open(&cache_dir).await {
             let max_age = Duration::from_secs(max_age_days as u64 * 86400);
-            let expired_download_entries = download_cache.preview_expired(max_age).await.unwrap_or_default();
+            let expired_download_entries = download_cache
+                .preview_expired(max_age)
+                .await
+                .unwrap_or_default();
             for entry in &expired_download_entries {
                 cleanup_record.add_file(
                     entry.file_path.display().to_string(),
@@ -1554,7 +1568,9 @@ async fn cache_cleanup_task(settings: SharedSettings, app: tauri::AppHandle) {
                     let _ = history.add(record).await;
                 }
             }
-            if let Err(e) = commands::cache::record_cache_snapshot(&cache_dir, metadata_cache_ttl).await {
+            if let Err(e) =
+                commands::cache::record_cache_snapshot(&cache_dir, metadata_cache_ttl).await
+            {
                 debug!("Failed to record auto-clean cache snapshot: {}", e);
             }
             let _ = app.emit(

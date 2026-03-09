@@ -42,7 +42,10 @@
         "storeId": "hello-world-rust",
         "pluginDir": "marketplace/hello-world-rust",
         "artifact": "plugin.wasm",
-        "checksumSha256": "8620482267e940e57518b36e95baf2505b678de935a987942979f935d4948ac5"
+        "checksumSha256": "8620482267e940e57518b36e95baf2505b678de935a987942979f935d4948ac5",
+        "downloadUrl": null,
+        "mirrorUrls": [],
+        "sizeBytes": null
       },
       "permissions": ["config_read", "env_read", "pkg_search"],
       "capabilities": ["settings.read", "environment.read", "packages.search"],
@@ -110,7 +113,10 @@
         "storeId": "hello-world-ts",
         "pluginDir": "marketplace/hello-world-ts",
         "artifact": "plugin.wasm",
-        "checksumSha256": "a05ba838e79183f8fd68163ab6e7c56ecd2373de5265b8c07bb63ab704aa0005"
+        "checksumSha256": "a05ba838e79183f8fd68163ab6e7c56ecd2373de5265b8c07bb63ab704aa0005",
+        "downloadUrl": null,
+        "mirrorUrls": [],
+        "sizeBytes": null
       },
       "permissions": ["config_read", "env_read", "pkg_search"],
       "capabilities": ["settings.read", "environment.read", "packages.search"],
@@ -171,7 +177,10 @@
         "storeId": "aab-to-apk-ts",
         "pluginDir": "marketplace/aab-to-apk-ts",
         "artifact": "plugin.wasm",
-        "checksumSha256": "a5d75656077d78d4201c3dc5bffaf1e9c410f892a1511ca948652f68992dd4f4"
+        "checksumSha256": "a5d75656077d78d4201c3dc5bffaf1e9c410f892a1511ca948652f68992dd4f4",
+        "downloadUrl": null,
+        "mirrorUrls": [],
+        "sizeBytes": null
       },
       "permissions": ["process_exec"],
       "capabilities": ["process.exec"],

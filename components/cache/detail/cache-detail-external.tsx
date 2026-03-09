@@ -74,6 +74,20 @@ export function CacheDetailExternalView() {
     other: <Globe className="h-4 w-4" />,
   };
 
+  const getStateBadge = (cache: (typeof caches)[number]) => {
+    const state = cache.detectionState ?? (cache.isAvailable ? 'found' : 'unavailable');
+    switch (state) {
+      case 'error':
+        return { label: t('cache.detail.externalError'), variant: 'destructive' as const };
+      case 'skipped':
+        return { label: t('cache.detail.externalSkipped'), variant: 'secondary' as const };
+      case 'unavailable':
+        return { label: t('cache.detail.externalUnavailable'), variant: 'secondary' as const };
+      default:
+        return { label: t('cache.detail.externalAvailable'), variant: 'default' as const };
+    }
+  };
+
   return (
     <div className="p-4 md:p-6 space-y-6">
       {/* Header */}
@@ -212,6 +226,7 @@ export function CacheDetailExternalView() {
                 <Accordion type="multiple" className="space-y-2">
                   {grouped[category].map((cache) => {
                     const pathInfo = getPathInfo(cache.provider);
+                    const stateBadge = getStateBadge(cache);
                     return (
                       <AccordionItem key={cache.provider} value={cache.provider} className="rounded-lg border last:border-b">
                         <div className="flex items-center justify-between p-3 hover:bg-muted/50 transition-colors">
@@ -220,11 +235,9 @@ export function CacheDetailExternalView() {
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-2">
                                 <span className="font-medium text-sm">{cache.displayName}</span>
-                                {cache.isAvailable ? (
-                                  <Badge variant="default" className="text-xs">{t('cache.detail.externalAvailable')}</Badge>
-                                ) : (
-                                  <Badge variant="secondary" className="text-xs">{t('cache.detail.externalUnavailable')}</Badge>
-                                )}
+                                <Badge variant={stateBadge.variant} className="text-xs">
+                                  {stateBadge.label}
+                                </Badge>
                               </div>
                               <p className="text-xs text-muted-foreground truncate">
                                 {cache.cachePath || t('cache.managedByTool')}
@@ -259,6 +272,22 @@ export function CacheDetailExternalView() {
                               <div className="flex gap-2">
                                 <span className="text-muted-foreground shrink-0">{t('cache.detail.externalCachePath')}:</span>
                                 <span className="font-mono text-xs break-all">{cache.cachePath}</span>
+                              </div>
+                            )}
+                            <div className="flex gap-2">
+                              <span className="text-muted-foreground shrink-0">{t('cache.detail.externalDetectionState')}:</span>
+                              <span>{stateBadge.label}</span>
+                            </div>
+                            {cache.detectionReason && (
+                              <div className="flex gap-2">
+                                <span className="text-muted-foreground shrink-0">{t('cache.detail.externalDetectionReason')}:</span>
+                                <span className="font-mono text-xs break-all">{cache.detectionReason}</span>
+                              </div>
+                            )}
+                            {cache.detectionError && (
+                              <div className="flex gap-2">
+                                <span className="text-muted-foreground shrink-0">{t('cache.detail.externalDetectionError')}:</span>
+                                <span className="font-mono text-xs break-all text-destructive">{cache.detectionError}</span>
                               </div>
                             )}
                             {pathInfo?.hasCleanCommand && pathInfo.cleanCommand && (

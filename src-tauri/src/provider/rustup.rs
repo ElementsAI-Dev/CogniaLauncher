@@ -602,10 +602,11 @@ impl EnvironmentProvider for RustupProvider {
     }
 
     async fn detect_version(&self, start_path: &Path) -> CogniaResult<Option<VersionDetection>> {
-        let sources: Vec<String> = crate::core::project_env_detect::default_detection_sources("rust")
-            .iter()
-            .map(|s| (*s).to_string())
-            .collect();
+        let sources: Vec<String> =
+            crate::core::project_env_detect::default_detection_sources("rust")
+                .iter()
+                .map(|s| (*s).to_string())
+                .collect();
 
         if let Some(detected) =
             crate::core::project_env_detect::detect_env_version("rust", start_path, &sources)
@@ -1072,12 +1073,10 @@ channel = "stable"
         let detection = provider.detect_version(tmp.path()).await.unwrap().unwrap();
         assert_eq!(detection.version, "nightly");
         assert!(matches!(detection.source, VersionSource::LocalFile));
-        assert!(
-            detection
-                .source_path
-                .as_ref()
-                .is_some_and(|p| p.ends_with("rust-toolchain"))
-        );
+        assert!(detection
+            .source_path
+            .as_ref()
+            .is_some_and(|p| p.ends_with("rust-toolchain")));
     }
 
     #[tokio::test]
@@ -1094,12 +1093,10 @@ channel = "stable"
         let detection = provider.detect_version(tmp.path()).await.unwrap().unwrap();
         assert_eq!(detection.version, "1.76.0");
         assert!(matches!(detection.source, VersionSource::LocalFile));
-        assert!(
-            detection
-                .source_path
-                .as_ref()
-                .is_some_and(|p| p.ends_with(".tool-versions"))
-        );
+        assert!(detection
+            .source_path
+            .as_ref()
+            .is_some_and(|p| p.ends_with(".tool-versions")));
     }
 
     #[test]

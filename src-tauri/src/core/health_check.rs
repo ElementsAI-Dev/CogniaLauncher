@@ -157,11 +157,7 @@ impl EnvironmentHealthResult {
         self.suggestions.push(suggestion.into());
     }
 
-    pub fn set_scope_state(
-        &mut self,
-        scope_state: HealthScopeState,
-        reason: impl Into<String>,
-    ) {
+    pub fn set_scope_state(&mut self, scope_state: HealthScopeState, reason: impl Into<String>) {
         self.scope_state = scope_state;
         self.scope_reason = Some(reason.into());
     }
@@ -225,11 +221,7 @@ impl PackageManagerHealthResult {
         self.issues.push(issue);
     }
 
-    pub fn set_scope_state(
-        &mut self,
-        scope_state: HealthScopeState,
-        reason: impl Into<String>,
-    ) {
+    pub fn set_scope_state(&mut self, scope_state: HealthScopeState, reason: impl Into<String>) {
         self.scope_state = scope_state;
         self.scope_reason = Some(reason.into());
     }
@@ -359,10 +351,10 @@ impl HealthCheckManager {
 
     fn canonical_environment_types() -> &'static [&'static str] {
         &[
-            "node", "python", "go", "rust", "ruby", "java", "kotlin", "scala", "groovy",
-            "gradle", "maven", "php", "dotnet", "deno", "zig", "dart", "bun", "lua",
-            "elixir", "erlang", "swift", "julia", "perl", "r", "haskell", "clojure",
-            "crystal", "nim", "ocaml", "fortran", "c", "cpp",
+            "node", "python", "go", "rust", "ruby", "java", "kotlin", "scala", "groovy", "gradle",
+            "maven", "php", "dotnet", "deno", "zig", "dart", "bun", "lua", "elixir", "erlang",
+            "swift", "julia", "perl", "r", "haskell", "clojure", "crystal", "nim", "ocaml",
+            "fortran", "c", "cpp",
         ]
     }
 
@@ -399,7 +391,9 @@ impl HealthCheckManager {
                 IssueCategory::Other,
                 format!("{} health check timed out", env_type),
             )
-            .with_details("The environment health check did not finish within the configured timeout."),
+            .with_details(
+                "The environment health check did not finish within the configured timeout.",
+            ),
         );
         result.finalize();
         result
@@ -418,7 +412,9 @@ impl HealthCheckManager {
                 IssueCategory::Other,
                 format!("{} health check timed out", display_name),
             )
-            .with_details("The provider health check did not finish within the configured timeout."),
+            .with_details(
+                "The provider health check did not finish within the configured timeout.",
+            ),
         );
         result.finalize();
         result
@@ -477,12 +473,9 @@ impl HealthCheckManager {
             let env_type = (*env_type).to_string();
             env_futures.push(tokio::spawn(async move {
                 let mgr = HealthCheckManager::new(registry);
-                tokio::time::timeout(
-                    Duration::from_secs(15),
-                    mgr.check_environment(&env_type),
-                )
-                .await
-                .unwrap_or_else(|_| Ok(mgr.create_environment_timeout_result(&env_type)))
+                tokio::time::timeout(Duration::from_secs(15), mgr.check_environment(&env_type))
+                    .await
+                    .unwrap_or_else(|_| Ok(mgr.create_environment_timeout_result(&env_type)))
             }));
         }
 
@@ -518,7 +511,10 @@ impl HealthCheckManager {
                 )
                 .await
                 .unwrap_or_else(|_| {
-                    mgr.create_package_manager_timeout_result(provider.id(), provider.display_name())
+                    mgr.create_package_manager_timeout_result(
+                        provider.id(),
+                        provider.display_name(),
+                    )
                 })
             }));
         }
@@ -562,16 +558,21 @@ impl HealthCheckManager {
 
         if providers.is_empty() {
             let default_provider = crate::core::environment::env_type_to_default_provider(env_type);
-            let mut result = EnvironmentHealthResult::new(env_type).with_provider(default_provider.clone());
+            let mut result =
+                EnvironmentHealthResult::new(env_type).with_provider(default_provider.clone());
             result.set_scope_state(HealthScopeState::Unsupported, "no_registered_provider");
-            result.add_issue(
-                self.build_install_issue(
-                    &default_provider,
-                    &format!("{} manager", env_type),
-                    format!("Install a version manager for {} to enable environment management", env_type),
-                    format!("Install {} to enable {} version management", default_provider, env_type),
+            result.add_issue(self.build_install_issue(
+                &default_provider,
+                &format!("{} manager", env_type),
+                format!(
+                    "Install a version manager for {} to enable environment management",
+                    env_type
                 ),
-            );
+                format!(
+                    "Install {} to enable {} version management",
+                    default_provider, env_type
+                ),
+            ));
             result.finalize();
             return Ok(result);
         }
@@ -592,7 +593,9 @@ impl HealthCheckManager {
             }
         }
 
-        let (provider_id, provider) = selected.or(first_registered).expect("providers checked above");
+        let (provider_id, provider) = selected
+            .or(first_registered)
+            .expect("providers checked above");
         let mut result = self.check_environment_health(&*provider).await;
         result.env_type = env_type.to_string();
         result.provider_id = Some(provider_id.clone());
@@ -632,7 +635,10 @@ impl HealthCheckManager {
                 )
                 .await
                 .unwrap_or_else(|_| {
-                    mgr.create_package_manager_timeout_result(provider.id(), provider.display_name())
+                    mgr.create_package_manager_timeout_result(
+                        provider.id(),
+                        provider.display_name(),
+                    )
                 })
             }));
         }
@@ -673,20 +679,18 @@ impl HealthCheckManager {
 
         if !is_available {
             result.set_scope_state(HealthScopeState::Unavailable, "provider_not_installed");
-            result.add_issue(
-                self.build_install_issue(
-                    provider.id(),
-                    provider.display_name(),
-                    format!(
-                        "The {} package manager is not available on this system",
-                        provider.display_name()
-                    ),
-                    format!(
-                        "Install {} to enable package management",
-                        provider.display_name()
-                    ),
+            result.add_issue(self.build_install_issue(
+                provider.id(),
+                provider.display_name(),
+                format!(
+                    "The {} package manager is not available on this system",
+                    provider.display_name()
                 ),
-            );
+                format!(
+                    "Install {} to enable package management",
+                    provider.display_name()
+                ),
+            ));
             let system_provider = {
                 let registry = self.registry.read().await;
                 registry.get_system_provider(provider.id())
@@ -1128,18 +1132,16 @@ impl HealthCheckManager {
         // Check 1: Provider availability
         if !provider.is_available().await {
             result.set_scope_state(HealthScopeState::Unavailable, "provider_not_installed");
-            result.add_issue(
-                self.build_install_issue(
+            result.add_issue(self.build_install_issue(
+                provider.id(),
+                provider.display_name(),
+                format!("The {} command was not found in your PATH", provider.id()),
+                format!(
+                    "Install {} to enable {} version management",
                     provider.id(),
-                    provider.display_name(),
-                    format!("The {} command was not found in your PATH", provider.id()),
-                    format!(
-                        "Install {} to enable {} version management",
-                        provider.id(),
-                        env_type
-                    ),
+                    env_type
                 ),
-            );
+            ));
             result.finalize();
             return result;
         }
@@ -2047,8 +2049,14 @@ mod tests {
             "Install fnm",
         );
 
-        assert_eq!(issue.remediation_id, Some("install-provider:fnm".to_string()));
-        assert_eq!(issue.fix_command, Some("winget install Schniz.fnm".to_string()));
+        assert_eq!(
+            issue.remediation_id,
+            Some("install-provider:fnm".to_string())
+        );
+        assert_eq!(
+            issue.fix_command,
+            Some("winget install Schniz.fnm".to_string())
+        );
     }
 
     #[test]
@@ -2103,7 +2111,10 @@ mod tests {
         assert!(matches!(result.scope_state, HealthScopeState::Unsupported));
         assert_eq!(result.provider_id, Some("fnm".to_string()));
         assert_eq!(
-            result.issues.first().and_then(|issue| issue.remediation_id.clone()),
+            result
+                .issues
+                .first()
+                .and_then(|issue| issue.remediation_id.clone()),
             Some("install-provider:fnm".to_string())
         );
     }

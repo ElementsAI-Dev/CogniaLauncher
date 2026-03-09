@@ -82,6 +82,13 @@ describe('EnvVarPathEditor', () => {
     expect(screen.getByText('Exists')).toBeInTheDocument();
   });
 
+  it('renders summary, controls, and list shells', () => {
+    render(<EnvVarPathEditor {...defaultProps} />);
+    expect(screen.getByTestId('envvar-path-summary')).toBeInTheDocument();
+    expect(screen.getByTestId('envvar-path-controls')).toBeInTheDocument();
+    expect(screen.getByTestId('envvar-path-list-card')).toBeInTheDocument();
+  });
+
   it('renders missing badge for non-existent paths', () => {
     render(<EnvVarPathEditor {...defaultProps} />);
     expect(screen.getByText('/nonexistent/path')).toBeInTheDocument();

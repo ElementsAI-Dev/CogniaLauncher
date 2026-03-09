@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
@@ -16,6 +16,7 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import { Shield, FileText, Pencil, RefreshCw, Save, Eye } from 'lucide-react';
 import type { PSProfileInfo } from '@/types/tauri';
 import { useLocale } from '@/components/providers/locale-provider';
@@ -98,22 +99,27 @@ export function TerminalPsManagement({
       {/* PS Profiles */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="text-base">{t('terminal.psProfiles')}</CardTitle>
-              <CardDescription>{t('terminal.psProfilesDesc')}</CardDescription>
-            </div>
+          <CardTitle className="text-base">{t('terminal.psProfiles')}</CardTitle>
+          <CardDescription>{t('terminal.psProfilesDesc')}</CardDescription>
+          <CardAction>
             <Button size="sm" variant="outline" onClick={handleRefresh}>
               <RefreshCw className="h-3.5 w-3.5 mr-1" />
               {t('common.refresh')}
             </Button>
-          </div>
+          </CardAction>
         </CardHeader>
         <CardContent className="space-y-4">
           {psProfiles.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-4">
-              {t('terminal.noPsProfiles')}
-            </p>
+            <Empty className="border-dashed py-6">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <FileText />
+                </EmptyMedia>
+                <EmptyTitle className="text-sm font-normal text-muted-foreground">
+                  {t('terminal.noPsProfiles')}
+                </EmptyTitle>
+              </EmptyHeader>
+            </Empty>
           ) : (
             <div className="rounded-md border">
               <Table>
@@ -167,6 +173,7 @@ export function TerminalPsManagement({
                                 variant="ghost"
                                 className="h-7 w-7"
                                 onClick={() => handleLoadProfile(profile.scope)}
+                                aria-label={`${t('terminal.viewProfile')} ${profile.scope}`}
                               >
                                 <Eye className="h-3.5 w-3.5" />
                               </Button>

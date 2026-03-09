@@ -52,6 +52,7 @@ function NavItem({ item, locale }: { item: DocNavItem; locale: string }) {
     <Link
       ref={linkRef}
       href={href}
+      aria-current={isActive ? 'page' : undefined}
       className={cn(
         'block rounded-md px-3 py-1.5 text-sm transition-colors',
         isActive
@@ -83,14 +84,16 @@ function NavSection({
 
   return (
     <Collapsible open={open} onOpenChange={setUserOpen}>
-      <CollapsibleTrigger className="flex w-full items-center justify-between rounded-md px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted/50 transition-colors">
-        <span>{title}</span>
-        <ChevronRight
-          className={cn(
-            'h-4 w-4 text-muted-foreground transition-transform duration-200',
-            open && 'rotate-90'
-          )}
-        />
+      <CollapsibleTrigger asChild>
+        <Button variant="ghost" size="sm" className="h-8 w-full justify-between rounded-md px-3 text-sm font-medium text-foreground hover:bg-muted/50">
+          <span className="truncate">{title}</span>
+          <ChevronRight
+            className={cn(
+              'h-4 w-4 text-muted-foreground transition-transform duration-200',
+              open && 'rotate-90'
+            )}
+          />
+        </Button>
       </CollapsibleTrigger>
       <CollapsibleContent>
         <div className="ml-3 space-y-0.5 border-l border-border pl-3 mt-0.5">
@@ -164,7 +167,7 @@ export function DocsMobileSidebar({ searchIndex }: { searchIndex?: DocSearchEntr
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
-        <Button variant="outline" size="sm" className="lg:hidden gap-2">
+        <Button variant="outline" size="sm" className="gap-2 lg:hidden" aria-label={t('docs.mobileMenu')}>
           <Menu className="h-4 w-4" />
           {t('docs.mobileMenu')}
         </Button>

@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import rawMarketplaceCatalog from '@/plugins/marketplace.json';
 import { isTauri } from '@/lib/tauri';
 import { usePluginStore } from '@/lib/stores/plugin';
@@ -9,8 +9,12 @@ import {
   filterMarketplaceListings,
   normalizeMarketplaceCatalog,
 } from '@/lib/toolbox-marketplace';
+import type { PluginMarketplaceActionResult } from '@/types/plugin';
 import type {
+  ToolboxMarketplaceActionError,
+  ToolboxMarketplaceActionProgress,
   ToolboxMarketplaceCatalog,
+  ToolboxMarketplaceCatalogSource,
   ToolboxMarketplaceFilters,
   ToolboxMarketplaceListing,
   ToolboxMarketplaceResolvedListing,
@@ -29,6 +33,63 @@ function getDefaultFilters(
     installState: 'all',
     sort: 'relevance',
     ...overrides,
+  };
+}
+
+function createFallbackActionResult(
+  action: PluginMarketplaceActionResult['action'],
+  pluginId: string | null,
+): PluginMarketplaceActionResult {
+  return {
+    ok: false,
+    action,
+    pluginId,
+    phase: 'failed',
+    downloadTaskId: null,
+    error: {
+      category: 'install_execution_failed',
+      message: action === 'install'
+        ? 'Marketplace install failed.'
+        : 'Marketplace update failed.',
+      retryable: true,
+    },
+  };
+}
+
+function buildMarketplaceActionError(
+  kind: ToolboxMarketplaceActionError['kind'],
+  listing: ToolboxMarketplaceListing,
+  options: {
+    category: ToolboxMarketplaceActionError['category'];
+    message: string;
+    retryable: boolean;
+  },
+): ToolboxMarketplaceActionError {
+  return {
+    kind,
+    category: options.category,
+    listingId: listing.id,
+    pluginId: listing.pluginId,
+    toolId: listing.tools[0] ? `plugin:${listing.pluginId}:${listing.tools[0].toolId}` : null,
+    message: options.message,
+    retryable: options.retryable,
+    timestamp: Date.now(),
+  };
+}
+
+function buildMarketplaceActionProgress(
+  kind: ToolboxMarketplaceActionProgress['kind'],
+  listing: ToolboxMarketplaceListing,
+  phase: ToolboxMarketplaceActionProgress['phase'],
+  downloadTaskId: string | null,
+): ToolboxMarketplaceActionProgress {
+  return {
+    kind,
+    listingId: listing.id,
+    pluginId: listing.pluginId,
+    phase,
+    downloadTaskId,
+    timestamp: Date.now(),
   };
 }
 
@@ -51,10 +112,16 @@ export function useToolboxMarketplace(overrides?: Partial<ToolboxMarketplaceFilt
     fetchPlugins,
     installMarketplacePlugin,
     updatePlugin,
+    installMarketplacePluginWithResult,
+    updatePluginWithResult,
   } = usePlugins();
 
   const isDesktop = isTauri();
   const filters = getDefaultFilters(overrides);
+  const [lastActionError, setLastActionError] =
+    useState<ToolboxMarketplaceActionError | null>(null);
+  const [lastActionProgress, setLastActionProgress] =
+    useState<ToolboxMarketplaceActionProgress | null>(null);
 
   const refreshCatalog = useCallback(async (): Promise<ToolboxMarketplaceCatalog> => {
     setMarketplaceSyncState('refreshing');
@@ -75,8 +142,8 @@ export function useToolboxMarketplace(overrides?: Partial<ToolboxMarketplaceFilt
     } catch (error) {
       const message = (error as Error).message ?? String(error);
       const fallbackCatalog = marketplaceCatalog ?? BUNDLED_MARKETPLACE_CATALOG;
-      const fallbackSource = marketplaceCatalog
-        ? (marketplaceCatalogSource ?? 'cached')
+      const fallbackSource: ToolboxMarketplaceCatalogSource = marketplaceCatalog
+        ? 'cached'
         : 'bundled';
       setMarketplaceCatalog(fallbackCatalog);
       setMarketplaceCatalogSource(fallbackSource);
@@ -164,27 +231,244 @@ export function useToolboxMarketplace(overrides?: Partial<ToolboxMarketplaceFilt
     [setContinuationHint],
   );
 
+  const clearMarketplaceActionError = useCallback(() => {
+    setLastActionError(null);
+    setLastActionProgress(null);
+  }, []);
+
   const installListing = useCallback(
     async (listing: ToolboxMarketplaceListing) => {
-      const pluginId = await installMarketplacePlugin(listing.source.storeId);
-      if (pluginId) {
-        recordContinuation(listing, 'marketplace-install');
+      setLastActionProgress(
+        buildMarketplaceActionProgress(
+          'marketplace-install',
+          listing,
+          'preparing',
+          null,
+        ),
+      );
+
+      if (!isDesktop || (listing.desktopOnly && !isDesktop)) {
+        setLastActionError(
+          buildMarketplaceActionError('marketplace-install', listing, {
+            category: 'compatibility_blocked',
+            message: 'Desktop runtime is required for plugin installation.',
+            retryable: false,
+          }),
+        );
+        setLastActionProgress(
+          buildMarketplaceActionProgress(
+            'marketplace-install',
+            listing,
+            'failed',
+            null,
+          ),
+        );
+        return null;
       }
-      return pluginId ?? null;
+
+      const listingFromInput = listing as ToolboxMarketplaceResolvedListing;
+      if (listingFromInput.installState === 'blocked') {
+        setLastActionError(
+          buildMarketplaceActionError('marketplace-install', listing, {
+            category: 'compatibility_blocked',
+            message: listingFromInput.blockedReason ?? 'Compatibility requirements are not satisfied.',
+            retryable: false,
+          }),
+        );
+        setLastActionProgress(
+          buildMarketplaceActionProgress(
+            'marketplace-install',
+            listing,
+            'failed',
+            null,
+          ),
+        );
+        return null;
+      }
+
+      const resolvedListing = getListingById(listing.id);
+      if (resolvedListing?.installState === 'blocked') {
+        setLastActionError(
+          buildMarketplaceActionError('marketplace-install', listing, {
+            category: 'compatibility_blocked',
+            message: resolvedListing.blockedReason ?? 'Compatibility requirements are not satisfied.',
+            retryable: false,
+          }),
+        );
+        setLastActionProgress(
+          buildMarketplaceActionProgress(
+            'marketplace-install',
+            listing,
+            'failed',
+            null,
+          ),
+        );
+        return null;
+      }
+
+      const result = installMarketplacePluginWithResult
+        ? await installMarketplacePluginWithResult(listing.source.storeId)
+        : (() => Promise.resolve())().then(async () => {
+            const pluginId = await installMarketplacePlugin(listing.source.storeId);
+            return pluginId
+              ? {
+                  ok: true,
+                  action: 'install',
+                  pluginId,
+                  phase: 'completed',
+                  downloadTaskId: null,
+                  error: null,
+                } satisfies PluginMarketplaceActionResult
+              : createFallbackActionResult('install', null);
+          });
+
+      setLastActionProgress(
+        buildMarketplaceActionProgress(
+          'marketplace-install',
+          listing,
+          result.phase ?? (result.ok ? 'completed' : 'failed'),
+          result.downloadTaskId ?? null,
+        ),
+      );
+
+      if (result.ok && result.pluginId) {
+        setLastActionError(null);
+        recordContinuation(listing, 'marketplace-install');
+        await refreshCatalog();
+        return result.pluginId;
+      }
+
+      setLastActionError(
+        buildMarketplaceActionError('marketplace-install', listing, {
+          category: result.error?.category ?? 'install_execution_failed',
+          message: result.error?.message ?? 'Marketplace install failed.',
+          retryable: result.error?.retryable ?? true,
+        }),
+      );
+      setLastActionProgress(
+        buildMarketplaceActionProgress(
+          'marketplace-install',
+          listing,
+          'failed',
+          result.downloadTaskId ?? null,
+        ),
+      );
+      return null;
     },
-    [installMarketplacePlugin, recordContinuation],
+    [
+      getListingById,
+      installMarketplacePlugin,
+      installMarketplacePluginWithResult,
+      isDesktop,
+      recordContinuation,
+      refreshCatalog,
+    ],
   );
 
   const updateListing = useCallback(
     async (listing: ToolboxMarketplaceResolvedListing) => {
-      if (listing.pendingUpdate) {
-        await updatePlugin(listing.pluginId);
-      } else {
-        await installMarketplacePlugin(listing.source.storeId);
+      setLastActionProgress(
+        buildMarketplaceActionProgress(
+          'marketplace-update',
+          listing,
+          'preparing',
+          null,
+        ),
+      );
+
+      if (listing.installState === 'blocked') {
+        setLastActionError(
+          buildMarketplaceActionError('marketplace-update', listing, {
+            category: 'compatibility_blocked',
+            message: listing.blockedReason ?? 'Compatibility requirements are not satisfied.',
+            retryable: false,
+          }),
+        );
+        setLastActionProgress(
+          buildMarketplaceActionProgress(
+            'marketplace-update',
+            listing,
+            'failed',
+            null,
+          ),
+        );
+        return;
       }
-      recordContinuation(listing, 'marketplace-update');
+
+      const result = listing.pendingUpdate
+        ? (
+            updatePluginWithResult
+              ? await updatePluginWithResult(listing.pluginId)
+              : (() => Promise.resolve())().then(async () => {
+                  await updatePlugin(listing.pluginId);
+                  return {
+                    ok: true,
+                    action: 'update',
+                    pluginId: listing.pluginId,
+                    phase: 'completed',
+                    downloadTaskId: null,
+                    error: null,
+                  } satisfies PluginMarketplaceActionResult;
+                })
+          )
+        : (
+            installMarketplacePluginWithResult
+              ? await installMarketplacePluginWithResult(listing.source.storeId)
+              : (() => Promise.resolve())().then(async () => {
+                  const pluginId = await installMarketplacePlugin(listing.source.storeId);
+                  return pluginId
+                    ? {
+                        ok: true,
+                        action: 'install',
+                        pluginId,
+                        phase: 'completed',
+                        downloadTaskId: null,
+                        error: null,
+                      } satisfies PluginMarketplaceActionResult
+                    : createFallbackActionResult('install', null);
+                })
+          );
+
+      setLastActionProgress(
+        buildMarketplaceActionProgress(
+          'marketplace-update',
+          listing,
+          result.phase ?? (result.ok ? 'completed' : 'failed'),
+          result.downloadTaskId ?? null,
+        ),
+      );
+
+      if (result.ok) {
+        setLastActionError(null);
+        recordContinuation(listing, 'marketplace-update');
+        await refreshCatalog();
+        return;
+      }
+
+      setLastActionError(
+        buildMarketplaceActionError('marketplace-update', listing, {
+          category: result.error?.category ?? 'install_execution_failed',
+          message: result.error?.message ?? 'Marketplace update failed.',
+          retryable: result.error?.retryable ?? true,
+        }),
+      );
+      setLastActionProgress(
+        buildMarketplaceActionProgress(
+          'marketplace-update',
+          listing,
+          'failed',
+          result.downloadTaskId ?? null,
+        ),
+      );
     },
-    [installMarketplacePlugin, recordContinuation, updatePlugin],
+    [
+      installMarketplacePlugin,
+      installMarketplacePluginWithResult,
+      recordContinuation,
+      refreshCatalog,
+      updatePlugin,
+      updatePluginWithResult,
+    ],
   );
 
   return {
@@ -199,10 +483,13 @@ export function useToolboxMarketplace(overrides?: Partial<ToolboxMarketplaceFilt
     syncState: marketplaceCatalog ? marketplaceSyncState : 'ready',
     lastSyncedAt: marketplaceLastSyncedAt ?? BUNDLED_MARKETPLACE_CATALOG.generatedAt,
     lastError: marketplaceLastError,
+    lastActionError,
+    lastActionProgress,
     continuationHint,
     refreshCatalog,
     getListingById,
     installListing,
     updateListing,
+    clearMarketplaceActionError,
   };
 }

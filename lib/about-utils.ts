@@ -1,11 +1,12 @@
 import { formatBytes, formatUptime } from '@/lib/utils';
 import { APP_VERSION } from '@/lib/app-version';
-import type { SystemInfo } from '@/types/about';
+import type { AboutInsights, SystemInfo } from '@/types/about';
 import type { SelfUpdateInfo } from '@/lib/tauri';
 import type { SystemInfoDisplay } from '@/hooks/use-system-info-display';
 
 export interface BuildSystemInfoTextParams {
   systemInfo: SystemInfo | null;
+  aboutInsights?: AboutInsights | null;
   updateInfo: SelfUpdateInfo | null;
   display: Pick<SystemInfoDisplay, 'osDisplayName' | 'cpuCoresDisplay' | 'memoryDisplay' | 'swapDisplay' | 'gpuDisplay'>;
   unknownText: string;
@@ -14,6 +15,7 @@ export interface BuildSystemInfoTextParams {
 
 export function buildSystemInfoText({
   systemInfo,
+  aboutInsights,
   updateInfo,
   display,
   unknownText,
@@ -167,6 +169,40 @@ export function buildSystemInfoText({
   if (systemInfo?.subsystemErrors?.length) {
     lines.push('');
     append('Subsystem Errors', systemInfo.subsystemErrors.join(', '));
+  }
+
+  if (aboutInsights) {
+    lines.push('');
+    lines.push(`[${t('about.insightsTitle')}]`);
+    append(t('about.insightsRuntimeMode'), aboutInsights.runtimeMode);
+    append(
+      t('about.insightsProviderSummary'),
+      `${aboutInsights.providerSummary.installed}/${aboutInsights.providerSummary.total}`,
+    );
+    append(t('about.insightsProviderSupported'), aboutInsights.providerSummary.supported);
+    append(
+      t('about.insightsProviderUnsupported'),
+      aboutInsights.providerSummary.unsupported,
+    );
+    append(
+      t('about.insightsLogsSize'),
+      aboutInsights.storageSummary.logTotalSizeHuman ??
+        (typeof aboutInsights.storageSummary.logTotalSizeBytes === 'number'
+          ? formatBytes(aboutInsights.storageSummary.logTotalSizeBytes)
+          : null),
+    );
+    append(
+      t('about.insightsCacheSize'),
+      aboutInsights.storageSummary.cacheTotalSizeHuman,
+    );
+    append(
+      t('about.insightsGroupStatus'),
+      [
+        `providers=${aboutInsights.sections.providers}`,
+        `logs=${aboutInsights.sections.logs}`,
+        `cache=${aboutInsights.sections.cache}`,
+      ].join(', '),
+    );
   }
 
   return lines.join('\n');

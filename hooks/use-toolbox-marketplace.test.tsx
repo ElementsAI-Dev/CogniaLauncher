@@ -4,14 +4,18 @@ import { usePluginStore } from "@/lib/stores/plugin";
 import { useToolboxStore } from "@/lib/stores/toolbox";
 
 const mockInstallMarketplacePlugin = jest.fn();
+const mockInstallMarketplacePluginWithResult = jest.fn();
 const mockUpdatePlugin = jest.fn();
+const mockUpdatePluginWithResult = jest.fn();
 const mockFetchPlugins = jest.fn();
 
 jest.mock("@/hooks/use-plugins", () => ({
   usePlugins: () => ({
     fetchPlugins: mockFetchPlugins,
     installMarketplacePlugin: mockInstallMarketplacePlugin,
+    installMarketplacePluginWithResult: mockInstallMarketplacePluginWithResult,
     updatePlugin: mockUpdatePlugin,
+    updatePluginWithResult: mockUpdatePluginWithResult,
   }),
 }));
 
@@ -25,7 +29,23 @@ describe("useToolboxMarketplace", () => {
     mockInstallMarketplacePlugin
       .mockReset()
       .mockResolvedValue("com.cognia.hello-world");
+    mockInstallMarketplacePluginWithResult.mockReset().mockResolvedValue({
+      ok: true,
+      action: "install",
+      pluginId: "com.cognia.hello-world",
+      phase: "completed",
+      downloadTaskId: null,
+      error: null,
+    });
     mockUpdatePlugin.mockReset().mockResolvedValue(undefined);
+    mockUpdatePluginWithResult.mockReset().mockResolvedValue({
+      ok: true,
+      action: "update",
+      pluginId: "com.cognia.hello-world",
+      phase: "completed",
+      downloadTaskId: null,
+      error: null,
+    });
     usePluginStore.setState({
       ...usePluginStore.getState(),
       installedPlugins: [],
@@ -59,12 +79,13 @@ describe("useToolboxMarketplace", () => {
       await result.current.installListing(listing);
     });
 
-    expect(mockInstallMarketplacePlugin).toHaveBeenCalledWith(
+    expect(mockInstallMarketplacePluginWithResult).toHaveBeenCalledWith(
       listing.source.storeId,
     );
     expect(useToolboxStore.getState().continuationHint?.listingId).toBe(
       listing.id,
     );
+    expect(result.current.lastActionError).toBeNull();
   });
 
   it("exposes degraded cached state when refresh fails with cached data available", async () => {
@@ -90,5 +111,79 @@ describe("useToolboxMarketplace", () => {
     expect(result.current.catalogSource).toBe("cached");
     expect(result.current.syncState).toBe("degraded");
     expect(result.current.lastError).toBe("sync failed");
+  });
+
+  it("sets actionable compatibility error without running install when listing is blocked", async () => {
+    const { result } = renderHook(() => useToolboxMarketplace());
+    const blockedListing = {
+      ...result.current.listings[0],
+      installState: "blocked" as const,
+      blockedReason: "Requires CogniaLauncher 9.9.9.",
+      compatible: false,
+    };
+
+    await act(async () => {
+      await result.current.installListing(blockedListing);
+    });
+
+    expect(mockInstallMarketplacePluginWithResult).not.toHaveBeenCalled();
+    expect(result.current.lastActionError?.category).toBe(
+      "compatibility_blocked",
+    );
+    expect(result.current.lastActionError?.retryable).toBe(false);
+  });
+
+  it("sets retryable error on failed marketplace update", async () => {
+    mockUpdatePluginWithResult.mockReset().mockResolvedValue({
+      ok: false,
+      action: "update",
+      pluginId: "com.cognia.hello-world",
+      phase: "failed",
+      downloadTaskId: "task-999",
+      error: {
+        category: "source_unavailable",
+        message: "network timeout",
+        retryable: true,
+      },
+    });
+
+    const { result } = renderHook(() => useToolboxMarketplace());
+    const listing = {
+      ...result.current.listings[0],
+      installState: "update-available" as const,
+      pendingUpdate: {
+        pluginId: "com.cognia.hello-world",
+        currentVersion: "0.0.1",
+        latestVersion: "0.1.0",
+        downloadUrl: "https://example.invalid",
+        changelog: null,
+      },
+      installedPlugin: {
+        id: "com.cognia.hello-world",
+        name: "Hello World",
+        version: "0.0.1",
+        description: "Demo",
+        authors: [],
+        toolCount: 1,
+        enabled: true,
+        installedAt: "2026-03-06T00:00:00.000Z",
+        updatedAt: null,
+        updateUrl: null,
+        source: { type: "store" as const, storeId: "hello-world-rust" },
+        builtinCandidate: false,
+        builtinSyncStatus: null,
+        builtinSyncMessage: null,
+      },
+    };
+
+    await act(async () => {
+      await result.current.updateListing(listing);
+    });
+
+    expect(result.current.lastActionError?.kind).toBe("marketplace-update");
+    expect(result.current.lastActionError?.category).toBe("source_unavailable");
+    expect(result.current.lastActionError?.retryable).toBe(true);
+    expect(result.current.lastActionProgress?.phase).toBe("failed");
+    expect(result.current.lastActionProgress?.downloadTaskId).toBe("task-999");
   });
 });

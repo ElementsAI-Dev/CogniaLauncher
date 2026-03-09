@@ -8,6 +8,11 @@
     "url": "https://github.com/AstroAir/CogniaLauncher",
     "directory": "plugin-sdk-ts"
   },
+  "scripts": {
+    "check:contract": "node ./scripts/check-contract.mjs",
+    "typecheck": "pnpm exec tsc -p tsconfig.typecheck.json --noEmit",
+    "test": "node --test ./tests/contract-check.test.mjs"
+  },
   "main": "src/index.ts",
   "types": "src/index.ts",
   "files": [

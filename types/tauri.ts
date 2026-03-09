@@ -302,6 +302,12 @@ export interface ProviderStatusInfo {
   display_name: string;
   installed: boolean;
   platforms: string[];
+  status?: 'supported' | 'unsupported';
+  reason?: string | null;
+  reason_code?: string | null;
+  update_supported?: boolean;
+  update_reason?: string | null;
+  update_reason_code?: string | null;
 }
 
 // ============================================================================
@@ -499,8 +505,19 @@ export interface BackupInfo {
   sizeHuman: string;
 }
 
+export type BackupOperationStatus = 'success' | 'partial' | 'skipped' | 'failed';
+
+export interface BackupOperationIssue {
+  code: string;
+  message: string;
+  contentType?: string | null;
+}
+
 export interface BackupResult {
   success: boolean;
+  status: BackupOperationStatus;
+  reasonCode?: string | null;
+  issues?: BackupOperationIssue[];
   path: string;
   manifest: BackupManifest;
   durationMs: number;
@@ -514,6 +531,9 @@ export interface RestoreSkipped {
 
 export interface RestoreResult {
   success: boolean;
+  status: BackupOperationStatus;
+  reasonCode?: string | null;
+  issues?: BackupOperationIssue[];
   restored: string[];
   skipped: RestoreSkipped[];
   error: string | null;
@@ -521,10 +541,55 @@ export interface RestoreResult {
 
 export interface BackupValidationResult {
   valid: boolean;
+  status: BackupOperationStatus;
+  reasonCode?: string | null;
+  issues?: BackupOperationIssue[];
   manifest: BackupManifest | null;
   missingFiles: string[];
   checksumMismatches: string[];
   errors: string[];
+}
+
+export interface BackupDeleteResult {
+  success: boolean;
+  status: BackupOperationStatus;
+  reasonCode?: string | null;
+  issues?: BackupOperationIssue[];
+  deleted: boolean;
+  path: string;
+  error: string | null;
+}
+
+export interface BackupExportResult {
+  success: boolean;
+  status: BackupOperationStatus;
+  reasonCode?: string | null;
+  issues?: BackupOperationIssue[];
+  bytes: number;
+  backupPath: string;
+  destPath: string;
+  error: string | null;
+}
+
+export interface BackupImportResult {
+  success: boolean;
+  status: BackupOperationStatus;
+  reasonCode?: string | null;
+  issues?: BackupOperationIssue[];
+  zipPath: string;
+  info: BackupInfo | null;
+  error: string | null;
+}
+
+export interface BackupCleanupResult {
+  success: boolean;
+  status: BackupOperationStatus;
+  reasonCode?: string | null;
+  issues?: BackupOperationIssue[];
+  deleted: number;
+  maxCount: number;
+  maxAgeDays: number;
+  error: string | null;
 }
 
 export interface IntegrityCheckResult {
@@ -730,6 +795,7 @@ export interface UpdateCheckProviderOutcome {
   provider: string;
   status: 'supported' | 'partial' | 'unsupported' | 'error';
   reason: string | null;
+  reason_code?: string | null;
   checked: number;
   updates: number;
   errors: number;
@@ -1220,8 +1286,19 @@ export type DownloadEvent =
 
 export type TrayIconState = 'normal' | 'downloading' | 'update' | 'error';
 export type TrayLanguage = 'en' | 'zh';
-export type TrayClickBehavior = 'toggle_window' | 'show_menu' | 'check_updates' | 'do_nothing';
+export type TrayClickBehavior =
+  | 'toggle_window'
+  | 'show_menu'
+  | 'check_updates'
+  | 'quick_action'
+  | 'do_nothing';
+export type TrayQuickAction =
+  | 'open_settings'
+  | 'open_downloads'
+  | 'check_updates'
+  | 'open_logs';
 export type TrayNotificationLevel = 'all' | 'important_only' | 'none';
+export type TrayNotificationEvent = 'updates' | 'downloads' | 'errors' | 'system';
 
 export type TrayMenuItemId =
   | 'show_hide'
@@ -1237,6 +1314,7 @@ export type TrayMenuItemId =
 
 export interface TrayMenuConfig {
   items: TrayMenuItemId[];
+  priorityItems: TrayMenuItemId[];
 }
 
 export interface TrayStateInfo {
@@ -1246,10 +1324,12 @@ export interface TrayStateInfo {
   hasUpdate: boolean;
   hasError: boolean;
   clickBehavior: TrayClickBehavior;
+  quickAction: TrayQuickAction;
   minimizeToTray: boolean;
   startMinimized: boolean;
   showNotifications: boolean;
   notificationLevel: TrayNotificationLevel;
+  notificationEvents: TrayNotificationEvent[];
   alwaysOnTop: boolean;
   menuConfig: TrayMenuConfig;
 }
@@ -1945,6 +2025,21 @@ export interface GitRebaseTodoItem {
   message: string;
 }
 
+export type GitCommandErrorCategory =
+  | 'environment'
+  | 'precondition'
+  | 'conflict'
+  | 'execution'
+  | 'cancelled'
+  | 'unknown';
+
+export interface GitCommandError {
+  category: GitCommandErrorCategory;
+  recoverable: boolean;
+  message: string;
+  nextSteps: string[];
+}
+
 // ============================================================================
 // Launch Types
 // ============================================================================
@@ -2235,6 +2330,7 @@ export interface TerminalConfigMutationResult {
   diagnosticDetails?: TerminalConfigDiagnostic[];
   snapshotPath?: string | null;
   fingerprint?: string | null;
+  contextMessage?: string | null;
 }
 
 export interface TerminalConfigRestoreResult {
@@ -2245,6 +2341,7 @@ export interface TerminalConfigRestoreResult {
   diagnostics: string[];
   diagnosticDetails?: TerminalConfigDiagnostic[];
   fingerprint?: string | null;
+  contextMessage?: string | null;
 }
 
 // ============================================================================

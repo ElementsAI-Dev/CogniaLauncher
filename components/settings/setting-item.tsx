@@ -1,7 +1,12 @@
 "use client";
 
+import {
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldLabel,
+} from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -61,12 +66,12 @@ export function SettingItem({
   return (
     <div
       className={cn(
-        "flex items-center justify-between py-3 rounded-md transition-colors",
+        "flex items-center justify-between rounded-md py-3 transition-colors",
         highlightMatch && "bg-yellow-50 dark:bg-yellow-900/20 px-3 -mx-3",
       )}
     >
-      <div className="space-y-0.5 flex-1 mr-4">
-        <Label htmlFor={id} className="font-medium flex items-center gap-2">
+      <Field data-invalid={!!error || undefined} className="mr-4 flex-1 gap-1">
+        <FieldLabel htmlFor={id} className="font-medium flex items-center gap-2">
           {label}
           {isModified && (
             <Tooltip>
@@ -76,25 +81,13 @@ export function SettingItem({
                   aria-label={modifiedLabel}
                 />
               </TooltipTrigger>
-              <TooltipContent side="top">
-                {modifiedLabel}
-              </TooltipContent>
+              <TooltipContent side="top">{modifiedLabel}</TooltipContent>
             </Tooltip>
           )}
-        </Label>
-        <p id={descId} className="text-sm text-muted-foreground">
-          {description}
-        </p>
-        {error && (
-          <p
-            id={errorId}
-            className="text-sm text-destructive mt-1"
-            role="alert"
-          >
-            {error}
-          </p>
-        )}
-      </div>
+        </FieldLabel>
+        <FieldDescription id={descId}>{description}</FieldDescription>
+        {error ? <FieldError id={errorId}>{error}</FieldError> : null}
+      </Field>
       <Input
         id={id}
         type={type}
@@ -144,16 +137,17 @@ export function SwitchSettingItem({
   return (
     <div
       className={cn(
-        "flex items-center justify-between py-2 rounded-md transition-colors",
+        "flex items-center justify-between rounded-md py-2 transition-colors",
         highlightMatch && "bg-yellow-50 dark:bg-yellow-900/20 px-3 -mx-3",
       )}
     >
-      <div className="space-y-0.5 flex-1 mr-4">
-        <Label htmlFor={id}>{label}</Label>
-        <p id={descId} className="text-sm text-muted-foreground">
-          {description}
-        </p>
-      </div>
+      <Field
+        data-disabled={disabled || undefined}
+        className="mr-4 flex-1 gap-1"
+      >
+        <FieldLabel htmlFor={id}>{label}</FieldLabel>
+        <FieldDescription id={descId}>{description}</FieldDescription>
+      </Field>
       <Switch
         id={id}
         aria-describedby={descId}
@@ -204,16 +198,17 @@ export function SelectSettingItem({
   return (
     <div
       className={cn(
-        "flex items-center justify-between py-2 rounded-md transition-colors",
+        "flex items-center justify-between rounded-md py-2 transition-colors",
         highlightMatch && "bg-yellow-50 dark:bg-yellow-900/20 px-3 -mx-3",
       )}
     >
-      <div className="space-y-0.5 flex-1 mr-4">
-        <Label htmlFor={id}>{label}</Label>
-        <p id={descId} className="text-sm text-muted-foreground">
-          {description}
-        </p>
-      </div>
+      <Field
+        data-disabled={disabled || undefined}
+        className="mr-4 flex-1 gap-1"
+      >
+        <FieldLabel htmlFor={id}>{label}</FieldLabel>
+        <FieldDescription id={descId}>{description}</FieldDescription>
+      </Field>
       <Select value={value} onValueChange={onValueChange} disabled={disabled}>
         <SelectTrigger
           id={id}
@@ -270,16 +265,17 @@ export function SliderSettingItem({
   return (
     <div
       className={cn(
-        "flex items-center justify-between py-2 rounded-md transition-colors",
+        "flex items-center justify-between rounded-md py-2 transition-colors",
         highlightMatch && "bg-yellow-50 dark:bg-yellow-900/20 px-3 -mx-3",
       )}
     >
-      <div className="space-y-0.5 flex-1 mr-4">
-        <Label htmlFor={id}>{label}</Label>
-        <p id={descId} className="text-sm text-muted-foreground">
-          {description}
-        </p>
-      </div>
+      <Field
+        data-disabled={disabled || undefined}
+        className="mr-4 flex-1 gap-1"
+      >
+        <FieldLabel htmlFor={id}>{label}</FieldLabel>
+        <FieldDescription id={descId}>{description}</FieldDescription>
+      </Field>
       <div className="flex items-center gap-3 w-48">
         <Slider
           id={id}

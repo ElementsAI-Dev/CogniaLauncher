@@ -17,7 +17,7 @@ export function StartupSettings({
   t,
 }: StartupSettingsProps) {
   return (
-    <div className="space-y-1">
+    <div className="flex flex-col gap-1">
       <SwitchSettingItem
         id="startup-scan-environments"
         label={t("settings.startupScanEnvironments")}

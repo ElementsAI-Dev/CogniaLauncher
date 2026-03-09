@@ -1,5 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Empty, EmptyMedia, EmptyDescription } from "@/components/ui/empty";
+import { DashboardEmptyState } from "@/components/dashboard/dashboard-primitives";
 
 interface WidgetEmptyCardProps {
   title: string;
@@ -15,10 +15,7 @@ export function WidgetEmptyCard({ title, message, icon, className }: WidgetEmpty
         <CardTitle className="text-base font-medium">{title}</CardTitle>
       </CardHeader>
       <CardContent>
-        <Empty className="h-[200px] border-none p-0">
-          {icon && <EmptyMedia variant="icon">{icon}</EmptyMedia>}
-          <EmptyDescription>{message}</EmptyDescription>
-        </Empty>
+        <DashboardEmptyState className="h-[200px] p-0" icon={icon} message={message} />
       </CardContent>
     </Card>
   );

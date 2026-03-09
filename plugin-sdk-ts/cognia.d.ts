@@ -1,7 +1,7 @@
 /**
  * Cognia Plugin SDK — Host Function Declarations
  *
- * These declare the 37 host functions provided by CogniaLauncher to WASM plugins.
+ * These declare the 38 host functions provided by CogniaLauncher to WASM plugins.
  * All functions use JSON string I/O via Extism Memory API (I64 offsets).
  */
 
@@ -41,6 +41,7 @@ declare module "extism:host" {
     // --- HTTP ---
     cognia_http_get(ptr: I64): I64;
     cognia_http_post(ptr: I64): I64;
+    cognia_http_request(ptr: I64): I64;
 
     // --- Clipboard ---
     cognia_clipboard_read(ptr: I64): I64;

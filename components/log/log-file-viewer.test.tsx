@@ -287,6 +287,101 @@ describe("LogFileViewer", () => {
     }
   });
 
+  it("resets viewport to top on manual refresh when follow mode is disabled", async () => {
+    const user = userEvent.setup();
+    mockQueryLogFile
+      .mockResolvedValueOnce({
+        ok: true,
+        data: { entries: sampleEntries, totalCount: 3, hasMore: false },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        data: { entries: sampleEntries, totalCount: 3, hasMore: false },
+      });
+
+    render(<LogFileViewer open fileName="app.log" onOpenChange={() => undefined} />);
+
+    await waitFor(() => expect(screen.getByText("First log entry")).toBeInTheDocument());
+
+    setViewportMetrics(getViewerViewport(), { clientHeight: 112, scrollTop: 92 });
+    expect(getViewerViewport().scrollTop).toBe(92);
+
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+
+    await waitFor(() => expect(mockQueryLogFile).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(getViewerViewport().scrollTop).toBe(0));
+  });
+
+  it("keeps refresh scroll intent deterministic after filter toggles", async () => {
+    const user = userEvent.setup();
+    mockQueryLogFile
+      .mockResolvedValueOnce({
+        ok: true,
+        data: { entries: sampleEntries, totalCount: 3, hasMore: false },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        data: { entries: sampleEntries, totalCount: 3, hasMore: false },
+      });
+
+    render(<LogFileViewer open fileName="app.log" onOpenChange={() => undefined} />);
+
+    await waitFor(() => expect(screen.getByText("First log entry")).toBeInTheDocument());
+
+    setViewportMetrics(getViewerViewport(), { clientHeight: 120, scrollTop: 88 });
+    await user.click(screen.getByRole("button", { name: /advanced/i }));
+    await user.click(screen.getByRole("switch", { name: "Regex" }));
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+
+    await waitFor(() => expect(mockQueryLogFile).toHaveBeenCalledTimes(3));
+    expect(mockQueryLogFile).toHaveBeenLastCalledWith(
+      expect.objectContaining({ offset: 0, useRegex: true }),
+    );
+    await waitFor(() => expect(getViewerViewport().scrollTop).toBe(0));
+  });
+
+  it("resets historical scroll state when switching to another file", async () => {
+    mockQueryLogFile
+      .mockResolvedValueOnce({
+        ok: true,
+        data: { entries: sampleEntries, totalCount: 3, hasMore: false },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        data: {
+          entries: [
+            {
+              timestamp: "2026-02-02T12:05:00Z",
+              level: "INFO",
+              target: "app",
+              message: "History file entry",
+              lineNumber: 1,
+            },
+          ],
+          totalCount: 1,
+          hasMore: false,
+        },
+      });
+
+    const { rerender } = render(
+      <LogFileViewer open fileName="app.log" onOpenChange={() => undefined} />,
+    );
+    await waitFor(() => expect(screen.getByText("First log entry")).toBeInTheDocument());
+
+    setViewportMetrics(getViewerViewport(), { clientHeight: 110, scrollTop: 76 });
+    expect(getViewerViewport().scrollTop).toBe(76);
+
+    rerender(<LogFileViewer open fileName="history.log" onOpenChange={() => undefined} />);
+
+    await waitFor(() =>
+      expect(mockQueryLogFile).toHaveBeenLastCalledWith(
+        expect.objectContaining({ fileName: "history.log", offset: 0, limit: 200 }),
+      ),
+    );
+    await waitFor(() => expect(screen.getByText("History file entry")).toBeInTheDocument());
+    await waitFor(() => expect(getViewerViewport().scrollTop).toBe(0));
+  });
+
   it("exports CSV without downgrading format", async () => {
     const user = userEvent.setup();
     mockQueryLogFile.mockResolvedValue({
@@ -393,6 +488,9 @@ describe("LogFileViewer", () => {
     const dialog = screen.getByRole("dialog");
     const statusRegion = screen.getByRole("status");
     const contentRegion = screen.getByRole("region", { name: "Log File Viewer: app.log" });
+    const actionGroup = screen.getByRole("group", {
+      name: "Historical viewer actions",
+    });
     const searchInput = screen.getByPlaceholderText("Search logs...");
 
     expect(dialog).toHaveClass("max-w-5xl");
@@ -400,6 +498,7 @@ describe("LogFileViewer", () => {
     expect(dialog).toHaveClass("overflow-hidden");
     expect(statusRegion).toHaveAttribute("aria-live", "polite");
     expect(statusRegion).toHaveTextContent("3 entries");
+    expect(actionGroup).toBeInTheDocument();
     expect(contentRegion).toContainElement(screen.getByTestId("log-file-viewer-scroll-area"));
     expect(
       searchInput.compareDocumentPosition(contentRegion) & Node.DOCUMENT_POSITION_FOLLOWING,

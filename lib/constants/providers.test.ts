@@ -1,4 +1,4 @@
-import { SYSTEM_PROVIDER_IDS, PACKAGE_MANAGER_IDS, ALL_PROVIDER_IDS } from './providers';
+import { SYSTEM_PROVIDER_IDS, PACKAGE_MANAGER_IDS, ALL_PROVIDER_IDS, isPackageManagerProvider } from './providers';
 
 describe('SYSTEM_PROVIDER_IDS', () => {
   it('is a Set', () => {
@@ -29,7 +29,13 @@ describe('PACKAGE_MANAGER_IDS', () => {
   });
 
   it('contains expected package managers', () => {
-    const expected = ['npm', 'pnpm', 'yarn', 'pip', 'uv', 'cargo', 'vcpkg', 'docker', 'podman', 'psgallery', 'github'];
+    const expected = [
+      'npm', 'pnpm', 'yarn', 'bun',
+      'pip', 'uv', 'poetry', 'conda', 'pipx',
+      'cargo', 'go', 'composer', 'bundler', 'gem',
+      'dotnet', 'deno', 'luarocks', 'pub',
+      'vcpkg', 'conan', 'xmake', 'docker', 'podman', 'psgallery', 'github', 'gitlab',
+    ];
     expected.forEach((id) => {
       expect(PACKAGE_MANAGER_IDS.has(id)).toBe(true);
     });
@@ -39,6 +45,26 @@ describe('PACKAGE_MANAGER_IDS', () => {
     PACKAGE_MANAGER_IDS.forEach((id) => {
       expect(SYSTEM_PROVIDER_IDS.has(id)).toBe(false);
     });
+  });
+
+  it('keeps representative JS/Python/system-language providers in package set', () => {
+    ['npm', 'pip', 'cargo'].forEach((id) => {
+      expect(PACKAGE_MANAGER_IDS.has(id)).toBe(true);
+      expect(ALL_PROVIDER_IDS).toContain(id);
+    });
+  });
+
+  it('classifies capability-based package providers consistently', () => {
+    expect(isPackageManagerProvider({
+      id: 'custom-provider',
+      capabilities: ['search', 'install'],
+      is_environment_provider: false,
+    })).toBe(true);
+    expect(isPackageManagerProvider({
+      id: 'system-node',
+      capabilities: ['version_switch'],
+      is_environment_provider: true,
+    })).toBe(false);
   });
 });
 

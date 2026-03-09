@@ -11,14 +11,14 @@ export function SettingsSkeleton({
   loadingLabel = "Loading settings",
 }: SettingsSkeletonProps) {
   return (
-    <div className="space-y-6" aria-busy="true" aria-label={loadingLabel}>
+    <div className="flex flex-col gap-6" aria-busy="true" aria-label={loadingLabel}>
       {/* General Settings Skeleton */}
       <Card>
         <CardHeader>
           <Skeleton className="h-6 w-32" />
           <Skeleton className="h-4 w-48 mt-1" />
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="flex flex-col gap-4">
           <div className="flex items-center justify-between py-3">
             <div className="space-y-2">
               <Skeleton className="h-4 w-36" />
@@ -42,7 +42,7 @@ export function SettingsSkeleton({
           <Skeleton className="h-6 w-28" />
           <Skeleton className="h-4 w-52 mt-1" />
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="flex flex-col gap-4">
           <div className="flex items-center justify-between py-3">
             <div className="space-y-2">
               <Skeleton className="h-4 w-24" />
@@ -76,7 +76,7 @@ export function SettingsSkeleton({
           </div>
           <Skeleton className="h-4 w-56 mt-1" />
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="flex flex-col gap-4">
           <div className="flex items-center justify-between py-2">
             <div className="space-y-2">
               <Skeleton className="h-4 w-32" />
@@ -103,7 +103,7 @@ export function SettingsSkeleton({
           </div>
           <Skeleton className="h-4 w-60 mt-1" />
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="flex flex-col gap-4">
           <div className="flex items-center justify-between py-2">
             <div className="space-y-2">
               <Skeleton className="h-4 w-20" />
@@ -127,7 +127,7 @@ export function SettingsSkeleton({
           <Skeleton className="h-6 w-32" />
           <Skeleton className="h-4 w-52 mt-1" />
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="flex flex-col gap-4">
           {[1, 2, 3].map((item) => (
             <div key={item} className="flex items-center justify-between py-2">
               <div className="space-y-2">
@@ -146,7 +146,7 @@ export function SettingsSkeleton({
           <Skeleton className="h-6 w-28" />
           <Skeleton className="h-4 w-48 mt-1" />
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="flex flex-col gap-4">
           {[1, 2, 3].map((item) => (
             <div key={item} className="flex items-center justify-between py-2">
               <div className="space-y-2">
@@ -165,7 +165,7 @@ export function SettingsSkeleton({
           <Skeleton className="h-6 w-36" />
           <Skeleton className="h-4 w-52 mt-1" />
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="flex flex-col gap-3">
           <div className="space-y-2">
             <Skeleton className="h-4 w-36" />
             <Skeleton className="h-3 w-64" />

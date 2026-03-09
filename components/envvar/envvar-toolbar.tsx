@@ -34,6 +34,7 @@ export function EnvVarToolbar({
         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
         <Input
           placeholder={t('envvar.table.search')}
+          aria-label={t('envvar.table.search')}
           value={searchQuery}
           onChange={(e) => onSearchChange(e.target.value)}
           className="h-9 pl-8"
@@ -48,7 +49,7 @@ export function EnvVarToolbar({
           }}
           disabled={disabled}
         >
-          <SelectTrigger className="h-9 w-full sm:w-[150px]">
+          <SelectTrigger className="h-9 w-full sm:w-37.5" aria-label={t('envvar.table.scope')}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

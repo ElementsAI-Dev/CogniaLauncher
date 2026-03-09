@@ -7,9 +7,10 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useLocale } from '@/components/providers/locale-provider';
-import { List } from 'lucide-react';
+import { ChevronRight, List } from 'lucide-react';
 import type { TocItem, DocsTocMode } from '@/types/docs';
 import { extractHeadings } from '@/lib/docs/headings';
 import { useActiveHeading } from '@/hooks/use-active-heading';
@@ -47,6 +48,7 @@ function TocNav({
             key={heading.id}
             ref={isActive ? activeRef : undefined}
             href={`#${heading.id}`}
+            aria-current={isActive ? 'location' : undefined}
             className={cn(
               'block text-xs leading-relaxed transition-colors hover:text-foreground border-l-2 py-0.5',
               heading.level === 3 ? 'pl-4' : 'pl-3',
@@ -112,9 +114,12 @@ export function DocsToc({ content, headings: headingsProp, className, mode = 'bo
       {showMobile && (
         <div className="xl:hidden mb-4">
           <Collapsible open={mobileOpen} onOpenChange={setMobileOpen}>
-            <CollapsibleTrigger className="flex w-full items-center gap-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-sm font-medium text-foreground hover:bg-muted/50 transition-colors">
-              <List className="h-4 w-4" />
-              <span>{t('docs.toc')}</span>
+            <CollapsibleTrigger asChild>
+              <Button variant="outline" className="h-9 w-full justify-start gap-2 bg-muted/30 text-sm font-medium hover:bg-muted/50">
+                <List className="h-4 w-4" />
+                <span>{t('docs.toc')}</span>
+                <ChevronRight className={cn('ml-auto h-4 w-4 text-muted-foreground transition-transform duration-200', mobileOpen && 'rotate-90')} />
+              </Button>
             </CollapsibleTrigger>
             <CollapsibleContent>
               <div className="mt-2 rounded-md border border-border bg-background p-3">

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 
 interface DocsScrollProgressProps {
@@ -17,7 +18,8 @@ export function DocsScrollProgress({ containerRef, className }: DocsScrollProgre
       // Fallback to window scroll
       const scrollTop = window.scrollY;
       const scrollHeight = document.documentElement.scrollHeight - window.innerHeight;
-      setProgress(scrollHeight > 0 ? (scrollTop / scrollHeight) * 100 : 0);
+      const next = scrollHeight > 0 ? (scrollTop / scrollHeight) * 100 : 0;
+      setProgress(Math.max(0, Math.min(100, next)));
       return;
     }
     // For ScrollArea, the scrollable viewport is the first child with data-radix-scroll-area-viewport
@@ -25,7 +27,8 @@ export function DocsScrollProgress({ containerRef, className }: DocsScrollProgre
     const target = viewport ?? el;
     const scrollTop = target.scrollTop;
     const scrollHeight = target.scrollHeight - target.clientHeight;
-    setProgress(scrollHeight > 0 ? (scrollTop / scrollHeight) * 100 : 0);
+    const next = scrollHeight > 0 ? (scrollTop / scrollHeight) * 100 : 0;
+    setProgress(Math.max(0, Math.min(100, next)));
   }, [containerRef]);
 
   useEffect(() => {
@@ -37,18 +40,5 @@ export function DocsScrollProgress({ containerRef, className }: DocsScrollProgre
     return () => target.removeEventListener('scroll', handleScroll);
   }, [containerRef, handleScroll]);
 
-  return (
-    <div
-      className={cn('h-0.5 bg-primary/20 w-full', className)}
-      role="progressbar"
-      aria-valuenow={Math.round(progress)}
-      aria-valuemin={0}
-      aria-valuemax={100}
-    >
-      <div
-        className="h-full bg-primary transition-[width] duration-150 ease-out"
-        style={{ width: `${progress}%` }}
-      />
-    </div>
-  );
+  return <Progress value={progress} max={100} aria-label="Reading progress" className={cn('h-1 w-full rounded-none bg-primary/15', className)} />;
 }

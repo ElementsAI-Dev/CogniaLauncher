@@ -19,6 +19,11 @@ import {
 } from "@/lib/theme/chart-utils";
 import type { CacheInfo } from "@/lib/tauri";
 import { WidgetEmptyCard } from "@/components/dashboard/widgets/widget-empty-card";
+import {
+  DashboardMetricGrid,
+  DashboardMetricItem,
+  DashboardSectionLabel,
+} from "@/components/dashboard/dashboard-primitives";
 
 interface CacheChartProps {
   cacheInfo: CacheInfo | null;
@@ -88,30 +93,83 @@ export function CacheChart({ cacheInfo, className }: CacheChartProps) {
           {t("dashboard.widgets.cacheUsageDesc")}
         </CardDescription>
       </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-3 gap-3 mb-4">
-          <div className="text-center">
-            <div className="text-lg font-bold">{cacheInfo.total_size_human}</div>
-            <div className="text-xs text-muted-foreground">{t("cache.totalSize")}</div>
-          </div>
-          <div className="text-center">
-            <div className="text-lg font-bold">{cacheInfo.download_cache.entry_count}</div>
-            <div className="text-xs text-muted-foreground">{t("dashboard.widgets.downloadCache")}</div>
-          </div>
-          <div className="text-center">
-            <div className="text-lg font-bold">{cacheInfo.metadata_cache.entry_count}</div>
-            <div className="text-xs text-muted-foreground">{t("dashboard.widgets.metadataCache")}</div>
-          </div>
-        </div>
+      <CardContent className="space-y-4">
+        <DashboardMetricGrid columns={3}>
+          <DashboardMetricItem
+            label={t("cache.totalSize")}
+            value={cacheInfo.total_size_human}
+          />
+          <DashboardMetricItem
+            label={t("dashboard.widgets.downloadCache")}
+            value={cacheInfo.download_cache.entry_count}
+          />
+          <DashboardMetricItem
+            label={t("dashboard.widgets.metadataCache")}
+            value={cacheInfo.metadata_cache.entry_count}
+          />
+        </DashboardMetricGrid>
 
         {pieData.length > 0 ? (
-          <ChartContainer config={chartConfig} className="h-[160px] w-full aspect-auto">
-            <PieChart>
-              <defs>
-                {[0, 1].map((index) => (
+          <div className="space-y-2">
+            <DashboardSectionLabel>{t("dashboard.widgets.cacheUsage")}</DashboardSectionLabel>
+            <ChartContainer config={chartConfig} className="h-40 w-full aspect-auto">
+              <PieChart>
+                <defs>
+                  {[0, 1].map((index) => (
+                    <linearGradient
+                      key={getGradientId("cache", index)}
+                      id={getGradientId("cache", index)}
+                      x1={pieGradient.x1}
+                      y1={pieGradient.y1}
+                      x2={pieGradient.x2}
+                      y2={pieGradient.y2}
+                    >
+                      {pieGradient.stops.map((stop, stopIndex) => (
+                        <stop
+                          key={`${stop.offset}-${stopIndex}`}
+                          offset={stop.offset}
+                          stopColor={index === 0 ? getChartColor(0) : getChartColor(3)}
+                          stopOpacity={stop.opacity}
+                        />
+                      ))}
+                    </linearGradient>
+                  ))}
+                </defs>
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <Pie
+                  data={pieData}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={45}
+                  outerRadius={70}
+                  paddingAngle={3}
+                  {...getChartSegmentStrokeStyle(2)}
+                  dataKey="value"
+                  nameKey="name"
+                >
+                  {pieData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.fill} />
+                  ))}
+                </Pie>
+              </PieChart>
+            </ChartContainer>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <DashboardSectionLabel>{t("dashboard.widgets.cacheUsage")}</DashboardSectionLabel>
+            <ChartContainer config={chartConfig} className="h-40 w-full aspect-auto">
+              <RadialBarChart
+                data={radialData}
+                startAngle={90}
+                endAngle={-270}
+                innerRadius={55}
+                outerRadius={75}
+                cx="50%"
+                cy="50%"
+              >
+                <defs>
                   <linearGradient
-                    key={getGradientId("cache", index)}
-                    id={getGradientId("cache", index)}
+                    id={getGradientId("cache", 0)}
                     x1={pieGradient.x1}
                     y1={pieGradient.y1}
                     x2={pieGradient.x2}
@@ -121,71 +179,24 @@ export function CacheChart({ cacheInfo, className }: CacheChartProps) {
                       <stop
                         key={`${stop.offset}-${stopIndex}`}
                         offset={stop.offset}
-                        stopColor={index === 0 ? getChartColor(0) : getChartColor(3)}
+                        stopColor={getChartColor(0)}
                         stopOpacity={stop.opacity}
                       />
                     ))}
                   </linearGradient>
-                ))}
-              </defs>
-              <ChartTooltip content={<ChartTooltipContent />} />
-              <Pie
-                data={pieData}
-                cx="50%"
-                cy="50%"
-                innerRadius={45}
-                outerRadius={70}
-                paddingAngle={3}
-                {...getChartSegmentStrokeStyle(2)}
-                dataKey="value"
-                nameKey="name"
-              >
-                {pieData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.fill} />
-                ))}
-              </Pie>
-            </PieChart>
-          </ChartContainer>
-        ) : (
-          <ChartContainer config={chartConfig} className="h-[160px] w-full aspect-auto">
-            <RadialBarChart
-              data={radialData}
-              startAngle={90}
-              endAngle={-270}
-              innerRadius={55}
-              outerRadius={75}
-              cx="50%"
-              cy="50%"
-            >
-              <defs>
-                <linearGradient
-                  id={getGradientId("cache", 0)}
-                  x1={pieGradient.x1}
-                  y1={pieGradient.y1}
-                  x2={pieGradient.x2}
-                  y2={pieGradient.y2}
-                >
-                  {pieGradient.stops.map((stop, stopIndex) => (
-                    <stop
-                      key={`${stop.offset}-${stopIndex}`}
-                      offset={stop.offset}
-                      stopColor={getChartColor(0)}
-                      stopOpacity={stop.opacity}
-                    />
-                  ))}
-                </linearGradient>
-              </defs>
-              <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
-              <RadialBar
-                dataKey="value"
-                cornerRadius={10}
-                background={getChartRadialTrackStyle()}
-              />
-              <text x="50%" y="50%" textAnchor="middle" dominantBaseline="middle" className="text-2xl font-bold fill-foreground">
-                {t("dashboard.widgets.empty")}
-              </text>
-            </RadialBarChart>
-          </ChartContainer>
+                </defs>
+                <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
+                <RadialBar
+                  dataKey="value"
+                  cornerRadius={10}
+                  background={getChartRadialTrackStyle()}
+                />
+                <text x="50%" y="50%" textAnchor="middle" dominantBaseline="middle" className="text-2xl font-bold fill-foreground">
+                  {t("dashboard.widgets.empty")}
+                </text>
+              </RadialBarChart>
+            </ChartContainer>
+          </div>
         )}
       </CardContent>
     </Card>

@@ -53,7 +53,30 @@ pub enum TrayClickBehavior {
     ToggleWindow,
     ShowMenu,
     CheckUpdates,
+    QuickAction,
     DoNothing,
+}
+
+/// Configurable quick action used by tray interactions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TrayQuickAction {
+    OpenSettings,
+    OpenDownloads,
+    #[default]
+    CheckUpdates,
+    OpenLogs,
+}
+
+impl TrayQuickAction {
+    pub(crate) fn defaults() -> Vec<TrayQuickAction> {
+        vec![
+            TrayQuickAction::OpenSettings,
+            TrayQuickAction::OpenDownloads,
+            TrayQuickAction::CheckUpdates,
+            TrayQuickAction::OpenLogs,
+        ]
+    }
 }
 
 /// Tray notification visibility policy
@@ -64,6 +87,27 @@ pub enum TrayNotificationLevel {
     All,
     ImportantOnly,
     None,
+}
+
+/// Notification event categories that can be toggled independently.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TrayNotificationEvent {
+    Updates,
+    Downloads,
+    Errors,
+    System,
+}
+
+impl TrayNotificationEvent {
+    pub(crate) fn defaults() -> Vec<TrayNotificationEvent> {
+        vec![
+            TrayNotificationEvent::Updates,
+            TrayNotificationEvent::Downloads,
+            TrayNotificationEvent::Errors,
+            TrayNotificationEvent::System,
+        ]
+    }
 }
 
 /// Identifiers for tray menu items that can be toggled on/off
@@ -105,12 +149,15 @@ impl TrayMenuItemId {
 #[serde(rename_all = "camelCase")]
 pub struct TrayMenuConfig {
     pub items: Vec<TrayMenuItemId>,
+    #[serde(default)]
+    pub priority_items: Vec<TrayMenuItemId>,
 }
 
 impl Default for TrayMenuConfig {
     fn default() -> Self {
         Self {
             items: TrayMenuItemId::defaults(),
+            priority_items: Vec::new(),
         }
     }
 }
@@ -124,10 +171,12 @@ pub struct TrayState {
     pub has_update: bool,
     pub has_error: bool,
     pub click_behavior: TrayClickBehavior,
+    pub quick_action: TrayQuickAction,
     pub minimize_to_tray: bool,
     pub start_minimized: bool,
     pub show_notifications: bool,
     pub notification_level: TrayNotificationLevel,
+    pub notification_events: Vec<TrayNotificationEvent>,
     pub always_on_top: AtomicBool,
     pub menu_config: TrayMenuConfig,
 }
@@ -141,10 +190,12 @@ impl Default for TrayState {
             has_update: false,
             has_error: false,
             click_behavior: TrayClickBehavior::default(),
+            quick_action: TrayQuickAction::default(),
             minimize_to_tray: true,
             start_minimized: false,
             show_notifications: true,
             notification_level: TrayNotificationLevel::default(),
+            notification_events: TrayNotificationEvent::defaults(),
             always_on_top: AtomicBool::new(false),
             menu_config: TrayMenuConfig::default(),
         }
@@ -300,7 +351,61 @@ fn normalize_menu_items(items: &[TrayMenuItemId]) -> Vec<TrayMenuItemId> {
     normalized
 }
 
-fn apply_visual_state_to_tray<R: Runtime>(app: &AppHandle<R>, state: &TrayState) -> Result<(), String> {
+fn normalize_priority_items(
+    priority_items: &[TrayMenuItemId],
+    normalized_items: &[TrayMenuItemId],
+) -> Vec<TrayMenuItemId> {
+    let allowed: HashSet<TrayMenuItemId> = normalized_items.iter().copied().collect();
+    let mut seen = HashSet::new();
+    let mut normalized: Vec<TrayMenuItemId> = Vec::new();
+
+    for item in priority_items {
+        if *item == TrayMenuItemId::Quit {
+            continue;
+        }
+        if allowed.contains(item) && seen.insert(*item) {
+            normalized.push(*item);
+        }
+    }
+
+    normalized
+}
+
+fn normalize_menu_config(config: &TrayMenuConfig) -> TrayMenuConfig {
+    let items = normalize_menu_items(&config.items);
+    let priority_items = normalize_priority_items(&config.priority_items, &items);
+    TrayMenuConfig {
+        items,
+        priority_items,
+    }
+}
+
+fn resolve_menu_order(config: &TrayMenuConfig) -> Vec<TrayMenuItemId> {
+    let mut ordered = Vec::with_capacity(config.items.len());
+
+    for item in &config.priority_items {
+        if config.items.contains(item) && !ordered.contains(item) {
+            ordered.push(*item);
+        }
+    }
+
+    for item in &config.items {
+        if !ordered.contains(item) {
+            ordered.push(*item);
+        }
+    }
+
+    if !ordered.contains(&TrayMenuItemId::Quit) {
+        ordered.push(TrayMenuItemId::Quit);
+    }
+
+    ordered
+}
+
+fn apply_visual_state_to_tray<R: Runtime>(
+    app: &AppHandle<R>,
+    state: &TrayState,
+) -> Result<(), String> {
     if let Some(tray) = app.tray_by_id(TRAY_ICON_ID) {
         let icon_bytes = get_icon_for_state(state.icon_state);
         let icon = Image::from_bytes(icon_bytes).map_err(|e| e.to_string())?;
@@ -327,10 +432,18 @@ fn refresh_tray_visual_state<R: Runtime>(app: &AppHandle<R>) -> Result<(), Strin
 fn should_send_notification(
     show_notifications: bool,
     notification_level: TrayNotificationLevel,
+    enabled_events: &[TrayNotificationEvent],
+    event: Option<TrayNotificationEvent>,
     important: Option<bool>,
 ) -> bool {
     if !show_notifications {
         return false;
+    }
+
+    if let Some(event_kind) = event {
+        if !enabled_events.contains(&event_kind) {
+            return false;
+        }
     }
 
     match notification_level {
@@ -469,7 +582,9 @@ fn build_menu<R: Runtime>(
     let menu = Menu::new(app)?;
     let mut need_separator = false;
 
-    for item_id in &state.menu_config.items {
+    let ordered_items = resolve_menu_order(&state.menu_config);
+
+    for item_id in &ordered_items {
         match item_id {
             TrayMenuItemId::ShowHide => {
                 if need_separator {
@@ -583,6 +698,75 @@ fn build_menu<R: Runtime>(
     Ok(menu)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TrayActionId {
+    ShowWindow,
+    HideWindow,
+    ToggleWindow,
+    NavigateDashboard,
+    NavigateEnvironments,
+    NavigatePackages,
+    NavigateDownloads,
+    NavigateCache,
+    NavigateLogs,
+    PauseAllDownloads,
+    ResumeAllDownloads,
+    OpenDownloadsPage,
+    OpenSettings,
+    CheckUpdates,
+    ToggleNotifications,
+    OpenLogsDir,
+    ToggleAlwaysOnTop,
+    ToggleAutostart,
+    Quit,
+}
+
+fn quick_action_to_action(action: TrayQuickAction) -> TrayActionId {
+    match action {
+        TrayQuickAction::OpenSettings => TrayActionId::OpenSettings,
+        TrayQuickAction::OpenDownloads => TrayActionId::OpenDownloadsPage,
+        TrayQuickAction::CheckUpdates => TrayActionId::CheckUpdates,
+        TrayQuickAction::OpenLogs => TrayActionId::OpenLogsDir,
+    }
+}
+
+fn tray_action_from_menu_id(id: &str) -> Option<TrayActionId> {
+    match id {
+        "show" => Some(TrayActionId::ShowWindow),
+        "hide" => Some(TrayActionId::HideWindow),
+        "nav_dashboard" => Some(TrayActionId::NavigateDashboard),
+        "nav_environments" => Some(TrayActionId::NavigateEnvironments),
+        "nav_packages" => Some(TrayActionId::NavigatePackages),
+        "nav_downloads" => Some(TrayActionId::NavigateDownloads),
+        "nav_cache" => Some(TrayActionId::NavigateCache),
+        "nav_logs" => Some(TrayActionId::NavigateLogs),
+        "download_pause_all" => Some(TrayActionId::PauseAllDownloads),
+        "download_resume_all" => Some(TrayActionId::ResumeAllDownloads),
+        "download_open_page" => Some(TrayActionId::OpenDownloadsPage),
+        "settings" => Some(TrayActionId::OpenSettings),
+        "check_updates" => Some(TrayActionId::CheckUpdates),
+        "toggle_notifications" => Some(TrayActionId::ToggleNotifications),
+        "open_logs" => Some(TrayActionId::OpenLogsDir),
+        "toggle_always_on_top" => Some(TrayActionId::ToggleAlwaysOnTop),
+        "toggle_autostart" => Some(TrayActionId::ToggleAutostart),
+        "quit" => Some(TrayActionId::Quit),
+        _ => None,
+    }
+}
+
+fn tray_action_from_click_behavior(
+    behavior: TrayClickBehavior,
+    quick_action: TrayQuickAction,
+) -> Option<TrayActionId> {
+    match behavior {
+        TrayClickBehavior::ToggleWindow => Some(TrayActionId::ToggleWindow),
+        TrayClickBehavior::ShowMenu => None,
+        TrayClickBehavior::CheckUpdates => Some(TrayActionId::CheckUpdates),
+        TrayClickBehavior::QuickAction => Some(quick_action_to_action(quick_action)),
+        TrayClickBehavior::DoNothing => None,
+    }
+}
+
 /// Show window and navigate to a path
 fn show_and_navigate<R: Runtime>(app: &AppHandle<R>, path: &str) {
     if let Some(window) = app.get_webview_window("main") {
@@ -600,48 +784,48 @@ fn trigger_update_check<R: Runtime>(app: &AppHandle<R>) {
     let _ = app.emit("check-updates", ());
 }
 
-/// Handle menu events
-fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
-    let id = event.id.as_ref();
-    match id {
-        // Window visibility
-        "show" => {
+fn execute_tray_action<R: Runtime>(app: &AppHandle<R>, action: TrayActionId) {
+    match action {
+        TrayActionId::ShowWindow => {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();
                 let _ = window.set_focus();
                 update_menu_state(app);
             }
         }
-        "hide" => {
+        TrayActionId::HideWindow => {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.hide();
                 update_menu_state(app);
             }
         }
-
-        // Quick navigation
-        "nav_dashboard" => show_and_navigate(app, "/"),
-        "nav_environments" => show_and_navigate(app, "/environments"),
-        "nav_packages" => show_and_navigate(app, "/packages"),
-        "nav_downloads" => show_and_navigate(app, "/downloads"),
-        "nav_cache" => show_and_navigate(app, "/cache"),
-        "nav_logs" => show_and_navigate(app, "/logs"),
-
-        // Downloads actions
-        "download_pause_all" => {
+        TrayActionId::ToggleWindow => {
+            if let Some(window) = app.get_webview_window("main") {
+                if window.is_visible().unwrap_or(false) {
+                    let _ = window.set_focus();
+                } else {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+                update_menu_state(app);
+            }
+        }
+        TrayActionId::NavigateDashboard => show_and_navigate(app, "/"),
+        TrayActionId::NavigateEnvironments => show_and_navigate(app, "/environments"),
+        TrayActionId::NavigatePackages => show_and_navigate(app, "/packages"),
+        TrayActionId::NavigateDownloads => show_and_navigate(app, "/downloads"),
+        TrayActionId::NavigateCache => show_and_navigate(app, "/cache"),
+        TrayActionId::NavigateLogs => show_and_navigate(app, "/logs"),
+        TrayActionId::PauseAllDownloads => {
             let _ = app.emit("download-pause-all", ());
         }
-        "download_resume_all" => {
+        TrayActionId::ResumeAllDownloads => {
             let _ = app.emit("download-resume-all", ());
         }
-        "download_open_page" => show_and_navigate(app, "/downloads"),
-
-        // Actions
-        "settings" => show_and_navigate(app, "/settings"),
-        "check_updates" => {
-            trigger_update_check(app);
-        }
-        "toggle_notifications" => {
+        TrayActionId::OpenDownloadsPage => show_and_navigate(app, "/downloads"),
+        TrayActionId::OpenSettings => show_and_navigate(app, "/settings"),
+        TrayActionId::CheckUpdates => trigger_update_check(app),
+        TrayActionId::ToggleNotifications => {
             if let Some(tray_state) = app.try_state::<SharedTrayState>() {
                 let Ok(mut guard) = tray_state.try_write() else {
                     return;
@@ -664,14 +848,13 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
                 update_menu_state(app);
             }
         }
-        "open_logs" => {
+        TrayActionId::OpenLogsDir => {
             let open_result = app
                 .path()
                 .app_log_dir()
                 .map_err(|e| e.to_string())
                 .and_then(|log_dir| {
-                    tauri_plugin_opener::open_path(log_dir, None::<&str>)
-                        .map_err(|e| e.to_string())
+                    tauri_plugin_opener::open_path(log_dir, None::<&str>).map_err(|e| e.to_string())
                 });
 
             if let Some(tray_state) = app.try_state::<SharedTrayState>() {
@@ -681,9 +864,7 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
             }
             let _ = refresh_tray_visual_state(app);
         }
-
-        // Toggles
-        "toggle_always_on_top" => {
+        TrayActionId::ToggleAlwaysOnTop => {
             if let Some(tray_state) = app.try_state::<SharedTrayState>() {
                 let prev = tray_state
                     .try_read()
@@ -700,7 +881,7 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
                 update_menu_state(app);
             }
         }
-        "toggle_autostart" => {
+        TrayActionId::ToggleAutostart => {
             #[cfg(desktop)]
             {
                 use tauri_plugin_autostart::ManagerExt;
@@ -716,37 +897,29 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
                 update_menu_state(app);
             }
         }
-
-        // Quit
-        "quit" => {
+        TrayActionId::Quit => {
             info!("Quit requested from tray menu");
             app.exit(0);
         }
-        _ => {}
+    }
+}
+
+/// Handle menu events
+fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
+    if let Some(action) = tray_action_from_menu_id(event.id.as_ref()) {
+        execute_tray_action(app, action);
     }
 }
 
 /// Handle tray icon click events
 fn handle_tray_click<R: Runtime>(app: &AppHandle<R>, behavior: TrayClickBehavior) {
-    match behavior {
-        TrayClickBehavior::ToggleWindow => {
-            if let Some(window) = app.get_webview_window("main") {
-                if window.is_visible().unwrap_or(false) {
-                    let _ = window.set_focus();
-                } else {
-                    let _ = window.show();
-                    let _ = window.set_focus();
-                }
-                update_menu_state(app);
-            }
-        }
-        TrayClickBehavior::ShowMenu => {
-            // Menu is shown automatically by right-click
-        }
-        TrayClickBehavior::CheckUpdates => {
-            trigger_update_check(app);
-        }
-        TrayClickBehavior::DoNothing => {}
+    let quick_action = app
+        .try_state::<SharedTrayState>()
+        .and_then(|state| state.try_read().ok().map(|guard| guard.quick_action))
+        .unwrap_or_default();
+
+    if let Some(action) = tray_action_from_click_behavior(behavior, quick_action) {
+        execute_tray_action(app, action);
     }
 }
 
@@ -784,32 +957,33 @@ pub fn setup_tray(app: &AppHandle<Wry>) -> Result<(), Box<dyn std::error::Error>
 
     let default_state = TrayState::default();
 
-    let (click_behavior, tooltip, resolved_icon_state, menu) = if let Some(ref state_arc) = tray_state {
-        let guard = futures::executor::block_on(state_arc.read());
-        let is_visible = app
-            .get_webview_window("main")
-            .map(|w| w.is_visible().unwrap_or(true))
-            .unwrap_or(true);
-        let m = build_menu(app, is_visible, &guard)?;
-        (
-            guard.click_behavior,
-            get_tooltip(&guard),
-            resolve_icon_state(&guard),
-            m,
-        )
-    } else {
-        let is_visible = app
-            .get_webview_window("main")
-            .map(|w| w.is_visible().unwrap_or(true))
-            .unwrap_or(true);
-        let m = build_menu(app, is_visible, &default_state)?;
-        (
-            TrayClickBehavior::default(),
-            format!("CogniaLauncher v{}", APP_VERSION),
-            resolve_icon_state(&default_state),
-            m,
-        )
-    };
+    let (click_behavior, tooltip, resolved_icon_state, menu) =
+        if let Some(ref state_arc) = tray_state {
+            let guard = futures::executor::block_on(state_arc.read());
+            let is_visible = app
+                .get_webview_window("main")
+                .map(|w| w.is_visible().unwrap_or(true))
+                .unwrap_or(true);
+            let m = build_menu(app, is_visible, &guard)?;
+            (
+                guard.click_behavior,
+                get_tooltip(&guard),
+                resolve_icon_state(&guard),
+                m,
+            )
+        } else {
+            let is_visible = app
+                .get_webview_window("main")
+                .map(|w| w.is_visible().unwrap_or(true))
+                .unwrap_or(true);
+            let m = build_menu(app, is_visible, &default_state)?;
+            (
+                TrayClickBehavior::default(),
+                format!("CogniaLauncher v{}", APP_VERSION),
+                resolve_icon_state(&default_state),
+                m,
+            )
+        };
 
     let icon_bytes = get_icon_for_state(resolved_icon_state);
     let icon = Image::from_bytes(icon_bytes)?;
@@ -921,7 +1095,8 @@ pub async fn tray_update_tooltip(
     };
 
     if let Some(tray) = app.tray_by_id(TRAY_ICON_ID) {
-        tray.set_tooltip(Some(&tooltip)).map_err(|e| e.to_string())?;
+        tray.set_tooltip(Some(&tooltip))
+            .map_err(|e| e.to_string())?;
     }
 
     Ok(())
@@ -1017,6 +1192,33 @@ pub async fn tray_set_click_behavior(
     Ok(())
 }
 
+/// Set the configurable quick action for tray interactions
+#[tauri::command]
+pub async fn tray_set_quick_action(
+    app: AppHandle<Wry>,
+    state: State<'_, SharedTrayState>,
+    action: TrayQuickAction,
+) -> Result<(), String> {
+    {
+        let mut guard = state.write().await;
+        guard.quick_action = action;
+    }
+
+    if let Some(settings) = app.try_state::<SharedSettings>() {
+        let mut settings_guard = settings.write().await;
+        settings_guard.tray.quick_action = action;
+        settings_guard.save().await.map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
+/// List all supported quick actions
+#[tauri::command]
+pub fn tray_get_available_quick_actions() -> Vec<TrayQuickAction> {
+    TrayQuickAction::defaults()
+}
+
 /// Set whether tray notifications are shown
 #[tauri::command]
 pub async fn tray_set_show_notifications(
@@ -1061,6 +1263,46 @@ pub async fn tray_set_notification_level(
     Ok(())
 }
 
+/// Set enabled notification event categories
+#[tauri::command]
+pub async fn tray_set_notification_events(
+    app: AppHandle<Wry>,
+    state: State<'_, SharedTrayState>,
+    events: Vec<TrayNotificationEvent>,
+) -> Result<(), String> {
+    let normalized = if events.is_empty() {
+        TrayNotificationEvent::defaults()
+    } else {
+        let mut deduped = Vec::new();
+        for event in events {
+            if !deduped.contains(&event) {
+                deduped.push(event);
+            }
+        }
+        deduped
+    };
+
+    {
+        let mut guard = state.write().await;
+        guard.notification_events = normalized.clone();
+    }
+
+    if let Some(settings) = app.try_state::<SharedSettings>() {
+        let mut settings_guard = settings.write().await;
+        settings_guard.tray.notification_events = normalized.clone();
+        settings_guard.save().await.map_err(|e| e.to_string())?;
+    }
+
+    let _ = app.emit("tray-notification-events-changed", normalized);
+    Ok(())
+}
+
+/// List all notification event categories
+#[tauri::command]
+pub fn tray_get_available_notification_events() -> Vec<TrayNotificationEvent> {
+    TrayNotificationEvent::defaults()
+}
+
 /// Get the current tray state
 #[tauri::command]
 pub async fn tray_get_state(state: State<'_, SharedTrayState>) -> Result<TrayStateInfo, String> {
@@ -1072,10 +1314,12 @@ pub async fn tray_get_state(state: State<'_, SharedTrayState>) -> Result<TraySta
         has_update: guard.has_update,
         has_error: guard.has_error,
         click_behavior: guard.click_behavior,
+        quick_action: guard.quick_action,
         minimize_to_tray: guard.minimize_to_tray,
         start_minimized: guard.start_minimized,
         show_notifications: guard.show_notifications,
         notification_level: guard.notification_level,
+        notification_events: guard.notification_events.clone(),
         always_on_top: guard.always_on_top.load(Ordering::SeqCst),
         menu_config: guard.menu_config.clone(),
     })
@@ -1091,10 +1335,12 @@ pub struct TrayStateInfo {
     pub has_update: bool,
     pub has_error: bool,
     pub click_behavior: TrayClickBehavior,
+    pub quick_action: TrayQuickAction,
     pub minimize_to_tray: bool,
     pub start_minimized: bool,
     pub show_notifications: bool,
     pub notification_level: TrayNotificationLevel,
+    pub notification_events: Vec<TrayNotificationEvent>,
     pub always_on_top: bool,
     pub menu_config: TrayMenuConfig,
 }
@@ -1149,15 +1395,26 @@ pub async fn tray_send_notification(
     title: String,
     body: String,
     important: Option<bool>,
+    event: Option<TrayNotificationEvent>,
 ) -> Result<(), String> {
     use tauri_plugin_notification::NotificationExt;
 
-    let (show_notifications, notification_level) = {
+    let (show_notifications, notification_level, notification_events) = {
         let guard = state.read().await;
-        (guard.show_notifications, guard.notification_level)
+        (
+            guard.show_notifications,
+            guard.notification_level,
+            guard.notification_events.clone(),
+        )
     };
 
-    let allowed = should_send_notification(show_notifications, notification_level, important);
+    let allowed = should_send_notification(
+        show_notifications,
+        notification_level,
+        &notification_events,
+        event,
+        important,
+    );
 
     if !allowed {
         return Ok(());
@@ -1251,10 +1508,7 @@ pub async fn tray_set_menu_config(
     state: State<'_, SharedTrayState>,
     config: TrayMenuConfig,
 ) -> Result<(), String> {
-    let normalized_items = normalize_menu_items(&config.items);
-    let normalized = TrayMenuConfig {
-        items: normalized_items,
-    };
+    let normalized = normalize_menu_config(&config);
 
     {
         let mut guard = state.write().await;
@@ -1264,6 +1518,7 @@ pub async fn tray_set_menu_config(
     if let Some(settings) = app.try_state::<SharedSettings>() {
         let mut settings_guard = settings.write().await;
         settings_guard.tray.menu_items = normalized.items.clone();
+        settings_guard.tray.menu_priority_items = normalized.priority_items.clone();
         settings_guard.save().await.map_err(|e| e.to_string())?;
     }
 
@@ -1292,7 +1547,8 @@ pub async fn tray_reset_menu_config(
 
     if let Some(settings) = app.try_state::<SharedSettings>() {
         let mut settings_guard = settings.write().await;
-        settings_guard.tray.menu_items = default.items;
+        settings_guard.tray.menu_items = default.items.clone();
+        settings_guard.tray.menu_priority_items = default.priority_items.clone();
         settings_guard.save().await.map_err(|e| e.to_string())?;
     }
 
@@ -1337,6 +1593,43 @@ mod tests {
     }
 
     #[test]
+    fn normalize_menu_config_keeps_priority_subset_without_quit() {
+        let normalized = normalize_menu_config(&TrayMenuConfig {
+            items: vec![TrayMenuItemId::Settings, TrayMenuItemId::Quit],
+            priority_items: vec![
+                TrayMenuItemId::Quit,
+                TrayMenuItemId::Settings,
+                TrayMenuItemId::Settings,
+                TrayMenuItemId::Downloads,
+            ],
+        });
+        assert_eq!(normalized.items, vec![TrayMenuItemId::Settings, TrayMenuItemId::Quit]);
+        assert_eq!(normalized.priority_items, vec![TrayMenuItemId::Settings]);
+    }
+
+    #[test]
+    fn resolve_menu_order_applies_priority_items_first() {
+        let ordered = resolve_menu_order(&TrayMenuConfig {
+            items: vec![
+                TrayMenuItemId::ShowHide,
+                TrayMenuItemId::Settings,
+                TrayMenuItemId::Downloads,
+                TrayMenuItemId::Quit,
+            ],
+            priority_items: vec![TrayMenuItemId::Downloads, TrayMenuItemId::Settings],
+        });
+        assert_eq!(
+            ordered,
+            vec![
+                TrayMenuItemId::Downloads,
+                TrayMenuItemId::Settings,
+                TrayMenuItemId::ShowHide,
+                TrayMenuItemId::Quit,
+            ]
+        );
+    }
+
+    #[test]
     fn resolve_icon_state_applies_priority_order() {
         let mut state = TrayState::default();
 
@@ -1360,28 +1653,60 @@ mod tests {
         assert!(should_send_notification(
             true,
             TrayNotificationLevel::All,
+            &TrayNotificationEvent::defaults(),
+            Some(TrayNotificationEvent::Updates),
             Some(false)
         ));
         assert!(!should_send_notification(
             true,
             TrayNotificationLevel::ImportantOnly,
+            &TrayNotificationEvent::defaults(),
+            Some(TrayNotificationEvent::Updates),
             None
         ));
         assert!(should_send_notification(
             true,
             TrayNotificationLevel::ImportantOnly,
+            &TrayNotificationEvent::defaults(),
+            Some(TrayNotificationEvent::Updates),
             Some(true)
         ));
         assert!(!should_send_notification(
             true,
             TrayNotificationLevel::None,
+            &TrayNotificationEvent::defaults(),
+            Some(TrayNotificationEvent::Updates),
             Some(true)
         ));
         assert!(!should_send_notification(
             false,
             TrayNotificationLevel::All,
+            &TrayNotificationEvent::defaults(),
+            Some(TrayNotificationEvent::Updates),
             Some(true)
         ));
+        assert!(!should_send_notification(
+            true,
+            TrayNotificationLevel::All,
+            &[TrayNotificationEvent::Errors],
+            Some(TrayNotificationEvent::Updates),
+            Some(true)
+        ));
+    }
+
+    #[test]
+    fn tray_action_from_click_behavior_maps_quick_action() {
+        assert_eq!(
+            tray_action_from_click_behavior(
+                TrayClickBehavior::QuickAction,
+                TrayQuickAction::OpenDownloads
+            ),
+            Some(TrayActionId::OpenDownloadsPage)
+        );
+        assert_eq!(
+            tray_action_from_click_behavior(TrayClickBehavior::DoNothing, TrayQuickAction::OpenLogs),
+            None
+        );
     }
 
     #[test]

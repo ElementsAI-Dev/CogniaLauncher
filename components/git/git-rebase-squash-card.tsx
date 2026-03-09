@@ -47,9 +47,11 @@ export function GitRebaseSquashCard({
             className="h-7 text-xs"
             disabled={disabled || !onto.trim()}
             onClick={async () => {
+              const confirmed = window.confirm(t('git.quickOps.rewriteConfirm'));
+              if (!confirmed) return;
               setBusy(true);
               try {
-                const result = await onRebase(onto.trim());
+                const result = await onRebase(onto.trim(), true);
                 toast.success(t('git.quickOps.rebaseSuccess'), { description: result });
               } catch (e) {
                 toast.error(String(e));
@@ -91,9 +93,11 @@ export function GitRebaseSquashCard({
                 toast.error(t('git.quickOps.squashCountInvalid'));
                 return;
               }
+              const confirmed = window.confirm(t('git.quickOps.rewriteConfirm'));
+              if (!confirmed) return;
               setBusy(true);
               try {
-                const result = await onSquash(count, message.trim());
+                const result = await onSquash(count, message.trim(), true);
                 toast.success(t('git.quickOps.squashSuccess'), { description: result });
               } catch (e) {
                 toast.error(String(e));

@@ -13,13 +13,15 @@ jest.mock('@/components/providers/locale-provider', () => ({
 
 jest.mock('@/components/docs', () => ({
   MarkdownRenderer: ({ content }: { content: string }) => <div data-testid="markdown">{content.slice(0, 50)}</div>,
-  DocsSidebar: ({ searchIndex }: { searchIndex?: unknown[] }) => (
-    <div data-testid="sidebar" data-index-count={searchIndex?.length ?? 0} />
+  DocsSidebar: ({ searchIndex, className }: { searchIndex?: unknown[]; className?: string }) => (
+    <div data-testid="sidebar" data-class={className ?? ''} data-index-count={searchIndex?.length ?? 0} />
   ),
-  DocsMobileSidebar: ({ searchIndex }: { searchIndex?: unknown[] }) => (
+  DocsMobileSidebar: ({ searchIndex }: { searchIndex?: unknown[]; className?: string }) => (
     <div data-testid="mobile-sidebar" data-index-count={searchIndex?.length ?? 0} />
   ),
-  DocsToc: ({ mode }: { mode?: string }) => <div data-testid={`toc-${mode}`} />,
+  DocsToc: ({ mode, className }: { mode?: string; className?: string }) => (
+    <div data-testid={`toc-${mode}`} data-class={className ?? ''} />
+  ),
   DocsNavFooter: ({ prev, next }: { prev?: { slug: string }; next?: { slug: string } }) => (
     <div data-testid="nav-footer" data-prev={prev?.slug ?? ''} data-next={next?.slug ?? ''} />
   ),
@@ -71,6 +73,23 @@ describe('DocsPageClient', () => {
     expect(screen.getByTestId('toc-desktop')).toBeInTheDocument();
     expect(screen.getByTestId('markdown')).toBeInTheDocument();
     expect(screen.getByTestId('nav-footer')).toBeInTheDocument();
+  });
+
+  it('keeps desktop section order as sidebar -> content -> desktop toc', () => {
+    render(<DocsPageClient contentZh="# A" contentEn="# B" slug={['guide']} />);
+    const sidebar = screen.getByTestId('sidebar');
+    const markdown = screen.getByTestId('markdown');
+    const desktopToc = screen.getByTestId('toc-desktop');
+
+    expect(sidebar.compareDocumentPosition(markdown) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(markdown.compareDocumentPosition(desktopToc) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('passes responsive visibility classes to desktop controls', () => {
+    render(<DocsPageClient contentZh="# A" contentEn="# B" slug={['guide']} />);
+    expect(screen.getByTestId('sidebar')).toHaveAttribute('data-class', expect.stringContaining('hidden'));
+    expect(screen.getByTestId('sidebar')).toHaveAttribute('data-class', expect.stringContaining('lg:block'));
+    expect(screen.getByTestId('toc-desktop')).toHaveAttribute('data-class', expect.stringContaining('border-l'));
   });
 
   it('renders English content when locale is en', () => {

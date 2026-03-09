@@ -113,6 +113,37 @@ export interface PluginUpdateInfo {
   changelog: string | null;
 }
 
+export type PluginMarketplaceActionType = "install" | "update";
+
+export type PluginMarketplaceActionPhase =
+  | "preparing"
+  | "downloading"
+  | "verifying"
+  | "installing"
+  | "completed"
+  | "failed";
+
+export type PluginMarketplaceActionErrorCategory =
+  | "compatibility_blocked"
+  | "source_unavailable"
+  | "validation_failed"
+  | "install_execution_failed";
+
+export interface PluginMarketplaceActionError {
+  category: PluginMarketplaceActionErrorCategory;
+  message: string;
+  retryable: boolean;
+}
+
+export interface PluginMarketplaceActionResult {
+  ok: boolean;
+  action: PluginMarketplaceActionType;
+  pluginId: string | null;
+  phase?: PluginMarketplaceActionPhase;
+  downloadTaskId?: string | null;
+  error: PluginMarketplaceActionError | null;
+}
+
 export interface PluginHealth {
   consecutiveFailures: number;
   totalCalls: number;

@@ -28,6 +28,8 @@ const defaultProps = {
     size: "md" as const,
   },
   isEditMode: false,
+  canRemove: true,
+  canToggleVisibility: true,
   onRemove: jest.fn(),
   onToggleVisibility: jest.fn(),
   onResize: jest.fn(),
@@ -101,6 +103,7 @@ describe("WidgetWrapper", () => {
     // Edit mode toolbar has drag handle, shrink, expand, toggle visibility, remove buttons
     const buttons = screen.getAllByRole("button");
     expect(buttons.length).toBeGreaterThanOrEqual(5);
+    expect(screen.getByRole("toolbar", { name: "dashboard.widgets.editLayout" })).toBeInTheDocument();
   });
 
   it("does not show edit controls in view mode", () => {
@@ -125,6 +128,28 @@ describe("WidgetWrapper", () => {
     const removeButton = buttons[buttons.length - 1];
     fireEvent.click(removeButton);
     expect(mockOnRemove).toHaveBeenCalledWith("test-1");
+  });
+
+  it("does not call handlers when remove/toggle are disabled", () => {
+    const mockOnRemove = jest.fn();
+    const mockToggle = jest.fn();
+    render(
+      <WidgetWrapper
+        {...defaultProps}
+        isEditMode={true}
+        canRemove={false}
+        canToggleVisibility={false}
+        onRemove={mockOnRemove}
+        onToggleVisibility={mockToggle}
+      >
+        <div>Content</div>
+      </WidgetWrapper>,
+    );
+
+    fireEvent.click(screen.getByTestId("widget-toggle-test-1"));
+    fireEvent.click(screen.getByTestId("widget-remove-test-1"));
+    expect(mockToggle).not.toHaveBeenCalled();
+    expect(mockOnRemove).not.toHaveBeenCalled();
   });
 
   it("calls onToggleVisibility with widget id when toggle button is clicked", () => {

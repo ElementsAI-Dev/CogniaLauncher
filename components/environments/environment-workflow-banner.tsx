@@ -14,6 +14,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
   useEnvironmentStore,
+  getLogicalEnvType,
   type EnvironmentWorkflowAction,
   type EnvironmentWorkflowOrigin,
 } from "@/lib/stores/environment";
@@ -130,9 +131,13 @@ export function EnvironmentWorkflowBanner({
   const currentProjectPath = projectPath || matchingContext?.projectPath || null;
   const currentProviderLabel = providerLabel || matchingContext?.providerId || null;
   const returnHref = matchingContext?.returnHref || null;
+  const logicalEnvType = getLogicalEnvType(envType);
+  const envTypeKey = `environments.languages.${logicalEnvType}`;
+  const translatedEnvType = t(envTypeKey);
+  const envTypeLabel = translatedEnvType === envTypeKey ? envType : translatedEnvType;
   const title = matchingAction
     ? getActionMessage(matchingAction, t)
-    : t("environments.workflow.contextTitle", { envType });
+    : t("environments.workflow.contextTitle", { envType: envTypeLabel });
 
   return (
     <Alert

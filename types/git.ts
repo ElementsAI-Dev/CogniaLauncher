@@ -297,6 +297,7 @@ export interface GitRepoActionBarProps {
     force?: boolean,
     forceLease?: boolean,
     setUpstream?: boolean,
+    confirmRisk?: boolean,
   ) => Promise<string>;
   onPull?: (
     remote?: string,
@@ -305,7 +306,7 @@ export interface GitRepoActionBarProps {
     autostash?: boolean,
   ) => Promise<string>;
   onFetch?: (remote?: string, prune?: boolean, all?: boolean) => Promise<string>;
-  onClean?: (directories?: boolean) => Promise<string>;
+  onClean?: (directories?: boolean, confirmRisk?: boolean) => Promise<string>;
   onCleanPreview?: (directories?: boolean) => Promise<string[]>;
   onRefresh?: () => void;
 }
@@ -411,8 +412,8 @@ export interface GitInteractiveRebaseCardProps {
 
 export interface GitRebaseSquashCardProps {
   loading?: boolean;
-  onRebase: (onto: string) => Promise<string>;
-  onSquash: (count: number, message: string) => Promise<string>;
+  onRebase: (onto: string, confirmRisk?: boolean) => Promise<string>;
+  onSquash: (count: number, message: string, confirmRisk?: boolean) => Promise<string>;
 }
 
 export interface GitBisectCardProps {
@@ -487,4 +488,51 @@ export interface GitConfigApplySummary {
   failed: number;
   skipped: number;
   results: GitConfigApplyResultItem[];
+}
+
+export type GitRefreshScope =
+  | 'repoInfo'
+  | 'status'
+  | 'branches'
+  | 'remotes'
+  | 'tags'
+  | 'stashes'
+  | 'log'
+  | 'graph'
+  | 'aheadBehind'
+  | 'advanced';
+
+export type GitGuardrailLevel = 'pass' | 'warn' | 'block';
+
+export type GitActionErrorCategory =
+  | 'environment'
+  | 'precondition'
+  | 'conflict'
+  | 'execution'
+  | 'cancelled'
+  | 'unknown';
+
+export interface GitGuardrailDecision {
+  level: GitGuardrailLevel;
+  reason: string;
+  nextSteps: string[];
+}
+
+export interface GitActionError {
+  category: GitActionErrorCategory;
+  recoverable: boolean;
+  rawMessage: string;
+  userMessage: string;
+  nextSteps: string[];
+}
+
+export type GitActionStatus = 'success' | 'failed' | 'blocked' | 'cancelled';
+
+export interface GitActionResult {
+  operation: string;
+  status: GitActionStatus;
+  message: string;
+  refreshScopes: GitRefreshScope[];
+  guardrail?: GitGuardrailDecision;
+  error?: GitActionError;
 }

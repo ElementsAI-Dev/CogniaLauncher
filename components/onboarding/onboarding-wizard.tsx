@@ -17,9 +17,11 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip
 import { Separator } from '@/components/ui/separator';
 import { useLocale } from '@/components/providers/locale-provider';
 import { useTheme } from 'next-themes';
+import { useRouter } from 'next/navigation';
 import { STEP_ICONS } from '@/lib/constants/onboarding';
 import { MIRROR_PRESETS } from '@/lib/constants/mirrors';
 import { isTauri } from '@/lib/tauri';
+import { useEnvironmentStore, getLogicalEnvType } from '@/lib/stores/environment';
 import { ModeSelectionStep } from './steps/mode-selection-step';
 import { WelcomeStep } from './steps/welcome-step';
 import { LanguageStep } from './steps/language-step';
@@ -29,7 +31,10 @@ import { MirrorsStep } from './steps/mirrors-step';
 import { ShellInitStep } from './steps/shell-init-step';
 import { CompleteStep } from './steps/complete-step';
 import { ChevronLeft, ChevronRight, SkipForward, Check } from 'lucide-react';
-import type { OnboardingWizardProps } from '@/types/onboarding';
+import type {
+  OnboardingWizardProps,
+  OnboardingNextAction,
+} from '@/types/onboarding';
 
 export function OnboardingWizard({
   open,
@@ -41,10 +46,13 @@ export function OnboardingWizard({
   isFirstStep,
   isLastStep,
   tourCompleted,
+  sessionSummary,
+  nextActions,
   onNext,
   onPrev,
   onGoTo,
   onSelectMode,
+  onUpdateSummary,
   onComplete,
   onSkip,
   onStartTour,
@@ -52,6 +60,9 @@ export function OnboardingWizard({
 }: OnboardingWizardProps) {
   const { t, locale, setLocale } = useLocale();
   const { theme, setTheme } = useTheme();
+  const router = useRouter();
+  const availableProviders = useEnvironmentStore((s) => s.availableProviders);
+  const setWorkflowContext = useEnvironmentStore((s) => s.setWorkflowContext);
 
   const currentStepId = stepIds[currentStep] ?? stepIds[0] ?? 'mode-selection';
   const isModeSelectionStep = currentStepId === 'mode-selection';
@@ -88,13 +99,13 @@ export function OnboardingWizard({
       } else if (event.key === 'ArrowLeft') {
         if (!isFirstStep) onPrev();
       } else if (event.key === 'Escape') {
-        onSkip();
+        onClose();
       }
     };
 
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [open, handleAdvance, isFirstStep, onPrev, onSkip]);
+  }, [open, handleAdvance, isFirstStep, onPrev, onClose]);
 
   const handleStartTourAndClose = useCallback(() => {
     onComplete();
@@ -118,6 +129,37 @@ export function OnboardingWizard({
     }
   }, []);
 
+  const handleRunCompletionAction = useCallback((action: OnboardingNextAction) => {
+    if (action.kind === 'tour') {
+      handleStartTourAndClose();
+      return;
+    }
+
+    onComplete();
+
+    if (action.kind === 'environment' && action.envType) {
+      const logicalEnvType = getLogicalEnvType(action.envType, availableProviders);
+      setWorkflowContext({
+        envType: logicalEnvType,
+        origin: 'onboarding',
+        returnHref: '/environments',
+        updatedAt: Date.now(),
+      });
+      router.push(`/environments/${logicalEnvType}`);
+      return;
+    }
+
+    if (action.kind === 'route' && action.route) {
+      router.push(action.route);
+    }
+  }, [
+    availableProviders,
+    handleStartTourAndClose,
+    onComplete,
+    router,
+    setWorkflowContext,
+  ]);
+
   const renderStep = () => {
     switch (currentStepId) {
       case 'mode-selection':
@@ -131,28 +173,66 @@ export function OnboardingWizard({
       case 'welcome':
         return <WelcomeStep t={t} />;
       case 'language':
-        return <LanguageStep locale={locale} setLocale={setLocale} t={t} />;
+        return (
+          <LanguageStep
+            locale={locale}
+            setLocale={(nextLocale) => {
+              setLocale(nextLocale);
+              onUpdateSummary({ locale: nextLocale });
+            }}
+            t={t}
+          />
+        );
       case 'theme':
-        return <ThemeStep theme={theme} setTheme={setTheme} t={t} />;
+        return (
+          <ThemeStep
+            theme={theme}
+            setTheme={(nextTheme) => {
+              setTheme(nextTheme);
+              onUpdateSummary({ theme: nextTheme });
+            }}
+            t={t}
+          />
+        );
       case 'environment-detection':
-        return <EnvironmentDetectionStep mode={mode ?? 'quick'} t={t} />;
+        return (
+          <EnvironmentDetectionStep
+            mode={mode ?? 'quick'}
+            t={t}
+            onDetectionSummaryChange={(summary) => {
+              onUpdateSummary(summary);
+            }}
+          />
+        );
       case 'mirrors':
         return (
           <MirrorsStep
             mode={mode ?? 'quick'}
             t={t}
-            onApplyPreset={handleApplyMirrorPreset}
+            onApplyPreset={(presetKey) => {
+              onUpdateSummary({ mirrorPreset: presetKey });
+              void handleApplyMirrorPreset(presetKey);
+            }}
           />
         );
       case 'shell-init':
-        return <ShellInitStep mode={mode ?? 'quick'} t={t} />;
+        return (
+          <ShellInitStep
+            mode={mode ?? 'quick'}
+            t={t}
+            onSummaryChange={(summary) => onUpdateSummary(summary)}
+          />
+        );
       case 'complete':
         return (
           <CompleteStep
             mode={mode ?? 'quick'}
             t={t}
             onStartTour={handleStartTourAndClose}
+            onRunAction={handleRunCompletionAction}
             tourCompleted={tourCompleted}
+            summary={sessionSummary}
+            actions={nextActions}
           />
         );
       default:

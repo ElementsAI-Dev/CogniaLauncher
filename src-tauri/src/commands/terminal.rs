@@ -551,7 +551,9 @@ pub fn terminal_validate_config_content(
     content: String,
     shell_type: ShellType,
 ) -> Result<Vec<TerminalConfigDiagnostic>, String> {
-    Ok(terminal::validate_shell_config_content(&content, shell_type))
+    Ok(terminal::validate_shell_config_content(
+        &content, shell_type,
+    ))
 }
 
 #[tauri::command]

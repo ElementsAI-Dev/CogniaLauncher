@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { isTauri } from '@/lib/tauri';
 import type {
+  ExternalCacheDetectionState,
   ExternalCacheCleanResult,
   ExternalCacheInfo,
   ExternalCachePathInfo,
@@ -24,6 +25,32 @@ interface UseExternalCacheOptions {
   useTrash?: boolean;
   setUseTrash?: (next: boolean) => void;
   defaultUseTrash?: boolean;
+}
+
+function inferDetectionState(cache: ExternalCacheInfo): ExternalCacheDetectionState {
+  if (cache.detectionState) return cache.detectionState;
+  if (cache.detectionError) return 'error';
+  if (!cache.isAvailable && cache.cachePath) return 'unavailable';
+  if (!cache.cachePath) return 'skipped';
+  return 'found';
+}
+
+function normalizeExternalCacheInfo(cache: ExternalCacheInfo): ExternalCacheInfo {
+  const detectionState = inferDetectionState(cache);
+  const detectionReason = cache.detectionReason ?? (
+    detectionState === 'skipped' ? 'legacy_skipped' : null
+  );
+  return {
+    ...cache,
+    detectionState,
+    detectionReason,
+    detectionError: cache.detectionError ?? null,
+    sizePending: cache.sizePending ?? false,
+  };
+}
+
+function normalizeExternalCaches(items: ExternalCacheInfo[]): ExternalCacheInfo[] {
+  return items.map(normalizeExternalCacheInfo);
 }
 
 function makeFailureResult(provider: string, error: string): ExternalCacheCleanResult {
@@ -87,16 +114,32 @@ export function useExternalCache({
               ? prev
               : prev.map((c) =>
                 c.provider === provId
-                  ? { ...c, size, sizeHuman: formatBytes(size), sizePending: false, canClean: size > 0 || c.canClean }
+                  ? {
+                    ...c,
+                    size,
+                    sizeHuman: formatBytes(size),
+                    sizePending: false,
+                    canClean: size > 0 || c.canClean,
+                    detectionState: c.detectionState === 'skipped' && size > 0 ? 'found' : c.detectionState,
+                    detectionError: null,
+                  }
                   : c,
               ),
           );
-        } catch {
+        } catch (err) {
           setCaches((prev) =>
             fetchWaveRef.current !== waveId
               ? prev
               : prev.map((c) =>
-                c.provider === provId ? { ...c, sizePending: false } : c,
+                c.provider === provId
+                  ? {
+                    ...c,
+                    sizePending: false,
+                    detectionState: 'error',
+                    detectionReason: c.detectionReason ?? 'size_scan_failed',
+                    detectionError: String(err),
+                  }
+                  : c,
               ),
           );
         }
@@ -117,8 +160,9 @@ export function useExternalCache({
 
       // Phase 1: fast discovery (instant — no size calculation)
       const fast = await tauri.discoverExternalCachesFast();
+      const normalizedFast = normalizeExternalCaches(fast);
       if (abortRef.current || fetchWaveRef.current !== waveId) return;
-      setCaches(fast);
+      setCaches(normalizedFast);
 
       // Fetch path infos in parallel if needed (already parallelized on backend)
       if (includePathInfos) {
@@ -134,7 +178,7 @@ export function useExternalCache({
       }
 
       // Phase 2: fill in sizes progressively (4 at a time)
-      await fillSizesProgressively(fast, waveId);
+      await fillSizesProgressively(normalizedFast, waveId);
     } catch (err) {
       console.error('Failed to fetch external caches:', err);
       if (!abortRef.current && fetchWaveRef.current === waveId) {

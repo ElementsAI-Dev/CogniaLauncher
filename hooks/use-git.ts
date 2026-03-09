@@ -25,7 +25,13 @@ import type {
   GitConfigApplyPlanItem,
   GitConfigApplyResultItem,
   GitConfigApplySummary,
+  GitActionResult,
+  GitRefreshScope,
 } from '@/types/git';
+import {
+  evaluateGitGuardrail,
+  executeGitOperation,
+} from '@/lib/git/operation-orchestrator';
 
 export interface UseGitReturn {
   // State
@@ -44,6 +50,7 @@ export interface UseGitReturn {
   statusFiles: GitStatusFile[];
   loading: boolean;
   error: string | null;
+  lastActionResult: GitActionResult | null;
 
   // Actions - Git tool management
   checkAvailability: () => Promise<boolean>;
@@ -72,6 +79,7 @@ export interface UseGitReturn {
   refreshStashes: () => Promise<void>;
   refreshContributors: () => Promise<void>;
   refreshStatus: () => Promise<void>;
+  refreshByScopes: (scopes: GitRefreshScope[]) => Promise<void>;
 
   // Actions - History & Blame
   getLog: (options?: {
@@ -116,7 +124,14 @@ export interface UseGitReturn {
   unstageFiles: (files: string[]) => Promise<string>;
   discardChanges: (files: string[]) => Promise<string>;
   commit: (message: string, amend?: boolean, allowEmpty?: boolean, signoff?: boolean, noVerify?: boolean) => Promise<string>;
-  push: (remote?: string, branch?: string, force?: boolean, forceLease?: boolean, setUpstream?: boolean) => Promise<string>;
+  push: (
+    remote?: string,
+    branch?: string,
+    force?: boolean,
+    forceLease?: boolean,
+    setUpstream?: boolean,
+    confirmRisk?: boolean,
+  ) => Promise<string>;
   pull: (remote?: string, branch?: string, rebase?: boolean, autostash?: boolean) => Promise<string>;
   fetch: (remote?: string, prune?: boolean, all?: boolean) => Promise<string>;
   cloneRepo: (url: string, destPath: string, options?: GitCloneOptions) => Promise<string>;
@@ -130,7 +145,7 @@ export interface UseGitReturn {
   merge: (branch: string, noFf?: boolean) => Promise<string>;
   revertCommit: (hash: string, noCommit?: boolean) => Promise<string>;
   cherryPick: (hash: string) => Promise<string>;
-  resetHead: (mode?: string, target?: string) => Promise<string>;
+  resetHead: (mode?: string, target?: string, confirmRisk?: boolean) => Promise<string>;
 
   // Actions - Remote & branch management
   remoteAdd: (name: string, url: string) => Promise<string>;
@@ -143,7 +158,7 @@ export interface UseGitReturn {
   deleteRemoteBranch: (remote: string, branch: string) => Promise<string>;
   stashShowDiff: (stashId?: string) => Promise<string>;
   getReflog: (limit?: number) => Promise<GitReflogEntry[]>;
-  cleanUntracked: (directories?: boolean) => Promise<string>;
+  cleanUntracked: (directories?: boolean, confirmRisk?: boolean) => Promise<string>;
   cleanDryRun: (directories?: boolean) => Promise<string[]>;
   stashPushFiles: (files: string[], message?: string, includeUntracked?: boolean) => Promise<string>;
 
@@ -167,6 +182,25 @@ export function useGit(): UseGitReturn {
   const [statusFiles, setStatusFiles] = useState<GitStatusFile[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastActionResult, setLastActionResult] =
+    useState<GitActionResult | null>(null);
+
+  const unwrapOperationPayload = useCallback(
+    <T,>(operation: { result: GitActionResult; payload?: T }): T => {
+      setLastActionResult(operation.result);
+      if (operation.result.status !== 'success') {
+        const nextSteps = operation.result.error?.nextSteps ?? [];
+        const message =
+          nextSteps.length > 0
+            ? `${operation.result.message} ${nextSteps.join(' ')}`
+            : operation.result.message;
+        setError(message);
+        throw new Error(message);
+      }
+      return operation.payload as T;
+    },
+    [],
+  );
 
   const checkAvailability = useCallback(async (): Promise<boolean> => {
     if (!tauri.isTauri()) {
@@ -587,6 +621,70 @@ export function useGit(): UseGitReturn {
     }
   }, [repoPath]);
 
+  const refreshByScopes = useCallback(
+    async (scopes: GitRefreshScope[]): Promise<void> => {
+      if (!tauri.isTauri() || !repoPath) return;
+      const uniqueScopes = [...new Set(scopes)];
+      const actions: Array<Promise<unknown>> = [];
+
+      for (const scope of uniqueScopes) {
+        switch (scope) {
+          case 'repoInfo':
+            actions.push(refreshRepoInfo());
+            break;
+          case 'status':
+            actions.push(refreshStatus());
+            break;
+          case 'branches':
+            actions.push(refreshBranches());
+            break;
+          case 'remotes':
+            actions.push(refreshRemotes());
+            break;
+          case 'tags':
+            actions.push(refreshTags());
+            break;
+          case 'stashes':
+            actions.push(refreshStashes());
+            break;
+          case 'log':
+            actions.push(getLog({ limit: 50 }));
+            break;
+          case 'graph':
+            actions.push(getLog({ limit: 200 }));
+            break;
+          case 'aheadBehind':
+            if (repoInfo?.currentBranch) {
+              actions.push(
+                tauri
+                  .gitGetAheadBehind(repoPath, repoInfo.currentBranch)
+                  .catch(() => ({ ahead: 0, behind: 0 })),
+              );
+            }
+            break;
+          case 'advanced':
+            // Advanced scope is handled by useGitAdvanced in page-level orchestration.
+            break;
+          default:
+            break;
+        }
+      }
+
+      await Promise.allSettled(actions);
+    },
+    [
+      repoPath,
+      refreshRepoInfo,
+      refreshStatus,
+      refreshBranches,
+      refreshRemotes,
+      refreshTags,
+      refreshStashes,
+      getLog,
+      repoInfo?.currentBranch,
+    ],
+  );
+
   const getCommitDetail = useCallback(
     async (hash: string): Promise<GitCommitDetail | null> => {
       if (!tauri.isTauri() || !repoPath) return null;
@@ -812,97 +910,133 @@ export function useGit(): UseGitReturn {
     async (files: string[]): Promise<string> => {
       if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
       const msg = await tauri.gitStageFiles(repoPath, files);
-      await refreshStatus();
-      await refreshRepoInfo();
+      await refreshByScopes(['status', 'repoInfo']);
       return msg;
     },
-    [repoPath, refreshStatus, refreshRepoInfo],
+    [repoPath, refreshByScopes],
   );
 
   const stageAll = useCallback(
     async (): Promise<string> => {
       if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
       const msg = await tauri.gitStageAll(repoPath);
-      await refreshStatus();
-      await refreshRepoInfo();
+      await refreshByScopes(['status', 'repoInfo']);
       return msg;
     },
-    [repoPath, refreshStatus, refreshRepoInfo],
+    [repoPath, refreshByScopes],
   );
 
   const unstageFiles = useCallback(
     async (files: string[]): Promise<string> => {
       if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
       const msg = await tauri.gitUnstageFiles(repoPath, files);
-      await refreshStatus();
-      await refreshRepoInfo();
+      await refreshByScopes(['status', 'repoInfo']);
       return msg;
     },
-    [repoPath, refreshStatus, refreshRepoInfo],
+    [repoPath, refreshByScopes],
   );
 
   const discardChanges = useCallback(
     async (files: string[]): Promise<string> => {
       if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
       const msg = await tauri.gitDiscardChanges(repoPath, files);
-      await refreshStatus();
-      await refreshRepoInfo();
+      await refreshByScopes(['status', 'repoInfo']);
       return msg;
     },
-    [repoPath, refreshStatus, refreshRepoInfo],
+    [repoPath, refreshByScopes],
   );
 
   const commit = useCallback(
     async (message: string, amend?: boolean, allowEmpty?: boolean, signoff?: boolean, noVerify?: boolean): Promise<string> => {
       if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
       const msg = await tauri.gitCommit(repoPath, message, amend, allowEmpty, signoff, noVerify);
-      await refreshStatus();
-      await refreshRepoInfo();
+      await refreshByScopes(['status', 'repoInfo', 'log']);
       return msg;
     },
-    [repoPath, refreshStatus, refreshRepoInfo],
+    [repoPath, refreshByScopes],
   );
 
   const push = useCallback(
-    async (remote?: string, branch?: string, force?: boolean, forceLease?: boolean, setUpstream?: boolean): Promise<string> => {
+    async (
+      remote?: string,
+      branch?: string,
+      force?: boolean,
+      forceLease?: boolean,
+      setUpstream?: boolean,
+      confirmRisk?: boolean,
+    ): Promise<string> => {
       if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-      return await tauri.gitPush(repoPath, remote, branch, force, forceLease, setUpstream);
+      const guardrail = evaluateGitGuardrail('push', { force, forceLease });
+      const operation = await executeGitOperation({
+        operation: 'push',
+        refreshByScopes,
+        refreshScopes: ['repoInfo', 'status', 'branches', 'aheadBehind', 'log'],
+        precheck: () => guardrail,
+        allowWarning: confirmRisk,
+        execute: () =>
+          tauri.gitPush(
+            repoPath,
+            remote,
+            branch,
+            force,
+            forceLease,
+            setUpstream,
+          ),
+      });
+      return unwrapOperationPayload(operation);
     },
-    [repoPath],
+    [repoPath, refreshByScopes, unwrapOperationPayload],
   );
 
   const pull = useCallback(
     async (remote?: string, branch?: string, rebase?: boolean, autostash?: boolean): Promise<string> => {
       if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-      const msg = await tauri.gitPull(repoPath, remote, branch, rebase, autostash);
-      await refreshRepoInfo();
-      await refreshStatus();
-      await refreshBranches();
-      return msg;
+      const operation = await executeGitOperation({
+        operation: 'pull',
+        refreshByScopes,
+        refreshScopes: ['repoInfo', 'status', 'branches', 'log', 'aheadBehind'],
+        execute: () => tauri.gitPull(repoPath, remote, branch, rebase, autostash),
+      });
+      return unwrapOperationPayload(operation);
     },
-    [repoPath, refreshRepoInfo, refreshStatus, refreshBranches],
+    [repoPath, refreshByScopes, unwrapOperationPayload],
   );
 
   const fetchRemote = useCallback(
     async (remote?: string, prune?: boolean, all?: boolean): Promise<string> => {
       if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-      return await tauri.gitFetch(repoPath, remote, prune, all);
+      const operation = await executeGitOperation({
+        operation: 'fetch',
+        refreshByScopes,
+        refreshScopes: ['branches', 'remotes', 'aheadBehind'],
+        execute: () => tauri.gitFetch(repoPath, remote, prune, all),
+      });
+      return unwrapOperationPayload(operation);
     },
-    [repoPath],
+    [repoPath, refreshByScopes, unwrapOperationPayload],
   );
 
   const cloneRepo = useCallback(
     async (url: string, destPath: string, options?: GitCloneOptions): Promise<string> => {
       if (!tauri.isTauri()) throw new Error('Not in Tauri environment');
-      return await tauri.gitClone(url, destPath, options);
+      const operation = await executeGitOperation({
+        operation: 'clone',
+        execute: () => tauri.gitClone(url, destPath, options),
+      });
+      return unwrapOperationPayload(operation);
     },
-    [],
+    [unwrapOperationPayload],
   );
 
   const cancelClone = useCallback(async (): Promise<void> => {
     if (!tauri.isTauri()) throw new Error('Not in Tauri environment');
-    await tauri.gitCancelClone();
-  }, []);
+    const operation = await executeGitOperation({
+      operation: 'cancelClone',
+      execute: () => tauri.gitCancelClone(),
+      mapSuccessMessage: () => 'Clone cancellation requested',
+    });
+    unwrapOperationPayload(operation);
+  }, [unwrapOperationPayload]);
 
   const extractRepoName = useCallback(async (url: string): Promise<string | null> => {
     if (!tauri.isTauri()) return null;
@@ -954,46 +1088,60 @@ export function useGit(): UseGitReturn {
   const merge = useCallback(
     async (branch: string, noFf?: boolean): Promise<string> => {
       if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-      const msg = await tauri.gitMerge(repoPath, branch, noFf);
-      await refreshRepoInfo();
-      await refreshStatus();
-      await refreshBranches();
-      return msg;
+      const operation = await executeGitOperation({
+        operation: 'merge',
+        refreshByScopes,
+        refreshScopes: ['repoInfo', 'status', 'branches', 'log', 'advanced'],
+        execute: () => tauri.gitMerge(repoPath, branch, noFf),
+      });
+      return unwrapOperationPayload(operation);
     },
-    [repoPath, refreshRepoInfo, refreshStatus, refreshBranches],
+    [repoPath, refreshByScopes, unwrapOperationPayload],
   );
 
   const revertCommit = useCallback(
     async (hash: string, noCommit?: boolean): Promise<string> => {
       if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-      const msg = await tauri.gitRevert(repoPath, hash, noCommit);
-      await refreshRepoInfo();
-      await refreshStatus();
-      return msg;
+      const operation = await executeGitOperation({
+        operation: 'revert',
+        refreshByScopes,
+        refreshScopes: ['repoInfo', 'status', 'log', 'advanced'],
+        execute: () => tauri.gitRevert(repoPath, hash, noCommit),
+      });
+      return unwrapOperationPayload(operation);
     },
-    [repoPath, refreshRepoInfo, refreshStatus],
+    [repoPath, refreshByScopes, unwrapOperationPayload],
   );
 
   const cherryPick = useCallback(
     async (hash: string): Promise<string> => {
       if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-      const msg = await tauri.gitCherryPick(repoPath, hash);
-      await refreshRepoInfo();
-      await refreshStatus();
-      return msg;
+      const operation = await executeGitOperation({
+        operation: 'cherryPick',
+        refreshByScopes,
+        refreshScopes: ['repoInfo', 'status', 'log', 'advanced'],
+        execute: () => tauri.gitCherryPick(repoPath, hash),
+      });
+      return unwrapOperationPayload(operation);
     },
-    [repoPath, refreshRepoInfo, refreshStatus],
+    [repoPath, refreshByScopes, unwrapOperationPayload],
   );
 
   const resetHead = useCallback(
-    async (mode?: string, target?: string): Promise<string> => {
+    async (mode?: string, target?: string, confirmRisk?: boolean): Promise<string> => {
       if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-      const msg = await tauri.gitReset(repoPath, mode, target);
-      await refreshRepoInfo();
-      await refreshStatus();
-      return msg;
+      const guardrail = evaluateGitGuardrail('reset', { mode });
+      const operation = await executeGitOperation({
+        operation: 'reset',
+        refreshByScopes,
+        refreshScopes: ['repoInfo', 'status', 'branches', 'log', 'advanced'],
+        precheck: () => guardrail,
+        allowWarning: confirmRisk,
+        execute: () => tauri.gitReset(repoPath, mode, target),
+      });
+      return unwrapOperationPayload(operation);
     },
-    [repoPath, refreshRepoInfo, refreshStatus],
+    [repoPath, refreshByScopes, unwrapOperationPayload],
   );
 
   // Remote & branch management
@@ -1092,14 +1240,20 @@ export function useGit(): UseGitReturn {
   );
 
   const cleanUntracked = useCallback(
-    async (directories?: boolean): Promise<string> => {
+    async (directories?: boolean, confirmRisk?: boolean): Promise<string> => {
       if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-      const msg = await tauri.gitClean(repoPath, directories);
-      await refreshStatus();
-      await refreshRepoInfo();
-      return msg;
+      const guardrail = evaluateGitGuardrail('clean');
+      const operation = await executeGitOperation({
+        operation: 'clean',
+        refreshByScopes,
+        refreshScopes: ['status', 'repoInfo'],
+        precheck: () => guardrail,
+        allowWarning: confirmRisk,
+        execute: () => tauri.gitClean(repoPath, directories),
+      });
+      return unwrapOperationPayload(operation);
     },
-    [repoPath, refreshStatus, refreshRepoInfo],
+    [repoPath, refreshByScopes, unwrapOperationPayload],
   );
 
   const cleanDryRun = useCallback(
@@ -1153,6 +1307,7 @@ export function useGit(): UseGitReturn {
     statusFiles,
     loading,
     error,
+    lastActionResult,
     checkAvailability,
     refreshVersion,
     installGit,
@@ -1175,6 +1330,7 @@ export function useGit(): UseGitReturn {
     refreshStashes,
     refreshContributors,
     refreshStatus,
+    refreshByScopes,
     getLog,
     getFileHistory,
     getBlame,

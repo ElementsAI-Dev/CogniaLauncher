@@ -612,6 +612,35 @@ describe('PluginsPage plugin bootstrap', () => {
     expect(screen.queryByText('toolbox.plugin.scaffoldContinueToImport')).not.toBeInTheDocument();
   });
 
+  it('blocks builtin scaffold submit when output path points to framework subdirectory', async () => {
+    render(<PluginsPage />);
+
+    fireEvent.click(screen.getByText('toolbox.plugin.createPlugin'));
+    fireEvent.change(screen.getByPlaceholderText('toolbox.plugin.scaffoldNamePlaceholder'), {
+      target: { value: 'Built-in Plugin' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('toolbox.plugin.scaffoldIdPlaceholder'), {
+      target: { value: 'com.cognia.builtin.sample' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('toolbox.plugin.scaffoldDescPlaceholder'), {
+      target: { value: 'desc' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('toolbox.plugin.scaffoldAuthorPlaceholder'), {
+      target: { value: 'author' },
+    });
+    fireEvent.change(screen.getByLabelText('toolbox.plugin.scaffoldOutputDir'), {
+      target: { value: 'D:\\Project\\CogniaLauncher\\plugins\\typescript' },
+    });
+
+    const selects = screen.getAllByRole('combobox');
+    fireEvent.change(selects[0], { target: { value: 'builtin' } });
+
+    const submitButton = screen.getByText('toolbox.plugin.scaffoldCreate');
+    expect(submitButton).toBeDisabled();
+    fireEvent.click(submitButton);
+    expect(mockScaffoldPlugin).not.toHaveBeenCalled();
+  });
+
   it('shows policy mode, governance warnings, and capability transparency for plugin cards/details', () => {
     mockPermissionMode = 'strict';
     mockPlugins = [

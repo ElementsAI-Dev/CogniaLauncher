@@ -5,6 +5,7 @@ export { NetworkSettings } from "./network-settings";
 export { SecuritySettings } from "./security-settings";
 export { MirrorsSettings } from "./mirrors-settings";
 export { AppearanceSettings } from "./appearance-settings";
+export { AppearanceWorkbench } from "./appearance-workbench";
 export { UpdateSettings } from "./update-settings";
 export { TraySettings } from "./tray-settings";
 export { SidebarOrderCustomizer } from "./sidebar-order-customizer";

@@ -6,6 +6,13 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  Empty,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -61,6 +68,7 @@ import { isTauri } from "@/lib/tauri";
 import type {
   BackupContentType,
   BackupInfo,
+  BackupOperationStatus,
   BackupValidationResult,
 } from "@/types/tauri";
 
@@ -114,26 +122,62 @@ export function BackupSettings({ t }: BackupSettingsProps) {
   // DB info state
   const [dbChecking, setDbChecking] = useState(false);
 
+  const describeStatus = useCallback(
+    (status: BackupOperationStatus) => {
+      switch (status) {
+        case "success":
+          return "success";
+        case "partial":
+          return "partial";
+        case "skipped":
+          return "skipped";
+        default:
+          return "failed";
+      }
+    },
+    [],
+  );
+
   const handleCreateBackup = useCallback(async () => {
     const result = await create(createContents, createNote || undefined);
-    if (result?.success) {
+    if (result.status === "success") {
       toast.success(t("backup.backupCreated", { duration: String(result.durationMs) }));
       setCreateOpen(false);
       setCreateNote("");
       setCreateContents(ALL_CONTENT_TYPES.map((c) => c.key));
-    } else if (result) {
-      toast.error(t("backup.backupFailed", { error: result.error || "Unknown error" }));
+      return;
     }
-  }, [create, createContents, createNote, t]);
+
+    if (result.status === "partial") {
+      toast.warning(
+        t("backup.backupFailed", {
+          error:
+            result.error ||
+            `${describeStatus(result.status)} (${result.issues?.length ?? 0} issues)`,
+        }),
+      );
+      setCreateOpen(false);
+      return;
+    }
+
+    toast.error(t("backup.backupFailed", { error: result.error || "Unknown error" }));
+  }, [create, createContents, createNote, describeStatus, t]);
 
   const handleRestore = useCallback(async () => {
     if (!restoreTarget) return;
     const result = await restore(restoreTarget.path, restoreContents);
-    if (result?.success) {
+    if (result.status === "success") {
       toast.success(t("backup.restoreSuccess"));
       setRestoreTarget(null);
-    } else if (result) {
-      toast.error(t("backup.restoreFailed", { error: result.error || result.skipped.map((s) => `${s.contentType}: ${s.reason}`).join(", ") }));
+      return;
+    }
+
+    const skippedReason = result.skipped.map((s) => `${s.contentType}: ${s.reason}`).join(", ");
+    const restoreError = result.error || skippedReason || "Unknown error";
+    if (result.status === "partial") {
+      toast.warning(t("backup.restoreFailed", { error: restoreError }));
+    } else {
+      toast.error(t("backup.restoreFailed", { error: restoreError }));
     }
   }, [restore, restoreTarget, restoreContents, t]);
 
@@ -148,9 +192,13 @@ export function BackupSettings({ t }: BackupSettingsProps) {
   }, [validate]);
 
   const handleDelete = useCallback(async (backup: BackupInfo) => {
-    const ok = await remove(backup.path);
-    if (ok) {
+    const result = await remove(backup.path);
+    if (result.status === "success" && result.deleted) {
       toast.success(t("backup.deleteSuccess"));
+    } else if (result.status === "skipped") {
+      toast.warning(result.error || t("backup.deleteConfirm"));
+    } else {
+      toast.error(result.error || t("backup.deleteConfirm"));
     }
   }, [remove, t]);
 
@@ -202,7 +250,7 @@ export function BackupSettings({ t }: BackupSettingsProps) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4">
       {/* Action bar */}
       <div className="flex flex-wrap items-center gap-2">
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
@@ -221,7 +269,7 @@ export function BackupSettings({ t }: BackupSettingsProps) {
               <DialogTitle>{t("backup.create")}</DialogTitle>
               <DialogDescription>{t("backup.selectContents")}</DialogDescription>
             </DialogHeader>
-            <div className="space-y-4 py-2">
+            <div className="flex flex-col gap-4 py-2">
               <div className="grid grid-cols-2 gap-2">
                 {ALL_CONTENT_TYPES.map((ct) => (
                   <Label
@@ -288,26 +336,30 @@ export function BackupSettings({ t }: BackupSettingsProps) {
       </div>
 
       {error && (
-        <div className="text-sm text-destructive">{error}</div>
+        <Alert variant="destructive">
+          <AlertDescription className="text-sm">{error}</AlertDescription>
+        </Alert>
       )}
 
       {/* Backup list */}
       {loading && backups.length === 0 ? (
-        <div className="space-y-3">
+        <div className="flex flex-col gap-3">
           {[1, 2, 3].map((i) => (
             <Skeleton key={i} className="h-24 w-full rounded-lg" />
           ))}
         </div>
       ) : backups.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-8 text-center">
-            <FileArchive className="h-10 w-10 text-muted-foreground mb-3" />
-            <p className="text-sm text-muted-foreground">{t("backup.noBackups")}</p>
-          </CardContent>
-        </Card>
+        <Empty className="min-h-[220px] border border-dashed">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <FileArchive />
+            </EmptyMedia>
+            <EmptyTitle className="text-base">{t("backup.noBackups")}</EmptyTitle>
+          </EmptyHeader>
+        </Empty>
       ) : (
         <ScrollArea className="max-h-[480px]">
-          <div className="space-y-3 pr-3">
+          <div className="flex flex-col gap-3 pr-3">
             {backups.map((backup) => (
               <BackupCard
                 key={backup.path}
@@ -380,7 +432,7 @@ export function BackupSettings({ t }: BackupSettingsProps) {
             <DialogTitle>{t("backup.validate")}</DialogTitle>
           </DialogHeader>
           {validationResult && (
-            <div className="space-y-3">
+            <div className="flex flex-col gap-3">
               <div className="flex items-center gap-2">
                 {validationResult.valid ? (
                   <>

@@ -194,8 +194,19 @@ describe('LogsPage', () => {
   it('renders page title and tabs', () => {
     render(<LogsPage />);
     expect(screen.getByText('Logs')).toBeInTheDocument();
-    expect(screen.getByText('Real-time')).toBeInTheDocument();
-    expect(screen.getByText('Files')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Real-time/ })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Files/ })).toBeInTheDocument();
+  });
+
+  it('renders status-first hierarchy in realtime and files tabs', async () => {
+    const user = userEvent.setup();
+    mockIsTauri = true;
+
+    render(<LogsPage />);
+
+    expect(screen.getByRole('status')).toHaveTextContent('Real-time');
+    await user.click(screen.getByRole('tab', { name: /Files/ }));
+    expect(screen.getByRole('status')).toHaveTextContent('Log Files');
   });
 
   it('shows desktop-only message in files tab for non-Tauri', async () => {
@@ -206,6 +217,21 @@ describe('LogsPage', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Desktop Only')).toBeInTheDocument();
+    });
+  });
+
+  it('shows explicit error feedback when manual refresh fails', async () => {
+    const user = userEvent.setup();
+    mockIsTauri = true;
+
+    render(<LogsPage />);
+    await waitFor(() => expect(mockLoadLogFiles).toHaveBeenCalled());
+
+    mockLoadLogFiles.mockResolvedValueOnce({ ok: false, error: 'Failed to load log files' });
+    await user.click(screen.getByRole('button', { name: 'Refresh' }));
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith('Failed to load log files');
     });
   });
 

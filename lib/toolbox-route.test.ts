@@ -22,8 +22,11 @@ describe('toolbox-route', () => {
   });
 
   it('builds canonical and legacy toolbox detail paths', () => {
-    const toolId = 'builtin:json formatter';
-    expect(getToolboxDetailPath(toolId)).toBe('/toolbox/builtin%3Ajson%20formatter');
-    expect(getLegacyToolboxDetailPath(toolId)).toBe('/toolbox/tool?id=builtin%3Ajson%20formatter');
+    const builtInToolId = 'builtin:json formatter';
+    const pluginToolId = 'plugin:demo:inspect';
+
+    expect(getToolboxDetailPath(builtInToolId)).toBe('/toolbox/tool?id=builtin%3Ajson%20formatter');
+    expect(getLegacyToolboxDetailPath(builtInToolId)).toBe('/toolbox/tool?id=builtin%3Ajson%20formatter');
+    expect(getToolboxDetailPath(pluginToolId)).toBe('/toolbox/tool?id=plugin%3Ademo%3Ainspect');
   });
 });

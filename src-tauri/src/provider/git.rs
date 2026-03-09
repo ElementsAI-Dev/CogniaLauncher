@@ -2291,6 +2291,15 @@ impl GitProvider {
     }
 
     /// Clone a repository with streaming progress and cancellation support
+    fn map_clone_stream_error(error: process::ProcessError) -> CogniaError {
+        match error {
+            process::ProcessError::Signal => {
+                CogniaError::Provider("git clone cancelled by user".to_string())
+            }
+            other => CogniaError::Provider(format!("git clone: {}", other)),
+        }
+    }
+
     pub async fn clone_repo_with_progress_cancellable<F>(
         &self,
         url: &str,
@@ -2317,7 +2326,7 @@ impl GitProvider {
             cancel_rx,
         )
         .await
-        .map_err(|e| CogniaError::Provider(format!("git clone: {}", e)))?;
+        .map_err(Self::map_clone_stream_error)?;
         if out.success {
             on_progress(GitCloneProgress {
                 phase: "done".to_string(),
@@ -3973,6 +3982,30 @@ mod tests {
     #[test]
     fn test_parse_version_empty() {
         assert_eq!(parse_version(""), None);
+    }
+
+    #[test]
+    fn test_map_clone_stream_error_cancelled() {
+        let err = GitProvider::map_clone_stream_error(process::ProcessError::Signal);
+        match err {
+            CogniaError::Provider(message) => {
+                assert!(message.contains("cancelled by user"));
+            }
+            other => panic!("unexpected error variant: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_map_clone_stream_error_passthrough() {
+        let err = GitProvider::map_clone_stream_error(process::ProcessError::StartFailed(
+            std::io::Error::other("spawn failed"),
+        ));
+        match err {
+            CogniaError::Provider(message) => {
+                assert!(message.contains("git clone: Process failed to start"));
+            }
+            other => panic!("unexpected error variant: {:?}", other),
+        }
     }
 
     #[test]

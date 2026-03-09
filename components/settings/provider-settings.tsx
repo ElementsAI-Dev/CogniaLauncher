@@ -29,7 +29,7 @@ export function ProviderSettings({
   );
 
   return (
-    <div className="space-y-3">
+    <div className="flex flex-col gap-3">
         <SettingItem
           id="disabled-providers"
           label={t("settings.disabledProviders")}

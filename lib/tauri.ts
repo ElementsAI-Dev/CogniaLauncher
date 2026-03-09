@@ -60,9 +60,15 @@ export type {
   BackupContentType,
   BackupManifest,
   BackupInfo,
+  BackupOperationStatus,
+  BackupOperationIssue,
   BackupResult,
   RestoreResult,
   BackupValidationResult,
+  BackupDeleteResult,
+  BackupExportResult,
+  BackupImportResult,
+  BackupCleanupResult,
   IntegrityCheckResult,
   DatabaseInfo,
   GpuInfo,
@@ -126,7 +132,9 @@ export type {
   TrayIconState,
   TrayLanguage,
   TrayClickBehavior,
+  TrayQuickAction,
   TrayNotificationLevel,
+  TrayNotificationEvent,
   TrayMenuItemId,
   TrayMenuConfig,
   TrayStateInfo,
@@ -293,6 +301,10 @@ import type {
   BackupResult,
   RestoreResult,
   BackupValidationResult,
+  BackupDeleteResult,
+  BackupExportResult,
+  BackupImportResult,
+  BackupCleanupResult,
   IntegrityCheckResult,
   DatabaseInfo,
   PlatformInfo,
@@ -338,7 +350,9 @@ import type {
   TrayIconState,
   TrayLanguage,
   TrayClickBehavior,
+  TrayQuickAction,
   TrayNotificationLevel,
+  TrayNotificationEvent,
   TrayMenuItemId,
   TrayMenuConfig,
   TrayStateInfo,
@@ -866,6 +880,12 @@ export const getTopAccessedEntries = (limit?: number) =>
   invoke<CacheEntryItem[]>("get_top_accessed_entries", { limit });
 
 // External cache management
+export type ExternalCacheDetectionState =
+  | "found"
+  | "unavailable"
+  | "skipped"
+  | "error";
+
 export interface ExternalCacheInfo {
   provider: string;
   displayName: string;
@@ -876,6 +896,9 @@ export interface ExternalCacheInfo {
   canClean: boolean;
   category: string;
   sizePending?: boolean;
+  detectionState?: ExternalCacheDetectionState;
+  detectionReason?: string | null;
+  detectionError?: string | null;
 }
 
 export interface ExternalCacheCleanResult {
@@ -1025,6 +1048,9 @@ export interface ExternalCachePathInfo {
   hasCleanCommand: boolean;
   cleanCommand: string | null;
   envVarsChecked: string[];
+  detectionState?: ExternalCacheDetectionState;
+  detectionReason?: string | null;
+  detectionError?: string | null;
 }
 
 export const getExternalCachePaths = () =>
@@ -1096,15 +1122,15 @@ export const backupRestore = (
 ) => invoke<RestoreResult>("backup_restore", { backupPath, contents });
 export const backupList = () => invoke<BackupInfo[]>("backup_list");
 export const backupDelete = (backupPath: string) =>
-  invoke<boolean>("backup_delete", { backupPath });
+  invoke<BackupDeleteResult>("backup_delete", { backupPath });
 export const backupValidate = (backupPath: string) =>
   invoke<BackupValidationResult>("backup_validate", { backupPath });
 export const backupExport = (backupPath: string, destPath: string) =>
-  invoke<number>("backup_export", { backupPath, destPath });
+  invoke<BackupExportResult>("backup_export", { backupPath, destPath });
 export const backupImport = (zipPath: string) =>
-  invoke<BackupInfo>("backup_import", { zipPath });
+  invoke<BackupImportResult>("backup_import", { zipPath });
 export const backupCleanup = (maxCount: number, maxAgeDays: number) =>
-  invoke<number>("backup_cleanup", { maxCount, maxAgeDays });
+  invoke<BackupCleanupResult>("backup_cleanup", { maxCount, maxAgeDays });
 export const dbIntegrityCheck = () =>
   invoke<IntegrityCheckResult>("db_integrity_check");
 export const dbGetInfo = () => invoke<DatabaseInfo>("db_get_info");
@@ -1575,11 +1601,23 @@ export const traySetLanguage = (language: TrayLanguage) =>
 export const traySetClickBehavior = (behavior: TrayClickBehavior) =>
   invoke<void>("tray_set_click_behavior", { behavior });
 
+export const traySetQuickAction = (action: TrayQuickAction) =>
+  invoke<void>("tray_set_quick_action", { action });
+
+export const trayGetAvailableQuickActions = () =>
+  invoke<TrayQuickAction[]>("tray_get_available_quick_actions");
+
 export const traySetShowNotifications = (enabled: boolean) =>
   invoke<void>("tray_set_show_notifications", { enabled });
 
 export const traySetNotificationLevel = (level: TrayNotificationLevel) =>
   invoke<void>("tray_set_notification_level", { level });
+
+export const traySetNotificationEvents = (events: TrayNotificationEvent[]) =>
+  invoke<void>("tray_set_notification_events", { events });
+
+export const trayGetAvailableNotificationEvents = () =>
+  invoke<TrayNotificationEvent[]>("tray_get_available_notification_events");
 
 export const trayGetState = () => invoke<TrayStateInfo>("tray_get_state");
 
@@ -1594,8 +1632,17 @@ export const trayDisableAutostart = () =>
 export const traySendNotification = (
   title: string,
   body: string,
-  important: boolean = false,
-) => invoke<void>("tray_send_notification", { title, body, important });
+  options: {
+    important?: boolean;
+    event?: TrayNotificationEvent;
+  } = {},
+) =>
+  invoke<void>("tray_send_notification", {
+    title,
+    body,
+    important: options.important ?? false,
+    event: options.event ?? null,
+  });
 
 export const trayRebuild = () => invoke<void>("tray_rebuild");
 
@@ -1667,6 +1714,14 @@ export async function listenTrayShowNotificationsChanged(
   callback: (enabled: boolean) => void,
 ): Promise<UnlistenFn> {
   return listen<boolean>("tray-show-notifications-changed", (event) => {
+    callback(event.payload);
+  });
+}
+
+export async function listenTrayNotificationEventsChanged(
+  callback: (events: TrayNotificationEvent[]) => void,
+): Promise<UnlistenFn> {
+  return listen<TrayNotificationEvent[]>("tray-notification-events-changed", (event) => {
     callback(event.payload);
   });
 }
@@ -3764,6 +3819,13 @@ export const pluginInstall = (source: string) =>
 export const pluginInstallMarketplace = (storeId: string) =>
   invoke<string>("plugin_install_marketplace", { storeId });
 
+/** Install a curated marketplace plugin by store id with structured action result */
+export const pluginInstallMarketplaceWithResult = (storeId: string) =>
+  invoke<import("@/types/plugin").PluginMarketplaceActionResult>(
+    "plugin_install_marketplace_with_result",
+    { storeId },
+  );
+
 /** Uninstall a plugin */
 export const pluginUninstall = (pluginId: string) =>
   invoke<void>("plugin_uninstall", { pluginId });
@@ -3862,6 +3924,13 @@ export const pluginCheckUpdate = (pluginId: string) =>
 /** Update a plugin to its latest version */
 export const pluginUpdate = (pluginId: string) =>
   invoke<void>("plugin_update", { pluginId });
+
+/** Update a plugin with structured marketplace action result */
+export const pluginUpdateWithResult = (pluginId: string) =>
+  invoke<import("@/types/plugin").PluginMarketplaceActionResult>(
+    "plugin_update_with_result",
+    { pluginId },
+  );
 
 /** Get a static asset from a plugin's UI directory */
 export const pluginGetUiAsset = (pluginId: string, assetPath: string) =>

@@ -60,7 +60,7 @@ export function AppearanceSettings({
   t,
 }: AppearanceSettingsProps) {
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4">
         <SelectSettingItem
           id="theme-select"
           label={t("settings.theme")}
@@ -90,8 +90,8 @@ export function AppearanceSettings({
           triggerClassName="w-32"
         />
         <Separator />
-        <div className="space-y-3 py-2">
-          <div className="space-y-0.5">
+        <div className="flex flex-col gap-3 py-2">
+          <div className="flex flex-col gap-0.5">
             <Label id="accent-color-label">{t("settings.accentColor")}</Label>
             <p id="accent-color-desc" className="text-sm text-muted-foreground">
               {t("settings.accentColorDesc")}
@@ -124,8 +124,8 @@ export function AppearanceSettings({
           triggerClassName="w-40"
         />
         <Separator />
-        <div className="space-y-3 py-2">
-          <div className="space-y-0.5">
+        <div className="flex flex-col gap-3 py-2">
+          <div className="flex flex-col gap-0.5">
             <Label id="interface-radius-label">{t("settings.interfaceRadius")}</Label>
             <p id="interface-radius-desc" className="text-sm text-muted-foreground">
               {t("settings.interfaceRadiusDesc")}

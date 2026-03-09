@@ -106,18 +106,11 @@ export default function GitPage() {
     repoPath,
     repoInfo,
     refreshAll,
+    refreshByScopes: refreshGitByScopes,
     getConfigFilePath,
     probeConfigEditor,
     setRepoPath,
     getAheadBehind,
-    refreshRepoInfo,
-    refreshStatus,
-    refreshBranches,
-    refreshRemotes,
-    refreshTags,
-    refreshStashes,
-    refreshContributors,
-    getLog,
     getCommitDetail,
   } = git;
   const {
@@ -130,6 +123,7 @@ export default function GitPage() {
     refreshRepoStats,
     refreshBisectState,
     refreshSparseCheckout,
+    refreshByScopes: refreshAdvancedByScopes,
   } = gitAdvanced;
   const {
     checkAvailability: checkLfsAvailability,
@@ -249,45 +243,41 @@ export default function GitPage() {
   }, [repoInfo?.currentBranch, repoPath, getAheadBehind]);
 
   const refreshRepoData = useCallback(() => {
-    void refreshRepoInfo();
-    void refreshStatus();
-    void refreshBranches();
-    void refreshRemotes();
-    void refreshTags();
-    void refreshStashes();
-    void refreshContributors();
+    void refreshGitByScopes([
+      "repoInfo",
+      "status",
+      "branches",
+      "remotes",
+      "tags",
+      "stashes",
+      "log",
+      "aheadBehind",
+    ]);
     void refreshAheadBehind();
-    void refreshAdvancedData();
+    void refreshAdvancedByScopes(["advanced"]);
     void refreshLfsData();
   }, [
-    refreshRepoInfo,
-    refreshStatus,
-    refreshBranches,
-    refreshRemotes,
-    refreshTags,
-    refreshStashes,
-    refreshContributors,
+    refreshGitByScopes,
     refreshAheadBehind,
-    refreshAdvancedData,
+    refreshAdvancedByScopes,
     refreshLfsData,
   ]);
 
   const refreshAfterGraphWrite = useCallback(async () => {
-    await Promise.allSettled([
-      refreshRepoInfo(),
-      refreshStatus(),
-      refreshBranches(),
-      refreshTags(),
-      getLog({ limit: 50 }),
+    await refreshGitByScopes([
+      "repoInfo",
+      "status",
+      "branches",
+      "tags",
+      "log",
+      "aheadBehind",
     ]);
+    await refreshAdvancedByScopes(["advanced"]);
     await refreshAheadBehind();
     setGraphRefreshKey((prev) => prev + 1);
   }, [
-    refreshRepoInfo,
-    refreshStatus,
-    refreshBranches,
-    refreshTags,
-    getLog,
+    refreshGitByScopes,
+    refreshAdvancedByScopes,
     refreshAheadBehind,
   ]);
 
@@ -323,25 +313,22 @@ export default function GitPage() {
 
   useEffect(() => {
     if (!repoPath) return;
-    refreshRepoInfo().catch(() => {});
-    refreshStatus().catch(() => {});
-    refreshBranches().catch(() => {});
-    refreshRemotes().catch(() => {});
-    refreshTags().catch(() => {});
-    refreshStashes().catch(() => {});
-    refreshContributors().catch(() => {});
-    refreshAdvancedData().catch(() => {});
+    refreshGitByScopes([
+      "repoInfo",
+      "status",
+      "branches",
+      "remotes",
+      "tags",
+      "stashes",
+      "log",
+      "aheadBehind",
+    ]).catch(() => {});
+    refreshAdvancedByScopes(["advanced"]).catch(() => {});
     refreshLfsData().catch(() => {});
   }, [
     repoPath,
-    refreshRepoInfo,
-    refreshStatus,
-    refreshBranches,
-    refreshRemotes,
-    refreshTags,
-    refreshStashes,
-    refreshContributors,
-    refreshAdvancedData,
+    refreshGitByScopes,
+    refreshAdvancedByScopes,
     refreshLfsData,
   ]);
 
@@ -907,8 +894,10 @@ export default function GitPage() {
                   }
                 }}
                 onResetTo={async (hash) => {
+                  const confirmed = window.confirm(t("git.resetAction.confirm"));
+                  if (!confirmed) return;
                   try {
-                    await runAction(() => git.resetHead("mixed", hash), {
+                    await runAction(() => git.resetHead("mixed", hash, true), {
                       successKey: "git.resetAction.success",
                       successDescription: true,
                       onSuccess: refreshAfterGraphWrite,
@@ -987,8 +976,10 @@ export default function GitPage() {
           <GitReflogCard
             onGetReflog={git.getReflog}
             onResetTo={async (hash, mode) => {
+              const confirmed = window.confirm(t("git.resetAction.confirm"));
+              if (!confirmed) return "";
               try {
-                return await runAction(() => git.resetHead(mode, hash), {
+                return await runAction(() => git.resetHead(mode, hash, true), {
                   successKey: "git.resetAction.success",
                   successDescription: true,
                   onSuccess: refreshAfterGraphWrite,
@@ -1246,14 +1237,14 @@ export default function GitPage() {
         <TabsContent value="operations" className="space-y-4 mt-4">
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
             <GitRebaseSquashCard
-              onRebase={async (onto) => {
-                const msg = await gitAdvanced.rebase(onto);
+              onRebase={async (onto, confirmRisk) => {
+                const msg = await gitAdvanced.rebase(onto, confirmRisk);
                 await refreshAfterGraphWrite();
                 await refreshAdvancedData();
                 return msg;
               }}
-              onSquash={async (count, message) => {
-                const msg = await gitAdvanced.squash(count, message);
+              onSquash={async (count, message, confirmRisk) => {
+                const msg = await gitAdvanced.squash(count, message, confirmRisk);
                 await refreshAfterGraphWrite();
                 await refreshAdvancedData();
                 return msg;

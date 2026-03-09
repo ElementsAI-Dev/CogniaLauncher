@@ -4,6 +4,14 @@ import { MarketplaceDetailPageClient } from './marketplace-detail-page-client';
 const mockRefreshCatalog = jest.fn();
 const mockInstallListing = jest.fn();
 const mockUpdateListing = jest.fn();
+let mockLastActionProgress: {
+  kind: "marketplace-install" | "marketplace-update";
+  listingId: string;
+  pluginId: string;
+  phase: "preparing" | "downloading" | "verifying" | "installing" | "completed" | "failed";
+  downloadTaskId: string | null;
+  timestamp: number;
+} | null = null;
 
 const mockListing = {
   id: 'hello-world-rust',
@@ -49,6 +57,9 @@ const mockListing = {
     pluginDir: 'marketplace/hello-world-rust',
     artifact: 'plugin.wasm',
     checksumSha256: 'abc',
+    downloadUrl: null,
+    mirrorUrls: [],
+    sizeBytes: null,
   },
   installState: 'not-installed' as const,
   blockedReason: null,
@@ -77,6 +88,7 @@ jest.mock('@/hooks/use-toolbox-marketplace', () => ({
     refreshCatalog: mockRefreshCatalog,
     installListing: mockInstallListing,
     updateListing: mockUpdateListing,
+    lastActionProgress: mockLastActionProgress,
   }),
 }));
 
@@ -91,6 +103,7 @@ jest.mock('next/link', () => {
 describe('MarketplaceDetailPageClient', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockLastActionProgress = null;
   });
 
   it('renders listing detail content', () => {
@@ -109,5 +122,22 @@ describe('MarketplaceDetailPageClient', () => {
     render(<MarketplaceDetailPageClient listingId="missing-listing" />);
 
     expect(screen.getByText('toolbox.marketplace.notFound')).toBeInTheDocument();
+  });
+
+  it('shows action phase details when current listing action is in progress', () => {
+    mockLastActionProgress = {
+      kind: 'marketplace-update',
+      listingId: 'hello-world-rust',
+      pluginId: 'com.cognia.hello-world',
+      phase: 'downloading',
+      downloadTaskId: 'task-42',
+      timestamp: Date.now(),
+    };
+
+    render(<MarketplaceDetailPageClient listingId="hello-world-rust" />);
+
+    expect(
+      screen.getByText('Action: marketplace-update · Phase: downloading · Task: task-42'),
+    ).toBeInTheDocument();
   });
 });

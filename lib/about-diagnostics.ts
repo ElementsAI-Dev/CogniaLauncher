@@ -1,6 +1,7 @@
 import { APP_VERSION } from '@/lib/app-version';
 import type { SelfUpdateInfo } from '@/lib/tauri';
 import type {
+  AboutInsights,
   SystemInfo,
   SystemSectionState,
   SystemSubsystem,
@@ -39,6 +40,7 @@ export interface WebDiagnosticsRuntimeSnapshot {
 
 export interface BuildWebDiagnosticsReportParams {
   systemInfo: SystemInfo | null;
+  aboutInsights?: AboutInsights | null;
   updateInfo: SelfUpdateInfo | null;
   updateStatus: UpdateStatus;
   updateErrorCategory: UpdateErrorCategory | null;
@@ -140,6 +142,7 @@ export function buildSystemSectionSummary(
 
 export function buildWebDiagnosticsReport({
   systemInfo,
+  aboutInsights,
   updateInfo,
   updateStatus,
   updateErrorCategory,
@@ -215,5 +218,6 @@ export function buildWebDiagnosticsReport({
           errorMessage: updateErrorMessage,
         }
       : null,
+    aboutInsights,
   };
 }

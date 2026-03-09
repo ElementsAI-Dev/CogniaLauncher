@@ -18,6 +18,16 @@ export interface EnvEntry {
   displayName: string;
 }
 
+export interface ProviderInfo {
+  id: string;
+  displayName: string;
+  capabilities: string[];
+  platforms: string[];
+  priority: number;
+  isEnvironmentProvider: boolean;
+  enabled: boolean;
+}
+
 export interface EnvDetectResult {
   available: boolean;
   currentVersion: string | null;

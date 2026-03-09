@@ -4,6 +4,7 @@ export { SystemInfoCard } from "./system-info-card";
 export { BuildDepsCard } from "./build-deps-card";
 export { LicenseCard } from "./license-card";
 export { ActionsCard } from "./actions-card";
+export { AboutInsightsCard } from "./about-insights-card";
 export { ErrorAlert } from "./error-alert";
 export { ChangelogDialog } from "./changelog-dialog";
 export { WhatsNewDialog } from "./whats-new-dialog";

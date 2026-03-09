@@ -87,7 +87,7 @@ describe("CommandPalette", () => {
     expect(mockToggleDrawer).toBeDefined();
   });
 
-  it("navigates toolbox tools to canonical detail route", () => {
+  it("navigates toolbox tools to static-export-safe detail route", () => {
     mockAllTools = [
       {
         id: "builtin:json-formatter",
@@ -99,6 +99,6 @@ describe("CommandPalette", () => {
     render(<CommandPalette open={true} onOpenChange={mockOnOpenChange} />);
     screen.getByText("JSON Formatter").click();
 
-    expect(mockPush).toHaveBeenCalledWith("/toolbox/builtin%3Ajson-formatter");
+    expect(mockPush).toHaveBeenCalledWith("/toolbox/tool?id=builtin%3Ajson-formatter");
   });
 });

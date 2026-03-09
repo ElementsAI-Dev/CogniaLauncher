@@ -11,7 +11,6 @@ import {
   CardAction,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   Collapsible,
   CollapsibleContent,
@@ -39,6 +38,11 @@ import { cn } from "@/lib/utils";
 import type { EnvironmentInfo } from "@/lib/tauri";
 import { getLogicalEnvType, useEnvironmentStore } from "@/lib/stores/environment";
 import type { EnvironmentFilterType } from "@/types/dashboard";
+import {
+  DashboardClickableRow,
+  DashboardEmptyState,
+  DashboardStatusBadge,
+} from "@/components/dashboard/dashboard-primitives";
 
 interface EnvironmentListProps {
   environments: EnvironmentInfo[];
@@ -93,7 +97,7 @@ export function EnvironmentList({
   const extraItems = filteredEnvironments.slice(initialLimit);
 
   return (
-    <Card className={cn("", className)}>
+    <Card className={cn(className)}>
       <CardHeader className="pb-3">
         <CardTitle className="text-base font-medium">
           {t("dashboard.environmentList.title")}
@@ -107,7 +111,7 @@ export function EnvironmentList({
               value={filter}
               onValueChange={(v) => setFilter(v as EnvironmentFilterType)}
             >
-              <SelectTrigger className="h-8 w-[120px]">
+              <SelectTrigger className="h-8 w-30">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -136,14 +140,14 @@ export function EnvironmentList({
       </CardHeader>
       <CardContent>
         {filteredEnvironments.length === 0 ? (
-          <div className="py-6 text-center">
-            <Layers className="mx-auto h-8 w-8 text-muted-foreground/50" />
-            <p className="mt-2 text-sm text-muted-foreground">
-              {filter === "all"
+          <DashboardEmptyState
+            icon={<Layers className="h-8 w-8 text-muted-foreground/70" />}
+            message={
+              filter === "all"
                 ? t("dashboard.noEnvironments")
-                : t("dashboard.environmentList.noResults")}
-            </p>
-          </div>
+                : t("dashboard.environmentList.noResults")
+            }
+          />
         ) : (
           <Collapsible open={expanded} onOpenChange={setExpanded}>
             <div className="space-y-2">
@@ -211,13 +215,9 @@ function EnvironmentItem({ environment, onClick, t }: EnvironmentItemProps) {
     environment;
 
   return (
-    <button
+    <DashboardClickableRow
       onClick={onClick}
-      className={cn(
-        "flex w-full items-center justify-between rounded-lg border p-3",
-        "transition-colors hover:bg-accent/50",
-        "focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
-      )}
+      aria-label={env_type}
     >
       <div className="flex items-center gap-3 min-w-0 flex-1">
         <div
@@ -257,12 +257,12 @@ function EnvironmentItem({ environment, onClick, t }: EnvironmentItemProps) {
 
       <div className="flex items-center gap-2 shrink-0">
         {current_version ? (
-          <Badge
-            variant="secondary"
-            className="font-mono text-xs max-w-[140px] truncate"
+          <DashboardStatusBadge
+            tone={available ? "default" : "muted"}
+            className="font-mono text-xs max-w-35 truncate"
           >
             {current_version}
-          </Badge>
+          </DashboardStatusBadge>
         ) : (
           <span className="text-xs text-muted-foreground">
             {t("common.none")}
@@ -270,6 +270,6 @@ function EnvironmentItem({ environment, onClick, t }: EnvironmentItemProps) {
         )}
         <ChevronRight className="h-4 w-4 text-muted-foreground" />
       </div>
-    </button>
+    </DashboardClickableRow>
   );
 }

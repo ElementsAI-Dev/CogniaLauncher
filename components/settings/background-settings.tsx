@@ -37,8 +37,8 @@ export function BackgroundSettings({ t }: BackgroundSettingsProps) {
   const disabled = !backgroundEnabled;
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-0.5">
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-0.5">
         <Label className="text-base font-medium">
           {t("settings.backgroundImage")}
         </Label>

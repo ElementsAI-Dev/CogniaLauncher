@@ -1,4 +1,5 @@
 import { render, screen, fireEvent } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { ChangelogDialog } from "./changelog-dialog";
 import type { ChangelogEntry } from "@/lib/constants/about";
 
@@ -175,6 +176,16 @@ describe("ChangelogDialog", () => {
     render(<ChangelogDialog {...defaultProps} />);
     expect(screen.getByText("All Types")).toBeInTheDocument();
     expect(screen.getByText("Filter by type")).toBeInTheDocument();
+  });
+
+  it("uses standardized toggle-group controls for type filter", async () => {
+    render(<ChangelogDialog {...defaultProps} />);
+    const addedFilter = screen
+      .getAllByText("Added")
+      .find((el) => el.getAttribute("data-slot") === "toggle-group-item");
+    expect(addedFilter).toBeTruthy();
+    await userEvent.click(addedFilter!);
+    expect(addedFilter).toHaveAttribute("data-state", "on");
   });
 
   it("renders markdown content for entries with markdownBody", () => {

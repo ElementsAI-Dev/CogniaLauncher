@@ -42,12 +42,43 @@ Access the settings page via the gear icon at the bottom of the sidebar. Setting
 - Theme mode (light/dark/follow system)
 - Accent color
 - Chart color theme (6 schemes)
+- Interface density and border radius
+- Reduced motion, native window effects, and background image tuning
+- Appearance preset workbench (save, rename, apply, delete presets)
 
 ### Security Settings
 
 - Allow HTTP (development only)
 - Certificate verification
 - Self-signed certificates
+
+### Onboarding Controls
+
+The Settings page includes an **Onboarding & Tour** card for first-run experience management:
+
+- Resume a paused setup session from the last active step
+- Re-run onboarding from mode selection (quick/detailed)
+- Start the guided tour independently after setup
+- View onboarding status (completed / skipped / paused / resumable)
+- Manage contextual bubble hints (reset, dismiss all, enable/disable)
+
+### Save, Import, and Reset Reliability
+
+The settings center now uses explicit baseline/draft/save snapshots so local edits remain stable during background refreshes.
+
+- If backend config refreshes while you have unsaved edits, CogniaLauncher keeps your draft and shows a conflict hint
+- Import now runs in four steps: parse, validate, diff preview, then explicit confirm
+- Save tracks per-key results and keeps failed keys in draft for **Retry Failed Items**
+- Section reset only resets that section's keys, while global reset synchronizes config, app settings, and appearance state
+
+### Terminal Config Workflow Reliability
+
+The Terminal page now uses stricter safety and refresh rules for shell config and profile management.
+
+- Switching tabs or changing shell/config targets now prompts before discarding unsaved config editor drafts
+- Profile import now uses a pre-validation + summary confirmation step (valid/conflict/invalid counts) before applying
+- Import conflict strategy is explicit: choose **Merge** or **Replace** before execution
+- Proxy, environment-variable, and PowerShell tab data refresh only when related resources are marked stale
 
 ---
 
@@ -66,6 +97,22 @@ Supported theme modes:
 ### Accent Color
 
 Choose different accent color schemes to personalize the interface.
+
+### Customization Workbench
+
+The Appearance section now includes a **Customization Workbench**:
+
+- Select and apply a saved preset in one click
+- Save current appearance as a new preset
+- Rename or delete non-default presets
+- Reset only appearance-related fields without touching other pending settings changes
+
+Preset application updates all appearance-controlled fields consistently (theme, accent color, chart theme, radius, density, reduced motion, background options, window effect).
+
+### Preset Migration Compatibility
+
+When upgrading from older versions without preset metadata, CogniaLauncher auto-creates a compatible default preset from the existing appearance values.  
+Legacy import payloads that do not contain preset data are still accepted and will also synthesize a default preset automatically.
 
 ### Chart Color Theme
 

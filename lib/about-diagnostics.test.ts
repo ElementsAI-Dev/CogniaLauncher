@@ -65,6 +65,21 @@ describe('about-diagnostics', () => {
   it('builds web diagnostics report with normalized update and redacted network data', () => {
     const report = buildWebDiagnosticsReport({
       generatedAt: '2026-03-05T00:00:00.000Z',
+      aboutInsights: {
+        runtimeMode: "web",
+        providerSummary: { total: 0, installed: 0, supported: 0, unsupported: 0 },
+        storageSummary: {
+          cacheTotalSizeHuman: "0 B",
+          logTotalSizeBytes: null,
+          logTotalSizeHuman: null,
+        },
+        sections: {
+          providers: "unavailable",
+          logs: "unavailable",
+          cache: "unavailable",
+        },
+        generatedAt: "2026-03-05T00:00:00.000Z",
+      },
       updateInfo: {
         current_version: '1.0.0',
         latest_version: '1.1.0',
@@ -156,6 +171,12 @@ describe('about-diagnostics', () => {
       status: 'error',
       errorCategory: 'network_error',
     });
+    expect(report.aboutInsights).toMatchObject({
+      runtimeMode: "web",
+      sections: {
+        providers: "unavailable",
+      },
+    });
     expect(report.system).toMatchObject({
       hostnameRedacted: 'MY***',
     });
@@ -168,4 +189,3 @@ describe('about-diagnostics', () => {
     expect(networks[0]).not.toHaveProperty('macAddress');
   });
 });
-

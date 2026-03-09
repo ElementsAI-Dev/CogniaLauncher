@@ -18,6 +18,8 @@ import type { WidgetConfig, WidgetSize } from "@/lib/stores/dashboard";
 interface WidgetWrapperProps {
   widget: WidgetConfig;
   isEditMode: boolean;
+  canRemove?: boolean;
+  canToggleVisibility?: boolean;
   onRemove: (id: string) => void;
   onToggleVisibility: (id: string) => void;
   onResize: (id: string, size: WidgetSize) => void;
@@ -27,6 +29,8 @@ interface WidgetWrapperProps {
 export function WidgetWrapper({
   widget,
   isEditMode,
+  canRemove = true,
+  canToggleVisibility = true,
   onRemove,
   onToggleVisibility,
   onResize,
@@ -55,22 +59,31 @@ export function WidgetWrapper({
     <div
       ref={setNodeRef}
       style={style}
+      role="listitem"
+      aria-label={widget.type}
+      aria-roledescription="dashboard widget"
       className={cn(
         WIDGET_SIZE_CLASSES[widget.size],
-        "relative group/widget transition-all duration-200 [&>*]:h-full",
+        "relative group/widget transition-all duration-200 *:h-full",
         isDragging && "z-50 opacity-80 scale-[1.02] shadow-xl",
         !widget.visible && isEditMode && "opacity-50",
-        isEditMode && "ring-1 ring-dashed ring-border rounded-xl",
+        isEditMode && "rounded-xl ring-1 ring-dashed ring-primary/40",
       )}
     >
       {isEditMode && (
-        <div className="absolute -top-2 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1 rounded-full border bg-background px-1.5 py-0.5 shadow-sm opacity-0 group-hover/widget:opacity-100 transition-opacity !h-auto">
+        <div
+          className="absolute -top-2 left-1/2 z-10 h-auto! -translate-x-1/2 rounded-full border bg-background px-1.5 py-0.5 shadow-sm opacity-0 transition-opacity group-hover/widget:opacity-100 group-focus-within/widget:opacity-100"
+          role="toolbar"
+          aria-label={t("dashboard.widgets.editLayout")}
+        >
+          <div className="flex items-center gap-1">
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
                 variant="ghost"
                 size="icon"
                 className="h-5 w-5 cursor-grab active:cursor-grabbing"
+                aria-label={t("dashboard.widgets.dragToReorder")}
                 {...attributes}
                 {...listeners}
               >
@@ -89,6 +102,7 @@ export function WidgetWrapper({
                 size="icon"
                 className="h-5 w-5"
                 onClick={() => onResize(widget.id, prevWidgetSize(widget.size))}
+                aria-label={t("dashboard.widgets.shrink")}
               >
                 <Minimize2 className="h-3 w-3" />
               </Button>
@@ -105,6 +119,7 @@ export function WidgetWrapper({
                 size="icon"
                 className="h-5 w-5"
                 onClick={() => onResize(widget.id, nextWidgetSize(widget.size))}
+                aria-label={t("dashboard.widgets.expand")}
               >
                 <Maximize2 className="h-3 w-3" />
               </Button>
@@ -121,6 +136,11 @@ export function WidgetWrapper({
                 size="icon"
                 className="h-5 w-5"
                 onClick={() => onToggleVisibility(widget.id)}
+                disabled={!canToggleVisibility}
+                aria-label={widget.visible
+                  ? t("dashboard.widgets.hide")
+                  : t("dashboard.widgets.show")}
+                data-testid={`widget-toggle-${widget.id}`}
               >
                 {widget.visible ? (
                   <EyeOff className="h-3 w-3" />
@@ -143,6 +163,9 @@ export function WidgetWrapper({
                 size="icon"
                 className="h-5 w-5 text-destructive hover:text-destructive"
                 onClick={() => onRemove(widget.id)}
+                disabled={!canRemove}
+                aria-label={t("dashboard.widgets.remove")}
+                data-testid={`widget-remove-${widget.id}`}
               >
                 <X className="h-3 w-3" />
               </Button>
@@ -151,6 +174,7 @@ export function WidgetWrapper({
               {t("dashboard.widgets.remove")}
             </TooltipContent>
           </Tooltip>
+          </div>
         </div>
       )}
 

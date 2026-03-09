@@ -3,12 +3,13 @@
 import { useState, useMemo } from 'react';
 import { writeClipboard } from '@/lib/clipboard';
 import Link from 'next/link';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import { Search, Copy, RefreshCw, ExternalLink } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { toast } from 'sonner';
@@ -79,28 +80,26 @@ export function TerminalEnvVars({
 
   return (
     <Card className="overflow-hidden">
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <CardTitle className="text-base">{t('terminal.shellEnvVars')}</CardTitle>
-            {shellEnvVars.length > 0 && (
-              <Badge variant="secondary" className="text-xs">{shellEnvVars.length}</Badge>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <Button size="sm" variant="outline" onClick={onFetchShellEnvVars}>
-              <RefreshCw className="h-3.5 w-3.5 mr-1" />
-              {t('common.refresh')}
-            </Button>
-            <Button size="sm" variant="outline" asChild>
-              <Link href="/envvar" className="gap-1.5">
-                <ExternalLink className="h-3.5 w-3.5" />
-                {t('nav.envvar')}
-              </Link>
-            </Button>
-          </div>
+      <CardHeader className="gap-3">
+        <div className="flex items-center gap-2">
+          <CardTitle className="text-base">{t('terminal.shellEnvVars')}</CardTitle>
+          {shellEnvVars.length > 0 && (
+            <Badge variant="secondary" className="text-xs">{shellEnvVars.length}</Badge>
+          )}
         </div>
         <CardDescription>{t('terminal.shellEnvVarsDesc')}</CardDescription>
+        <CardAction className="flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={onFetchShellEnvVars}>
+            <RefreshCw className="h-3.5 w-3.5 mr-1" />
+            {t('common.refresh')}
+          </Button>
+          <Button size="sm" variant="outline" asChild>
+            <Link href="/envvar" className="gap-1.5">
+              <ExternalLink className="h-3.5 w-3.5" />
+              {t('nav.envvar')}
+            </Link>
+          </Button>
+        </CardAction>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="relative">
@@ -114,9 +113,16 @@ export function TerminalEnvVars({
         </div>
 
         {shellEnvVars.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-8">
-            {t('terminal.noEnvVars')}
-          </p>
+          <Empty className="border-dashed py-8">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <Search />
+              </EmptyMedia>
+              <EmptyTitle className="text-sm font-normal text-muted-foreground">
+                {t('terminal.noEnvVars')}
+              </EmptyTitle>
+            </EmptyHeader>
+          </Empty>
         ) : (
           <div className="overflow-y-auto max-h-[60vh]">
             <div className="space-y-4">

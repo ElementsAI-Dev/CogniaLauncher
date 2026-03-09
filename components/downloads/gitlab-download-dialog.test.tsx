@@ -211,7 +211,7 @@ describe("GitLabDownloadDialog", () => {
       isValid: true,
       releases: [testRelease],
     });
-    fireEvent.click(screen.getByText("v1.0.0"));
+    fireEvent.click(screen.getByRole("button", { name: /v1\.0\.0/i }));
     expect(screen.getByText("app-linux-x64.tar.gz")).toBeInTheDocument();
     expect(screen.getByText("app-windows-x64.zip")).toBeInTheDocument();
   });
@@ -394,7 +394,10 @@ describe("GitLabDownloadDialog", () => {
       ],
     });
 
-    await userEvent.click(screen.getByText("#101"));
+    const pipelineButton = screen.getByRole("button", { name: /#101/i });
+    expect(pipelineButton).toHaveAttribute("aria-pressed", "false");
+    await userEvent.click(pipelineButton);
+    expect(pipelineButton).toHaveAttribute("aria-pressed", "true");
 
     expect(mockUseGitLabDownloads.fetchPipelineJobs).toHaveBeenCalledWith(101);
   });
@@ -436,7 +439,10 @@ describe("GitLabDownloadDialog", () => {
       ],
     });
 
-    await userEvent.click(screen.getByText("cli-bundle"));
+    const packageButton = screen.getByRole("button", { name: /cli-bundle/i });
+    expect(packageButton).toHaveAttribute("aria-pressed", "false");
+    await userEvent.click(packageButton);
+    expect(packageButton).toHaveAttribute("aria-pressed", "true");
 
     expect(mockUseGitLabDownloads.fetchPackageFiles).toHaveBeenCalledWith(301);
   });

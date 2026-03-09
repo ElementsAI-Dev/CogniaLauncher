@@ -7,9 +7,7 @@ use crate::provider::gitlab::{
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use super::download::{
-    download_add, DownloadRequest, SharedDownloadManager, SharedSettings,
-};
+use super::download::{download_add, DownloadRequest, SharedDownloadManager, SharedSettings};
 
 fn map_gitlab_error(e: CogniaError) -> String {
     let msg = e.to_string();

@@ -1,8 +1,8 @@
 use crate::cache::{
-    external, migration, CacheAccessStats, CacheEntry, CacheEntryType, CacheSizeSnapshot, CleanupHistory,
-    CleanupRecord, CleanupRecordBuilder, CombinedCacheStats, DownloadCache, DownloadResumer,
-    ExternalCacheCleanResult, ExternalCacheInfo, MetadataCache, MigrationMode, MigrationResult,
-    MigrationValidation,
+    external, migration, CacheAccessStats, CacheEntry, CacheEntryType, CacheSizeSnapshot,
+    CleanupHistory, CleanupRecord, CleanupRecordBuilder, CombinedCacheStats, DownloadCache,
+    DownloadResumer, ExternalCacheCleanResult, ExternalCacheInfo, MetadataCache, MigrationMode,
+    MigrationResult, MigrationValidation,
 };
 use crate::config::Settings;
 use crate::platform::{disk, disk::format_size, fs, process::ProcessOptions};
@@ -134,7 +134,10 @@ fn append_cleanup_entry(builder: &mut CleanupRecordBuilder, entry: &CacheEntry) 
     );
 }
 
-pub async fn record_cache_snapshot(cache_dir: &Path, metadata_cache_ttl: i64) -> Result<(), String> {
+pub async fn record_cache_snapshot(
+    cache_dir: &Path,
+    metadata_cache_ttl: i64,
+) -> Result<(), String> {
     let download_cache = DownloadCache::open(cache_dir)
         .await
         .map_err(|e| e.to_string())?;
@@ -188,13 +191,7 @@ async fn finalize_internal_cache_mutation(
 }
 
 fn emit_external_cache_changed(app: &AppHandle, action: &str, freed_bytes: u64, scope: &str) {
-    emit_cache_changed(
-        app,
-        action,
-        freed_bytes,
-        scope,
-        external_cache_domains(),
-    );
+    emit_cache_changed(app, action, freed_bytes, scope, external_cache_domains());
 }
 
 #[derive(Serialize)]
@@ -351,7 +348,11 @@ pub async fn cache_clean(
 
     let total_freed = dl_freed + md_freed + partial_freed;
     let scope = CacheCommandScope::from_clean_type(clean_type_str);
-    let cleanup_record = if deleted_count > 0 { Some(record) } else { None };
+    let cleanup_record = if deleted_count > 0 {
+        Some(record)
+    } else {
+        None
+    };
     finalize_internal_cache_mutation(
         &app,
         &cache_dir,
@@ -444,7 +445,10 @@ pub async fn cache_verify(
                 details.push(CacheIssue {
                     entry_key: entry.key.clone(),
                     issue_type: "size_mismatch".to_string(),
-                    description: format!("Expected {} bytes, got {} bytes", entry.size, actual_size),
+                    description: format!(
+                        "Expected {} bytes, got {} bytes",
+                        entry.size, actual_size
+                    ),
                 });
                 continue;
             }
@@ -484,7 +488,10 @@ pub async fn cache_verify(
                 details.push(CacheIssue {
                     entry_key: format!("metadata:{}", entry.key),
                     issue_type: "size_mismatch".to_string(),
-                    description: format!("Expected {} bytes, got {} bytes", entry.size, actual_size),
+                    description: format!(
+                        "Expected {} bytes, got {} bytes",
+                        entry.size, actual_size
+                    ),
                 });
                 continue;
             }
@@ -543,7 +550,8 @@ pub async fn cache_repair(
     let mut removed_entries = 0usize;
     let mut recovered_entries = 0usize;
     let mut freed_bytes = 0u64;
-    let mut cleanup_builder = CleanupRecordBuilder::new(format!("repair_{}", scope.as_str()), false);
+    let mut cleanup_builder =
+        CleanupRecordBuilder::new(format!("repair_{}", scope.as_str()), false);
 
     if scope.includes_download() {
         for entry in dl_entries {
@@ -1558,8 +1566,14 @@ pub async fn get_top_accessed_entries(
 
 /// Discover all external package manager caches on the system
 #[tauri::command]
-pub async fn discover_external_caches() -> Result<Vec<ExternalCacheInfo>, String> {
-    external::discover_all_caches()
+pub async fn discover_external_caches(
+    settings: State<'_, SharedSettings>,
+) -> Result<Vec<ExternalCacheInfo>, String> {
+    let s = settings.read().await;
+    let excluded = s.general.external_cache_excluded_providers.clone();
+    let custom = s.general.custom_cache_entries.clone();
+    drop(s);
+    external::discover_all_caches_full_with_custom(&excluded, &custom)
         .await
         .map_err(|e| e.to_string())
 }
@@ -1645,6 +1659,8 @@ pub async fn get_combined_cache_stats(
 ) -> Result<CombinedCacheStats, String> {
     let s = settings.read().await;
     let cache_dir = s.get_cache_dir();
+    let excluded = s.general.external_cache_excluded_providers.clone();
+    let custom = s.general.custom_cache_entries.clone();
     drop(s);
 
     // Get internal cache size
@@ -1656,7 +1672,7 @@ pub async fn get_combined_cache_stats(
     let internal_size = download_stats.total_size;
 
     // Get combined stats
-    external::get_combined_stats(internal_size)
+    external::get_combined_stats_with_custom(internal_size, &excluded, &custom)
         .await
         .map_err(|e| e.to_string())
 }
@@ -1707,6 +1723,8 @@ pub async fn cache_size_monitor(
     let max_size = s.general.cache_max_size;
     let threshold = s.general.cache_auto_clean_threshold;
     let include_ext = include_external.unwrap_or(s.general.cache_monitor_external);
+    let excluded = s.general.external_cache_excluded_providers.clone();
+    let custom = s.general.custom_cache_entries.clone();
     drop(s);
 
     // Get internal cache size
@@ -1718,7 +1736,7 @@ pub async fn cache_size_monitor(
 
     // Get external cache sizes if requested
     let (external_size, external_caches) = if include_ext {
-        let caches = external::discover_all_caches()
+        let caches = external::discover_all_caches_full_with_custom(&excluded, &custom)
             .await
             .map_err(|e| e.to_string())?;
         let ext_size: u64 = caches.iter().map(|c| c.size).sum();
@@ -2204,47 +2222,60 @@ pub struct ExternalCachePathInfo {
     pub has_clean_command: bool,
     pub clean_command: Option<String>,
     pub env_vars_checked: Vec<String>,
+    pub detection_state: external::ExternalCacheDetectionState,
+    pub detection_reason: Option<String>,
+    pub detection_error: Option<String>,
 }
 
 /// Get path info for all external cache providers
 #[tauri::command]
-pub async fn get_external_cache_paths() -> Result<Vec<ExternalCachePathInfo>, String> {
+pub async fn get_external_cache_paths(
+    settings: State<'_, SharedSettings>,
+) -> Result<Vec<ExternalCachePathInfo>, String> {
+    let s = settings.read().await;
+    let excluded = s.general.external_cache_excluded_providers.clone();
+    let custom = s.general.custom_cache_entries.clone();
+    drop(s);
+
+    let discovered = external::discover_all_caches_fast_with_custom(&excluded, &custom);
     let mut results = Vec::new();
 
-    for provider in external::ExternalCacheProvider::all() {
-        let cache_path = provider.cache_path();
-        let exists = cache_path.as_ref().map(|p| p.exists()).unwrap_or(false);
-        let size = if let Some(ref p) = cache_path {
-            if exists {
-                external::calculate_dir_size(p).await
-            } else {
-                0
-            }
+    for cache in discovered {
+        let cache_path = if cache.cache_path.is_empty() {
+            None
         } else {
-            0
+            Some(PathBuf::from(&cache.cache_path))
+        };
+        let exists = cache_path.as_ref().map(|p| p.exists()).unwrap_or(false);
+        let size = match (exists, cache_path.as_ref()) {
+            (true, Some(path)) => external::calculate_dir_size(path).await,
+            _ => 0,
         };
 
-        let is_available = external::is_provider_available(provider).await;
-
-        let clean_cmd = provider
-            .clean_command()
-            .map(|(cmd, args)| format!("{} {}", cmd, args.join(" ")));
+        let provider = external::ExternalCacheProvider::parse_str(&cache.provider);
+        let clean_cmd = provider.and_then(|p| {
+            p.clean_command()
+                .map(|(cmd, args)| format!("{} {}", cmd, args.join(" ")))
+        });
         let has_clean_command = clean_cmd.is_some();
 
         // Get environment variables that were checked for this provider
         let env_vars = get_provider_env_vars(provider);
 
         results.push(ExternalCachePathInfo {
-            provider: provider.id().to_string(),
-            display_name: provider.display_name().to_string(),
+            provider: cache.provider,
+            display_name: cache.display_name,
             cache_path: cache_path.map(|p| p.display().to_string()),
             exists,
             size,
             size_human: format_size(size),
-            is_available,
+            is_available: cache.is_available,
             has_clean_command,
             clean_command: clean_cmd,
             env_vars_checked: env_vars,
+            detection_state: cache.detection_state,
+            detection_reason: cache.detection_reason,
+            detection_error: cache.detection_error,
         });
     }
 
@@ -2252,7 +2283,11 @@ pub async fn get_external_cache_paths() -> Result<Vec<ExternalCachePathInfo>, St
 }
 
 /// Get environment variables checked for a provider's cache path
-fn get_provider_env_vars(provider: external::ExternalCacheProvider) -> Vec<String> {
+fn get_provider_env_vars(provider: Option<external::ExternalCacheProvider>) -> Vec<String> {
+    let Some(provider) = provider else {
+        return vec![];
+    };
+
     match provider {
         external::ExternalCacheProvider::Npm => vec!["npm_config_cache".into()],
         external::ExternalCacheProvider::Pnpm => vec!["PNPM_STORE_DIR".into()],
@@ -2373,8 +2408,8 @@ pub async fn get_cache_size_history(
 mod tests {
     use super::{record_cache_snapshot, CacheChangedEvent, CacheCommandScope, CacheOptimizeResult};
     use crate::cache::{DownloadCache, MetadataCache};
-    use tempfile::tempdir;
     use serde_json::Value;
+    use tempfile::tempdir;
 
     #[test]
     fn cache_optimize_result_serializes_in_camel_case() {
@@ -2466,7 +2501,9 @@ mod tests {
             .await
             .expect("checksum");
 
-        let mut download_cache = DownloadCache::open(cache_dir).await.expect("download cache");
+        let mut download_cache = DownloadCache::open(cache_dir)
+            .await
+            .expect("download cache");
         download_cache
             .add_file(&test_file, &checksum)
             .await

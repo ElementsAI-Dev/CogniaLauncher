@@ -129,6 +129,8 @@ describe('useWsl', () => {
     expect(result.current.runningDistros).toEqual([]);
     expect(result.current.config).toBeNull();
     expect(result.current.capabilities).toBeNull();
+    expect(result.current.completeness.state).toBe('degraded');
+    expect(result.current.lastFailure).toBeNull();
     expect(result.current.loading).toBe(false);
     expect(result.current.error).toBeNull();
   });
@@ -710,6 +712,33 @@ describe('useWsl', () => {
     });
 
     expect(mockWslSetSparse).toHaveBeenCalledWith('Ubuntu', true);
+  });
+
+  it('should block sparse operation when capability is unsupported', async () => {
+    mockWslGetCapabilities.mockResolvedValue({
+      manage: true,
+      move: true,
+      resize: true,
+      setSparse: false,
+      setDefaultUser: true,
+      mountOptions: true,
+      shutdownForce: true,
+      exportFormat: true,
+      importInPlace: true,
+      version: '2.0.0',
+    });
+
+    const { result } = renderHook(() => useWsl());
+    await act(async () => {
+      await result.current.refreshCapabilities();
+    });
+
+    await expect(
+      act(async () => {
+        await result.current.setSparse('Ubuntu', true);
+      })
+    ).rejects.toThrow('[WSL_UNSUPPORTED:distro.setSparse]');
+    expect(mockWslSetSparse).not.toHaveBeenCalled();
   });
 
   it('should move distro', async () => {

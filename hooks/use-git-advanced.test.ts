@@ -221,14 +221,47 @@ describe('useGitAdvanced', () => {
   describe('rebase', () => {
     it('rebase calls tauri and refreshes state', async () => {
       const { result } = renderHook(() => useGitAdvanced('/repo'));
-      await act(async () => { await result.current.rebase('main'); });
+      await act(async () => { await result.current.rebase('main', true); });
       expect(tauri.gitRebase).toHaveBeenCalledWith('/repo', 'main');
     });
 
     it('squash calls tauri', async () => {
       const { result } = renderHook(() => useGitAdvanced('/repo'));
-      await act(async () => { await result.current.squash(3, 'Combined commit'); });
+      await act(async () => { await result.current.squash(3, 'Combined commit', true); });
       expect(tauri.gitSquash).toHaveBeenCalledWith('/repo', 3, 'Combined commit');
+    });
+
+    it('blocks rebase when history-rewrite confirmation is missing', async () => {
+      const { result } = renderHook(() => useGitAdvanced('/repo'));
+      let error: unknown;
+      await act(async () => {
+        try {
+          await result.current.rebase('main');
+        } catch (e) {
+          error = e;
+        }
+      });
+      expect(String(error)).toContain('Rebase/Squash rewrites commit history');
+      expect(tauri.gitRebase).not.toHaveBeenCalled();
+      expect(result.current.lastActionResult).toMatchObject({
+        operation: 'rebase',
+        status: 'blocked',
+        guardrail: { level: 'warn' },
+        error: { category: 'precondition', recoverable: true },
+      });
+    });
+
+    it('refreshByScopes deduplicates advanced scope refreshes', async () => {
+      const { result } = renderHook(() => useGitAdvanced('/repo'));
+      tauri.gitGetMergeRebaseState.mockClear();
+      tauri.gitGetConflictedFiles.mockClear();
+
+      await act(async () => {
+        await result.current.refreshByScopes(['advanced', 'advanced']);
+      });
+
+      expect(tauri.gitGetMergeRebaseState).toHaveBeenCalledTimes(1);
+      expect(tauri.gitGetConflictedFiles).toHaveBeenCalledTimes(1);
     });
   });
 

@@ -27,6 +27,9 @@ const mockGetComponentsInfo = jest.fn();
 const mockGetBatteryInfo = jest.fn();
 const mockGetDiskInfo = jest.fn();
 const mockGetNetworkInterfaces = jest.fn();
+const mockProviderStatusAll = jest.fn();
+const mockGetCombinedCacheStats = jest.fn();
+const mockLogGetTotalSize = jest.fn();
 
 jest.mock('@/lib/platform', () => ({
   isTauri: () => mockIsTauri(),
@@ -43,15 +46,22 @@ jest.mock('@/lib/tauri', () => ({
   getBatteryInfo: (...args: unknown[]) => mockGetBatteryInfo(...args),
   getDiskInfo: (...args: unknown[]) => mockGetDiskInfo(...args),
   getNetworkInterfaces: (...args: unknown[]) => mockGetNetworkInterfaces(...args),
-  providerStatusAll: jest.fn().mockResolvedValue([]),
-  getCombinedCacheStats: jest.fn().mockResolvedValue({ internalSizeHuman: '0 B', externalSizeHuman: '0 B', totalSizeHuman: '0 B' }),
-  logGetTotalSize: jest.fn().mockResolvedValue(0),
+  providerStatusAll: (...args: unknown[]) => mockProviderStatusAll(...args),
+  getCombinedCacheStats: (...args: unknown[]) => mockGetCombinedCacheStats(...args),
+  logGetTotalSize: (...args: unknown[]) => mockLogGetTotalSize(...args),
 }));
 
 describe('useAboutData', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockIsTauri.mockReturnValue(false);
+    mockProviderStatusAll.mockResolvedValue([]);
+    mockGetCombinedCacheStats.mockResolvedValue({
+      internalSizeHuman: "0 B",
+      externalSizeHuman: "0 B",
+      totalSizeHuman: "0 B",
+    });
+    mockLogGetTotalSize.mockResolvedValue(0);
   });
 
   describe('web mode (non-Tauri)', () => {
@@ -69,6 +79,9 @@ describe('useAboutData', () => {
       expect(result.current.systemInfo?.arch).toBe('Browser');
       expect(result.current.systemInfo?.appVersion).toBe('1.0.0');
       expect(result.current.updateStatus).toBe('up_to_date');
+      expect(result.current.aboutInsights?.runtimeMode).toBe("web");
+      expect(result.current.aboutInsights?.sections.providers).toBe("unavailable");
+      expect(result.current.insightsLoading).toBe(false);
     });
 
     it('should set updateInfo with no update available in web mode', async () => {
@@ -117,6 +130,13 @@ describe('useAboutData', () => {
       mockGetBatteryInfo.mockResolvedValue(null);
       mockGetDiskInfo.mockResolvedValue([]);
       mockGetNetworkInterfaces.mockResolvedValue([]);
+      mockProviderStatusAll.mockResolvedValue([]);
+      mockGetCombinedCacheStats.mockResolvedValue({
+        internalSizeHuman: "0 B",
+        externalSizeHuman: "0 B",
+        totalSizeHuman: "0 B",
+      });
+      mockLogGetTotalSize.mockResolvedValue(0);
     });
 
     it('should set isDesktop to true', async () => {
@@ -281,6 +301,89 @@ describe('useAboutData', () => {
       expect(result.current.systemInfo?.disks).toEqual([]);
       expect(result.current.systemInfo?.networks).toEqual([]);
       expect(result.current.systemInfo?.subsystemErrors).toEqual([]);
+      expect(result.current.aboutInsights?.runtimeMode).toBe("desktop");
+      expect(result.current.aboutInsights?.sections.logs).toBe("ok");
+    });
+
+    it("should build insights summary from providers and logs", async () => {
+      mockSelfCheckUpdate.mockResolvedValue({
+        current_version: "1.0.0",
+        latest_version: "1.0.0",
+        update_available: false,
+        release_notes: null,
+      });
+      mockGetPlatformInfo.mockResolvedValue({
+        os: "windows", arch: "x86_64", osVersion: "", osLongVersion: "",
+        kernelVersion: "", hostname: "", osName: "", distributionId: "",
+        cpuArch: "", cpuModel: "", cpuVendorId: "", cpuFrequency: 0,
+        cpuCores: 0, physicalCoreCount: null, globalCpuUsage: 0,
+        totalMemory: 0, availableMemory: 0, usedMemory: 0,
+        totalSwap: 0, usedSwap: 0, uptime: 0, bootTime: 0,
+        loadAverage: [0, 0, 0], gpus: [], appVersion: "1.0.0",
+      });
+      mockGetCogniaDir.mockResolvedValue("/tmp");
+      mockProviderStatusAll.mockResolvedValue([
+        { id: "npm", display_name: "npm", installed: true, platforms: ["windows"], status: "supported" },
+        { id: "pip", display_name: "pip", installed: false, platforms: ["windows"], status: "supported" },
+        { id: "apt", display_name: "apt", installed: false, platforms: ["linux"], status: "unsupported" },
+      ]);
+      mockLogGetTotalSize.mockResolvedValue(2048);
+      mockGetCombinedCacheStats.mockResolvedValue({
+        internalSizeHuman: "1.0 MB",
+        externalSizeHuman: "2.0 MB",
+        totalSizeHuman: "3.0 MB",
+      });
+
+      const { result } = renderHook(() => useAboutData("en"));
+      await act(async () => {});
+
+      expect(result.current.aboutInsights?.providerSummary).toMatchObject({
+        total: 3,
+        installed: 1,
+        supported: 2,
+        unsupported: 1,
+      });
+      expect(result.current.aboutInsights?.storageSummary.logTotalSizeBytes).toBe(2048);
+      expect(result.current.aboutInsights?.sections).toMatchObject({
+        providers: "ok",
+        logs: "ok",
+        cache: "ok",
+      });
+    });
+
+    it("should expose failed section state for partial insights failure", async () => {
+      mockSelfCheckUpdate.mockResolvedValue({
+        current_version: "1.0.0",
+        latest_version: "1.0.0",
+        update_available: false,
+        release_notes: null,
+      });
+      mockGetPlatformInfo.mockResolvedValue({
+        os: "windows", arch: "x86_64", osVersion: "", osLongVersion: "",
+        kernelVersion: "", hostname: "", osName: "", distributionId: "",
+        cpuArch: "", cpuModel: "", cpuVendorId: "", cpuFrequency: 0,
+        cpuCores: 0, physicalCoreCount: null, globalCpuUsage: 0,
+        totalMemory: 0, availableMemory: 0, usedMemory: 0,
+        totalSwap: 0, usedSwap: 0, uptime: 0, bootTime: 0,
+        loadAverage: [0, 0, 0], gpus: [], appVersion: "1.0.0",
+      });
+      mockGetCogniaDir.mockResolvedValue("/tmp");
+      mockProviderStatusAll.mockRejectedValue(new Error("provider fail"));
+      mockLogGetTotalSize.mockResolvedValue(1024);
+      mockGetCombinedCacheStats.mockResolvedValue({
+        internalSizeHuman: "1.0 MB",
+        externalSizeHuman: "2.0 MB",
+        totalSizeHuman: "3.0 MB",
+      });
+
+      const { result } = renderHook(() => useAboutData("en"));
+      await act(async () => {});
+
+      expect(result.current.aboutInsights?.sections).toMatchObject({
+        providers: "failed",
+        logs: "ok",
+        cache: "ok",
+      });
     });
 
     it('should load components and battery info from backend', async () => {

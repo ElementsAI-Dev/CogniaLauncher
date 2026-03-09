@@ -1,3 +1,4 @@
+import "@testing-library/jest-dom";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SystemInfoCard } from "./system-info-card";
@@ -171,12 +172,13 @@ describe("SystemInfoCard", () => {
     expect(container.querySelectorAll("[class*='animate-pulse']").length).toBeGreaterThan(0);
   });
 
-  it("shows Unknown when systemInfo is null and not loading", () => {
+  it("shows empty fallback when systemInfo is null and not loading", () => {
     render(
       <SystemInfoCard {...defaultProps} systemInfo={null} />,
     );
-    const unknowns = screen.getAllByText("Unknown");
-    expect(unknowns.length).toBeGreaterThan(0);
+    expect(screen.getAllByText("System Information").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("Failed to load system info")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Retry" }).length).toBeGreaterThan(0);
   });
 
   it("calls onRetry when retry button is clicked", async () => {
@@ -188,10 +190,10 @@ describe("SystemInfoCard", () => {
 
   it("has correct aria region", () => {
     render(<SystemInfoCard {...defaultProps} />);
-    expect(screen.getByRole("region")).toBeInTheDocument();
+    expect(screen.getAllByRole("region").length).toBeGreaterThan(0);
   });
 
-  it("renders temperature section when components are present", () => {
+  it("renders temperature section when components are present", async () => {
     const withComponents = {
       ...systemInfo,
       components: [
@@ -201,6 +203,7 @@ describe("SystemInfoCard", () => {
     };
     render(<SystemInfoCard {...defaultProps} systemInfo={withComponents} />);
     expect(screen.getByText("Temperature")).toBeInTheDocument();
+    await userEvent.click(screen.getByText("Temperature").closest("button")!);
     expect(screen.getByText("CPU Package")).toBeInTheDocument();
     expect(screen.getByText("65.5°C / 100°C")).toBeInTheDocument();
   });
@@ -221,6 +224,7 @@ describe("SystemInfoCard", () => {
     render(<SystemInfoCard {...defaultProps} systemInfo={manyComponents} />);
 
     expect(screen.getByText("Total: 7")).toBeInTheDocument();
+    await userEvent.click(screen.getByText("Temperature").closest("button")!);
     expect(screen.getByText("Show 1 more")).toBeInTheDocument();
     expect(screen.queryByText("Chipset")).not.toBeInTheDocument();
 
@@ -234,7 +238,7 @@ describe("SystemInfoCard", () => {
     expect(screen.queryByText("Temperature")).not.toBeInTheDocument();
   });
 
-  it("renders battery section when battery info is present", () => {
+  it("renders battery section when battery info is present", async () => {
     const withBattery = {
       ...systemInfo,
       battery: {
@@ -254,6 +258,7 @@ describe("SystemInfoCard", () => {
     };
     render(<SystemInfoCard {...defaultProps} systemInfo={withBattery} />);
     expect(screen.getByText("Battery")).toBeInTheDocument();
+    await userEvent.click(screen.getByText("Battery").closest("button")!);
     expect(screen.getByText("Charging")).toBeInTheDocument();
     expect(screen.getByText("92%")).toBeInTheDocument();
     expect(screen.getByText("Li-ion")).toBeInTheDocument();
@@ -265,7 +270,7 @@ describe("SystemInfoCard", () => {
     expect(screen.queryByText("Battery")).not.toBeInTheDocument();
   });
 
-  it("renders storage section when disks are present", () => {
+  it("renders storage section when disks are present", async () => {
     const withDisks = {
       ...systemInfo,
       disks: [
@@ -292,9 +297,11 @@ describe("SystemInfoCard", () => {
     };
     render(<SystemInfoCard {...defaultProps} systemInfo={withDisks} />);
     expect(screen.getByText("Storage")).toBeInTheDocument();
+    await userEvent.click(screen.getByText("Storage").closest("button")!);
+    expect(screen.getByText("NTFS")).toBeInTheDocument();
   });
 
-  it("renders network section when interfaces with IPs are present", () => {
+  it("renders network section when interfaces with IPs are present", async () => {
     const withNetworks = {
       ...systemInfo,
       networks: [
@@ -316,6 +323,7 @@ describe("SystemInfoCard", () => {
     };
     render(<SystemInfoCard {...defaultProps} systemInfo={withNetworks} />);
     expect(screen.getByText("Network")).toBeInTheDocument();
+    await userEvent.click(screen.getByText("Network").closest("button")!);
     expect(screen.getByText("Ethernet")).toBeInTheDocument();
   });
 
@@ -342,18 +350,20 @@ describe("SystemInfoCard", () => {
     expect(toast.success).toHaveBeenCalled();
   });
 
-  it("renders GPU VRAM in GB for large values", () => {
+  it("renders GPU VRAM in GB for large values", async () => {
     render(<SystemInfoCard {...defaultProps} />);
+    await userEvent.click(screen.getByText("Graphics").closest("button")!);
     // GPU VRAM is 12288 MB = 12.0 GB
     expect(screen.getByText("12.0 GB")).toBeInTheDocument();
   });
 
-  it("renders GPU driver version", () => {
+  it("renders GPU driver version", async () => {
     render(<SystemInfoCard {...defaultProps} />);
+    await userEvent.click(screen.getByText("Graphics").closest("button")!);
     expect(screen.getByText("555.42")).toBeInTheDocument();
   });
 
-  it("renders battery discharging state", () => {
+  it("renders battery discharging state", async () => {
     const withBatteryDischarging = {
       ...systemInfo,
       battery: {
@@ -375,6 +385,7 @@ describe("SystemInfoCard", () => {
       <SystemInfoCard {...defaultProps} systemInfo={withBatteryDischarging} />,
     );
     expect(screen.getByText("Battery")).toBeInTheDocument();
+    await userEvent.click(screen.getByText("Battery").closest("button")!);
     expect(screen.getByText("On Battery")).toBeInTheDocument();
   });
 

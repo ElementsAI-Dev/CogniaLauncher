@@ -35,7 +35,11 @@ function mergeRetainedSystemRows(previous: DetectedEnv[], next: DetectedEnv[]): 
   return Array.from(rows.values()).sort((a, b) => a.name.localeCompare(b.name));
 }
 
-export function EnvironmentDetectionStep({ t, mode = 'quick' }: EnvironmentDetectionStepProps) {
+export function EnvironmentDetectionStep({
+  t,
+  mode = 'quick',
+  onDetectionSummaryChange,
+}: EnvironmentDetectionStepProps) {
   const isDesktop = tauri.isTauri();
   const router = useRouter();
   const [detecting, setDetecting] = useState(false);
@@ -152,6 +156,24 @@ export function EnvironmentDetectionStep({ t, mode = 'quick' }: EnvironmentDetec
   ]);
 
   const detectedCount = detected.filter((e) => e.available).length;
+
+  useEffect(() => {
+    if (!onDetectionSummaryChange) {
+      return;
+    }
+
+    const manageableEnvironments = Array.from(new Set(
+      detected
+        .filter((env) => env.available && typeof env.envType === 'string' && env.envType.length > 0)
+        .map((env) => env.envType as string),
+    ));
+
+    onDetectionSummaryChange({
+      detectedCount,
+      primaryEnvironment: manageableEnvironments[0] ?? null,
+      manageableEnvironments,
+    });
+  }, [detected, detectedCount, onDetectionSummaryChange]);
 
   const handleManageEnvironment = useCallback((envType: string) => {
     const logicalEnvType = getLogicalEnvType(envType, storeProviders);

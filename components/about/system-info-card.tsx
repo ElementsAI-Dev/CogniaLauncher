@@ -10,6 +10,20 @@ import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
@@ -35,7 +49,7 @@ import { useSystemInfoDisplay } from "@/hooks/use-system-info-display";
 import { buildSystemInfoText } from "@/lib/about-utils";
 import { formatBytes, formatUptime } from "@/lib/utils";
 import { APP_VERSION } from "@/lib/app-version";
-import type { SystemInfo } from "@/types/about";
+import type { AboutInsights, SystemInfo } from "@/types/about";
 import type { SelfUpdateInfo } from "@/lib/tauri";
 
 interface InfoRowProps {
@@ -54,14 +68,14 @@ function InfoRow({
   unknownText,
 }: InfoRowProps) {
   return (
-    <div className="flex justify-between items-center min-h-[24px] gap-4">
+    <div className="flex justify-between items-center min-h-6 gap-4">
       <span className="text-[13px] text-muted-foreground">{label}</span>
       {isLoading ? (
         <Skeleton className="h-4 w-20" />
       ) : isMono && value && value.length > 25 ? (
         <Tooltip>
           <TooltipTrigger asChild>
-            <span className="text-[13px] font-medium text-foreground font-mono truncate max-w-[240px] cursor-help">
+            <span className="text-[13px] font-medium text-foreground font-mono truncate max-w-60or-help">
               {value}
             </span>
           </TooltipTrigger>
@@ -82,6 +96,7 @@ function InfoRow({
 
 interface SystemInfoCardProps {
   systemInfo: SystemInfo | null;
+  aboutInsights?: AboutInsights | null;
   systemLoading: boolean;
   updateInfo: SelfUpdateInfo | null;
   systemError: string | null;
@@ -95,6 +110,7 @@ const NETWORKS_PREVIEW_COUNT = 4;
 
 export function SystemInfoCard({
   systemInfo,
+  aboutInsights,
   systemLoading,
   updateInfo,
   systemError,
@@ -105,6 +121,7 @@ export function SystemInfoCard({
   const [showAllComponents, setShowAllComponents] = useState(false);
   const [showAllDisks, setShowAllDisks] = useState(false);
   const [showAllNetworks, setShowAllNetworks] = useState(false);
+  const [expandedSections, setExpandedSections] = useState<string[]>([]);
 
   const unknownText = t("common.unknown");
 
@@ -135,9 +152,34 @@ export function SystemInfoCard({
     ? networkItems
     : networkItems.slice(0, NETWORKS_PREVIEW_COUNT);
 
+  const optionalSectionValues = useMemo(() => {
+    const values: string[] = [];
+    if ((systemInfo?.gpus?.length ?? 0) > 0) values.push("gpu");
+    if (componentItems.length > 0) values.push("temperature");
+    if (systemInfo?.battery) values.push("battery");
+    if (diskItems.length > 0) values.push("storage");
+    if (networkItems.length > 0) values.push("network");
+    return values;
+  }, [
+    componentItems.length,
+    diskItems.length,
+    networkItems.length,
+    systemInfo?.battery,
+    systemInfo?.gpus,
+  ]);
+
+  const normalizedExpandedSections = useMemo(() => {
+    const filtered = expandedSections.filter((value) =>
+      optionalSectionValues.includes(value),
+    );
+    if (filtered.length > 0) return filtered;
+    return optionalSectionValues.length > 0 ? [optionalSectionValues[0]] : [];
+  }, [expandedSections, optionalSectionValues]);
+
   const copySystemInfo = async () => {
     const text = buildSystemInfoText({
       systemInfo,
+      aboutInsights,
       updateInfo,
       display: { osDisplayName, cpuCoresDisplay, memoryDisplay, swapDisplay, gpuDisplay },
       unknownText,
@@ -156,6 +198,20 @@ export function SystemInfoCard({
 
   const renderSectionHeader = (icon: ReactNode, label: string, count?: number) => (
     <div className="flex items-center gap-1.5 mb-2">
+      {icon}
+      <Badge variant="outline" className="text-[10px] uppercase tracking-wider font-medium">
+        {label}
+      </Badge>
+      {typeof count === "number" && (
+        <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-5">
+          {t("about.totalItems", { count })}
+        </Badge>
+      )}
+    </div>
+  );
+
+  const renderAccordionLabel = (icon: ReactNode, label: string, count?: number) => (
+    <div className="flex items-center gap-1.5">
       {icon}
       <Badge variant="outline" className="text-[10px] uppercase tracking-wider font-medium">
         {label}
@@ -190,12 +246,14 @@ export function SystemInfoCard({
     );
   };
 
+  const showUnavailableState = !systemLoading && !systemInfo;
+  const hasExpandableSections = optionalSectionValues.length > 0;
   return (
     <Card
       role="region"
       aria-labelledby="system-info-heading"
     >
-      <CardHeader>
+      <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-base">
           <Monitor className="h-5 w-5 text-foreground" aria-hidden="true" />
           <span id="system-info-heading">{t("about.systemInfo")}</span>
@@ -273,6 +331,26 @@ export function SystemInfoCard({
           </Alert>
         )}
 
+        {showUnavailableState && (
+          <Empty>
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <Monitor className="h-5 w-5" aria-hidden="true" />
+              </EmptyMedia>
+              <EmptyTitle>{t("about.systemInfo")}</EmptyTitle>
+              <EmptyDescription>{t("about.systemInfoFailed")}</EmptyDescription>
+            </EmptyHeader>
+            <EmptyContent>
+              <Button variant="outline" size="sm" onClick={onRetry}>
+                <RefreshCw className="h-3.5 w-3.5 mr-1" aria-hidden="true" />
+                {t("common.retry")}
+              </Button>
+            </EmptyContent>
+          </Empty>
+        )}
+
+        {!showUnavailableState && (
+          <>
         <div className="space-y-1">
           {renderSectionHeader(
             <Server className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />,
@@ -381,10 +459,10 @@ export function SystemInfoCard({
                     value={memoryPercent}
                     className={`h-1.5 flex-1 ${
                       memoryPercent > 90
-                        ? "[&>[data-slot=progress-indicator]]:bg-red-500"
+                        ? "*:data-[slot=progress-indicator]:bg-red-500"
                         : memoryPercent > 70
-                          ? "[&>[data-slot=progress-indicator]]:bg-yellow-500"
-                          : "[&>[data-slot=progress-indicator]]:bg-green-500"
+                          ? "*:data-[slot=progress-indicator]:bg-yellow-500"
+                          : "*:data-[slot=progress-indicator]:bg-green-500"
                     }`}
                     aria-label={`${t("about.memory")} ${memoryPercent}%`}
                   />
@@ -438,10 +516,10 @@ export function SystemInfoCard({
                       value={swapPercent}
                       className={`h-1.5 flex-1 ${
                         swapPercent > 90
-                          ? "[&>[data-slot=progress-indicator]]:bg-red-500"
+                          ? "*:data-[slot=progress-indicator]:bg-red-500"
                           : swapPercent > 70
-                            ? "[&>[data-slot=progress-indicator]]:bg-yellow-500"
-                            : "[&>[data-slot=progress-indicator]]:bg-blue-500"
+                            ? "*:data-[slot=progress-indicator]:bg-yellow-500"
+                            : "*:data-[slot=progress-indicator]:bg-blue-500"
                       }`}
                       aria-label={`${t("about.swap")} ${swapPercent}%`}
                     />
@@ -455,269 +533,281 @@ export function SystemInfoCard({
           </div>
         </div>
 
-        {systemInfo?.gpus && systemInfo.gpus.length > 0 && (
+        {hasExpandableSections && (
           <>
             <Separator />
-            <div className="space-y-1">
-              {renderSectionHeader(
-                <Gauge className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />,
-                t("about.gpuInfo"),
-                systemInfo.gpus.length,
-              )}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
-                {systemInfo.gpus.map((gpu, idx) => (
-                  <InfoRow
-                    key={idx}
-                    label={systemInfo.gpus.length > 1 ? `GPU ${idx + 1}` : t("about.gpu")}
-                    value={gpu.name}
-                    isLoading={systemLoading}
-                    unknownText={unknownText}
-                  />
-                ))}
-                {systemInfo.gpus[0]?.vramMb && (
-                  <InfoRow
-                    label={t("about.gpuVram")}
-                    value={
-                      systemInfo.gpus[0].vramMb >= 1024
-                        ? `${(systemInfo.gpus[0].vramMb / 1024).toFixed(1)} GB`
-                        : `${systemInfo.gpus[0].vramMb} MB`
-                    }
-                    isLoading={systemLoading}
-                    unknownText={unknownText}
-                  />
-                )}
-                {systemInfo.gpus[0]?.driverVersion && (
-                  <InfoRow
-                    label={t("about.gpuDriver")}
-                    value={systemInfo.gpus[0].driverVersion}
-                    isLoading={systemLoading}
-                    unknownText={unknownText}
-                  />
-                )}
-              </div>
-            </div>
-          </>
-        )}
-
-        {componentItems.length > 0 && (
-          <>
-            <Separator />
-            <div className="space-y-1">
-              {renderSectionHeader(
-                <Thermometer className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />,
-                t("about.temperature"),
-                componentItems.length,
-              )}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
-                {visibleComponents.map((comp, idx) => (
-                  <InfoRow
-                    key={`${comp.label}-${idx}`}
-                    label={comp.label}
-                    value={
-                      comp.temperature != null
-                        ? `${comp.temperature.toFixed(1)}°C${comp.critical != null ? ` / ${comp.critical.toFixed(0)}°C` : ""}`
-                        : undefined
-                    }
-                    isLoading={systemLoading}
-                    unknownText={unknownText}
-                  />
-                ))}
-              </div>
-              {renderDisclosureButton(
-                componentItems.length,
-                showAllComponents ? componentItems.length : COMPONENTS_PREVIEW_COUNT,
-                showAllComponents,
-                () => setShowAllComponents((prev) => !prev),
-              )}
-            </div>
-          </>
-        )}
-
-        {systemInfo?.battery && (
-          <>
-            <Separator />
-            <div className="space-y-1">
-              {renderSectionHeader(
-                systemInfo.battery.isCharging ? (
-                  <BatteryCharging className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
-                ) : (
-                  <Battery className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
-                ),
-                t("about.battery"),
-              )}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
-                <div className="space-y-1">
-                  <InfoRow
-                    label={t("about.batteryPercent")}
-                    value={`${systemInfo.battery.percent}%`}
-                    isLoading={systemLoading}
-                    unknownText={unknownText}
-                  />
-                  {!systemLoading && (
-                    <div className="flex items-center gap-2">
-                      <Progress
-                        value={systemInfo.battery.percent}
-                        className={`h-1.5 flex-1 ${
-                          systemInfo.battery.percent <= 20
-                            ? "[&>[data-slot=progress-indicator]]:bg-red-500"
-                            : systemInfo.battery.percent <= 50
-                              ? "[&>[data-slot=progress-indicator]]:bg-yellow-500"
-                              : "[&>[data-slot=progress-indicator]]:bg-green-500"
-                        }`}
-                        aria-label={`${t("about.battery")} ${systemInfo.battery.percent}%`}
-                      />
-                      <span className="text-[11px] text-muted-foreground w-8 text-right">
-                        {systemInfo.battery.percent}%
-                      </span>
-                    </div>
-                  )}
-                </div>
-                <InfoRow
-                  label={t("about.powerSource")}
-                  value={
-                    systemInfo.battery.isCharging
-                      ? t("about.batteryCharging")
-                      : systemInfo.battery.isPluggedIn
-                        ? t("about.batteryPluggedIn")
-                        : t("about.batteryDischarging")
-                  }
-                  isLoading={systemLoading}
-                  unknownText={unknownText}
-                />
-                {systemInfo.battery.healthPercent != null && (
-                  <InfoRow
-                    label={t("about.batteryHealth")}
-                    value={`${systemInfo.battery.healthPercent}%`}
-                    isLoading={systemLoading}
-                    unknownText={unknownText}
-                  />
-                )}
-                {systemInfo.battery.technology && (
-                  <InfoRow
-                    label={t("about.batteryTechnology")}
-                    value={systemInfo.battery.technology}
-                    isLoading={systemLoading}
-                    unknownText={unknownText}
-                  />
-                )}
-                {systemInfo.battery.cycleCount != null && (
-                  <InfoRow
-                    label={t("about.cycleCount")}
-                    value={`${systemInfo.battery.cycleCount}`}
-                    isLoading={systemLoading}
-                    unknownText={unknownText}
-                  />
-                )}
-              </div>
-            </div>
-          </>
-        )}
-
-        {diskItems.length > 0 && (
-          <>
-            <Separator />
-            <div className="space-y-1">
-              {renderSectionHeader(
-                <Database className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />,
-                t("about.storage"),
-                diskItems.length,
-              )}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
-                {visibleDisks.map((disk, idx) => (
-                  <div key={`${disk.mountPoint || disk.name}-${idx}`} className="space-y-1">
-                    <InfoRow
-                      label={disk.mountPoint || disk.name}
-                      value={`${disk.usedSpaceHuman} / ${disk.totalSpaceHuman} (${disk.diskType})`}
-                      isLoading={systemLoading}
-                      unknownText={unknownText}
-                    />
-                    <InfoRow
-                      label="Filesystem"
-                      value={disk.fileSystem}
-                      isLoading={systemLoading}
-                      unknownText={unknownText}
-                    />
-                    <InfoRow
-                      label="IO"
-                      value={`${disk.readBytesHuman} / ${disk.writtenBytesHuman}`}
-                      isLoading={systemLoading}
-                      unknownText={unknownText}
-                    />
-                    {!systemLoading && (
-                      <div className="flex items-center gap-2">
-                        <Progress
-                          value={disk.usagePercent}
-                          className={`h-1.5 flex-1 ${
-                            disk.usagePercent > 90
-                              ? "[&>[data-slot=progress-indicator]]:bg-red-500"
-                              : disk.usagePercent > 70
-                                ? "[&>[data-slot=progress-indicator]]:bg-yellow-500"
-                                : "[&>[data-slot=progress-indicator]]:bg-blue-500"
-                          }`}
-                          aria-label={`${disk.mountPoint || disk.name} ${Math.round(disk.usagePercent)}%`}
-                        />
-                        <span className="text-[11px] text-muted-foreground w-8 text-right">
-                          {Math.round(disk.usagePercent)}%
-                        </span>
-                      </div>
+            <Accordion type="multiple" value={normalizedExpandedSections} onValueChange={setExpandedSections} className="w-full">
+              {systemInfo?.gpus && systemInfo.gpus.length > 0 && (
+                <AccordionItem value="gpu">
+                  <AccordionTrigger className="py-2">
+                    {renderAccordionLabel(
+                      <Gauge className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />,
+                      t("about.gpuInfo"),
+                      systemInfo.gpus.length,
                     )}
-                  </div>
-                ))}
-              </div>
-              {renderDisclosureButton(
-                diskItems.length,
-                showAllDisks ? diskItems.length : DISKS_PREVIEW_COUNT,
-                showAllDisks,
-                () => setShowAllDisks((prev) => !prev),
+                  </AccordionTrigger>
+                  <AccordionContent>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
+                      {systemInfo.gpus.map((gpu, idx) => (
+                        <InfoRow
+                          key={idx}
+                          label={systemInfo.gpus.length > 1 ? `GPU ${idx + 1}` : t("about.gpu")}
+                          value={gpu.name}
+                          isLoading={systemLoading}
+                          unknownText={unknownText}
+                        />
+                      ))}
+                      {systemInfo.gpus[0]?.vramMb && (
+                        <InfoRow
+                          label={t("about.gpuVram")}
+                          value={
+                            systemInfo.gpus[0].vramMb >= 1024
+                              ? `${(systemInfo.gpus[0].vramMb / 1024).toFixed(1)} GB`
+                              : `${systemInfo.gpus[0].vramMb} MB`
+                          }
+                          isLoading={systemLoading}
+                          unknownText={unknownText}
+                        />
+                      )}
+                      {systemInfo.gpus[0]?.driverVersion && (
+                        <InfoRow
+                          label={t("about.gpuDriver")}
+                          value={systemInfo.gpus[0].driverVersion}
+                          isLoading={systemLoading}
+                          unknownText={unknownText}
+                        />
+                      )}
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
               )}
-            </div>
-          </>
-        )}
 
-        {networkItems.length > 0 && (
-          <>
-            <Separator />
-            <div className="space-y-1">
-              {renderSectionHeader(
-                <Wifi className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />,
-                t("about.networkInfo"),
-                networkItems.length,
+              {componentItems.length > 0 && (
+                <AccordionItem value="temperature">
+                  <AccordionTrigger className="py-2">
+                    {renderAccordionLabel(
+                      <Thermometer className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />,
+                      t("about.temperature"),
+                      componentItems.length,
+                    )}
+                  </AccordionTrigger>
+                  <AccordionContent className="space-y-2">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
+                      {visibleComponents.map((comp, idx) => (
+                        <InfoRow
+                          key={`${comp.label}-${idx}`}
+                          label={comp.label}
+                          value={
+                            comp.temperature != null
+                              ? `${comp.temperature.toFixed(1)}°C${comp.critical != null ? ` / ${comp.critical.toFixed(0)}°C` : ""}`
+                              : undefined
+                          }
+                          isLoading={systemLoading}
+                          unknownText={unknownText}
+                        />
+                      ))}
+                    </div>
+                    {renderDisclosureButton(
+                      componentItems.length,
+                      showAllComponents ? componentItems.length : COMPONENTS_PREVIEW_COUNT,
+                      showAllComponents,
+                      () => setShowAllComponents((prev) => !prev),
+                    )}
+                  </AccordionContent>
+                </AccordionItem>
               )}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
-                {visibleNetworks.map((net, idx) => (
-                  <div key={`${net.name}-${idx}`} className="space-y-1">
-                    <InfoRow
-                      label={net.name}
-                      value={
-                        net.ipAddresses.length > 0
-                          ? `${net.ipAddresses[0]}${net.mtu ? ` (MTU: ${net.mtu})` : ""}`
-                          : t("about.noIpAddress")
-                      }
-                      isLoading={systemLoading}
-                      unknownText={unknownText}
-                    />
-                    <InfoRow
-                      label="Traffic"
-                      value={`${net.totalReceivedHuman} / ${net.totalTransmittedHuman}`}
-                      isLoading={systemLoading}
-                      unknownText={unknownText}
-                    />
-                    <InfoRow
-                      label="Errors"
-                      value={`${net.totalErrorsOnReceived}/${net.totalErrorsOnTransmitted}`}
-                      isLoading={systemLoading}
-                      unknownText={unknownText}
-                    />
-                  </div>
-                ))}
-              </div>
-              {renderDisclosureButton(
-                networkItems.length,
-                showAllNetworks ? networkItems.length : NETWORKS_PREVIEW_COUNT,
-                showAllNetworks,
-                () => setShowAllNetworks((prev) => !prev),
+
+              {systemInfo?.battery && (
+                <AccordionItem value="battery">
+                  <AccordionTrigger className="py-2">
+                    {renderAccordionLabel(
+                      systemInfo.battery.isCharging ? (
+                        <BatteryCharging className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+                      ) : (
+                        <Battery className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+                      ),
+                      t("about.battery"),
+                    )}
+                  </AccordionTrigger>
+                  <AccordionContent>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
+                      <div className="space-y-1">
+                        <InfoRow
+                          label={t("about.batteryPercent")}
+                          value={`${systemInfo.battery.percent}%`}
+                          isLoading={systemLoading}
+                          unknownText={unknownText}
+                        />
+                        {!systemLoading && (
+                          <div className="flex items-center gap-2">
+                            <Progress
+                              value={systemInfo.battery.percent}
+                              className={`h-1.5 flex-1 ${
+                                systemInfo.battery.percent <= 20
+                                  ? "*:data-[slot=progress-indicator]:bg-red-500"
+                                  : systemInfo.battery.percent <= 50
+                                    ? "*:data-[slot=progress-indicator]:bg-yellow-500"
+                                    : "*:data-[slot=progress-indicator]:bg-green-500"
+                              }`}
+                              aria-label={`${t("about.battery")} ${systemInfo.battery.percent}%`}
+                            />
+                            <span className="text-[11px] text-muted-foreground w-8 text-right">
+                              {systemInfo.battery.percent}%
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                      <InfoRow
+                        label={t("about.powerSource")}
+                        value={
+                          systemInfo.battery.isCharging
+                            ? t("about.batteryCharging")
+                            : systemInfo.battery.isPluggedIn
+                              ? t("about.batteryPluggedIn")
+                              : t("about.batteryDischarging")
+                        }
+                        isLoading={systemLoading}
+                        unknownText={unknownText}
+                      />
+                      {systemInfo.battery.healthPercent != null && (
+                        <InfoRow
+                          label={t("about.batteryHealth")}
+                          value={`${systemInfo.battery.healthPercent}%`}
+                          isLoading={systemLoading}
+                          unknownText={unknownText}
+                        />
+                      )}
+                      {systemInfo.battery.technology && (
+                        <InfoRow
+                          label={t("about.batteryTechnology")}
+                          value={systemInfo.battery.technology}
+                          isLoading={systemLoading}
+                          unknownText={unknownText}
+                        />
+                      )}
+                      {systemInfo.battery.cycleCount != null && (
+                        <InfoRow
+                          label={t("about.cycleCount")}
+                          value={`${systemInfo.battery.cycleCount}`}
+                          isLoading={systemLoading}
+                          unknownText={unknownText}
+                        />
+                      )}
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
               )}
-            </div>
+
+              {diskItems.length > 0 && (
+                <AccordionItem value="storage">
+                  <AccordionTrigger className="py-2">
+                    {renderAccordionLabel(
+                      <Database className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />,
+                      t("about.storage"),
+                      diskItems.length,
+                    )}
+                  </AccordionTrigger>
+                  <AccordionContent className="space-y-2">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
+                      {visibleDisks.map((disk, idx) => (
+                        <div key={`${disk.mountPoint || disk.name}-${idx}`} className="space-y-1">
+                          <InfoRow
+                            label={disk.mountPoint || disk.name}
+                            value={`${disk.usedSpaceHuman} / ${disk.totalSpaceHuman} (${disk.diskType})`}
+                            isLoading={systemLoading}
+                            unknownText={unknownText}
+                          />
+                          <InfoRow
+                            label="Filesystem"
+                            value={disk.fileSystem}
+                            isLoading={systemLoading}
+                            unknownText={unknownText}
+                          />
+                          <InfoRow
+                            label="IO"
+                            value={`${disk.readBytesHuman} / ${disk.writtenBytesHuman}`}
+                            isLoading={systemLoading}
+                            unknownText={unknownText}
+                          />
+                          {!systemLoading && (
+                            <div className="flex items-center gap-2">
+                              <Progress
+                                value={disk.usagePercent}
+                                className={`h-1.5 flex-1 ${
+                                  disk.usagePercent > 90
+                                    ? "*:data-[slot=progress-indicator]:bg-red-500"
+                                    : disk.usagePercent > 70
+                                      ? "*:data-[slot=progress-indicator]:bg-yellow-500"
+                                      : "*:data-[slot=progress-indicator]:bg-blue-500"
+                                }`}
+                                aria-label={`${disk.mountPoint || disk.name} ${Math.round(disk.usagePercent)}%`}
+                              />
+                              <span className="text-[11px] text-muted-foreground w-8 text-right">
+                                {Math.round(disk.usagePercent)}%
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    {renderDisclosureButton(
+                      diskItems.length,
+                      showAllDisks ? diskItems.length : DISKS_PREVIEW_COUNT,
+                      showAllDisks,
+                      () => setShowAllDisks((prev) => !prev),
+                    )}
+                  </AccordionContent>
+                </AccordionItem>
+              )}
+
+              {networkItems.length > 0 && (
+                <AccordionItem value="network">
+                  <AccordionTrigger className="py-2">
+                    {renderAccordionLabel(
+                      <Wifi className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />,
+                      t("about.networkInfo"),
+                      networkItems.length,
+                    )}
+                  </AccordionTrigger>
+                  <AccordionContent className="space-y-2">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
+                      {visibleNetworks.map((net, idx) => (
+                        <div key={`${net.name}-${idx}`} className="space-y-1">
+                          <InfoRow
+                            label={net.name}
+                            value={
+                              net.ipAddresses.length > 0
+                                ? `${net.ipAddresses[0]}${net.mtu ? ` (MTU: ${net.mtu})` : ""}`
+                                : t("about.noIpAddress")
+                            }
+                            isLoading={systemLoading}
+                            unknownText={unknownText}
+                          />
+                          <InfoRow
+                            label="Traffic"
+                            value={`${net.totalReceivedHuman} / ${net.totalTransmittedHuman}`}
+                            isLoading={systemLoading}
+                            unknownText={unknownText}
+                          />
+                          <InfoRow
+                            label="Errors"
+                            value={`${net.totalErrorsOnReceived}/${net.totalErrorsOnTransmitted}`}
+                            isLoading={systemLoading}
+                            unknownText={unknownText}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                    {renderDisclosureButton(
+                      networkItems.length,
+                      showAllNetworks ? networkItems.length : NETWORKS_PREVIEW_COUNT,
+                      showAllNetworks,
+                      () => setShowAllNetworks((prev) => !prev),
+                    )}
+                  </AccordionContent>
+                </AccordionItem>
+              )}
+            </Accordion>
           </>
         )}
 
@@ -806,6 +896,8 @@ export function SystemInfoCard({
             )}
           </div>
         </div>
+          </>
+        )}
       </CardContent>
     </Card>
   );

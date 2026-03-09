@@ -110,6 +110,7 @@ export function TerminalDetectedShells({ shells, loading, startupMeasurements = 
                   className="h-7 text-xs gap-1"
                   onClick={() => onMeasureStartup(shell.id)}
                   disabled={measuringShellId === shell.id}
+                  aria-label={`${t('terminal.measureStartup')} ${shell.name}`}
                 >
                   {measuringShellId === shell.id ? (
                     <Loader2 className="h-3 w-3 animate-spin" />
@@ -147,6 +148,7 @@ export function TerminalDetectedShells({ shells, loading, startupMeasurements = 
                   className="h-7 text-xs gap-1"
                   onClick={() => onCheckShellHealth(shell.id)}
                   disabled={checkingHealthShellId === shell.id}
+                  aria-label={`${t('terminal.healthCheck')} ${shell.name}`}
                 >
                   {checkingHealthShellId === shell.id ? (
                     <Loader2 className="h-3 w-3 animate-spin" />
@@ -168,24 +170,24 @@ export function TerminalDetectedShells({ shells, loading, startupMeasurements = 
               </div>
             )}
             {healthResults[shell.id]?.issues.length > 0 && (
-              <div className="space-y-1">
+              <ul className="space-y-1">
                 {healthResults[shell.id].issues.map((issue, idx) => (
-                  <div key={idx} className="flex items-start gap-1.5 text-xs">
+                  <li key={idx} className="flex items-start gap-1.5 text-xs">
                     <span className={cn(
                       'mt-0.5 h-1.5 w-1.5 rounded-full shrink-0',
                       issue.severity === 'warning' ? 'bg-yellow-500' : issue.severity === 'error' ? 'bg-destructive' : 'bg-blue-400'
                     )} />
                     <span className="text-muted-foreground">{issue.message}</span>
-                  </div>
+                  </li>
                 ))}
-              </div>
+              </ul>
             )}
             {shell.configFiles.length > 0 && (
               <div>
                 <span className="text-muted-foreground">{t('terminal.configFiles')}: </span>
-                <div className="mt-1 space-y-1">
+                <ul className="mt-1 space-y-1">
                   {shell.configFiles.map((cf) => (
-                    <div key={cf.path} className="flex items-center gap-2 text-xs">
+                    <li key={cf.path} className="flex items-center gap-2 text-xs">
                       <span className={cn(
                         'h-1.5 w-1.5 rounded-full',
                         cf.exists ? 'bg-green-500' : 'bg-muted-foreground/30'
@@ -205,9 +207,9 @@ export function TerminalDetectedShells({ shells, loading, startupMeasurements = 
                           ({(cf.sizeBytes / 1024).toFixed(1)} KB)
                         </span>
                       )}
-                    </div>
+                    </li>
                   ))}
-                </div>
+                </ul>
               </div>
             )}
           </CardContent>

@@ -19,6 +19,10 @@ import {
 } from "@/lib/theme/chart-utils";
 import type { EnvironmentInfo, InstalledPackage } from "@/lib/tauri";
 import { WidgetEmptyCard } from "@/components/dashboard/widgets/widget-empty-card";
+import {
+  DashboardMetricGrid,
+  DashboardMetricItem,
+} from "@/components/dashboard/dashboard-primitives";
 
 interface ActivityChartProps {
   environments: EnvironmentInfo[];
@@ -86,8 +90,18 @@ export function ActivityChart({ environments, packages, className }: ActivityCha
           {t("dashboard.widgets.distributionOverviewDesc")}
         </CardDescription>
       </CardHeader>
-      <CardContent>
-        <ChartContainer config={chartConfig} className="h-[200px] w-full aspect-auto">
+      <CardContent className="space-y-4">
+        <DashboardMetricGrid>
+          <DashboardMetricItem
+            label={t("dashboard.widgets.environments")}
+            value={chartData.reduce((sum, item) => sum + item.environments, 0)}
+          />
+          <DashboardMetricItem
+            label={t("dashboard.widgets.packages")}
+            value={chartData.reduce((sum, item) => sum + item.packages, 0)}
+          />
+        </DashboardMetricGrid>
+        <ChartContainer config={chartConfig} className="h-50 w-full aspect-auto">
           <AreaChart data={chartData} margin={{ left: 0, right: 12 }}>
             <defs>
               <linearGradient

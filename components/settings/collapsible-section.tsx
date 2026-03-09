@@ -63,6 +63,8 @@ export function CollapsibleSection({
   const [internalOpen, setInternalOpen] = useState(defaultOpen);
   const isControlled = typeof open === "boolean";
   const resolvedOpen = isControlled ? open : internalOpen;
+  const sectionCardId = `section-${id}`;
+  const sectionContentId = `section-${id}-content`;
   const Icon = SECTION_ICONS[icon] || Settings2;
 
   const handleOpenChange = useCallback(
@@ -89,9 +91,13 @@ export function CollapsibleSection({
       onOpenChange={handleOpenChange}
       className={className}
     >
-      <Card id={`section-${id}`}>
+      <Card id={sectionCardId}>
         <CollapsibleTrigger asChild>
-          <CardHeader className="cursor-pointer select-none transition-colors hover:bg-muted/50">
+          <CardHeader
+            className="cursor-pointer select-none transition-colors hover:bg-muted/50"
+            aria-controls={sectionContentId}
+            aria-expanded={resolvedOpen}
+          >
             <div className="flex items-center justify-between">
               <CardTitle className="flex items-center gap-2 text-lg">
                 <Icon className="h-5 w-5" aria-hidden="true" />
@@ -107,6 +113,7 @@ export function CollapsibleSection({
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button
+                        type="button"
                         variant="ghost"
                         size="icon"
                         className="h-8 w-8"
@@ -136,8 +143,8 @@ export function CollapsibleSection({
             <CardDescription>{description}</CardDescription>
           </CardHeader>
         </CollapsibleTrigger>
-        <CollapsibleContent>
-          <CardContent className="pt-0">{children}</CardContent>
+        <CollapsibleContent id={sectionContentId}>
+          <CardContent className="pt-0 flex flex-col gap-4">{children}</CardContent>
         </CollapsibleContent>
       </Card>
     </Collapsible>

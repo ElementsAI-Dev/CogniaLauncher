@@ -6,6 +6,7 @@ import {
   pluginListAllTools,
   pluginInstall,
   pluginInstallMarketplace,
+  pluginInstallMarketplaceWithResult as pluginInstallMarketplaceWithResultCommand,
   pluginImportLocal,
   pluginUninstall,
   pluginEnable,
@@ -23,6 +24,7 @@ import {
   pluginValidate,
   pluginCheckUpdate,
   pluginUpdate,
+  pluginUpdateWithResult as pluginUpdateWithResultCommand,
   pluginGetHealth,
   pluginGetAllHealth,
   pluginResetHealth,
@@ -50,11 +52,73 @@ import type {
   PluginUpdateInfo,
   PluginHealth,
   PluginSettingDeclaration,
+  PluginMarketplaceActionError,
+  PluginMarketplaceActionResult,
+  PluginMarketplaceActionType,
 } from "@/types/plugin";
 import { toast } from "sonner";
 
 // Keep card-level preview compact and deterministic for scan-friendly plugin lists.
 const PLUGIN_TOOL_PREVIEW_LIMIT = 3;
+
+function normalizeMarketplaceActionError(
+  action: PluginMarketplaceActionType,
+  error: unknown,
+): PluginMarketplaceActionError {
+  const message = (error as Error).message ?? String(error);
+  const normalized = message.trim().toLowerCase();
+
+  if (
+    normalized.includes("desktop runtime is required")
+    || normalized.includes("requires cognialauncher")
+    || normalized.includes("requires tool contract")
+    || normalized.includes("incompatible")
+    || normalized.includes("compatib")
+  ) {
+    return {
+      category: "compatibility_blocked",
+      message,
+      retryable: false,
+    };
+  }
+
+  if (
+    normalized.includes("checksum")
+    || normalized.includes("validation")
+    || normalized.includes("plugin.toml")
+    || normalized.includes("invalid")
+    || normalized.includes("manifest")
+  ) {
+    return {
+      category: "validation_failed",
+      message,
+      retryable: false,
+    };
+  }
+
+  if (
+    normalized.includes("network")
+    || normalized.includes("timeout")
+    || normalized.includes("dns")
+    || normalized.includes("download")
+    || normalized.includes("fetch")
+    || normalized.includes("not found")
+    || normalized.includes("404")
+    || normalized.includes("unavailable")
+  ) {
+    return {
+      category: "source_unavailable",
+      message,
+      retryable: true,
+    };
+  }
+
+  return {
+    category: "install_execution_failed",
+    message,
+    retryable: action === "install" || action === "update",
+  };
+}
 
 function normalizeOptionalText(
   value: string | null | undefined,
@@ -215,6 +279,17 @@ export function usePlugins() {
 
   const fetchPluginsInFlightRef = useRef<Promise<void> | null>(null);
 
+  const clearPendingUpdateForPlugin = useCallback(
+    (pluginId: string) => {
+      const currentUpdates = usePluginStore.getState().pendingUpdates;
+      if (currentUpdates.length === 0) return;
+      setPendingUpdates(
+        currentUpdates.filter((update) => update.pluginId !== pluginId),
+      );
+    },
+    [setPendingUpdates],
+  );
+
   const syncMarketplaceContinuationForPlugin = useCallback(
     (pluginId: string) => {
       const state = usePluginStore.getState();
@@ -354,26 +429,130 @@ export function usePlugins() {
     [fetchPlugins, setError, setLoading],
   );
 
-  const installMarketplacePlugin = useCallback(
-    async (storeId: string) => {
-      if (!isTauri()) return null;
+  const installMarketplacePluginWithResult = useCallback(
+    async (storeId: string): Promise<PluginMarketplaceActionResult> => {
+      if (!isTauri()) {
+        return {
+          ok: false,
+          action: "install",
+          pluginId: null,
+          phase: "failed",
+          downloadTaskId: null,
+          error: {
+            category: "source_unavailable",
+            message: "Marketplace install requires desktop runtime.",
+            retryable: false,
+          },
+        };
+      }
+
       setLoading(true);
       try {
-        const pluginId = await pluginInstallMarketplace(storeId);
-        toast.success(`Marketplace plugin installed: ${pluginId}`);
+        let result: PluginMarketplaceActionResult;
+        try {
+          const commandResult =
+            await pluginInstallMarketplaceWithResultCommand(storeId);
+          if (!commandResult || typeof commandResult.ok !== "boolean") {
+            throw new Error("invalid marketplace install result");
+          }
+          result = {
+            ok: commandResult.ok,
+            action: "install",
+            pluginId: commandResult.pluginId ?? null,
+            phase: commandResult.phase ?? (commandResult.ok ? "completed" : "failed"),
+            downloadTaskId: commandResult.downloadTaskId ?? null,
+            error: commandResult.error ?? null,
+          };
+        } catch (error) {
+          const message = (error as Error).message ?? String(error);
+          const normalized = message.toLowerCase();
+          const shouldFallback =
+            normalized.includes("unknown command")
+            || normalized.includes("plugin_install_marketplace_with_result")
+            || normalized.includes("command not found");
+          if (!shouldFallback) {
+            throw error;
+          }
+
+          const pluginId = await pluginInstallMarketplace(storeId);
+          result = pluginId
+            ? {
+                ok: true,
+                action: "install",
+                pluginId,
+                phase: "completed",
+                downloadTaskId: null,
+                error: null,
+              }
+            : {
+                ok: false,
+                action: "install",
+                pluginId: null,
+                phase: "failed",
+                downloadTaskId: null,
+                error: {
+                  category: "install_execution_failed",
+                  message: "Marketplace install failed.",
+                  retryable: true,
+                },
+              };
+        }
+
+        if (!result.ok || !result.pluginId) {
+          const normalizedError = result.error ?? {
+            category: "install_execution_failed" as const,
+            message: "Marketplace install failed.",
+            retryable: true,
+          };
+          toast.error(`Marketplace install failed: ${normalizedError.message}`);
+          setError(normalizedError.message);
+          return {
+            ...result,
+            ok: false,
+            action: "install",
+            pluginId: result.pluginId ?? null,
+            phase: result.phase ?? "failed",
+            downloadTaskId: result.downloadTaskId ?? null,
+            error: normalizedError,
+          };
+        }
+
+        toast.success(`Marketplace plugin installed: ${result.pluginId}`);
         await fetchPlugins();
-        syncMarketplaceContinuationForPlugin(pluginId);
-        return pluginId;
+        clearPendingUpdateForPlugin(result.pluginId);
+        syncMarketplaceContinuationForPlugin(result.pluginId);
+        return result;
       } catch (e) {
-        const msg = (e as Error).message ?? String(e);
-        toast.error(`Marketplace install failed: ${msg}`);
-        setError(msg);
-        return null;
+        const normalizedError = normalizeMarketplaceActionError("install", e);
+        toast.error(`Marketplace install failed: ${normalizedError.message}`);
+        setError(normalizedError.message);
+        return {
+          ok: false,
+          action: "install",
+          pluginId: null,
+          phase: "failed",
+          downloadTaskId: null,
+          error: normalizedError,
+        };
       } finally {
         setLoading(false);
       }
     },
-    [fetchPlugins, setError, setLoading, syncMarketplaceContinuationForPlugin],
+    [
+      clearPendingUpdateForPlugin,
+      fetchPlugins,
+      setError,
+      setLoading,
+      syncMarketplaceContinuationForPlugin,
+    ],
+  );
+
+  const installMarketplacePlugin = useCallback(
+    async (storeId: string) => {
+      const result = await installMarketplacePluginWithResult(storeId);
+      return result.ok ? result.pluginId : null;
+    },
+    [installMarketplacePluginWithResult],
   );
 
   const importLocalPlugin = useCallback(
@@ -673,24 +852,115 @@ export function usePlugins() {
     [],
   );
 
-  const updatePlugin = useCallback(
-    async (pluginId: string) => {
-      if (!isTauri()) return;
+  const updatePluginWithResult = useCallback(
+    async (pluginId: string): Promise<PluginMarketplaceActionResult> => {
+      if (!isTauri()) {
+        return {
+          ok: false,
+          action: "update",
+          pluginId,
+          phase: "failed",
+          downloadTaskId: null,
+          error: {
+            category: "source_unavailable",
+            message: "Plugin update requires desktop runtime.",
+            retryable: false,
+          },
+        };
+      }
+
       setLoading(true);
       try {
-        await pluginUpdate(pluginId);
+        let result: PluginMarketplaceActionResult;
+        try {
+          const commandResult = await pluginUpdateWithResultCommand(pluginId);
+          if (!commandResult || typeof commandResult.ok !== "boolean") {
+            throw new Error("invalid marketplace update result");
+          }
+          result = {
+            ok: commandResult.ok,
+            action: "update",
+            pluginId: commandResult.pluginId ?? pluginId,
+            phase: commandResult.phase ?? (commandResult.ok ? "completed" : "failed"),
+            downloadTaskId: commandResult.downloadTaskId ?? null,
+            error: commandResult.error ?? null,
+          };
+        } catch (error) {
+          const message = (error as Error).message ?? String(error);
+          const normalized = message.toLowerCase();
+          const shouldFallback =
+            normalized.includes("unknown command")
+            || normalized.includes("plugin_update_with_result")
+            || normalized.includes("command not found");
+          if (!shouldFallback) {
+            throw error;
+          }
+
+          await pluginUpdate(pluginId);
+          result = {
+            ok: true,
+            action: "update",
+            pluginId,
+            phase: "completed",
+            downloadTaskId: null,
+            error: null,
+          };
+        }
+
+        if (!result.ok) {
+          const normalizedError = result.error ?? {
+            category: "install_execution_failed" as const,
+            message: "Marketplace update failed.",
+            retryable: true,
+          };
+          toast.error(`Update failed: ${normalizedError.message}`);
+          setError(normalizedError.message);
+          return {
+            ...result,
+            ok: false,
+            action: "update",
+            pluginId: result.pluginId ?? pluginId,
+            phase: result.phase ?? "failed",
+            downloadTaskId: result.downloadTaskId ?? null,
+            error: normalizedError,
+          };
+        }
+
         toast.success(`Plugin updated: ${pluginId}`);
         await fetchPlugins();
+        clearPendingUpdateForPlugin(pluginId);
         syncMarketplaceContinuationForPlugin(pluginId);
+        return result;
       } catch (e) {
-        const msg = (e as Error).message ?? String(e);
-        toast.error(`Update failed: ${msg}`);
-        setError(msg);
+        const normalizedError = normalizeMarketplaceActionError("update", e);
+        toast.error(`Update failed: ${normalizedError.message}`);
+        setError(normalizedError.message);
+        return {
+          ok: false,
+          action: "update",
+          pluginId,
+          phase: "failed",
+          downloadTaskId: null,
+          error: normalizedError,
+        };
       } finally {
         setLoading(false);
       }
     },
-    [fetchPlugins, setError, setLoading, syncMarketplaceContinuationForPlugin],
+    [
+      clearPendingUpdateForPlugin,
+      fetchPlugins,
+      setError,
+      setLoading,
+      syncMarketplaceContinuationForPlugin,
+    ],
+  );
+
+  const updatePlugin = useCallback(
+    async (pluginId: string) => {
+      await updatePluginWithResult(pluginId);
+    },
+    [updatePluginWithResult],
   );
 
   const getHealth = useCallback(
@@ -864,6 +1134,7 @@ export function usePlugins() {
     fetchPlugins,
     installPlugin,
     installMarketplacePlugin,
+    installMarketplacePluginWithResult,
     importLocalPlugin,
     uninstallPlugin,
     enablePlugin,
@@ -881,6 +1152,7 @@ export function usePlugins() {
     validatePlugin,
     checkUpdate,
     updatePlugin,
+    updatePluginWithResult,
     healthMap,
     pendingUpdates,
     permissionMode,

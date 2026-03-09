@@ -49,6 +49,7 @@ pub mod rustup;
 pub mod scoop;
 pub mod sdkman;
 pub mod snap;
+pub mod support;
 pub mod system;
 pub mod traits;
 pub mod uv;

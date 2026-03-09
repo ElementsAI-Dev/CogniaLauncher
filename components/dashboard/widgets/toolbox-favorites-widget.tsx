@@ -10,6 +10,10 @@ import { getCategoryMeta } from '@/lib/constants/toolbox';
 import { cn } from '@/lib/utils';
 import type { ToolCategory } from '@/types/toolbox';
 import { getToolboxDetailPath } from '@/lib/toolbox-route';
+import {
+  DashboardClickableRow,
+  DashboardEmptyState,
+} from '@/components/dashboard/dashboard-primitives';
 
 export function ToolboxFavoritesWidget() {
   const { t } = useLocale();
@@ -26,19 +30,22 @@ export function ToolboxFavoritesWidget() {
 
   if (!hasContent) {
     return (
-      <div className="flex flex-col items-center justify-center py-6 text-center">
-        <Wrench className="h-8 w-8 text-muted-foreground/40 mb-2" />
-        <p className="text-sm text-muted-foreground">{t('dashboard.widgets.toolboxEmpty')}</p>
-        <Button
-          variant="link"
-          size="sm"
-          className="mt-1 gap-1"
-          onClick={() => router.push('/toolbox')}
-        >
-          {t('dashboard.widgets.toolboxBrowse')}
-          <ArrowRight className="h-3 w-3" />
-        </Button>
-      </div>
+      <DashboardEmptyState
+        className="py-6"
+        icon={<Wrench className="h-8 w-8 text-muted-foreground/60" />}
+        message={t('dashboard.widgets.toolboxEmpty')}
+        action={(
+          <Button
+            variant="link"
+            size="sm"
+            className="mt-1 gap-1"
+            onClick={() => router.push('/toolbox')}
+          >
+            {t('dashboard.widgets.toolboxBrowse')}
+            <ArrowRight className="h-3 w-3" />
+          </Button>
+        )}
+      />
     );
   }
 
@@ -69,14 +76,15 @@ export function ToolboxFavoritesWidget() {
           <p className="text-xs font-medium text-muted-foreground">{t('toolbox.categories.recent')}</p>
           <div className="space-y-1">
             {recentUsed.map((tool) => tool && (
-              <button
+              <DashboardClickableRow
                 key={tool.id}
-                className="flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent/50 cursor-pointer"
+                className="items-center gap-2 rounded-md px-2 py-1.5"
                 onClick={() => router.push(getToolboxDetailPath(tool.id))}
+                aria-label={tool.name}
               >
                 <DynamicIcon name={tool.icon} className="h-3.5 w-3.5 text-muted-foreground" />
                 <span className="text-xs truncate">{tool.name}</span>
-              </button>
+              </DashboardClickableRow>
             ))}
           </div>
         </>

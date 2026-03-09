@@ -342,17 +342,28 @@ export function LogToolbar({
 
   return (
     <Collapsible open={showAdvanced} onOpenChange={setShowAdvanced}>
-    <div className="flex flex-col gap-2 p-3 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <section
+        className="flex flex-col gap-2 border-b bg-background/95 p-3 backdrop-blur supports-backdrop-filter:bg-background/60"
+        aria-label={t("logs.filter")}
+        data-testid="log-toolbar-shell"
+      >
       {/* Primary row - Search and main actions */}
-      <div className="flex flex-wrap items-center gap-2">
+      <div
+        className="flex flex-wrap items-center gap-2"
+        role="group"
+        aria-label="Primary log controls"
+        data-testid="log-toolbar-primary-row"
+      >
         {/* Search input */}
-        <div className="relative min-w-0 flex-1 basis-full sm:basis-auto">
+        <div className="relative min-w-0 flex-1 basis-full sm:basis-auto" role="search">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
           <Input
+            type="search"
             placeholder={t("logs.searchPlaceholder")}
             value={searchValue}
             onChange={(e) => handleSearchChange(e.target.value)}
             className="pl-9 pr-8 h-9"
+            aria-label={t("logs.searchPlaceholder")}
           />
           {searchValue && (
             <Button
@@ -438,7 +449,11 @@ export function LogToolbar({
 
         {/* Realtime controls */}
         {showRealtimeControls && (
-          <div className="flex items-center gap-0.5">
+          <div
+            className="flex items-center gap-0.5"
+            role="group"
+            aria-label="Realtime log controls"
+          >
             <Tooltip>
               <TooltipTrigger asChild>
                 <Toggle
@@ -487,56 +502,62 @@ export function LogToolbar({
           </div>
         )}
 
-        {/* Export menu */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9 shrink-0"
-              aria-label={t("logs.export")}
-            >
-              <Download className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => handleExport("txt")}>
-              {t("logs.exportTxt")}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => handleExport("json")}>
-              {t("logs.exportJson")}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => handleExport("csv")}>
-              {t("logs.exportCsv")}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={handleDiagnosticExport}>
-              {t("logs.exportDiagnostic")}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-
-        {/* Clear button */}
-        {showRealtimeControls && (
-          <Tooltip>
-            <TooltipTrigger asChild>
+        <div className="flex items-center gap-1" role="group" aria-label="Export and clear controls">
+          {/* Export menu */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
               <Button
                 variant="ghost"
                 size="icon"
                 className="h-9 w-9 shrink-0"
-                onClick={clearLogs}
-                aria-label={t("logs.clear")}
+                aria-label={t("logs.export")}
               >
-                <Trash2 className="h-4 w-4 text-destructive" />
+                <Download className="h-4 w-4" />
               </Button>
-            </TooltipTrigger>
-            <TooltipContent>{t("logs.clear")}</TooltipContent>
-          </Tooltip>
-        )}
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => handleExport("txt")}>
+                {t("logs.exportTxt")}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleExport("json")}>
+                {t("logs.exportJson")}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleExport("csv")}>
+                {t("logs.exportCsv")}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleDiagnosticExport}>
+                {t("logs.exportDiagnostic")}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Clear button */}
+          {showRealtimeControls && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9 shrink-0"
+                  onClick={clearLogs}
+                  aria-label={t("logs.clear")}
+                >
+                  <Trash2 className="h-4 w-4 text-destructive" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t("logs.clear")}</TooltipContent>
+            </Tooltip>
+          )}
+        </div>
 
         {/* Stats badge + level bar */}
         {showRealtimeControls && (
-          <div className="hidden md:flex items-center gap-2">
+          <div
+            className="hidden md:flex items-center gap-2"
+            role="status"
+            aria-live="polite"
+          >
             {stats.total > 0 && (
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -582,15 +603,20 @@ export function LogToolbar({
       </div>
 
       {/* Advanced filters row - collapsible */}
-        <CollapsibleContent>
-          <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-dashed">
+      <CollapsibleContent>
+        <div
+          className="flex flex-wrap items-center gap-3 border-t border-dashed pt-2"
+          role="group"
+          aria-label="Advanced log filters"
+          data-testid="log-toolbar-advanced-row"
+        >
             {/* Time range */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2" role="group">
               <Label className="text-xs text-muted-foreground shrink-0">
                 {t("logs.timeRange")}:
               </Label>
               <Select value={timeRangePreset} onValueChange={handlePresetChange}>
-                <SelectTrigger className="h-8 w-[120px]" size="sm">
+                <SelectTrigger className="h-8 w-30" size="sm">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -608,12 +634,12 @@ export function LogToolbar({
             {showPresetControls && (
               <>
                 <Separator orientation="vertical" className="h-5 hidden sm:block" />
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2" role="group">
                   <Label className="text-xs text-muted-foreground shrink-0">
                     {t("logs.presets")}:
                   </Label>
                   <Select value={activePresetId} onValueChange={applyFilterPreset}>
-                    <SelectTrigger className="h-8 w-[170px]" size="sm">
+                    <SelectTrigger className="h-8 w-42.5" size="sm">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -643,10 +669,10 @@ export function LogToolbar({
             )}
 
             {timeRangePreset === "custom" && (
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2" role="group">
                 <Input
                   type="datetime-local"
-                  className="h-8 w-[160px] text-xs"
+                  className="h-8 w-40 text-xs"
                   value={customStart}
                   onChange={(event) =>
                     handleCustomStartChange(event.target.value)
@@ -656,7 +682,7 @@ export function LogToolbar({
                 <span className="text-xs text-muted-foreground">→</span>
                 <Input
                   type="datetime-local"
-                  className="h-8 w-[160px] text-xs"
+                  className="h-8 w-40 text-xs"
                   value={customEnd}
                   onChange={(event) => handleCustomEndChange(event.target.value)}
                   aria-label={t("logs.timeRangeEnd")}
@@ -667,7 +693,7 @@ export function LogToolbar({
             <Separator orientation="vertical" className="h-5 hidden sm:block" />
 
             {/* Target filter */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2" role="group">
               <Label className="text-xs text-muted-foreground shrink-0">
                 {t("logs.targetFilter")}:
               </Label>
@@ -675,7 +701,7 @@ export function LogToolbar({
                 value={filter.target ?? "all"}
                 onValueChange={(v) => setFilter({ target: v === "all" ? undefined : v })}
               >
-                <SelectTrigger className="h-8 w-[140px]" size="sm">
+                <SelectTrigger className="h-8 w-35" size="sm">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -692,7 +718,7 @@ export function LogToolbar({
             <Separator orientation="vertical" className="h-5 hidden sm:block" />
 
             {/* Regex toggle */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2" role="group">
               <Switch
                 id="regex-toggle"
                 checked={Boolean(filter.useRegex)}
@@ -710,7 +736,7 @@ export function LogToolbar({
             {showBookmarksToggle && (
               <>
                 <Separator orientation="vertical" className="h-5 hidden sm:block" />
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2" role="group">
                   <Switch
                     id="bookmarks-toggle"
                     checked={activeShowBookmarksOnly}
@@ -732,7 +758,7 @@ export function LogToolbar({
                   orientation="vertical"
                   className="h-5 hidden sm:block"
                 />
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2" role="group">
                   <Label
                     htmlFor="max-scan-lines"
                     className="text-xs text-muted-foreground shrink-0"
@@ -753,7 +779,7 @@ export function LogToolbar({
                     className="h-8 w-28"
                   />
                 </div>
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1" role="group">
                   {SCAN_LINE_PRESETS.map((preset) => (
                     <Button
                       key={preset}
@@ -787,7 +813,7 @@ export function LogToolbar({
                   orientation="vertical"
                   className="h-5 hidden sm:block"
                 />
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2" role="group">
                   <Label
                     htmlFor="max-logs"
                     className="text-xs text-muted-foreground shrink-0"
@@ -806,9 +832,9 @@ export function LogToolbar({
                 </div>
               </>
             )}
-          </div>
-        </CollapsibleContent>
-    </div>
+        </div>
+      </CollapsibleContent>
+      </section>
     </Collapsible>
   );
 }

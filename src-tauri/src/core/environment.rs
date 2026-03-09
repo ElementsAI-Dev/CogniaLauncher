@@ -544,15 +544,18 @@ impl EnvironmentManager {
                 .await?
         {
             if detected.source_type.is_empty() {
-                detected.source_type =
-                    super::project_env_detect::classify_detection_source(&logical, &detected.source);
+                detected.source_type = super::project_env_detect::classify_detection_source(
+                    &logical,
+                    &detected.source,
+                );
             }
             return Ok(Some(detected));
         }
 
         // Deterministic fallback: when no project-local or manifest pin is found,
         // fall back to the provider's global/default current version.
-        if let Ok((_logical, _provider_id, provider)) = self.resolve_provider(&logical, None, None).await
+        if let Ok((_logical, _provider_id, provider)) =
+            self.resolve_provider(&logical, None, None).await
         {
             if let Ok(Some(version)) = provider.get_current_version().await {
                 return Ok(Some(DetectedEnvironment {
@@ -1162,7 +1165,11 @@ mod tests {
         let manager = EnvironmentManager::new(Arc::new(RwLock::new(registry)));
         let dir = tempdir().unwrap();
 
-        let detected = manager.detect_version("deno", dir.path()).await.unwrap().unwrap();
+        let detected = manager
+            .detect_version("deno", dir.path())
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(detected.env_type, "deno");
         assert_eq!(detected.version, "1.40.5");
         assert_eq!(detected.source, "global");
@@ -1180,16 +1187,17 @@ mod tests {
             .iter()
             .map(|source| (*source).to_string())
             .collect::<Vec<_>>();
-        let shared_detected = crate::core::project_env_detect::detect_env_version(
-            "node",
-            dir.path(),
-            &sources,
-        )
-        .await
-        .unwrap()
-        .unwrap();
+        let shared_detected =
+            crate::core::project_env_detect::detect_env_version("node", dir.path(), &sources)
+                .await
+                .unwrap()
+                .unwrap();
 
-        let detected = manager.detect_version("node", dir.path()).await.unwrap().unwrap();
+        let detected = manager
+            .detect_version("node", dir.path())
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(detected.env_type, shared_detected.env_type);
         assert_eq!(detected.version, shared_detected.version);
         assert_eq!(detected.source, shared_detected.source);

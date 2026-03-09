@@ -127,6 +127,50 @@ export interface WslAssistanceSuggestion {
 }
 
 // ============================================================================
+// WSL completeness contract
+// ============================================================================
+
+export type WslCompletenessState =
+  | 'unavailable'
+  | 'empty'
+  | 'ready'
+  | 'degraded';
+
+export type WslFailureCategory =
+  | 'unsupported'
+  | 'permission'
+  | 'runtime'
+  | 'operation';
+
+export type WslOperationId =
+  | 'runtime.importInPlace'
+  | 'runtime.mount'
+  | 'runtime.mountWithOptions'
+  | 'distro.setSparse'
+  | 'network.portForward'
+  | 'distro.healthCheck';
+
+export interface WslOperationGate {
+  supported: boolean;
+  reason?: string;
+  capability?: keyof WslCapabilities;
+}
+
+export interface WslOperationFailure {
+  category: WslFailureCategory;
+  message: string;
+  raw: string;
+}
+
+export interface WslCompletenessSnapshot {
+  state: WslCompletenessState;
+  available: boolean;
+  distroCount: number;
+  runningCount: number;
+  degradedReasons: string[];
+}
+
+// ============================================================================
 // WSL config setting definitions
 // ============================================================================
 

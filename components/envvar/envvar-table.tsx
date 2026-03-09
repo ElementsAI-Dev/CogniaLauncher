@@ -167,7 +167,7 @@ export function EnvVarTable({
 
   const actionContainerClass = compactMode
     ? 'flex items-center justify-end gap-0.5 opacity-100 transition-opacity'
-    : 'flex items-center justify-end gap-0.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity';
+    : 'flex items-center justify-end gap-0.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 transition-opacity';
 
   const renderActionButtons = (row: EnvVarRow, value: string) => (
     <div className={actionContainerClass}>
@@ -175,7 +175,14 @@ export function EnvVarTable({
         <>
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleRevealPath(value)} disabled={busy}>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => handleRevealPath(value)}
+                disabled={busy}
+                aria-label={t('envvar.table.openPath')}
+              >
                 <FolderOpen className="h-3 w-3" />
               </Button>
             </TooltipTrigger>
@@ -183,7 +190,14 @@ export function EnvVarTable({
           </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleOpenPath(value)} disabled={busy}>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => handleOpenPath(value)}
+                disabled={busy}
+                aria-label={t('envvar.table.openFile')}
+              >
                 <ExternalLink className="h-3 w-3" />
               </Button>
             </TooltipTrigger>
@@ -193,7 +207,14 @@ export function EnvVarTable({
       )}
       <Tooltip>
         <TooltipTrigger asChild>
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleCopy(value)} disabled={busy}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={() => handleCopy(value)}
+            disabled={busy}
+            aria-label={t('envvar.table.copy')}
+          >
             <Copy className="h-3 w-3" />
           </Button>
         </TooltipTrigger>
@@ -201,7 +222,14 @@ export function EnvVarTable({
       </Tooltip>
       <Tooltip>
         <TooltipTrigger asChild>
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleStartEdit(row)} disabled={busy}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={() => handleStartEdit(row)}
+            disabled={busy}
+            aria-label={t('envvar.actions.edit')}
+          >
             <Pencil className="h-3 w-3" />
           </Button>
         </TooltipTrigger>
@@ -211,7 +239,13 @@ export function EnvVarTable({
         <Tooltip>
           <TooltipTrigger asChild>
             <AlertDialogTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" disabled={busy}>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-destructive"
+                disabled={busy}
+                aria-label={t('envvar.actions.delete')}
+              >
                 <Trash2 className="h-3 w-3" />
               </Button>
             </AlertDialogTrigger>
@@ -282,9 +316,11 @@ export function EnvVarTable({
                       disabled={busy}
                     />
                     <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={handleSaveEdit} disabled={busy}>
+                      <span className="sr-only">{t('common.save')}</span>
                       <Check className="h-3 w-3 text-green-600" />
                     </Button>
                     <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={handleCancelEdit} disabled={busy}>
+                      <span className="sr-only">{t('common.cancel')}</span>
                       <X className="h-3 w-3" />
                     </Button>
                   </div>
@@ -312,10 +348,10 @@ export function EnvVarTable({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-[280px]">{t('envvar.table.key')}</TableHead>
+              <TableHead className="w-70">{t('envvar.table.key')}</TableHead>
               <TableHead>{t('envvar.table.value')}</TableHead>
-              <TableHead className="w-[100px]">{t('envvar.table.scope')}</TableHead>
-              <TableHead className="w-[100px] text-right" />
+              <TableHead className="w-25">{t('envvar.table.scope')}</TableHead>
+              <TableHead className="w-25 text-right" />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -357,9 +393,11 @@ export function EnvVarTable({
                           disabled={busy}
                         />
                         <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={handleSaveEdit} disabled={busy}>
+                          <span className="sr-only">{t('common.save')}</span>
                           <Check className="h-3 w-3 text-green-600" />
                         </Button>
                         <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={handleCancelEdit} disabled={busy}>
+                          <span className="sr-only">{t('common.cancel')}</span>
                           <X className="h-3 w-3" />
                         </Button>
                       </div>

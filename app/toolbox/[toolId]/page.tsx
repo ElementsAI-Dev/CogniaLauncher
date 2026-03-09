@@ -1,9 +1,19 @@
 import { TOOL_REGISTRY } from '@/lib/constants/toolbox';
 import { ToolDetailPageClient } from '@/components/toolbox/tool-detail-page-client';
-import { decodeToolIdFromPath } from '@/lib/toolbox-route';
+import { decodeToolIdFromPath, encodeToolIdForPath } from '@/lib/toolbox-route';
 
 export function generateStaticParams() {
-  return TOOL_REGISTRY.map((tool) => ({ toolId: tool.id }));
+  const ids = TOOL_REGISTRY.flatMap((tool) => {
+    const builtInRawId = `builtin:${tool.id}`;
+    return [
+      tool.id,
+      encodeToolIdForPath(tool.id),
+      builtInRawId,
+      encodeToolIdForPath(builtInRawId),
+    ];
+  });
+
+  return [...new Set(ids)].map((toolId) => ({ toolId }));
 }
 
 export default async function ToolDetailPage({

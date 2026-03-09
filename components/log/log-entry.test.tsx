@@ -42,6 +42,9 @@ describe("LogEntry", () => {
   it("renders log entry with message", () => {
     render(<LogEntry entry={mockEntry} />);
     expect(screen.getByText("Test log message")).toBeInTheDocument();
+    expect(
+      screen.getByRole("group", { name: "Log entry actions" }),
+    ).toBeInTheDocument();
   });
 
   it("displays formatted timestamp", () => {

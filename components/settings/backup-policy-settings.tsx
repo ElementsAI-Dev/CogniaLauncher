@@ -1,6 +1,8 @@
 "use client";
 
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
+import { AlertTriangle, Info } from "lucide-react";
 import { SettingItem, SwitchSettingItem } from "./setting-item";
 
 interface BackupPolicySettingsProps {
@@ -16,8 +18,38 @@ export function BackupPolicySettings({
   onValueChange,
   t,
 }: BackupPolicySettingsProps) {
+  const policyErrors = [
+    errors["backup.auto_backup_interval_hours"],
+    errors["backup.max_backups"],
+    errors["backup.retention_days"],
+  ].filter((value): value is string => Boolean(value));
+
+  const boundaryNotes: string[] = [];
+  if ((localConfig["backup.max_backups"] || "10") === "0") {
+    boundaryNotes.push("Max backups is set to 0 (unlimited count).");
+  }
+  if ((localConfig["backup.retention_days"] || "30") === "0") {
+    boundaryNotes.push("Retention days is set to 0 (no age limit).");
+  }
+
   return (
-    <div className="space-y-1">
+    <div className="flex flex-col gap-1">
+      {policyErrors.length > 0 && (
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription className="text-xs">
+            {policyErrors.join(" ")}
+          </AlertDescription>
+        </Alert>
+      )}
+      {boundaryNotes.length > 0 && (
+        <Alert>
+          <Info className="h-4 w-4" />
+          <AlertDescription className="text-xs">
+            {boundaryNotes.join(" ")}
+          </AlertDescription>
+        </Alert>
+      )}
       <SwitchSettingItem
         id="backup-auto-enabled"
         label={t("settings.backupAutoBackupEnabled")}

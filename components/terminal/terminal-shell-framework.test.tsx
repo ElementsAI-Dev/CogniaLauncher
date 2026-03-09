@@ -135,6 +135,27 @@ describe('TerminalShellFramework', () => {
     });
   });
 
+  it('calls onFetchPlugins when framework row is activated by keyboard', async () => {
+    const onFetchPlugins = jest.fn().mockResolvedValue(undefined);
+
+    render(
+      <TerminalShellFramework
+        shells={shells}
+        frameworks={frameworks}
+        plugins={[]}
+        onDetectFrameworks={jest.fn()}
+        onFetchPlugins={onFetchPlugins}
+      />,
+    );
+
+    const frameworkRow = screen.getByRole('button', { name: /terminal\.frameworks: Oh My Zsh/i });
+    fireEvent.keyDown(frameworkRow, { key: 'Enter' });
+
+    await waitFor(() => {
+      expect(onFetchPlugins).toHaveBeenCalledWith('Oh My Zsh', '/home/user/.oh-my-zsh', 'zsh', '/home/user/.zshrc');
+    });
+  });
+
   it('disables detect button when no shells provided', () => {
     render(
       <TerminalShellFramework

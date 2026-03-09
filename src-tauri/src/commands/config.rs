@@ -84,7 +84,10 @@ const CONFIG_LIST_STATIC_KEYS: &[&str] = &[
     "tray.show_notifications",
     "tray.notification_level",
     "tray.click_behavior",
+    "tray.quick_action",
+    "tray.notification_events",
     "tray.menu_items",
+    "tray.menu_priority_items",
     "paths.root",
     "paths.cache",
     "paths.environments",
@@ -302,7 +305,10 @@ mod tests {
         assert!(CONFIG_LIST_STATIC_KEYS.contains(&"tray.show_notifications"));
         assert!(CONFIG_LIST_STATIC_KEYS.contains(&"tray.notification_level"));
         assert!(CONFIG_LIST_STATIC_KEYS.contains(&"tray.click_behavior"));
+        assert!(CONFIG_LIST_STATIC_KEYS.contains(&"tray.quick_action"));
+        assert!(CONFIG_LIST_STATIC_KEYS.contains(&"tray.notification_events"));
         assert!(CONFIG_LIST_STATIC_KEYS.contains(&"tray.menu_items"));
+        assert!(CONFIG_LIST_STATIC_KEYS.contains(&"tray.menu_priority_items"));
     }
 
     #[test]

@@ -190,6 +190,12 @@ describe("FeedbackDialog", () => {
     expect(screen.getByText("Other")).toBeInTheDocument();
   });
 
+  it("renders category options as a single-select group", () => {
+    mockDialogOpen = true;
+    render(<FeedbackDialog />);
+    expect(screen.getByRole("group", { name: "Category" })).toBeInTheDocument();
+  });
+
   it("renders title and description inputs", () => {
     mockDialogOpen = true;
     render(<FeedbackDialog />);
@@ -312,6 +318,17 @@ describe("FeedbackDialog", () => {
     await user.click(titleInput);
     await user.tab();
     expect(titleInput).toHaveAttribute("aria-invalid", "true");
+  });
+
+  it("sets title field container data-invalid when validation fails", async () => {
+    mockDialogOpen = true;
+    const user = userEvent.setup();
+    render(<FeedbackDialog />);
+    const titleInput = screen.getByPlaceholderText("Brief summary");
+    await user.click(titleInput);
+    await user.tab();
+    const titleField = titleInput.closest('[data-slot="field"]');
+    expect(titleField).toHaveAttribute("data-invalid", "true");
   });
 
   it("does not show title error before blur", () => {
@@ -769,6 +786,7 @@ describe("FeedbackHistoryDialog", () => {
     expect(
       screen.getByText("Submitted feedback will appear here"),
     ).toBeInTheDocument();
+    expect(document.querySelector('[data-slot="empty"]')).toBeInTheDocument();
   });
 
   it("shows operation-scoped error when history loading fails", async () => {

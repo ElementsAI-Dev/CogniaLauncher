@@ -1,3 +1,4 @@
+import React from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import { DocsMobileSidebar, DocsSidebar } from "./docs-sidebar";
 
@@ -64,13 +65,23 @@ jest.mock("@/components/ui/collapsible", () => ({
   ),
   CollapsibleTrigger: ({
     children,
+    asChild,
     ...props
   }: {
     children: React.ReactNode;
+    asChild?: boolean;
+    [key: string]: unknown;
   }) => (
-    <button data-testid="collapsible-trigger" {...props}>
-      {children}
-    </button>
+    asChild && React.isValidElement(children)
+      ? React.cloneElement(children, {
+          ...(props as Record<string, unknown>),
+          "data-testid": "collapsible-trigger",
+        })
+      : (
+        <button data-testid="collapsible-trigger" {...props}>
+          {children}
+        </button>
+      )
   ),
   CollapsibleContent: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="collapsible-content">{children}</div>

@@ -454,7 +454,25 @@ export default function LogsPage() {
           value="realtime"
           className="flex-1 mt-0 p-4 sm:p-6 pt-3 sm:pt-4 min-h-0"
         >
-          <LogPanel className="h-full" maxHeight="100%" showToolbar />
+          <div className="flex h-full min-h-0 flex-col gap-3">
+            <section
+              role="status"
+              aria-live="polite"
+              className="shrink-0 rounded-lg border bg-card px-3 py-2 text-xs text-muted-foreground"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-medium text-foreground/90">
+                  {t("logs.realtime")}
+                </span>
+                <span className="tabular-nums">
+                  {stats.total} {t("logs.entries")}
+                </span>
+              </div>
+            </section>
+            <section className="min-h-0 flex-1" aria-label={t("logs.realtime")}>
+              <LogPanel className="h-full" maxHeight="100%" showToolbar />
+            </section>
+          </div>
         </TabsContent>
 
         {/* Log files tab */}
@@ -463,7 +481,24 @@ export default function LogsPage() {
           data-testid="logs-files-tab-content"
           className="flex-1 mt-0 p-4 sm:p-6 pt-3 sm:pt-4 min-h-0 overflow-hidden"
         >
-          <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4 h-full min-h-0">
+          <div className="flex h-full min-h-0 flex-col gap-3">
+            <section
+              role="status"
+              aria-live="polite"
+              className="shrink-0 rounded-lg border bg-card px-3 py-2 text-xs text-muted-foreground"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-medium text-foreground/90">
+                  {t("logs.logFiles")}
+                </span>
+                <span className="tabular-nums">
+                  {logFiles.length} • {formatBytes(totalSize)}
+                </span>
+              </div>
+            </section>
+
+            <section className="min-h-0 flex-1">
+              <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4 h-full min-h-0">
             {/* File list */}
             <Card className="flex flex-col min-h-0">
               <CardHeader className="shrink-0 pb-3">
@@ -722,6 +757,8 @@ export default function LogsPage() {
                 />
               </div>
             )}
+              </div>
+            </section>
           </div>
         </TabsContent>
 
@@ -730,16 +767,34 @@ export default function LogsPage() {
           value="management"
           className="flex-1 mt-0 p-4 sm:p-6 pt-3 sm:pt-4 overflow-auto lg:hidden"
         >
-          {isTauri() && (
-            <LogManagementCard
-              totalSize={totalSize}
-              fileCount={logFiles.length}
-              previewResult={cleanupPreview}
-              onPreviewCleanup={handlePreviewCleanup}
-              onCleanup={handleManagementCleanup}
-              onRefresh={handleManagementRefresh}
-            />
-          )}
+          <div className="flex min-h-full flex-col gap-3">
+            <section
+              role="status"
+              aria-live="polite"
+              className="shrink-0 rounded-lg border bg-card px-3 py-2 text-xs text-muted-foreground"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-medium text-foreground/90">
+                  {t("logs.management")}
+                </span>
+                <span className="tabular-nums">
+                  {logFiles.length} • {formatBytes(totalSize)}
+                </span>
+              </div>
+            </section>
+            <section className="min-h-0 flex-1">
+              {isTauri() && (
+                <LogManagementCard
+                  totalSize={totalSize}
+                  fileCount={logFiles.length}
+                  previewResult={cleanupPreview}
+                  onPreviewCleanup={handlePreviewCleanup}
+                  onCleanup={handleManagementCleanup}
+                  onRefresh={handleManagementRefresh}
+                />
+              )}
+            </section>
+          </div>
         </TabsContent>
       </Tabs>
 

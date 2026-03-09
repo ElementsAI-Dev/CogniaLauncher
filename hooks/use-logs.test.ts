@@ -121,6 +121,34 @@ describe('useLogs', () => {
     expect(response).toEqual({ ok: true, data: queryResult });
   });
 
+  it('normalizes query options before calling backend logQuery', async () => {
+    const queryResult = { entries: [], totalCount: 0, hasMore: false };
+    mockLogQuery.mockResolvedValue(queryResult);
+    const { result } = renderHook(() => useLogs());
+
+    await act(async () => {
+      await result.current.queryLogFile({
+        fileName: ' app.log ',
+        levelFilter: [],
+        target: '   ',
+        search: '   ',
+        useRegex: false,
+        limit: 0,
+        offset: -20,
+        maxScanLines: 0,
+      });
+    });
+
+    const [normalizedOptions] = mockLogQuery.mock.calls[0] as [Record<string, unknown>];
+    expect(normalizedOptions.fileName).toBe('app.log');
+    expect(normalizedOptions.levelFilter).toBeUndefined();
+    expect(normalizedOptions.target).toBeUndefined();
+    expect(normalizedOptions.search).toBeUndefined();
+    expect(normalizedOptions.limit).toBe(1);
+    expect(normalizedOptions.offset).toBe(0);
+    expect(normalizedOptions.maxScanLines).toBe(1);
+  });
+
   it('clears historical logs and returns deleted summary', async () => {
     mockStoreLogFiles = [
       { name: 'current.log', path: 'current.log', size: 1000, modified: 2 },

@@ -21,6 +21,11 @@ import {
 import type { InstalledPackage } from "@/lib/tauri";
 import type { ProviderInfo } from "@/lib/tauri";
 import { WidgetEmptyCard } from "@/components/dashboard/widgets/widget-empty-card";
+import {
+  DashboardMetricGrid,
+  DashboardMetricItem,
+  DashboardSectionLabel,
+} from "@/components/dashboard/dashboard-primitives";
 
 interface PackageChartProps {
   packages: InstalledPackage[];
@@ -80,65 +85,70 @@ export function PackageChart({ packages, providers, className }: PackageChartPro
           {t("dashboard.widgets.packageChartDesc")}
         </CardDescription>
       </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-2 gap-4 mb-4">
-          <div className="text-center">
-            <div className="text-2xl font-bold">{packages.length}</div>
-            <div className="text-xs text-muted-foreground">{t("dashboard.widgets.totalPackages")}</div>
-          </div>
-          <div className="text-center">
-            <div className="text-2xl font-bold">{providers.length}</div>
-            <div className="text-xs text-muted-foreground">{t("dashboard.widgets.activeProviders")}</div>
-          </div>
-        </div>
+      <CardContent className="space-y-4">
+        <DashboardMetricGrid>
+          <DashboardMetricItem
+            label={t("dashboard.widgets.totalPackages")}
+            value={packages.length}
+            valueClassName="text-2xl"
+          />
+          <DashboardMetricItem
+            label={t("dashboard.widgets.activeProviders")}
+            value={providers.length}
+            valueClassName="text-2xl"
+          />
+        </DashboardMetricGrid>
 
         {chartData.length > 0 && (
-          <ChartContainer config={chartConfig} className="h-[180px] w-full aspect-auto">
-            <BarChart data={chartData} margin={{ left: 0, right: 0 }}>
-              <defs>
-                {chartData.map((_, index) => (
-                  <linearGradient
-                    key={getGradientId("pkg", index)}
-                    id={getGradientId("pkg", index)}
-                    x1={barGradient.x1}
-                    y1={barGradient.y1}
-                    x2={barGradient.x2}
-                    y2={barGradient.y2}
-                  >
-                    {barGradient.stops.map((stop, stopIndex) => (
-                      <stop
-                        key={`${stop.offset}-${stopIndex}`}
-                        offset={stop.offset}
-                        stopColor={getChartColor(index)}
-                        stopOpacity={stop.opacity}
-                      />
-                    ))}
-                  </linearGradient>
-                ))}
-              </defs>
-              <CartesianGrid vertical={false} {...getChartGridStyle()} />
-              <XAxis
-                dataKey="provider"
-                tickLine={false}
-                axisLine={false}
-                tickMargin={8}
-                tick={getChartAxisTickStyle(10)}
-                interval={0}
-                angle={-30}
-                textAnchor="end"
-                height={50}
-              />
-              <ChartTooltip
-                content={<ChartTooltipContent />}
-                cursor={getChartTooltipCursorStyle()}
-              />
-              <Bar dataKey="count" radius={[6, 6, 0, 0]} maxBarSize={45}>
-                {chartData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.fill} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ChartContainer>
+          <div className="space-y-2">
+            <DashboardSectionLabel>{t("dashboard.widgets.packageCount")}</DashboardSectionLabel>
+            <ChartContainer config={chartConfig} className="h-[180px] w-full aspect-auto">
+              <BarChart data={chartData} margin={{ left: 0, right: 0 }}>
+                <defs>
+                  {chartData.map((_, index) => (
+                    <linearGradient
+                      key={getGradientId("pkg", index)}
+                      id={getGradientId("pkg", index)}
+                      x1={barGradient.x1}
+                      y1={barGradient.y1}
+                      x2={barGradient.x2}
+                      y2={barGradient.y2}
+                    >
+                      {barGradient.stops.map((stop, stopIndex) => (
+                        <stop
+                          key={`${stop.offset}-${stopIndex}`}
+                          offset={stop.offset}
+                          stopColor={getChartColor(index)}
+                          stopOpacity={stop.opacity}
+                        />
+                      ))}
+                    </linearGradient>
+                  ))}
+                </defs>
+                <CartesianGrid vertical={false} {...getChartGridStyle()} />
+                <XAxis
+                  dataKey="provider"
+                  tickLine={false}
+                  axisLine={false}
+                  tickMargin={8}
+                  tick={getChartAxisTickStyle(10)}
+                  interval={0}
+                  angle={-30}
+                  textAnchor="end"
+                  height={50}
+                />
+                <ChartTooltip
+                  content={<ChartTooltipContent />}
+                  cursor={getChartTooltipCursorStyle()}
+                />
+                <Bar dataKey="count" radius={[6, 6, 0, 0]} maxBarSize={45}>
+                  {chartData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.fill} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ChartContainer>
+          </div>
         )}
       </CardContent>
     </Card>

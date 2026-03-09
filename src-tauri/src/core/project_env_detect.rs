@@ -197,7 +197,10 @@ pub fn classify_detection_source(env_type: &str, source: &str) -> String {
             return "manifest".to_string();
         }
 
-        if matches!(source, ".java-version" | ".sdkmanrc" | ".tool-versions" | "mise.toml") {
+        if matches!(
+            source,
+            ".java-version" | ".sdkmanrc" | ".tool-versions" | "mise.toml"
+        ) {
             return "local".to_string();
         }
     }
@@ -3717,7 +3720,10 @@ rust-version = "1.70"
             .iter()
             .map(|s| (*s).to_string())
             .collect::<Vec<_>>();
-        let detected = detect_env_version("zig", root, &sources).await.unwrap().unwrap();
+        let detected = detect_env_version("zig", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(detected.version, "0.13.0");
         assert_eq!(detected.source, ".tool-versions");
     }
@@ -3727,15 +3733,21 @@ rust-version = "1.70"
         let dir = tempdir().unwrap();
         let root = dir.path();
 
-        crate::platform::fs::write_file_string(root.join(".mise.toml"), "[tools]\nzig = \"0.14.0\"\n")
-            .await
-            .unwrap();
+        crate::platform::fs::write_file_string(
+            root.join(".mise.toml"),
+            "[tools]\nzig = \"0.14.0\"\n",
+        )
+        .await
+        .unwrap();
 
         let sources = default_detection_sources("zig")
             .iter()
             .map(|s| (*s).to_string())
             .collect::<Vec<_>>();
-        let detected = detect_env_version("zig", root, &sources).await.unwrap().unwrap();
+        let detected = detect_env_version("zig", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(detected.version, "0.14.0");
         assert_eq!(detected.source, ".mise.toml");
         assert_eq!(
@@ -3759,15 +3771,21 @@ rust-version = "1.70"
         crate::platform::fs::write_file_string(root.join(".tool-versions"), "zig\n")
             .await
             .unwrap();
-        crate::platform::fs::write_file_string(root.join(".mise.toml"), "[tools]\nzig = \"0.15.0\"\n")
-            .await
-            .unwrap();
+        crate::platform::fs::write_file_string(
+            root.join(".mise.toml"),
+            "[tools]\nzig = \"0.15.0\"\n",
+        )
+        .await
+        .unwrap();
 
         let sources = default_detection_sources("zig")
             .iter()
             .map(|s| (*s).to_string())
             .collect::<Vec<_>>();
-        let detected = detect_env_version("zig", root, &sources).await.unwrap().unwrap();
+        let detected = detect_env_version("zig", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(detected.version, "0.15.0");
         assert_eq!(detected.source, ".mise.toml");
     }

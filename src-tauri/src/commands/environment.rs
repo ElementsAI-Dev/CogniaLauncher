@@ -430,7 +430,9 @@ mod tests {
         let mut lifecycle = InstallLifecycle::default();
 
         lifecycle.transition(EnvInstallPhase::Resolve).unwrap();
-        lifecycle.transition(EnvInstallPhase::SelectArtifact).unwrap();
+        lifecycle
+            .transition(EnvInstallPhase::SelectArtifact)
+            .unwrap();
         lifecycle.transition(EnvInstallPhase::Download).unwrap();
         lifecycle.transition(EnvInstallPhase::Verify).unwrap();
         lifecycle.transition(EnvInstallPhase::Persist).unwrap();
@@ -450,9 +452,7 @@ mod tests {
         let mut lifecycle = InstallLifecycle::default();
         lifecycle.transition(EnvInstallPhase::Resolve).unwrap();
 
-        let err = lifecycle
-            .transition(EnvInstallPhase::Download)
-            .unwrap_err();
+        let err = lifecycle.transition(EnvInstallPhase::Download).unwrap_err();
         assert!(err.contains("skipped required stage"));
     }
 
@@ -460,7 +460,9 @@ mod tests {
     fn lifecycle_rejects_non_terminal_after_terminal() {
         let mut lifecycle = InstallLifecycle::default();
         lifecycle.transition(EnvInstallPhase::Resolve).unwrap();
-        lifecycle.transition(EnvInstallPhase::SelectArtifact).unwrap();
+        lifecycle
+            .transition(EnvInstallPhase::SelectArtifact)
+            .unwrap();
         lifecycle.transition(EnvInstallPhase::Download).unwrap();
         lifecycle.transition(EnvInstallPhase::Verify).unwrap();
         lifecycle.transition(EnvInstallPhase::Persist).unwrap();
@@ -469,9 +471,7 @@ mod tests {
             .mark_terminal(EnvInstallTerminalState::Completed)
             .unwrap();
 
-        let err = lifecycle
-            .transition(EnvInstallPhase::Finalize)
-            .unwrap_err();
+        let err = lifecycle.transition(EnvInstallPhase::Finalize).unwrap_err();
         assert!(err.contains("after terminal state"));
     }
 
@@ -609,7 +609,13 @@ pub async fn env_install(
         let _ = lifecycle.mark_terminal(EnvInstallTerminalState::Failed);
         let _ = app.emit(
             "env-install-progress",
-            build_lifecycle_failure_progress(&env_type, &version, current_phase, reason.clone(), None),
+            build_lifecycle_failure_progress(
+                &env_type,
+                &version,
+                current_phase,
+                reason.clone(),
+                None,
+            ),
         );
         let mut tokens_guard = tokens.write().await;
         tokens_guard.remove(&cancel_key);
@@ -1118,7 +1124,11 @@ fn normalize_version_token(raw: &str) -> String {
     if let Some(stripped) = normalized.strip_prefix('v') {
         normalized = stripped.to_string();
     }
-    if normalized.starts_with("go") && normalized[2..].chars().next().is_some_and(|c| c.is_ascii_digit())
+    if normalized.starts_with("go")
+        && normalized[2..]
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_digit())
     {
         normalized = normalized[2..].to_string();
     }
@@ -1131,9 +1141,7 @@ fn versions_compatible(expected: &str, actual: &str) -> bool {
     if expected.is_empty() || actual.is_empty() {
         return false;
     }
-    expected == actual
-        || actual.starts_with(&expected)
-        || expected.starts_with(&actual)
+    expected == actual || actual.starts_with(&expected) || expected.starts_with(&actual)
 }
 
 #[tauri::command]
@@ -1214,7 +1222,11 @@ pub async fn env_use_local(
 
     let sources = enabled_detection_sources_for_env_type(&logical_env_type, config.inner()).await;
     let detected = manager
-        .detect_version_with_sources(&logical_env_type, std::path::Path::new(&project_path), &sources)
+        .detect_version_with_sources(
+            &logical_env_type,
+            std::path::Path::new(&project_path),
+            &sources,
+        )
         .await
         .map_err(|e| e.to_string())?;
     let effective_version = detected.as_ref().map(|d| d.version.clone());
@@ -1981,9 +1993,7 @@ pub async fn env_get_detection_sources(env_type: String) -> Result<Vec<String>, 
 #[tauri::command]
 pub async fn env_get_default_detection_sources(env_type: String) -> Result<Vec<String>, String> {
     let logical = EnvironmentManager::logical_env_type(&env_type);
-    Ok(crate::core::project_env_detect::default_enabled_detection_sources(
-        &logical,
-    ))
+    Ok(crate::core::project_env_detect::default_enabled_detection_sources(&logical))
 }
 
 /// Get detection sources for all known environment types at once.
@@ -2896,7 +2906,10 @@ pub async fn rustup_remove_component(
         ));
     };
 
-    match rustup.remove_component(&component, toolchain.as_deref()).await {
+    match rustup
+        .remove_component(&component, toolchain.as_deref())
+        .await
+    {
         Ok(()) => Ok(RustupOperationResult::success(op, toolchain_scope, subject)),
         Err(e) => Ok(RustupOperationResult::failure(
             op,
@@ -3336,11 +3349,7 @@ pub async fn rustup_set_profile(
 
     if let Ok(current) = rustup.get_profile().await {
         if normalize_rustup_profile(&current) == Some(normalized.as_str()) {
-            return Ok(RustupOperationResult::success(
-                op,
-                None,
-                Some(normalized),
-            ));
+            return Ok(RustupOperationResult::success(op, None, Some(normalized)));
         }
     }
 

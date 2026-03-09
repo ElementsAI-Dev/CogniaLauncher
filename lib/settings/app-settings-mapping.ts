@@ -39,6 +39,7 @@ function parseTrayClickBehavior(
     value === "toggle_window"
     || value === "show_menu"
     || value === "check_updates"
+    || value === "quick_action"
     || value === "do_nothing"
   ) {
     return value;

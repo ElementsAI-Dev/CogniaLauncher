@@ -609,6 +609,16 @@
                 }
               ]
             },
+            "list-persistent-typed": {
+              "description": "List persistent variables with type metadata",
+              "args": [
+                {
+                  "name": "scope",
+                  "takesValue": true,
+                  "description": "Scope: user|system"
+                }
+              ]
+            },
             "set-persistent": {
               "description": "Set persistent environment variable",
               "args": [
@@ -644,6 +654,107 @@
                   "name": "scope",
                   "takesValue": true,
                   "description": "Scope: user|system"
+                }
+              ]
+            },
+            "get-path": {
+              "description": "Get PATH entries by scope",
+              "args": [
+                {
+                  "name": "scope",
+                  "takesValue": true,
+                  "description": "Scope: process|user|system"
+                }
+              ]
+            },
+            "add-path": {
+              "description": "Add a PATH entry",
+              "args": [
+                {
+                  "name": "path",
+                  "index": 1,
+                  "takesValue": true,
+                  "description": "PATH entry value"
+                },
+                {
+                  "name": "scope",
+                  "takesValue": true,
+                  "description": "Scope: process|user|system"
+                },
+                {
+                  "name": "position",
+                  "takesValue": true,
+                  "description": "Optional insertion index"
+                }
+              ]
+            },
+            "remove-path": {
+              "description": "Remove a PATH entry",
+              "args": [
+                {
+                  "name": "path",
+                  "index": 1,
+                  "takesValue": true,
+                  "description": "PATH entry value"
+                },
+                {
+                  "name": "scope",
+                  "takesValue": true,
+                  "description": "Scope: process|user|system"
+                }
+              ]
+            },
+            "reorder-path": {
+              "description": "Replace PATH entries with explicit order",
+              "args": [
+                {
+                  "name": "entries",
+                  "takesValue": true,
+                  "multiple": true,
+                  "description": "Ordered PATH entries"
+                },
+                {
+                  "name": "scope",
+                  "takesValue": true,
+                  "description": "Scope: process|user|system"
+                }
+              ]
+            },
+            "deduplicate-path": {
+              "description": "Deduplicate PATH entries",
+              "args": [
+                {
+                  "name": "scope",
+                  "takesValue": true,
+                  "description": "Scope: process|user|system"
+                }
+              ]
+            },
+            "detect-conflicts": {
+              "description": "Detect user/system variable conflicts"
+            },
+            "list-shell-profiles": {
+              "description": "List detected shell profile files"
+            },
+            "read-shell-profile": {
+              "description": "Read shell profile content",
+              "args": [
+                {
+                  "name": "path",
+                  "index": 1,
+                  "takesValue": true,
+                  "description": "Profile file path"
+                }
+              ]
+            },
+            "expand-path": {
+              "description": "Expand env references in path text",
+              "args": [
+                {
+                  "name": "path",
+                  "index": 1,
+                  "takesValue": true,
+                  "description": "Input path text"
                 }
               ]
             },

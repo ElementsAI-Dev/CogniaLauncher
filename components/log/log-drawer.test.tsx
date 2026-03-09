@@ -91,6 +91,7 @@ describe("LogDrawer", () => {
     useLogStore.setState({ ...useLogStore.getState(), drawerOpen: true });
     render(<LogDrawer />);
     expect(screen.getByText("No logs yet")).toBeInTheDocument();
+    expect(screen.getByLabelText("Logs")).toBeInTheDocument();
   });
 
   it("closes drawer when close button is clicked", async () => {

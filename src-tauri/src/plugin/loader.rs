@@ -16,7 +16,12 @@ pub struct PluginLoader {
 }
 
 impl PluginLoader {
-    fn log_runtime_boundary(plugin_id: &str, operation: &str, stage: &str, detail: impl AsRef<str>) {
+    fn log_runtime_boundary(
+        plugin_id: &str,
+        operation: &str,
+        stage: &str,
+        detail: impl AsRef<str>,
+    ) {
         log::warn!(
             "[plugin-runtime][plugin:{}][operation:{}][stage:{}] {}",
             plugin_id,

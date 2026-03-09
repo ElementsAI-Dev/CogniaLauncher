@@ -1,18 +1,61 @@
 'use client';
 
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   useOnboardingStore,
   getOnboardingSteps,
   type OnboardingStepId,
   type OnboardingMode,
+  type OnboardingSessionState,
+  type OnboardingSessionSummary,
 } from '@/lib/stores/onboarding';
+import type { OnboardingNextAction } from '@/types/onboarding';
 import { useOnboardingHydration } from './use-onboarding-hydration';
+
+function buildNextActions(
+  summary: OnboardingSessionSummary,
+  tourCompleted: boolean,
+): OnboardingNextAction[] {
+  const actions: OnboardingNextAction[] = [];
+
+  if (summary.primaryEnvironment) {
+    actions.push({
+      id: 'manage-primary-environment',
+      kind: 'environment',
+      labelKey: 'onboarding.completeActionManageEnvironment',
+      descriptionKey: 'onboarding.completeActionManageEnvironmentDesc',
+      envType: summary.primaryEnvironment,
+    });
+  }
+
+  if (!tourCompleted) {
+    actions.push({
+      id: 'start-guided-tour',
+      kind: 'tour',
+      labelKey: 'onboarding.completeActionTour',
+      descriptionKey: 'onboarding.completeActionTourDesc',
+    });
+  }
+
+  actions.push({
+    id: 'review-settings',
+    kind: 'route',
+    labelKey: 'onboarding.completeActionSettings',
+    descriptionKey: 'onboarding.completeActionSettingsDesc',
+    route: '/settings',
+  });
+
+  return actions;
+}
 
 export interface UseOnboardingReturn {
   isHydrated: boolean;
   shouldShowWizard: boolean;
   mode: OnboardingMode | null;
+  sessionState: OnboardingSessionState;
+  canResume: boolean;
+  sessionSummary: OnboardingSessionSummary;
+  nextActions: OnboardingNextAction[];
   isCompleted: boolean;
   isSkipped: boolean;
   currentStep: number;
@@ -29,6 +72,7 @@ export interface UseOnboardingReturn {
   openWizard: () => void;
   closeWizard: () => void;
   selectMode: (mode: OnboardingMode) => void;
+  updateSummary: (summary: Partial<OnboardingSessionSummary>) => void;
   next: () => void;
   prev: () => void;
   goTo: (step: number) => void;
@@ -44,6 +88,7 @@ export interface UseOnboardingReturn {
 
 export function useOnboarding(): UseOnboardingReturn {
   const isHydrated = useOnboardingHydration();
+  const pausedInRuntimeRef = useRef(false);
   const {
     mode,
     completed,
@@ -53,14 +98,19 @@ export function useOnboarding(): UseOnboardingReturn {
     tourCompleted,
     tourActive,
     tourStep,
-    setWizardOpen,
+    sessionState,
+    canResume,
+    sessionSummary,
     selectMode: selectModeAction,
+    updateSessionSummary,
     nextStep,
     prevStep,
     goToStep,
     completeOnboarding,
     skipOnboarding,
     resetOnboarding,
+    pauseOnboarding,
+    resumeOnboarding,
     startTour: startTourAction,
     nextTourStep: nextTourStepAction,
     prevTourStep: prevTourStepAction,
@@ -68,32 +118,78 @@ export function useOnboarding(): UseOnboardingReturn {
     stopTour: stopTourAction,
   } = useOnboardingStore();
 
-  useEffect(() => {
-    if (!isHydrated) return;
-    if (!completed && !skipped && !wizardOpen && !tourActive) {
-      setWizardOpen(true);
-    }
-  }, [isHydrated, completed, skipped, wizardOpen, tourActive, setWizardOpen]);
-
   const stepIds = getOnboardingSteps(mode);
   const totalSteps = stepIds.length;
   const normalizedCurrentStep = Math.min(currentStep, Math.max(totalSteps - 1, 0));
   const currentStepId = stepIds[normalizedCurrentStep] ?? 'mode-selection';
+
+  useEffect(() => {
+    if (!isHydrated || wizardOpen || tourActive) return;
+    if (completed || skipped) return;
+
+    const resumeBlockedInRuntime = sessionState === 'paused' && pausedInRuntimeRef.current;
+    if (resumeBlockedInRuntime) return;
+
+    const canAutoOpen =
+      sessionState === 'idle'
+      || sessionState === 'active'
+      || (sessionState === 'paused' && canResume);
+
+    if (canAutoOpen) {
+      resumeOnboarding();
+    }
+  }, [
+    isHydrated,
+    wizardOpen,
+    tourActive,
+    completed,
+    skipped,
+    sessionState,
+    canResume,
+    resumeOnboarding,
+  ]);
+
   const progress = mode && totalSteps > 1
     ? Math.round((normalizedCurrentStep / (totalSteps - 1)) * 100)
     : 0;
   const isFirstStep = normalizedCurrentStep === 0;
   const isLastStep = mode !== null && normalizedCurrentStep === totalSteps - 1;
 
-  const openWizard = useCallback(() => setWizardOpen(true), [setWizardOpen]);
-  const closeWizard = useCallback(() => skipOnboarding(), [skipOnboarding]);
+  const openWizard = useCallback(() => {
+    pausedInRuntimeRef.current = false;
+    resumeOnboarding();
+  }, [resumeOnboarding]);
+
+  const closeWizard = useCallback(() => {
+    pausedInRuntimeRef.current = true;
+    pauseOnboarding(currentStepId);
+  }, [pauseOnboarding, currentStepId]);
+
+  const skip = useCallback(() => {
+    pausedInRuntimeRef.current = false;
+    skipOnboarding();
+  }, [skipOnboarding]);
 
   const shouldShowWizard = isHydrated && wizardOpen;
+
+  const nextActions = useMemo(
+    () => buildNextActions(sessionSummary, tourCompleted),
+    [sessionSummary, tourCompleted],
+  );
+
+  const selectMode = useCallback((nextMode: OnboardingMode) => {
+    selectModeAction(nextMode);
+    updateSessionSummary({ mode: nextMode });
+  }, [selectModeAction, updateSessionSummary]);
 
   return {
     isHydrated,
     shouldShowWizard,
     mode,
+    sessionState,
+    canResume,
+    sessionSummary,
+    nextActions,
     isCompleted: completed,
     isSkipped: skipped,
     currentStep: normalizedCurrentStep,
@@ -109,12 +205,13 @@ export function useOnboarding(): UseOnboardingReturn {
     tourStep,
     openWizard,
     closeWizard,
-    selectMode: selectModeAction,
+    selectMode,
+    updateSummary: updateSessionSummary,
     next: nextStep,
     prev: prevStep,
     goTo: goToStep,
     complete: completeOnboarding,
-    skip: skipOnboarding,
+    skip,
     reset: resetOnboarding,
     startTour: startTourAction,
     nextTourStep: nextTourStepAction,

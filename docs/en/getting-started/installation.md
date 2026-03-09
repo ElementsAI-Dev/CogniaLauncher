@@ -8,7 +8,8 @@
 - **pnpm** 8.x or higher (recommended)
 
 ```bash
-npm install -g pnpm
+corepack enable
+corepack prepare pnpm@latest --activate
 ```
 
 ### Desktop Application Development (Additional Requirements)

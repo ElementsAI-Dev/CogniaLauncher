@@ -23,10 +23,10 @@ export function callHost(fnName: string, input: string): string {
   if (!fn) {
     throw new Error(`Host function '${fnName}' is not available`);
   }
-  // @ts-expect-error — Memory is a global provided by Extism JS runtime
+  // @ts-ignore — Memory is a global provided by Extism JS runtime
   const mem = Memory.fromString(input);
   const offset = fn(mem.offset);
-  // @ts-expect-error — Memory is a global provided by Extism JS runtime
+  // @ts-ignore — Memory is a global provided by Extism JS runtime
   return Memory.find(offset).readString();
 }
 

@@ -177,14 +177,14 @@ export function EnvVarImportExport({
               </div>
               <Alert className="border-dashed">
                 <AlertDescription className="text-xs">
-                  Import validates each line and skips invalid entries. Choose scope before applying.
+                  {t('envvar.importExport.importHint')}
                 </AlertDescription>
               </Alert>
               <Textarea
                 value={importContent}
                 onChange={(e) => setImportContent(e.target.value)}
                 placeholder={'KEY=VALUE\nANOTHER_KEY="some value"'}
-                className="font-mono text-xs min-h-[160px]"
+                className="font-mono text-xs min-h-40"
                 disabled={busy || importing}
               />
             </div>
@@ -213,7 +213,7 @@ export function EnvVarImportExport({
                 </Select>
               </div>
               <div className="flex-1 space-y-2">
-                <Label>Format</Label>
+                <Label>{t('envvar.importExport.formatLabel')}</Label>
                 <Select value={exportFormat} onValueChange={(v) => setExportFormat(v as EnvFileFormat)} disabled={busy || exporting}>
                   <SelectTrigger className="h-9">
                     <SelectValue />
@@ -231,7 +231,7 @@ export function EnvVarImportExport({
 
             <Alert className="border-dashed">
               <AlertDescription className="text-xs">
-                Export reads the latest persisted values for the selected scope and output format.
+                {t('envvar.importExport.exportHint')}
               </AlertDescription>
             </Alert>
 
@@ -246,7 +246,7 @@ export function EnvVarImportExport({
                 <Textarea
                   value={exportContent}
                   readOnly
-                  className="font-mono text-xs min-h-[160px]"
+                  className="font-mono text-xs min-h-40"
                 />
                 <DialogFooter className="gap-2">
                   <Button variant="outline" onClick={handleCopyExport} className="gap-1.5" disabled={busy || exporting}>

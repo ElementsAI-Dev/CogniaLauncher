@@ -20,7 +20,7 @@ import { usePackages } from '@/hooks/use-packages';
 import { useLocale } from '@/components/providers/locale-provider';
 import { AlertCircle } from 'lucide-react';
 import * as tauri from '@/lib/tauri';
-import { SYSTEM_PROVIDER_IDS, PACKAGE_MANAGER_IDS } from '@/lib/constants/providers';
+import { SYSTEM_PROVIDER_IDS, isPackageManagerProvider } from '@/lib/constants/providers';
 import { toast } from 'sonner';
 
 export default function ProvidersPage() {
@@ -110,7 +110,7 @@ export default function ProvidersPage() {
   const getProviderCategory = useCallback((provider: tauri.ProviderInfo): CategoryFilter => {
     if (provider.is_environment_provider) return 'environment';
     if (SYSTEM_PROVIDER_IDS.has(provider.id)) return 'system';
-    if (PACKAGE_MANAGER_IDS.has(provider.id)) return 'package';
+    if (isPackageManagerProvider(provider)) return 'package';
     return 'package';
   }, []);
 

@@ -1,5 +1,6 @@
 import type { ComponentType } from 'react';
 import type {
+  ShellConfigEntries,
   ShellType,
   TerminalConfigDiagnostic,
   TerminalEditorLanguage,
@@ -14,7 +15,7 @@ export interface TerminalConfigEditorSurfaceProps {
 
 export type TerminalConfigEditorSurfaceComponent = ComponentType<TerminalConfigEditorSurfaceProps>;
 
-export type TerminalConfigEditorView = 'editor' | 'diagnostics' | 'changes';
+export type TerminalConfigEditorView = 'editor' | 'structured' | 'diagnostics' | 'changes';
 
 export interface TerminalConfigEditorProps extends TerminalConfigEditorSurfaceProps {
   baselineValue?: string | null;
@@ -22,6 +23,9 @@ export interface TerminalConfigEditorProps extends TerminalConfigEditorSurfacePr
   configPath?: string | null;
   snapshotPath?: string | null;
   fingerprint?: string | null;
+  structuredEntries?: ShellConfigEntries | null;
+  structuredFallbackReason?: string | null;
+  onStructuredEntriesChange?: (next: ShellConfigEntries) => void;
 }
 
 export interface TerminalConfigEditorToolbarProps {

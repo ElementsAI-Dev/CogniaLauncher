@@ -1,4 +1,4 @@
-import { useAppearanceStore } from './appearance';
+import { DEFAULT_APPEARANCE_PRESET_ID, useAppearanceStore } from './appearance';
 
 describe('useAppearanceStore', () => {
   beforeEach(() => {
@@ -37,6 +37,15 @@ describe('useAppearanceStore', () => {
     it('has default window effect as auto', () => {
       const { windowEffect } = useAppearanceStore.getState();
       expect(windowEffect).toBe('auto');
+    });
+
+    it('has default preset collection and active preset', () => {
+      const { presets, activePresetId } = useAppearanceStore.getState();
+      expect(activePresetId).toBe(DEFAULT_APPEARANCE_PRESET_ID);
+      expect(presets).toHaveLength(1);
+      expect(presets[0].id).toBe(DEFAULT_APPEARANCE_PRESET_ID);
+      expect(presets[0].name).toBe('Default');
+      expect(presets[0].config.theme).toBe('system');
     });
   });
 
@@ -187,12 +196,114 @@ describe('useAppearanceStore', () => {
     });
   });
 
+  describe('preset lifecycle', () => {
+    it('creates a new preset and sets it active', () => {
+      const state = useAppearanceStore.getState();
+      const id = state.createPreset('Workspace', {
+        theme: 'dark',
+        accentColor: 'purple',
+        chartColorTheme: 'sunset',
+        interfaceRadius: 0.75,
+        interfaceDensity: 'compact',
+        reducedMotion: true,
+        backgroundEnabled: true,
+        backgroundOpacity: 60,
+        backgroundBlur: 4,
+        backgroundFit: 'contain',
+        windowEffect: 'mica',
+      });
+
+      const next = useAppearanceStore.getState();
+      expect(next.activePresetId).toBe(id);
+      expect(next.presets.some((preset) => preset.id === id)).toBe(true);
+    });
+
+    it('renames and deletes a non-default preset', () => {
+      const state = useAppearanceStore.getState();
+      const id = state.createPreset('Preset A', {
+        theme: 'light',
+        accentColor: 'green',
+        chartColorTheme: 'default',
+        interfaceRadius: 0.625,
+        interfaceDensity: 'comfortable',
+        reducedMotion: false,
+        backgroundEnabled: false,
+        backgroundOpacity: 20,
+        backgroundBlur: 0,
+        backgroundFit: 'cover',
+        windowEffect: 'auto',
+      });
+
+      useAppearanceStore.getState().renamePreset(id, 'Preset B');
+      expect(useAppearanceStore.getState().presets.find((preset) => preset.id === id)?.name).toBe('Preset B');
+
+      useAppearanceStore.getState().deletePreset(id);
+      expect(useAppearanceStore.getState().presets.some((preset) => preset.id === id)).toBe(false);
+      expect(useAppearanceStore.getState().activePresetId).toBe(DEFAULT_APPEARANCE_PRESET_ID);
+    });
+
+    it('applies preset values and normalizes invalid legacy values', () => {
+      useAppearanceStore.getState().replacePresetCollection(
+        [
+          {
+            id: DEFAULT_APPEARANCE_PRESET_ID,
+            name: 'Default',
+            config: {
+              theme: 'system',
+              accentColor: 'blue',
+              chartColorTheme: 'default',
+              interfaceRadius: 0.625,
+              interfaceDensity: 'comfortable',
+              reducedMotion: false,
+              backgroundEnabled: false,
+              backgroundOpacity: 20,
+              backgroundBlur: 0,
+              backgroundFit: 'cover',
+              windowEffect: 'auto',
+            },
+          },
+          {
+            id: 'legacy',
+            name: 'Legacy',
+            config: {
+              theme: 'system' as never,
+              accentColor: 'pink' as never,
+              chartColorTheme: 'neon' as never,
+              interfaceRadius: 0.74 as never,
+              interfaceDensity: 'tight' as never,
+              reducedMotion: 'unknown' as never,
+              backgroundEnabled: 'yes' as never,
+              backgroundOpacity: 180 as never,
+              backgroundBlur: -4 as never,
+              backgroundFit: 'stretch' as never,
+              windowEffect: 'glass' as never,
+            },
+          },
+        ],
+        'legacy',
+      );
+
+      const applied = useAppearanceStore.getState().applyPreset('legacy');
+      expect(applied).toBeTruthy();
+      expect(useAppearanceStore.getState().accentColor).toBe('blue');
+      expect(useAppearanceStore.getState().chartColorTheme).toBe('default');
+      expect(useAppearanceStore.getState().interfaceRadius).toBe(0.75);
+      expect(useAppearanceStore.getState().interfaceDensity).toBe('comfortable');
+      expect(useAppearanceStore.getState().reducedMotion).toBe(false);
+      expect(useAppearanceStore.getState().backgroundEnabled).toBe(false);
+      expect(useAppearanceStore.getState().backgroundOpacity).toBe(100);
+      expect(useAppearanceStore.getState().backgroundBlur).toBe(0);
+      expect(useAppearanceStore.getState().backgroundFit).toBe('cover');
+      expect(useAppearanceStore.getState().windowEffect).toBe('auto');
+    });
+  });
+
   describe('persist migration', () => {
     // Access the persist config to test migration function
     const getPersistConfig = () =>
       (useAppearanceStore as unknown as { persist: { getOptions: () => { migrate: (state: unknown, version: number) => unknown } } }).persist.getOptions();
 
-    it('v1 → v7: adds all missing fields', () => {
+    it('v1 → v8: adds all missing fields', () => {
       const v1State = { accentColor: 'rose' };
       const migrated = getPersistConfig().migrate(v1State, 1) as Record<string, unknown>;
 
@@ -205,11 +316,13 @@ describe('useAppearanceStore', () => {
       expect(migrated.backgroundBlur).toBe(0);
       expect(migrated.backgroundFit).toBe('cover');
       expect(migrated.windowEffect).toBe('auto');
+      expect(migrated.activePresetId).toBe(DEFAULT_APPEARANCE_PRESET_ID);
+      expect(Array.isArray(migrated.presets)).toBe(true);
       // Preserves existing fields
       expect(migrated.accentColor).toBe('rose');
     });
 
-    it('v2 → v7: skips reducedMotion, adds rest', () => {
+    it('v2 → v8: skips reducedMotion, adds rest', () => {
       const v2State = { accentColor: 'blue', reducedMotion: true };
       const migrated = getPersistConfig().migrate(v2State, 2) as Record<string, unknown>;
 
@@ -219,9 +332,10 @@ describe('useAppearanceStore', () => {
       expect(migrated.interfaceDensity).toBe('comfortable');
       expect(migrated.backgroundEnabled).toBe(false);
       expect(migrated.windowEffect).toBe('auto');
+      expect(migrated.activePresetId).toBe(DEFAULT_APPEARANCE_PRESET_ID);
     });
 
-    it('v3 → v6: skips chartColorTheme, adds rest', () => {
+    it('v3 → v8: skips chartColorTheme, adds rest', () => {
       const v3State = { chartColorTheme: 'ocean', reducedMotion: false };
       const migrated = getPersistConfig().migrate(v3State, 3) as Record<string, unknown>;
 
@@ -231,7 +345,7 @@ describe('useAppearanceStore', () => {
       expect(migrated.backgroundEnabled).toBe(false);
     });
 
-    it('v4 → v6: skips interfaceRadius, adds rest', () => {
+    it('v4 → v8: skips interfaceRadius, adds rest', () => {
       const v4State = { interfaceRadius: 1.0 };
       const migrated = getPersistConfig().migrate(v4State, 4) as Record<string, unknown>;
 
@@ -240,7 +354,7 @@ describe('useAppearanceStore', () => {
       expect(migrated.backgroundEnabled).toBe(false);
     });
 
-    it('v5 → v6: adds only background fields', () => {
+    it('v5 → v8: adds background and newer fields', () => {
       const v5State = { interfaceDensity: 'compact' };
       const migrated = getPersistConfig().migrate(v5State, 5) as Record<string, unknown>;
 
@@ -249,23 +363,57 @@ describe('useAppearanceStore', () => {
       expect(migrated.backgroundOpacity).toBe(20);
       expect(migrated.backgroundBlur).toBe(0);
       expect(migrated.backgroundFit).toBe('cover');
+      expect(migrated.windowEffect).toBe('auto');
     });
 
-    it('v6 → v7: adds only windowEffect', () => {
+    it('v6 → v8: adds windowEffect and presets', () => {
       const v6State = { accentColor: 'green', backgroundEnabled: true };
       const migrated = getPersistConfig().migrate(v6State, 6) as Record<string, unknown>;
 
       expect(migrated.accentColor).toBe('green');
       expect(migrated.backgroundEnabled).toBe(true);
       expect(migrated.windowEffect).toBe('auto');
+      expect(migrated.activePresetId).toBe(DEFAULT_APPEARANCE_PRESET_ID);
     });
 
-    it('v7: no migration needed', () => {
+    it('v7 → v8: adds presets while preserving v7 values', () => {
       const v7State = { accentColor: 'green', windowEffect: 'mica' };
       const migrated = getPersistConfig().migrate(v7State, 7) as Record<string, unknown>;
 
       expect(migrated.accentColor).toBe('green');
       expect(migrated.windowEffect).toBe('mica');
+      expect(migrated.activePresetId).toBe(DEFAULT_APPEARANCE_PRESET_ID);
+      expect(Array.isArray(migrated.presets)).toBe(true);
+    });
+
+    it('v8: no migration needed', () => {
+      const v8State = {
+        accentColor: 'green',
+        windowEffect: 'mica',
+        activePresetId: DEFAULT_APPEARANCE_PRESET_ID,
+        presets: [
+          {
+            id: DEFAULT_APPEARANCE_PRESET_ID,
+            name: 'Default',
+            config: {
+              theme: 'system',
+              accentColor: 'green',
+              chartColorTheme: 'default',
+              interfaceRadius: 0.625,
+              interfaceDensity: 'comfortable',
+              reducedMotion: false,
+              backgroundEnabled: false,
+              backgroundOpacity: 20,
+              backgroundBlur: 0,
+              backgroundFit: 'cover',
+              windowEffect: 'mica',
+            },
+          },
+        ],
+      };
+      const migrated = getPersistConfig().migrate(v8State, 8) as Record<string, unknown>;
+      expect(migrated.windowEffect).toBe('mica');
+      expect(migrated.activePresetId).toBe(DEFAULT_APPEARANCE_PRESET_ID);
     });
 
     it('does not overwrite existing fields during migration', () => {
@@ -304,8 +452,28 @@ describe('useAppearanceStore', () => {
         backgroundBlur: -9,
         backgroundFit: 'stretch',
         windowEffect: 'glass',
+        activePresetId: 'legacy',
+        presets: [
+          {
+            id: 'legacy',
+            name: 'Legacy',
+            config: {
+              theme: 'night',
+              accentColor: 'pink',
+              chartColorTheme: 'neon',
+              interfaceRadius: 0.74,
+              interfaceDensity: 'tight',
+              reducedMotion: 'sometimes',
+              backgroundEnabled: 'yes',
+              backgroundOpacity: 160,
+              backgroundBlur: -7,
+              backgroundFit: 'stretch',
+              windowEffect: 'frosted',
+            },
+          },
+        ],
       };
-      const migrated = getPersistConfig().migrate(invalid, 7) as Record<string, unknown>;
+      const migrated = getPersistConfig().migrate(invalid, 8) as Record<string, unknown>;
 
       expect(migrated.accentColor).toBe('blue');
       expect(migrated.chartColorTheme).toBe('default');
@@ -317,6 +485,7 @@ describe('useAppearanceStore', () => {
       expect(migrated.backgroundBlur).toBe(0);
       expect(migrated.backgroundFit).toBe('cover');
       expect(migrated.windowEffect).toBe('auto');
+      expect(migrated.activePresetId).toBe('legacy');
     });
   });
 
@@ -349,6 +518,9 @@ describe('useAppearanceStore', () => {
       expect(state.backgroundBlur).toBe(0);
       expect(state.backgroundFit).toBe('cover');
       expect(state.windowEffect).toBe('auto');
+      expect(state.activePresetId).toBe(DEFAULT_APPEARANCE_PRESET_ID);
+      expect(state.presets).toHaveLength(1);
+      expect(state.presets[0].id).toBe(DEFAULT_APPEARANCE_PRESET_ID);
     });
   });
 });

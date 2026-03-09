@@ -231,56 +231,58 @@ export function DownloadToolbar({
         value={statusFilter}
         onValueChange={(value) => onStatusChange(value as StatusFilter)}
       >
-        <TabsList>
-          <TabsTrigger value="all" className="gap-1.5">
-            {t("downloads.toolbar.filterAll")}
-            <Badge variant="secondary" className="px-1.5 py-0 text-xs">
-              {stats.totalTasks}
-            </Badge>
-          </TabsTrigger>
-          <TabsTrigger value="downloading" className="gap-1.5">
-            {t("downloads.toolbar.filterDownloading")}
-            <Badge variant="secondary" className="px-1.5 py-0 text-xs">
-              {stats.downloading}
-            </Badge>
-          </TabsTrigger>
-          <TabsTrigger value="queued" className="gap-1.5">
-            {t("downloads.toolbar.filterQueued")}
-            <Badge variant="secondary" className="px-1.5 py-0 text-xs">
-              {stats.queued}
-            </Badge>
-          </TabsTrigger>
-          <TabsTrigger value="paused" className="gap-1.5">
-            {t("downloads.toolbar.filterPaused")}
-            <Badge variant="secondary" className="px-1.5 py-0 text-xs">
-              {stats.paused}
-            </Badge>
-          </TabsTrigger>
-          <TabsTrigger value="completed" className="gap-1.5">
-            {t("downloads.toolbar.filterCompleted")}
-            <Badge variant="secondary" className="px-1.5 py-0 text-xs">
-              {stats.completed}
-            </Badge>
-          </TabsTrigger>
-          <TabsTrigger value="failed" className="gap-1.5">
-            {t("downloads.toolbar.filterFailed")}
-            <Badge variant="secondary" className="px-1.5 py-0 text-xs">
-              {stats.failed}
-            </Badge>
-          </TabsTrigger>
-          <TabsTrigger value="cancelled" className="gap-1.5">
-            {t("downloads.toolbar.filterCancelled")}
-            <Badge variant="secondary" className="px-1.5 py-0 text-xs">
-              {stats.cancelled}
-            </Badge>
-          </TabsTrigger>
-          <TabsTrigger value="extracting" className="gap-1.5">
-            {t("downloads.toolbar.filterExtracting")}
-            <Badge variant="secondary" className="px-1.5 py-0 text-xs">
-              {extractingCount}
-            </Badge>
-          </TabsTrigger>
-        </TabsList>
+        <div className="w-full overflow-x-auto pb-1">
+          <TabsList className="inline-flex h-auto min-w-max">
+            <TabsTrigger value="all" className="gap-1.5">
+              {t("downloads.toolbar.filterAll")}
+              <Badge variant="secondary" className="px-1.5 py-0 text-xs">
+                {stats.totalTasks}
+              </Badge>
+            </TabsTrigger>
+            <TabsTrigger value="downloading" className="gap-1.5">
+              {t("downloads.toolbar.filterDownloading")}
+              <Badge variant="secondary" className="px-1.5 py-0 text-xs">
+                {stats.downloading}
+              </Badge>
+            </TabsTrigger>
+            <TabsTrigger value="queued" className="gap-1.5">
+              {t("downloads.toolbar.filterQueued")}
+              <Badge variant="secondary" className="px-1.5 py-0 text-xs">
+                {stats.queued}
+              </Badge>
+            </TabsTrigger>
+            <TabsTrigger value="paused" className="gap-1.5">
+              {t("downloads.toolbar.filterPaused")}
+              <Badge variant="secondary" className="px-1.5 py-0 text-xs">
+                {stats.paused}
+              </Badge>
+            </TabsTrigger>
+            <TabsTrigger value="completed" className="gap-1.5">
+              {t("downloads.toolbar.filterCompleted")}
+              <Badge variant="secondary" className="px-1.5 py-0 text-xs">
+                {stats.completed}
+              </Badge>
+            </TabsTrigger>
+            <TabsTrigger value="failed" className="gap-1.5">
+              {t("downloads.toolbar.filterFailed")}
+              <Badge variant="secondary" className="px-1.5 py-0 text-xs">
+                {stats.failed}
+              </Badge>
+            </TabsTrigger>
+            <TabsTrigger value="cancelled" className="gap-1.5">
+              {t("downloads.toolbar.filterCancelled")}
+              <Badge variant="secondary" className="px-1.5 py-0 text-xs">
+                {stats.cancelled}
+              </Badge>
+            </TabsTrigger>
+            <TabsTrigger value="extracting" className="gap-1.5">
+              {t("downloads.toolbar.filterExtracting")}
+              <Badge variant="secondary" className="px-1.5 py-0 text-xs">
+                {extractingCount}
+              </Badge>
+            </TabsTrigger>
+          </TabsList>
+        </div>
       </Tabs>
     </div>
   );

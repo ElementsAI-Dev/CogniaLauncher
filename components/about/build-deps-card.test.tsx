@@ -109,4 +109,9 @@ describe("BuildDepsCard", () => {
       expect(link).toHaveAttribute("target", "_blank");
     }
   });
+
+  it("renders dependency list with table semantics", () => {
+    render(<BuildDepsCard t={mockT} />);
+    expect(screen.getByRole("table")).toBeInTheDocument();
+  });
 });

@@ -53,6 +53,39 @@ export interface SystemInfo {
   sectionSummary?: Partial<Record<SystemSubsystem, SystemSectionState>>;
 }
 
+export type AboutInsightGroupState =
+  | 'loading'
+  | 'ok'
+  | 'failed'
+  | 'unavailable';
+
+export interface AboutProviderSummary {
+  total: number;
+  installed: number;
+  supported: number;
+  unsupported: number;
+}
+
+export interface AboutStorageSummary {
+  cacheTotalSizeHuman: string;
+  logTotalSizeBytes: number | null;
+  logTotalSizeHuman: string | null;
+}
+
+export interface AboutInsightsSectionSummary {
+  providers: AboutInsightGroupState;
+  logs: AboutInsightGroupState;
+  cache: AboutInsightGroupState;
+}
+
+export interface AboutInsights {
+  runtimeMode: 'desktop' | 'web';
+  providerSummary: AboutProviderSummary;
+  storageSummary: AboutStorageSummary;
+  sections: AboutInsightsSectionSummary;
+  generatedAt: string;
+}
+
 export type UpdateStatus =
   | 'idle'
   | 'checking'

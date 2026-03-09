@@ -364,7 +364,7 @@ describe("QuickSearch", () => {
     expect(container.firstChild).toHaveClass("custom-search");
   });
 
-  it("navigates tool results to canonical toolbox route", async () => {
+  it("navigates tool results to static-export-safe toolbox route", async () => {
     mockAllTools = [
       {
         id: "builtin:json-formatter",
@@ -392,7 +392,7 @@ describe("QuickSearch", () => {
     const resultItem = resultText.closest("[cmdk-item]") ?? resultText;
     fireEvent.click(resultItem);
 
-    expect(mockPush).toHaveBeenCalledWith("/toolbox/builtin%3Ajson-formatter");
+    expect(mockPush).toHaveBeenCalledWith("/toolbox/tool?id=builtin%3Ajson-formatter");
   });
 
 });

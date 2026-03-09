@@ -20,16 +20,16 @@ export function request(input: HttpRequest): HttpResponse {
 }
 
 /**
- * Make an HTTP GET request to a URL (must be in allowed domains).
- * Requires: http permission + domain allowlist.
+ * Compatibility helper for a simple HTTP GET request.
+ * For new plugins, prefer `request()` to use the normalized request contract.
  */
 export function get(url: string): HttpResponse {
   return request({ method: 'GET', url });
 }
 
 /**
- * Make an HTTP POST request (must be in allowed domains).
- * Requires: http permission + domain allowlist.
+ * Compatibility helper for a simple HTTP POST request.
+ * For new plugins, prefer `request()` to use the normalized request contract.
  */
 export function post(
   url: string,

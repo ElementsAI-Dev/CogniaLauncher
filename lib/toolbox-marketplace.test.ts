@@ -51,6 +51,9 @@ const rawCatalog = {
         pluginDir: "marketplace/hello-world-rust",
         artifact: "plugin.wasm",
         checksumSha256: "abc123",
+        downloadUrl: null,
+        mirrorUrls: [],
+        sizeBytes: null,
       },
       permissions: ["env_read"],
       capabilities: ["environment.read"],
@@ -83,6 +86,9 @@ const rawCatalog = {
         pluginDir: "marketplace/future-plugin",
         artifact: "plugin.wasm",
         checksumSha256: "def456",
+        downloadUrl: null,
+        mirrorUrls: [],
+        sizeBytes: null,
       },
       permissions: [],
       capabilities: [],
@@ -141,6 +147,40 @@ describe("toolbox marketplace helpers", () => {
     ]);
     expect(firstListing.gallery).toHaveLength(1);
     expect(firstListing.releaseNotes).toContain("environment inspection");
+  });
+
+  it("normalizes mixed local and remote source metadata with backward-compatible defaults", () => {
+    const catalog = normalizeMarketplaceCatalog({
+      schemaVersion: 1,
+      generatedAt: "2026-03-08T00:00:00.000Z",
+      listings: [
+        {
+          id: "remote-only",
+          pluginId: "com.cognia.remote-only",
+          name: "Remote Only",
+          version: "1.0.0",
+          category: "developer",
+          source: {
+            type: "store",
+            storeId: "remote-only",
+            downloadUrl: "https://example.invalid/remote-only.zip",
+            mirrorUrls: ["https://mirror.example.invalid/remote-only.zip"],
+            checksumSha256: "abc",
+          },
+        },
+      ],
+    });
+
+    expect(catalog.listings[0]?.source).toEqual({
+      type: "store",
+      storeId: "remote-only",
+      pluginDir: "",
+      artifact: "plugin.wasm",
+      checksumSha256: "abc",
+      downloadUrl: "https://example.invalid/remote-only.zip",
+      mirrorUrls: ["https://mirror.example.invalid/remote-only.zip"],
+      sizeBytes: null,
+    });
   });
 
   it("joins install state, update state, and compatibility state deterministically", () => {
@@ -228,5 +268,123 @@ describe("toolbox marketplace helpers", () => {
     });
 
     expect(listings[0]?.installState).toBe("disabled");
+  });
+
+  it("emits explicit blocked reasons for desktop and contract incompatibility", () => {
+    const contractListing = {
+      ...rawCatalog.listings[0],
+      id: "contract-plugin",
+      pluginId: "com.cognia.contract-plugin",
+      toolContractVersion: "999.0.0",
+      source: {
+        type: "store" as const,
+        storeId: "store.contract-plugin",
+        pluginDir: "marketplace/contract-plugin",
+        artifact: "plugin.wasm",
+        checksumSha256: "contract999",
+        downloadUrl: null,
+        mirrorUrls: [],
+        sizeBytes: null,
+      },
+    };
+    const catalog = normalizeMarketplaceCatalog({
+      ...rawCatalog,
+      listings: [...rawCatalog.listings, contractListing],
+    });
+
+    const nonDesktopListings = buildMarketplaceListings(catalog, {
+      installedPlugins: [],
+      pendingUpdates: [],
+      isDesktop: false,
+    });
+    expect(nonDesktopListings[0]?.installState).toBe("blocked");
+    expect(nonDesktopListings[0]?.blockedReason).toBe(
+      "Desktop runtime is required for plugin installation.",
+    );
+
+    const contractBlockedListings = buildMarketplaceListings(catalog, {
+      installedPlugins: [],
+      pendingUpdates: [],
+      isDesktop: true,
+    });
+    const contractBlocked = contractBlockedListings.find(
+      (listing) => listing.id === "contract-plugin",
+    );
+    expect(contractBlocked?.installState).toBe("blocked");
+    expect(contractBlocked?.blockedReason).toBe(
+      "Requires tool contract 999.0.0.",
+    );
+  });
+
+  it("keeps deterministic ordering when sort keys tie", () => {
+    const tieCatalog = normalizeMarketplaceCatalog({
+      ...rawCatalog,
+      listings: [
+        {
+          ...rawCatalog.listings[0],
+          id: "tie-b",
+          name: "Same Name",
+          installCount: 100,
+          updatedAt: "2026-03-01T00:00:00.000Z",
+          source: {
+            type: "store" as const,
+            storeId: "store.tie-b",
+            pluginDir: "marketplace/tie-b",
+            artifact: "plugin.wasm",
+            checksumSha256: "tie-b",
+            downloadUrl: null,
+            mirrorUrls: [],
+            sizeBytes: null,
+          },
+          pluginId: "com.cognia.tie-b",
+        },
+        {
+          ...rawCatalog.listings[0],
+          id: "tie-a",
+          name: "Same Name",
+          installCount: 100,
+          updatedAt: "2026-03-01T00:00:00.000Z",
+          source: {
+            type: "store" as const,
+            storeId: "store.tie-a",
+            pluginDir: "marketplace/tie-a",
+            artifact: "plugin.wasm",
+            checksumSha256: "tie-a",
+            downloadUrl: null,
+            mirrorUrls: [],
+            sizeBytes: null,
+          },
+          pluginId: "com.cognia.tie-a",
+        },
+      ],
+    });
+
+    const listings = buildMarketplaceListings(tieCatalog, {
+      installedPlugins: [],
+      pendingUpdates: [],
+      isDesktop: true,
+    });
+
+    expect(
+      filterMarketplaceListings(listings, {
+        query: "",
+        category: "all",
+        featuredOnly: false,
+        installState: "all",
+        verifiedOnly: false,
+        sort: "name",
+      } satisfies ToolboxMarketplaceFilters).map((listing) => listing.id),
+    ).toEqual(["tie-a", "tie-b"]);
+
+    expect(
+      filterMarketplaceListings(listings, {
+        query: "",
+        category: "all",
+        featuredOnly: false,
+        installState: "all",
+        verifiedOnly: false,
+        sort: "popular",
+      } satisfies ToolboxMarketplaceFilters).map((listing) => listing.id),
+    ).toEqual(["tie-a", "tie-b"]);
   });
 });

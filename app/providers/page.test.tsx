@@ -46,6 +46,24 @@ const mockProviders = [
     is_environment_provider: false,
     enabled: true,
   },
+  {
+    id: 'pip',
+    display_name: 'pip',
+    capabilities: ['install', 'uninstall', 'search', 'update'],
+    platforms: ['windows', 'linux', 'macos'],
+    priority: 85,
+    is_environment_provider: false,
+    enabled: true,
+  },
+  {
+    id: 'cargo',
+    display_name: 'Cargo',
+    capabilities: ['install', 'uninstall', 'search', 'update'],
+    platforms: ['windows', 'linux', 'macos'],
+    priority: 84,
+    is_environment_provider: false,
+    enabled: true,
+  },
 ];
 
 jest.mock('@/hooks/use-packages', () => ({
@@ -207,6 +225,22 @@ describe('ProvidersPage', () => {
     await waitFor(() => {
       expect(screen.getByText('APT')).toBeInTheDocument();
       expect(screen.queryByText('npm')).not.toBeInTheDocument();
+    });
+  });
+
+  it('keeps language package-manager matrix providers under package category', async () => {
+    const user = userEvent.setup();
+    render(<ProvidersPage />);
+
+    const packageTab = screen.getByRole('tab', { name: 'Package Manager' });
+    await user.click(packageTab);
+
+    await waitFor(() => {
+      expect(screen.getAllByText('npm').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('pip').length).toBeGreaterThan(0);
+      expect(screen.getByText('Cargo')).toBeInTheDocument();
+      expect(screen.queryByText('Node Version Manager')).not.toBeInTheDocument();
+      expect(screen.queryByText('APT')).not.toBeInTheDocument();
     });
   });
 

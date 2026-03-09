@@ -31,6 +31,10 @@ import {
 } from '@/components/ui/dialog';
 import { Monitor, User, FileText, Blocks, Shield, Globe, Variable, RefreshCw, Plus } from 'lucide-react';
 
+type PendingNavigationIntent =
+  | { kind: 'tab'; nextTab: string }
+  | { kind: 'config-target' };
+
 export default function TerminalPage() {
   const { t } = useLocale();
   const terminal = useTerminal({ t });
@@ -43,7 +47,10 @@ export default function TerminalPage() {
   const [saveAsTemplateName, setSaveAsTemplateName] = useState('');
   const [saveAsTemplateDesc, setSaveAsTemplateDesc] = useState('');
   const [activeTab, setActiveTab] = useState('shells');
-  const [tabLoaded, setTabLoaded] = useState<Record<string, boolean>>({});
+  const [pendingNavigationIntent, setPendingNavigationIntent] = useState<PendingNavigationIntent | null>(null);
+  const [configDirty, setConfigDirty] = useState(false);
+  const [discardSignal, setDiscardSignal] = useState(0);
+  const [configRefreshSignal, setConfigRefreshSignal] = useState(0);
 
   const profileDialogKey = `${profileDialogOpen ? 'open' : 'closed'}:${editingProfile?.id ?? 'new'}:${templateProfile?.name ?? 'none'}:${terminal.shells
     .map((shell) => shell.id)
@@ -92,26 +99,39 @@ export default function TerminalPage() {
     setSaveAsTemplateOpen(false);
   }, [saveAsTemplateProfileId, saveAsTemplateName, saveAsTemplateDesc, terminal]);
 
-  const handleTabChange = useCallback((tab: string) => {
-    setActiveTab(tab);
-    if (tabLoaded[tab]) return;
-    setTabLoaded((prev) => ({ ...prev, [tab]: true }));
+  const fetchStaleTabResources = useCallback((tab: string) => {
     switch (tab) {
       case 'powershell':
-        terminal.fetchPSProfiles();
-        terminal.fetchPSModules();
-        terminal.fetchPSScripts();
-        terminal.fetchExecutionPolicy();
+        if (terminal.resourceStale.psProfiles) terminal.fetchPSProfiles();
+        if (terminal.resourceStale.psModules) terminal.fetchPSModules();
+        if (terminal.resourceStale.psScripts) terminal.fetchPSScripts();
+        if (terminal.resourceStale.executionPolicy) terminal.fetchExecutionPolicy();
         break;
       case 'proxy':
-        terminal.loadProxyConfig();
-        terminal.fetchProxyEnvVars();
+        if (terminal.resourceStale.proxyConfig) terminal.loadProxyConfig();
+        if (terminal.resourceStale.proxyEnvVars) terminal.fetchProxyEnvVars();
         break;
       case 'envvars':
-        terminal.fetchShellEnvVars();
+        if (terminal.resourceStale.shellEnvVars) terminal.fetchShellEnvVars();
+        break;
+      default:
         break;
     }
-  }, [tabLoaded, terminal]);
+  }, [terminal]);
+
+  const activateTab = useCallback((tab: string) => {
+    setActiveTab(tab);
+    fetchStaleTabResources(tab);
+  }, [fetchStaleTabResources]);
+
+  const handleTabChange = useCallback((tab: string) => {
+    if (tab === activeTab) return;
+    if (configDirty) {
+      setPendingNavigationIntent({ kind: 'tab', nextTab: tab });
+      return;
+    }
+    activateTab(tab);
+  }, [activeTab, activateTab, configDirty]);
 
   const handleSaveProfile = useCallback(async (profile: TerminalProfile) => {
     if (profile.id) {
@@ -121,20 +141,29 @@ export default function TerminalPage() {
     }
   }, [terminal]);
 
-  useEffect(() => {
-    if (terminal.configMutationState.status === 'success') {
-      setTabLoaded((prev) => ({ ...prev, config: false }));
+  const handleConfigDiscardRequest = useCallback(() => {
+    setPendingNavigationIntent({ kind: 'config-target' });
+  }, []);
+
+  const handleConfirmDiscard = useCallback(() => {
+    const currentIntent = pendingNavigationIntent;
+    setDiscardSignal((prev) => prev + 1);
+    setConfigDirty(false);
+    setPendingNavigationIntent(null);
+    if (currentIntent?.kind === 'tab') {
+      activateTab(currentIntent.nextTab);
     }
-  }, [terminal.configMutationState.status, terminal.configMutationState.updatedAt]);
+  }, [activateTab, pendingNavigationIntent]);
 
   useEffect(() => {
-    if (terminal.proxySyncState.status === 'success') {
-      setTabLoaded((prev) => ({ ...prev, proxy: false, envvars: false }));
+    if (activeTab !== 'config') return;
+    if (terminal.resourceStale.configEntries || terminal.resourceStale.configMetadata) {
+      setConfigRefreshSignal((prev) => prev + 1);
     }
-  }, [terminal.proxySyncState.status, terminal.proxySyncState.updatedAt]);
+  }, [activeTab, terminal.resourceStale.configEntries, terminal.resourceStale.configMetadata]);
 
   return (
-    <div className="p-4 md:p-6 space-y-6">
+    <div className="mx-auto w-full max-w-[1400px] space-y-6 p-4 md:p-6">
       <PageHeader
         title={t('terminal.title')}
         description={t('terminal.description')}
@@ -159,32 +188,32 @@ export default function TerminalPage() {
       />
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="shells" className="gap-1.5">
+        <TabsList className="h-auto w-full justify-start overflow-x-auto p-1">
+          <TabsTrigger value="shells" className="flex-none gap-1.5">
             <Monitor className="h-3.5 w-3.5" />
             {t('terminal.tabShells')}
           </TabsTrigger>
-          <TabsTrigger value="profiles" className="gap-1.5">
+          <TabsTrigger value="profiles" className="flex-none gap-1.5">
             <User className="h-3.5 w-3.5" />
             {t('terminal.tabProfiles')}
           </TabsTrigger>
-          <TabsTrigger value="config" className="gap-1.5">
+          <TabsTrigger value="config" className="flex-none gap-1.5">
             <FileText className="h-3.5 w-3.5" />
             {t('terminal.tabConfig')}
           </TabsTrigger>
-          <TabsTrigger value="frameworks" className="gap-1.5">
+          <TabsTrigger value="frameworks" className="flex-none gap-1.5">
             <Blocks className="h-3.5 w-3.5" />
             {t('terminal.tabFrameworks')}
           </TabsTrigger>
-          <TabsTrigger value="powershell" className="gap-1.5">
+          <TabsTrigger value="powershell" className="flex-none gap-1.5">
             <Shield className="h-3.5 w-3.5" />
             {t('terminal.tabPowerShell')}
           </TabsTrigger>
-          <TabsTrigger value="proxy" className="gap-1.5">
+          <TabsTrigger value="proxy" className="flex-none gap-1.5">
             <Globe className="h-3.5 w-3.5" />
             {t('terminal.tabProxy')}
           </TabsTrigger>
-          <TabsTrigger value="envvars" className="gap-1.5">
+          <TabsTrigger value="envvars" className="flex-none gap-1.5">
             <Variable className="h-3.5 w-3.5" />
             {t('terminal.tabEnvVars')}
           </TabsTrigger>
@@ -251,6 +280,7 @@ export default function TerminalPage() {
             onReadConfig={terminal.readShellConfig}
             onFetchConfigEntries={terminal.fetchConfigEntries}
             onParseConfigContent={terminal.parseConfigContent}
+            onValidateConfigContent={terminal.validateConfigContent}
             onBackupConfig={terminal.backupShellConfig}
             onWriteConfig={terminal.writeShellConfig}
             onGetConfigEditorMetadata={terminal.getConfigEditorMetadata}
@@ -259,6 +289,14 @@ export default function TerminalPage() {
             mutationMessage={terminal.configMutationState.message}
             mutationResult={terminal.configMutationState.result}
             onClearMutationState={terminal.clearConfigMutationState}
+            onDirtyChange={setConfigDirty}
+            onRequestDiscard={handleConfigDiscardRequest}
+            discardSignal={discardSignal}
+            refreshSignal={configRefreshSignal}
+            onRefreshHandled={(didRefresh) => {
+              if (!didRefresh) return;
+              terminal.markResourcesFresh(['configEntries', 'configMetadata']);
+            }}
           />
         </TabsContent>
 
@@ -383,6 +421,28 @@ export default function TerminalPage() {
             </Button>
             <Button onClick={handleConfirmSaveAsTemplate} disabled={!saveAsTemplateName.trim()}>
               {t('terminal.save')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={pendingNavigationIntent !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingNavigationIntent(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle>{t('terminal.unsavedChangesTitle')}</DialogTitle>
+            <DialogDescription>{t('terminal.unsavedChangesDesc')}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPendingNavigationIntent(null)}>
+              {t('terminal.cancel')}
+            </Button>
+            <Button variant="destructive" onClick={handleConfirmDiscard}>
+              {t('terminal.discardAndContinue')}
             </Button>
           </DialogFooter>
         </DialogContent>

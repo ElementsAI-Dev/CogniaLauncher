@@ -109,6 +109,7 @@ describe("SettingsSearch", () => {
 
     expect(screen.getByText("1 results found")).toBeInTheDocument();
     expect(screen.getByText("Parallel Downloads")).toBeInTheDocument();
+    expect(screen.getByRole("listbox")).toBeInTheDocument();
   });
 
   it("shows no results message when no matches found", () => {

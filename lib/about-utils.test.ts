@@ -103,4 +103,41 @@ describe('buildSystemInfoText', () => {
     expect(result).toContain('~/.cognia');
     expect(result).toContain('en-US');
   });
+
+  it("includes about insights fields when provided", () => {
+    const result = buildSystemInfoText({
+      systemInfo: { appVersion: "2.0.0" } as never,
+      aboutInsights: {
+        runtimeMode: "desktop",
+        providerSummary: {
+          total: 4,
+          installed: 3,
+          supported: 3,
+          unsupported: 1,
+        },
+        storageSummary: {
+          cacheTotalSizeHuman: "8.0 MB",
+          logTotalSizeBytes: 1024,
+          logTotalSizeHuman: "1.0 KB",
+        },
+        sections: {
+          providers: "ok",
+          logs: "ok",
+          cache: "failed",
+        },
+        generatedAt: "2026-03-08T00:00:00.000Z",
+      },
+      updateInfo: null,
+      display: baseDisplay,
+      unknownText: "N/A",
+      t: mockT,
+    });
+
+    expect(result).toContain("about.insightsTitle");
+    expect(result).toContain("desktop");
+    expect(result).toContain("3/4");
+    expect(result).toContain("8.0 MB");
+    expect(result).toContain("providers=ok");
+    expect(result).toContain("cache=failed");
+  });
 });

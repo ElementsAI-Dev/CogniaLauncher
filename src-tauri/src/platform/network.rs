@@ -332,7 +332,9 @@ impl HttpClient {
         while let Some(chunk) = stream.next().await {
             let chunk = match chunk {
                 Ok(chunk) => chunk,
-                Err(error) => return Err(classify_request_error(error, self.default_options.timeout)),
+                Err(error) => {
+                    return Err(classify_request_error(error, self.default_options.timeout))
+                }
             };
             file.write_all(&chunk).await?;
             downloaded += chunk.len() as u64;

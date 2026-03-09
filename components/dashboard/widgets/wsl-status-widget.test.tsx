@@ -45,6 +45,7 @@ describe('WslStatusWidget', () => {
       distros: [],
       status: null,
       runningCount: 0,
+      completeness: { state: 'unavailable', available: false, distroCount: 0, runningCount: 0, degradedReasons: [] },
     });
   });
 
@@ -54,6 +55,7 @@ describe('WslStatusWidget', () => {
       distros: [],
       status: null,
       runningCount: 0,
+      completeness: { state: 'degraded', available: false, distroCount: 0, runningCount: 0, degradedReasons: [] },
     });
 
     render(<WslStatusWidget />);
@@ -74,6 +76,7 @@ describe('WslStatusWidget', () => {
       ],
       status: { defaultVersion: 2, kernelVersion: '5.15.0', version: '2.2.4' },
       runningCount: 1,
+      completeness: { state: 'ready', available: true, distroCount: 2, runningCount: 1, degradedReasons: [] },
     });
 
     render(<WslStatusWidget />);
@@ -93,6 +96,7 @@ describe('WslStatusWidget', () => {
       distros: [],
       status: { defaultVersion: 2, kernelVersion: '5.15.0', version: '2.2.4' },
       runningCount: 0,
+      completeness: { state: 'empty', available: true, distroCount: 0, runningCount: 0, degradedReasons: [] },
     });
 
     render(<WslStatusWidget />);

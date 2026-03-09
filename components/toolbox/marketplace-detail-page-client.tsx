@@ -13,7 +13,13 @@ import { getToolboxDetailPath } from '@/lib/toolbox-route';
 
 export function MarketplaceDetailPageClient({ listingId }: { listingId: string }) {
   const { t } = useLocale();
-  const { getListingById, refreshCatalog, installListing, updateListing } = useToolboxMarketplace();
+  const {
+    getListingById,
+    refreshCatalog,
+    installListing,
+    updateListing,
+    lastActionProgress,
+  } = useToolboxMarketplace();
 
   useEffect(() => {
     void refreshCatalog();
@@ -47,6 +53,9 @@ export function MarketplaceDetailPageClient({ listingId }: { listingId: string }
   const primaryToolHref = listing.tools[0]
     ? getToolboxDetailPath(`plugin:${listing.pluginId}:${listing.tools[0].toolId}`)
     : null;
+  const busy = lastActionProgress?.listingId === listing.id
+    && lastActionProgress.phase !== 'completed'
+    && lastActionProgress.phase !== 'failed';
 
   return (
     <div className="space-y-6 p-4 md:p-6">
@@ -68,7 +77,9 @@ export function MarketplaceDetailPageClient({ listingId }: { listingId: string }
                 <Link href="/toolbox/plugins">{t('toolbox.marketplace.managePlugin')}</Link>
               </Button>
             ) : listing.installState === 'update-available' ? (
-              <Button size="sm" onClick={() => void updateListing(listing)}>{t('toolbox.marketplace.update')}</Button>
+              <Button size="sm" disabled={busy} onClick={() => void updateListing(listing)}>
+                {busy ? 'Working...' : t('toolbox.marketplace.update')}
+              </Button>
             ) : listing.installState === 'installed' ? (
               primaryToolHref ? (
                 <Button size="sm" asChild>
@@ -80,11 +91,25 @@ export function MarketplaceDetailPageClient({ listingId }: { listingId: string }
                 </Button>
               )
             ) : (
-              <Button size="sm" onClick={() => void installListing(listing)}>{t('toolbox.marketplace.install')}</Button>
+              <Button size="sm" disabled={busy} onClick={() => void installListing(listing)}>
+                {busy ? 'Working...' : t('toolbox.marketplace.install')}
+              </Button>
             )}
           </div>
         }
       />
+
+      {lastActionProgress && lastActionProgress.listingId === listing.id && (
+        <Card>
+          <CardContent className="py-3 text-xs text-muted-foreground">
+            {`Action: ${lastActionProgress.kind} · Phase: ${lastActionProgress.phase}${
+              lastActionProgress.downloadTaskId
+                ? ` · Task: ${lastActionProgress.downloadTaskId}`
+                : ''
+            }`}
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-4 xl:grid-cols-[1.5fr_1fr]">
         <Card>

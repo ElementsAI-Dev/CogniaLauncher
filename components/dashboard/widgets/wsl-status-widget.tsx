@@ -1,7 +1,6 @@
 'use client';
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { useLocale } from '@/components/providers/locale-provider';
@@ -10,20 +9,27 @@ import { useWslStore } from '@/lib/stores/wsl';
 import { buildWslOverviewHref } from '@/lib/wsl/workflow';
 import { Terminal, ExternalLink, Loader2 } from 'lucide-react';
 import Link from 'next/link';
+import {
+  DashboardEmptyState,
+  DashboardMetricGrid,
+  DashboardMetricItem,
+  DashboardStatusBadge,
+} from '@/components/dashboard/dashboard-primitives';
 
 export function WslStatusWidget() {
   const { t } = useLocale();
-  const { available, distros, status, runningCount } = useWslStatus();
+  const { available, distros, status, runningCount, completeness } = useWslStatus();
   const overviewContext = useWslStore((state) => state.overviewContext);
 
   if (available === null) {
     return (
       <Card>
         <CardContent className="py-6">
-          <div className="text-center text-sm text-muted-foreground">
-            <Loader2 className="h-8 w-8 mx-auto mb-2 animate-spin opacity-70" />
-            <p>{t('common.loading')}</p>
-          </div>
+          <DashboardEmptyState
+            className="py-0"
+            icon={<Loader2 className="h-8 w-8 animate-spin opacity-70" />}
+            message={t('common.loading')}
+          />
         </CardContent>
       </Card>
     );
@@ -33,10 +39,11 @@ export function WslStatusWidget() {
     return (
       <Card>
         <CardContent className="py-6">
-          <div className="text-center text-sm text-muted-foreground">
-            <Terminal className="h-8 w-8 mx-auto mb-2 opacity-50" />
-            <p>{t('wsl.notAvailable')}</p>
-          </div>
+          <DashboardEmptyState
+            className="py-0"
+            icon={<Terminal className="h-8 w-8 opacity-60" />}
+            message={t('wsl.notAvailable')}
+          />
         </CardContent>
       </Card>
     );
@@ -51,18 +58,25 @@ export function WslStatusWidget() {
         <CardDescription>
           {t('wsl.kernelVersion')}: {status?.version ?? '—'}
         </CardDescription>
+        {completeness.state === 'degraded' && (
+          <p className="text-xs text-amber-600">
+            {completeness.degradedReasons[0]}
+          </p>
+        )}
       </CardHeader>
       <CardContent>
-        <div className="grid gap-3 grid-cols-2 mb-3">
-          <div className="text-center rounded-md border p-2.5">
-            <p className="text-2xl font-bold">{distros.length}</p>
-            <p className="text-xs text-muted-foreground">{t('wsl.distros')}</p>
-          </div>
-          <div className="text-center rounded-md border p-2.5">
-            <p className="text-2xl font-bold text-green-600">{runningCount}</p>
-            <p className="text-xs text-muted-foreground">{t('wsl.running')}</p>
-          </div>
-        </div>
+        <DashboardMetricGrid className="mb-3">
+          <DashboardMetricItem
+            label={t('wsl.distros')}
+            value={distros.length}
+            valueClassName="text-2xl"
+          />
+          <DashboardMetricItem
+            label={t('wsl.running')}
+            value={runningCount}
+            valueClassName="text-2xl text-green-600"
+          />
+        </DashboardMetricGrid>
 
         {distros.length > 0 && (
           <>
@@ -71,12 +85,9 @@ export function WslStatusWidget() {
               {distros.slice(0, 4).map((d) => (
                 <div key={d.name} className="flex items-center justify-between text-sm px-1">
                   <span className="truncate font-medium">{d.name}</span>
-                  <Badge
-                    variant={d.state.toLowerCase() === 'running' ? 'default' : 'secondary'}
-                    className="text-xs"
-                  >
+                  <DashboardStatusBadge tone={d.state.toLowerCase() === 'running' ? 'success' : 'muted'}>
                     {d.state.toLowerCase() === 'running' ? t('wsl.running') : t('wsl.stopped')}
-                  </Badge>
+                  </DashboardStatusBadge>
                 </div>
               ))}
               {distros.length > 4 && (

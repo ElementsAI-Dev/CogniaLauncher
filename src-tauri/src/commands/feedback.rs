@@ -1,5 +1,7 @@
 use crate::commands::config::SharedSettings;
-use crate::commands::diagnostic::{diagnostic_export_bundle, DiagnosticExportOptions, ErrorContext};
+use crate::commands::diagnostic::{
+    diagnostic_export_bundle, DiagnosticExportOptions, ErrorContext,
+};
 use crate::platform::fs as platform_fs;
 use chrono::Local;
 use log::{info, warn};
@@ -244,7 +246,8 @@ fn get_feedbacks_dir() -> PathBuf {
 }
 
 fn save_feedback_item(path: &Path, item: &FeedbackItem) -> Result<(), String> {
-    let json = serde_json::to_string_pretty(item).map_err(|e| format!("Failed to serialize: {e}"))?;
+    let json =
+        serde_json::to_string_pretty(item).map_err(|e| format!("Failed to serialize: {e}"))?;
     fs::write(path, json).map_err(|e| format!("Failed to write feedback: {e}"))
 }
 
@@ -295,7 +298,10 @@ fn apply_diagnostics_outcome(item: &mut FeedbackItem, outcome: Result<Option<Str
             item.diagnostic_error = None;
         }
         Err(error) => {
-            warn!("Failed to attach diagnostics for feedback {}: {error}", item.id);
+            warn!(
+                "Failed to attach diagnostics for feedback {}: {error}",
+                item.id
+            );
             item.diagnostic_path = None;
             item.diagnostic_error = Some(error);
             item.updated_at = Local::now().to_rfc3339();
@@ -332,7 +338,10 @@ fn cleanup_feedback_attachments(dir: &Path, id: &str, explicit_path: Option<&str
             }
             if let Err(e) = fs::remove_file(&path) {
                 if e.kind() != std::io::ErrorKind::NotFound {
-                    warn!("Failed to delete feedback attachment {}: {e}", path.display());
+                    warn!(
+                        "Failed to delete feedback attachment {}: {e}",
+                        path.display()
+                    );
                 }
             }
         }

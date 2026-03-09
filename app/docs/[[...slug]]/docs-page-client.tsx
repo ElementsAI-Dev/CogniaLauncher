@@ -73,36 +73,42 @@ export function DocsPageClient({ contentZh, contentEn, slug, basePath, searchInd
   }, [content, scrollToHashTarget]);
 
   return (
-    <div className="flex h-full">
-      <DocsSidebar className="border-r border-border pl-4 pt-2 hidden lg:block" searchIndex={searchIndex} />
-      <div className="flex-1 flex flex-col min-w-0" ref={scrollRef}>
+    <div className="grid h-full min-h-0 grid-cols-1 lg:grid-cols-[15rem_minmax(0,1fr)] xl:grid-cols-[15rem_minmax(0,1fr)_14rem]">
+      <DocsSidebar className="hidden border-r border-border px-3 pt-2 lg:block" searchIndex={searchIndex} />
+      <section className="relative flex min-h-0 min-w-0 flex-col" ref={scrollRef}>
         <DocsScrollProgress containerRef={scrollRef} />
         <ScrollArea className="flex-1">
-          <main className="p-6 max-w-4xl mx-auto">
-            <div className="flex items-center justify-between gap-2 mb-2">
-              <DocsBreadcrumb slug={currentSlug} className="mb-0" />
-              <DocsMobileSidebar searchIndex={searchIndex} />
-            </div>
-            <PageHeader
-              title={title}
-              description={t('docs.description')}
-              actions={
-                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <Clock className="h-3.5 w-3.5" />
-                  {t('docs.readingTime', { count: readingTime })}
-                </span>
-              }
-            />
-            <DocsToc content={content} headings={headings} mode="mobile" />
-            <div className="mt-6">
+          <main className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6 lg:px-8">
+            <header className="mb-2 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <DocsBreadcrumb slug={currentSlug} className="mb-0" />
+                <DocsMobileSidebar searchIndex={searchIndex} />
+              </div>
+              <PageHeader
+                title={title}
+                description={t('docs.description')}
+                actions={
+                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Clock className="h-3.5 w-3.5" />
+                    {t('docs.readingTime', { count: readingTime })}
+                  </span>
+                }
+              />
+            </header>
+            <section aria-label={t('docs.toc')}>
+              <DocsToc content={content} headings={headings} mode="mobile" />
+            </section>
+            <article className="mt-6">
               <MarkdownRenderer content={content} basePath={basePath} />
-            </div>
+            </article>
             {currentSlug === 'index' && <DocsHomeCards />}
             <DocsNavFooter prev={prev} next={next} slug={currentSlug} />
           </main>
         </ScrollArea>
-      </div>
-      <DocsToc content={content} headings={headings} mode="desktop" className="border-l border-border pr-4 pt-6" />
+      </section>
+      <aside className="hidden xl:block">
+        <DocsToc content={content} headings={headings} mode="desktop" className="border-l border-border px-4 pt-6" />
+      </aside>
     </div>
   );
 }

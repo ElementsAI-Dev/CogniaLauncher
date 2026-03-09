@@ -1,7 +1,9 @@
-use crate::plugin::manager::{CapabilityAuditRecord, PluginHealth, PluginManager, PluginUpdateInfo};
+use crate::plugin::manager::{
+    CapabilityAuditRecord, PluginActionReport, PluginHealth, PluginManager, PluginUpdateInfo,
+};
 use crate::plugin::manifest::PluginManifest;
-use crate::plugin::permissions::PluginPermissionState;
 use crate::plugin::permissions::PermissionEnforcementMode;
+use crate::plugin::permissions::PluginPermissionState;
 use crate::plugin::registry::{PluginInfo, PluginToolInfo};
 use crate::plugin::scaffold::{ScaffoldConfig, ScaffoldResult, ValidationResult};
 use serde::Serialize;
@@ -12,6 +14,88 @@ use tauri::State;
 use tokio::sync::RwLock;
 
 pub type SharedPluginManager = Arc<RwLock<PluginManager>>;
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginMarketplaceActionError {
+    pub category: String,
+    pub message: String,
+    pub retryable: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginMarketplaceActionResult {
+    pub ok: bool,
+    pub action: String,
+    pub plugin_id: Option<String>,
+    pub phase: String,
+    pub download_task_id: Option<String>,
+    pub error: Option<PluginMarketplaceActionError>,
+}
+
+fn normalize_marketplace_error(action: &str, message: &str) -> PluginMarketplaceActionError {
+    let normalized = message.trim().to_ascii_lowercase();
+
+    if normalized.contains("desktop runtime is required")
+        || normalized.contains("incompatible")
+        || normalized.contains("compatib")
+    {
+        return PluginMarketplaceActionError {
+            category: "compatibility_blocked".to_string(),
+            message: message.to_string(),
+            retryable: false,
+        };
+    }
+
+    if normalized.contains("checksum")
+        || normalized.contains("invalid zip")
+        || normalized.contains("plugin.toml")
+        || normalized.contains("validation")
+        || normalized.contains("manifest")
+    {
+        return PluginMarketplaceActionError {
+            category: "validation_failed".to_string(),
+            message: message.to_string(),
+            retryable: false,
+        };
+    }
+
+    if normalized.contains("download failed")
+        || normalized.contains("network")
+        || normalized.contains("timeout")
+        || normalized.contains("http ")
+        || normalized.contains("source")
+        || normalized.contains("unavailable")
+    {
+        return PluginMarketplaceActionError {
+            category: "source_unavailable".to_string(),
+            message: message.to_string(),
+            retryable: true,
+        };
+    }
+
+    let retryable = action == "install" || action == "update";
+    PluginMarketplaceActionError {
+        category: "install_execution_failed".to_string(),
+        message: message.to_string(),
+        retryable,
+    }
+}
+
+fn success_marketplace_result(
+    action: &str,
+    report: PluginActionReport,
+) -> PluginMarketplaceActionResult {
+    PluginMarketplaceActionResult {
+        ok: true,
+        action: action.to_string(),
+        plugin_id: Some(report.plugin_id),
+        phase: report.phase,
+        download_task_id: report.download_task_id,
+        error: None,
+    }
+}
 
 /// List all installed plugins
 #[tauri::command]
@@ -96,6 +180,28 @@ pub async fn plugin_install_marketplace(
     mgr.install_from_marketplace(&store_id)
         .await
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn plugin_install_marketplace_with_result(
+    store_id: String,
+    manager: State<'_, SharedPluginManager>,
+) -> Result<PluginMarketplaceActionResult, String> {
+    let mut mgr = manager.write().await;
+    match mgr.install_from_marketplace_with_report(&store_id).await {
+        Ok(report) => Ok(success_marketplace_result("install", report)),
+        Err(error) => {
+            let message = error.to_string();
+            Ok(PluginMarketplaceActionResult {
+                ok: false,
+                action: "install".to_string(),
+                plugin_id: None,
+                phase: "failed".to_string(),
+                download_task_id: None,
+                error: Some(normalize_marketplace_error("install", &message)),
+            })
+        }
+    }
 }
 
 /// Uninstall a plugin
@@ -265,6 +371,28 @@ pub async fn plugin_update(
     mgr.update_plugin(&plugin_id)
         .await
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn plugin_update_with_result(
+    plugin_id: String,
+    manager: State<'_, SharedPluginManager>,
+) -> Result<PluginMarketplaceActionResult, String> {
+    let mut mgr = manager.write().await;
+    match mgr.update_plugin_with_report(&plugin_id).await {
+        Ok(report) => Ok(success_marketplace_result("update", report)),
+        Err(error) => {
+            let message = error.to_string();
+            Ok(PluginMarketplaceActionResult {
+                ok: false,
+                action: "update".to_string(),
+                plugin_id: Some(plugin_id),
+                phase: "failed".to_string(),
+                download_task_id: None,
+                error: Some(normalize_marketplace_error("update", &message)),
+            })
+        }
+    }
 }
 
 /// Entry data for rendering a plugin's iframe UI
@@ -579,11 +707,7 @@ fn compose_vscode_open_result(
             Ok(()) => Ok(ScaffoldOpenResult {
                 opened_with: "folder".to_string(),
                 fallback_used: true,
-                message: format!(
-                    "{}. Opened folder fallback: {}",
-                    vscode_err,
-                    path.display()
-                ),
+                message: format!("{}. Opened folder fallback: {}", vscode_err, path.display()),
             }),
             Err(folder_err) => Err(format!(
                 "{}; fallback folder open failed: {}",
@@ -639,6 +763,25 @@ mod tests {
     }
 
     #[test]
+    fn validate_scaffold_open_path_rejects_empty_input() {
+        let result = validate_scaffold_open_path("   ");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("must not be empty"));
+    }
+
+    #[test]
+    fn validate_scaffold_open_path_trims_input_before_resolution() {
+        let dir = unique_temp_path("cognia_scaffold_dir_trim");
+        fs::create_dir_all(&dir).expect("create temp dir");
+        let padded = format!("  {}  ", dir.to_string_lossy());
+
+        let result = validate_scaffold_open_path(&padded).expect("validated path");
+        assert_eq!(result, dir.canonicalize().expect("canonical dir"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn compose_vscode_open_result_success_without_fallback() {
         let path = PathBuf::from("C:/tmp/example");
         let result = compose_vscode_open_result(&path, Ok(()), Ok(())).expect("result");
@@ -665,10 +808,8 @@ mod tests {
             Err("folder failed".to_string()),
         );
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .contains("fallback folder open failed: folder failed")
-        );
+        assert!(result
+            .unwrap_err()
+            .contains("fallback folder open failed: folder failed"));
     }
 }

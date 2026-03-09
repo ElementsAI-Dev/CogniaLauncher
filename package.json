@@ -8,6 +8,8 @@
     "build": "node scripts/run-next-build.mjs",
     "start": "next start",
     "lint": "eslint",
+    "docs:validate": "node scripts/docs/validate-docs.mjs",
+    "docs:validate:warn": "node scripts/docs/validate-docs.mjs --mode=warn",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",

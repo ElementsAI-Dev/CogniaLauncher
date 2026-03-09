@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useOnboardingStore } from '@/lib/stores/onboarding';
+import { DashboardClickableRow } from '@/components/dashboard/dashboard-primitives';
 
 interface WelcomeWidgetProps {
   hasEnvironments: boolean;
@@ -85,10 +86,11 @@ export function WelcomeWidget({ hasEnvironments, hasPackages, className }: Welco
           {steps.map((step) => {
             const Icon = step.icon;
             return (
-              <button
+              <DashboardClickableRow
                 key={step.id}
                 onClick={() => router.push(step.href)}
-                className="flex w-full items-center gap-3 rounded-lg border p-3 transition-colors hover:bg-accent/50 text-left"
+                className="items-center gap-3"
+                aria-label={step.title}
               >
                 <div className={cn(
                   'flex h-8 w-8 shrink-0 items-center justify-center rounded-md',
@@ -113,7 +115,7 @@ export function WelcomeWidget({ hasEnvironments, hasPackages, className }: Welco
                   <p className="text-xs text-muted-foreground line-clamp-1">{step.description}</p>
                 </div>
                 <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
-              </button>
+              </DashboardClickableRow>
             );
           })}
         </div>

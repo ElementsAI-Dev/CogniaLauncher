@@ -376,6 +376,18 @@ export default function PluginsPage() {
     ) {
       return t("toolbox.plugin.scaffoldValidationBuiltinLanguage");
     }
+    if (scaffoldForm.lifecycleProfile === "builtin") {
+      const normalizedOutputDir = scaffoldForm.outputDir
+        .trim()
+        .replace(/\\/g, "/")
+        .toLowerCase();
+      if (
+        normalizedOutputDir.endsWith("/rust")
+        || normalizedOutputDir.endsWith("/typescript")
+      ) {
+        return t("toolbox.plugin.scaffoldValidationBuiltinOutputRoot");
+      }
+    }
     if (!/^[A-Za-z0-9._-]+$/.test(scaffoldForm.id.trim())) {
       return t("toolbox.plugin.scaffoldValidationIdInvalid");
     }

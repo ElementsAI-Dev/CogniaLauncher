@@ -10,6 +10,11 @@ import type {
   GitBisectState,
   GitRebaseTodoItem,
 } from '@/types/tauri';
+import type { GitActionResult, GitRefreshScope } from '@/types/git';
+import {
+  evaluateGitGuardrail,
+  executeGitOperation,
+} from '@/lib/git/operation-orchestrator';
 
 export interface UseGitAdvancedReturn {
   // State
@@ -23,6 +28,7 @@ export interface UseGitAdvancedReturn {
   bisectState: GitBisectState;
   sparsePatterns: string[];
   isSparseCheckout: boolean;
+  lastActionResult: GitActionResult | null;
 
   // Submodule actions
   refreshSubmodules: () => Promise<void>;
@@ -52,6 +58,7 @@ export interface UseGitAdvancedReturn {
   // Merge/rebase state & conflict resolution
   refreshMergeRebaseState: () => Promise<void>;
   refreshConflictedFiles: () => Promise<void>;
+  refreshByScopes: (scopes: GitRefreshScope[]) => Promise<void>;
   resolveFileOurs: (file: string) => Promise<string>;
   resolveFileTheirs: (file: string) => Promise<string>;
   resolveFileMark: (file: string) => Promise<string>;
@@ -62,11 +69,11 @@ export interface UseGitAdvancedReturn {
   revertAbort: () => Promise<string>;
 
   // Rebase & squash actions
-  rebase: (onto: string) => Promise<string>;
+  rebase: (onto: string, confirmRisk?: boolean) => Promise<string>;
   rebaseAbort: () => Promise<string>;
   rebaseContinue: () => Promise<string>;
   rebaseSkip: () => Promise<string>;
-  squash: (count: number, message: string) => Promise<string>;
+  squash: (count: number, message: string, confirmRisk?: boolean) => Promise<string>;
 
   // Interactive rebase
   getRebaseTodoPreview: (base: string) => Promise<GitRebaseTodoItem[]>;
@@ -142,6 +149,24 @@ export function useGitAdvanced(repoPath: string | null): UseGitAdvancedReturn {
   });
   const [sparsePatterns, setSparsePatterns] = useState<string[]>([]);
   const [isSparseCheckoutState, setIsSparseCheckout] = useState(false);
+  const [lastActionResult, setLastActionResult] =
+    useState<GitActionResult | null>(null);
+
+  const unwrapOperationPayload = useCallback(
+    <T,>(operation: { result: GitActionResult; payload?: T }): T => {
+      setLastActionResult(operation.result);
+      if (operation.result.status !== 'success') {
+        const nextSteps = operation.result.error?.nextSteps ?? [];
+        const message =
+          nextSteps.length > 0
+            ? `${operation.result.message} ${nextSteps.join(' ')}`
+            : operation.result.message;
+        throw new Error(message);
+      }
+      return operation.payload as T;
+    },
+    [],
+  );
 
   useEffect(() => {
     if (repoPath) return;
@@ -291,6 +316,41 @@ export function useGitAdvanced(repoPath: string | null): UseGitAdvancedReturn {
     } catch { /* ignore */ }
   }, [repoPath]);
 
+  const refreshByScopes = useCallback(
+    async (scopes: GitRefreshScope[]): Promise<void> => {
+      if (!tauri.isTauri() || !repoPath) return;
+      const uniqueScopes = [...new Set(scopes)];
+      const actions: Array<Promise<unknown>> = [];
+
+      for (const scope of uniqueScopes) {
+        switch (scope) {
+          case 'advanced':
+            actions.push(refreshMergeRebaseState());
+            actions.push(refreshConflictedFiles());
+            break;
+          case 'status':
+            actions.push(refreshConflictedFiles());
+            break;
+          case 'repoInfo':
+          case 'branches':
+          case 'remotes':
+          case 'tags':
+          case 'stashes':
+          case 'log':
+          case 'graph':
+          case 'aheadBehind':
+            // Managed by useGit (repository-level state).
+            break;
+          default:
+            break;
+        }
+      }
+
+      await Promise.allSettled(actions);
+    },
+    [repoPath, refreshMergeRebaseState, refreshConflictedFiles],
+  );
+
   const resolveFileOurs = useCallback(async (file: string) => {
     if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
     const msg = await tauri.gitResolveFileOurs(repoPath, file);
@@ -314,72 +374,120 @@ export function useGitAdvanced(repoPath: string | null): UseGitAdvancedReturn {
 
   const mergeAbort = useCallback(async () => {
     if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-    const msg = await tauri.gitMergeAbort(repoPath);
-    await refreshMergeRebaseState();
-    return msg;
-  }, [repoPath, refreshMergeRebaseState]);
+    const operation = await executeGitOperation({
+      operation: 'mergeAbort',
+      refreshByScopes,
+      refreshScopes: ['advanced', 'status'],
+      execute: () => tauri.gitMergeAbort(repoPath),
+    });
+    return unwrapOperationPayload(operation);
+  }, [repoPath, refreshByScopes, unwrapOperationPayload]);
 
   const mergeContinue = useCallback(async () => {
     if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-    const msg = await tauri.gitMergeContinue(repoPath);
-    await refreshMergeRebaseState();
-    return msg;
-  }, [repoPath, refreshMergeRebaseState]);
+    const operation = await executeGitOperation({
+      operation: 'mergeContinue',
+      refreshByScopes,
+      refreshScopes: ['advanced', 'status'],
+      execute: () => tauri.gitMergeContinue(repoPath),
+    });
+    return unwrapOperationPayload(operation);
+  }, [repoPath, refreshByScopes, unwrapOperationPayload]);
 
   const cherryPickAbort = useCallback(async () => {
     if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-    const msg = await tauri.gitCherryPickAbort(repoPath);
-    await refreshMergeRebaseState();
-    return msg;
-  }, [repoPath, refreshMergeRebaseState]);
+    const operation = await executeGitOperation({
+      operation: 'cherryPickAbort',
+      refreshByScopes,
+      refreshScopes: ['advanced', 'status'],
+      execute: () => tauri.gitCherryPickAbort(repoPath),
+    });
+    return unwrapOperationPayload(operation);
+  }, [repoPath, refreshByScopes, unwrapOperationPayload]);
 
   const cherryPickContinue = useCallback(async () => {
     if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-    const msg = await tauri.gitCherryPickContinue(repoPath);
-    await refreshMergeRebaseState();
-    return msg;
-  }, [repoPath, refreshMergeRebaseState]);
+    const operation = await executeGitOperation({
+      operation: 'cherryPickContinue',
+      refreshByScopes,
+      refreshScopes: ['advanced', 'status'],
+      execute: () => tauri.gitCherryPickContinue(repoPath),
+    });
+    return unwrapOperationPayload(operation);
+  }, [repoPath, refreshByScopes, unwrapOperationPayload]);
 
   const revertAbort = useCallback(async () => {
     if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-    const msg = await tauri.gitRevertAbort(repoPath);
-    await refreshMergeRebaseState();
-    return msg;
-  }, [repoPath, refreshMergeRebaseState]);
+    const operation = await executeGitOperation({
+      operation: 'revertAbort',
+      refreshByScopes,
+      refreshScopes: ['advanced', 'status'],
+      execute: () => tauri.gitRevertAbort(repoPath),
+    });
+    return unwrapOperationPayload(operation);
+  }, [repoPath, refreshByScopes, unwrapOperationPayload]);
 
   // --- Rebase & squash ---
-  const rebase = useCallback(async (onto: string) => {
+  const rebase = useCallback(async (onto: string, confirmRisk?: boolean) => {
     if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-    const msg = await tauri.gitRebase(repoPath, onto);
-    await refreshMergeRebaseState();
-    return msg;
-  }, [repoPath, refreshMergeRebaseState]);
+    const guardrail = evaluateGitGuardrail('rebase');
+    const operation = await executeGitOperation({
+      operation: 'rebase',
+      refreshByScopes,
+      refreshScopes: ['advanced', 'status'],
+      precheck: () => guardrail,
+      allowWarning: confirmRisk,
+      execute: () => tauri.gitRebase(repoPath, onto),
+    });
+    return unwrapOperationPayload(operation);
+  }, [repoPath, refreshByScopes, unwrapOperationPayload]);
 
   const rebaseAbort = useCallback(async () => {
     if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-    const msg = await tauri.gitRebaseAbort(repoPath);
-    await refreshMergeRebaseState();
-    return msg;
-  }, [repoPath, refreshMergeRebaseState]);
+    const operation = await executeGitOperation({
+      operation: 'rebaseAbort',
+      refreshByScopes,
+      refreshScopes: ['advanced', 'status'],
+      execute: () => tauri.gitRebaseAbort(repoPath),
+    });
+    return unwrapOperationPayload(operation);
+  }, [repoPath, refreshByScopes, unwrapOperationPayload]);
 
   const rebaseContinue = useCallback(async () => {
     if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-    const msg = await tauri.gitRebaseContinue(repoPath);
-    await refreshMergeRebaseState();
-    return msg;
-  }, [repoPath, refreshMergeRebaseState]);
+    const operation = await executeGitOperation({
+      operation: 'rebaseContinue',
+      refreshByScopes,
+      refreshScopes: ['advanced', 'status'],
+      execute: () => tauri.gitRebaseContinue(repoPath),
+    });
+    return unwrapOperationPayload(operation);
+  }, [repoPath, refreshByScopes, unwrapOperationPayload]);
 
   const rebaseSkip = useCallback(async () => {
     if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-    const msg = await tauri.gitRebaseSkip(repoPath);
-    await refreshMergeRebaseState();
-    return msg;
-  }, [repoPath, refreshMergeRebaseState]);
+    const operation = await executeGitOperation({
+      operation: 'rebaseSkip',
+      refreshByScopes,
+      refreshScopes: ['advanced', 'status'],
+      execute: () => tauri.gitRebaseSkip(repoPath),
+    });
+    return unwrapOperationPayload(operation);
+  }, [repoPath, refreshByScopes, unwrapOperationPayload]);
 
-  const squash = useCallback(async (count: number, message: string) => {
+  const squash = useCallback(async (count: number, message: string, confirmRisk?: boolean) => {
     if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-    return await tauri.gitSquash(repoPath, count, message);
-  }, [repoPath]);
+    const guardrail = evaluateGitGuardrail('squash');
+    const operation = await executeGitOperation({
+      operation: 'squash',
+      refreshByScopes,
+      refreshScopes: ['advanced', 'status'],
+      precheck: () => guardrail,
+      allowWarning: confirmRisk,
+      execute: () => tauri.gitSquash(repoPath, count, message),
+    });
+    return unwrapOperationPayload(operation);
+  }, [repoPath, refreshByScopes, unwrapOperationPayload]);
 
   // --- Interactive rebase ---
   const getRebaseTodoPreview = useCallback(async (base: string) => {
@@ -389,10 +497,14 @@ export function useGitAdvanced(repoPath: string | null): UseGitAdvancedReturn {
 
   const startInteractiveRebase = useCallback(async (base: string, todo: GitRebaseTodoItem[]) => {
     if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-    const msg = await tauri.gitStartInteractiveRebase(repoPath, base, todo);
-    await refreshMergeRebaseState();
-    return msg;
-  }, [repoPath, refreshMergeRebaseState]);
+    const operation = await executeGitOperation({
+      operation: 'interactiveRebase',
+      refreshByScopes,
+      refreshScopes: ['advanced', 'status'],
+      execute: () => tauri.gitStartInteractiveRebase(repoPath, base, todo),
+    });
+    return unwrapOperationPayload(operation);
+  }, [repoPath, refreshByScopes, unwrapOperationPayload]);
 
   // --- Bisect ---
   const bisectStart = useCallback(async (badRef: string, goodRef: string) => {
@@ -602,6 +714,7 @@ export function useGitAdvanced(repoPath: string | null): UseGitAdvancedReturn {
     bisectState,
     sparsePatterns,
     isSparseCheckout: isSparseCheckoutState,
+    lastActionResult,
     refreshSubmodules,
     addSubmodule,
     updateSubmodules,
@@ -621,6 +734,7 @@ export function useGitAdvanced(repoPath: string | null): UseGitAdvancedReturn {
     toggleHook,
     refreshMergeRebaseState,
     refreshConflictedFiles,
+    refreshByScopes,
     resolveFileOurs,
     resolveFileTheirs,
     resolveFileMark,

@@ -767,8 +767,7 @@ impl EnvironmentProvider for ZigProvider {
             .map(|source| (*source).to_string())
             .collect::<Vec<_>>();
         if let Some(detected) =
-            crate::core::project_env_detect::detect_env_version("zig", start_path, &sources)
-                .await?
+            crate::core::project_env_detect::detect_env_version("zig", start_path, &sources).await?
         {
             let source = match detected.source_type.as_str() {
                 "manifest" => VersionSource::Manifest,
@@ -1873,9 +1872,9 @@ mod tests {
         let expected_shared_source_type = match provider_detection.source {
             VersionSource::Manifest => "manifest",
             VersionSource::LocalFile => "local",
-            VersionSource::GlobalFile | VersionSource::SystemDefault | VersionSource::SystemExecutable => {
-                "global"
-            }
+            VersionSource::GlobalFile
+            | VersionSource::SystemDefault
+            | VersionSource::SystemExecutable => "global",
         };
         assert_eq!(shared_detection.source_type, expected_shared_source_type);
     }

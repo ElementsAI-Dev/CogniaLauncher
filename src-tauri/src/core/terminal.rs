@@ -1256,6 +1256,8 @@ pub struct TerminalConfigMutationResult {
     pub snapshot_path: Option<String>,
     #[serde(default)]
     pub fingerprint: Option<String>,
+    #[serde(default)]
+    pub context_message: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1270,6 +1272,8 @@ pub struct TerminalConfigRestoreResult {
     pub diagnostic_details: Vec<TerminalConfigDiagnostic>,
     #[serde(default)]
     pub fingerprint: Option<String>,
+    #[serde(default)]
+    pub context_message: Option<String>,
 }
 
 fn stage_error(stage: TerminalConfigMutationStage, message: impl Into<String>) -> CogniaError {
@@ -1589,6 +1593,7 @@ pub async fn backup_shell_config_verified(
         )],
         snapshot_path: None,
         fingerprint: fs::calculate_sha256(path).await.ok(),
+        context_message: Some("Backup completed and verification passed".to_string()),
     })
 }
 
@@ -1687,6 +1692,7 @@ pub async fn append_to_shell_config_verified(
         )],
         snapshot_path,
         fingerprint,
+        context_message: Some("Append persisted and read-back verification passed".to_string()),
     })
 }
 
@@ -1773,10 +1779,13 @@ pub async fn write_shell_config_verified(
         )],
         snapshot_path,
         fingerprint,
+        context_message: Some("Write persisted and read-back verification passed".to_string()),
     })
 }
 
-pub async fn restore_shell_config_snapshot(path: &Path) -> CogniaResult<TerminalConfigRestoreResult> {
+pub async fn restore_shell_config_snapshot(
+    path: &Path,
+) -> CogniaResult<TerminalConfigRestoreResult> {
     if path.as_os_str().is_empty() {
         return Err(stage_error(
             TerminalConfigMutationStage::Validation,
@@ -1788,7 +1797,7 @@ pub async fn restore_shell_config_snapshot(path: &Path) -> CogniaResult<Terminal
         return Err(stage_error(
             TerminalConfigMutationStage::Validation,
             format!(
-                "No restorable snapshot found for target: {}",
+                "No restorable snapshot found for target: {}. Save this config at least once to create a snapshot.",
                 path.display()
             ),
         ));
@@ -1819,6 +1828,7 @@ pub async fn restore_shell_config_snapshot(path: &Path) -> CogniaResult<Terminal
             details
         },
         fingerprint: write_result.fingerprint,
+        context_message: Some("Config restored from latest snapshot and re-verified".to_string()),
     })
 }
 
@@ -4867,10 +4877,7 @@ source ~/no_space.nu
         let diagnostics = validate_shell_config_content("export A=\"unterminated", ShellType::Bash);
         assert!(!diagnostics.is_empty());
         let first = &diagnostics[0];
-        assert_eq!(
-            first.category,
-            TerminalConfigDiagnosticCategory::Validation
-        );
+        assert_eq!(first.category, TerminalConfigDiagnosticCategory::Validation);
         assert_eq!(first.stage, Some(TerminalConfigMutationStage::Validation));
         assert_eq!(first.location.as_ref().and_then(|loc| loc.line), Some(1));
     }
@@ -4908,11 +4915,33 @@ source ~/no_space.nu
         let restore_result = restore_shell_config_snapshot(&path).await.unwrap();
         assert!(restore_result.verified);
         assert!(restore_result.snapshot_path.contains(".latest"));
+        assert_eq!(
+            restore_result.context_message.as_deref(),
+            Some("Config restored from latest snapshot and re-verified")
+        );
         let restored = read_shell_config(&path).await.unwrap();
         assert_eq!(
             normalize_config_text(&restored),
             normalize_config_text("export FOO=before\n")
         );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn test_restore_shell_config_snapshot_missing_snapshot_returns_actionable_hint() {
+        let dir = std::env::temp_dir().join("cognia_test_restore_snapshot_missing");
+        let path = dir.join(".bashrc");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(&path, "export FOO=now\n").unwrap();
+
+        let err = restore_shell_config_snapshot(&path)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("No restorable snapshot found for target"));
+        assert!(err.contains("Save this config at least once to create a snapshot"));
 
         let _ = std::fs::remove_dir_all(&dir);
     }

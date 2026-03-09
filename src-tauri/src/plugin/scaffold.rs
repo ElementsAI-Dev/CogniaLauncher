@@ -94,7 +94,7 @@ impl Default for ScaffoldSchemaPreset {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScaffoldTemplateOptions {
     #[serde(default = "default_include_unified_contract_samples")]
@@ -107,6 +107,18 @@ pub struct ScaffoldTemplateOptions {
     pub include_validation_guidance: bool,
     #[serde(default)]
     pub include_starter_tests: bool,
+}
+
+impl Default for ScaffoldTemplateOptions {
+    fn default() -> Self {
+        Self {
+            include_unified_contract_samples: default_include_unified_contract_samples(),
+            contract_template: ScaffoldContractTemplate::default(),
+            schema_preset: ScaffoldSchemaPreset::default(),
+            include_validation_guidance: default_include_validation_guidance(),
+            include_starter_tests: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -291,11 +303,9 @@ pub async fn scaffold_plugin(config: &ScaffoldConfig) -> CogniaResult<ScaffoldRe
     // Optionally generate CI workflow skeleton
     if config.include_ci {
         let ci_dir = plugin_dir.join(".github").join("workflows");
-        tokio::fs::create_dir_all(&ci_dir)
-            .await
-            .map_err(|e| {
-                CogniaError::Plugin(format!("Failed to create .github/workflows dir: {}", e))
-            })?;
+        tokio::fs::create_dir_all(&ci_dir).await.map_err(|e| {
+            CogniaError::Plugin(format!("Failed to create .github/workflows dir: {}", e))
+        })?;
 
         let ci = generate_ci_workflow(config);
         tokio::fs::write(ci_dir.join("ci.yml"), ci)
@@ -306,39 +316,15 @@ pub async fn scaffold_plugin(config: &ScaffoldConfig) -> CogniaResult<ScaffoldRe
         files_created.push(".github/workflows/ci.yml".to_string());
     }
 
-    // Generate language-specific files
-    match config.language {
-        PluginLanguage::Rust => {
-            let extra = generate_rust_project(config, &plugin_dir).await?;
-            files_created.extend(extra);
-        }
-        PluginLanguage::JavaScript => {
-            let extra = generate_js_project(config, &plugin_dir).await?;
-            files_created.extend(extra);
-        }
-        PluginLanguage::TypeScript => {
-            let extra = generate_ts_project(config, &plugin_dir).await?;
-            files_created.extend(extra);
-        }
-    }
-
-    if config.template_options.include_unified_contract_samples {
-        let extra = generate_unified_contract_artifacts(config, &plugin_dir).await?;
-        files_created.extend(extra);
-    }
-
-    if config.template_options.include_starter_tests {
-        let extra = generate_contract_starter_tests(config, &plugin_dir).await?;
-        files_created.extend(extra);
-    }
+    // Generate language-specific and template-option files.
+    files_created.extend(generate_language_project_files(config, &plugin_dir).await?);
+    files_created.extend(generate_template_option_files(config, &plugin_dir).await?);
 
     let mut handoff = build_scaffold_handoff(config, &plugin_dir);
     let lifecycle_manifest = generate_lifecycle_manifest(config, &handoff);
     tokio::fs::write(plugin_dir.join("cognia.scaffold.json"), lifecycle_manifest)
         .await
-        .map_err(|e| {
-            CogniaError::Plugin(format!("Failed to write cognia.scaffold.json: {}", e))
-        })?;
+        .map_err(|e| CogniaError::Plugin(format!("Failed to write cognia.scaffold.json: {}", e)))?;
     files_created.push("cognia.scaffold.json".to_string());
 
     if matches!(config.lifecycle_profile, ScaffoldLifecycleProfile::BuiltIn) {
@@ -371,6 +357,34 @@ pub async fn scaffold_plugin(config: &ScaffoldConfig) -> CogniaResult<ScaffoldRe
         lifecycle_profile: config.lifecycle_profile.clone(),
         handoff,
     })
+}
+
+async fn generate_language_project_files(
+    config: &ScaffoldConfig,
+    plugin_dir: &Path,
+) -> CogniaResult<Vec<String>> {
+    match config.language {
+        PluginLanguage::Rust => generate_rust_project(config, plugin_dir).await,
+        PluginLanguage::JavaScript => generate_js_project(config, plugin_dir).await,
+        PluginLanguage::TypeScript => generate_ts_project(config, plugin_dir).await,
+    }
+}
+
+async fn generate_template_option_files(
+    config: &ScaffoldConfig,
+    plugin_dir: &Path,
+) -> CogniaResult<Vec<String>> {
+    let mut files = Vec::new();
+
+    if config.template_options.include_unified_contract_samples {
+        files.extend(generate_unified_contract_artifacts(config, plugin_dir).await?);
+    }
+
+    if config.template_options.include_starter_tests {
+        files.extend(generate_contract_starter_tests(config, plugin_dir).await?);
+    }
+
+    Ok(files)
 }
 
 /// Validate a plugin directory
@@ -469,10 +483,7 @@ pub async fn validate_plugin(path: &Path) -> CogniaResult<ValidationResult> {
         }
     }
 
-    let missing_artifact_path = path
-        .join("plugin.wasm")
-        .display()
-        .to_string();
+    let missing_artifact_path = path.join("plugin.wasm").display().to_string();
     let build_required = warnings
         .iter()
         .any(|warning| warning.contains("No plugin.wasm found"));
@@ -582,7 +593,10 @@ fn builtin_framework_dir(language: &PluginLanguage) -> &'static str {
 
 fn build_scaffold_handoff(config: &ScaffoldConfig, plugin_dir: &Path) -> ScaffoldHandoff {
     let artifact_path = plugin_dir.join("plugin.wasm").display().to_string();
-    let lifecycle_manifest_path = plugin_dir.join("cognia.scaffold.json").display().to_string();
+    let lifecycle_manifest_path = plugin_dir
+        .join("cognia.scaffold.json")
+        .display()
+        .to_string();
     match config.lifecycle_profile {
         ScaffoldLifecycleProfile::External => ScaffoldHandoff {
             profile: ScaffoldLifecycleProfile::External,
@@ -607,7 +621,8 @@ fn build_scaffold_handoff(config: &ScaffoldConfig, plugin_dir: &Path) -> Scaffol
             next_steps: vec![
                 "Add the generated sample entry to plugins/manifest.json.".to_string(),
                 "Run pnpm plugins:checksums to capture the built artifact checksum.".to_string(),
-                "Run pnpm plugins:validate before treating the plugin as built-in ready.".to_string(),
+                "Run pnpm plugins:validate before treating the plugin as built-in ready."
+                    .to_string(),
             ],
             import_path: None,
             import_requires_build: true,
@@ -702,8 +717,7 @@ fn generate_builtin_catalog_entry_sample(
             entry["rustCrate"] = serde_json::Value::String(builtin_catalog_rust_crate(config));
         }
         PluginLanguage::TypeScript => {
-            entry["packageName"] =
-                serde_json::Value::String(builtin_catalog_package_name(config));
+            entry["packageName"] = serde_json::Value::String(builtin_catalog_package_name(config));
         }
         PluginLanguage::JavaScript => {}
     }
@@ -764,7 +778,12 @@ fn generate_manifest(config: &ScaffoldConfig) -> String {
     }
 
     let entry_fn = config.id.replace(['.', '-'], "_");
-    let tool_id = config.id.split('.').last().unwrap_or(&config.id).to_string();
+    let tool_id = config
+        .id
+        .split('.')
+        .last()
+        .unwrap_or(&config.id)
+        .to_string();
     let keywords = build_keywords(&tool_id, &config.additional_keywords);
     let metadata = build_optional_plugin_metadata(config);
     let unified_contract_metadata = build_unified_contract_metadata(config);
@@ -812,7 +831,12 @@ entry = "{entry}"
 
 fn build_optional_plugin_metadata(config: &ScaffoldConfig) -> String {
     let mut lines = Vec::new();
-    if let Some(license) = config.license.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+    if let Some(license) = config
+        .license
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
         lines.push(format!("license = \"{}\"", escape_toml_string(license)));
     }
     if let Some(repository) = config
@@ -1050,7 +1074,9 @@ async fn generate_unified_contract_artifacts(
         serde_json::to_string_pretty(&input_schema).unwrap(),
     )
     .await
-    .map_err(|e| CogniaError::Plugin(format!("Failed to write schemas/input.schema.json: {}", e)))?;
+    .map_err(|e| {
+        CogniaError::Plugin(format!("Failed to write schemas/input.schema.json: {}", e))
+    })?;
     files.push("schemas/input.schema.json".to_string());
 
     let output_schema = generate_output_schema_stub();
@@ -1059,7 +1085,9 @@ async fn generate_unified_contract_artifacts(
         serde_json::to_string_pretty(&output_schema).unwrap(),
     )
     .await
-    .map_err(|e| CogniaError::Plugin(format!("Failed to write schemas/output.schema.json: {}", e)))?;
+    .map_err(|e| {
+        CogniaError::Plugin(format!("Failed to write schemas/output.schema.json: {}", e))
+    })?;
     files.push("schemas/output.schema.json".to_string());
 
     let action_envelope_schema = generate_action_envelope_schema();
@@ -1095,7 +1123,12 @@ async fn generate_unified_contract_artifacts(
 
 fn generate_unified_contract_sample(config: &ScaffoldConfig) -> serde_json::Value {
     let entry_fn = config.id.replace(['.', '-'], "_");
-    let tool_id = config.id.split('.').last().unwrap_or(&config.id).to_string();
+    let tool_id = config
+        .id
+        .split('.')
+        .last()
+        .unwrap_or(&config.id)
+        .to_string();
     let capabilities = infer_capability_declarations(config);
     let ui_mode = match config.template_options.contract_template {
         ScaffoldContractTemplate::Minimal => "text",
@@ -1337,7 +1370,10 @@ async fn generate_contract_starter_tests(
             tokio::fs::write(tests_dir.join("contract_validation.rs"), content)
                 .await
                 .map_err(|e| {
-                    CogniaError::Plugin(format!("Failed to write tests/contract_validation.rs: {}", e))
+                    CogniaError::Plugin(format!(
+                        "Failed to write tests/contract_validation.rs: {}",
+                        e
+                    ))
                 })?;
             files.push("tests/contract_validation.rs".to_string());
         }
@@ -1762,6 +1798,7 @@ declare module "extism:host" {{
     cognia_fs_mkdir(ptr: I64): I64;
     cognia_http_get(ptr: I64): I64;
     cognia_http_post(ptr: I64): I64;
+    cognia_http_request(ptr: I64): I64;
     cognia_clipboard_read(ptr: I64): I64;
     cognia_clipboard_write(ptr: I64): I64;
     cognia_notification_send(ptr: I64): I64;
@@ -1829,7 +1866,10 @@ module.exports = {{ {entry} }};
 fn generate_wasm_build_script(with_bundle: bool, with_interface: bool) -> String {
     let template = include_str!("templates/wasm_build_script.mjs");
     template
-        .replace("__WITH_BUNDLE__", if with_bundle { "true" } else { "false" })
+        .replace(
+            "__WITH_BUNDLE__",
+            if with_bundle { "true" } else { "false" },
+        )
         .replace(
             "__WITH_INTERFACE__",
             if with_interface { "true" } else { "false" },
@@ -2092,6 +2132,36 @@ Translation files are in the `locales/` directory:
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn unique_temp_path(prefix: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time went backwards")
+            .as_nanos();
+        std::env::temp_dir().join(format!("{}_{}", prefix, nanos))
+    }
+
+    fn base_scaffold_config(output_dir: &str) -> ScaffoldConfig {
+        ScaffoldConfig {
+            name: "Sample Plugin".to_string(),
+            id: "com.example.sample".to_string(),
+            description: "desc".to_string(),
+            author: "author".to_string(),
+            output_dir: output_dir.to_string(),
+            license: None,
+            repository: None,
+            homepage: None,
+            lifecycle_profile: ScaffoldLifecycleProfile::External,
+            language: PluginLanguage::TypeScript,
+            permissions: ScaffoldPermissions::default(),
+            include_ci: false,
+            include_vscode: true,
+            additional_keywords: Vec::new(),
+            template_options: ScaffoldTemplateOptions::default(),
+        }
+    }
 
     #[test]
     fn test_generate_manifest() {
@@ -2129,6 +2199,21 @@ mod tests {
         assert!(manifest.contains("compatible_cognia_versions = \">=0.1.0\""));
         assert!(manifest.contains("ui_mode = \"text\""));
         assert!(manifest.contains("capabilities = [\"settings.read\", \"environment.read\"]"));
+    }
+
+    #[test]
+    fn test_generate_manifest_advanced_contract_template_updates_ui_defaults() {
+        let mut config = base_scaffold_config("/tmp");
+        config.language = PluginLanguage::TypeScript;
+        config.id = "com.example.advanced".to_string();
+        config.permissions.config_read = true;
+        config.permissions.env_read = true;
+        config.template_options.contract_template = ScaffoldContractTemplate::Advanced;
+
+        let manifest = generate_manifest(&config);
+        assert!(manifest.contains("ui_mode = \"declarative\""));
+        assert!(manifest.contains("capabilities = [\"settings.read\", \"environment.read\"]"));
+        assert!(manifest.contains("tool_contract_version = \"1.0.0\""));
     }
 
     #[test]
@@ -2402,6 +2487,54 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_scaffold_config_rejects_builtin_framework_subdirectory_output() {
+        let config = ScaffoldConfig {
+            name: "Built-in TS".to_string(),
+            id: "com.cognia.builtin.ts".to_string(),
+            description: "desc".to_string(),
+            author: "auth".to_string(),
+            output_dir: "/repo/plugins/typescript".to_string(),
+            license: None,
+            repository: None,
+            homepage: None,
+            lifecycle_profile: ScaffoldLifecycleProfile::BuiltIn,
+            language: PluginLanguage::TypeScript,
+            permissions: ScaffoldPermissions::default(),
+            include_ci: false,
+            include_vscode: true,
+            additional_keywords: Vec::new(),
+            template_options: ScaffoldTemplateOptions::default(),
+        };
+        let result = validate_scaffold_config(&config);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("workspace root"));
+    }
+
+    #[test]
+    fn test_validate_scaffold_config_rejects_invalid_id_characters() {
+        let config = ScaffoldConfig {
+            name: "Invalid ID".to_string(),
+            id: "com.example.bad id".to_string(),
+            description: "desc".to_string(),
+            author: "auth".to_string(),
+            output_dir: "/tmp".to_string(),
+            license: None,
+            repository: None,
+            homepage: None,
+            lifecycle_profile: ScaffoldLifecycleProfile::External,
+            language: PluginLanguage::Rust,
+            permissions: ScaffoldPermissions::default(),
+            include_ci: false,
+            include_vscode: true,
+            additional_keywords: Vec::new(),
+            template_options: ScaffoldTemplateOptions::default(),
+        };
+        let result = validate_scaffold_config(&config);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Invalid plugin id"));
+    }
+
+    #[test]
     fn test_build_scaffold_handoff_external_includes_import_path() {
         let config = ScaffoldConfig {
             name: "External".to_string(),
@@ -2423,13 +2556,19 @@ mod tests {
 
         let plugin_dir = PathBuf::from("/tmp/com.example.external");
         let handoff = build_scaffold_handoff(&config, &plugin_dir);
-        assert!(matches!(handoff.profile, ScaffoldLifecycleProfile::External));
+        assert!(matches!(
+            handoff.profile,
+            ScaffoldLifecycleProfile::External
+        ));
         assert_eq!(
             handoff.import_path.as_deref(),
             Some("/tmp/com.example.external")
         );
         assert!(handoff.import_requires_build);
-        assert!(handoff.build_commands.iter().any(|cmd| cmd.contains("pnpm build")));
+        assert!(handoff
+            .build_commands
+            .iter()
+            .any(|cmd| cmd.contains("pnpm build")));
     }
 
     #[test]
@@ -2464,7 +2603,10 @@ mod tests {
             handoff.builtin_validation_command.as_deref(),
             Some("pnpm plugins:validate")
         );
-        assert!(handoff.next_steps.iter().any(|step| step.contains("pnpm plugins:checksums")));
+        assert!(handoff
+            .next_steps
+            .iter()
+            .any(|step| step.contains("pnpm plugins:checksums")));
     }
 
     #[test]
@@ -2478,5 +2620,95 @@ mod tests {
         let js_script = generate_wasm_build_script(false, false);
         assert!(js_script.contains("const WITH_BUNDLE = false;"));
         assert!(js_script.contains("const WITH_INTERFACE = false;"));
+    }
+
+    #[tokio::test]
+    async fn test_validate_plugin_reports_build_required_when_wasm_missing() {
+        let dir = unique_temp_path("cognia_scaffold_validate_missing_wasm");
+        fs::create_dir_all(&dir).expect("create temp dir");
+
+        let mut config = base_scaffold_config(dir.to_string_lossy().as_ref());
+        config.language = PluginLanguage::Rust;
+        config.id = "com.example.validate".to_string();
+        let manifest = generate_manifest(&config);
+        fs::write(dir.join("plugin.toml"), manifest).expect("write manifest");
+
+        let result = validate_plugin(&dir).await.expect("validate plugin");
+        assert!(result.valid, "manifest is valid, only wasm is missing");
+        assert!(!result.can_import);
+        assert!(result.build_required);
+        let expected_missing_path = dir.join("plugin.wasm").display().to_string();
+        assert_eq!(
+            result.missing_artifact_path.as_deref(),
+            Some(expected_missing_path.as_str())
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn test_scaffold_plugin_external_template_option_matrix() {
+        let output_root = unique_temp_path("cognia_scaffold_matrix_external");
+        fs::create_dir_all(&output_root).expect("create output root");
+
+        let mut config = base_scaffold_config(output_root.to_string_lossy().as_ref());
+        config.id = "com.example.matrix.external".to_string();
+        config.template_options.include_unified_contract_samples = false;
+        config.template_options.include_validation_guidance = false;
+        config.template_options.include_starter_tests = false;
+
+        let result = scaffold_plugin(&config).await.expect("scaffold plugin");
+        let plugin_dir = PathBuf::from(&result.plugin_dir);
+
+        assert!(plugin_dir.join("plugin.toml").exists());
+        assert!(plugin_dir.join("README.md").exists());
+        assert!(plugin_dir.join("cognia.scaffold.json").exists());
+        assert!(!plugin_dir.join("contracts").exists());
+        assert!(!plugin_dir.join("schemas").exists());
+        assert!(!plugin_dir.join("docs").join("validation-guide.md").exists());
+        assert!(!plugin_dir.join("tests").join("contract-validation.test.js").exists());
+        assert!(result
+            .files_created
+            .iter()
+            .all(|path| !path.starts_with("contracts/")));
+
+        let _ = fs::remove_dir_all(&output_root);
+    }
+
+    #[tokio::test]
+    async fn test_scaffold_plugin_builtin_handoff_and_catalog_artifacts() {
+        let output_root = unique_temp_path("cognia_scaffold_matrix_builtin");
+        fs::create_dir_all(&output_root).expect("create output root");
+
+        let mut config = base_scaffold_config(output_root.to_string_lossy().as_ref());
+        config.id = "com.cognia.builtin.matrix".to_string();
+        config.lifecycle_profile = ScaffoldLifecycleProfile::BuiltIn;
+        config.language = PluginLanguage::TypeScript;
+
+        let result = scaffold_plugin(&config).await.expect("scaffold built-in plugin");
+        let plugin_dir = PathBuf::from(&result.plugin_dir);
+
+        assert!(plugin_dir.join("catalog-entry.sample.json").exists());
+        assert!(plugin_dir.join("cognia.scaffold.json").exists());
+        assert_eq!(
+            result.handoff.builtin_catalog_path.as_deref(),
+            Some("plugins/manifest.json")
+        );
+        assert_eq!(
+            result.handoff.builtin_checksum_command.as_deref(),
+            Some("pnpm plugins:checksums")
+        );
+        assert_eq!(
+            result.handoff.builtin_validation_command.as_deref(),
+            Some("pnpm plugins:validate")
+        );
+        assert!(result.handoff.import_path.is_none());
+        assert!(result
+            .handoff
+            .next_steps
+            .iter()
+            .any(|step| step.contains("plugins/manifest.json")));
+
+        let _ = fs::remove_dir_all(&output_root);
     }
 }

@@ -12,7 +12,6 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import {
   Collapsible,
   CollapsibleContent,
@@ -30,6 +29,11 @@ import {
 import { useLocale } from "@/components/providers/locale-provider";
 import { cn } from "@/lib/utils";
 import type { InstalledPackage } from "@/lib/tauri";
+import {
+  DashboardClickableRow,
+  DashboardEmptyState,
+  DashboardStatusBadge,
+} from "@/components/dashboard/dashboard-primitives";
 
 interface PackageListProps {
   packages: InstalledPackage[];
@@ -80,7 +84,7 @@ export function PackageList({
   const extraItems = filteredPackages.slice(initialLimit);
 
   return (
-    <Card className={cn("", className)}>
+    <Card className={cn(className)}>
       <CardHeader className="pb-3">
         <CardTitle className="text-base font-medium">
           {t("dashboard.packageList.title")}
@@ -128,14 +132,14 @@ export function PackageList({
 
         {/* Package List */}
         {filteredPackages.length === 0 ? (
-          <div className="py-6 text-center">
-            <Package className="mx-auto h-8 w-8 text-muted-foreground/50" />
-            <p className="mt-2 text-sm text-muted-foreground">
-              {packages.length === 0
+          <DashboardEmptyState
+            icon={<Package className="h-8 w-8 text-muted-foreground/70" />}
+            message={
+              packages.length === 0
                 ? t("dashboard.noPackages")
-                : t("dashboard.packageList.noResults")}
-            </p>
-          </div>
+                : t("dashboard.packageList.noResults")
+            }
+          />
         ) : (
           <Collapsible open={expanded} onOpenChange={setExpanded}>
             <div className="space-y-2">
@@ -197,13 +201,9 @@ interface PackageItemProps {
 
 function PackageItem({ package: pkg, onClick }: PackageItemProps) {
   return (
-    <button
+    <DashboardClickableRow
       onClick={onClick}
-      className={cn(
-        "flex w-full items-center justify-between rounded-lg border p-3",
-        "transition-colors hover:bg-accent/50",
-        "focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
-      )}
+      aria-label={pkg.name}
     >
       <div className="flex items-center gap-3 min-w-0 flex-1">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted">
@@ -216,14 +216,13 @@ function PackageItem({ package: pkg, onClick }: PackageItemProps) {
       </div>
 
       <div className="flex items-center gap-2 shrink-0">
-        <Badge
-          variant="secondary"
-          className="font-mono text-xs max-w-[120px] truncate"
+        <DashboardStatusBadge
+          className="font-mono text-xs max-w-30 truncate"
         >
           {pkg.version}
-        </Badge>
+        </DashboardStatusBadge>
         <ChevronRight className="h-4 w-4 text-muted-foreground" />
       </div>
-    </button>
+    </DashboardClickableRow>
   );
 }

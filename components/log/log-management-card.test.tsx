@@ -111,6 +111,9 @@ describe("LogManagementCard", () => {
     render(<LogManagementCard {...defaultProps} />);
     expect(screen.getByText("Preview Cleanup")).toBeInTheDocument();
     expect(screen.getByText("Confirm Cleanup")).toBeInTheDocument();
+    expect(
+      screen.getByRole("group", { name: "Log cleanup actions" }),
+    ).toBeInTheDocument();
   });
 
   it("disables cleanup button when only 1 or 0 files", () => {

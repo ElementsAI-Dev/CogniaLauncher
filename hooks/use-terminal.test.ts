@@ -362,6 +362,29 @@ describe('useTerminal', () => {
     expect(toast.error).toHaveBeenCalledWith('terminal.toastParseConfigFailed');
   });
 
+  it('validateConfigContent calls backend validator and returns diagnostics', async () => {
+    const diagnostics = [
+      {
+        category: 'validation',
+        stage: 'validation',
+        message: 'Unterminated double quote',
+        location: { line: 1, column: 1, endLine: 1, endColumn: 18 },
+      },
+    ];
+    mockTerminalValidateConfigContent.mockResolvedValue(diagnostics);
+
+    const { result } = renderHook(() => useTerminal({ t: mockT }));
+    await waitFor(() => expect(mockTerminalDetectShells).toHaveBeenCalledTimes(1));
+
+    let response: unknown[] = [];
+    await act(async () => {
+      response = await result.current.validateConfigContent('export A="oops', 'bash');
+    });
+
+    expect(mockTerminalValidateConfigContent).toHaveBeenCalledWith('export A="oops', 'bash');
+    expect(response).toEqual(diagnostics);
+  });
+
   // ── Framework Cache Management tests ──
 
   it('fetchFrameworkCacheStats loads cache stats into state', async () => {
@@ -608,6 +631,9 @@ describe('useTerminal', () => {
     expect(mockTerminalRestoreConfigSnapshot).toHaveBeenCalledWith('/tmp/.bashrc');
     expect(result.current.configMutationState.status).toBe('success');
     expect(result.current.configMutationState.message).toBe('terminal.toastConfigUpdated');
+    expect(result.current.configMutationState.result?.snapshotPath).toBe(
+      '/tmp/.cognia/terminal-snapshots/.bashrc.latest',
+    );
   });
 
   it('updateProxyMode reloads canonical proxy state and marks sync success', async () => {
@@ -652,5 +678,33 @@ describe('useTerminal', () => {
 
     expect(result.current.proxySyncState.status).toBe('error');
     expect(result.current.proxySyncState.message).toBe('terminal.toastSaveProxyFailed');
+  });
+
+  it('tracks config resource invalidation after successful config writes', async () => {
+    const { result } = renderHook(() => useTerminal({ t: mockT }));
+    await waitFor(() => expect(mockTerminalDetectShells).toHaveBeenCalledTimes(1));
+
+    expect(result.current.resourceStale.configEntries).toBe(false);
+    expect(result.current.resourceStale.configMetadata).toBe(false);
+
+    await act(async () => {
+      await result.current.writeShellConfig('/tmp/.bashrc', 'export A=1', 'bash');
+    });
+
+    expect(result.current.resourceStale.configEntries).toBe(true);
+    expect(result.current.resourceStale.configMetadata).toBe(true);
+  });
+
+  it('marks proxy env resource fresh after explicit fetch', async () => {
+    const { result } = renderHook(() => useTerminal({ t: mockT }));
+    await waitFor(() => expect(mockTerminalDetectShells).toHaveBeenCalledTimes(1));
+
+    expect(result.current.resourceStale.proxyEnvVars).toBe(true);
+
+    await act(async () => {
+      await result.current.fetchProxyEnvVars();
+    });
+
+    expect(result.current.resourceStale.proxyEnvVars).toBe(false);
   });
 });

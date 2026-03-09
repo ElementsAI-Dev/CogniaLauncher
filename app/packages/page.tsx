@@ -210,6 +210,38 @@ export default function PackagesPage() {
     () => (updateCheckProviderOutcomes ?? []).filter((o) => o.status === 'unsupported'),
     [updateCheckProviderOutcomes]
   );
+  const partialProviderOutcomes = useMemo(
+    () => (updateCheckProviderOutcomes ?? []).filter((o) => o.status === 'partial'),
+    [updateCheckProviderOutcomes]
+  );
+
+  const describeProviderOutcomeReason = useCallback((outcome: {
+    reason: string | null;
+    reason_code?: string | null;
+  }) => {
+    if (outcome.reason) {
+      return outcome.reason;
+    }
+
+    switch (outcome.reason_code) {
+      case 'platform_unsupported':
+        return t('packages.updateReasonPlatformUnsupported');
+      case 'missing_update_capability':
+        return t('packages.updateReasonCapabilityMissing');
+      case 'provider_executable_unavailable':
+        return t('packages.updateReasonProviderUnavailable');
+      case 'no_matching_installed_packages':
+        return t('packages.updateReasonNoMatchingInstalled');
+      case 'native_update_check_failed_with_fallback':
+        return t('packages.updateReasonNativeFallback');
+      case 'native_update_check_failed':
+        return t('packages.updateReasonNativeFailed');
+      case 'installed_package_enumeration_failed':
+        return t('packages.updateReasonInstalledEnumerationFailed');
+      default:
+        return t('common.unknown');
+    }
+  }, [t]);
 
   const refreshHistoryIfVisible = useCallback(async () => {
     historyDirtyRef.current = true;
@@ -777,6 +809,27 @@ export default function PackagesPage() {
               </Card>
             ) : updates.length === 0 ? (
               <div className="space-y-4">
+                {partialProviderOutcomes.length > 0 && (
+                  <Alert className="border-yellow-500/40 bg-yellow-500/5 text-yellow-700 dark:text-yellow-400 [&>svg]:text-yellow-600">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>
+                      {t('packages.updateCheckPartial', { count: partialProviderOutcomes.length })}
+                      <details className="mt-1">
+                        <summary className="cursor-pointer text-xs">{t('common.details')}</summary>
+                        <ul className="mt-1 text-xs space-y-0.5 list-disc pl-4">
+                          {partialProviderOutcomes.slice(0, 5).map((outcome, i) => (
+                            <li key={i}>
+                              {outcome.provider}: {describeProviderOutcomeReason(outcome)}
+                            </li>
+                          ))}
+                          {partialProviderOutcomes.length > 5 && (
+                            <li>...{partialProviderOutcomes.length - 5} more</li>
+                          )}
+                        </ul>
+                      </details>
+                    </AlertDescription>
+                  </Alert>
+                )}
                 {unsupportedProviderOutcomes.length > 0 && (
                   <Alert className="border-muted-foreground/30 bg-muted/40">
                     <AlertDescription>
@@ -786,7 +839,7 @@ export default function PackagesPage() {
                         <ul className="mt-1 text-xs space-y-0.5 list-disc pl-4">
                           {unsupportedProviderOutcomes.slice(0, 5).map((outcome, i) => (
                             <li key={i}>
-                              {outcome.provider}: {outcome.reason ?? t('common.unknown')}
+                              {outcome.provider}: {describeProviderOutcomeReason(outcome)}
                             </li>
                           ))}
                           {unsupportedProviderOutcomes.length > 5 && (
