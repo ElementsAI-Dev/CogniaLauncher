@@ -881,6 +881,46 @@ pub fn parse_graph_log(output: &str) -> Vec<GitGraphEntry> {
         .collect()
 }
 
+fn build_graph_log_args(
+    limit: u32,
+    all_branches: bool,
+    first_parent: bool,
+    branch: Option<&str>,
+) -> Vec<String> {
+    let format_str = format!(
+        "%H{}%P{}%D{}%an{}%aI{}%s",
+        FIELD_SEP, FIELD_SEP, FIELD_SEP, FIELD_SEP, FIELD_SEP
+    );
+    let format_arg = format!("--format={}", format_str);
+    let limit_str = format!("-{}", limit);
+
+    // NOTE: %D decorations are only populated when decoration is enabled.
+    // Also force deterministic output without color codes.
+    let mut args = vec![
+        "log".to_string(),
+        "--topo-order".to_string(),
+        "--decorate=short".to_string(),
+        "--no-color".to_string(),
+        format_arg,
+        limit_str,
+    ];
+
+    if first_parent {
+        args.push("--first-parent".to_string());
+    }
+
+    // Mutual exclusion: if branch is specified, it takes precedence over --all.
+    if all_branches && branch.is_none() {
+        args.push("--all".to_string());
+    }
+
+    if let Some(b) = branch {
+        args.push(b.to_string());
+    }
+
+    args
+}
+
 /// Parse ahead/behind output from `git rev-list --left-right --count`
 pub fn parse_ahead_behind(output: &str) -> GitAheadBehind {
     let parts: Vec<&str> = output.trim().split('\t').collect();
@@ -1968,24 +2008,8 @@ impl GitProvider {
         first_parent: bool,
         branch: Option<&str>,
     ) -> CogniaResult<Vec<GitGraphEntry>> {
-        let format_str = format!(
-            "%H{}%P{}%D{}%an{}%aI{}%s",
-            FIELD_SEP, FIELD_SEP, FIELD_SEP, FIELD_SEP, FIELD_SEP
-        );
-        let format_arg = format!("--format={}", format_str);
-        let limit_str = format!("-{}", limit);
-        let mut args = vec!["log", "--topo-order", &format_arg, &limit_str];
-        if first_parent {
-            args.push("--first-parent");
-        }
-        if all_branches {
-            args.push("--all");
-        }
-        let branch_owned: String;
-        if let Some(b) = branch {
-            branch_owned = b.to_string();
-            args.push(&branch_owned);
-        }
+        let args_owned = build_graph_log_args(limit, all_branches, first_parent, branch);
+        let args: Vec<&str> = args_owned.iter().map(|s| s.as_str()).collect();
         let output = run_git_in_lenient(path, &args).await?;
         Ok(parse_graph_log(&output))
     }
@@ -4392,6 +4416,58 @@ filename src/main.rs\n\
         assert_eq!(entries[0].parents, vec!["parent1", "parent2"]);
         assert_eq!(entries[0].refs, vec!["HEAD -> main", "origin/main"]);
         assert_eq!(entries[1].refs, vec!["tag: v1.0"]);
+    }
+
+    #[test]
+    fn test_parse_graph_log_empty_refs_and_message_sep() {
+        let message = format!("Hello{}World", FIELD_SEP);
+        let input = format!(
+            "abc1234{}{}{}Author{}2025-01-15T10:30:00+08:00{}Hello{}World",
+            FIELD_SEP,
+            FIELD_SEP,
+            FIELD_SEP,
+            FIELD_SEP,
+            FIELD_SEP,
+            FIELD_SEP,
+        );
+        let entries = parse_graph_log(&input);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].refs, Vec::<String>::new());
+        assert_eq!(entries[0].parents, Vec::<String>::new());
+        assert_eq!(entries[0].message, message);
+    }
+
+    #[test]
+    fn test_parse_graph_log_decorations_split() {
+        let input = format!(
+            "abc1234{}{}HEAD -> main, origin/main, origin/HEAD, tag: v1.0{}Author{}2025-01-15T10:30:00+08:00{}Msg",
+            FIELD_SEP, FIELD_SEP, FIELD_SEP, FIELD_SEP, FIELD_SEP
+        );
+        let entries = parse_graph_log(&input);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(
+            entries[0].refs,
+            vec!["HEAD -> main", "origin/main", "origin/HEAD", "tag: v1.0"]
+        );
+    }
+
+    #[test]
+    fn test_build_graph_log_args_all_branches_first_parent() {
+        let args = build_graph_log_args(50, true, true, None);
+        assert_eq!(args[0], "log");
+        assert!(args.contains(&"--decorate=short".to_string()));
+        assert!(args.contains(&"--no-color".to_string()));
+        assert!(args.contains(&"--first-parent".to_string()));
+        assert!(args.contains(&"--all".to_string()));
+        assert!(args.iter().any(|a| a.starts_with("--format=%H")));
+        assert!(args.contains(&"-50".to_string()));
+    }
+
+    #[test]
+    fn test_build_graph_log_args_branch_precedence_over_all() {
+        let args = build_graph_log_args(100, true, false, Some("main"));
+        assert!(!args.contains(&"--all".to_string()));
+        assert!(args.contains(&"main".to_string()));
     }
 
     #[test]

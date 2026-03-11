@@ -87,6 +87,7 @@ export default function WslPage() {
     onlineDistros,
     status,
     capabilities,
+    runtimeSnapshot,
     completeness,
     loading,
     error,
@@ -184,8 +185,20 @@ export default function WslPage() {
   const filteredDistros = activeTagFilter
     ? distros.filter((d) => (distroTags[d.name] ?? []).includes(activeTagFilter))
     : distros;
-  const completenessHint =
-    completeness.state === 'degraded' ? completeness.degradedReasons[0] ?? null : null;
+  const completenessHint = useMemo(() => {
+    if (runtimeSnapshot?.state === 'degraded') {
+      return runtimeSnapshot.degradedReasons[0]
+        ?? runtimeSnapshot.reason
+        ?? t('wsl.runtimeDegradedHint');
+    }
+    if (runtimeSnapshot?.state === 'unavailable') {
+      return runtimeSnapshot.reason || t('wsl.runtimeUnavailableHint');
+    }
+    if (completeness.state === 'degraded') {
+      return completeness.degradedReasons[0] ?? t('wsl.runtimeDegradedHint');
+    }
+    return null;
+  }, [completeness.degradedReasons, completeness.state, runtimeSnapshot, t]);
   const runtimeAssistanceActions = getAssistanceActions('runtime');
 
   const assistanceActionById = runtimeAssistanceActions.reduce<Record<string, WslAssistanceActionDescriptor>>(
@@ -758,9 +771,9 @@ export default function WslPage() {
 
   const importInPlaceUnsupported = capabilities?.importInPlace === false;
   const importInPlaceHint = importInPlaceUnsupported
-    ? t('wsl.capabilityUnsupported')
+    ? `${t('wsl.capabilityUnsupported')
         .replace('{feature}', t('wsl.importInPlace'))
-        .replace('{version}', capabilities?.version ?? 'Unknown')
+        .replace('{version}', capabilities?.version ?? 'Unknown')} ${t('wsl.runtimeUnsupportedHint')}`
     : null;
   const runtimeErrorSuggestions = error
     ? mapErrorToAssistance(error, 'runtime')

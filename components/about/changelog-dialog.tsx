@@ -11,6 +11,9 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
@@ -36,6 +39,8 @@ import {
   RefreshCw,
   AlertTriangle,
   Filter,
+  Search,
+  X,
 } from "lucide-react";
 import { MarkdownRenderer } from "@/components/docs/markdown-renderer";
 import { getTypeColor, getTypeLabel } from "@/lib/constants/changelog-utils";
@@ -59,6 +64,27 @@ export interface ChangelogDialogProps {
 
 const FILTER_ALL = "all" as const;
 type ChangelogFilterValue = typeof FILTER_ALL | ChangelogChangeType;
+
+const SOURCE_ALL = "all" as const;
+type ChangelogSourceValue = typeof SOURCE_ALL | "local" | "remote";
+
+function normalizeSearchQuery(input: string): string[] {
+  return input
+    .trim()
+    .toLowerCase()
+    .split(/\s+/g)
+    .filter(Boolean);
+}
+
+function entryMatchesQuery(entry: ChangelogEntry, queryTokens: string[]): boolean {
+  if (queryTokens.length === 0) return true;
+
+  const changeText = entry.changes.map((c) => c.description).join(" ");
+  const markdownText = entry.markdownBody ?? "";
+  const haystack = `${entry.version} ${changeText} ${markdownText}`.toLowerCase();
+
+  return queryTokens.every((token) => haystack.includes(token));
+}
 
 function ChangelogSkeleton() {
   return (
@@ -93,46 +119,93 @@ export function ChangelogDialog({
   const [typeFilter, setTypeFilter] = useState<ChangelogFilterValue>(
     FILTER_ALL,
   );
-  const [expandedVersions, setExpandedVersions] = useState<string[]>(
-    () => (entries[0] ? [entries[0].version] : []),
+  const [sourceFilter, setSourceFilter] = useState<ChangelogSourceValue>(
+    SOURCE_ALL,
   );
+  const [showPrerelease, setShowPrerelease] = useState(true);
+  const [query, setQuery] = useState("");
+  const [userExpandedVersions, setUserExpandedVersions] = useState<string[]>([]);
+
+  const queryTokens = useMemo(() => normalizeSearchQuery(query), [query]);
+
+  const hasLocal = useMemo(
+    () => entries.some((e) => (e.source ?? "local") === "local"),
+    [entries],
+  );
+  const hasRemote = useMemo(
+    () => entries.some((e) => e.source === "remote"),
+    [entries],
+  );
+  const hasPrerelease = useMemo(
+    () => entries.some((e) => !!e.prerelease),
+    [entries],
+  );
+
+  const facetEntries = useMemo(() => {
+    return entries.filter((entry) => {
+      const entrySource = entry.source ?? "local";
+      if (sourceFilter !== SOURCE_ALL && entrySource !== sourceFilter) {
+        return false;
+      }
+      if (!showPrerelease && entry.prerelease) {
+        return false;
+      }
+      return true;
+    });
+  }, [entries, sourceFilter, showPrerelease]);
 
   const availableTypes = useMemo(() => {
     const types = new Set<ChangelogChangeType>();
-    for (const entry of entries) {
+    for (const entry of facetEntries) {
       for (const change of entry.changes) {
         types.add(change.type);
       }
     }
     return ALL_CHANGE_TYPES.filter((type) => types.has(type));
-  }, [entries]);
+  }, [facetEntries]);
+
+  const effectiveTypeFilter =
+    typeFilter !== FILTER_ALL && !availableTypes.includes(typeFilter)
+      ? FILTER_ALL
+      : typeFilter;
+
+  const typeFilteredEntries = useMemo(() => {
+    if (effectiveTypeFilter === FILTER_ALL) return facetEntries;
+    return facetEntries.filter((entry) =>
+      entry.changes.some((c) => c.type === effectiveTypeFilter),
+    );
+  }, [facetEntries, effectiveTypeFilter]);
 
   const filteredEntries = useMemo(() => {
-    if (typeFilter === FILTER_ALL) return entries;
-    return entries.filter(
-      (entry) =>
-        entry.changes.some((c) => c.type === typeFilter) ||
-        !!entry.markdownBody,
+    if (queryTokens.length === 0) return typeFilteredEntries;
+    return typeFilteredEntries.filter((entry) =>
+      entryMatchesQuery(entry, queryTokens),
     );
-  }, [entries, typeFilter]);
+  }, [typeFilteredEntries, queryTokens]);
 
-  const visibleExpandedVersions = useMemo(() => {
+  const effectiveExpandedVersions = useMemo(() => {
+    if (!open) return [];
+    if (filteredEntries.length === 0) return [];
+
     const visibleSet = new Set(filteredEntries.map((entry) => entry.version));
-    return expandedVersions.filter((version) => visibleSet.has(version));
-  }, [expandedVersions, filteredEntries]);
+    const visibleManual = userExpandedVersions.filter((v) => visibleSet.has(v));
+    if (visibleManual.length > 0) return visibleManual;
+    return [filteredEntries[0]!.version];
+  }, [open, filteredEntries, userExpandedVersions]);
 
   const allExpanded =
     filteredEntries.length > 0 &&
-    visibleExpandedVersions.length === filteredEntries.length;
+    effectiveExpandedVersions.length === filteredEntries.length;
   const hasFilterControls = availableTypes.length > 1;
   const hasDisclosureControls = filteredEntries.length > 1;
+  const hasSourceControls = hasLocal && hasRemote;
 
   const toggleAllExpanded = () => {
     if (allExpanded) {
-      setExpandedVersions([]);
+      setUserExpandedVersions([]);
       return;
     }
-    setExpandedVersions(filteredEntries.map((entry) => entry.version));
+    setUserExpandedVersions(filteredEntries.map((entry) => entry.version));
   };
 
   return (
@@ -146,58 +219,126 @@ export function ChangelogDialog({
           <DialogDescription>{t("about.changelogDescription")}</DialogDescription>
         </DialogHeader>
 
-        {(hasFilterControls || hasDisclosureControls) ? (
-          <div
-            className="flex flex-col gap-2 rounded-md border bg-muted/30 p-2.5"
-            role="toolbar"
-            aria-label={t("about.changelog")}
-            data-testid="changelog-controls"
-          >
-            {hasFilterControls ? (
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Filter className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span>{t("about.changelogFilterByType")}</span>
-                </div>
-                <ToggleGroup
-                  type="single"
-                  value={typeFilter}
-                  onValueChange={(value) => {
-                    setTypeFilter((value || FILTER_ALL) as ChangelogFilterValue);
-                  }}
-                  variant="outline"
-                  size="sm"
-                  spacing={1}
-                  className="flex w-full flex-wrap"
-                  aria-label={t("about.changelogFilterByType")}
-                >
-                  <ToggleGroupItem value={FILTER_ALL}>
-                    {t("about.changelogAllTypes")}
-                  </ToggleGroupItem>
-                  {availableTypes.map((type) => (
-                    <ToggleGroupItem key={type} value={type}>
-                      {getTypeLabel(type, t)}
-                    </ToggleGroupItem>
-                  ))}
-                </ToggleGroup>
-              </div>
-            ) : null}
-            {hasDisclosureControls ? (
-              <div className="flex items-center justify-end">
+        <div
+          className="flex flex-col gap-2 rounded-md border bg-muted/30 p-2.5"
+          role="toolbar"
+          aria-label={t("about.changelog")}
+          data-testid="changelog-controls"
+        >
+            <div className="flex items-center gap-2">
+              <Search className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={t("about.changelogSearchPlaceholder")}
+                aria-label={t("about.changelogSearchPlaceholder")}
+                className="h-8"
+              />
+              {query ? (
                 <Button
                   variant="ghost"
-                  size="sm"
-                  onClick={toggleAllExpanded}
-                  aria-pressed={allExpanded}
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => setQuery("")}
+                  aria-label={t("about.changelogClearSearch")}
                 >
-                  {allExpanded
-                    ? t("about.changelogCollapseAll")
-                    : t("about.changelogExpandAll")}
+                  <X className="h-4 w-4" aria-hidden="true" />
                 </Button>
+              ) : null}
+            </div>
+
+            <div className="flex flex-col gap-2">
+              {hasFilterControls ? (
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Filter className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>{t("about.changelogFilterByType")}</span>
+                  </div>
+                  <ToggleGroup
+                    type="single"
+                    value={effectiveTypeFilter}
+                    onValueChange={(value) => {
+                      setTypeFilter((value || FILTER_ALL) as ChangelogFilterValue);
+                    }}
+                    variant="outline"
+                    size="sm"
+                    spacing={1}
+                    className="flex w-full flex-wrap"
+                    aria-label={t("about.changelogFilterByType")}
+                  >
+                    <ToggleGroupItem value={FILTER_ALL}>
+                      {t("about.changelogAllTypes")}
+                    </ToggleGroupItem>
+                    {availableTypes.map((type) => (
+                      <ToggleGroupItem key={type} value={type}>
+                        {getTypeLabel(type, t)}
+                      </ToggleGroupItem>
+                    ))}
+                  </ToggleGroup>
+                </div>
+              ) : null}
+
+              <div className="flex flex-wrap items-center gap-2 justify-between">
+                {hasSourceControls ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">
+                      {t("about.changelogFilterBySource")}
+                    </span>
+                    <ToggleGroup
+                      type="single"
+                      value={sourceFilter}
+                      onValueChange={(value) => {
+                        setSourceFilter((value || SOURCE_ALL) as ChangelogSourceValue);
+                      }}
+                      variant="outline"
+                      size="sm"
+                      spacing={1}
+                      aria-label={t("about.changelogFilterBySource")}
+                      className="flex flex-wrap"
+                    >
+                      <ToggleGroupItem value={SOURCE_ALL}>
+                        {t("about.changelogAllSources")}
+                      </ToggleGroupItem>
+                      <ToggleGroupItem value="local">
+                        {t("about.changelogLocal")}
+                      </ToggleGroupItem>
+                      <ToggleGroupItem value="remote">
+                        {t("about.changelogRemote")}
+                      </ToggleGroupItem>
+                    </ToggleGroup>
+                  </div>
+                ) : null}
+
+                {hasPrerelease ? (
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      id="changelog-prerelease"
+                      checked={showPrerelease}
+                      onCheckedChange={(checked) => setShowPrerelease(!!checked)}
+                      aria-label={t("about.changelogShowPrerelease")}
+                    />
+                    <Label htmlFor="changelog-prerelease" className="text-xs text-muted-foreground">
+                      {t("about.changelogShowPrerelease")}
+                    </Label>
+                  </div>
+                ) : null}
+
+                {hasDisclosureControls ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={toggleAllExpanded}
+                    aria-pressed={allExpanded}
+                    className="ml-auto"
+                  >
+                    {allExpanded
+                      ? t("about.changelogCollapseAll")
+                      : t("about.changelogExpandAll")}
+                  </Button>
+                ) : null}
               </div>
-            ) : null}
-          </div>
-        ) : null}
+            </div>
+        </div>
 
         {error && (
           <Alert variant="destructive">
@@ -233,7 +374,7 @@ export function ChangelogDialog({
                   {t("about.changelogNoResults")}
                 </EmptyTitle>
                 <EmptyDescription>
-                  {t("about.changelogFilterByType")}
+                  {t("about.changelogNoResults")}
                 </EmptyDescription>
               </EmptyHeader>
               {onRetry ? (
@@ -249,16 +390,16 @@ export function ChangelogDialog({
             <div className="flex flex-col gap-2">
               <Accordion
                 type="multiple"
-                value={visibleExpandedVersions}
-                onValueChange={setExpandedVersions}
+                value={effectiveExpandedVersions}
+                onValueChange={setUserExpandedVersions}
                 className="w-full"
                 aria-label={t("about.changelog")}
               >
                 {filteredEntries.map((entry) => {
                   const filteredChanges =
-                    typeFilter === FILTER_ALL
+                    effectiveTypeFilter === FILTER_ALL
                       ? entry.changes
-                      : entry.changes.filter((c) => c.type === typeFilter);
+                      : entry.changes.filter((c) => c.type === effectiveTypeFilter);
                   const sourceLabel =
                     entry.source === "remote"
                       ? t("about.changelogRemote")

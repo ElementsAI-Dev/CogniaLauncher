@@ -4,6 +4,7 @@ import { AlertCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { useLocale } from '@/components/providers/locale-provider';
 import type { TerminalConfigDiagnostic } from '@/types/tauri';
 import type { TerminalConfigEditorDiagnosticsPanelProps } from './types';
 
@@ -18,13 +19,21 @@ function formatDiagnosticLocation(diagnostic: TerminalConfigDiagnostic) {
   return `L${line}${typeof column === 'number' ? `:${column}` : ''}`;
 }
 
-export function getDiagnosticSummaryLabel(count: number) {
+export function getDiagnosticSummaryLabel(
+  count: number,
+  t?: (key: string, params?: Record<string, string | number>) => string,
+) {
+  if (t) {
+    return t('terminal.editorDiagnosticsSummary', { count });
+  }
   return `${count} issue${count === 1 ? '' : 's'} detected`;
 }
 
 export function TerminalConfigEditorDiagnosticsPanel({
   diagnostics,
 }: TerminalConfigEditorDiagnosticsPanelProps) {
+  const { t } = useLocale();
+
   if (diagnostics.length === 0) {
     return null;
   }
@@ -33,9 +42,9 @@ export function TerminalConfigEditorDiagnosticsPanel({
     <div className="space-y-3">
       <Alert variant="destructive">
         <AlertCircle className="h-4 w-4" />
-        <AlertTitle>{getDiagnosticSummaryLabel(diagnostics.length)}</AlertTitle>
+        <AlertTitle>{getDiagnosticSummaryLabel(diagnostics.length, t)}</AlertTitle>
         <AlertDescription>
-          <p>Review validation details before saving this terminal configuration.</p>
+          <p>{t('terminal.editorDiagnosticsReviewHint')}</p>
         </AlertDescription>
       </Alert>
 

@@ -2,6 +2,13 @@ use crate::core::DetectedEnvironment;
 use crate::error::CogniaResult;
 use std::path::{Path, PathBuf};
 
+const JAVA_POM_SOURCE: &str = "pom.xml (java.version)";
+const JAVA_GRADLE_SOURCE: &str = "build.gradle (sourceCompatibility)";
+const JAVA_GRADLE_WRAPPER_SOURCE: &str =
+    "gradle/wrapper/gradle-wrapper.properties (distributionUrl)";
+const JAVA_MAVEN_WRAPPER_SOURCE: &str =
+    ".mvn/wrapper/maven-wrapper.properties (distributionUrl)";
+
 /// Default detection sources for a logical environment type.
 ///
 /// These labels MUST match frontend `DEFAULT_DETECTION_FILES` and the persisted
@@ -46,9 +53,11 @@ pub fn default_detection_sources(env_type: &str) -> &'static [&'static str] {
             ".java-version",
             ".sdkmanrc",
             ".tool-versions",
-            "pom.xml (java.version)",
-            "build.gradle (sourceCompatibility)",
             "mise.toml",
+            JAVA_POM_SOURCE,
+            JAVA_GRADLE_SOURCE,
+            JAVA_GRADLE_WRAPPER_SOURCE,
+            JAVA_MAVEN_WRAPPER_SOURCE,
         ],
         "kotlin" => &[
             ".kotlin-version",
@@ -192,7 +201,10 @@ pub fn classify_detection_source(env_type: &str, source: &str) -> String {
     if env_type == "java" {
         if matches!(
             source,
-            "pom.xml (java.version)" | "build.gradle (sourceCompatibility)"
+            JAVA_POM_SOURCE
+                | JAVA_GRADLE_SOURCE
+                | JAVA_GRADLE_WRAPPER_SOURCE
+                | JAVA_MAVEN_WRAPPER_SOURCE
         ) {
             return "manifest".to_string();
         }
@@ -418,7 +430,7 @@ async fn detect_java(dir: &Path, source: &str) -> CogniaResult<Option<DetectedVa
         ".tool-versions" => {
             read_tool_versions(dir.join(".tool-versions"), &["java"], ".tool-versions").await
         }
-        "pom.xml (java.version)" => {
+        JAVA_POM_SOURCE => {
             let path = dir.join("pom.xml");
             if !path.is_file() {
                 return Ok(None);
@@ -433,7 +445,7 @@ async fn detect_java(dir: &Path, source: &str) -> CogniaResult<Option<DetectedVa
                 None => Ok(None),
             }
         }
-        "build.gradle (sourceCompatibility)" => {
+        JAVA_GRADLE_SOURCE => {
             for name in &["build.gradle.kts", "build.gradle"] {
                 let path = dir.join(name);
                 if path.is_file() {
@@ -450,6 +462,44 @@ async fn detect_java(dir: &Path, source: &str) -> CogniaResult<Option<DetectedVa
                 }
             }
             Ok(None)
+        }
+        JAVA_GRADLE_WRAPPER_SOURCE => {
+            let path = dir
+                .join("gradle")
+                .join("wrapper")
+                .join("gradle-wrapper.properties");
+            if !path.is_file() {
+                return Ok(None);
+            }
+            let content = crate::platform::fs::read_file_string(&path).await?;
+            Ok(
+                crate::provider::sdkman::extract_gradle_wrapper_version(&content).map(|ver| {
+                    DetectedValue {
+                        value: format!("gradle@{}", ver),
+                        source: source.to_string(),
+                        path,
+                    }
+                }),
+            )
+        }
+        JAVA_MAVEN_WRAPPER_SOURCE => {
+            let path = dir
+                .join(".mvn")
+                .join("wrapper")
+                .join("maven-wrapper.properties");
+            if !path.is_file() {
+                return Ok(None);
+            }
+            let content = crate::platform::fs::read_file_string(&path).await?;
+            Ok(
+                crate::provider::sdkman::extract_maven_wrapper_version(&content).map(|ver| {
+                    DetectedValue {
+                        value: format!("maven@{}", ver),
+                        source: source.to_string(),
+                        path,
+                    }
+                }),
+            )
         }
         "mise.toml" => read_mise_toml(dir, &["java"], source).await,
         _ => Ok(None),
@@ -2782,6 +2832,118 @@ java {
         assert_eq!(detected.source_type, "local");
     }
 
+    #[tokio::test]
+    async fn java_detects_gradle_wrapper_context_when_enabled() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        let wrapper_dir = root.join("gradle").join("wrapper");
+        std::fs::create_dir_all(&wrapper_dir).unwrap();
+
+        crate::platform::fs::write_file_string(
+            wrapper_dir.join("gradle-wrapper.properties"),
+            "distributionUrl=https\\://services.gradle.org/distributions/gradle-8.10.2-bin.zip",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec![JAVA_GRADLE_WRAPPER_SOURCE.to_string()];
+        let detected = detect_env_version("java", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(detected.version, "gradle@8.10.2");
+        assert_eq!(detected.source, JAVA_GRADLE_WRAPPER_SOURCE);
+        assert_eq!(detected.source_type, "manifest");
+    }
+
+    #[tokio::test]
+    async fn java_detects_maven_wrapper_context_when_enabled() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        let wrapper_dir = root.join(".mvn").join("wrapper");
+        std::fs::create_dir_all(&wrapper_dir).unwrap();
+
+        crate::platform::fs::write_file_string(
+            wrapper_dir.join("maven-wrapper.properties"),
+            "distributionUrl=https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/3.9.9/apache-maven-3.9.9-bin.zip",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec![JAVA_MAVEN_WRAPPER_SOURCE.to_string()];
+        let detected = detect_env_version("java", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(detected.version, "maven@3.9.9");
+        assert_eq!(detected.source, JAVA_MAVEN_WRAPPER_SOURCE);
+        assert_eq!(detected.source_type, "manifest");
+    }
+
+    #[tokio::test]
+    async fn java_manifest_sources_take_priority_over_wrapper_sources() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        let wrapper_dir = root.join("gradle").join("wrapper");
+        std::fs::create_dir_all(&wrapper_dir).unwrap();
+
+        crate::platform::fs::write_file_string(
+            root.join("build.gradle"),
+            "sourceCompatibility = '21'",
+        )
+        .await
+        .unwrap();
+        crate::platform::fs::write_file_string(
+            wrapper_dir.join("gradle-wrapper.properties"),
+            "distributionUrl=https\\://services.gradle.org/distributions/gradle-8.11.1-all.zip",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec![
+            JAVA_GRADLE_SOURCE.to_string(),
+            JAVA_GRADLE_WRAPPER_SOURCE.to_string(),
+        ];
+        let detected = detect_env_version("java", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(detected.version, "21");
+        assert_eq!(detected.source, JAVA_GRADLE_SOURCE);
+    }
+
+    #[tokio::test]
+    async fn java_gradle_wrapper_missing_returns_none() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        let sources = vec![JAVA_GRADLE_WRAPPER_SOURCE.to_string()];
+        let detected = detect_env_version("java", root, &sources).await.unwrap();
+        assert!(detected.is_none());
+    }
+
+    #[tokio::test]
+    async fn java_maven_wrapper_invalid_value_returns_none() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        let wrapper_dir = root.join(".mvn").join("wrapper");
+        std::fs::create_dir_all(&wrapper_dir).unwrap();
+
+        crate::platform::fs::write_file_string(
+            wrapper_dir.join("maven-wrapper.properties"),
+            "distributionUrl=https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/${maven.version}/apache-maven-${maven.version}-bin.zip",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec![JAVA_MAVEN_WRAPPER_SOURCE.to_string()];
+        let detected = detect_env_version("java", root, &sources).await.unwrap();
+        assert!(detected.is_none());
+    }
+
     // ── Dart detection tests ──
 
     #[tokio::test]
@@ -4192,9 +4354,11 @@ rust-version = "1.70"
                 ".java-version".to_string(),
                 ".sdkmanrc".to_string(),
                 ".tool-versions".to_string(),
-                "pom.xml (java.version)".to_string(),
-                "build.gradle (sourceCompatibility)".to_string(),
                 "mise.toml".to_string(),
+                JAVA_POM_SOURCE.to_string(),
+                JAVA_GRADLE_SOURCE.to_string(),
+                JAVA_GRADLE_WRAPPER_SOURCE.to_string(),
+                JAVA_MAVEN_WRAPPER_SOURCE.to_string(),
             ],
         );
     }

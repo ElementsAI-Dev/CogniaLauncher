@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,17 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { useLocale } from "@/components/providers/locale-provider";
 import { isTauri, configGet, configSet } from "@/lib/tauri";
 import type {
@@ -21,6 +32,7 @@ import type {
   LogCleanupPreviewSummary,
   LogMutationSummary,
 } from "@/hooks/use-logs";
+import type { LogCleanupOptions, LogCleanupPolicyInput } from "@/types/tauri";
 import { formatBytes } from "@/lib/utils";
 import { Loader2, Settings2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -29,16 +41,28 @@ interface LogManagementCardProps {
   totalSize: number;
   fileCount: number;
   previewResult: LogCleanupPreviewSummary | null;
-  onPreviewCleanup: () => Promise<LogActionResult<LogCleanupPreviewSummary>>;
-  onCleanup: () => Promise<LogActionResult<LogMutationSummary>>;
+  onPreviewCleanup: (
+    policy?: LogCleanupPolicyInput,
+  ) => Promise<LogActionResult<LogCleanupPreviewSummary>>;
+  onCleanup: (
+    options: LogCleanupOptions,
+  ) => Promise<LogActionResult<LogMutationSummary>>;
   onRefresh: () => void;
 }
+
+type PolicySaveState = "dirty" | "saving" | "saved" | "error";
 
 function normalizeNumberInput(value: string, fallback: string, max?: number): string {
   const parsed = Number.parseInt(value, 10);
   if (Number.isNaN(parsed)) return fallback;
   const normalized = Math.max(0, max ? Math.min(parsed, max) : parsed);
   return String(normalized);
+}
+
+function toPolicyNumber(value: string, fallback: string, max: number): number {
+  const normalized = normalizeNumberInput(value, fallback, max);
+  const parsed = Number.parseInt(normalized, 10);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 export function LogManagementCard({
@@ -56,67 +80,165 @@ export function LogManagementCard({
   const [maxTotalSizeMb, setMaxTotalSizeMb] = useState<string>("100");
   const [autoCleanup, setAutoCleanup] = useState(true);
   const [logLevel, setLogLevel] = useState<string>("info");
+  const [policySaveState, setPolicySaveState] = useState<PolicySaveState>("saved");
+  const [policySaveError, setPolicySaveError] = useState<string | null>(null);
+  const [lastFailedWrite, setLastFailedWrite] = useState<{
+    key: string;
+    value: string;
+  } | null>(null);
+  const [cleanupConfirmOpen, setCleanupConfirmOpen] = useState(false);
 
   useEffect(() => {
     if (!isTauri()) return;
+    let active = true;
     Promise.all([
       configGet("log.max_retention_days"),
       configGet("log.max_total_size_mb"),
       configGet("log.auto_cleanup"),
       configGet("log.log_level"),
-    ]).then(([days, size, auto, level]) => {
-      if (days) setRetentionDays(days);
-      if (size) setMaxTotalSizeMb(size);
-      if (auto) setAutoCleanup(auto === "true");
-      if (level) setLogLevel(level);
-    }).catch(() => { /* use defaults */ });
+    ])
+      .then(([days, size, auto, level]) => {
+        if (!active) return;
+        if (days) setRetentionDays(days);
+        if (size) setMaxTotalSizeMb(size);
+        if (auto) setAutoCleanup(auto === "true");
+        if (level) setLogLevel(level);
+        setPolicySaveState("saved");
+        setPolicySaveError(null);
+        setLastFailedWrite(null);
+      })
+      .catch(() => {
+        if (!active) return;
+        setPolicySaveState("saved");
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
-  // Periodically refresh stats to keep size display up to date
+  // Periodically refresh stats to keep size display up to date.
   useEffect(() => {
     const timer = setInterval(onRefresh, 30_000);
     return () => clearInterval(timer);
   }, [onRefresh]);
 
-  const handleSaveRetentionDays = async (value: string) => {
-    const normalized = normalizeNumberInput(value, retentionDays, 365);
-    setRetentionDays(normalized);
-    if (!isTauri()) return;
-    try {
-      await configSet("log.max_retention_days", normalized);
-    } catch {
-      /* ignore */
-    }
-  };
+  const effectivePolicy = useMemo<LogCleanupPolicyInput>(
+    () => ({
+      maxRetentionDays: toPolicyNumber(retentionDays, "30", 365),
+      maxTotalSizeMb: toPolicyNumber(maxTotalSizeMb, "100", 10_000),
+    }),
+    [maxTotalSizeMb, retentionDays],
+  );
 
-  const handleSaveMaxSize = async (value: string) => {
-    const normalized = normalizeNumberInput(value, maxTotalSizeMb, 10000);
-    setMaxTotalSizeMb(normalized);
-    if (!isTauri()) return;
-    try {
-      await configSet("log.max_total_size_mb", normalized);
-    } catch {
-      /* ignore */
+  const isPreviewStale = useMemo(() => {
+    if (!previewResult) {
+      return false;
     }
-  };
+    return (
+      previewResult.maxRetentionDays !== effectivePolicy.maxRetentionDays ||
+      previewResult.maxTotalSizeMb !== effectivePolicy.maxTotalSizeMb
+    );
+  }, [effectivePolicy.maxRetentionDays, effectivePolicy.maxTotalSizeMb, previewResult]);
 
-  const handleToggleAutoCleanup = async (checked: boolean) => {
-    setAutoCleanup(checked);
-    if (!isTauri()) return;
-    try {
-      await configSet("log.auto_cleanup", String(checked));
-    } catch {
-      /* ignore */
+  const markPolicyDirty = useCallback(() => {
+    setPolicySaveError(null);
+    setPolicySaveState((prev) => (prev === "saving" ? prev : "dirty"));
+  }, []);
+
+  const persistSetting = useCallback(
+    async (key: string, value: string): Promise<boolean> => {
+      if (!isTauri()) {
+        setPolicySaveState("saved");
+        return true;
+      }
+      setPolicySaveState("saving");
+      setPolicySaveError(null);
+      try {
+        await configSet(key, value);
+        setPolicySaveState("saved");
+        setLastFailedWrite(null);
+        return true;
+      } catch (error) {
+        const message =
+          error instanceof Error && error.message.trim()
+            ? error.message
+            : t("logs.policySaveFailed");
+        setPolicySaveState("error");
+        setPolicySaveError(message);
+        setLastFailedWrite({ key, value });
+        return false;
+      }
+    },
+    [t],
+  );
+
+  const handleSaveRetentionDays = useCallback(
+    async (value: string) => {
+      const normalized = normalizeNumberInput(value, retentionDays, 365);
+      setRetentionDays(normalized);
+      await persistSetting("log.max_retention_days", normalized);
+    },
+    [persistSetting, retentionDays],
+  );
+
+  const handleSaveMaxSize = useCallback(
+    async (value: string) => {
+      const normalized = normalizeNumberInput(value, maxTotalSizeMb, 10_000);
+      setMaxTotalSizeMb(normalized);
+      await persistSetting("log.max_total_size_mb", normalized);
+    },
+    [maxTotalSizeMb, persistSetting],
+  );
+
+  const handleToggleAutoCleanup = useCallback(
+    async (checked: boolean) => {
+      setAutoCleanup(checked);
+      markPolicyDirty();
+      await persistSetting("log.auto_cleanup", String(checked));
+    },
+    [markPolicyDirty, persistSetting],
+  );
+
+  const handleRetrySave = useCallback(async () => {
+    if (lastFailedWrite) {
+      await persistSetting(lastFailedWrite.key, lastFailedWrite.value);
+      return;
     }
-  };
+    await Promise.all([
+      persistSetting("log.max_retention_days", String(effectivePolicy.maxRetentionDays ?? 0)),
+      persistSetting("log.max_total_size_mb", String(effectivePolicy.maxTotalSizeMb ?? 0)),
+      persistSetting("log.auto_cleanup", String(autoCleanup)),
+      persistSetting("log.log_level", logLevel),
+    ]);
+  }, [
+    autoCleanup,
+    effectivePolicy.maxRetentionDays,
+    effectivePolicy.maxTotalSizeMb,
+    lastFailedWrite,
+    logLevel,
+    persistSetting,
+  ]);
 
-  const handleCleanup = async () => {
+  const handleCleanup = useCallback(async () => {
     if (!previewResult) return;
+    if (isPreviewStale) {
+      toast.error(t("logs.previewStale"));
+      return;
+    }
+
     setCleaning(true);
     try {
-      const result = await onCleanup();
+      const result = await onCleanup({
+        policy: effectivePolicy,
+        expectedPolicyFingerprint: previewResult.policyFingerprint,
+      });
       if (!result.ok) {
         toast.error(result.error || t("logs.deleteFailed"));
+        return;
+      }
+
+      if (result.data.status === "failed") {
+        toast.error(result.data.warnings[0] || t("logs.deleteFailed"));
         return;
       }
 
@@ -130,17 +252,21 @@ export function LogManagementCard({
       } else {
         toast.info(t("logs.cleanupNone"));
       }
+      if (result.data.warnings.length > 0) {
+        toast.info(t("logs.partialWarning", { count: result.data.warnings.length }));
+      }
+      setCleanupConfirmOpen(false);
     } catch {
       toast.error(t("logs.deleteFailed"));
     } finally {
       setCleaning(false);
     }
-  };
+  }, [effectivePolicy, isPreviewStale, onCleanup, previewResult, t]);
 
-  const handlePreviewCleanup = async () => {
+  const handlePreviewCleanup = useCallback(async () => {
     setPreviewing(true);
     try {
-      const result = await onPreviewCleanup();
+      const result = await onPreviewCleanup(effectivePolicy);
       if (!result.ok) {
         toast.error(result.error || t("logs.deleteFailed"));
         return;
@@ -156,7 +282,16 @@ export function LogManagementCard({
     } finally {
       setPreviewing(false);
     }
-  };
+  }, [effectivePolicy, onPreviewCleanup, t]);
+
+  const policyStateLabel =
+    policySaveState === "dirty"
+      ? t("logs.policyStateDirty")
+      : policySaveState === "saving"
+        ? t("logs.policyStateSaving")
+        : policySaveState === "error"
+          ? t("logs.policyStateError")
+          : t("logs.policyStateSaved");
 
   return (
     <Card>
@@ -168,7 +303,6 @@ export function LogManagementCard({
         <CardDescription>{t("logs.managementDescription")}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Overview stats */}
         <section className="grid grid-cols-2 gap-3" aria-label="Log storage status">
           <div className="rounded-lg border p-3">
             <p className="text-xs text-muted-foreground">{t("logs.totalFiles")}</p>
@@ -182,7 +316,6 @@ export function LogManagementCard({
 
         <Separator />
 
-        {/* Retention settings */}
         <section className="space-y-3" aria-label="Log cleanup configuration">
           <div className="space-y-1.5">
             <Label htmlFor="retention-days" className="text-sm">
@@ -194,8 +327,13 @@ export function LogManagementCard({
               min="0"
               max="365"
               value={retentionDays}
-              onChange={(e) => setRetentionDays(e.target.value)}
-              onBlur={() => { void handleSaveRetentionDays(retentionDays); }}
+              onChange={(e) => {
+                setRetentionDays(e.target.value);
+                markPolicyDirty();
+              }}
+              onBlur={() => {
+                void handleSaveRetentionDays(retentionDays);
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.currentTarget.blur();
@@ -218,8 +356,13 @@ export function LogManagementCard({
               min="0"
               max="10000"
               value={maxTotalSizeMb}
-              onChange={(e) => setMaxTotalSizeMb(e.target.value)}
-              onBlur={() => { void handleSaveMaxSize(maxTotalSizeMb); }}
+              onChange={(e) => {
+                setMaxTotalSizeMb(e.target.value);
+                markPolicyDirty();
+              }}
+              onBlur={() => {
+                void handleSaveMaxSize(maxTotalSizeMb);
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.currentTarget.blur();
@@ -250,8 +393,8 @@ export function LogManagementCard({
               value={logLevel}
               onValueChange={async (value) => {
                 setLogLevel(value);
-                if (!isTauri()) return;
-                try { await configSet("log.log_level", value); } catch { /* ignore */ }
+                markPolicyDirty();
+                await persistSetting("log.log_level", value);
               }}
             >
               <SelectTrigger id="log-level" className="h-8">
@@ -271,11 +414,47 @@ export function LogManagementCard({
           </div>
         </section>
 
+        <section className="rounded-lg border p-3 space-y-2" aria-live="polite">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs text-muted-foreground">
+              {t("logs.policySaveStateLabel")}
+            </p>
+            <p
+              data-testid="log-policy-save-state"
+              className={`text-xs font-medium ${
+                policySaveState === "error"
+                  ? "text-destructive"
+                  : policySaveState === "saved"
+                    ? "text-emerald-600"
+                    : "text-muted-foreground"
+              }`}
+            >
+              {policyStateLabel}
+            </p>
+          </div>
+          {policySaveState === "error" && (
+            <div className="space-y-2">
+              <p className="text-xs text-destructive">
+                {policySaveError || t("logs.policySaveFailed")}
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() => {
+                  void handleRetrySave();
+                }}
+              >
+                {t("logs.retrySavePolicy")}
+              </Button>
+            </div>
+          )}
+        </section>
+
         {previewResult && (
           <section className="rounded-lg border border-dashed p-3 space-y-1" aria-label="Cleanup preview">
-            <p className="text-xs text-muted-foreground">
-              {t("logs.previewSummary")}
-            </p>
+            <p className="text-xs text-muted-foreground">{t("logs.previewSummary")}</p>
             <p className="text-sm">
               {t("logs.previewReady", {
                 count: previewResult.deletedCount,
@@ -285,6 +464,11 @@ export function LogManagementCard({
             <p className="text-xs text-muted-foreground">
               {t("logs.previewProtected", { count: previewResult.protectedCount })}
             </p>
+            {isPreviewStale && (
+              <p className="text-xs text-amber-700" data-testid="log-preview-stale-hint">
+                {t("logs.previewStale")}
+              </p>
+            )}
           </section>
         )}
 
@@ -303,19 +487,58 @@ export function LogManagementCard({
             {t("logs.previewCleanup")}
           </Button>
 
-          <Button
-            variant="outline"
-            className="w-full"
-            onClick={handleCleanup}
-            disabled={cleaning || fileCount <= 1 || !previewResult}
-          >
-            {cleaning ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Trash2 className="mr-2 h-4 w-4" />
-            )}
-            {t("logs.manualCleanupConfirm")}
-          </Button>
+          <AlertDialog open={cleanupConfirmOpen} onOpenChange={setCleanupConfirmOpen}>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="outline"
+                className="w-full"
+                disabled={cleaning || fileCount <= 1 || !previewResult || isPreviewStale}
+              >
+                {cleaning ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Trash2 className="mr-2 h-4 w-4" />
+                )}
+                {t("logs.manualCleanupConfirm")}
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>{t("logs.cleanupConfirmTitle")}</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {t("logs.cleanupConfirmDescription", {
+                    count: previewResult?.deletedCount ?? 0,
+                    size: formatBytes(previewResult?.freedBytes ?? 0),
+                  })}
+                </AlertDialogDescription>
+                {previewResult && previewResult.protectedCount > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    {t("logs.previewProtected", {
+                      count: previewResult.protectedCount,
+                    })}
+                  </p>
+                )}
+                {isPreviewStale && (
+                  <p className="text-xs text-destructive">{t("logs.previewStale")}</p>
+                )}
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={(event) => {
+                    event.preventDefault();
+                    void handleCleanup();
+                  }}
+                  disabled={cleaning || isPreviewStale || !previewResult}
+                >
+                  {cleaning ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : null}
+                  {t("logs.cleanupConfirmAction")}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </section>
       </CardContent>
     </Card>

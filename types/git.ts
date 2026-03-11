@@ -16,6 +16,7 @@ import type {
   GitContributor,
   GitDayActivity,
   GitHistoryQuery,
+  GitHistorySearchType,
   GitHistoryQueryState,
   GitFileStatEntry,
   GitGraphEntry,
@@ -191,7 +192,11 @@ export interface GitRepoSelectorProps {
 }
 
 export interface GitSearchCommitsProps {
-  onSearch: (query: string | GitHistoryQuery, searchType?: string, limit?: number) => Promise<GitCommitEntry[]>;
+  onSearch: (
+    query: string | GitHistoryQuery,
+    searchType?: GitHistorySearchType,
+    limit?: number,
+  ) => Promise<GitCommitEntry[]>;
   onSelectCommit?: (hash: string) => void;
   queryState?: GitHistoryQueryState;
 }
@@ -559,6 +564,7 @@ export type GitActionErrorCategory =
   | 'conflict'
   | 'execution'
   | 'cancelled'
+  | 'timeout'
   | 'unknown';
 
 export interface GitGuardrailDecision {

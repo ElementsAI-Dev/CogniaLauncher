@@ -3,7 +3,12 @@ export const BG_CHANGE_EVENT = 'cognia-bg-change';
 
 export function getBackgroundImage(): string | null {
   try {
-    return localStorage.getItem(BG_IMAGE_KEY);
+    const value = localStorage.getItem(BG_IMAGE_KEY);
+    if (!value) return null;
+    if (typeof value !== 'string') return null;
+    if (value.trim().length === 0) return null;
+    if (!value.startsWith('data:image/')) return null;
+    return value;
   } catch {
     return null;
   }
@@ -11,6 +16,7 @@ export function getBackgroundImage(): string | null {
 
 export function setBackgroundImageData(dataUrl: string): void {
   localStorage.setItem(BG_IMAGE_KEY, dataUrl);
+  notifyBackgroundChange();
 }
 
 export function removeBackgroundImage(): void {
@@ -18,11 +24,18 @@ export function removeBackgroundImage(): void {
     localStorage.removeItem(BG_IMAGE_KEY);
   } catch {
     /* ignore */
+  } finally {
+    notifyBackgroundChange();
   }
 }
 
 export function notifyBackgroundChange(): void {
-  window.dispatchEvent(new CustomEvent(BG_CHANGE_EVENT));
+  try {
+    if (typeof window === 'undefined') return;
+    window.dispatchEvent(new CustomEvent(BG_CHANGE_EVENT));
+  } catch {
+    /* ignore */
+  }
 }
 
 /**

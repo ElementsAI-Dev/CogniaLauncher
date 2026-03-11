@@ -1,6 +1,10 @@
 import { render, screen } from '@testing-library/react';
 import { TerminalConfigEditor } from './terminal-config-editor';
 
+jest.mock('@/components/providers/locale-provider', () => ({
+  useLocale: () => ({ t: (key: string) => key }),
+}));
+
 describe('TerminalConfigEditor', () => {
   it('keeps the stable adapter entry wired to the editor workspace', async () => {
     render(

@@ -12,6 +12,33 @@ interface BackupPolicySettingsProps {
   t: (key: string) => string;
 }
 
+export function getBackupPolicyBoundaryNotes(localConfig: Record<string, string>): string[] {
+  const notes: string[] = [];
+  const maxBackupsRaw = Number(localConfig["backup.max_backups"] || "10");
+  const retentionDaysRaw = Number(localConfig["backup.retention_days"] || "30");
+  const intervalHoursRaw = Number(localConfig["backup.auto_backup_interval_hours"] || "24");
+
+  if (maxBackupsRaw === 0) {
+    notes.push("Max backups is 0 (backend interprets this as unlimited manual backup count).");
+  } else if (maxBackupsRaw > 1000) {
+    notes.push("Max backups above 1000 will be clamped to 1000 during cleanup execution.");
+  }
+
+  if (retentionDaysRaw === 0) {
+    notes.push("Retention days is 0 (backend interprets this as no age limit).");
+  } else if (retentionDaysRaw > 3650) {
+    notes.push("Retention days above 3650 will be clamped to 3650 during cleanup execution.");
+  }
+
+  if (intervalHoursRaw === 0) {
+    notes.push("Auto backup interval is 0 (scheduled automatic backup loop is disabled).");
+  } else if (intervalHoursRaw > 720) {
+    notes.push("Auto backup interval above 720 hours will be clamped to 720 by backend policy.");
+  }
+
+  return notes;
+}
+
 export function BackupPolicySettings({
   localConfig,
   errors,
@@ -24,13 +51,7 @@ export function BackupPolicySettings({
     errors["backup.retention_days"],
   ].filter((value): value is string => Boolean(value));
 
-  const boundaryNotes: string[] = [];
-  if ((localConfig["backup.max_backups"] || "10") === "0") {
-    boundaryNotes.push("Max backups is set to 0 (unlimited count).");
-  }
-  if ((localConfig["backup.retention_days"] || "30") === "0") {
-    boundaryNotes.push("Retention days is set to 0 (no age limit).");
-  }
+  const boundaryNotes = getBackupPolicyBoundaryNotes(localConfig);
 
   return (
     <div className="flex flex-col gap-1">

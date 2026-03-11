@@ -49,6 +49,13 @@ interface UseBackupReturn {
   getDatabaseInfo: () => Promise<DatabaseInfo | null>;
 }
 
+type OperationLike = {
+  status: BackupOperationStatus;
+  reasonCode?: string | null;
+  issues?: BackupOperationIssue[];
+  error?: string | null;
+};
+
 function emptyManifest(): BackupManifest {
   return {
     formatVersion: 1,
@@ -161,6 +168,44 @@ function failureIssue(code: string, message: string): BackupOperationIssue {
   return { code, message, contentType: null };
 }
 
+function reasonCodeMessage(reasonCode: string | null | undefined): string | null {
+  switch (reasonCode) {
+    case 'operation_in_progress':
+      return 'Another backup operation is in progress. Wait for it to complete and retry.';
+    case 'cleanup_policy_unbounded':
+      return 'Cleanup skipped because policy is unbounded (max backups and retention are unlimited).';
+    case 'restore_safety_backup_failed':
+      return 'Restore completed with degraded safety because pre-restore backup failed.';
+    case 'backup_create_permission_denied':
+    case 'backup_restore_permission_denied':
+    case 'backup_delete_permission_denied':
+    case 'backup_export_permission_denied':
+    case 'backup_import_permission_denied':
+    case 'backup_cleanup_permission_denied':
+      return 'Operation failed due to insufficient filesystem permissions.';
+    case 'backup_create_path_error':
+    case 'backup_restore_path_error':
+    case 'backup_delete_path_error':
+    case 'backup_export_path_error':
+    case 'backup_import_path_error':
+    case 'backup_cleanup_path_error':
+    case 'backup_import_path_conflict':
+      return 'Operation failed due to an invalid, missing, or conflicting filesystem path.';
+    default:
+      return null;
+  }
+}
+
+function resolveOperationError(result: OperationLike): string | null {
+  if (result.status === 'success') return null;
+  if (result.error) return result.error;
+  const fromReason = reasonCodeMessage(result.reasonCode);
+  if (fromReason) return fromReason;
+  const fromIssues = result.issues?.[0]?.message ?? null;
+  if (fromIssues) return fromIssues;
+  return `Backup operation ended with status: ${result.status}`;
+}
+
 export function useBackup(): UseBackupReturn {
   const [backups, setBackups] = useState<BackupInfo[]>([]);
   const [loading, setLoading] = useState(false);
@@ -169,10 +214,12 @@ export function useBackup(): UseBackupReturn {
   const [restoring, setRestoring] = useState(false);
   const reconcilePromiseRef = useRef<Promise<void> | null>(null);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (preserveError = false) => {
     if (!isTauri()) return;
     setLoading(true);
-    setError(null);
+    if (!preserveError) {
+      setError(null);
+    }
     try {
       const result = await backupList();
       setBackups(result);
@@ -191,7 +238,7 @@ export function useBackup(): UseBackupReturn {
     }
 
     const pending = (async () => {
-      await refresh();
+      await refresh(true);
     })();
     reconcilePromiseRef.current = pending;
 
@@ -226,7 +273,8 @@ export function useBackup(): UseBackupReturn {
       setError(null);
       try {
         const result = normalizeBackupResult(await backupCreate(contents, note));
-        if (result.error) setError(result.error);
+        const opError = resolveOperationError(result);
+        setError(opError);
         await reconcile();
         return result;
       } catch (err) {
@@ -267,7 +315,8 @@ export function useBackup(): UseBackupReturn {
       setError(null);
       try {
         const result = normalizeRestoreResult(await backupRestore(backupPath, contents));
-        if (result.error) setError(result.error);
+        const opError = resolveOperationError(result);
+        setError(opError);
         await reconcile();
         return result;
       } catch (err) {
@@ -306,7 +355,8 @@ export function useBackup(): UseBackupReturn {
       setError(null);
       try {
         const result = normalizeDeleteResult(await backupDelete(backupPath));
-        if (result.error) setError(result.error);
+        const opError = resolveOperationError(result);
+        setError(opError);
         await reconcile();
         return result;
       } catch (err) {
@@ -389,7 +439,8 @@ export function useBackup(): UseBackupReturn {
       }
       try {
         const result = normalizeExportResult(await backupExport(backupPath, destPath));
-        if (result.error) setError(result.error);
+        const opError = resolveOperationError(result);
+        setError(opError);
         await reconcile();
         return result;
       } catch (err) {
@@ -426,7 +477,8 @@ export function useBackup(): UseBackupReturn {
       }
       try {
         const result = normalizeImportResult(await backupImport(zipPath));
-        if (result.error) setError(result.error);
+        const opError = resolveOperationError(result);
+        setError(opError);
         await reconcile();
         return result;
       } catch (err) {
@@ -463,7 +515,8 @@ export function useBackup(): UseBackupReturn {
       }
       try {
         const result = normalizeCleanupResult(await backupCleanup(maxCount, maxAgeDays));
-        if (result.error) setError(result.error);
+        const opError = resolveOperationError(result);
+        setError(opError);
         await reconcile();
         return result;
       } catch (err) {

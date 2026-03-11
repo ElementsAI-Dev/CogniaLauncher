@@ -690,6 +690,20 @@ describe('useGit', () => {
     expect(tauri.gitGetLog).toHaveBeenCalledTimes(1);
   });
 
+  it('refreshByScopes graph triggers graph reload signal without reloading log', async () => {
+    const { result } = renderHook(() => useGit());
+    await act(async () => { await result.current.setRepoPath('/repo'); });
+    tauri.gitGetLog.mockClear();
+
+    expect(result.current.graphReloadKey).toBe(0);
+    await act(async () => {
+      await result.current.refreshByScopes(['graph', 'graph']);
+    });
+
+    expect(result.current.graphReloadKey).toBe(1);
+    expect(tauri.gitGetLog).not.toHaveBeenCalled();
+  });
+
   it('tracks unified log query state and append pagination', async () => {
     const { result } = renderHook(() => useGit());
     await act(async () => { await result.current.setRepoPath('/repo'); });
@@ -725,6 +739,39 @@ describe('useGit', () => {
     );
     expect(result.current.commits).toHaveLength(2);
     expect(result.current.historyState.log.resultCount).toBe(2);
+  });
+
+  it('marks log query failures as errors (not empty) and preserves query for retry', async () => {
+    const { result } = renderHook(() => useGit());
+    await act(async () => { await result.current.setRepoPath('/repo'); });
+    tauri.gitGetLog.mockReset();
+    tauri.gitGetLog.mockRejectedValueOnce('[git:timeout] git log timed out');
+    tauri.gitGetLog.mockResolvedValueOnce([
+      { hash: 'r1', parents: [], authorName: 'Dev', authorEmail: 'd@e.com', date: '2025-01-03', message: 'retry ok' },
+    ]);
+
+    await act(async () => {
+      await result.current.getLog({ limit: 3, branch: 'main' });
+    });
+
+    expect(result.current.historyState.log.error).toMatchObject({
+      category: 'command_failed',
+      recoverable: true,
+    });
+    expect(result.current.historyState.log.empty).toBe(false);
+    expect(result.current.historyState.log.query).toEqual(
+      expect.objectContaining({ limit: 3, branch: 'main', skip: 0, append: false }),
+    );
+
+    await act(async () => {
+      await result.current.getLog(result.current.historyState.log.query ?? undefined);
+    });
+    expect(tauri.gitGetLog).toHaveBeenLastCalledWith(
+      '/repo',
+      expect.objectContaining({ limit: 3, branch: 'main', skip: 0, append: false }),
+    );
+    expect(result.current.historyState.log.error).toBeNull();
+    expect(result.current.historyState.log.empty).toBe(false);
   });
 
   it('classifies invalid path error for file history queries', async () => {
@@ -772,6 +819,47 @@ describe('useGit', () => {
     expect(result.current.historyState.search.query).toEqual(
       expect.objectContaining({ query: 'search', limit: 1, skip: 0 }),
     );
+  });
+
+  it('renders explicit empty-state semantics for successful zero-result history query', async () => {
+    tauri.gitSearchCommits.mockResolvedValueOnce([]);
+    const { result } = renderHook(() => useGit());
+    await act(async () => { await result.current.setRepoPath('/repo'); });
+
+    await act(async () => {
+      await result.current.searchCommits({ query: 'none', limit: 10 });
+    });
+
+    expect(result.current.historyState.search.error).toBeNull();
+    expect(result.current.historyState.search.empty).toBe(true);
+    expect(result.current.historyState.search.resultCount).toBe(0);
+  });
+
+  it('stores cancelled result for cancelClone and remains able to clone afterwards', async () => {
+    tauri.gitCancelClone.mockRejectedValueOnce('[git:cancelled] clone cancellation requested');
+    tauri.gitClone.mockResolvedValueOnce('Repository cloned');
+    const { result } = renderHook(() => useGit());
+
+    let cancelErr: unknown;
+    await act(async () => {
+      try {
+        await result.current.cancelClone();
+      } catch (e) {
+        cancelErr = e;
+      }
+    });
+    expect(String(cancelErr)).toContain('clone cancellation requested');
+    expect(result.current.lastActionResult).toMatchObject({
+      operation: 'cancelClone',
+      status: 'cancelled',
+      error: { category: 'cancelled', recoverable: true },
+    });
+
+    let cloneMsg = '';
+    await act(async () => {
+      cloneMsg = await result.current.cloneRepo('https://github.com/user/repo.git', '/dest');
+    });
+    expect(cloneMsg).toBe('Repository cloned');
   });
 
   // ===== NEW: Config value operations =====

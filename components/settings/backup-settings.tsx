@@ -87,6 +87,50 @@ interface BackupSettingsProps {
   t: (key: string, params?: Record<string, string | number>) => string;
 }
 
+type BackupActionOutcome = {
+  status: BackupOperationStatus;
+  reasonCode?: string | null;
+  issues?: { message: string }[];
+  error?: string | null;
+};
+
+export function getBackupActionHint(reasonCode?: string | null): string | null {
+  switch (reasonCode) {
+    case "operation_in_progress":
+      return "Another backup operation is running. Please wait for completion and retry.";
+    case "restore_safety_backup_failed":
+      return "Restore finished, but the safety backup step failed. Review backup integrity before continuing.";
+    case "cleanup_policy_unbounded":
+      return "Cleanup policy is unbounded (0/0), so no cleanup operation is performed.";
+    case "backup_create_permission_denied":
+    case "backup_restore_permission_denied":
+    case "backup_delete_permission_denied":
+    case "backup_export_permission_denied":
+    case "backup_import_permission_denied":
+    case "backup_cleanup_permission_denied":
+      return "Operation failed due to insufficient file-system permissions.";
+    case "backup_create_path_error":
+    case "backup_restore_path_error":
+    case "backup_delete_path_error":
+    case "backup_export_path_error":
+    case "backup_import_path_error":
+    case "backup_import_path_conflict":
+    case "backup_cleanup_path_error":
+      return "Operation failed because the backup path is invalid, missing, or conflicts with existing data.";
+    default:
+      return null;
+  }
+}
+
+function getOutcomeMessage(outcome: BackupActionOutcome): string {
+  return (
+    outcome.error ||
+    getBackupActionHint(outcome.reasonCode) ||
+    outcome.issues?.[0]?.message ||
+    "Unknown error"
+  );
+}
+
 export function BackupSettings({ t }: BackupSettingsProps) {
   const {
     backups,
@@ -140,6 +184,7 @@ export function BackupSettings({ t }: BackupSettingsProps) {
 
   const handleCreateBackup = useCallback(async () => {
     const result = await create(createContents, createNote || undefined);
+    const message = getOutcomeMessage(result);
     if (result.status === "success") {
       toast.success(t("backup.backupCreated", { duration: String(result.durationMs) }));
       setCreateOpen(false);
@@ -151,21 +196,20 @@ export function BackupSettings({ t }: BackupSettingsProps) {
     if (result.status === "partial") {
       toast.warning(
         t("backup.backupFailed", {
-          error:
-            result.error ||
-            `${describeStatus(result.status)} (${result.issues?.length ?? 0} issues)`,
+          error: `${message} (${describeStatus(result.status)}, ${result.issues?.length ?? 0} issues)`,
         }),
       );
       setCreateOpen(false);
       return;
     }
 
-    toast.error(t("backup.backupFailed", { error: result.error || "Unknown error" }));
+    toast.error(t("backup.backupFailed", { error: message }));
   }, [create, createContents, createNote, describeStatus, t]);
 
   const handleRestore = useCallback(async () => {
     if (!restoreTarget) return;
     const result = await restore(restoreTarget.path, restoreContents);
+    const hint = getBackupActionHint(result.reasonCode);
     if (result.status === "success") {
       toast.success(t("backup.restoreSuccess"));
       setRestoreTarget(null);
@@ -173,7 +217,7 @@ export function BackupSettings({ t }: BackupSettingsProps) {
     }
 
     const skippedReason = result.skipped.map((s) => `${s.contentType}: ${s.reason}`).join(", ");
-    const restoreError = result.error || skippedReason || "Unknown error";
+    const restoreError = result.error || hint || skippedReason || "Unknown error";
     if (result.status === "partial") {
       toast.warning(t("backup.restoreFailed", { error: restoreError }));
     } else {
@@ -193,12 +237,13 @@ export function BackupSettings({ t }: BackupSettingsProps) {
 
   const handleDelete = useCallback(async (backup: BackupInfo) => {
     const result = await remove(backup.path);
+    const deleteError = getOutcomeMessage(result);
     if (result.status === "success" && result.deleted) {
       toast.success(t("backup.deleteSuccess"));
     } else if (result.status === "skipped") {
-      toast.warning(result.error || t("backup.deleteConfirm"));
+      toast.warning(deleteError);
     } else {
-      toast.error(result.error || t("backup.deleteConfirm"));
+      toast.error(deleteError);
     }
   }, [remove, t]);
 

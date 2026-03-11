@@ -97,6 +97,24 @@ describe('GitCommitGraph', () => {
     });
   });
 
+  it('shows error state (not empty) and retries', async () => {
+    mockOnLoadGraph
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockResolvedValueOnce(mockEntries);
+
+    render(<GitCommitGraph onLoadGraph={mockOnLoadGraph} />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/boom/)).toBeInTheDocument();
+    });
+    expect(screen.queryByText('git.graph.empty')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'common.retry' }));
+    await waitFor(() => {
+      expect(screen.getByText('Initial commit')).toBeInTheDocument();
+    });
+  });
+
   it('calls onSelectCommit when commit row is clicked', async () => {
     render(<GitCommitGraph onLoadGraph={mockOnLoadGraph} onSelectCommit={mockOnSelectCommit} />);
     await waitFor(() => {
@@ -158,6 +176,38 @@ describe('GitCommitGraph', () => {
     fireEvent.click(screen.getByText('git.graph.loadMore'));
     await waitFor(() => {
       expect(mockOnLoadGraph).toHaveBeenCalledWith(200, true, false, undefined);
+    });
+  });
+
+  it('resets pagination window when first-parent filter changes', async () => {
+    const user = userEvent.setup();
+    const manyEntries = Array.from({ length: 100 }, (_, i) => ({
+      hash: `h${String(i).padStart(6, '0')}`,
+      parents: i > 0 ? [`h${String(i - 1).padStart(6, '0')}`] : [],
+      refs: [],
+      authorName: 'Dev',
+      date: new Date().toISOString(),
+      message: `Commit ${i}`,
+    }));
+
+    mockOnLoadGraph.mockResolvedValue(manyEntries);
+    const branches = [
+      { name: 'main', shortHash: 'abc1234', upstream: null, isCurrent: true, isRemote: false },
+    ];
+
+    render(<GitCommitGraph onLoadGraph={mockOnLoadGraph} branches={branches} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('git.graph.loadMore')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText('git.graph.loadMore'));
+    await waitFor(() => {
+      expect(mockOnLoadGraph).toHaveBeenCalledWith(200, true, false, undefined);
+    });
+
+    await user.click(screen.getByText('git.graph.firstParent'));
+    await waitFor(() => {
+      expect(mockOnLoadGraph).toHaveBeenCalledWith(100, true, true, undefined);
     });
   });
 

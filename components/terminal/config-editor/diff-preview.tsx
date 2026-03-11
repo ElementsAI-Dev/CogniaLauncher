@@ -2,18 +2,21 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { useLocale } from '@/components/providers/locale-provider';
 import type { TerminalConfigEditorDiffPreviewProps } from './types';
 
 export function TerminalConfigEditorDiffPreview({
   baselineValue,
   value,
 }: TerminalConfigEditorDiffPreviewProps) {
+  const { t } = useLocale();
+
   return (
     <div className="grid gap-3 md:grid-cols-2">
       <Card>
         <CardHeader className="py-3">
           <CardTitle className="text-xs uppercase tracking-wide text-muted-foreground">
-            Persisted Baseline
+            {t('terminal.editorPersistedBaseline')}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -26,7 +29,7 @@ export function TerminalConfigEditorDiffPreview({
       <Card>
         <CardHeader className="py-3">
           <CardTitle className="text-xs uppercase tracking-wide text-muted-foreground">
-            Pending Draft
+            {t('terminal.editorPendingDraft')}
           </CardTitle>
         </CardHeader>
         <CardContent>

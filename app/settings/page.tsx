@@ -36,6 +36,7 @@ import { useSettingsStore, type AppSettings } from "@/lib/stores/settings";
 import { isTauri } from "@/lib/tauri";
 import {
   APPEARANCE_DEFAULTS,
+  areAppearancePresetConfigsEqual,
   isThemeMode,
   normalizeAccentColor,
   normalizeChartColorTheme,
@@ -1228,6 +1229,13 @@ export default function SettingsPage() {
     windowEffect,
   ]);
 
+  const hasAppearancePresetDivergence = useMemo(() => {
+    if (!presets || presets.length === 0) return false;
+    const activePreset = presets.find((preset) => preset.id === activePresetId) ?? presets[0];
+    const current = buildPresetFromCurrentState();
+    return !areAppearancePresetConfigsEqual(current, activePreset.config);
+  }, [activePresetId, buildPresetFromCurrentState, presets]);
+
   const handleApplyAppearancePreset = useCallback(
     async (presetId: string) => {
       const selected = presets.find((preset) => preset.id === presetId);
@@ -2018,7 +2026,7 @@ export default function SettingsPage() {
               <AppearanceWorkbench
                 presets={presets}
                 activePresetId={activePresetId}
-                hasAppearanceChanges={sectionHasDraftState("appearance")}
+                hasAppearanceChanges={hasAppearancePresetDivergence}
                 onSelectPreset={setActivePresetId}
                 onApplyPreset={handleApplyAppearancePreset}
                 onSavePreset={handleSaveAppearancePreset}

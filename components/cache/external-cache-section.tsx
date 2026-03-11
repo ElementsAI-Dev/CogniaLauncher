@@ -32,6 +32,22 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
@@ -50,11 +66,15 @@ import {
   CheckCircle2,
   XCircle,
   FolderOpen,
+  AlertTriangle,
+  Copy,
 } from "lucide-react";
 import { formatBytes } from "@/lib/utils";
 import { getCategoryLabel } from "@/lib/constants/cache";
 import type { ExternalCacheSectionProps } from "@/types/cache";
 import { useExternalCache } from "@/hooks/use-external-cache";
+import type { ExternalCacheCleanResult } from "@/lib/tauri";
+import { writeClipboard } from "@/lib/clipboard";
 
 export function ExternalCacheSection({
   useTrash,
@@ -62,6 +82,9 @@ export function ExternalCacheSection({
 }: ExternalCacheSectionProps) {
   const { t } = useLocale();
   const [isOpen, setIsOpen] = useState(false);
+  const [resultOpen, setResultOpen] = useState(false);
+  const [resultTitle, setResultTitle] = useState("");
+  const [resultRows, setResultRows] = useState<ExternalCacheCleanResult[]>([]);
   const {
     caches: externalCaches,
     loading,
@@ -87,6 +110,34 @@ export function ExternalCacheSection({
     }
   }, [isOpen, externalCaches.length, fetchExternalCaches]);
   const cleaningAll = cleaning === "all";
+
+  const diagHintKeyByReason: Record<string, string> = {
+    probe_timeout: "cache.externalDiag.probe_timeout",
+    probe_failed: "cache.externalDiag.probe_failed",
+    path_unreadable: "cache.externalDiag.path_unreadable",
+    provider_unavailable: "cache.externalDiag.provider_unavailable",
+    legacy_skipped: "cache.externalDiag.legacy_skipped",
+  };
+
+  const showResults = (title: string, rows: ExternalCacheCleanResult[]) => {
+    setResultTitle(title);
+    setResultRows(rows);
+    setResultOpen(true);
+  };
+
+  const handleCleanSingleWithReport = async (provider: string) => {
+    const result = await handleCleanSingle(provider);
+    if (result && !result.success) {
+      showResults(t("cache.externalCleanResultTitle"), [result]);
+    }
+  };
+
+  const handleCleanAllWithReport = async () => {
+    const results = await handleCleanAll();
+    if (results.some((r) => !r.success)) {
+      showResults(t("cache.externalCleanAllResultTitle"), results);
+    }
+  };
 
   return (
     <Card>
@@ -175,7 +226,7 @@ export function ExternalCacheSection({
                           {t("common.cancel")}
                         </AlertDialogCancel>
                         <AlertDialogAction
-                          onClick={handleCleanAll}
+                          onClick={handleCleanAllWithReport}
                           className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                         >
                           {t("cache.cleanAll")}
@@ -227,8 +278,10 @@ export function ExternalCacheSection({
                               <p className="font-medium">{cache.displayName}</p>
                               {cache.probePending ? (
                                 <RefreshCw className="h-3 w-3 animate-spin text-muted-foreground" />
-                              ) : cache.isAvailable ? (
+                              ) : cache.detectionState === "found" ? (
                                 <CheckCircle2 className="h-3 w-3 text-green-500" />
+                              ) : cache.detectionState === "error" ? (
+                                <AlertTriangle className="h-3 w-3 text-destructive" />
                               ) : (
                                 <XCircle className="h-3 w-3 text-muted-foreground" />
                               )}
@@ -241,6 +294,22 @@ export function ExternalCacheSection({
                                   : cache.cachePath || t("cache.managedByTool")}
                               </span>
                             </div>
+                            {!cache.probePending && (cache.detectionReason || cache.detectionError) && (
+                              <div className="text-xs text-muted-foreground mt-1">
+                                {cache.detectionReason && (
+                                  <p className="truncate" title={cache.detectionReason}>
+                                    {diagHintKeyByReason[cache.detectionReason]
+                                      ? t(diagHintKeyByReason[cache.detectionReason])
+                                      : cache.detectionReason}
+                                  </p>
+                                )}
+                                {cache.detectionError && (
+                                  <p className="truncate text-destructive" title={cache.detectionError}>
+                                    {cache.detectionError}
+                                  </p>
+                                )}
+                              </div>
+                            )}
                           </div>
                         </div>
                         <div className="flex items-center gap-3 ml-4">
@@ -258,7 +327,7 @@ export function ExternalCacheSection({
                                   cache.probePending || !cache.canClean || cleaning === cache.provider
                                 }
                                 onClick={() =>
-                                  handleCleanSingle(cache.provider)
+                                  handleCleanSingleWithReport(cache.provider)
                                 }
                               >
                                 <Trash2 className="h-4 w-4 mr-1" />
@@ -279,6 +348,55 @@ export function ExternalCacheSection({
           </CardContent>
         </CollapsibleContent>
       </Collapsible>
+
+      <Dialog open={resultOpen} onOpenChange={setResultOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>{resultTitle}</DialogTitle>
+            <DialogDescription>{t("cache.externalCleanResultDesc")}</DialogDescription>
+          </DialogHeader>
+
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t("cache.externalProvider")}</TableHead>
+                  <TableHead>{t("cache.status")}</TableHead>
+                  <TableHead>{t("cache.freedSize")}</TableHead>
+                  <TableHead>{t("cache.error")}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {resultRows.map((r) => (
+                  <TableRow key={r.provider}>
+                    <TableCell className="font-medium">{r.displayName}</TableCell>
+                    <TableCell>
+                      <Badge variant={r.success ? "default" : "destructive"}>
+                        {r.success ? t("cache.success") : t("cache.failed")}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>{r.freedHuman}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{r.error ?? ""}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setResultOpen(false)}>{t("common.close")}</Button>
+            <Button
+              variant="outline"
+              onClick={async () => {
+                await writeClipboard(JSON.stringify(resultRows, null, 2));
+              }}
+            >
+              <Copy className="h-4 w-4 mr-2" />
+              {t("cache.copyJson")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

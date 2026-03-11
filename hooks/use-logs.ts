@@ -13,23 +13,21 @@ import {
   logDeleteFile,
   logDeleteBatch,
 } from '@/lib/tauri';
-import type { LogFileInfo } from '@/types/log';
-import type { LogOperationStatus } from '@/types/tauri';
+import type {
+  LogCleanupOptions,
+  LogCleanupPolicyInput,
+  LogCleanupPreviewResult,
+  LogCleanupResult,
+  LogOperationReasonCode,
+  LogOperationStatus,
+} from '@/types/tauri';
 
 export type LogActionResult<T> =
   | { ok: true; data: T }
   | { ok: false; error: string };
 
-export interface LogMutationSummary {
-  deletedCount: number;
-  freedBytes: number;
-  status: LogOperationStatus;
-  warnings: string[];
-}
-
-export interface LogCleanupPreviewSummary extends LogMutationSummary {
-  protectedCount: number;
-}
+export type LogMutationSummary = LogCleanupResult;
+export type LogCleanupPreviewSummary = LogCleanupPreviewResult;
 
 interface QueryLogFileOptions {
   fileName?: string;
@@ -54,26 +52,97 @@ function toLogErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
-function summarizeRemovedFiles(
-  beforeFiles: LogFileInfo[],
-  afterFiles: LogFileInfo[],
-  candidates: LogFileInfo[],
-): LogMutationSummary {
-  const remainingNames = new Set(afterFiles.map((file) => file.name));
-  const removed = candidates.filter((file) => !remainingNames.has(file.name));
-  return {
-    deletedCount: removed.length,
-    freedBytes: removed.reduce((total, file) => total + file.size, 0),
-    status: 'success',
-    warnings: [],
-  };
-}
-
 function normalizeOperationStatus(status?: LogOperationStatus): LogOperationStatus {
   if (status === 'success' || status === 'partial_success' || status === 'failed') {
     return status;
   }
   return 'success';
+}
+
+function normalizeReasonCode(
+  reasonCode?: LogOperationReasonCode | null,
+): LogOperationReasonCode | null {
+  if (typeof reasonCode !== 'string') {
+    return null;
+  }
+  const normalized = reasonCode.trim();
+  return normalized.length > 0 ? (normalized as LogOperationReasonCode) : null;
+}
+
+function clampInt(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, Math.floor(value)));
+}
+
+function normalizeCleanupPolicyInput(
+  policy?: LogCleanupPolicyInput,
+): LogCleanupPolicyInput | undefined {
+  if (!policy) {
+    return undefined;
+  }
+  const normalizedDays = Number.isFinite(policy.maxRetentionDays)
+    ? clampInt(policy.maxRetentionDays as number, 0, 365)
+    : undefined;
+  const normalizedSizeMb = Number.isFinite(policy.maxTotalSizeMb)
+    ? clampInt(policy.maxTotalSizeMb as number, 0, 10_000)
+    : undefined;
+  if (typeof normalizedDays !== 'number' && typeof normalizedSizeMb !== 'number') {
+    return undefined;
+  }
+  return {
+    maxRetentionDays: normalizedDays,
+    maxTotalSizeMb: normalizedSizeMb,
+  };
+}
+
+function normalizeCleanupOptions(options?: LogCleanupOptions): LogCleanupOptions | undefined {
+  if (!options) {
+    return undefined;
+  }
+  const normalizedPolicy = normalizeCleanupPolicyInput(options.policy);
+  const normalizedExpectedFingerprint =
+    typeof options.expectedPolicyFingerprint === 'string'
+      ? options.expectedPolicyFingerprint.trim()
+      : '';
+  if (!normalizedPolicy && normalizedExpectedFingerprint.length === 0) {
+    return undefined;
+  }
+  return {
+    policy: normalizedPolicy,
+    expectedPolicyFingerprint:
+      normalizedExpectedFingerprint.length > 0 ? normalizedExpectedFingerprint : undefined,
+  };
+}
+
+function normalizeMutationSummary(result: Partial<LogCleanupResult>): LogMutationSummary {
+  return {
+    deletedCount: result.deletedCount ?? 0,
+    freedBytes: result.freedBytes ?? 0,
+    protectedCount: result.protectedCount ?? 0,
+    skippedCount: result.skippedCount ?? 0,
+    status: normalizeOperationStatus(result.status),
+    reasonCode: normalizeReasonCode(result.reasonCode),
+    warnings: result.warnings ?? [],
+    policyFingerprint: result.policyFingerprint ?? null,
+    maxRetentionDays: result.maxRetentionDays ?? null,
+    maxTotalSizeMb: result.maxTotalSizeMb ?? null,
+  };
+}
+
+function normalizePreviewSummary(
+  result: Partial<LogCleanupPreviewResult>,
+): LogCleanupPreviewSummary {
+  const maxRetentionDays = result.maxRetentionDays ?? 0;
+  const maxTotalSizeMb = result.maxTotalSizeMb ?? 0;
+  const policyFingerprint =
+    typeof result.policyFingerprint === 'string' && result.policyFingerprint.trim().length > 0
+      ? result.policyFingerprint.trim()
+      : `v1:${maxRetentionDays}:${maxTotalSizeMb}`;
+  return {
+    ...normalizeMutationSummary(result),
+    policyFingerprint,
+    maxRetentionDays,
+    maxTotalSizeMb,
+  };
 }
 
 function normalizeQueryLogFileOptions(options: QueryLogFileOptions): QueryLogFileOptions {
@@ -184,21 +253,12 @@ export function useLogs() {
     }
 
     try {
-      const targetCandidates = fileName
-        ? logFiles.filter((file) => file.name === fileName)
-        : logFiles.slice(1);
-
-      await logClear(fileName);
+      const summary = normalizeMutationSummary(await logClear(fileName));
       const refreshResult = await loadLogFiles();
       if (!refreshResult.ok) {
         return refreshResult;
       }
 
-      const summary = summarizeRemovedFiles(
-        logFiles,
-        refreshResult.data,
-        targetCandidates,
-      );
       return {
         ok: true,
         data: summary,
@@ -210,7 +270,7 @@ export function useLogs() {
         error: toLogErrorMessage(error, 'Failed to clear log file'),
       } satisfies LogActionResult<never>;
     }
-  }, [loadLogFiles, logFiles]);
+  }, [loadLogFiles]);
 
   // Get log directory
   const getLogDirectory = useCallback(async () => {
@@ -350,25 +410,20 @@ export function useLogs() {
   }, []);
 
   // Run log cleanup based on configured retention policy
-  const cleanupLogs = useCallback(async () => {
+  const cleanupLogs = useCallback(async (options?: LogCleanupOptions) => {
     if (!isTauri()) {
       return { ok: false, error: 'Log cleanup is available in desktop mode only' } satisfies LogActionResult<never>;
     }
 
     try {
-      const cleanupResult = await logCleanup();
+      const cleanupResult = await logCleanup(normalizeCleanupOptions(options));
       const refreshResult = await loadLogFiles();
       if (!refreshResult.ok) {
         return refreshResult;
       }
       return {
         ok: true,
-        data: {
-          deletedCount: cleanupResult.deletedCount,
-          freedBytes: cleanupResult.freedBytes,
-          status: normalizeOperationStatus(cleanupResult.status),
-          warnings: cleanupResult.warnings ?? [],
-        },
+        data: normalizeMutationSummary(cleanupResult),
       } satisfies LogActionResult<LogMutationSummary>;
     } catch (error) {
       console.error('Failed to cleanup logs:', error);
@@ -379,22 +434,16 @@ export function useLogs() {
     }
   }, [loadLogFiles]);
 
-  const previewCleanupLogs = useCallback(async () => {
+  const previewCleanupLogs = useCallback(async (policy?: LogCleanupPolicyInput) => {
     if (!isTauri()) {
       return { ok: false, error: 'Log cleanup preview is available in desktop mode only' } satisfies LogActionResult<never>;
     }
 
     try {
-      const preview = await logCleanupPreview();
+      const preview = await logCleanupPreview(normalizeCleanupPolicyInput(policy));
       return {
         ok: true,
-        data: {
-          deletedCount: preview.deletedCount,
-          freedBytes: preview.freedBytes,
-          protectedCount: preview.protectedCount,
-          status: normalizeOperationStatus(preview.status),
-          warnings: preview.warnings ?? [],
-        },
+        data: normalizePreviewSummary(preview),
       } satisfies LogActionResult<LogCleanupPreviewSummary>;
     } catch (error) {
       console.error('Failed to preview log cleanup:', error);
@@ -412,18 +461,12 @@ export function useLogs() {
     }
 
     try {
-      const targetCandidates = logFiles.filter((file) => file.name === fileName);
-      await logDeleteFile(fileName);
+      const summary = normalizeMutationSummary(await logDeleteFile(fileName));
       const refreshResult = await loadLogFiles();
       if (!refreshResult.ok) {
         return refreshResult;
       }
 
-      const summary = summarizeRemovedFiles(
-        logFiles,
-        refreshResult.data,
-        targetCandidates,
-      );
       return {
         ok: true,
         data: summary,
@@ -435,7 +478,7 @@ export function useLogs() {
         error: toLogErrorMessage(error, 'Failed to delete log file'),
       } satisfies LogActionResult<never>;
     }
-  }, [loadLogFiles, logFiles]);
+  }, [loadLogFiles]);
 
   // Delete multiple log files at once
   const deleteLogFiles = useCallback(async (fileNames: string[]) => {
@@ -451,12 +494,7 @@ export function useLogs() {
       }
       return {
         ok: true,
-        data: {
-          deletedCount: result.deletedCount,
-          freedBytes: result.freedBytes,
-          status: normalizeOperationStatus(result.status),
-          warnings: result.warnings ?? [],
-        },
+        data: normalizeMutationSummary(result),
       } satisfies LogActionResult<LogMutationSummary>;
     } catch (error) {
       console.error('Failed to delete log files:', error);

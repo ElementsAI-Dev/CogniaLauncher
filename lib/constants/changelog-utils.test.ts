@@ -1,4 +1,10 @@
-import { getTypeColor, getTypeLabel, compareSemver } from './changelog-utils';
+import {
+  getTypeColor,
+  getTypeLabel,
+  compareSemver,
+  compareVersions,
+  parseReleaseNotesToChanges,
+} from './changelog-utils';
 
 describe('getTypeColor', () => {
   it('returns green classes for added', () => {
@@ -100,5 +106,69 @@ describe('compareSemver', () => {
   it('handles complex version comparisons', () => {
     expect(compareSemver('1.10.0', '1.9.0')).toBeGreaterThan(0);
     expect(compareSemver('0.1.0', '0.0.99')).toBeGreaterThan(0);
+  });
+
+  it('treats release as greater than prerelease', () => {
+    expect(compareSemver('1.0.0', '1.0.0-rc.1')).toBeGreaterThan(0);
+    expect(compareSemver('1.0.0-rc.1', '1.0.0')).toBeLessThan(0);
+  });
+
+  it('supports v-prefixed versions', () => {
+    expect(compareSemver('v1.2.3', '1.2.2')).toBeGreaterThan(0);
+  });
+
+  it('falls back deterministically for non-parseable versions', () => {
+    // Should not throw and should be stable.
+    expect(() => compareSemver('nightly', 'v1.0.0')).not.toThrow();
+  });
+});
+
+describe('compareVersions', () => {
+  it('matches compareSemver behavior for simple versions', () => {
+    expect(compareVersions('1.0.0', '1.0.0')).toBe(0);
+    expect(compareVersions('2.0.0', '1.0.0')).toBeGreaterThan(0);
+    expect(compareVersions('1.0.0', '2.0.0')).toBeLessThan(0);
+  });
+
+  it('orders prerelease identifiers correctly', () => {
+    expect(compareVersions('1.0.0-beta.2', '1.0.0-beta.1')).toBeGreaterThan(0);
+    expect(compareVersions('1.0.0-beta.1', '1.0.0-beta.2')).toBeLessThan(0);
+    expect(compareVersions('1.0.0-beta', '1.0.0-beta.1')).toBeLessThan(0);
+  });
+});
+
+describe('parseReleaseNotesToChanges', () => {
+  it('extracts typed changes from English headings', () => {
+    const markdown = [
+      '## Added',
+      '- New feature A',
+      '- New feature B',
+      '## Fixed',
+      '* Bug fix 1',
+      '### Changed',
+      '1. UI update',
+    ].join('\n');
+
+    expect(parseReleaseNotesToChanges(markdown)).toEqual([
+      { type: 'added', description: 'New feature A' },
+      { type: 'added', description: 'New feature B' },
+      { type: 'fixed', description: 'Bug fix 1' },
+      { type: 'changed', description: 'UI update' },
+    ]);
+  });
+
+  it('extracts typed changes from Chinese headings', () => {
+    const markdown = ['## 新增', '- 功能 A', '## 修复', '- 问题 B'].join('\n');
+    expect(parseReleaseNotesToChanges(markdown)).toEqual([
+      { type: 'added', description: '功能 A' },
+      { type: 'fixed', description: '问题 B' },
+    ]);
+  });
+
+  it('does not fabricate changes when no recognizable sections exist', () => {
+    const markdown = ['## Release Notes', '- A bullet without typed section'].join(
+      '\n',
+    );
+    expect(parseReleaseNotesToChanges(markdown)).toEqual([]);
   });
 });

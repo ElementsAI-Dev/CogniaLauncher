@@ -19,19 +19,28 @@ jest.mock('@/lib/tauri', () => ({
 describe('useTrayMenu', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockTrayGetAvailableMenuItems.mockResolvedValue(['show', 'settings', 'quit']);
-    mockTrayGetMenuConfig.mockResolvedValue({ items: ['show', 'quit'], priorityItems: [] });
+    mockTrayGetAvailableMenuItems.mockResolvedValue(['show_hide', 'settings', 'quit']);
+    mockTrayGetMenuConfig.mockResolvedValue({ items: ['show_hide', 'quit'], priorityItems: [] });
     mockTraySetMenuConfig.mockResolvedValue(undefined);
     mockTrayResetMenuConfig.mockResolvedValue(undefined);
   });
 
-  it('loads menu config and toggles non-quit item', async () => {
+  it('loads normalized menu config and derived sections', async () => {
     const { result } = renderHook(() => useTrayMenu());
     await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(result.current.enabledItems).toEqual(['show', 'quit']);
+    expect(result.current.enabledItems).toEqual(['show_hide', 'quit']);
+    expect(result.current.priorityEnabledItems).toEqual([]);
+    expect(result.current.normalEnabledItems).toEqual(['show_hide']);
+    expect(result.current.requiredEnabledItems).toEqual(['quit']);
+    expect(result.current.disabledItems).toEqual(['settings']);
+  });
+
+  it('toggles non-quit item and persists normalized config', async () => {
+    const { result } = renderHook(() => useTrayMenu());
+    await waitFor(() => expect(result.current.loading).toBe(false));
 
     act(() => {
-      result.current.handleToggle('settings' as never, true);
+      result.current.handleToggle('settings', true);
     });
 
     expect(mockTraySetMenuConfig).toHaveBeenCalled();
@@ -43,9 +52,74 @@ describe('useTrayMenu', () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     act(() => {
-      result.current.handleToggle('quit' as never, false);
+      result.current.handleToggle('quit', false);
     });
 
     expect(result.current.enabledItems).toContain('quit');
+  });
+
+  it('reorders normal items and saves once at drag end handler', async () => {
+    mockTrayGetAvailableMenuItems.mockResolvedValue([
+      'show_hide',
+      'settings',
+      'downloads',
+      'quit',
+    ]);
+    mockTrayGetMenuConfig.mockResolvedValue({
+      items: ['show_hide', 'settings', 'downloads', 'quit'],
+      priorityItems: [],
+    });
+
+    const { result } = renderHook(() => useTrayMenu());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    act(() => {
+      result.current.handleNormalReorder('downloads', 'show_hide');
+    });
+
+    expect(result.current.normalEnabledItems).toEqual([
+      'downloads',
+      'show_hide',
+      'settings',
+    ]);
+    expect(mockTraySetMenuConfig).toHaveBeenCalledWith({
+      items: ['downloads', 'show_hide', 'settings', 'quit'],
+      priorityItems: [],
+    });
+  });
+
+  it('keeps priority as an ordered enabled subset without quit', async () => {
+    mockTrayGetAvailableMenuItems.mockResolvedValue([
+      'show_hide',
+      'settings',
+      'downloads',
+      'quit',
+    ]);
+    mockTrayGetMenuConfig.mockResolvedValue({
+      items: ['show_hide', 'settings', 'downloads', 'quit'],
+      priorityItems: ['settings'],
+    });
+
+    const { result } = renderHook(() => useTrayMenu());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    act(() => {
+      result.current.handlePriorityToggle('downloads', true);
+    });
+
+    act(() => {
+      result.current.handlePriorityReorder('downloads', 'settings');
+    });
+
+    act(() => {
+      result.current.handlePriorityToggle('quit', true);
+    });
+
+    expect(result.current.priorityEnabledItems).toEqual(['downloads', 'settings']);
+    expect(result.current.priorityEnabledItems).not.toContain('quit');
+    expect(mockTraySetMenuConfig).toHaveBeenLastCalledWith({
+      items: ['downloads', 'settings', 'show_hide', 'quit'],
+      priorityItems: ['downloads', 'settings'],
+    });
   });
 });

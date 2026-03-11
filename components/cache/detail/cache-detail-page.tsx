@@ -70,6 +70,7 @@ import { ENTRIES_PER_PAGE } from '@/lib/constants/cache';
 import type { CacheDetailPageClientProps } from '@/types/cache';
 
 import { CacheDetailExternalView } from './cache-detail-external';
+import { CachePreviewDialog } from '@/components/cache/cache-preview-dialog';
 
 export function CacheDetailPageClient({ cacheType }: CacheDetailPageClientProps) {
   const { t } = useLocale();
@@ -130,8 +131,10 @@ function InternalCacheDetailView({ cacheType }: { cacheType: 'download' | 'metad
     verifying,
     useTrash,
     setUseTrash,
-    cleanConfirmOpen,
-    setCleanConfirmOpen,
+    previewOpen,
+    setPreviewOpen,
+    previewData,
+    previewLoading,
     deleteConfirmOpen,
     setDeleteConfirmOpen,
     titleKey,
@@ -139,6 +142,7 @@ function InternalCacheDetailView({ cacheType }: { cacheType: 'download' | 'metad
     cacheStats,
     totalPages,
     handleRefresh,
+    handlePreviewClean,
     handleClean,
     handleVerify,
     handleDeleteSelected,
@@ -251,7 +255,7 @@ function InternalCacheDetailView({ cacheType }: { cacheType: 'download' | 'metad
           <TooltipTrigger asChild>
             <Button
               variant="outline"
-              onClick={() => setCleanConfirmOpen(true)}
+              onClick={handlePreviewClean}
               disabled={cleaning}
             >
               <Trash2 className="h-4 w-4 mr-2" />
@@ -545,29 +549,17 @@ function InternalCacheDetailView({ cacheType }: { cacheType: 'download' | 'metad
         </DialogContent>
       </Dialog>
 
-      {/* Clean Confirm Dialog */}
-      <AlertDialog open={cleanConfirmOpen} onOpenChange={setCleanConfirmOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {t('cache.detail.cleanConfirmTitle', { type: cacheType })}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {t('cache.detail.cleanConfirmDesc', { type: cacheType })}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleClean}
-              disabled={cleaning}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {cleaning ? t('cache.clearing') : t('cache.confirmClean')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <CachePreviewDialog
+        previewOpen={previewOpen}
+        setPreviewOpen={setPreviewOpen}
+        previewData={previewData}
+        previewType={cacheType === 'download' ? 'downloads' : 'metadata'}
+        previewLoading={previewLoading}
+        useTrash={useTrash}
+        setUseTrash={setUseTrash}
+        operationLoading={cleaning ? 'clean' : null}
+        handleEnhancedClean={handleClean}
+      />
 
       {/* Batch Delete Confirm Dialog */}
       <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>

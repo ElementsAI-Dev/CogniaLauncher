@@ -105,6 +105,7 @@ export default function GitPage() {
   const {
     repoPath,
     repoInfo,
+    graphReloadKey,
     refreshAll,
     refreshByScopes: refreshGitByScopes,
     getConfigFilePath,
@@ -152,7 +153,6 @@ export default function GitPage() {
     undefined,
   );
   const [configFilePath, setConfigFilePath] = useState<string | null>(null);
-  const [graphRefreshKey, setGraphRefreshKey] = useState(0);
   const [configEditorCapability, setConfigEditorCapability] =
     useState<EditorCapabilityProbeResult | null>(null);
 
@@ -251,6 +251,7 @@ export default function GitPage() {
       "tags",
       "stashes",
       "log",
+      "graph",
       "aheadBehind",
     ]);
     void refreshAheadBehind();
@@ -270,11 +271,11 @@ export default function GitPage() {
       "branches",
       "tags",
       "log",
+      "graph",
       "aheadBehind",
     ]);
     await refreshAdvancedByScopes(["advanced"]);
     await refreshAheadBehind();
-    setGraphRefreshKey((prev) => prev + 1);
   }, [
     refreshGitByScopes,
     refreshAdvancedByScopes,
@@ -321,6 +322,7 @@ export default function GitPage() {
       "tags",
       "stashes",
       "log",
+      "graph",
       "aheadBehind",
     ]).catch(() => {});
     refreshAdvancedByScopes(["advanced"]).catch(() => {});
@@ -843,7 +845,7 @@ export default function GitPage() {
                 onSelectCommit={handleSelectCommit}
                 selectedHash={selectedCommitHash}
                 branches={git.branches}
-                refreshKey={graphRefreshKey}
+                refreshKey={graphReloadKey}
                 onCopyHash={async (hash) => {
                   await writeClipboard(hash);
                   toast.success(t("git.graph.copyHash"));

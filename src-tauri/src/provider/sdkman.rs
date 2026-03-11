@@ -149,13 +149,13 @@ pub fn parse_sdkmanrc(content: &str) -> Vec<(String, String)> {
     content
         .lines()
         .filter_map(|line| {
-            let line = line.trim();
+            let line = strip_hash_comment(line).trim();
             if line.is_empty() || line.starts_with('#') {
                 return None;
             }
             let (key, value) = line.split_once('=')?;
             let key = key.trim().to_string();
-            let value = value.trim().to_string();
+            let value = normalize_detected_version(value)?;
             if key.is_empty() || value.is_empty() {
                 return None;
             }
@@ -168,21 +168,18 @@ pub fn parse_sdkmanrc(content: &str) -> Vec<(String, String)> {
 /// Checks: java.version, maven.compiler.source, maven.compiler.target, maven.compiler.release
 pub fn extract_java_version_from_pom(content: &str) -> Option<String> {
     // Priority order: java.version > maven.compiler.release > maven.compiler.source > maven.compiler.target
-    let tags = [
-        ("<java.version>", "</java.version>"),
-        ("<maven.compiler.release>", "</maven.compiler.release>"),
-        ("<maven.compiler.source>", "</maven.compiler.source>"),
-        ("<maven.compiler.target>", "</maven.compiler.target>"),
+    let patterns = [
+        r"(?is)<java\.version>\s*([^<]+?)\s*</java\.version>",
+        r"(?is)<maven\.compiler\.release>\s*([^<]+?)\s*</maven\.compiler\.release>",
+        r"(?is)<maven\.compiler\.source>\s*([^<]+?)\s*</maven\.compiler\.source>",
+        r"(?is)<maven\.compiler\.target>\s*([^<]+?)\s*</maven\.compiler\.target>",
     ];
-    for (open, close) in &tags {
-        for line in content.lines() {
-            let trimmed = line.trim();
-            if let Some(rest) = trimmed.strip_prefix(open) {
-                if let Some(ver) = rest.strip_suffix(close) {
-                    let ver = ver.trim();
-                    if !ver.is_empty() && !ver.starts_with('$') {
-                        return Some(ver.to_string());
-                    }
+    for pattern in &patterns {
+        let re = regex::Regex::new(pattern).ok()?;
+        if let Some(caps) = re.captures(content) {
+            if let Some(value) = caps.get(1) {
+                if let Some(version) = normalize_detected_version(value.as_str()) {
+                    return Some(version);
                 }
             }
         }
@@ -214,8 +211,8 @@ pub fn extract_java_version_from_gradle(content: &str) -> Option<String> {
                 let rest = &trimmed[start + "JavaLanguageVersion.of(".len()..];
                 if let Some(end) = rest.find(')') {
                     let ver = rest[..end].trim().trim_matches('"').trim_matches('\'');
-                    if !ver.is_empty() {
-                        return Some(ver.to_string());
+                    if let Some(version) = normalize_detected_version(ver) {
+                        return Some(version);
                     }
                 }
             }
@@ -258,12 +255,36 @@ pub fn extract_gradle_wrapper_version(content: &str) -> Option<String> {
             if let Some(pos) = trimmed.find("gradle-") {
                 let rest = &trimmed[pos + "gradle-".len()..];
                 if let Some(end) = rest.find('-') {
-                    let ver = &rest[..end];
-                    if !ver.is_empty() {
-                        return Some(ver.to_string());
-                    }
+                    return normalize_detected_version(&rest[..end]);
                 }
             }
+        }
+    }
+    None
+}
+
+/// Extract Maven version from `.mvn/wrapper/maven-wrapper.properties`.
+pub fn extract_maven_wrapper_version(content: &str) -> Option<String> {
+    // distributionUrl=https://repo.maven.apache.org/.../apache-maven-3.9.9-bin.zip
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if !trimmed.starts_with("distributionUrl") {
+            continue;
+        }
+
+        let Some(pos) = trimmed.find("apache-maven-") else {
+            continue;
+        };
+
+        let rest = &trimmed[pos + "apache-maven-".len()..];
+        let end = rest
+            .find("-bin")
+            .or_else(|| rest.find("-all"))
+            .or_else(|| rest.find(".zip"))
+            .unwrap_or(rest.len());
+        let candidate = rest[..end].trim();
+        if let Some(version) = normalize_detected_version(candidate) {
+            return Some(version);
         }
     }
     None
@@ -278,9 +299,7 @@ fn extract_gradle_version_value(line: &str) -> Option<String> {
             .take_while(|c| c.is_ascii_digit() || *c == '_')
             .collect();
         let ver = ver.replace('_', ".");
-        if !ver.is_empty() {
-            return Some(ver);
-        }
+        return normalize_detected_version(&ver);
     }
     // Handle: = '17' or = "17" or = 17
     extract_gradle_quoted_value(line)
@@ -289,11 +308,13 @@ fn extract_gradle_version_value(line: &str) -> Option<String> {
 fn extract_gradle_quoted_value(line: &str) -> Option<String> {
     if let Some(eq_pos) = line.find('=') {
         let rhs = line[eq_pos + 1..].trim();
-        let ver = rhs
+        let candidate = rhs
             .trim_matches(|c: char| c == '\'' || c == '"' || c.is_whitespace())
             .to_string();
-        if !ver.is_empty() && ver.chars().next().is_some_and(|c| c.is_ascii_digit()) {
-            return Some(ver);
+        if let Some(ver) = normalize_detected_version(&candidate) {
+            if ver.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+                return Some(ver);
+            }
         }
     }
     None
@@ -303,15 +324,38 @@ fn extract_gradle_version_after_keyword(line: &str) -> Option<String> {
     // ... version "X.Y.Z" or version 'X.Y.Z'
     if let Some(pos) = line.rfind("version") {
         let rest = line[pos + "version".len()..].trim();
-        let ver = rest
+        let candidate = rest
             .trim_matches(|c: char| c == '\'' || c == '"' || c.is_whitespace() || c == '(')
             .trim_end_matches(')')
             .to_string();
-        if !ver.is_empty() && ver.chars().next().is_some_and(|c| c.is_ascii_digit()) {
-            return Some(ver);
+        if let Some(ver) = normalize_detected_version(&candidate) {
+            if ver.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+                return Some(ver);
+            }
         }
     }
     None
+}
+
+fn strip_hash_comment(line: &str) -> &str {
+    line.split('#').next().unwrap_or(line)
+}
+
+pub fn normalize_detected_version(raw: &str) -> Option<String> {
+    let candidate = raw
+        .trim()
+        .trim_matches('"')
+        .trim_matches('\'')
+        .trim()
+        .trim_end_matches(',')
+        .trim_end_matches(';')
+        .trim();
+
+    if candidate.is_empty() || candidate.starts_with('$') || candidate.starts_with("${") {
+        return None;
+    }
+
+    Some(candidate.to_string())
 }
 
 #[derive(Debug, Clone)]
@@ -1215,6 +1259,21 @@ gradle=8.5
     }
 
     #[test]
+    fn test_parse_sdkmanrc_with_inline_comments_and_invalid_values() {
+        let entries = parse_sdkmanrc(
+            r#"
+java=21.0.2-tem # default JDK
+gradle=${gradleVersion}
+maven='3.9.9'
+"#,
+        );
+
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0], ("java".to_string(), "21.0.2-tem".to_string()));
+        assert_eq!(entries[1], ("maven".to_string(), "3.9.9".to_string()));
+    }
+
+    #[test]
     fn test_extract_java_version_from_pom_java_version() {
         let pom = r#"
 <project>
@@ -1265,6 +1324,19 @@ gradle=8.5
     fn test_extract_java_version_from_pom_none() {
         let pom = "<project></project>";
         assert_eq!(extract_java_version_from_pom(pom), None);
+    }
+
+    #[test]
+    fn test_extract_java_version_from_pom_multiline_tag() {
+        let pom = r#"
+<project>
+  <properties>
+    <maven.compiler.release>
+      21
+    </maven.compiler.release>
+  </properties>
+</project>"#;
+        assert_eq!(extract_java_version_from_pom(pom), Some("21".to_string()));
     }
 
     #[test]
@@ -1370,6 +1442,26 @@ zipStorePath=wrapper/dists
         assert_eq!(
             extract_gradle_wrapper_version(props),
             Some("8.11.1".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_maven_wrapper_version_bin_zip() {
+        let props =
+            "distributionUrl=https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/3.9.9/apache-maven-3.9.9-bin.zip";
+        assert_eq!(
+            extract_maven_wrapper_version(props),
+            Some("3.9.9".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_maven_wrapper_version_all_zip() {
+        let props =
+            "distributionUrl=https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/4.0.0-beta-4/apache-maven-4.0.0-beta-4-all.zip";
+        assert_eq!(
+            extract_maven_wrapper_version(props),
+            Some("4.0.0-beta-4".to_string())
         );
     }
 

@@ -245,6 +245,27 @@ pub struct WslCapabilities {
     pub version: Option<String>,
 }
 
+/// A single runtime probe result used for staged WSL detection.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WslRuntimeProbeResult {
+    pub id: String,
+    pub command: String,
+    pub success: bool,
+    pub reason_code: String,
+    pub detail: Option<String>,
+}
+
+/// Runtime detection snapshot used by frontend readiness flows.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WslRuntimeDetection {
+    pub available: bool,
+    pub reason_code: String,
+    pub reason: String,
+    pub probes: Vec<WslRuntimeProbeResult>,
+}
+
 /// Detected environment information from inside a WSL distribution.
 ///
 /// Populated by parsing `/etc/os-release`, probing binaries, and reading
@@ -295,6 +316,264 @@ pub struct WslDistroEnvironment {
 impl WslProvider {
     pub fn new() -> Self {
         Self
+    }
+
+    fn probe_detail(output: &str) -> Option<String> {
+        let trimmed = output.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        Some(trimmed.chars().take(240).collect::<String>())
+    }
+
+    fn push_runtime_probe(
+        probes: &mut Vec<WslRuntimeProbeResult>,
+        id: &str,
+        command: &str,
+        success: bool,
+        reason_code: &str,
+        detail: Option<String>,
+    ) {
+        probes.push(WslRuntimeProbeResult {
+            id: id.to_string(),
+            command: command.to_string(),
+            success,
+            reason_code: reason_code.to_string(),
+            detail,
+        });
+    }
+
+    pub async fn detect_runtime_snapshot(&self) -> WslRuntimeDetection {
+        let mut probes: Vec<WslRuntimeProbeResult> = Vec::new();
+
+        // Probe 1: `wsl --version`
+        match execute_wsl(&["--version"], WSL_AVAIL_TIMEOUT).await {
+            Ok(out) => {
+                let combined = format!("{} {}", out.stdout, out.stderr);
+                let has_digit = combined.chars().any(|c| c.is_ascii_digit());
+                let has_marker =
+                    combined.contains('.') || combined.contains("WSL") || combined.contains("wsl");
+                if has_digit && has_marker {
+                    Self::push_runtime_probe(
+                        &mut probes,
+                        "runtime.version",
+                        "wsl --version",
+                        true,
+                        "ok",
+                        Self::probe_detail(&combined),
+                    );
+                    return WslRuntimeDetection {
+                        available: true,
+                        reason_code: "runtime_detected".to_string(),
+                        reason: "Runtime detected via `wsl --version`.".to_string(),
+                        probes,
+                    };
+                }
+                Self::push_runtime_probe(
+                    &mut probes,
+                    "runtime.version",
+                    "wsl --version",
+                    false,
+                    "version_probe_no_markers",
+                    Self::probe_detail(&combined),
+                );
+            }
+            Err(e) => {
+                Self::push_runtime_probe(
+                    &mut probes,
+                    "runtime.version",
+                    "wsl --version",
+                    false,
+                    "version_probe_exec_error",
+                    Some(e.to_string()),
+                );
+            }
+        }
+
+        // Probe 2: `wsl --status`
+        match execute_wsl(&["--status"], WSL_AVAIL_TIMEOUT).await {
+            Ok(out) => {
+                let combined = format!("{} {}", out.stdout, out.stderr);
+                let trimmed = combined.trim();
+                if !trimmed.is_empty() && trimmed.len() > 10 {
+                    let lower = trimmed.to_lowercase();
+                    let is_error = lower.contains("not recognized")
+                        || lower.contains("enable the virtual machine")
+                        || lower.contains("not installed")
+                        || lower.contains("未识别")
+                        || lower.contains("未安装");
+                    if !is_error {
+                        Self::push_runtime_probe(
+                            &mut probes,
+                            "runtime.status",
+                            "wsl --status",
+                            true,
+                            "ok",
+                            Self::probe_detail(trimmed),
+                        );
+                        return WslRuntimeDetection {
+                            available: true,
+                            reason_code: "runtime_detected".to_string(),
+                            reason: "Runtime detected via `wsl --status`.".to_string(),
+                            probes,
+                        };
+                    }
+                    Self::push_runtime_probe(
+                        &mut probes,
+                        "runtime.status",
+                        "wsl --status",
+                        false,
+                        "status_probe_error_output",
+                        Self::probe_detail(trimmed),
+                    );
+                } else {
+                    Self::push_runtime_probe(
+                        &mut probes,
+                        "runtime.status",
+                        "wsl --status",
+                        false,
+                        "status_probe_empty_output",
+                        Self::probe_detail(trimmed),
+                    );
+                }
+            }
+            Err(e) => {
+                Self::push_runtime_probe(
+                    &mut probes,
+                    "runtime.status",
+                    "wsl --status",
+                    false,
+                    "status_probe_exec_error",
+                    Some(e.to_string()),
+                );
+            }
+        }
+
+        // Probe 3: `wsl --help`
+        match execute_wsl(&["--help"], WSL_AVAIL_TIMEOUT).await {
+            Ok(out) => {
+                let combined = format!("{}{}", out.stdout, out.stderr);
+                if !combined.trim().is_empty() {
+                    Self::push_runtime_probe(
+                        &mut probes,
+                        "runtime.help",
+                        "wsl --help",
+                        true,
+                        "ok",
+                        Self::probe_detail(&combined),
+                    );
+                    return WslRuntimeDetection {
+                        available: true,
+                        reason_code: "runtime_detected".to_string(),
+                        reason: "Runtime detected via `wsl --help`.".to_string(),
+                        probes,
+                    };
+                }
+                Self::push_runtime_probe(
+                    &mut probes,
+                    "runtime.help",
+                    "wsl --help",
+                    false,
+                    "help_probe_empty_output",
+                    None,
+                );
+            }
+            Err(e) => {
+                Self::push_runtime_probe(
+                    &mut probes,
+                    "runtime.help",
+                    "wsl --help",
+                    false,
+                    "help_probe_exec_error",
+                    Some(e.to_string()),
+                );
+            }
+        }
+
+        // Probe 4: absolute path fallback
+        #[cfg(windows)]
+        {
+            let abs_path = "C:\\Windows\\System32\\wsl.exe";
+            let exists = std::path::Path::new(abs_path).exists();
+            if !exists {
+                Self::push_runtime_probe(
+                    &mut probes,
+                    "runtime.absolutePath",
+                    "C:\\Windows\\System32\\wsl.exe --help",
+                    false,
+                    "absolute_path_missing",
+                    Some("wsl.exe was not found in System32.".to_string()),
+                );
+            } else {
+                match TokioCommand::new(abs_path)
+                    .arg("--help")
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .creation_flags(0x08000000) // CREATE_NO_WINDOW
+                    .output()
+                    .await
+                {
+                    Ok(output) => {
+                        let stdout = decode_wsl_bytes(&output.stdout);
+                        let stderr = decode_wsl_bytes(&output.stderr);
+                        let combined = format!("{}{}", stdout, stderr);
+                        if !combined.trim().is_empty() {
+                            Self::push_runtime_probe(
+                                &mut probes,
+                                "runtime.absolutePath",
+                                "C:\\Windows\\System32\\wsl.exe --help",
+                                true,
+                                "ok",
+                                Self::probe_detail(&combined),
+                            );
+                            return WslRuntimeDetection {
+                                available: true,
+                                reason_code: "runtime_detected".to_string(),
+                                reason: "Runtime detected via absolute-path fallback.".to_string(),
+                                probes,
+                            };
+                        }
+                        Self::push_runtime_probe(
+                            &mut probes,
+                            "runtime.absolutePath",
+                            "C:\\Windows\\System32\\wsl.exe --help",
+                            false,
+                            "absolute_path_empty_output",
+                            None,
+                        );
+                    }
+                    Err(e) => {
+                        Self::push_runtime_probe(
+                            &mut probes,
+                            "runtime.absolutePath",
+                            "C:\\Windows\\System32\\wsl.exe --help",
+                            false,
+                            "absolute_path_spawn_error",
+                            Some(e.to_string()),
+                        );
+                    }
+                }
+            }
+        }
+
+        #[cfg(not(windows))]
+        {
+            Self::push_runtime_probe(
+                &mut probes,
+                "runtime.absolutePath",
+                "C:\\Windows\\System32\\wsl.exe --help",
+                false,
+                "unsupported_platform",
+                Some("Absolute-path fallback is only available on Windows.".to_string()),
+            );
+        }
+
+        WslRuntimeDetection {
+            available: false,
+            reason_code: "runtime_unavailable".to_string(),
+            reason: "WSL runtime could not be detected by any probe.".to_string(),
+            probes,
+        }
     }
 
     /// Execute a wsl.exe command and return stdout on success.
@@ -2483,139 +2762,15 @@ impl Provider for WslProvider {
     }
 
     async fn is_available(&self) -> bool {
-        // Multi-step detection strategy, ordered by reliability:
-        // 1. `wsl --version` — most reliable, available on Store-installed WSL 2.x
-        // 2. `wsl --status` — available on modern WSL (may be missing on inbox/legacy)
-        // 3. `wsl --help` — universally available if wsl.exe exists at all
-        //
-        // Uses positive pattern matching (look for version-like output) instead of
-        // fragile negative matching against localized error strings.
-
-        // Step 1: Try `wsl --version` (best indicator of a working WSL installation)
-        log::debug!("[WSL] is_available: Step 1 — trying wsl --version");
-        match execute_wsl(&["--version"], WSL_AVAIL_TIMEOUT).await {
-            Ok(out) => {
-                let combined = format!("{} {}", out.stdout, out.stderr);
-                log::debug!(
-                    "[WSL] --version exit_code={}, success={}, stdout_len={}, stderr_len={}, combined_first_200='{}'",
-                    out.exit_code,
-                    out.success,
-                    out.stdout.len(),
-                    out.stderr.len(),
-                    &combined.chars().take(200).collect::<String>()
-                );
-                let has_digit = combined.chars().any(|c| c.is_ascii_digit());
-                let has_marker =
-                    combined.contains('.') || combined.contains("WSL") || combined.contains("wsl");
-                if has_digit && has_marker {
-                    log::debug!(
-                        "[WSL] is_available: Step 1 PASSED (has_digit={}, has_marker={})",
-                        has_digit,
-                        has_marker
-                    );
-                    return true;
-                }
-                log::debug!("[WSL] is_available: Step 1 failed positive check (has_digit={}, has_marker={})", has_digit, has_marker);
-            }
-            Err(e) => {
-                log::debug!("[WSL] is_available: Step 1 execute_wsl error: {}", e);
-            }
-        }
-
-        // Step 2: Try `wsl --status` (modern WSL, may not exist on older inbox versions)
-        log::debug!("[WSL] is_available: Step 2 — trying wsl --status");
-        match execute_wsl(&["--status"], WSL_AVAIL_TIMEOUT).await {
-            Ok(out) => {
-                let combined = format!("{} {}", out.stdout, out.stderr);
-                let trimmed = combined.trim();
-                log::debug!(
-                    "[WSL] --status exit_code={}, trimmed_len={}, first_200='{}'",
-                    out.exit_code,
-                    trimmed.len(),
-                    &trimmed.chars().take(200).collect::<String>()
-                );
-                if !trimmed.is_empty() && trimmed.len() > 10 {
-                    let lower = trimmed.to_lowercase();
-                    let is_error = lower.contains("not recognized")
-                        || lower.contains("enable the virtual machine")
-                        || lower.contains("not installed");
-                    if !is_error {
-                        log::debug!("[WSL] is_available: Step 2 PASSED");
-                        return true;
-                    }
-                    log::debug!("[WSL] is_available: Step 2 failed — error indicator found");
-                } else {
-                    log::debug!("[WSL] is_available: Step 2 failed — output too short or empty");
-                }
-            }
-            Err(e) => {
-                log::debug!("[WSL] is_available: Step 2 execute_wsl error: {}", e);
-            }
-        }
-
-        // Step 3: Try `wsl --help` (universally supported if wsl.exe exists)
-        log::debug!("[WSL] is_available: Step 3 — trying wsl --help");
-        match execute_wsl(&["--help"], WSL_AVAIL_TIMEOUT).await {
-            Ok(out) => {
-                let combined = format!("{}{}", out.stdout, out.stderr);
-                log::debug!(
-                    "[WSL] --help exit_code={}, combined_len={}, non_empty={}",
-                    out.exit_code,
-                    combined.len(),
-                    !combined.trim().is_empty()
-                );
-                if !combined.trim().is_empty() {
-                    log::debug!("[WSL] is_available: Step 3 PASSED");
-                    return true;
-                }
-            }
-            Err(e) => {
-                log::debug!("[WSL] is_available: Step 3 execute_wsl error: {}", e);
-            }
-        }
-
-        // Step 4: Absolute path fallback — try C:\Windows\System32\wsl.exe directly
-        #[cfg(windows)]
-        {
-            let abs_path = "C:\\Windows\\System32\\wsl.exe";
-            let exists = std::path::Path::new(abs_path).exists();
+        let snapshot = self.detect_runtime_snapshot().await;
+        if !snapshot.available {
             log::debug!(
-                "[WSL] is_available: Step 4 — absolute path fallback, exists={}",
-                exists
+                "[WSL] is_available: runtime unavailable (reason_code={}, reason={})",
+                snapshot.reason_code,
+                snapshot.reason
             );
-            if exists {
-                match TokioCommand::new(abs_path)
-                    .arg("--help")
-                    .stdout(Stdio::piped())
-                    .stderr(Stdio::piped())
-                    .creation_flags(0x08000000) // CREATE_NO_WINDOW
-                    .output()
-                    .await
-                {
-                    Ok(output) => {
-                        let stdout = decode_wsl_bytes(&output.stdout);
-                        let stderr = decode_wsl_bytes(&output.stderr);
-                        let combined = format!("{}{}", stdout, stderr);
-                        log::debug!(
-                            "[WSL] abs_path --help: status={:?}, combined_len={}, non_empty={}",
-                            output.status.code(),
-                            combined.len(),
-                            !combined.trim().is_empty()
-                        );
-                        if !combined.trim().is_empty() {
-                            log::debug!("[WSL] is_available: Step 4 PASSED");
-                            return true;
-                        }
-                    }
-                    Err(e) => {
-                        log::debug!("[WSL] is_available: Step 4 spawn error: {}", e);
-                    }
-                }
-            }
         }
-
-        log::debug!("[WSL] is_available: ALL STEPS FAILED — returning false");
-        false
+        snapshot.available
     }
 
     /// Search for available WSL distributions.

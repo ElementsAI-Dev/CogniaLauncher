@@ -46,6 +46,7 @@ describe('WslStatusWidget', () => {
       status: null,
       runningCount: 0,
       completeness: { state: 'unavailable', available: false, distroCount: 0, runningCount: 0, degradedReasons: [] },
+      runtimeSnapshot: null,
     });
   });
 
@@ -56,6 +57,7 @@ describe('WslStatusWidget', () => {
       status: null,
       runningCount: 0,
       completeness: { state: 'degraded', available: false, distroCount: 0, runningCount: 0, degradedReasons: [] },
+      runtimeSnapshot: null,
     });
 
     render(<WslStatusWidget />);
@@ -65,6 +67,31 @@ describe('WslStatusWidget', () => {
   it('renders not available message when WSL is unavailable', () => {
     render(<WslStatusWidget />);
     expect(screen.getByText('WSL is not available on this system')).toBeInTheDocument();
+  });
+
+  it('renders runtime snapshot reason when unavailable reason is provided', () => {
+    mockUseWslStatus.mockReturnValue({
+      available: false,
+      distros: [],
+      status: null,
+      runningCount: 0,
+      completeness: { state: 'unavailable', available: false, distroCount: 0, runningCount: 0, degradedReasons: [] },
+      runtimeSnapshot: {
+        state: 'unavailable',
+        available: false,
+        reasonCode: 'runtime_unavailable',
+        reason: 'WSL runtime could not be detected by any probe.',
+        runtimeProbes: [],
+        statusProbe: { ready: false, reasonCode: 'runtime_unavailable' },
+        capabilityProbe: { ready: false, reasonCode: 'runtime_unavailable' },
+        distroProbe: { ready: false, reasonCode: 'runtime_unavailable' },
+        distroCount: 0,
+        degradedReasons: ['WSL runtime could not be detected by any probe.'],
+      },
+    });
+
+    render(<WslStatusWidget />);
+    expect(screen.getByText('WSL runtime could not be detected by any probe.')).toBeInTheDocument();
   });
 
   it('renders loaded metrics when WSL is available', () => {
@@ -77,6 +104,7 @@ describe('WslStatusWidget', () => {
       status: { defaultVersion: 2, kernelVersion: '5.15.0', version: '2.2.4' },
       runningCount: 1,
       completeness: { state: 'ready', available: true, distroCount: 2, runningCount: 1, degradedReasons: [] },
+      runtimeSnapshot: null,
     });
 
     render(<WslStatusWidget />);
@@ -97,6 +125,7 @@ describe('WslStatusWidget', () => {
       status: { defaultVersion: 2, kernelVersion: '5.15.0', version: '2.2.4' },
       runningCount: 0,
       completeness: { state: 'empty', available: true, distroCount: 0, runningCount: 0, degradedReasons: [] },
+      runtimeSnapshot: null,
     });
 
     render(<WslStatusWidget />);

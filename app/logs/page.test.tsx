@@ -63,17 +63,31 @@ jest.mock('@/components/providers/locale-provider', () => ({
         'logs.currentSession': 'Current Session',
         'logs.management': 'Management',
         'logs.deleteSelected': 'Delete Selected',
+        'logs.deleteConfirmTitle': 'Confirm log deletion',
         'logs.deleteSuccess': 'Deleted {count} log file(s)',
         'logs.deleteFailed': 'Delete failed',
         'logs.cleanupSuccess': 'Cleaned up {count} files, freed {size}',
         'logs.cleanupNone': 'No log files need cleanup',
         'logs.partialWarning': '{count} warning(s) occurred',
+        'logs.currentSessionProtectedNotice': 'Current session log is protected and may be skipped.',
+        'logs.cleanupSummaryTitle': 'Cleanup result',
+        'logs.deleteSummaryTitle': 'Delete result',
+        'logs.statusSuccess': 'Success',
+        'logs.statusPartialSuccess': 'Partial success',
+        'logs.statusFailed': 'Failed',
+        'logs.resultSummaryMetrics':
+          'Deleted {deleted} file(s), freed {size}, protected {protected}, skipped {skipped}.',
+        'logs.reasonCurrentSessionProtected': 'Current session log is protected.',
+        'logs.reasonLogFileNotFound': 'Target log file was not found.',
+        'logs.reasonLogDeleteFailed': 'Log deletion failed.',
+        'logs.reasonStalePolicyContext': 'Policy changed since preview. Refresh preview and retry.',
         'logs.copyPathSuccess': 'Path copied to clipboard',
         'logs.copyPathFailed': 'Failed to copy path',
         'logs.clear': 'Clear logs',
         'logs.pageSize': 'Per page',
         'logs.pageInfo': 'Page {current} of {total}',
         'common.refresh': 'Refresh',
+        'common.cancel': 'Cancel',
         'common.previous': 'Previous',
         'common.next': 'Next',
         'common.delete': 'Delete',
@@ -169,13 +183,80 @@ describe('LogsPage', () => {
     mockSelectedLogFile = null;
     mockLoadLogFiles.mockResolvedValue({ ok: true, data: defaultFiles });
     mockGetLogDirectory.mockResolvedValue({ ok: true, data: '' });
-    mockDeleteLogFiles.mockResolvedValue({ ok: true, data: { deletedCount: 0, freedBytes: 0 } });
-    mockDeleteLogFile.mockResolvedValue({ ok: true, data: { deletedCount: 1, freedBytes: 512 } });
-    mockClearLogFile.mockResolvedValue({ ok: true, data: { deletedCount: 1, freedBytes: 512 } });
-    mockCleanupLogs.mockResolvedValue({ ok: true, data: { deletedCount: 1, freedBytes: 512 } });
+    mockDeleteLogFiles.mockResolvedValue({
+      ok: true,
+      data: {
+        deletedCount: 0,
+        freedBytes: 0,
+        protectedCount: 0,
+        skippedCount: 0,
+        status: 'success',
+        reasonCode: null,
+        warnings: [],
+        policyFingerprint: null,
+        maxRetentionDays: null,
+        maxTotalSizeMb: null,
+      },
+    });
+    mockDeleteLogFile.mockResolvedValue({
+      ok: true,
+      data: {
+        deletedCount: 1,
+        freedBytes: 512,
+        protectedCount: 0,
+        skippedCount: 0,
+        status: 'success',
+        reasonCode: null,
+        warnings: [],
+        policyFingerprint: null,
+        maxRetentionDays: null,
+        maxTotalSizeMb: null,
+      },
+    });
+    mockClearLogFile.mockResolvedValue({
+      ok: true,
+      data: {
+        deletedCount: 1,
+        freedBytes: 512,
+        protectedCount: 0,
+        skippedCount: 0,
+        status: 'success',
+        reasonCode: null,
+        warnings: [],
+        policyFingerprint: null,
+        maxRetentionDays: null,
+        maxTotalSizeMb: null,
+      },
+    });
+    mockCleanupLogs.mockResolvedValue({
+      ok: true,
+      data: {
+        deletedCount: 1,
+        freedBytes: 512,
+        protectedCount: 0,
+        skippedCount: 0,
+        status: 'success',
+        reasonCode: null,
+        warnings: [],
+        policyFingerprint: 'v1:30:100',
+        maxRetentionDays: 30,
+        maxTotalSizeMb: 100,
+      },
+    });
     mockPreviewCleanupLogs.mockResolvedValue({
       ok: true,
-      data: { deletedCount: 1, freedBytes: 512, protectedCount: 1, status: 'success', warnings: [] },
+      data: {
+        deletedCount: 1,
+        freedBytes: 512,
+        protectedCount: 1,
+        skippedCount: 1,
+        status: 'success',
+        reasonCode: null,
+        warnings: [],
+        policyFingerprint: 'v1:30:100',
+        maxRetentionDays: 30,
+        maxTotalSizeMb: 100,
+      },
     });
     mockExportLogFile.mockResolvedValue({
       ok: true,
@@ -354,7 +435,7 @@ describe('LogsPage', () => {
     expect(viewer).toHaveTextContent(defaultFiles[1].name);
   });
 
-  it('triggers single-file delete for historical file', async () => {
+  it('requires confirmation before single-file delete', async () => {
     const user = userEvent.setup();
     mockIsTauri = true;
 
@@ -364,6 +445,10 @@ describe('LogsPage', () => {
     const rows = await screen.findAllByTestId('log-file-row');
     const deleteBtn = within(rows[1]).getByTitle('Delete');
     await user.click(deleteBtn);
+    expect(screen.getByText('Confirm log deletion')).toBeInTheDocument();
+
+    const confirmDialog = await screen.findByRole('alertdialog');
+    await user.click(within(confirmDialog).getByRole('button', { name: 'Delete' }));
 
     await waitFor(() => {
       expect(mockDeleteLogFile).toHaveBeenCalledWith(defaultFiles[1].name);
@@ -382,9 +467,53 @@ describe('LogsPage', () => {
     const checkboxes = await screen.findAllByRole('checkbox');
     await user.click(checkboxes[0]);
     await user.click(screen.getByRole('button', { name: /Delete Selected/i }));
+    expect(screen.getByText('Current session log is protected and may be skipped.')).toBeInTheDocument();
+    const confirmDialog = await screen.findByRole('alertdialog');
+    await user.click(within(confirmDialog).getByRole('button', { name: 'Delete' }));
 
     await waitFor(() => {
       expect(toast.error).toHaveBeenCalledWith('Delete failed');
     });
+  });
+
+  it('surfaces partial-success delete feedback in persistent summary', async () => {
+    const user = userEvent.setup();
+    mockIsTauri = true;
+    mockDeleteLogFiles.mockResolvedValue({
+      ok: true,
+      data: {
+        deletedCount: 1,
+        freedBytes: 512,
+        protectedCount: 1,
+        skippedCount: 1,
+        status: 'partial_success',
+        reasonCode: 'current_session_protected',
+        warnings: ['Skipped current session log file: app.log'],
+        policyFingerprint: null,
+        maxRetentionDays: null,
+        maxTotalSizeMb: null,
+      },
+    });
+
+    render(<LogsPage />);
+    await user.click(screen.getByRole('tab', { name: /Files/ }));
+
+    const checkboxes = await screen.findAllByRole('checkbox');
+    await user.click(checkboxes[0]);
+    await user.click(screen.getByRole('button', { name: /Delete Selected/i }));
+
+    const confirmDialog = await screen.findByRole('alertdialog');
+    await user.click(within(confirmDialog).getByRole('button', { name: 'Delete' }));
+
+    await waitFor(() => {
+      expect(mockDeleteLogFiles).toHaveBeenCalled();
+      expect(toast.success).toHaveBeenCalledWith('Deleted 1 log file(s)');
+      expect(toast.info).toHaveBeenCalledWith('1 warning(s) occurred');
+    });
+
+    const summary = screen.getByTestId('logs-result-summary');
+    expect(summary).toHaveTextContent('Delete result');
+    expect(summary).toHaveTextContent('Partial success');
+    expect(summary).toHaveTextContent('protected 1');
   });
 });

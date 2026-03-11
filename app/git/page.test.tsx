@@ -87,6 +87,7 @@ jest.mock('@/hooks/use-git', () => ({
     contributors: [],
     statusFiles: [],
     lastActionResult: null,
+    graphReloadKey: 0,
     historyState: {
       log: { query: null, loading: false, empty: false, resultCount: 0, hasMore: false, error: null, updatedAt: null },
       search: { query: null, loading: false, empty: false, resultCount: 0, hasMore: false, error: null, updatedAt: null },
@@ -311,12 +312,27 @@ jest.mock('@/components/git', () => ({
   GitEmptyState: () => <div data-testid="empty-state">empty</div>,
   GitNotAvailable: () => <div data-testid="not-available">not-available</div>,
   GitRepoInfoCard: () => <div data-testid="repo-info">repo-info</div>,
-  GitCommitDetail: () => <div data-testid="commit-detail">commit-detail</div>,
+  GitCommitDetail: ({ hash }: { hash?: string | null }) => (
+    <div data-testid="commit-detail">{hash ?? 'commit-detail'}</div>
+  ),
   GitStatusFiles: () => <div data-testid="status-files">status-files</div>,
   GitSearchCommits: () => <div data-testid="search-commits">search-commits</div>,
-  GitCommitGraph: ({ onResetTo }: { onResetTo?: (hash: string) => void }) => (
+  GitCommitGraph: ({
+    onResetTo,
+    onSelectCommit,
+    selectedHash,
+    refreshKey,
+  }: {
+    onResetTo?: (hash: string) => void;
+    onSelectCommit?: (hash: string) => void;
+    selectedHash?: string | null;
+    refreshKey?: number;
+  }) => (
     <div data-testid="commit-graph">
       graph
+      <div data-testid="graph-refresh">{String(refreshKey ?? '')}</div>
+      <div data-testid="graph-selected">{String(selectedHash ?? '')}</div>
+      <button data-testid="select-from-graph" onClick={() => onSelectCommit?.('abc1234')}>select</button>
       <button data-testid="reset-from-graph" onClick={() => onResetTo?.('abc1234')}>reset</button>
     </div>
   ),
@@ -477,12 +493,31 @@ describe('GitPage', () => {
   it('wires commit graph reset action to resetHead', async () => {
     const user = userEvent.setup();
     await renderGitPage();
+    const prevRefreshScopes = mockRefreshGitByScopes.mock.calls.length;
 
     await user.click(screen.getByRole('tab', { name: /graph/i }));
+    expect(screen.getByTestId('graph-refresh')).toHaveTextContent('0');
     await user.click(screen.getByTestId('reset-from-graph'));
 
     await waitFor(() => {
       expect(mockResetHead).toHaveBeenCalledWith('mixed', 'abc1234', true);
+      expect(mockRefreshGitByScopes.mock.calls.length).toBeGreaterThan(prevRefreshScopes);
+    });
+    expect(mockRefreshGitByScopes).toHaveBeenCalledWith(
+      expect.arrayContaining(['graph']),
+    );
+  });
+
+  it('uses shared commit selection when graph entry is selected', async () => {
+    const user = userEvent.setup();
+    await renderGitPage();
+
+    await user.click(screen.getByRole('tab', { name: /graph/i }));
+    await user.click(screen.getByTestId('select-from-graph'));
+
+    await waitFor(() => {
+      expect(mockGetCommitDetail).toHaveBeenCalledWith('abc1234');
+      expect(screen.getByTestId('graph-selected')).toHaveTextContent('abc1234');
     });
   });
 
@@ -498,6 +533,9 @@ describe('GitPage', () => {
       expect(mockResetHead).toHaveBeenCalledWith('hard', 'def5678', true);
       expect(mockRefreshGitByScopes.mock.calls.length).toBeGreaterThan(prevRefreshScopes);
     });
+    expect(mockRefreshGitByScopes).toHaveBeenCalledWith(
+      expect.arrayContaining(['graph']),
+    );
   });
 
   it('uses shared commit selection when reflog entry is selected', async () => {
@@ -540,6 +578,9 @@ describe('GitPage', () => {
       expect(mockRefreshGitByScopes.mock.calls.length).toBeGreaterThan(prevRefreshScopes);
       expect(mockRefreshAdvancedByScopes.mock.calls.length).toBeGreaterThan(prevAdvancedScopes);
     });
+    expect(mockRefreshGitByScopes).toHaveBeenCalledWith(
+      expect.arrayContaining(['graph']),
+    );
   });
 
   it('wires commit action and refreshes graph-related data', async () => {
@@ -556,6 +597,9 @@ describe('GitPage', () => {
       expect(mockRefreshGitByScopes.mock.calls.length).toBeGreaterThan(prevRefreshScopes);
       expect(mockRefreshAdvancedByScopes.mock.calls.length).toBeGreaterThan(prevAdvancedScopes);
     });
+    expect(mockRefreshGitByScopes).toHaveBeenCalledWith(
+      expect.arrayContaining(['graph']),
+    );
   });
 });
 

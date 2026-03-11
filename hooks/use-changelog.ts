@@ -3,7 +3,10 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { isTauri } from '@/lib/platform';
 import { getChangelog } from '@/lib/constants/about';
-import { compareSemver } from '@/lib/constants/changelog-utils';
+import {
+  compareVersions,
+  parseReleaseNotesToChanges,
+} from '@/lib/constants/changelog-utils';
 import type { ChangelogEntry } from '@/lib/constants/about';
 import type { GitHubReleaseInfo } from '@/types/github';
 
@@ -26,7 +29,7 @@ function releaseToEntry(release: GitHubReleaseInfo): ChangelogEntry {
   return {
     version,
     date,
-    changes: [],
+    changes: release.body ? parseReleaseNotesToChanges(release.body) : [],
     markdownBody: release.body || undefined,
     prerelease: release.prerelease,
     url: `https://github.com/${GITHUB_REPO}/releases/tag/${release.tagName}`,
@@ -159,9 +162,14 @@ function mergeEntries(
   for (const entry of remote) {
     const existing = versionMap.get(entry.version);
     if (existing && existing.source === 'local') {
-      // Merge: keep local structured changes, add remote markdown + metadata
+      const mergedChanges =
+        existing.changes.length > 0 ? existing.changes : entry.changes;
+
+      // Merge: keep bundled structured changes when present; otherwise use parsed remote changes.
+      // Always attach remote metadata when available.
       versionMap.set(entry.version, {
         ...existing,
+        changes: mergedChanges,
         markdownBody: entry.markdownBody,
         prerelease: entry.prerelease,
         url: entry.url,
@@ -172,8 +180,8 @@ function mergeEntries(
     }
   }
 
-  // Sort by semantic version descending
+  // Sort by version-like semantics descending (newest first)
   return Array.from(versionMap.values()).sort((a, b) =>
-    compareSemver(b.version, a.version),
+    compareVersions(b.version, a.version),
   );
 }

@@ -150,11 +150,23 @@ describe('useLogs', () => {
   });
 
   it('clears historical logs and returns deleted summary', async () => {
+    const clearResult = {
+      deletedCount: 1,
+      freedBytes: 500,
+      protectedCount: 0,
+      skippedCount: 0,
+      status: 'success',
+      reasonCode: null,
+      warnings: [],
+      policyFingerprint: null,
+      maxRetentionDays: null,
+      maxTotalSizeMb: null,
+    };
     mockStoreLogFiles = [
       { name: 'current.log', path: 'current.log', size: 1000, modified: 2 },
       { name: 'old.log', path: 'old.log', size: 500, modified: 1 },
     ];
-    mockLogClear.mockResolvedValue(undefined);
+    mockLogClear.mockResolvedValue(clearResult);
     mockLogListFiles.mockResolvedValue([
       { name: 'current.log', path: 'current.log', size: 1000, modified: 2 },
     ]);
@@ -168,7 +180,7 @@ describe('useLogs', () => {
     expect(mockLogClear).toHaveBeenCalledWith(undefined);
     expect(response).toEqual({
       ok: true,
-      data: { deletedCount: 1, freedBytes: 500, status: 'success', warnings: [] },
+      data: clearResult,
     });
   });
 
@@ -186,7 +198,18 @@ describe('useLogs', () => {
   });
 
   it('runs cleanup and reloads files', async () => {
-    const cleanupResult = { deletedCount: 3, freedBytes: 1024, status: 'success', warnings: [] };
+    const cleanupResult = {
+      deletedCount: 3,
+      freedBytes: 1024,
+      protectedCount: 0,
+      skippedCount: 0,
+      status: 'success',
+      reasonCode: null,
+      warnings: [],
+      policyFingerprint: null,
+      maxRetentionDays: null,
+      maxTotalSizeMb: null,
+    };
     mockLogCleanup.mockResolvedValue(cleanupResult);
     mockLogListFiles.mockResolvedValue([]);
     const { result } = renderHook(() => useLogs());
@@ -202,11 +225,23 @@ describe('useLogs', () => {
   });
 
   it('deletes a specific log file and returns deleted summary', async () => {
+    const deleteResult = {
+      deletedCount: 1,
+      freedBytes: 256,
+      protectedCount: 0,
+      skippedCount: 0,
+      status: 'success',
+      reasonCode: null,
+      warnings: [],
+      policyFingerprint: null,
+      maxRetentionDays: null,
+      maxTotalSizeMb: null,
+    };
     mockStoreLogFiles = [
       { name: 'current.log', path: 'current.log', size: 1000, modified: 2 },
       { name: 'history.log', path: 'history.log', size: 256, modified: 1 },
     ];
-    mockLogDeleteFile.mockResolvedValue(undefined);
+    mockLogDeleteFile.mockResolvedValue(deleteResult);
     mockLogListFiles.mockResolvedValue([
       { name: 'current.log', path: 'current.log', size: 1000, modified: 2 },
     ]);
@@ -220,12 +255,23 @@ describe('useLogs', () => {
     expect(mockLogDeleteFile).toHaveBeenCalledWith('history.log');
     expect(response).toEqual({
       ok: true,
-      data: { deletedCount: 1, freedBytes: 256, status: 'success', warnings: [] },
+      data: deleteResult,
     });
   });
 
   it('batch deletes log files and returns backend summary', async () => {
-    const batchResult = { deletedCount: 2, freedBytes: 2048, status: 'partial_success', warnings: ['Skipped current session log file: a.log'] };
+    const batchResult = {
+      deletedCount: 2,
+      freedBytes: 2048,
+      protectedCount: 0,
+      skippedCount: 0,
+      status: 'partial_success',
+      reasonCode: null,
+      warnings: ['Skipped current session log file: a.log'],
+      policyFingerprint: null,
+      maxRetentionDays: null,
+      maxTotalSizeMb: null,
+    };
     mockLogDeleteBatch.mockResolvedValue(batchResult);
     mockLogListFiles.mockResolvedValue([]);
     const { result } = renderHook(() => useLogs());
@@ -241,7 +287,18 @@ describe('useLogs', () => {
   });
 
   it('previews cleanup and returns structured summary', async () => {
-    const previewResult = { deletedCount: 2, freedBytes: 900, protectedCount: 1, status: 'success', warnings: [] };
+    const previewResult = {
+      deletedCount: 2,
+      freedBytes: 900,
+      protectedCount: 1,
+      skippedCount: 0,
+      status: 'success',
+      reasonCode: null,
+      warnings: [],
+      policyFingerprint: 'v1:0:0',
+      maxRetentionDays: 0,
+      maxTotalSizeMb: 0,
+    };
     mockLogCleanupPreview.mockResolvedValue(previewResult);
     const { result } = renderHook(() => useLogs());
 

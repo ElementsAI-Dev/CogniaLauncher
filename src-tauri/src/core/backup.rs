@@ -9,6 +9,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::LazyLock;
 
 // ============================================================================
 // Types
@@ -247,6 +248,186 @@ fn issue(
     }
 }
 
+static BACKUP_MUTATION_GATE: LazyLock<tokio::sync::Mutex<()>> =
+    LazyLock::new(|| tokio::sync::Mutex::new(()));
+
+fn mutation_in_progress_error(operation: &str) -> String {
+    format!(
+        "Backup mutation '{}' is already running; wait for completion and retry",
+        operation
+    )
+}
+
+fn mutation_in_progress_issue(operation: &str) -> BackupOperationIssue {
+    issue(
+        "operation_in_progress",
+        mutation_in_progress_error(operation),
+        None,
+    )
+}
+
+fn empty_manifest(note: Option<&str>) -> BackupManifest {
+    BackupManifest {
+        format_version: 1,
+        app_version: env!("CARGO_PKG_VERSION").to_string(),
+        created_at: Utc::now().to_rfc3339(),
+        platform: std::env::consts::OS.to_string(),
+        hostname: "unknown".to_string(),
+        contents: vec![],
+        file_checksums: HashMap::new(),
+        total_size: 0,
+        note: note.map(|s| s.to_string()),
+        auto_generated: false,
+    }
+}
+
+fn operation_failure_reason(operation: &str, err: &CogniaError) -> String {
+    let fallback = format!("backup_{}_failed", operation);
+    match err {
+        CogniaError::PermissionDenied(_) => format!("backup_{}_permission_denied", operation),
+        CogniaError::Io(io_err) => match io_err.kind() {
+            std::io::ErrorKind::PermissionDenied => {
+                format!("backup_{}_permission_denied", operation)
+            }
+            std::io::ErrorKind::NotFound
+            | std::io::ErrorKind::InvalidInput
+            | std::io::ErrorKind::NotADirectory
+            | std::io::ErrorKind::AlreadyExists => format!("backup_{}_path_error", operation),
+            _ => fallback,
+        },
+        CogniaError::Internal(message) => {
+            let lower = message.to_ascii_lowercase();
+            if lower.contains("already exists") || lower.contains("conflict") {
+                format!("backup_{}_path_conflict", operation)
+            } else if lower.contains("permission") || lower.contains("access denied") {
+                format!("backup_{}_permission_denied", operation)
+            } else if lower.contains("path")
+                || lower.contains("manifest")
+                || lower.contains("not found")
+                || lower.contains("zip")
+            {
+                format!("backup_{}_path_error", operation)
+            } else {
+                fallback
+            }
+        }
+        _ => fallback,
+    }
+}
+
+fn normalize_cleanup_policy(
+    max_count: u32,
+    max_age_days: u32,
+) -> (u32, u32, Vec<BackupOperationIssue>) {
+    let mut issues = Vec::new();
+
+    let normalized_max_count = if max_count > 1000 {
+        issues.push(issue(
+            "cleanup_max_count_clamped",
+            format!(
+                "max_count={} exceeds supported limit; clamped to 1000",
+                max_count
+            ),
+            None,
+        ));
+        1000
+    } else {
+        max_count
+    };
+
+    let normalized_max_age_days = if max_age_days > 3650 {
+        issues.push(issue(
+            "cleanup_retention_days_clamped",
+            format!(
+                "max_age_days={} exceeds supported limit; clamped to 3650",
+                max_age_days
+            ),
+            None,
+        ));
+        3650
+    } else {
+        max_age_days
+    };
+
+    if normalized_max_count == 0 {
+        issues.push(issue(
+            "cleanup_unlimited_count",
+            "max_count=0 interpreted as unlimited manual backup count",
+            None,
+        ));
+    }
+    if normalized_max_age_days == 0 {
+        issues.push(issue(
+            "cleanup_unlimited_age",
+            "max_age_days=0 interpreted as unlimited retention age",
+            None,
+        ));
+    }
+
+    (normalized_max_count, normalized_max_age_days, issues)
+}
+
+fn normalize_auto_backup_interval(interval_hours: u32) -> (u32, Option<BackupOperationIssue>) {
+    if interval_hours == 0 {
+        return (
+            0,
+            Some(issue(
+                "auto_backup_interval_disabled",
+                "auto_backup_interval_hours=0 interpreted as scheduled backup disabled",
+                None,
+            )),
+        );
+    }
+    if interval_hours > 720 {
+        return (
+            720,
+            Some(issue(
+                "auto_backup_interval_clamped",
+                format!(
+                    "auto_backup_interval_hours={} exceeds supported limit; clamped to 720",
+                    interval_hours
+                ),
+                None,
+            )),
+        );
+    }
+    (interval_hours, None)
+}
+
+fn compose_restore_outcome(
+    restored_len: usize,
+    skipped_len: usize,
+    safety_backup_ok: bool,
+) -> (BackupOperationStatus, Option<String>, Option<String>) {
+    if restored_len == 0 && skipped_len > 0 {
+        (
+            BackupOperationStatus::Failed,
+            Some("restore_no_content_restored".to_string()),
+            Some(format!(
+                "Restore failed for all requested content types ({} skipped)",
+                skipped_len
+            )),
+        )
+    } else if skipped_len == 0 && !safety_backup_ok {
+        (
+            BackupOperationStatus::Partial,
+            Some("restore_safety_backup_failed".to_string()),
+            Some("Restore completed but pre-restore safety backup failed".to_string()),
+        )
+    } else if skipped_len == 0 {
+        (BackupOperationStatus::Success, None, None)
+    } else {
+        (
+            BackupOperationStatus::Partial,
+            Some("restore_partial_content_failure".to_string()),
+            Some(format!(
+                "Restore completed with {} skipped content type(s)",
+                skipped_len
+            )),
+        )
+    }
+}
+
 // ============================================================================
 // Backup Operations
 // ============================================================================
@@ -366,6 +547,58 @@ pub async fn create_backup(
         duration_ms,
         error,
     })
+}
+
+pub async fn create_backup_with_result(
+    settings: &Settings,
+    contents: &[BackupContentType],
+    note: Option<&str>,
+    terminal_manager: &TerminalProfileManager,
+    profile_manager: &ProfileManager,
+    custom_detection_manager: &CustomDetectionManager,
+) -> BackupResult {
+    let _gate = match BACKUP_MUTATION_GATE.try_lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            let err = mutation_in_progress_error("create");
+            return BackupResult {
+                success: false,
+                status: BackupOperationStatus::Skipped,
+                reason_code: Some("operation_in_progress".to_string()),
+                issues: vec![mutation_in_progress_issue("create")],
+                path: String::new(),
+                manifest: empty_manifest(note),
+                duration_ms: 0,
+                error: Some(err),
+            };
+        }
+    };
+
+    match create_backup(
+        settings,
+        contents,
+        note,
+        terminal_manager,
+        profile_manager,
+        custom_detection_manager,
+    )
+    .await
+    {
+        Ok(result) => result,
+        Err(err) => {
+            let reason_code = operation_failure_reason("create", &err);
+            BackupResult {
+                success: false,
+                status: BackupOperationStatus::Failed,
+                reason_code: Some(reason_code.clone()),
+                issues: vec![issue(&reason_code, err.to_string(), None)],
+                path: String::new(),
+                manifest: empty_manifest(note),
+                duration_ms: 0,
+                error: Some(err.to_string()),
+            }
+        }
+    }
 }
 
 /// Backup a single content type, returning list of (filename, sha256, size).
@@ -494,25 +727,7 @@ pub async fn restore_backup(
     profile_manager: &mut ProfileManager,
     custom_detection_manager: &mut CustomDetectionManager,
 ) -> CogniaResult<RestoreResult> {
-    // Create a safety backup before restoring
-    match create_auto_backup(
-        settings,
-        "pre-restore-auto-backup",
-        terminal_manager,
-        profile_manager,
-        custom_detection_manager,
-    )
-    .await
-    {
-        Ok(result) => {
-            log::info!("Pre-restore safety backup created at: {}", result.path);
-        }
-        Err(e) => {
-            log::warn!("Failed to create pre-restore safety backup: {}", e);
-        }
-    }
-
-    // First validate the backup
+    // Stage 1: validate restore source before mutating any local state.
     let validation = validate_backup(backup_path).await?;
     if !validation.valid {
         let mut issues = validation.issues.clone();
@@ -542,13 +757,40 @@ pub async fn restore_backup(
         });
     }
 
+    let mut issues = Vec::new();
+
+    // Stage 2: best-effort safety backup.
+    let safety_backup_ok = match create_auto_backup(
+        settings,
+        "pre-restore-auto-backup",
+        terminal_manager,
+        profile_manager,
+        custom_detection_manager,
+    )
+    .await
+    {
+        Ok(result) => {
+            log::info!("Pre-restore safety backup created at: {}", result.path);
+            true
+        }
+        Err(e) => {
+            log::warn!("Failed to create pre-restore safety backup: {}", e);
+            issues.push(issue(
+                "restore_safety_backup_failed",
+                format!("Pre-restore safety backup failed: {}", e),
+                None,
+            ));
+            false
+        }
+    };
+
     let cache_dir = settings.get_cache_dir();
     let state_dir = settings.get_state_dir();
 
     let mut restored = Vec::new();
     let mut skipped = Vec::new();
-    let mut issues = Vec::new();
 
+    // Stage 3: content-level restore and partial-failure aggregation.
     for content_type in contents {
         match restore_content(
             *content_type,
@@ -579,33 +821,14 @@ pub async fn restore_backup(
         }
     }
 
-    // Save settings after restore
+    // Stage 4: persist settings snapshot after staged restore.
     settings.save().await?;
 
-    let (status, reason_code, error) = if restored.is_empty() && !skipped.is_empty() {
-        (
-            BackupOperationStatus::Failed,
-            Some("restore_no_content_restored".to_string()),
-            Some(format!(
-                "Restore failed for all requested content types ({} skipped)",
-                skipped.len()
-            )),
-        )
-    } else if skipped.is_empty() {
-        (BackupOperationStatus::Success, None, None)
-    } else {
-        (
-            BackupOperationStatus::Partial,
-            Some("restore_partial_content_failure".to_string()),
-            Some(format!(
-                "Restore completed with {} skipped content type(s)",
-                skipped.len()
-            )),
-        )
-    };
+    let (status, reason_code, error) =
+        compose_restore_outcome(restored.len(), skipped.len(), safety_backup_ok);
 
     Ok(RestoreResult {
-        success: skipped.is_empty(),
+        success: matches!(status, BackupOperationStatus::Success),
         status,
         reason_code,
         issues,
@@ -613,6 +836,56 @@ pub async fn restore_backup(
         skipped,
         error,
     })
+}
+
+pub async fn restore_backup_with_result(
+    backup_path: &Path,
+    contents: &[BackupContentType],
+    settings: &mut Settings,
+    terminal_manager: &mut TerminalProfileManager,
+    profile_manager: &mut ProfileManager,
+    custom_detection_manager: &mut CustomDetectionManager,
+) -> RestoreResult {
+    let _gate = match BACKUP_MUTATION_GATE.try_lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            let err = mutation_in_progress_error("restore");
+            return RestoreResult {
+                success: false,
+                status: BackupOperationStatus::Skipped,
+                reason_code: Some("operation_in_progress".to_string()),
+                issues: vec![mutation_in_progress_issue("restore")],
+                restored: vec![],
+                skipped: vec![],
+                error: Some(err),
+            };
+        }
+    };
+
+    match restore_backup(
+        backup_path,
+        contents,
+        settings,
+        terminal_manager,
+        profile_manager,
+        custom_detection_manager,
+    )
+    .await
+    {
+        Ok(result) => result,
+        Err(err) => {
+            let reason_code = operation_failure_reason("restore", &err);
+            RestoreResult {
+                success: false,
+                status: BackupOperationStatus::Failed,
+                reason_code: Some(reason_code.clone()),
+                issues: vec![issue(&reason_code, err.to_string(), None)],
+                restored: vec![],
+                skipped: vec![],
+                error: Some(err.to_string()),
+            }
+        }
+    }
 }
 
 /// Restore a single content type from backup.
@@ -955,64 +1228,94 @@ pub async fn export_backup(backup_path: &Path, dest_path: &Path) -> CogniaResult
 
     let size = tokio::task::spawn_blocking(move || -> CogniaResult<u64> {
         use std::io::Write;
+        use std::time::{SystemTime, UNIX_EPOCH};
 
-        let file = std::fs::File::create(&dest).map_err(|e| CogniaError::Io(e))?;
-        let mut zip_writer = zip::ZipWriter::new(file);
-        let options = zip::write::SimpleFileOptions::default()
-            .compression_method(zip::CompressionMethod::Deflated);
-
-        // Use the backup directory name as a top-level prefix in the zip
-        // so import can extract it as a named directory.
-        let dir_name = backup_dir
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("backup")
-            .to_string();
-
-        // Add top-level directory entry
-        zip_writer
-            .add_directory(format!("{}/", dir_name), options)
-            .map_err(|e| CogniaError::Internal(format!("ZIP dir error: {}", e)))?;
-
-        // Walk the backup directory
-        for entry in walkdir::WalkDir::new(&backup_dir)
-            .into_iter()
-            .filter_map(|e| e.ok())
-        {
-            let path = entry.path();
-            let relative = path.strip_prefix(&backup_dir).unwrap_or(path);
-
-            if path.is_file() {
-                let name = format!(
-                    "{}/{}",
-                    dir_name,
-                    relative.to_string_lossy().replace('\\', "/")
-                );
-                zip_writer
-                    .start_file(&name, options)
-                    .map_err(|e| CogniaError::Internal(format!("ZIP write error: {}", e)))?;
-                let data = std::fs::read(path).map_err(CogniaError::Io)?;
-                zip_writer
-                    .write_all(&data)
-                    .map_err(|e| CogniaError::Internal(format!("ZIP write error: {}", e)))?;
-            } else if path.is_dir() && path != backup_dir.as_path() {
-                let name = format!(
-                    "{}/{}/",
-                    dir_name,
-                    relative.to_string_lossy().replace('\\', "/")
-                );
-                zip_writer
-                    .add_directory(&name, options)
-                    .map_err(|e| CogniaError::Internal(format!("ZIP dir error: {}", e)))?;
-            }
+        if dest.exists() {
+            return Err(CogniaError::Internal(format!(
+                "Export destination already exists: {}",
+                dest.display()
+            )));
         }
 
-        zip_writer
-            .finish()
-            .map_err(|e| CogniaError::Internal(format!("ZIP finish error: {}", e)))?;
+        let ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|v| v.as_millis())
+            .unwrap_or_default();
+        let temp_dest = dest.with_extension(format!("tmp-{}", ts));
 
-        let meta = std::fs::metadata(&dest).map_err(CogniaError::Io)?;
-        Ok(meta.len())
+        let export_result = (|| -> CogniaResult<u64> {
+            let file = std::fs::File::create(&temp_dest).map_err(CogniaError::Io)?;
+            let mut zip_writer = zip::ZipWriter::new(file);
+            let options = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated);
+
+            // Use the backup directory name as a top-level prefix in the zip
+            // so import can extract it as a named directory.
+            let dir_name = backup_dir
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("backup")
+                .to_string();
+
+            // Add top-level directory entry
+            zip_writer
+                .add_directory(format!("{}/", dir_name), options)
+                .map_err(|e| CogniaError::Internal(format!("ZIP dir error: {}", e)))?;
+
+            // Walk the backup directory
+            for entry in walkdir::WalkDir::new(&backup_dir)
+                .into_iter()
+                .filter_map(|e| e.ok())
+            {
+                let path = entry.path();
+                let relative = path.strip_prefix(&backup_dir).unwrap_or(path);
+
+                if path.is_file() {
+                    let name = format!(
+                        "{}/{}",
+                        dir_name,
+                        relative.to_string_lossy().replace('\\', "/")
+                    );
+                    zip_writer
+                        .start_file(&name, options)
+                        .map_err(|e| CogniaError::Internal(format!("ZIP write error: {}", e)))?;
+                    let data = std::fs::read(path).map_err(CogniaError::Io)?;
+                    zip_writer
+                        .write_all(&data)
+                        .map_err(|e| CogniaError::Internal(format!("ZIP write error: {}", e)))?;
+                } else if path.is_dir() && path != backup_dir.as_path() {
+                    let name = format!(
+                        "{}/{}/",
+                        dir_name,
+                        relative.to_string_lossy().replace('\\', "/")
+                    );
+                    zip_writer
+                        .add_directory(&name, options)
+                        .map_err(|e| CogniaError::Internal(format!("ZIP dir error: {}", e)))?;
+                }
+            }
+
+            zip_writer
+                .finish()
+                .map_err(|e| CogniaError::Internal(format!("ZIP finish error: {}", e)))?;
+
+            std::fs::rename(&temp_dest, &dest).map_err(|e| {
+                CogniaError::Internal(format!(
+                    "Failed to finalize backup export '{}': {}",
+                    dest.display(),
+                    e
+                ))
+            })?;
+
+            let meta = std::fs::metadata(&dest).map_err(CogniaError::Io)?;
+            Ok(meta.len())
+        })();
+
+        if export_result.is_err() {
+            let _ = std::fs::remove_file(&temp_dest);
+        }
+
+        export_result
     })
     .await
     .map_err(|e| CogniaError::Internal(format!("Export task failed: {}", e)))??;
@@ -1034,63 +1337,111 @@ pub async fn import_backup(zip_path: &Path, settings: &Settings) -> CogniaResult
     // Extract in blocking context
     let extracted_dir = tokio::task::spawn_blocking(move || -> CogniaResult<std::path::PathBuf> {
         use std::io::Read;
+        use std::path::{Component, PathBuf};
 
         let file = std::fs::File::open(&src).map_err(CogniaError::Io)?;
         let mut archive = zip::ZipArchive::new(file)
             .map_err(|e| CogniaError::Internal(format!("Invalid ZIP: {}", e)))?;
 
-        // Determine the backup directory name from the zip
-        // If the zip has a top-level directory, use it; otherwise generate one
-        let top_dir = {
-            let first = archive
-                .by_index(0)
-                .map_err(|e| CogniaError::Internal(format!("ZIP read error: {}", e)))?;
-            let name = first.name().to_string();
-            if let Some(slash_pos) = name.find('/') {
-                name[..slash_pos].to_string()
-            } else {
-                format!(
-                    "cognia-backup-imported-{}",
-                    chrono::Utc::now().format("%Y%m%d-%H%M%S")
-                )
-            }
-        };
-
-        let dest_dir = base.join(&top_dir);
-        if dest_dir.exists() {
-            return Err(CogniaError::Internal(format!(
-                "Backup directory already exists: {}",
-                top_dir
-            )));
+        if archive.len() == 0 {
+            return Err(CogniaError::Internal(
+                "Invalid ZIP: archive contains no entries".to_string(),
+            ));
         }
 
-        // Extract all files
+        let mut top_level_names: Vec<String> = Vec::new();
+        let mut single_root_dir_candidate = true;
         for i in 0..archive.len() {
-            let mut entry = archive
+            let entry = archive
                 .by_index(i)
                 .map_err(|e| CogniaError::Internal(format!("ZIP read error: {}", e)))?;
-
-            let out_path = base.join(entry.name());
-
-            // Prevent path traversal
-            if !out_path.starts_with(&base) {
-                continue;
-            }
-
-            if entry.is_dir() {
-                std::fs::create_dir_all(&out_path).map_err(CogniaError::Io)?;
-            } else {
-                if let Some(parent) = out_path.parent() {
-                    std::fs::create_dir_all(parent).map_err(CogniaError::Io)?;
+            let enclosed = entry.enclosed_name().ok_or_else(|| {
+                CogniaError::Internal(format!("Unsafe ZIP entry path: {}", entry.name()))
+            })?;
+            let mut components = enclosed.components();
+            let first_component = components.next();
+            if let Some(Component::Normal(first)) = first_component {
+                let first = first.to_string_lossy().to_string();
+                if !first.is_empty() && !top_level_names.iter().any(|name| name == &first) {
+                    top_level_names.push(first);
                 }
-                let mut outfile = std::fs::File::create(&out_path).map_err(CogniaError::Io)?;
-                let mut buf = Vec::new();
-                entry
-                    .read_to_end(&mut buf)
-                    .map_err(|e| CogniaError::Internal(format!("ZIP read error: {}", e)))?;
-                std::io::Write::write_all(&mut outfile, &buf)
-                    .map_err(|e| CogniaError::Internal(format!("Write error: {}", e)))?;
             }
+            let has_more_components = components.next().is_some();
+            if !has_more_components && !entry.is_dir() {
+                single_root_dir_candidate = false;
+            }
+        }
+
+        let archive_has_single_root = top_level_names.len() == 1 && single_root_dir_candidate;
+        let base_name = if archive_has_single_root {
+            top_level_names[0].clone()
+        } else {
+            format!(
+                "cognia-backup-imported-{}",
+                chrono::Utc::now().format("%Y%m%d-%H%M%S")
+            )
+        };
+
+        let mut dest_dir = base.join(&base_name);
+        if dest_dir.exists() {
+            // Non-destructive conflict handling: auto-select a unique import folder.
+            let mut suffix = 1;
+            loop {
+                let candidate = base.join(format!("{}-imported-{}", base_name, suffix));
+                if !candidate.exists() {
+                    dest_dir = candidate;
+                    break;
+                }
+                suffix += 1;
+            }
+        }
+        std::fs::create_dir_all(&dest_dir).map_err(CogniaError::Io)?;
+
+        let extract_result = (|| -> CogniaResult<()> {
+            // Extract all files
+            for i in 0..archive.len() {
+                let mut entry = archive
+                    .by_index(i)
+                    .map_err(|e| CogniaError::Internal(format!("ZIP read error: {}", e)))?;
+                let enclosed = entry.enclosed_name().ok_or_else(|| {
+                    CogniaError::Internal(format!("Unsafe ZIP entry path: {}", entry.name()))
+                })?;
+
+                let output_rel_path: PathBuf = if archive_has_single_root {
+                    let mut components = enclosed.components();
+                    let _ = components.next();
+                    components.as_path().to_path_buf()
+                } else {
+                    enclosed.to_path_buf()
+                };
+
+                let out_path = if output_rel_path.as_os_str().is_empty() {
+                    dest_dir.clone()
+                } else {
+                    dest_dir.join(output_rel_path)
+                };
+
+                if entry.is_dir() {
+                    std::fs::create_dir_all(&out_path).map_err(CogniaError::Io)?;
+                } else {
+                    if let Some(parent) = out_path.parent() {
+                        std::fs::create_dir_all(parent).map_err(CogniaError::Io)?;
+                    }
+                    let mut outfile = std::fs::File::create(&out_path).map_err(CogniaError::Io)?;
+                    let mut buf = Vec::new();
+                    entry
+                        .read_to_end(&mut buf)
+                        .map_err(|e| CogniaError::Internal(format!("ZIP read error: {}", e)))?;
+                    std::io::Write::write_all(&mut outfile, &buf)
+                        .map_err(|e| CogniaError::Internal(format!("Write error: {}", e)))?;
+                }
+            }
+            Ok(())
+        })();
+
+        if let Err(err) = extract_result {
+            let _ = std::fs::remove_dir_all(&dest_dir);
+            return Err(err);
         }
 
         Ok(dest_dir)
@@ -1239,6 +1590,22 @@ pub async fn cleanup_old_backups(
 }
 
 pub async fn delete_backup_with_result(backup_path: &Path) -> BackupDeleteResult {
+    let _gate = match BACKUP_MUTATION_GATE.try_lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            let err = mutation_in_progress_error("delete");
+            return BackupDeleteResult {
+                success: false,
+                status: BackupOperationStatus::Skipped,
+                reason_code: Some("operation_in_progress".to_string()),
+                issues: vec![mutation_in_progress_issue("delete")],
+                deleted: false,
+                path: backup_path.display().to_string(),
+                error: Some(err),
+            };
+        }
+    };
+
     match delete_backup(backup_path).await {
         Ok(deleted) if deleted => BackupDeleteResult {
             success: true,
@@ -1265,8 +1632,8 @@ pub async fn delete_backup_with_result(backup_path: &Path) -> BackupDeleteResult
         Err(e) => BackupDeleteResult {
             success: false,
             status: BackupOperationStatus::Failed,
-            reason_code: Some("backup_delete_failed".to_string()),
-            issues: vec![issue("backup_delete_failed", e.to_string(), None)],
+            reason_code: Some(operation_failure_reason("delete", &e)),
+            issues: vec![issue(&operation_failure_reason("delete", &e), e.to_string(), None)],
             deleted: false,
             path: backup_path.display().to_string(),
             error: Some(e.to_string()),
@@ -1275,6 +1642,23 @@ pub async fn delete_backup_with_result(backup_path: &Path) -> BackupDeleteResult
 }
 
 pub async fn export_backup_with_result(backup_path: &Path, dest_path: &Path) -> BackupExportResult {
+    let _gate = match BACKUP_MUTATION_GATE.try_lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            let err = mutation_in_progress_error("export");
+            return BackupExportResult {
+                success: false,
+                status: BackupOperationStatus::Skipped,
+                reason_code: Some("operation_in_progress".to_string()),
+                issues: vec![mutation_in_progress_issue("export")],
+                bytes: 0,
+                backup_path: backup_path.display().to_string(),
+                dest_path: dest_path.display().to_string(),
+                error: Some(err),
+            };
+        }
+    };
+
     match export_backup(backup_path, dest_path).await {
         Ok(bytes) => BackupExportResult {
             success: true,
@@ -1289,8 +1673,8 @@ pub async fn export_backup_with_result(backup_path: &Path, dest_path: &Path) -> 
         Err(e) => BackupExportResult {
             success: false,
             status: BackupOperationStatus::Failed,
-            reason_code: Some("backup_export_failed".to_string()),
-            issues: vec![issue("backup_export_failed", e.to_string(), None)],
+            reason_code: Some(operation_failure_reason("export", &e)),
+            issues: vec![issue(&operation_failure_reason("export", &e), e.to_string(), None)],
             bytes: 0,
             backup_path: backup_path.display().to_string(),
             dest_path: dest_path.display().to_string(),
@@ -1300,6 +1684,22 @@ pub async fn export_backup_with_result(backup_path: &Path, dest_path: &Path) -> 
 }
 
 pub async fn import_backup_with_result(zip_path: &Path, settings: &Settings) -> BackupImportResult {
+    let _gate = match BACKUP_MUTATION_GATE.try_lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            let err = mutation_in_progress_error("import");
+            return BackupImportResult {
+                success: false,
+                status: BackupOperationStatus::Skipped,
+                reason_code: Some("operation_in_progress".to_string()),
+                issues: vec![mutation_in_progress_issue("import")],
+                zip_path: zip_path.display().to_string(),
+                info: None,
+                error: Some(err),
+            };
+        }
+    };
+
     match import_backup(zip_path, settings).await {
         Ok(info) => BackupImportResult {
             success: true,
@@ -1313,8 +1713,8 @@ pub async fn import_backup_with_result(zip_path: &Path, settings: &Settings) -> 
         Err(e) => BackupImportResult {
             success: false,
             status: BackupOperationStatus::Failed,
-            reason_code: Some("backup_import_failed".to_string()),
-            issues: vec![issue("backup_import_failed", e.to_string(), None)],
+            reason_code: Some(operation_failure_reason("import", &e)),
+            issues: vec![issue(&operation_failure_reason("import", &e), e.to_string(), None)],
             zip_path: zip_path.display().to_string(),
             info: None,
             error: Some(e.to_string()),
@@ -1327,39 +1727,92 @@ pub async fn cleanup_old_backups_with_result(
     max_count: u32,
     max_age_days: u32,
 ) -> BackupCleanupResult {
-    match cleanup_old_backups(settings, max_count, max_age_days).await {
+    let _gate = match BACKUP_MUTATION_GATE.try_lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            let err = mutation_in_progress_error("cleanup");
+            return BackupCleanupResult {
+                success: false,
+                status: BackupOperationStatus::Skipped,
+                reason_code: Some("operation_in_progress".to_string()),
+                issues: vec![mutation_in_progress_issue("cleanup")],
+                deleted: 0,
+                max_count,
+                max_age_days,
+                error: Some(err),
+            };
+        }
+    };
+
+    let (normalized_max_count, normalized_max_age_days, mut policy_issues) =
+        normalize_cleanup_policy(max_count, max_age_days);
+    let (_normalized_interval_hours, interval_issue) =
+        normalize_auto_backup_interval(settings.backup.auto_backup_interval_hours);
+    if let Some(interval_issue) = interval_issue {
+        policy_issues.push(interval_issue);
+    }
+
+    if normalized_max_count == 0 && normalized_max_age_days == 0 {
+        policy_issues.push(issue(
+            "cleanup_policy_unbounded",
+            "Cleanup skipped because both max_count and max_age_days are unlimited (0)",
+            None,
+        ));
+        return BackupCleanupResult {
+            success: false,
+            status: BackupOperationStatus::Skipped,
+            reason_code: Some("cleanup_policy_unbounded".to_string()),
+            issues: policy_issues,
+            deleted: 0,
+            max_count: normalized_max_count,
+            max_age_days: normalized_max_age_days,
+            error: Some("Cleanup skipped: policy is unbounded".to_string()),
+        };
+    }
+
+    match cleanup_old_backups(settings, normalized_max_count, normalized_max_age_days).await {
         Ok(deleted) if deleted > 0 => BackupCleanupResult {
             success: true,
             status: BackupOperationStatus::Success,
             reason_code: None,
-            issues: vec![],
+            issues: policy_issues,
             deleted,
-            max_count,
-            max_age_days,
+            max_count: normalized_max_count,
+            max_age_days: normalized_max_age_days,
             error: None,
         },
         Ok(_) => BackupCleanupResult {
             success: false,
             status: BackupOperationStatus::Skipped,
             reason_code: Some("cleanup_no_backups_deleted".to_string()),
-            issues: vec![issue(
-                "cleanup_no_backups_deleted",
-                "No backups matched cleanup policy",
-                None,
-            )],
+            issues: {
+                policy_issues.push(issue(
+                    "cleanup_no_backups_deleted",
+                    "No backups matched cleanup policy",
+                    None,
+                ));
+                policy_issues
+            },
             deleted: 0,
-            max_count,
-            max_age_days,
+            max_count: normalized_max_count,
+            max_age_days: normalized_max_age_days,
             error: Some("No backups matched cleanup policy".to_string()),
         },
         Err(e) => BackupCleanupResult {
             success: false,
             status: BackupOperationStatus::Failed,
-            reason_code: Some("backup_cleanup_failed".to_string()),
-            issues: vec![issue("backup_cleanup_failed", e.to_string(), None)],
+            reason_code: Some(operation_failure_reason("cleanup", &e)),
+            issues: {
+                policy_issues.push(issue(
+                    &operation_failure_reason("cleanup", &e),
+                    e.to_string(),
+                    None,
+                ));
+                policy_issues
+            },
             deleted: 0,
-            max_count,
-            max_age_days,
+            max_count: normalized_max_count,
+            max_age_days: normalized_max_age_days,
             error: Some(e.to_string()),
         },
     }
@@ -1847,7 +2300,25 @@ mod tests {
         let result = export_backup_with_result(&empty_dir, &dest).await;
         assert!(!result.success);
         assert_eq!(result.status, BackupOperationStatus::Failed);
-        assert_eq!(result.reason_code.as_deref(), Some("backup_export_failed"));
+        assert_eq!(result.reason_code.as_deref(), Some("backup_export_path_error"));
+    }
+
+    #[tokio::test]
+    async fn test_export_backup_existing_dest_is_non_destructive() {
+        let dir = tempfile::tempdir().unwrap();
+        let backup_dir = dir.path().join("cognia-backup-existing-dest");
+        tokio::fs::create_dir(&backup_dir).await.unwrap();
+        tokio::fs::write(backup_dir.join("manifest.json"), "{}")
+            .await
+            .unwrap();
+
+        let dest = dir.path().join("existing.zip");
+        tokio::fs::write(&dest, "existing-content").await.unwrap();
+
+        let result = export_backup(&backup_dir, &dest).await;
+        assert!(result.is_err());
+        let existing = tokio::fs::read_to_string(&dest).await.unwrap();
+        assert_eq!(existing, "existing-content");
     }
 
     #[tokio::test]
@@ -1903,7 +2374,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_import_duplicate_fails() {
+    async fn test_import_duplicate_uses_non_destructive_rename() {
         let dir = tempfile::tempdir().unwrap();
 
         // Create a backup directory
@@ -1941,10 +2412,9 @@ mod tests {
 
         import_backup(&zip_path, &settings).await.unwrap();
 
-        // Import again — should fail (directory exists)
-        let result = import_backup(&zip_path, &settings).await;
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("already exists"));
+        // Import again — should succeed by using a unique directory name
+        let result = import_backup(&zip_path, &settings).await.unwrap();
+        assert!(result.name.starts_with("cognia-backup-dup-imported-"));
     }
 
     // ===== cleanup tests =====
@@ -1973,6 +2443,80 @@ mod tests {
             result.reason_code.as_deref(),
             Some("cleanup_no_backups_deleted")
         );
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_with_result_unbounded_policy_is_explicitly_skipped() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut settings = Settings::default();
+        settings.paths.root = Some(dir.path().to_path_buf());
+
+        let mut result = cleanup_old_backups_with_result(&settings, 0, 0).await;
+        for _ in 0..5 {
+            if result.reason_code.as_deref() == Some("operation_in_progress") {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                result = cleanup_old_backups_with_result(&settings, 0, 0).await;
+                continue;
+            }
+            break;
+        }
+        assert_eq!(result.status, BackupOperationStatus::Skipped);
+        assert_eq!(
+            result.reason_code.as_deref(),
+            Some("cleanup_policy_unbounded")
+        );
+        assert!(result
+            .issues
+            .iter()
+            .any(|item| item.code == "cleanup_unlimited_count"));
+        assert!(result
+            .issues
+            .iter()
+            .any(|item| item.code == "cleanup_unlimited_age"));
+    }
+
+    #[tokio::test]
+    async fn test_mutation_gate_rejects_concurrent_delete() {
+        let _guard = BACKUP_MUTATION_GATE.lock().await;
+        let result = delete_backup_with_result(std::path::Path::new("/tmp/nonexistent")).await;
+        assert_eq!(result.status, BackupOperationStatus::Skipped);
+        assert_eq!(result.reason_code.as_deref(), Some("operation_in_progress"));
+        assert!(result
+            .issues
+            .iter()
+            .any(|item| item.code == "operation_in_progress"));
+    }
+
+    #[test]
+    fn test_compose_restore_outcome_with_safety_backup_degradation() {
+        let (status, reason_code, error) = compose_restore_outcome(1, 0, false);
+        assert_eq!(status, BackupOperationStatus::Partial);
+        assert_eq!(reason_code.as_deref(), Some("restore_safety_backup_failed"));
+        assert!(error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("safety backup"));
+    }
+
+    #[test]
+    fn test_normalize_auto_backup_interval_bounds() {
+        let (disabled, disabled_issue) = normalize_auto_backup_interval(0);
+        assert_eq!(disabled, 0);
+        assert_eq!(
+            disabled_issue.as_ref().map(|item| item.code.as_str()),
+            Some("auto_backup_interval_disabled")
+        );
+
+        let (clamped, clamped_issue) = normalize_auto_backup_interval(2048);
+        assert_eq!(clamped, 720);
+        assert_eq!(
+            clamped_issue.as_ref().map(|item| item.code.as_str()),
+            Some("auto_backup_interval_clamped")
+        );
+
+        let (normal, normal_issue) = normalize_auto_backup_interval(24);
+        assert_eq!(normal, 24);
+        assert!(normal_issue.is_none());
     }
 
     #[tokio::test]

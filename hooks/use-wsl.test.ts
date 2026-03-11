@@ -3,6 +3,7 @@ import { useWsl } from './use-wsl';
 
 const mockIsTauri = jest.fn(() => true);
 const mockWslIsAvailable = jest.fn();
+const mockWslGetRuntimeSnapshot = jest.fn();
 const mockWslListDistros = jest.fn();
 const mockWslListOnline = jest.fn();
 const mockWslGetStatus = jest.fn();
@@ -59,6 +60,7 @@ const mockPackageUninstall = jest.fn();
 jest.mock('@/lib/tauri', () => ({
   isTauri: () => mockIsTauri(),
   wslIsAvailable: (...a: unknown[]) => mockWslIsAvailable(...a),
+  wslGetRuntimeSnapshot: (...a: unknown[]) => mockWslGetRuntimeSnapshot(...a),
   wslListDistros: (...a: unknown[]) => mockWslListDistros(...a),
   wslListOnline: (...a: unknown[]) => mockWslListOnline(...a),
   wslGetStatus: (...a: unknown[]) => mockWslGetStatus(...a),
@@ -117,6 +119,18 @@ describe('useWsl', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockIsTauri.mockReturnValue(true);
+    mockWslGetRuntimeSnapshot.mockResolvedValue({
+      state: 'ready',
+      available: true,
+      reasonCode: 'runtime_ready',
+      reason: 'Runtime and management probes passed.',
+      runtimeProbes: [],
+      statusProbe: { ready: true, reasonCode: 'ok' },
+      capabilityProbe: { ready: true, reasonCode: 'ok' },
+      distroProbe: { ready: true, reasonCode: 'ok' },
+      distroCount: 1,
+      degradedReasons: [],
+    });
   });
 
   it('should initialize with default state', () => {
@@ -167,6 +181,7 @@ describe('useWsl', () => {
   });
 
   it('should handle availability check error', async () => {
+    mockWslGetRuntimeSnapshot.mockRejectedValue(new Error('snapshot-fail'));
     mockWslIsAvailable.mockRejectedValue(new Error('fail'));
 
     const { result } = renderHook(() => useWsl());

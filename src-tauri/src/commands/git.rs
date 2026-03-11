@@ -93,6 +93,11 @@ fn normalize_git_error_message(message: String) -> String {
         || lower.contains("terminated by signal")
     {
         "cancelled"
+    } else if lower.contains("[git:timeout]")
+        || lower.contains("timed out")
+        || lower.contains("timeout")
+    {
+        "timeout"
     } else if lower.contains("no repo")
         || lower.contains("no clone operation in progress")
         || lower.contains("no upstream")
@@ -1771,6 +1776,13 @@ mod tests {
     fn normalize_git_error_maps_cancelled() {
         let normalized = normalize_git_error_message("process terminated by signal".to_string());
         assert!(normalized.starts_with("[git:cancelled]"));
+    }
+
+    #[test]
+    fn normalize_git_error_maps_timeout() {
+        let normalized =
+            normalize_git_error_message("git command timed out after 30s".to_string());
+        assert!(normalized.starts_with("[git:timeout]"));
     }
 
     #[test]

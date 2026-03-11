@@ -38,6 +38,11 @@ const mockT = (
     "about.changelogLocal": "Bundled",
     "about.changelogRemote": "GitHub",
     "about.changelogReleaseNotes": "Release Notes",
+    "about.changelogSearchPlaceholder": "Search versions and release notes...",
+    "about.changelogClearSearch": "Clear search",
+    "about.changelogFilterBySource": "Source",
+    "about.changelogAllSources": "All Sources",
+    "about.changelogShowPrerelease": "Include pre-releases",
     "about.changelogRelativeTime": `${params?.time ?? ""} ago`,
   };
   return translations[key] || key;
@@ -97,11 +102,10 @@ describe("ChangelogDialog", () => {
     expect(screen.getByText("2025-01-01")).toBeInTheDocument();
   });
 
-  it("renders change descriptions (first entry expanded by default)", () => {
+  it("renders change descriptions (first entry expanded by default)", async () => {
     render(<ChangelogDialog {...defaultProps} />);
-    // First entry is expanded by default
-    expect(screen.getByText("Initial release")).toBeInTheDocument();
-    expect(screen.getByText("Fixed a bug")).toBeInTheDocument();
+    expect(await screen.findByText("Initial release")).toBeInTheDocument();
+    expect(await screen.findByText("Fixed a bug")).toBeInTheDocument();
   });
 
   it("renders type badges", () => {
@@ -206,6 +210,7 @@ describe("ChangelogDialog", () => {
     // "Fixed a bug" should be hidden since it's type=fixed, not added
     // The first entry is expanded but only "added" changes should remain
     expect(screen.getByText("Initial release")).toBeInTheDocument();
+    expect(screen.queryByText("Fixed a bug")).not.toBeInTheDocument();
   });
 
   it("shows no results message when filter excludes all changes", () => {
@@ -231,5 +236,37 @@ describe("ChangelogDialog", () => {
     expect(screen.getByText("Expand All")).toBeInTheDocument();
     fireEvent.click(screen.getByText("Expand All"));
     expect(screen.getByText("Collapse All")).toBeInTheDocument();
+  });
+
+  it("filters entries by keyword search", async () => {
+    render(<ChangelogDialog {...defaultProps} />);
+    const searchInput = screen.getByPlaceholderText(
+      "Search versions and release notes...",
+    );
+    await userEvent.type(searchInput, "bug");
+    expect(screen.getByText("v1.0.0")).toBeInTheDocument();
+    expect(screen.queryByText("v0.9.0")).not.toBeInTheDocument();
+  });
+
+  it("filters entries by source", async () => {
+    render(<ChangelogDialog {...defaultProps} />);
+    const bundledFilter = screen
+      .getAllByText("Bundled")
+      .find((el) => el.getAttribute("data-slot") === "toggle-group-item");
+    expect(bundledFilter).toBeTruthy();
+    await userEvent.click(bundledFilter!);
+    expect(screen.getByText("v1.0.0")).toBeInTheDocument();
+    expect(screen.queryByText("v0.9.0")).not.toBeInTheDocument();
+  });
+
+  it("hides prerelease entries when prerelease toggle is off", async () => {
+    render(<ChangelogDialog {...defaultProps} />);
+    expect(screen.getByText("v0.9.0")).toBeInTheDocument();
+
+    const prereleaseSwitch = screen.getByRole("switch", {
+      name: "Include pre-releases",
+    });
+    await userEvent.click(prereleaseSwitch);
+    expect(screen.queryByText("v0.9.0")).not.toBeInTheDocument();
   });
 });

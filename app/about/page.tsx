@@ -6,7 +6,7 @@ import { PageHeader } from '@/components/layout/page-header';
 import { useAboutData } from '@/hooks/use-about-data';
 import { useChangelog } from '@/hooks/use-changelog';
 import { useChangelogStore } from '@/lib/stores/changelog';
-import { compareSemver } from '@/lib/constants/changelog-utils';
+import { compareVersions } from '@/lib/constants/changelog-utils';
 import { APP_VERSION } from '@/lib/app-version';
 import {
   VersionCards,
@@ -64,7 +64,7 @@ export default function AboutPage() {
   // Filter entries newer than lastSeenVersion for "What's New"
   const whatsNewEntries = changelog.entries.filter((entry) => {
     if (!lastSeenVersion) return false;
-    return compareSemver(entry.version, lastSeenVersion) > 0;
+    return compareVersions(entry.version, lastSeenVersion) > 0;
   });
 
   return (

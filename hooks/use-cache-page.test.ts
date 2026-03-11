@@ -161,6 +161,29 @@ describe('useCachePage', () => {
     expect(mockDeleteCacheEntries).toHaveBeenCalledWith(['a', 'b'], true);
   });
 
+  it('closes preview dialog when preview fails', async () => {
+    mockCacheCleanPreview.mockRejectedValueOnce(new Error('boom'));
+    const { result } = renderHook(() => useCachePage({ t }));
+
+    await act(async () => {
+      await result.current.handlePreview('downloads');
+    });
+
+    expect(result.current.previewOpen).toBe(false);
+    expect(mockToastError).toHaveBeenCalled();
+  });
+
+  it('refreshes cleanup history after force clean completes', async () => {
+    const { result } = renderHook(() => useCachePage({ t }));
+
+    await act(async () => {
+      await result.current.handleForceClean();
+    });
+
+    expect(mockCacheForceClean).toHaveBeenCalled();
+    expect(mockGetCleanupHistory).toHaveBeenCalled();
+  });
+
   it('verifies and repairs the global cache scope from overview actions', async () => {
     const { result } = renderHook(() => useCachePage({ t }));
 

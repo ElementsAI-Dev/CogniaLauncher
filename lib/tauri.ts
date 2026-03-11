@@ -118,6 +118,8 @@ export type {
   LogQueryResult,
   LogExportOptions,
   LogExportResult,
+  LogCleanupPolicyInput,
+  LogCleanupOptions,
   LogCleanupResult,
   LogCleanupPreviewResult,
   CommandOutputEvent,
@@ -167,6 +169,7 @@ export type {
   WslStatus,
   WslVersionInfo,
   WslCapabilities,
+  WslRuntimeSnapshot,
   WslImportOptions,
   WslExecResult,
   WslDiskUsage,
@@ -340,6 +343,8 @@ import type {
   LogQueryResult,
   LogExportOptions,
   LogExportResult,
+  LogCleanupPolicyInput,
+  LogCleanupOptions,
   LogCleanupResult,
   LogCleanupPreviewResult,
   CommandOutputEvent,
@@ -378,6 +383,7 @@ import type {
   WslStatus,
   WslVersionInfo,
   WslCapabilities,
+  WslRuntimeSnapshot,
   WslImportOptions,
   WslExecResult,
   WslDiskUsage,
@@ -1364,16 +1370,17 @@ export const logListFiles = () => invoke<LogFileInfo[]>("log_list_files");
 export const logQuery = (options: LogQueryOptions) =>
   invoke<LogQueryResult>("log_query", { options });
 export const logClear = (fileName?: string) =>
-  invoke<void>("log_clear", { fileName });
+  invoke<LogCleanupResult>("log_clear", { fileName });
 export const logGetDir = () => invoke<string>("log_get_dir");
 export const logExport = (options: LogExportOptions) =>
   invoke<LogExportResult>("log_export", { options });
 export const logGetTotalSize = () => invoke<number>("log_get_total_size");
-export const logCleanup = () => invoke<LogCleanupResult>("log_cleanup");
-export const logCleanupPreview = () =>
-  invoke<LogCleanupPreviewResult>("log_cleanup_preview");
+export const logCleanup = (options?: LogCleanupOptions) =>
+  invoke<LogCleanupResult>("log_cleanup", { options });
+export const logCleanupPreview = (policy?: LogCleanupPolicyInput) =>
+  invoke<LogCleanupPreviewResult>("log_cleanup_preview", { policy });
 export const logDeleteFile = (fileName: string) =>
-  invoke<void>("log_delete_file", { fileName });
+  invoke<LogCleanupResult>("log_delete_file", { fileName });
 export const logDeleteBatch = (fileNames: string[]) =>
   invoke<LogCleanupResult>("log_delete_batch", { fileNames });
 
@@ -2430,6 +2437,10 @@ export const wslGetVersionInfo = () =>
 /** Get runtime WSL capability flags */
 export const wslGetCapabilities = () =>
   invoke<WslCapabilities>("wsl_get_capabilities");
+
+/** Get staged runtime detection snapshot for WSL readiness */
+export const wslGetRuntimeSnapshot = () =>
+  invoke<WslRuntimeSnapshot>("wsl_get_runtime_snapshot");
 
 /** Set sparse VHD mode for a WSL distribution */
 export const wslSetSparse = (distro: string, enabled: boolean) =>

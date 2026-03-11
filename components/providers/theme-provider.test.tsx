@@ -62,6 +62,7 @@ describe("ThemeProvider", () => {
     delete document.documentElement.dataset.density;
     document.documentElement.classList.remove("no-transitions");
     delete document.documentElement.dataset.bgActive;
+    localStorage.clear();
     Object.defineProperty(window, "matchMedia", {
       writable: true,
       value: jest.fn().mockImplementation((query: string) => ({
@@ -291,8 +292,9 @@ describe("ThemeProvider", () => {
     expect(screen.getByTestId("next-themes-provider")).toBeInTheDocument();
   });
 
-  it("sets data-bg-active attribute when backgroundEnabled is true", async () => {
+  it("sets data-bg-active attribute when backgroundEnabled is true and background image exists", async () => {
     mockBackgroundEnabled = true;
+    localStorage.setItem("cognia-bg-image", "data:image/jpeg;base64,test");
 
     render(
       <ThemeProvider>
@@ -305,6 +307,22 @@ describe("ThemeProvider", () => {
     });
 
     expect(document.documentElement.dataset.bgActive).toBe("");
+  });
+
+  it("does not set data-bg-active attribute when backgroundEnabled is true but no image exists", async () => {
+    mockBackgroundEnabled = true;
+
+    render(
+      <ThemeProvider>
+        <div>Content</div>
+      </ThemeProvider>,
+    );
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(document.documentElement.dataset.bgActive).toBeUndefined();
   });
 
   it("syncs OS prefers-reduced-motion on first mount", async () => {

@@ -1,4 +1,9 @@
-import type { WslCapabilities, WslDistroStatus, WslStatus } from '@/types/tauri';
+import type {
+  WslCapabilities,
+  WslDistroStatus,
+  WslRuntimeSnapshot,
+  WslStatus,
+} from '@/types/tauri';
 import type {
   WslCompletenessSnapshot,
   WslFailureCategory,
@@ -39,8 +44,16 @@ const OPERATION_DESCRIPTORS: Record<WslOperationId, WslOperationDescriptor> = {
 export function resolveWslOperationGate(
   operationId: WslOperationId,
   available: boolean | null,
-  capabilities: WslCapabilities | null
+  capabilities: WslCapabilities | null,
+  runtimeSnapshot?: WslRuntimeSnapshot | null
 ): WslOperationGate {
+  if (runtimeSnapshot?.available === false) {
+    return {
+      supported: false,
+      reason: runtimeSnapshot.reason || 'WSL runtime is unavailable on this host.',
+    };
+  }
+
   if (available === false) {
     return {
       supported: false,
@@ -51,6 +64,18 @@ export function resolveWslOperationGate(
   const descriptor = OPERATION_DESCRIPTORS[operationId];
   if (!descriptor.capability) {
     return { supported: true };
+  }
+
+  if (
+    runtimeSnapshot?.state === 'degraded'
+    && runtimeSnapshot.capabilityProbe.ready === false
+  ) {
+    return {
+      supported: false,
+      capability: descriptor.capability,
+      reason: runtimeSnapshot.capabilityProbe.detail
+        ?? 'Runtime capability detection is degraded. Refresh runtime state and retry.',
+    };
   }
 
   // When capability payload is unavailable, stay permissive and let backend decide.
@@ -83,7 +108,10 @@ export function classifyWslFailure(rawError: string): WslFailureCategory {
     return 'permission';
   }
   if (
-    message.includes('wsl is unavailable')
+    message.includes('[wsl_runtime:')
+    || message.includes('runtime_unavailable')
+    || message.includes('wsl runtime is unavailable')
+    || message.includes('wsl is unavailable')
     || message.includes('distribution not found')
     || message.includes('not running')
     || message.includes('kernel')
@@ -107,11 +135,29 @@ export function deriveWslCompleteness(
   available: boolean | null,
   distros: WslDistroStatus[],
   status: WslStatus | null,
-  capabilities: WslCapabilities | null
+  capabilities: WslCapabilities | null,
+  runtimeSnapshot?: WslRuntimeSnapshot | null
 ): WslCompletenessSnapshot {
-  const distroCount = distros.length;
+  const distroCount = distros.length > 0
+    ? distros.length
+    : runtimeSnapshot?.distroCount ?? 0;
   const runningCount = distros.filter((d) => (d.state ?? '').toLowerCase() === 'running').length;
   const degradedReasons: string[] = [];
+
+  if (runtimeSnapshot) {
+    const reasons = runtimeSnapshot.state === 'degraded'
+      ? runtimeSnapshot.degradedReasons
+      : runtimeSnapshot.state === 'unavailable'
+        ? [runtimeSnapshot.reason]
+        : [];
+    return {
+      state: runtimeSnapshot.state,
+      available: runtimeSnapshot.available,
+      distroCount,
+      runningCount,
+      degradedReasons: reasons.length > 0 ? reasons : runtimeSnapshot.reason ? [runtimeSnapshot.reason] : [],
+    };
+  }
 
   if (available === null) {
     return {

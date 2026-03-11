@@ -3,6 +3,10 @@ import userEvent from '@testing-library/user-event';
 import type { TerminalConfigEditorSurfaceProps } from './types';
 import { TerminalConfigEditorWorkspace } from './editor-workspace';
 
+jest.mock('@/components/providers/locale-provider', () => ({
+  useLocale: () => ({ t: (key: string) => key }),
+}));
+
 function StubSurface({ value }: TerminalConfigEditorSurfaceProps) {
   return <div data-testid="terminal-config-editor-surface">{value}</div>;
 }
@@ -34,18 +38,18 @@ describe('TerminalConfigEditorWorkspace', () => {
     );
 
     expect(screen.getByText('/home/user/.bashrc')).toBeInTheDocument();
-    expect(screen.getByText('Shell bash')).toBeInTheDocument();
-    expect(screen.getByText('Language bash')).toBeInTheDocument();
-    expect(screen.getByText('1 line')).toBeInTheDocument();
+    expect(screen.getByText('terminal.editorShellBadge')).toBeInTheDocument();
+    expect(screen.getByText('terminal.editorLanguageBadge')).toBeInTheDocument();
+    expect(screen.getByText('terminal.editorLineCount')).toBeInTheDocument();
     expect(screen.getByText('abc123')).toBeInTheDocument();
-    expect(screen.getByText('1 issue detected')).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /diagnostics/i })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /changes/i })).toBeInTheDocument();
+    expect(screen.getByText('terminal.editorDiagnosticsSummary')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /terminal\.editorViewDiagnostics/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /terminal\.editorViewChanges/i })).toBeInTheDocument();
 
-    await user.click(screen.getByRole('tab', { name: /changes/i }));
+    await user.click(screen.getByRole('tab', { name: /terminal\.editorViewChanges/i }));
 
-    expect(screen.getByText('Persisted Baseline')).toBeInTheDocument();
-    expect(screen.getByText('Pending Draft')).toBeInTheDocument();
+    expect(screen.getByText('terminal.editorPersistedBaseline')).toBeInTheDocument();
+    expect(screen.getByText('terminal.editorPendingDraft')).toBeInTheDocument();
     expect(screen.getByText('export FOO=1')).toBeInTheDocument();
     expect(screen.getByText('export FOO=2')).toBeInTheDocument();
   });
@@ -70,7 +74,7 @@ describe('TerminalConfigEditorWorkspace', () => {
       />,
     );
 
-    await user.click(screen.getByRole('tab', { name: /diagnostics/i }));
+    await user.click(screen.getByRole('tab', { name: /terminal\.editorViewDiagnostics/i }));
 
     rerender(
       <TerminalConfigEditorWorkspace
@@ -83,9 +87,9 @@ describe('TerminalConfigEditorWorkspace', () => {
       />,
     );
 
-    expect(screen.getByRole('tab', { name: /editor/i })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.queryByRole('tab', { name: /diagnostics/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('tab', { name: /changes/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /terminal\.editorViewEditor/i })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByRole('tab', { name: /terminal\.editorViewDiagnostics/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: /terminal\.editorViewChanges/i })).not.toBeInTheDocument();
     expect(screen.getByTestId('terminal-config-editor-surface')).toBeInTheDocument();
   });
 
@@ -110,10 +114,10 @@ describe('TerminalConfigEditorWorkspace', () => {
       />,
     );
 
-    await user.click(screen.getByRole('tab', { name: /structured/i }));
+    await user.click(screen.getByRole('tab', { name: /terminal\.editorViewStructured/i }));
     expect(screen.getByTestId('terminal-config-editor-structured')).toBeInTheDocument();
 
-    const addButtons = screen.getAllByRole('button', { name: /^add$/i });
+    const addButtons = screen.getAllByRole('button', { name: /^terminal\.addEnvVar$/i });
     await user.click(addButtons[0]);
     expect(onStructuredEntriesChange).toHaveBeenCalled();
   });
@@ -137,7 +141,9 @@ describe('TerminalConfigEditorWorkspace', () => {
       />,
     );
 
-    expect(screen.getByRole('tab', { name: /structured/i })).toBeDisabled();
+    expect(screen.getByRole('tab', { name: /terminal\.editorViewStructured/i })).toBeDisabled();
+    expect(screen.getByText('terminal.structuredEditingUnavailable')).toBeInTheDocument();
+    expect(screen.getByText('advanced syntax detected')).toBeInTheDocument();
     expect(screen.getByTestId('terminal-config-editor-surface')).toBeInTheDocument();
   });
 });

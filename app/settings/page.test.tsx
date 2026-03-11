@@ -216,7 +216,7 @@ const mockMessages = {
       appearanceDesc: 'Customize the look and feel',
       customizationWorkbenchTitle: 'Customization Workbench',
       customizationWorkbenchDesc: 'Create and apply appearance presets',
-      customizationWorkbenchChanged: 'Appearance changed',
+      customizationWorkbenchChanged: 'Differs from preset',
       customizationPresetSelect: 'Preset',
       customizationPresetApply: 'Apply Preset',
       customizationPresetName: 'Preset Name',
@@ -566,6 +566,36 @@ describe('SettingsPage', () => {
 
     expect(screen.getByRole('button', { name: /apply preset/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /reset appearance group/i })).toBeInTheDocument();
+  });
+
+  it('does not show preset divergence badge when current appearance matches selected preset', async () => {
+    renderWithProviders(<SettingsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Customization Workbench')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText('Differs from preset')).not.toBeInTheDocument();
+  });
+
+  it('shows preset divergence badge when current appearance differs from selected preset', async () => {
+    const { useTheme } = jest.requireMock('next-themes') as {
+      useTheme: jest.Mock;
+    };
+
+    useTheme.mockReturnValue({
+      theme: 'dark',
+      setTheme: mockSetTheme,
+      resolvedTheme: 'dark',
+    });
+
+    renderWithProviders(<SettingsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Customization Workbench')).toBeInTheDocument();
+    });
+
+    expect(screen.getByText('Differs from preset')).toBeInTheDocument();
   });
 
   it('applies selected appearance preset from workbench', async () => {

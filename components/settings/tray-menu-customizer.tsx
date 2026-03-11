@@ -1,5 +1,21 @@
 "use client";
 
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { GripVertical, RotateCcw, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -30,20 +46,197 @@ interface TrayMenuCustomizerProps {
   t: (key: string) => string;
 }
 
+interface SortableMenuItemProps {
+  id: TrayMenuItemId;
+  isPriority: boolean;
+  canDrag: boolean;
+  canTogglePriority: boolean;
+  label: string;
+  t: (key: string) => string;
+  onPriorityToggle: (id: TrayMenuItemId, checked: boolean) => void;
+  onToggleEnabled: (id: TrayMenuItemId, checked: boolean) => void;
+}
+
+function SortableMenuItem({
+  id,
+  isPriority,
+  canDrag,
+  canTogglePriority,
+  label,
+  t,
+  onPriorityToggle,
+  onToggleEnabled,
+}: SortableMenuItemProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id, disabled: !canDrag });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  const isQuit = id === "quit";
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cn(
+        "flex items-center gap-2 px-2 py-2 text-sm transition-colors hover:bg-muted/50",
+        isDragging && "rounded-sm bg-muted",
+      )}
+    >
+      <button
+        type="button"
+        className={cn(
+          "inline-flex h-5 w-5 items-center justify-center",
+          canDrag ? "touch-none cursor-grab active:cursor-grabbing" : "cursor-default",
+        )}
+        disabled={!canDrag}
+        aria-label={t("settings.trayMenu.dragHint")}
+        {...(canDrag ? attributes : {})}
+        {...(canDrag ? listeners : {})}
+      >
+        <GripVertical
+          className={cn(
+            "h-3.5 w-3.5 shrink-0 text-muted-foreground",
+            !canDrag && "invisible",
+          )}
+        />
+      </button>
+      <span className="flex-1">{label}</span>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        onClick={() => onPriorityToggle(id, !isPriority)}
+        disabled={!canTogglePriority || isQuit}
+        className={cn("size-6", isPriority && "text-amber-500")}
+        aria-label={t("settings.trayMenu.priority")}
+        title={t("settings.trayMenu.priority")}
+      >
+        <Star className={cn("h-3.5 w-3.5", isPriority && "fill-current")} />
+      </Button>
+      <Switch
+        checked
+        onCheckedChange={(checked) => onToggleEnabled(id, checked)}
+        disabled={isQuit}
+        className="scale-75"
+      />
+    </div>
+  );
+}
+
+interface DisabledMenuItemProps {
+  id: TrayMenuItemId;
+  label: string;
+  t: (key: string) => string;
+  onToggleEnabled: (id: TrayMenuItemId, checked: boolean) => void;
+}
+
+function DisabledMenuItem({ id, label, t, onToggleEnabled }: DisabledMenuItemProps) {
+  return (
+    <div className="flex items-center gap-2 px-2 py-2 text-sm text-muted-foreground">
+      <span className="inline-flex h-5 w-5 items-center justify-center">
+        <GripVertical className="h-3.5 w-3.5 shrink-0 invisible" />
+      </span>
+      <span className="flex-1">{label}</span>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        disabled
+        className="size-6"
+        aria-label={t("settings.trayMenu.priority")}
+      >
+        <Star className="h-3.5 w-3.5" />
+      </Button>
+      <Switch
+        checked={false}
+        onCheckedChange={(checked) => onToggleEnabled(id, checked)}
+        className="scale-75"
+      />
+    </div>
+  );
+}
+
+interface StaticEnabledMenuItemProps {
+  id: TrayMenuItemId;
+  label: string;
+  t: (key: string) => string;
+  onToggleEnabled: (id: TrayMenuItemId, checked: boolean) => void;
+}
+
+function StaticEnabledMenuItem({
+  id,
+  label,
+  t,
+  onToggleEnabled,
+}: StaticEnabledMenuItemProps) {
+  return (
+    <div className="flex items-center gap-2 px-2 py-2 text-sm transition-colors hover:bg-muted/50">
+      <span className="inline-flex h-5 w-5 items-center justify-center">
+        <GripVertical className="h-3.5 w-3.5 shrink-0 text-muted-foreground invisible" />
+      </span>
+      <span className="flex-1">{label}</span>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        disabled
+        className="size-6"
+        aria-label={t("settings.trayMenu.priority")}
+      >
+        <Star className="h-3.5 w-3.5" />
+      </Button>
+      <Switch
+        checked
+        onCheckedChange={(checked) => onToggleEnabled(id, checked)}
+        disabled
+        className="scale-75"
+      />
+    </div>
+  );
+}
+
 export function TrayMenuCustomizer({ t }: TrayMenuCustomizerProps) {
   const {
-    allItems,
-    enabledItems,
-    priorityItems,
+    priorityEnabledItems,
+    normalEnabledItems,
+    requiredEnabledItems,
+    disabledItems,
     loading,
-    dragIndex,
     handleToggle,
     handlePriorityToggle,
-    handleDragStart,
-    handleDragOver,
-    handleDragEnd,
+    handlePriorityReorder,
+    handleNormalReorder,
     handleReset,
   } = useTrayMenu();
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  );
+
+  const handlePriorityDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    handlePriorityReorder(
+      String(active.id) as TrayMenuItemId,
+      String(over.id) as TrayMenuItemId,
+    );
+  };
+
+  const handleNormalDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    handleNormalReorder(
+      String(active.id) as TrayMenuItemId,
+      String(over.id) as TrayMenuItemId,
+    );
+  };
 
   if (loading) {
     return (
@@ -73,62 +266,96 @@ export function TrayMenuCustomizer({ t }: TrayMenuCustomizerProps) {
         </Button>
       </div>
 
-      <div className="flex flex-col gap-0.5 rounded-md border">
-        {allItems.map((id) => {
-          const isEnabled = enabledItems.includes(id);
-          const enabledIndex = enabledItems.indexOf(id);
-          const isQuit = id === "quit";
-          const isPriority = priorityItems.includes(id);
-
-          return (
-            <div
-              key={id}
-              draggable={isEnabled && !isQuit}
-              onDragStart={() => isEnabled && handleDragStart(enabledIndex)}
-              onDragOver={(e) =>
-                isEnabled && handleDragOver(e, enabledIndex)
-              }
-              onDragEnd={handleDragEnd}
-              className={cn(
-                "flex items-center gap-2 px-3 py-2 text-sm",
-                "transition-colors hover:bg-muted/50",
-                dragIndex !== null &&
-                  enabledIndex === dragIndex &&
-                  "bg-muted",
-                !isEnabled && "opacity-50",
-              )}
+      <div className="flex flex-col gap-2 rounded-md border p-1">
+        <div className="px-2 pt-1 text-xs font-medium text-muted-foreground">
+          {t("settings.trayMenuSections.priority")}
+        </div>
+        {priorityEnabledItems.length > 0 ? (
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handlePriorityDragEnd}
+          >
+            <SortableContext
+              items={priorityEnabledItems}
+              strategy={verticalListSortingStrategy}
             >
-              <GripVertical
-                className={cn(
-                  "h-3.5 w-3.5 shrink-0 text-muted-foreground",
-                  (!isEnabled || isQuit) && "invisible",
-                )}
+              {priorityEnabledItems.map((id) => (
+                <SortableMenuItem
+                  key={id}
+                  id={id}
+                  isPriority
+                  canDrag
+                  canTogglePriority
+                  label={getMenuItemLabel(id, t)}
+                  t={t}
+                  onPriorityToggle={handlePriorityToggle}
+                  onToggleEnabled={handleToggle}
+                />
+              ))}
+            </SortableContext>
+          </DndContext>
+        ) : (
+          <p className="px-2 py-1 text-xs text-muted-foreground">
+            {t("settings.trayMenuSections.priorityEmpty")}
+          </p>
+        )}
+
+        <div className="px-2 pt-1 text-xs font-medium text-muted-foreground">
+          {t("settings.trayMenuSections.enabled")}
+        </div>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleNormalDragEnd}
+        >
+          <SortableContext
+            items={normalEnabledItems}
+            strategy={verticalListSortingStrategy}
+          >
+            {normalEnabledItems.map((id) => (
+              <SortableMenuItem
+                key={id}
+                id={id}
+                isPriority={false}
+                canDrag
+                canTogglePriority
+                label={getMenuItemLabel(id, t)}
+                t={t}
+                onPriorityToggle={handlePriorityToggle}
+                onToggleEnabled={handleToggle}
               />
-              <span className="flex-1">{getMenuItemLabel(id, t)}</span>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                onClick={() => handlePriorityToggle(id, !isPriority)}
-                disabled={!isEnabled || isQuit}
-                className={cn(
-                  "size-6",
-                  isPriority && "text-amber-500",
-                )}
-                aria-label={t("settings.trayMenu.priority")}
-                title={t("settings.trayMenu.priority")}
-              >
-                <Star className={cn("h-3.5 w-3.5", isPriority && "fill-current")} />
-              </Button>
-              <Switch
-                checked={isEnabled}
-                onCheckedChange={(checked) => handleToggle(id, checked)}
-                disabled={isQuit}
-                className="scale-75"
-              />
-            </div>
-          );
-        })}
+            ))}
+          </SortableContext>
+        </DndContext>
+        {requiredEnabledItems.map((id) => (
+          <StaticEnabledMenuItem
+            key={id}
+            id={id}
+            label={getMenuItemLabel(id, t)}
+            t={t}
+            onToggleEnabled={handleToggle}
+          />
+        ))}
+
+        <div className="px-2 pt-1 text-xs font-medium text-muted-foreground">
+          {t("settings.trayMenuSections.disabled")}
+        </div>
+        {disabledItems.length > 0 ? (
+          disabledItems.map((id) => (
+            <DisabledMenuItem
+              key={id}
+              id={id}
+              label={getMenuItemLabel(id, t)}
+              t={t}
+              onToggleEnabled={handleToggle}
+            />
+          ))
+        ) : (
+          <p className="px-2 py-1 text-xs text-muted-foreground">
+            {t("settings.trayMenuSections.disabledEmpty")}
+          </p>
+        )}
       </div>
     </div>
   );

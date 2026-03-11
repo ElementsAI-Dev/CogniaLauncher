@@ -3,6 +3,7 @@
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { useLocale } from '@/components/providers/locale-provider';
 import type { TerminalConfigEditorToolbarProps } from './types';
 
 function truncateFingerprint(fingerprint?: string | null) {
@@ -17,10 +18,6 @@ function truncateFingerprint(fingerprint?: string | null) {
   return `${fingerprint.slice(0, 12)}…`;
 }
 
-function formatLineCount(lineCount: number) {
-  return `${lineCount} ${lineCount === 1 ? 'line' : 'lines'}`;
-}
-
 export function TerminalConfigEditorToolbar({
   configPath,
   fingerprint,
@@ -31,16 +28,17 @@ export function TerminalConfigEditorToolbar({
   shellType,
   snapshotPath,
 }: TerminalConfigEditorToolbarProps) {
+  const { t } = useLocale();
   const shortFingerprint = truncateFingerprint(fingerprint);
 
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        {shellType && <Badge variant="secondary">{`Shell ${shellType}`}</Badge>}
-        <Badge variant="outline">{`Language ${language}`}</Badge>
-        <Badge variant="outline">{formatLineCount(lineCount)}</Badge>
-        {hasDiagnostics && <Badge variant="destructive">Diagnostics</Badge>}
-        {hasPendingChanges && <Badge variant="secondary">Unsaved changes</Badge>}
+        {shellType && <Badge variant="secondary">{t('terminal.editorShellBadge', { shellType })}</Badge>}
+        <Badge variant="outline">{t('terminal.editorLanguageBadge', { language })}</Badge>
+        <Badge variant="outline">{t('terminal.editorLineCount', { count: lineCount })}</Badge>
+        {hasDiagnostics && <Badge variant="destructive">{t('terminal.editorViewDiagnostics')}</Badge>}
+        {hasPendingChanges && <Badge variant="secondary">{t('terminal.editorUnsavedChanges')}</Badge>}
       </div>
 
       {(configPath || snapshotPath || shortFingerprint) && (
@@ -62,7 +60,7 @@ export function TerminalConfigEditorToolbar({
             {snapshotPath && (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <span className="rounded-md border px-2 py-1 font-mono">snapshot ready</span>
+                  <span className="rounded-md border px-2 py-1 font-mono">{t('terminal.editorSnapshotReady')}</span>
                 </TooltipTrigger>
                 <TooltipContent side="bottom" className="max-w-sm break-all font-mono text-xs">
                   {snapshotPath}

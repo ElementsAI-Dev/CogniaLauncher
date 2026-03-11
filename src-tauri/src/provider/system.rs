@@ -201,13 +201,13 @@ impl SystemEnvironmentType {
                 commands: vec!["java"],
                 version_args: vec!["-version"],
                 version_pattern: r#"version "(\d+(?:\.\d+)*)""#,
-                version_files: vec![".java-version", ".tool-versions", ".sdkmanrc"],
+                version_files: vec![".java-version", ".sdkmanrc", ".tool-versions"],
                 manifest_files: vec![
-                    (
-                        "pom.xml",
-                        r#"<java\.version>(\d+(?:\.\d+)*)</java\.version>"#,
-                    ),
-                    ("build.gradle", r#"sourceCompatibility\s*=\s*['"]?(\d+)"#),
+                    ("pom.xml", ""),
+                    ("build.gradle.kts", ""),
+                    ("build.gradle", ""),
+                    ("gradle/wrapper/gradle-wrapper.properties", ""),
+                    (".mvn/wrapper/maven-wrapper.properties", ""),
                 ],
             },
             Self::Kotlin => SystemDetectionConfig {
@@ -525,6 +525,21 @@ impl SystemEnvironmentProvider {
                                 }
                             }
                         }
+                    } else if *version_file == ".sdkmanrc" {
+                        if let Ok(content) = crate::platform::fs::read_file_string(&file_path).await
+                        {
+                            let env_type = self.env_type.env_type();
+                            let entries = crate::provider::sdkman::parse_sdkmanrc(&content);
+                            if let Some((_, value)) =
+                                entries.iter().find(|(key, _)| key == env_type)
+                            {
+                                return Ok(Some(VersionDetection {
+                                    version: value.clone(),
+                                    source: VersionSource::LocalFile,
+                                    source_path: Some(file_path),
+                                }));
+                            }
+                        }
                     } else {
                         // Simple version file
                         if let Ok(content) = crate::platform::fs::read_file_string(&file_path).await
@@ -547,14 +562,47 @@ impl SystemEnvironmentProvider {
                 let file_path = current.join(manifest_file);
                 if file_path.exists() {
                     if let Ok(content) = crate::platform::fs::read_file_string(&file_path).await {
-                        if let Ok(re) = Regex::new(pattern) {
-                            if let Some(caps) = re.captures(&content) {
-                                if let Some(version) = caps.get(1) {
-                                    return Ok(Some(VersionDetection {
-                                        version: version.as_str().to_string(),
-                                        source: VersionSource::Manifest,
-                                        source_path: Some(file_path),
-                                    }));
+                        if self.env_type == SystemEnvironmentType::Java {
+                            let detected = match *manifest_file {
+                                "pom.xml" => {
+                                    crate::provider::sdkman::extract_java_version_from_pom(&content)
+                                }
+                                "build.gradle" | "build.gradle.kts" => {
+                                    crate::provider::sdkman::extract_java_version_from_gradle(
+                                        &content,
+                                    )
+                                }
+                                "gradle/wrapper/gradle-wrapper.properties" => {
+                                    crate::provider::sdkman::extract_gradle_wrapper_version(&content)
+                                        .map(|version| format!("gradle@{}", version))
+                                }
+                                ".mvn/wrapper/maven-wrapper.properties" => {
+                                    crate::provider::sdkman::extract_maven_wrapper_version(&content)
+                                        .map(|version| format!("maven@{}", version))
+                                }
+                                _ => None,
+                            };
+
+                            if let Some(version) = detected {
+                                return Ok(Some(VersionDetection {
+                                    version,
+                                    source: VersionSource::Manifest,
+                                    source_path: Some(file_path),
+                                }));
+                            }
+                            continue;
+                        }
+
+                        if !pattern.is_empty() {
+                            if let Ok(re) = Regex::new(pattern) {
+                                if let Some(caps) = re.captures(&content) {
+                                    if let Some(version) = caps.get(1) {
+                                        return Ok(Some(VersionDetection {
+                                            version: version.as_str().to_string(),
+                                            source: VersionSource::Manifest,
+                                            source_path: Some(file_path),
+                                        }));
+                                    }
                                 }
                             }
                         }
@@ -754,6 +802,7 @@ impl EnvironmentProvider for SystemEnvironmentProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::tempdir;
 
     #[tokio::test]
     async fn test_system_go_detection() {
@@ -844,6 +893,118 @@ mod tests {
         assert_eq!(config.version_pattern, r"(\d+\.\d+\.\d+)");
         assert_eq!(config.version_files, vec![".tool-versions"]);
         assert!(config.manifest_files.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_java_project_detection_uses_sdkman_java_key() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        crate::platform::fs::write_file_string(
+            root.join(".sdkmanrc"),
+            "java=21.0.2-tem\ngradle=8.11.1\n",
+        )
+        .await
+        .unwrap();
+
+        let provider = SystemEnvironmentProvider::new(SystemEnvironmentType::Java);
+        let detected = provider.detect_from_project_files(root).await.unwrap().unwrap();
+        assert_eq!(detected.version, "21.0.2-tem");
+        assert!(matches!(detected.source, VersionSource::LocalFile));
+        assert_eq!(
+            detected
+                .source_path
+                .as_ref()
+                .and_then(|p| p.file_name())
+                .and_then(|n| n.to_str()),
+            Some(".sdkmanrc")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_java_project_detection_reads_gradle_wrapper_context() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        let wrapper_dir = root.join("gradle").join("wrapper");
+        std::fs::create_dir_all(&wrapper_dir).unwrap();
+        crate::platform::fs::write_file_string(
+            wrapper_dir.join("gradle-wrapper.properties"),
+            "distributionUrl=https\\://services.gradle.org/distributions/gradle-8.11.1-all.zip",
+        )
+        .await
+        .unwrap();
+
+        let provider = SystemEnvironmentProvider::new(SystemEnvironmentType::Java);
+        let detected = provider.detect_from_project_files(root).await.unwrap().unwrap();
+        assert_eq!(detected.version, "gradle@8.11.1");
+        assert!(matches!(detected.source, VersionSource::Manifest));
+    }
+
+    #[tokio::test]
+    async fn test_java_project_detection_prefers_pom_over_wrapper_context() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        let wrapper_dir = root.join("gradle").join("wrapper");
+        std::fs::create_dir_all(&wrapper_dir).unwrap();
+        crate::platform::fs::write_file_string(
+            root.join("pom.xml"),
+            "<project><properties><java.version>17</java.version></properties></project>",
+        )
+        .await
+        .unwrap();
+        crate::platform::fs::write_file_string(
+            wrapper_dir.join("gradle-wrapper.properties"),
+            "distributionUrl=https\\://services.gradle.org/distributions/gradle-8.11.1-bin.zip",
+        )
+        .await
+        .unwrap();
+
+        let provider = SystemEnvironmentProvider::new(SystemEnvironmentType::Java);
+        let detected = provider.detect_from_project_files(root).await.unwrap().unwrap();
+        assert_eq!(detected.version, "17");
+        assert!(matches!(detected.source, VersionSource::Manifest));
+        assert_eq!(
+            detected
+                .source_path
+                .as_ref()
+                .and_then(|p| p.file_name())
+                .and_then(|n| n.to_str()),
+            Some("pom.xml")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_java_project_detection_ignores_invalid_sdkmanrc_value() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        crate::platform::fs::write_file_string(root.join(".sdkmanrc"), "java=${jdk.version}\n")
+            .await
+            .unwrap();
+
+        let provider = SystemEnvironmentProvider::new(SystemEnvironmentType::Java);
+        let detected = provider.detect_from_project_files(root).await.unwrap();
+        assert!(detected.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_java_project_detection_prefers_java_version_file_over_wrapper_context() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        let wrapper_dir = root.join(".mvn").join("wrapper");
+        std::fs::create_dir_all(&wrapper_dir).unwrap();
+        crate::platform::fs::write_file_string(root.join(".java-version"), "21")
+            .await
+            .unwrap();
+        crate::platform::fs::write_file_string(
+            wrapper_dir.join("maven-wrapper.properties"),
+            "distributionUrl=https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/3.9.9/apache-maven-3.9.9-bin.zip",
+        )
+        .await
+        .unwrap();
+
+        let provider = SystemEnvironmentProvider::new(SystemEnvironmentType::Java);
+        let detected = provider.detect_from_project_files(root).await.unwrap().unwrap();
+        assert_eq!(detected.version, "21");
+        assert!(matches!(detected.source, VersionSource::LocalFile));
     }
 
     #[test]

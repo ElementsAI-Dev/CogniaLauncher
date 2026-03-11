@@ -459,9 +459,11 @@ describe('useEnvironments', () => {
       '.java-version',
       '.sdkmanrc',
       '.tool-versions',
+      'mise.toml',
       'pom.xml (java.version)',
       'build.gradle (sourceCompatibility)',
-      'mise.toml',
+      'gradle/wrapper/gradle-wrapper.properties (distributionUrl)',
+      '.mvn/wrapper/maven-wrapper.properties (distributionUrl)',
     ]);
     mockEnvGetDefaultDetectionSources.mockResolvedValue([
       '.java-version',
@@ -484,9 +486,11 @@ describe('useEnvironments', () => {
         { fileName: '.java-version', enabled: true },
         { fileName: '.sdkmanrc', enabled: false },
         { fileName: '.tool-versions', enabled: false },
+        { fileName: 'mise.toml', enabled: true },
         { fileName: 'pom.xml (java.version)', enabled: true },
         { fileName: 'build.gradle (sourceCompatibility)', enabled: false },
-        { fileName: 'mise.toml', enabled: true },
+        { fileName: 'gradle/wrapper/gradle-wrapper.properties (distributionUrl)', enabled: false },
+        { fileName: '.mvn/wrapper/maven-wrapper.properties (distributionUrl)', enabled: false },
       ],
     });
   });

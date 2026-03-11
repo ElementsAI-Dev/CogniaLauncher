@@ -151,10 +151,12 @@ describe('Environment Constants', () => {
       expect(rustFiles).toContain('rust-toolchain');
     });
 
-    it('java has pom.xml and build.gradle detection files', () => {
+    it('java has pom.xml, build.gradle, and wrapper detection files', () => {
       const javaFiles = DEFAULT_DETECTION_FILES.java;
       expect(javaFiles).toContain('pom.xml (java.version)');
       expect(javaFiles).toContain('build.gradle (sourceCompatibility)');
+      expect(javaFiles).toContain('gradle/wrapper/gradle-wrapper.properties (distributionUrl)');
+      expect(javaFiles).toContain('.mvn/wrapper/maven-wrapper.properties (distributionUrl)');
     });
 
     it('scala has build.sbt detection file', () => {

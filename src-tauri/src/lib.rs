@@ -875,6 +875,7 @@ pub fn run() {
             commands::wsl::wsl_set_distro_config,
             commands::wsl::wsl_get_version_info,
             commands::wsl::wsl_get_capabilities,
+            commands::wsl::wsl_get_runtime_snapshot,
             commands::wsl::wsl_set_sparse,
             commands::wsl::wsl_move_distro,
             commands::wsl::wsl_resize_distro,
@@ -1625,6 +1626,16 @@ async fn auto_backup_task(
             continue;
         }
 
+        let effective_interval_hours = if interval_hours > 720 {
+            info!(
+                "Auto-backup interval {}h exceeds supported limit; clamping to 720h",
+                interval_hours
+            );
+            720
+        } else {
+            interval_hours
+        };
+
         // Perform auto backup
         {
             let s = settings.read().await;
@@ -1661,7 +1672,7 @@ async fn auto_backup_task(
         }
 
         // Sleep for the configured interval
-        let sleep_secs = (interval_hours as u64).max(1) * 3600;
+        let sleep_secs = (effective_interval_hours as u64).max(1) * 3600;
         tokio::time::sleep(Duration::from_secs(sleep_secs)).await;
     }
 }

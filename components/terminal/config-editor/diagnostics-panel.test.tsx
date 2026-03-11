@@ -4,6 +4,10 @@ import {
   TerminalConfigEditorDiagnosticsPanel,
 } from './diagnostics-panel';
 
+jest.mock('@/components/providers/locale-provider', () => ({
+  useLocale: () => ({ t: (key: string) => key }),
+}));
+
 describe('TerminalConfigEditorDiagnosticsPanel', () => {
   it('returns null when diagnostics list is empty', () => {
     const { container } = render(
@@ -27,7 +31,7 @@ describe('TerminalConfigEditorDiagnosticsPanel', () => {
       />,
     );
 
-    expect(screen.getByText('1 issue detected')).toBeInTheDocument();
+    expect(screen.getByText('terminal.editorDiagnosticsSummary')).toBeInTheDocument();
     expect(screen.getByText('validation')).toBeInTheDocument();
     expect(screen.getByText('parse')).toBeInTheDocument();
     expect(screen.getByText('L3:8')).toBeInTheDocument();

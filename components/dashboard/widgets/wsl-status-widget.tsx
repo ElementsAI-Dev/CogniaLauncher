@@ -18,7 +18,14 @@ import {
 
 export function WslStatusWidget() {
   const { t } = useLocale();
-  const { available, distros, status, runningCount, completeness } = useWslStatus();
+  const {
+    available,
+    distros,
+    status,
+    runningCount,
+    completeness,
+    runtimeSnapshot,
+  } = useWslStatus();
   const overviewContext = useWslStore((state) => state.overviewContext);
 
   if (available === null) {
@@ -42,7 +49,7 @@ export function WslStatusWidget() {
           <DashboardEmptyState
             className="py-0"
             icon={<Terminal className="h-8 w-8 opacity-60" />}
-            message={t('wsl.notAvailable')}
+            message={runtimeSnapshot?.reason || t('wsl.notAvailable')}
           />
         </CardContent>
       </Card>
@@ -60,7 +67,7 @@ export function WslStatusWidget() {
         </CardDescription>
         {completeness.state === 'degraded' && (
           <p className="text-xs text-amber-600">
-            {completeness.degradedReasons[0]}
+            {runtimeSnapshot?.degradedReasons[0] ?? completeness.degradedReasons[0]}
           </p>
         )}
       </CardHeader>

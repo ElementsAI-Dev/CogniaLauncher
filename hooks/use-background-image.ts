@@ -6,7 +6,6 @@ import {
   compressImage,
   setBackgroundImageData,
   getBackgroundImage,
-  notifyBackgroundChange,
   BG_CHANGE_EVENT,
 } from "@/lib/theme/background";
 import { isTauri } from "@/lib/tauri";
@@ -56,7 +55,6 @@ export function useBackgroundImage(
       try {
         const dataUrl = await compressImage(blob);
         setBackgroundImageData(dataUrl);
-        notifyBackgroundChange();
         if (!backgroundEnabled) {
           setBackgroundEnabled(true);
         }
@@ -128,7 +126,6 @@ export function useBackgroundImage(
 
   const handleClear = useCallback(() => {
     clearBackground();
-    notifyBackgroundChange();
   }, [clearBackground]);
 
   return {

@@ -2405,7 +2405,7 @@ async fn cmd_backup(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_
                     Err(msg) => return runtime_error(command, json_mode, msg),
                 };
 
-            match backup::create_backup(
+            let result = backup::create_backup_with_result(
                 &ctx.settings,
                 &contents,
                 note.as_deref(),
@@ -2413,38 +2413,36 @@ async fn cmd_backup(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_
                 &profile_manager,
                 &custom_detection_manager,
             )
-            .await
-            {
-                Ok(result) => {
-                    if json_mode {
-                        print_command_json(command, &result);
-                    } else {
-                        println!("Backup created at: {}", result.path);
-                        println!("Duration: {} ms", result.duration_ms);
-                        println!("Status: {:?}", result.status);
-                        if let Some(code) = &result.reason_code {
-                            println!("Reason: {}", code);
-                        }
-                        if !result.issues.is_empty() {
-                            for item in &result.issues {
-                                if let Some(content_type) = &item.content_type {
-                                    eprintln!(
-                                        "Issue [{}] ({}): {}",
-                                        item.code, content_type, item.message
-                                    );
-                                } else {
-                                    eprintln!("Issue [{}]: {}", item.code, item.message);
-                                }
-                            }
-                        }
-                        if let Some(err) = &result.error {
-                            eprintln!("Error: {}", err);
+            .await;
+
+            if json_mode {
+                print_command_json(command, &result);
+            } else {
+                if !result.path.is_empty() {
+                    println!("Backup created at: {}", result.path);
+                }
+                println!("Duration: {} ms", result.duration_ms);
+                println!("Status: {:?}", result.status);
+                if let Some(code) = &result.reason_code {
+                    println!("Reason: {}", code);
+                }
+                if !result.issues.is_empty() {
+                    for item in &result.issues {
+                        if let Some(content_type) = &item.content_type {
+                            eprintln!(
+                                "Issue [{}] ({}): {}",
+                                item.code, content_type, item.message
+                            );
+                        } else {
+                            eprintln!("Issue [{}]: {}", item.code, item.message);
                         }
                     }
-                    backup_status_exit_code(result.status)
                 }
-                Err(e) => runtime_error(command, json_mode, format!("Backup create error: {}", e)),
+                if let Some(err) = &result.error {
+                    eprintln!("Error: {}", err);
+                }
             }
+            backup_status_exit_code(result.status)
         }
         "restore" => {
             let command = "backup.restore";
@@ -2465,7 +2463,7 @@ async fn cmd_backup(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_
                 };
             let mut settings = ctx.settings.clone();
 
-            match backup::restore_backup(
+            let result = backup::restore_backup_with_result(
                 Path::new(&backup_path),
                 &contents,
                 &mut settings,
@@ -2473,45 +2471,41 @@ async fn cmd_backup(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_
                 &mut profile_manager,
                 &mut custom_detection_manager,
             )
-            .await
-            {
-                Ok(result) => {
-                    if json_mode {
-                        print_command_json(command, &result);
-                    } else {
-                        println!("Restore success: {}", result.success);
-                        println!("Status: {:?}", result.status);
-                        if let Some(code) = &result.reason_code {
-                            println!("Reason: {}", code);
-                        }
-                        if !result.restored.is_empty() {
-                            println!("Restored: {}", result.restored.join(", "));
-                        }
-                        if !result.skipped.is_empty() {
-                            for item in &result.skipped {
-                                eprintln!("Skipped {}: {}", item.content_type, item.reason);
-                            }
-                        }
-                        if !result.issues.is_empty() {
-                            for item in &result.issues {
-                                if let Some(content_type) = &item.content_type {
-                                    eprintln!(
-                                        "Issue [{}] ({}): {}",
-                                        item.code, content_type, item.message
-                                    );
-                                } else {
-                                    eprintln!("Issue [{}]: {}", item.code, item.message);
-                                }
-                            }
-                        }
-                        if let Some(err) = &result.error {
-                            eprintln!("Error: {}", err);
+            .await;
+
+            if json_mode {
+                print_command_json(command, &result);
+            } else {
+                println!("Restore success: {}", result.success);
+                println!("Status: {:?}", result.status);
+                if let Some(code) = &result.reason_code {
+                    println!("Reason: {}", code);
+                }
+                if !result.restored.is_empty() {
+                    println!("Restored: {}", result.restored.join(", "));
+                }
+                if !result.skipped.is_empty() {
+                    for item in &result.skipped {
+                        eprintln!("Skipped {}: {}", item.content_type, item.reason);
+                    }
+                }
+                if !result.issues.is_empty() {
+                    for item in &result.issues {
+                        if let Some(content_type) = &item.content_type {
+                            eprintln!(
+                                "Issue [{}] ({}): {}",
+                                item.code, content_type, item.message
+                            );
+                        } else {
+                            eprintln!("Issue [{}]: {}", item.code, item.message);
                         }
                     }
-                    backup_status_exit_code(result.status)
                 }
-                Err(e) => runtime_error(command, json_mode, format!("Backup restore error: {}", e)),
+                if let Some(err) = &result.error {
+                    eprintln!("Error: {}", err);
+                }
             }
+            backup_status_exit_code(result.status)
         }
         "delete" => {
             let command = "backup.delete";
@@ -2520,26 +2514,30 @@ async fn cmd_backup(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_
                 None => return usage_error(command, json_mode, "backup path is required"),
             };
 
-            match backup::delete_backup(Path::new(&backup_path)).await {
-                Ok(deleted) => {
-                    if json_mode {
-                        print_command_json(
-                            command,
-                            &json!({ "deleted": deleted, "path": backup_path }),
-                        );
-                    } else if deleted {
-                        println!("Deleted backup: {}", backup_path);
-                    } else {
-                        println!("Backup not deleted: {}", backup_path);
-                    }
-                    if deleted {
-                        EXIT_OK
-                    } else {
-                        EXIT_ERROR
+            let result = backup::delete_backup_with_result(Path::new(&backup_path)).await;
+            if json_mode {
+                print_command_json(command, &result);
+            } else {
+                println!("Delete success: {}", result.success);
+                println!("Status: {:?}", result.status);
+                if let Some(code) = &result.reason_code {
+                    println!("Reason: {}", code);
+                }
+                if result.deleted {
+                    println!("Deleted backup: {}", result.path);
+                } else {
+                    println!("Backup not deleted: {}", result.path);
+                }
+                if !result.issues.is_empty() {
+                    for item in &result.issues {
+                        eprintln!("Issue [{}]: {}", item.code, item.message);
                     }
                 }
-                Err(e) => runtime_error(command, json_mode, format!("Backup delete error: {}", e)),
+                if let Some(err) = &result.error {
+                    eprintln!("Error: {}", err);
+                }
             }
+            backup_status_exit_code(result.status)
         }
         other => usage_error(
             COMMAND,
@@ -3700,13 +3698,22 @@ async fn cmd_log(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_mod
             let command = "log.clear";
             let file_name = get_string(&subcmd.matches.args, "file");
             match crate::commands::log::log_clear(ctx.app.clone(), file_name.clone()).await {
-                Ok(()) => {
+                Ok(result) => {
                     if json_mode {
-                        print_command_json(command, &json!({ "cleared": true, "file": file_name }));
+                        print_command_json(command, &result);
                     } else if let Some(file) = file_name {
-                        println!("Cleared log file {}", file);
+                        println!(
+                            "Cleared log file {} (deleted {}, freed {})",
+                            file,
+                            result.deleted_count,
+                            format_size(result.freed_bytes)
+                        );
                     } else {
-                        println!("Cleared log files");
+                        println!(
+                            "Cleared log files (deleted {}, freed {})",
+                            result.deleted_count,
+                            format_size(result.freed_bytes)
+                        );
                     }
                     EXIT_OK
                 }
@@ -4197,6 +4204,18 @@ mod tests {
             backup_status_exit_code(backup::BackupOperationStatus::Failed),
             EXIT_ERROR
         );
+    }
+
+    #[test]
+    fn test_backup_status_exit_code_non_success_are_failures() {
+        let non_success = [
+            backup::BackupOperationStatus::Partial,
+            backup::BackupOperationStatus::Skipped,
+            backup::BackupOperationStatus::Failed,
+        ];
+        for status in non_success {
+            assert_eq!(backup_status_exit_code(status), EXIT_ERROR);
+        }
     }
 
     #[test]

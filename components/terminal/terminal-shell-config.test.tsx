@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { TerminalShellConfig } from './terminal-shell-config';
 import type { ShellInfo, ShellConfigEntries } from '@/types/tauri';
@@ -518,12 +518,134 @@ describe('TerminalShellConfig', () => {
     await user.click(await screen.findByRole('option', { name: /\/home\/user\/\.bashrc/i }));
 
     await user.click(screen.getByRole('button', { name: /terminal\.loadConfig/i }));
-    await screen.findByRole('button', { name: /Restore Snapshot/i });
+    await screen.findByRole('button', { name: /terminal\.restoreSnapshot/i });
 
-    await user.click(screen.getByRole('button', { name: /Restore Snapshot/i }));
+    await user.click(screen.getByRole('button', { name: /terminal\.restoreSnapshot/i }));
 
     expect(onRestoreConfigSnapshot).toHaveBeenCalledWith('/home/user/.bashrc');
     expect(onReadConfig).toHaveBeenCalledTimes(2);
+  });
+
+  it('refreshes only parsed entries when refresh intent marks configEntries stale', async () => {
+    const user = userEvent.setup();
+    const onRefreshHandled = jest.fn();
+    const onReadConfig = jest.fn().mockResolvedValue('export TEST=1');
+    const onFetchConfigEntries = jest.fn().mockResolvedValue(mockEntries);
+    const onParseConfigContent = jest.fn().mockResolvedValue(mockEntries);
+    const onGetConfigEditorMetadata = jest.fn().mockResolvedValue({
+      path: '/home/user/.bashrc',
+      shellType: 'bash',
+      language: 'bash',
+      snapshotPath: null,
+      fingerprint: 'abc123',
+    });
+
+    const { rerender } = render(
+      <TerminalShellConfig
+        shells={shells}
+        onReadConfig={onReadConfig}
+        onFetchConfigEntries={onFetchConfigEntries}
+        onParseConfigContent={onParseConfigContent}
+        onGetConfigEditorMetadata={onGetConfigEditorMetadata}
+        onBackupConfig={jest.fn()}
+        refreshIntent={{ signal: 0, configEntries: false, configMetadata: false }}
+        onRefreshHandled={onRefreshHandled}
+      />,
+    );
+
+    const [, configSelect] = screen.getAllByRole('combobox');
+    await user.click(configSelect);
+    await user.click(await screen.findByRole('option', { name: /\/home\/user\/\.bashrc/i }));
+    await user.click(screen.getByRole('button', { name: /terminal\.loadConfig/i }));
+    await waitFor(() => {
+      expect(onReadConfig).toHaveBeenCalledTimes(1);
+    });
+
+    onRefreshHandled.mockClear();
+    onReadConfig.mockClear();
+    onParseConfigContent.mockClear();
+    onGetConfigEditorMetadata.mockClear();
+
+    rerender(
+      <TerminalShellConfig
+        shells={shells}
+        onReadConfig={onReadConfig}
+        onFetchConfigEntries={onFetchConfigEntries}
+        onParseConfigContent={onParseConfigContent}
+        onGetConfigEditorMetadata={onGetConfigEditorMetadata}
+        onBackupConfig={jest.fn()}
+        refreshIntent={{ signal: 1, configEntries: true, configMetadata: false }}
+        onRefreshHandled={onRefreshHandled}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(onReadConfig).toHaveBeenCalledTimes(1);
+      expect(onParseConfigContent).toHaveBeenCalledTimes(1);
+      expect(onGetConfigEditorMetadata).not.toHaveBeenCalled();
+      expect(onRefreshHandled).toHaveBeenCalledWith({ configEntries: true, configMetadata: false });
+    });
+  });
+
+  it('refreshes only metadata when refresh intent marks configMetadata stale', async () => {
+    const user = userEvent.setup();
+    const onRefreshHandled = jest.fn();
+    const onReadConfig = jest.fn().mockResolvedValue('export TEST=1');
+    const onFetchConfigEntries = jest.fn().mockResolvedValue(mockEntries);
+    const onParseConfigContent = jest.fn().mockResolvedValue(mockEntries);
+    const onGetConfigEditorMetadata = jest.fn().mockResolvedValue({
+      path: '/home/user/.bashrc',
+      shellType: 'bash',
+      language: 'bash',
+      snapshotPath: null,
+      fingerprint: 'abc123',
+    });
+
+    const { rerender } = render(
+      <TerminalShellConfig
+        shells={shells}
+        onReadConfig={onReadConfig}
+        onFetchConfigEntries={onFetchConfigEntries}
+        onParseConfigContent={onParseConfigContent}
+        onGetConfigEditorMetadata={onGetConfigEditorMetadata}
+        onBackupConfig={jest.fn()}
+        refreshIntent={{ signal: 0, configEntries: false, configMetadata: false }}
+        onRefreshHandled={onRefreshHandled}
+      />,
+    );
+
+    const [, configSelect] = screen.getAllByRole('combobox');
+    await user.click(configSelect);
+    await user.click(await screen.findByRole('option', { name: /\/home\/user\/\.bashrc/i }));
+    await user.click(screen.getByRole('button', { name: /terminal\.loadConfig/i }));
+    await waitFor(() => {
+      expect(onReadConfig).toHaveBeenCalledTimes(1);
+    });
+
+    onRefreshHandled.mockClear();
+    onReadConfig.mockClear();
+    onParseConfigContent.mockClear();
+    onGetConfigEditorMetadata.mockClear();
+
+    rerender(
+      <TerminalShellConfig
+        shells={shells}
+        onReadConfig={onReadConfig}
+        onFetchConfigEntries={onFetchConfigEntries}
+        onParseConfigContent={onParseConfigContent}
+        onGetConfigEditorMetadata={onGetConfigEditorMetadata}
+        onBackupConfig={jest.fn()}
+        refreshIntent={{ signal: 1, configEntries: false, configMetadata: true }}
+        onRefreshHandled={onRefreshHandled}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(onReadConfig).not.toHaveBeenCalled();
+      expect(onParseConfigContent).not.toHaveBeenCalled();
+      expect(onGetConfigEditorMetadata).toHaveBeenCalledTimes(1);
+      expect(onRefreshHandled).toHaveBeenCalledWith({ configEntries: false, configMetadata: true });
+    });
   });
 
   it('emits dirty-state changes and shows explicit unsaved-draft actions when switching target', async () => {
@@ -569,14 +691,14 @@ describe('TerminalShellConfig', () => {
     await user.click(await screen.findByRole('option', { name: /\/home\/user\/\.bash_profile/i }));
 
     expect(onRequestDiscard).not.toHaveBeenCalled();
-    expect(screen.getByRole('heading', { name: /Unsaved Draft/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /terminal\.unsavedDraft/i })).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: /Stay/i }));
-    expect(screen.queryByRole('heading', { name: /Unsaved Draft/i })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /terminal\.stay/i }));
+    expect(screen.queryByRole('heading', { name: /terminal\.unsavedDraft/i })).not.toBeInTheDocument();
 
     await user.click(screen.getAllByRole('combobox')[1]);
     await user.click(await screen.findByRole('option', { name: /\/home\/user\/\.bash_profile/i }));
-    await user.click(screen.getByRole('button', { name: /Discard and Switch/i }));
+    await user.click(screen.getByRole('button', { name: /terminal\.discardAndSwitch/i }));
 
     expect(screen.queryByTestId('terminal-config-editor')).not.toBeInTheDocument();
   });

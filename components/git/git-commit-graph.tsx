@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -77,6 +78,14 @@ interface GraphRowProps {
   onSelect?: (hash: string) => void;
   onContextAction?: (action: string, hash: string) => void;
   hasContextMenu: boolean;
+  enabledActions: {
+    copy: boolean;
+    branch: boolean;
+    tag: boolean;
+    cherrypick: boolean;
+    revert: boolean;
+    reset: boolean;
+  };
 }
 
 const GraphRow = memo(function GraphRow({
@@ -85,6 +94,7 @@ const GraphRow = memo(function GraphRow({
   onSelect,
   onContextAction,
   hasContextMenu,
+  enabledActions,
 }: GraphRowProps) {
   const { t } = useLocale();
   const isMerge = entry.parents.length >= 2;
@@ -162,32 +172,50 @@ const GraphRow = memo(function GraphRow({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-44">
-            <DropdownMenuItem onClick={() => onContextAction?.('copy', entry.hash)}>
-              <Copy className="h-3.5 w-3.5 mr-2" />
-              {t('git.graph.copyHash')}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => onContextAction?.('branch', entry.hash)}>
-              <GitBranch className="h-3.5 w-3.5 mr-2" />
-              {t('git.graph.createBranch')}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onContextAction?.('tag', entry.hash)}>
-              <Tag className="h-3.5 w-3.5 mr-2" />
-              {t('git.graph.createTag')}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => onContextAction?.('cherrypick', entry.hash)}>
-              <CherryIcon className="h-3.5 w-3.5 mr-2" />
-              {t('git.graph.cherryPick')}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onContextAction?.('revert', entry.hash)}>
-              <RotateCcw className="h-3.5 w-3.5 mr-2" />
-              {t('git.graph.revert')}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onContextAction?.('reset', entry.hash)}>
-              <History className="h-3.5 w-3.5 mr-2" />
-              {t('git.resetAction.title')}
-            </DropdownMenuItem>
+            {enabledActions.copy && (
+              <>
+                <DropdownMenuItem onClick={() => onContextAction?.('copy', entry.hash)}>
+                  <Copy className="h-3.5 w-3.5 mr-2" />
+                  {t('git.graph.copyHash')}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+              </>
+            )}
+            {(enabledActions.branch || enabledActions.tag) && (
+              <>
+                {enabledActions.branch && (
+                  <DropdownMenuItem onClick={() => onContextAction?.('branch', entry.hash)}>
+                    <GitBranch className="h-3.5 w-3.5 mr-2" />
+                    {t('git.graph.createBranch')}
+                  </DropdownMenuItem>
+                )}
+                {enabledActions.tag && (
+                  <DropdownMenuItem onClick={() => onContextAction?.('tag', entry.hash)}>
+                    <Tag className="h-3.5 w-3.5 mr-2" />
+                    {t('git.graph.createTag')}
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuSeparator />
+              </>
+            )}
+            {enabledActions.cherrypick && (
+              <DropdownMenuItem onClick={() => onContextAction?.('cherrypick', entry.hash)}>
+                <CherryIcon className="h-3.5 w-3.5 mr-2" />
+                {t('git.graph.cherryPick')}
+              </DropdownMenuItem>
+            )}
+            {enabledActions.revert && (
+              <DropdownMenuItem onClick={() => onContextAction?.('revert', entry.hash)}>
+                <RotateCcw className="h-3.5 w-3.5 mr-2" />
+                {t('git.graph.revert')}
+              </DropdownMenuItem>
+            )}
+            {enabledActions.reset && (
+              <DropdownMenuItem onClick={() => onContextAction?.('reset', entry.hash)}>
+                <History className="h-3.5 w-3.5 mr-2" />
+                {t('git.resetAction.title')}
+              </DropdownMenuItem>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       )}
@@ -217,6 +245,7 @@ export function GitCommitGraph({
   const { t } = useLocale();
   const [entries, setEntries] = useState<GitGraphEntry[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [limit, setLimit] = useState(100);
   const [allBranches, setAllBranches] = useState(true);
   const [firstParent, setFirstParent] = useState(false);
@@ -227,28 +256,65 @@ export function GitCommitGraph({
   const [focusedIdx, setFocusedIdx] = useState(-1);
 
   const hasContextMenu = !!(onCopyHash || onCreateBranch || onCreateTag || onRevert || onCherryPick || onResetTo);
+  const enabledActions = useMemo(
+    () => ({
+      copy: !!onCopyHash,
+      branch: !!onCreateBranch,
+      tag: !!onCreateTag,
+      cherrypick: !!onCherryPick,
+      revert: !!onRevert,
+      reset: !!onResetTo,
+    }),
+    [onCopyHash, onCreateBranch, onCreateTag, onCherryPick, onRevert, onResetTo],
+  );
 
   const loadData = useCallback(async (loadLimit: number, allBr: boolean, fp: boolean, br: string) => {
     setLoading(true);
+    setError(null);
     try {
       const branchArg = br === '__all__' ? undefined : br;
       const data = await onLoadGraph(loadLimit, allBr, fp, branchArg);
       setEntries(data);
+      setError(null);
+    } catch (e) {
+      setError(String(e));
     } finally {
       setLoading(false);
     }
   }, [onLoadGraph]);
 
+  const resetWindowAndLoad = useCallback(
+    async (allBr: boolean, fp: boolean, br: string) => {
+      const nextLimit = 100;
+      setLimit(nextLimit);
+      setScrollTop(0);
+      if (scrollRef.current) scrollRef.current.scrollTop = 0;
+      await loadData(nextLimit, allBr, fp, br);
+    },
+    [loadData],
+  );
+
   useEffect(() => {
-    loadData(limit, allBranches, firstParent, selectedBranch);
+    resetWindowAndLoad(allBranches, firstParent, selectedBranch);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [onLoadGraph]);
 
   useEffect(() => {
     if (refreshKey === undefined) return;
     loadData(limit, allBranches, firstParent, selectedBranch);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshKey]);
+
+  useEffect(() => {
+    if (!branches?.length) return;
+    if (selectedBranch === '__all__') return;
+    const exists = branches.some((b) => b.name === selectedBranch);
+    if (!exists) {
+      setSelectedBranch('__all__');
+      setAllBranches(true);
+      resetWindowAndLoad(true, firstParent, '__all__');
+    }
+  }, [branches, selectedBranch, resetWindowAndLoad, firstParent]);
 
   const laneMap = useMemo(() => assignLanes(entries), [entries]);
   const hashToIndex = useMemo(() => {
@@ -339,20 +405,20 @@ export function GitCommitGraph({
 
   const handleToggleAllBranches = useCallback((v: boolean) => {
     setAllBranches(v);
-    loadData(limit, v, firstParent, selectedBranch);
-  }, [loadData, limit, firstParent, selectedBranch]);
+    resetWindowAndLoad(v, firstParent, selectedBranch);
+  }, [resetWindowAndLoad, firstParent, selectedBranch]);
 
   const handleToggleFirstParent = useCallback((v: boolean) => {
     setFirstParent(v);
-    loadData(limit, allBranches, v, selectedBranch);
-  }, [loadData, limit, allBranches, selectedBranch]);
+    resetWindowAndLoad(allBranches, v, selectedBranch);
+  }, [resetWindowAndLoad, allBranches, selectedBranch]);
 
   const handleBranchChange = useCallback((v: string) => {
     setSelectedBranch(v);
     const isAll = v === '__all__';
     setAllBranches(isAll);
-    loadData(limit, isAll, firstParent, v);
-  }, [loadData, limit, firstParent]);
+    resetWindowAndLoad(isAll, firstParent, v);
+  }, [resetWindowAndLoad, firstParent]);
 
   const handleContextAction = useCallback((action: string, hash: string) => {
     switch (action) {
@@ -468,20 +534,55 @@ export function GitCommitGraph({
         </div>
       </CardHeader>
       <CardContent className="p-0">
-        {entries.length === 0 && !loading ? (
+        {error && entries.length === 0 && !loading ? (
+          <div className="p-3">
+            <Alert variant="destructive">
+              <AlertDescription className="flex items-center justify-between gap-3">
+                <span className="text-xs">{error}</span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => loadData(limit, allBranches, firstParent, selectedBranch)}
+                >
+                  {t('common.retry')}
+                </Button>
+              </AlertDescription>
+            </Alert>
+          </div>
+        ) : entries.length === 0 && !loading ? (
           <p className="text-xs text-muted-foreground text-center py-8">
             {t('git.graph.empty')}
           </p>
         ) : (
-          <div
-            ref={scrollRef}
-            className="overflow-x-auto overflow-y-auto max-h-[600px] focus:outline-none"
-            onScroll={handleScroll}
-            tabIndex={0}
-            onKeyDown={handleKeyDown}
-            role="listbox"
-            aria-label={t('git.graph.title')}
-          >
+          <div className="space-y-2">
+            {error && (
+              <div className="px-3 pt-3">
+                <Alert variant="destructive">
+                  <AlertDescription className="flex items-center justify-between gap-3">
+                    <span className="text-xs">{error}</span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => loadData(limit, allBranches, firstParent, selectedBranch)}
+                    >
+                      {t('common.retry')}
+                    </Button>
+                  </AlertDescription>
+                </Alert>
+              </div>
+            )}
+
+            <div
+              ref={scrollRef}
+              className="overflow-x-auto overflow-y-auto max-h-[600px] focus:outline-none"
+              onScroll={handleScroll}
+              tabIndex={0}
+              onKeyDown={handleKeyDown}
+              role="listbox"
+              aria-label={t('git.graph.title')}
+            >
             <div style={{ height: totalHeight, position: 'relative' }} className="flex min-w-[600px]">
               {/* SVG graph column — only visible edges + nodes */}
               <svg
@@ -567,6 +668,7 @@ export function GitCommitGraph({
                         onSelect={onSelectCommit}
                         onContextAction={hasContextMenu ? handleContextAction : undefined}
                         hasContextMenu={hasContextMenu}
+                        enabledActions={enabledActions}
                       />
                     </div>
                   );
@@ -588,6 +690,7 @@ export function GitCommitGraph({
                 </Button>
               </div>
             )}
+          </div>
           </div>
         )}
       </CardContent>

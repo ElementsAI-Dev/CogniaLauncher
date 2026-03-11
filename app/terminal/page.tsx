@@ -35,6 +35,12 @@ type PendingNavigationIntent =
   | { kind: 'tab'; nextTab: string }
   | { kind: 'config-target' };
 
+interface ConfigRefreshIntent {
+  signal: number;
+  configEntries: boolean;
+  configMetadata: boolean;
+}
+
 export default function TerminalPage() {
   const { t } = useLocale();
   const terminal = useTerminal({ t });
@@ -50,7 +56,11 @@ export default function TerminalPage() {
   const [pendingNavigationIntent, setPendingNavigationIntent] = useState<PendingNavigationIntent | null>(null);
   const [configDirty, setConfigDirty] = useState(false);
   const [discardSignal, setDiscardSignal] = useState(0);
-  const [configRefreshSignal, setConfigRefreshSignal] = useState(0);
+  const [configRefreshIntent, setConfigRefreshIntent] = useState<ConfigRefreshIntent>({
+    signal: 0,
+    configEntries: false,
+    configMetadata: false,
+  });
 
   const profileDialogKey = `${profileDialogOpen ? 'open' : 'closed'}:${editingProfile?.id ?? 'new'}:${templateProfile?.name ?? 'none'}:${terminal.shells
     .map((shell) => shell.id)
@@ -161,7 +171,11 @@ export default function TerminalPage() {
   useEffect(() => {
     if (activeTab !== 'config') return;
     if (terminal.resourceStale.configEntries || terminal.resourceStale.configMetadata) {
-      setConfigRefreshSignal((prev) => prev + 1);
+      setConfigRefreshIntent((prev) => ({
+        signal: prev.signal + 1,
+        configEntries: terminal.resourceStale.configEntries,
+        configMetadata: terminal.resourceStale.configMetadata,
+      }));
     }
   }, [activeTab, terminal.resourceStale.configEntries, terminal.resourceStale.configMetadata]);
 
@@ -295,10 +309,13 @@ export default function TerminalPage() {
             onDirtyChange={setConfigDirty}
             onRequestDiscard={handleConfigDiscardRequest}
             discardSignal={discardSignal}
-            refreshSignal={configRefreshSignal}
-            onRefreshHandled={(didRefresh) => {
-              if (!didRefresh) return;
-              terminal.markResourcesFresh(['configEntries', 'configMetadata']);
+            refreshIntent={configRefreshIntent}
+            onRefreshHandled={(handled) => {
+              const resources: Array<'configEntries' | 'configMetadata'> = [];
+              if (handled.configEntries) resources.push('configEntries');
+              if (handled.configMetadata) resources.push('configMetadata');
+              if (resources.length === 0) return;
+              terminal.markResourcesFresh(resources);
             }}
           />
         </TabsContent>

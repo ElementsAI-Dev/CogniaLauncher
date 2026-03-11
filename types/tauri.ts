@@ -1118,6 +1118,12 @@ export interface LogEntry {
 }
 
 export type LogOperationStatus = 'success' | 'partial_success' | 'failed';
+export type LogOperationReasonCode =
+  | 'current_session_protected'
+  | 'log_file_not_found'
+  | 'log_delete_failed'
+  | 'stale_policy_context'
+  | (string & {});
 
 export interface LogQueryOptions {
   fileName?: string;
@@ -1152,28 +1158,50 @@ export interface LogExportOptions {
 }
 
 export interface LogExportResult {
-  sizeBytes?: number;
-  status?: LogOperationStatus;
-  redactedCount?: number;
-  sanitized?: boolean;
-  warnings?: string[];
+  sizeBytes: number;
+  status: LogOperationStatus;
+  reasonCode?: LogOperationReasonCode | null;
+  redactedCount: number;
+  sanitized: boolean;
+  warnings: string[];
   content: string;
   fileName: string;
+}
+
+export interface LogCleanupPolicyInput {
+  maxRetentionDays?: number;
+  maxTotalSizeMb?: number;
+}
+
+export interface LogCleanupOptions {
+  policy?: LogCleanupPolicyInput;
+  expectedPolicyFingerprint?: string;
 }
 
 export interface LogCleanupResult {
   deletedCount: number;
   freedBytes: number;
-  status?: LogOperationStatus;
-  warnings?: string[];
+  protectedCount: number;
+  skippedCount: number;
+  status: LogOperationStatus;
+  reasonCode?: LogOperationReasonCode | null;
+  warnings: string[];
+  policyFingerprint?: string | null;
+  maxRetentionDays?: number | null;
+  maxTotalSizeMb?: number | null;
 }
 
 export interface LogCleanupPreviewResult {
   deletedCount: number;
   freedBytes: number;
   protectedCount: number;
+  skippedCount: number;
   status: LogOperationStatus;
+  reasonCode?: LogOperationReasonCode | null;
   warnings: string[];
+  policyFingerprint: string;
+  maxRetentionDays: number;
+  maxTotalSizeMb: number;
 }
 
 // ============================================================================
@@ -1644,6 +1672,36 @@ export interface WslCapabilities {
   exportFormat: boolean;
   importInPlace: boolean;
   version?: string;
+}
+
+/** One probe result within staged runtime detection. */
+export interface WslRuntimeProbe {
+  id: string;
+  command: string;
+  success: boolean;
+  reasonCode: string;
+  detail?: string;
+}
+
+/** One non-command runtime stage state (status/capability/distro probes). */
+export interface WslRuntimeStage {
+  ready: boolean;
+  reasonCode: string;
+  detail?: string;
+}
+
+/** Structured runtime readiness snapshot for WSL management flows. */
+export interface WslRuntimeSnapshot {
+  state: "unavailable" | "empty" | "degraded" | "ready";
+  available: boolean;
+  reasonCode: string;
+  reason: string;
+  runtimeProbes: WslRuntimeProbe[];
+  statusProbe: WslRuntimeStage;
+  capabilityProbe: WslRuntimeStage;
+  distroProbe: WslRuntimeStage;
+  distroCount: number;
+  degradedReasons: string[];
 }
 
 /** Options for importing a WSL distribution */

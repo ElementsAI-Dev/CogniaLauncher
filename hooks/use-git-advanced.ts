@@ -202,29 +202,45 @@ export function useGitAdvanced(repoPath: string | null): UseGitAdvancedReturn {
 
   const addSubmodule = useCallback(async (url: string, subpath: string) => {
     if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-    const msg = await tauri.gitAddSubmodule(repoPath, url, subpath);
+    const operation = await executeGitOperation({
+      operation: 'addSubmodule',
+      execute: () => tauri.gitAddSubmodule(repoPath, url, subpath),
+    });
+    const msg = unwrapOperationPayload(operation);
     await refreshSubmodules();
     return msg;
-  }, [repoPath, refreshSubmodules]);
+  }, [repoPath, refreshSubmodules, unwrapOperationPayload]);
 
   const updateSubmodules = useCallback(async (init?: boolean, recursive?: boolean) => {
     if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-    const msg = await tauri.gitUpdateSubmodules(repoPath, init, recursive);
+    const operation = await executeGitOperation({
+      operation: 'updateSubmodules',
+      execute: () => tauri.gitUpdateSubmodules(repoPath, init, recursive),
+    });
+    const msg = unwrapOperationPayload(operation);
     await refreshSubmodules();
     return msg;
-  }, [repoPath, refreshSubmodules]);
+  }, [repoPath, refreshSubmodules, unwrapOperationPayload]);
 
   const removeSubmodule = useCallback(async (subpath: string) => {
     if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-    const msg = await tauri.gitRemoveSubmodule(repoPath, subpath);
+    const operation = await executeGitOperation({
+      operation: 'removeSubmodule',
+      execute: () => tauri.gitRemoveSubmodule(repoPath, subpath),
+    });
+    const msg = unwrapOperationPayload(operation);
     await refreshSubmodules();
     return msg;
-  }, [repoPath, refreshSubmodules]);
+  }, [repoPath, refreshSubmodules, unwrapOperationPayload]);
 
   const syncSubmodules = useCallback(async () => {
     if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-    return await tauri.gitSyncSubmodules(repoPath);
-  }, [repoPath]);
+    const operation = await executeGitOperation({
+      operation: 'syncSubmodules',
+      execute: () => tauri.gitSyncSubmodules(repoPath),
+    });
+    return unwrapOperationPayload(operation);
+  }, [repoPath, unwrapOperationPayload]);
 
   // --- Worktree actions ---
   const refreshWorktrees = useCallback(async () => {
@@ -236,24 +252,36 @@ export function useGitAdvanced(repoPath: string | null): UseGitAdvancedReturn {
 
   const addWorktree = useCallback(async (dest: string, branch?: string, newBranch?: string) => {
     if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-    const msg = await tauri.gitAddWorktree(repoPath, dest, branch, newBranch);
+    const operation = await executeGitOperation({
+      operation: 'addWorktree',
+      execute: () => tauri.gitAddWorktree(repoPath, dest, branch, newBranch),
+    });
+    const msg = unwrapOperationPayload(operation);
     await refreshWorktrees();
     return msg;
-  }, [repoPath, refreshWorktrees]);
+  }, [repoPath, refreshWorktrees, unwrapOperationPayload]);
 
   const removeWorktree = useCallback(async (dest: string, force?: boolean) => {
     if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-    const msg = await tauri.gitRemoveWorktree(repoPath, dest, force);
+    const operation = await executeGitOperation({
+      operation: 'removeWorktree',
+      execute: () => tauri.gitRemoveWorktree(repoPath, dest, force),
+    });
+    const msg = unwrapOperationPayload(operation);
     await refreshWorktrees();
     return msg;
-  }, [repoPath, refreshWorktrees]);
+  }, [repoPath, refreshWorktrees, unwrapOperationPayload]);
 
   const pruneWorktrees = useCallback(async () => {
     if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-    const msg = await tauri.gitPruneWorktrees(repoPath);
+    const operation = await executeGitOperation({
+      operation: 'pruneWorktrees',
+      execute: () => tauri.gitPruneWorktrees(repoPath),
+    });
+    const msg = unwrapOperationPayload(operation);
     await refreshWorktrees();
     return msg;
-  }, [repoPath, refreshWorktrees]);
+  }, [repoPath, refreshWorktrees, unwrapOperationPayload]);
 
   // --- .gitignore actions ---
   const getGitignore = useCallback(async () => {
@@ -263,8 +291,13 @@ export function useGitAdvanced(repoPath: string | null): UseGitAdvancedReturn {
 
   const setGitignore = useCallback(async (content: string) => {
     if (!tauri.isTauri() || !repoPath) return;
-    await tauri.gitSetGitignore(repoPath, content);
-  }, [repoPath]);
+    const operation = await executeGitOperation({
+      operation: 'setGitignore',
+      execute: () => tauri.gitSetGitignore(repoPath, content),
+      mapSuccessMessage: () => 'Updated .gitignore',
+    });
+    unwrapOperationPayload(operation);
+  }, [repoPath, unwrapOperationPayload]);
 
   const checkIgnore = useCallback(async (files: string[]) => {
     if (!tauri.isTauri() || !repoPath) return [];
@@ -273,8 +306,13 @@ export function useGitAdvanced(repoPath: string | null): UseGitAdvancedReturn {
 
   const addToGitignore = useCallback(async (patterns: string[]) => {
     if (!tauri.isTauri() || !repoPath) return;
-    await tauri.gitAddToGitignore(repoPath, patterns);
-  }, [repoPath]);
+    const operation = await executeGitOperation({
+      operation: 'addToGitignore',
+      execute: () => tauri.gitAddToGitignore(repoPath, patterns),
+      mapSuccessMessage: () => 'Updated .gitignore',
+    });
+    unwrapOperationPayload(operation);
+  }, [repoPath, unwrapOperationPayload]);
 
   // --- Hook actions ---
   const refreshHooks = useCallback(async () => {
@@ -291,15 +329,25 @@ export function useGitAdvanced(repoPath: string | null): UseGitAdvancedReturn {
 
   const setHookContent = useCallback(async (name: string, content: string) => {
     if (!tauri.isTauri() || !repoPath) return;
-    await tauri.gitSetHookContent(repoPath, name, content);
+    const operation = await executeGitOperation({
+      operation: 'setHookContent',
+      execute: () => tauri.gitSetHookContent(repoPath, name, content),
+      mapSuccessMessage: () => `Updated hook ${name}`,
+    });
+    unwrapOperationPayload(operation);
     await refreshHooks();
-  }, [repoPath, refreshHooks]);
+  }, [repoPath, refreshHooks, unwrapOperationPayload]);
 
   const toggleHook = useCallback(async (name: string, enabled: boolean) => {
     if (!tauri.isTauri() || !repoPath) return;
-    await tauri.gitToggleHook(repoPath, name, enabled);
+    const operation = await executeGitOperation({
+      operation: 'toggleHook',
+      execute: () => tauri.gitToggleHook(repoPath, name, enabled),
+      mapSuccessMessage: () => `${enabled ? 'Enabled' : 'Disabled'} hook ${name}`,
+    });
+    unwrapOperationPayload(operation);
     await refreshHooks();
-  }, [repoPath, refreshHooks]);
+  }, [repoPath, refreshHooks, unwrapOperationPayload]);
 
   // --- Merge/rebase state & conflict resolution ---
   const refreshMergeRebaseState = useCallback(async () => {
@@ -353,24 +401,36 @@ export function useGitAdvanced(repoPath: string | null): UseGitAdvancedReturn {
 
   const resolveFileOurs = useCallback(async (file: string) => {
     if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-    const msg = await tauri.gitResolveFileOurs(repoPath, file);
-    await refreshConflictedFiles();
-    return msg;
-  }, [repoPath, refreshConflictedFiles]);
+    const operation = await executeGitOperation({
+      operation: 'resolveFileOurs',
+      refreshByScopes,
+      refreshScopes: ['advanced', 'status'],
+      execute: () => tauri.gitResolveFileOurs(repoPath, file),
+    });
+    return unwrapOperationPayload(operation);
+  }, [repoPath, refreshByScopes, unwrapOperationPayload]);
 
   const resolveFileTheirs = useCallback(async (file: string) => {
     if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-    const msg = await tauri.gitResolveFileTheirs(repoPath, file);
-    await refreshConflictedFiles();
-    return msg;
-  }, [repoPath, refreshConflictedFiles]);
+    const operation = await executeGitOperation({
+      operation: 'resolveFileTheirs',
+      refreshByScopes,
+      refreshScopes: ['advanced', 'status'],
+      execute: () => tauri.gitResolveFileTheirs(repoPath, file),
+    });
+    return unwrapOperationPayload(operation);
+  }, [repoPath, refreshByScopes, unwrapOperationPayload]);
 
   const resolveFileMark = useCallback(async (file: string) => {
     if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-    const msg = await tauri.gitResolveFileMark(repoPath, file);
-    await refreshConflictedFiles();
-    return msg;
-  }, [repoPath, refreshConflictedFiles]);
+    const operation = await executeGitOperation({
+      operation: 'resolveFileMark',
+      refreshByScopes,
+      refreshScopes: ['advanced', 'status'],
+      execute: () => tauri.gitResolveFileMark(repoPath, file),
+    });
+    return unwrapOperationPayload(operation);
+  }, [repoPath, refreshByScopes, unwrapOperationPayload]);
 
   const mergeAbort = useCallback(async () => {
     if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
@@ -509,42 +569,62 @@ export function useGitAdvanced(repoPath: string | null): UseGitAdvancedReturn {
   // --- Bisect ---
   const bisectStart = useCallback(async (badRef: string, goodRef: string) => {
     if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-    const msg = await tauri.gitBisectStart(repoPath, badRef, goodRef);
+    const operation = await executeGitOperation({
+      operation: 'bisectStart',
+      execute: () => tauri.gitBisectStart(repoPath, badRef, goodRef),
+    });
+    const msg = unwrapOperationPayload(operation);
     await refreshBisectState();
     return msg;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [repoPath]);
+  }, [repoPath, unwrapOperationPayload]);
 
   const bisectGood = useCallback(async () => {
     if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-    const msg = await tauri.gitBisectGood(repoPath);
+    const operation = await executeGitOperation({
+      operation: 'bisectGood',
+      execute: () => tauri.gitBisectGood(repoPath),
+    });
+    const msg = unwrapOperationPayload(operation);
     await refreshBisectState();
     return msg;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [repoPath]);
+  }, [repoPath, unwrapOperationPayload]);
 
   const bisectBad = useCallback(async () => {
     if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-    const msg = await tauri.gitBisectBad(repoPath);
+    const operation = await executeGitOperation({
+      operation: 'bisectBad',
+      execute: () => tauri.gitBisectBad(repoPath),
+    });
+    const msg = unwrapOperationPayload(operation);
     await refreshBisectState();
     return msg;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [repoPath]);
+  }, [repoPath, unwrapOperationPayload]);
 
   const bisectSkip = useCallback(async () => {
     if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-    const msg = await tauri.gitBisectSkip(repoPath);
+    const operation = await executeGitOperation({
+      operation: 'bisectSkip',
+      execute: () => tauri.gitBisectSkip(repoPath),
+    });
+    const msg = unwrapOperationPayload(operation);
     await refreshBisectState();
     return msg;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [repoPath]);
+  }, [repoPath, unwrapOperationPayload]);
 
   const bisectReset = useCallback(async () => {
     if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-    const msg = await tauri.gitBisectReset(repoPath);
+    const operation = await executeGitOperation({
+      operation: 'bisectReset',
+      execute: () => tauri.gitBisectReset(repoPath),
+    });
+    const msg = unwrapOperationPayload(operation);
     setBisectState({ active: false, currentHash: null, stepsTaken: 0, remainingEstimate: null });
     return msg;
-  }, [repoPath]);
+  }, [repoPath, unwrapOperationPayload]);
 
   const bisectLog = useCallback(async () => {
     if (!tauri.isTauri() || !repoPath) return '';
@@ -568,15 +648,25 @@ export function useGitAdvanced(repoPath: string | null): UseGitAdvancedReturn {
 
   const setLocalConfigValue = useCallback(async (key: string, value: string) => {
     if (!tauri.isTauri() || !repoPath) return;
-    await tauri.gitSetLocalConfig(repoPath, key, value);
+    const operation = await executeGitOperation({
+      operation: 'setLocalConfig',
+      execute: () => tauri.gitSetLocalConfig(repoPath, key, value),
+      mapSuccessMessage: () => `Set local config ${key}`,
+    });
+    unwrapOperationPayload(operation);
     await refreshLocalConfig();
-  }, [repoPath, refreshLocalConfig]);
+  }, [repoPath, refreshLocalConfig, unwrapOperationPayload]);
 
   const removeLocalConfigKey = useCallback(async (key: string) => {
     if (!tauri.isTauri() || !repoPath) return;
-    await tauri.gitRemoveLocalConfig(repoPath, key);
+    const operation = await executeGitOperation({
+      operation: 'removeLocalConfig',
+      execute: () => tauri.gitRemoveLocalConfig(repoPath, key),
+      mapSuccessMessage: () => `Removed local config ${key}`,
+    });
+    unwrapOperationPayload(operation);
     await refreshLocalConfig();
-  }, [repoPath, refreshLocalConfig]);
+  }, [repoPath, refreshLocalConfig, unwrapOperationPayload]);
 
   const getLocalConfigValue = useCallback(async (key: string) => {
     if (!tauri.isTauri() || !repoPath) return null;
@@ -609,13 +699,21 @@ export function useGitAdvanced(repoPath: string | null): UseGitAdvancedReturn {
 
   const deepen = useCallback(async (depth: number) => {
     if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-    return await tauri.gitDeepen(repoPath, depth);
-  }, [repoPath]);
+    const operation = await executeGitOperation({
+      operation: 'deepen',
+      execute: () => tauri.gitDeepen(repoPath, depth),
+    });
+    return unwrapOperationPayload(operation);
+  }, [repoPath, unwrapOperationPayload]);
 
   const unshallow = useCallback(async () => {
     if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-    return await tauri.gitUnshallow(repoPath);
-  }, [repoPath]);
+    const operation = await executeGitOperation({
+      operation: 'unshallow',
+      execute: () => tauri.gitUnshallow(repoPath),
+    });
+    return unwrapOperationPayload(operation);
+  }, [repoPath, unwrapOperationPayload]);
 
   // --- Sparse-checkout ---
   const refreshSparseCheckout = useCallback(async () => {
@@ -633,31 +731,47 @@ export function useGitAdvanced(repoPath: string | null): UseGitAdvancedReturn {
 
   const sparseCheckoutInit = useCallback(async (cone?: boolean) => {
     if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-    const msg = await tauri.gitSparseCheckoutInit(repoPath, cone);
+    const operation = await executeGitOperation({
+      operation: 'sparseCheckoutInit',
+      execute: () => tauri.gitSparseCheckoutInit(repoPath, cone),
+    });
+    const msg = unwrapOperationPayload(operation);
     await refreshSparseCheckout();
     return msg;
-  }, [repoPath, refreshSparseCheckout]);
+  }, [repoPath, refreshSparseCheckout, unwrapOperationPayload]);
 
   const sparseCheckoutSet = useCallback(async (patterns: string[]) => {
     if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-    const msg = await tauri.gitSparseCheckoutSet(repoPath, patterns);
+    const operation = await executeGitOperation({
+      operation: 'sparseCheckoutSet',
+      execute: () => tauri.gitSparseCheckoutSet(repoPath, patterns),
+    });
+    const msg = unwrapOperationPayload(operation);
     await refreshSparseCheckout();
     return msg;
-  }, [repoPath, refreshSparseCheckout]);
+  }, [repoPath, refreshSparseCheckout, unwrapOperationPayload]);
 
   const sparseCheckoutAdd = useCallback(async (patterns: string[]) => {
     if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-    const msg = await tauri.gitSparseCheckoutAdd(repoPath, patterns);
+    const operation = await executeGitOperation({
+      operation: 'sparseCheckoutAdd',
+      execute: () => tauri.gitSparseCheckoutAdd(repoPath, patterns),
+    });
+    const msg = unwrapOperationPayload(operation);
     await refreshSparseCheckout();
     return msg;
-  }, [repoPath, refreshSparseCheckout]);
+  }, [repoPath, refreshSparseCheckout, unwrapOperationPayload]);
 
   const sparseCheckoutDisable = useCallback(async () => {
     if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-    const msg = await tauri.gitSparseCheckoutDisable(repoPath);
+    const operation = await executeGitOperation({
+      operation: 'sparseCheckoutDisable',
+      execute: () => tauri.gitSparseCheckoutDisable(repoPath),
+    });
+    const msg = unwrapOperationPayload(operation);
     await refreshSparseCheckout();
     return msg;
-  }, [repoPath, refreshSparseCheckout]);
+  }, [repoPath, refreshSparseCheckout, unwrapOperationPayload]);
 
   // --- Archive & Patch ---
   const archive = useCallback(async (format: string, outputPath: string, refName: string, prefix?: string) => {
@@ -672,25 +786,49 @@ export function useGitAdvanced(repoPath: string | null): UseGitAdvancedReturn {
 
   const applyPatch = useCallback(async (patchPath: string, checkOnly?: boolean) => {
     if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-    return await tauri.gitApplyPatch(repoPath, patchPath, checkOnly);
-  }, [repoPath]);
+    const operation = await executeGitOperation({
+      operation: 'applyPatch',
+      refreshByScopes,
+      refreshScopes: ['status', 'advanced'],
+      execute: () => tauri.gitApplyPatch(repoPath, patchPath, checkOnly),
+    });
+    return unwrapOperationPayload(operation);
+  }, [repoPath, refreshByScopes, unwrapOperationPayload]);
 
   const applyMailbox = useCallback(async (patchPath: string) => {
     if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-    return await tauri.gitApplyMailbox(repoPath, patchPath);
-  }, [repoPath]);
+    const operation = await executeGitOperation({
+      operation: 'applyMailbox',
+      refreshByScopes,
+      refreshScopes: ['status', 'advanced'],
+      execute: () => tauri.gitApplyMailbox(repoPath, patchPath),
+    });
+    return unwrapOperationPayload(operation);
+  }, [repoPath, refreshByScopes, unwrapOperationPayload]);
 
   // --- Remote prune ---
   const remotePrune = useCallback(async (remote: string) => {
     if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-    return await tauri.gitRemotePrune(repoPath, remote);
-  }, [repoPath]);
+    const operation = await executeGitOperation({
+      operation: 'remotePrune',
+      refreshByScopes,
+      refreshScopes: ['status'],
+      execute: () => tauri.gitRemotePrune(repoPath, remote),
+    });
+    return unwrapOperationPayload(operation);
+  }, [repoPath, refreshByScopes, unwrapOperationPayload]);
 
   // --- Stash branch ---
   const stashBranch = useCallback(async (branchName: string, stashId?: string) => {
     if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-    return await tauri.gitStashBranch(repoPath, branchName, stashId);
-  }, [repoPath]);
+    const operation = await executeGitOperation({
+      operation: 'stashBranch',
+      refreshByScopes,
+      refreshScopes: ['status', 'advanced'],
+      execute: () => tauri.gitStashBranch(repoPath, branchName, stashId),
+    });
+    return unwrapOperationPayload(operation);
+  }, [repoPath, refreshByScopes, unwrapOperationPayload]);
 
   // --- Signature verification ---
   const verifyCommit = useCallback(async (hash: string) => {

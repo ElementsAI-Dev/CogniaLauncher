@@ -87,6 +87,7 @@ const defaultHookState = {
 describe('ExternalCacheSection', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockHandleCleanAll.mockResolvedValue([]);
     mockUseExternalCache.mockReturnValue(defaultHookState);
   });
 

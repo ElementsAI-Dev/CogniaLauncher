@@ -5,6 +5,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useLocale } from '@/components/providers/locale-provider';
 import type { ShellConfigEntries } from '@/types/tauri';
 
 interface TerminalConfigStructuredEditorProps {
@@ -26,10 +27,12 @@ export function TerminalConfigStructuredEditor({
   fallbackReason = null,
   onChange,
 }: TerminalConfigStructuredEditorProps) {
+  const { t } = useLocale();
+
   if (fallbackReason) {
     return (
       <Alert>
-        <AlertTitle>Structured Editing Unavailable</AlertTitle>
+        <AlertTitle>{t('terminal.structuredEditingUnavailable')}</AlertTitle>
         <AlertDescription>{fallbackReason}</AlertDescription>
       </Alert>
     );
@@ -39,7 +42,7 @@ export function TerminalConfigStructuredEditor({
     <div className="space-y-4" data-testid="terminal-config-editor-structured">
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm">Aliases</CardTitle>
+          <CardTitle className="text-sm">{t('terminal.aliases')}</CardTitle>
           <CardAction>
             <Button
               type="button"
@@ -53,7 +56,7 @@ export function TerminalConfigStructuredEditor({
               }
             >
               <Plus className="mr-1 h-3.5 w-3.5" />
-              Add
+              {t('terminal.addEnvVar')}
             </Button>
           </CardAction>
         </CardHeader>
@@ -71,7 +74,7 @@ export function TerminalConfigStructuredEditor({
                     ]),
                   })
                 }
-                placeholder="name"
+                placeholder={t('terminal.structuredAliasNamePlaceholder')}
               />
               <Input
                 value={value}
@@ -84,7 +87,7 @@ export function TerminalConfigStructuredEditor({
                     ]),
                   })
                 }
-                placeholder="command"
+                placeholder={t('terminal.structuredAliasCommandPlaceholder')}
               />
               <Button
                 type="button"
@@ -96,7 +99,7 @@ export function TerminalConfigStructuredEditor({
                     aliases: entries.aliases.filter((_, itemIndex) => itemIndex !== index),
                   })
                 }
-                aria-label={`Remove alias ${name || index + 1}`}
+                aria-label={t('terminal.structuredRemoveAlias', { name: name || index + 1 })}
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </Button>
@@ -107,7 +110,7 @@ export function TerminalConfigStructuredEditor({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm">Exports</CardTitle>
+          <CardTitle className="text-sm">{t('terminal.envExports')}</CardTitle>
           <CardAction>
             <Button
               type="button"
@@ -121,7 +124,7 @@ export function TerminalConfigStructuredEditor({
               }
             >
               <Plus className="mr-1 h-3.5 w-3.5" />
-              Add
+              {t('terminal.addEnvVar')}
             </Button>
           </CardAction>
         </CardHeader>
@@ -139,7 +142,7 @@ export function TerminalConfigStructuredEditor({
                     ]),
                   })
                 }
-                placeholder="KEY"
+                placeholder={t('terminal.structuredExportKeyPlaceholder')}
               />
               <Input
                 value={value}
@@ -152,7 +155,7 @@ export function TerminalConfigStructuredEditor({
                     ]),
                   })
                 }
-                placeholder="VALUE"
+                placeholder={t('terminal.structuredExportValuePlaceholder')}
               />
               <Button
                 type="button"
@@ -164,7 +167,7 @@ export function TerminalConfigStructuredEditor({
                     exports: entries.exports.filter((_, itemIndex) => itemIndex !== index),
                   })
                 }
-                aria-label={`Remove export ${name || index + 1}`}
+                aria-label={t('terminal.structuredRemoveExport', { name: name || index + 1 })}
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </Button>
@@ -175,7 +178,7 @@ export function TerminalConfigStructuredEditor({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm">Sources</CardTitle>
+          <CardTitle className="text-sm">{t('terminal.sources')}</CardTitle>
           <CardAction>
             <Button
               type="button"
@@ -189,7 +192,7 @@ export function TerminalConfigStructuredEditor({
               }
             >
               <Plus className="mr-1 h-3.5 w-3.5" />
-              Add
+              {t('terminal.addEnvVar')}
             </Button>
           </CardAction>
         </CardHeader>
@@ -206,7 +209,7 @@ export function TerminalConfigStructuredEditor({
                     ),
                   })
                 }
-                placeholder="path/to/file"
+                placeholder={t('terminal.structuredSourcePathPlaceholder')}
               />
               <Button
                 type="button"
@@ -218,7 +221,7 @@ export function TerminalConfigStructuredEditor({
                     sources: entries.sources.filter((_, itemIndex) => itemIndex !== index),
                   })
                 }
-                aria-label={`Remove source ${index + 1}`}
+                aria-label={t('terminal.structuredRemoveSource', { index: index + 1 })}
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </Button>

@@ -1,6 +1,10 @@
 import { render, screen } from '@testing-library/react';
 import { TerminalConfigEditorToolbar } from './editor-toolbar';
 
+jest.mock('@/components/providers/locale-provider', () => ({
+  useLocale: () => ({ t: (key: string) => key }),
+}));
+
 describe('TerminalConfigEditorToolbar', () => {
   it('renders key status badges and metadata chips', () => {
     render(
@@ -16,13 +20,13 @@ describe('TerminalConfigEditorToolbar', () => {
       />,
     );
 
-    expect(screen.getByText('Shell bash')).toBeInTheDocument();
-    expect(screen.getByText('Language bash')).toBeInTheDocument();
-    expect(screen.getByText('2 lines')).toBeInTheDocument();
-    expect(screen.getByText('Diagnostics')).toBeInTheDocument();
-    expect(screen.getByText('Unsaved changes')).toBeInTheDocument();
+    expect(screen.getByText('terminal.editorShellBadge')).toBeInTheDocument();
+    expect(screen.getByText('terminal.editorLanguageBadge')).toBeInTheDocument();
+    expect(screen.getByText('terminal.editorLineCount')).toBeInTheDocument();
+    expect(screen.getByText('terminal.editorViewDiagnostics')).toBeInTheDocument();
+    expect(screen.getByText('terminal.editorUnsavedChanges')).toBeInTheDocument();
     expect(screen.getByText('/home/user/.bashrc')).toBeInTheDocument();
-    expect(screen.getByText('snapshot ready')).toBeInTheDocument();
+    expect(screen.getByText('terminal.editorSnapshotReady')).toBeInTheDocument();
     expect(screen.getByText('1234567890ab…')).toBeInTheDocument();
   });
 
@@ -36,6 +40,6 @@ describe('TerminalConfigEditorToolbar', () => {
       />,
     );
 
-    expect(screen.getByText('1 line')).toBeInTheDocument();
+    expect(screen.getByText('terminal.editorLineCount')).toBeInTheDocument();
   });
 });

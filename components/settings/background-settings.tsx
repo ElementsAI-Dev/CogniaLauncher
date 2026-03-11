@@ -4,8 +4,9 @@ import { useAppearanceStore } from "@/lib/stores/appearance";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { SwitchSettingItem, SliderSettingItem, SelectSettingItem } from "./setting-item";
-import { ImagePlus, Trash2 } from "lucide-react";
+import { AlertCircle, ImagePlus, Trash2 } from "lucide-react";
 import { useBackgroundImage } from "@/hooks/use-background-image";
 import type { BackgroundFit } from "@/lib/stores/appearance";
 
@@ -34,7 +35,7 @@ export function BackgroundSettings({ t }: BackgroundSettingsProps) {
     handleClear,
   } = useBackgroundImage(t);
 
-  const disabled = !backgroundEnabled;
+  const paramsDisabled = !backgroundEnabled || !hasImage;
 
   return (
     <div className="flex flex-col gap-4">
@@ -54,6 +55,15 @@ export function BackgroundSettings({ t }: BackgroundSettingsProps) {
         checked={backgroundEnabled}
         onCheckedChange={setBackgroundEnabled}
       />
+
+      {backgroundEnabled && !hasImage ? (
+        <Alert>
+          <AlertCircle />
+          <AlertDescription>
+            {t("settings.backgroundMissingImage")}
+          </AlertDescription>
+        </Alert>
+      ) : null}
 
       <div className="flex items-center gap-3">
         <input
@@ -82,7 +92,6 @@ export function BackgroundSettings({ t }: BackgroundSettingsProps) {
             variant="outline"
             size="sm"
             onClick={handleSelectImage}
-            disabled={disabled}
           >
             <ImagePlus className="h-4 w-4 mr-2" />
             {t("settings.backgroundSelect")}
@@ -112,7 +121,7 @@ export function BackgroundSettings({ t }: BackgroundSettingsProps) {
         min={0}
         max={100}
         step={5}
-        disabled={disabled}
+        disabled={paramsDisabled}
         unit="%"
       />
 
@@ -125,7 +134,7 @@ export function BackgroundSettings({ t }: BackgroundSettingsProps) {
         min={0}
         max={20}
         step={1}
-        disabled={disabled}
+        disabled={paramsDisabled}
         unit="px"
       />
 
@@ -142,7 +151,7 @@ export function BackgroundSettings({ t }: BackgroundSettingsProps) {
           { value: "tile", label: t("settings.backgroundFitTile") },
         ]}
         placeholder={t("settings.backgroundFit")}
-        disabled={disabled}
+        disabled={paramsDisabled}
         triggerClassName="w-40"
       />
     </div>

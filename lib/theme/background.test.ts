@@ -2,7 +2,6 @@ import {
   getBackgroundImage,
   setBackgroundImageData,
   removeBackgroundImage,
-  notifyBackgroundChange,
   compressImage,
   BG_CHANGE_EVENT,
 } from './background';
@@ -22,6 +21,16 @@ describe('background', () => {
       expect(getBackgroundImage()).toBe('data:image/jpeg;base64,abc');
     });
 
+    it('returns null when stored value is empty', () => {
+      localStorage.setItem('cognia-bg-image', '');
+      expect(getBackgroundImage()).toBeNull();
+    });
+
+    it('returns null when stored value is not a data URL', () => {
+      localStorage.setItem('cognia-bg-image', 'https://example.com/bg.png');
+      expect(getBackgroundImage()).toBeNull();
+    });
+
     it('returns null when localStorage throws', () => {
       const spy = jest.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
         throw new Error('quota');
@@ -32,6 +41,16 @@ describe('background', () => {
   });
 
   describe('setBackgroundImageData', () => {
+    it('dispatches BG_CHANGE_EVENT after storing', () => {
+      const handler = jest.fn();
+      window.addEventListener(BG_CHANGE_EVENT, handler);
+
+      setBackgroundImageData('data:image/png;base64,xyz');
+
+      expect(handler).toHaveBeenCalledTimes(1);
+      window.removeEventListener(BG_CHANGE_EVENT, handler);
+    });
+
     it('stores data URL in localStorage', () => {
       setBackgroundImageData('data:image/png;base64,xyz');
       expect(localStorage.getItem('cognia-bg-image')).toBe('data:image/png;base64,xyz');
@@ -51,6 +70,16 @@ describe('background', () => {
       expect(localStorage.getItem('cognia-bg-image')).toBeNull();
     });
 
+    it('dispatches BG_CHANGE_EVENT when removed', () => {
+      const handler = jest.fn();
+      window.addEventListener(BG_CHANGE_EVENT, handler);
+
+      removeBackgroundImage();
+
+      expect(handler).toHaveBeenCalledTimes(1);
+      window.removeEventListener(BG_CHANGE_EVENT, handler);
+    });
+
     it('does not throw when nothing is stored', () => {
       expect(() => removeBackgroundImage()).not.toThrow();
     });
@@ -61,20 +90,6 @@ describe('background', () => {
       });
       expect(() => removeBackgroundImage()).not.toThrow();
       spy.mockRestore();
-    });
-  });
-
-  describe('notifyBackgroundChange', () => {
-    it('dispatches a custom event', () => {
-      const handler = jest.fn();
-      window.addEventListener(BG_CHANGE_EVENT, handler);
-
-      notifyBackgroundChange();
-
-      expect(handler).toHaveBeenCalledTimes(1);
-      expect(handler).toHaveBeenCalledWith(expect.any(CustomEvent));
-
-      window.removeEventListener(BG_CHANGE_EVENT, handler);
     });
   });
 

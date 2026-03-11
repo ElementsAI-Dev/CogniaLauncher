@@ -13,6 +13,16 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -20,9 +30,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/layout/page-header";
 import { useLocale } from "@/components/providers/locale-provider";
 import { useLogStore } from "@/lib/stores/log";
-import { useLogs, type LogMutationSummary } from "@/hooks/use-logs";
+import {
+  useLogs,
+  type LogCleanupPreviewSummary,
+  type LogMutationSummary,
+} from "@/hooks/use-logs";
 import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import { isTauri } from "@/lib/tauri";
+import type { LogCleanupOptions, LogCleanupPolicyInput } from "@/types/tauri";
 import { formatBytes, formatDate } from "@/lib/utils";
 import { formatSessionLabel } from "@/lib/log";
 import { writeClipboard } from "@/lib/clipboard";
@@ -36,12 +51,26 @@ import {
   X,
   Copy,
   ShieldAlert,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 
 const PAGE_SIZE_PRESETS = [20, 50, 100] as const;
 const MIN_PAGE_SIZE = 10;
 const MAX_PAGE_SIZE = 500;
+
+type MutationMode = "delete" | "cleanup";
+
+interface MutationSummaryRecord {
+  mode: MutationMode;
+  summary: LogMutationSummary;
+  at: number;
+}
+
+interface DeleteIntent {
+  mode: "single" | "batch";
+  fileNames: string[];
+}
 
 export default function LogsPage() {
   const { t } = useLocale();
@@ -59,13 +88,12 @@ export default function LogsPage() {
     exportLogFile,
   } = useLogs();
   const [logDir, setLogDir] = useState<string>("");
-  const [cleanupPreview, setCleanupPreview] = useState<{
-    deletedCount: number;
-    freedBytes: number;
-    protectedCount: number;
-    status: "success" | "partial_success" | "failed";
-    warnings: string[];
-  } | null>(null);
+  const [cleanupPreview, setCleanupPreview] =
+    useState<LogCleanupPreviewSummary | null>(null);
+  const [lastMutationSummary, setLastMutationSummary] =
+    useState<MutationSummaryRecord | null>(null);
+  const [deleteIntent, setDeleteIntent] = useState<DeleteIntent | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useKeyboardShortcuts({
     shortcuts: [
@@ -199,9 +227,21 @@ export default function LogsPage() {
     (summary: LogMutationSummary, mode: "delete" | "cleanup") => {
       const warnings = summary.warnings ?? [];
       const status = summary.status ?? "success";
+      const reasonCode = summary.reasonCode ?? null;
+
+      const reasonMessage =
+        reasonCode === "current_session_protected"
+          ? t("logs.reasonCurrentSessionProtected")
+          : reasonCode === "log_file_not_found"
+            ? t("logs.reasonLogFileNotFound")
+            : reasonCode === "log_delete_failed"
+              ? t("logs.reasonLogDeleteFailed")
+              : reasonCode === "stale_policy_context"
+                ? t("logs.reasonStalePolicyContext")
+                : null;
 
       if (status === "failed") {
-        toast.error(warnings[0] || t("logs.deleteFailed"));
+        toast.error(reasonMessage || warnings[0] || t("logs.deleteFailed"));
         return;
       }
 
@@ -218,6 +258,10 @@ export default function LogsPage() {
             t("logs.deleteSuccess", { count: summary.deletedCount }),
           );
         }
+      } else if (summary.protectedCount > 0) {
+        toast.info(
+          t("logs.previewProtected", { count: summary.protectedCount }),
+        );
       } else {
         toast.info(t("logs.cleanupNone"));
       }
@@ -228,6 +272,67 @@ export default function LogsPage() {
     },
     [t],
   );
+
+  const renderResultSummarySection = useCallback(() => {
+    if (!lastMutationSummary) {
+      return null;
+    }
+    return (
+      <section
+        data-testid="logs-result-summary"
+        className={`shrink-0 rounded-lg border px-3 py-2 text-xs ${
+          lastMutationSummary.summary.status === "failed"
+            ? "border-destructive/40 bg-destructive/5"
+            : lastMutationSummary.summary.status === "partial_success"
+              ? "border-amber-500/40 bg-amber-500/5"
+              : "border-emerald-500/40 bg-emerald-500/5"
+        }`}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="font-medium text-foreground/90">
+            {lastMutationSummary.mode === "cleanup"
+              ? t("logs.cleanupSummaryTitle")
+              : t("logs.deleteSummaryTitle")}
+          </p>
+          <span className="tabular-nums">
+            {lastMutationSummary.summary.status === "success"
+              ? t("logs.statusSuccess")
+              : lastMutationSummary.summary.status === "partial_success"
+                ? t("logs.statusPartialSuccess")
+                : t("logs.statusFailed")}
+          </span>
+        </div>
+        <p className="mt-1 text-muted-foreground">
+          {t("logs.resultSummaryMetrics", {
+            deleted: lastMutationSummary.summary.deletedCount,
+            size: formatBytes(lastMutationSummary.summary.freedBytes),
+            protected: lastMutationSummary.summary.protectedCount,
+            skipped: lastMutationSummary.summary.skippedCount,
+          })}
+        </p>
+        {lastMutationSummary.summary.reasonCode && (
+          <p className="mt-1 text-muted-foreground">
+            {lastMutationSummary.summary.reasonCode === "current_session_protected"
+              ? t("logs.reasonCurrentSessionProtected")
+              : lastMutationSummary.summary.reasonCode === "log_file_not_found"
+                ? t("logs.reasonLogFileNotFound")
+                : lastMutationSummary.summary.reasonCode === "log_delete_failed"
+                  ? t("logs.reasonLogDeleteFailed")
+                  : lastMutationSummary.summary.reasonCode === "stale_policy_context"
+                    ? t("logs.reasonStalePolicyContext")
+                    : lastMutationSummary.summary.reasonCode}
+          </p>
+        )}
+        {lastMutationSummary.summary.warnings.length > 0 && (
+          <ul className="mt-1 space-y-0.5 text-muted-foreground">
+            {lastMutationSummary.summary.warnings.map((warning, index) => (
+              <li key={`${warning}-${index}`}>{warning}</li>
+            ))}
+          </ul>
+        )}
+      </section>
+    );
+  }, [lastMutationSummary, t]);
 
   const handleCopyPath = useCallback(
     async (path: string) => {
@@ -283,39 +388,69 @@ export default function LogsPage() {
     }
   }, [exportLogFile, filter, t]);
 
-  const handlePreviewCleanup = useCallback(async () => {
-    const result = await previewCleanupLogs();
-    if (!result.ok) {
-      toast.error(result.error || t("logs.deleteFailed"));
+  const handlePreviewCleanup = useCallback(
+    async (policy?: LogCleanupPolicyInput) => {
+      const result = await previewCleanupLogs(policy);
+      if (!result.ok) {
+        toast.error(result.error || t("logs.deleteFailed"));
+        return result;
+      }
+      setCleanupPreview(result.data);
       return result;
-    }
-    setCleanupPreview(result.data);
-    return result;
-  }, [previewCleanupLogs, t]);
+    },
+    [previewCleanupLogs, t],
+  );
 
-  const handleDeleteSelected = useCallback(async () => {
+  const handleDeleteSelectedRequest = useCallback(() => {
     if (selectedFiles.size === 0) return;
+    setDeleteIntent({
+      mode: "batch",
+      fileNames: Array.from(selectedFiles),
+    });
+  }, [selectedFiles]);
 
-    const result = await deleteLogFiles(Array.from(selectedFiles));
-    if (!result.ok) {
-      toast.error(result.error || t("logs.deleteFailed"));
+  const handleDeleteSingleRequest = useCallback((fileName: string) => {
+    setDeleteIntent({
+      mode: "single",
+      fileNames: [fileName],
+    });
+  }, []);
+
+  const handleConfirmDelete = useCallback(async () => {
+    if (!deleteIntent) {
       return;
     }
-    showMutationFeedback(result.data, "delete");
-    setSelectedFiles(new Set());
-  }, [selectedFiles, deleteLogFiles, showMutationFeedback, t]);
 
-  const handleDeleteSingle = useCallback(
-    async (fileName: string) => {
-      const result = await deleteLogFile(fileName);
+    setDeleting(true);
+    try {
+      const result =
+        deleteIntent.mode === "single"
+          ? await deleteLogFile(deleteIntent.fileNames[0])
+          : await deleteLogFiles(deleteIntent.fileNames);
       if (!result.ok) {
         toast.error(result.error || t("logs.deleteFailed"));
         return;
       }
       showMutationFeedback(result.data, "delete");
-    },
-    [deleteLogFile, showMutationFeedback, t],
-  );
+      setLastMutationSummary({
+        mode: "delete",
+        summary: result.data,
+        at: Date.now(),
+      });
+      if (deleteIntent.mode === "batch") {
+        setSelectedFiles(new Set());
+      }
+      setDeleteIntent(null);
+    } finally {
+      setDeleting(false);
+    }
+  }, [
+    deleteIntent,
+    deleteLogFile,
+    deleteLogFiles,
+    showMutationFeedback,
+    t,
+  ]);
 
   const handleClearHistory = useCallback(async () => {
     const result = await clearLogFile();
@@ -323,6 +458,11 @@ export default function LogsPage() {
       toast.error(result.error || t("logs.deleteFailed"));
       return;
     }
+    setLastMutationSummary({
+      mode: "cleanup",
+      summary: result.data,
+      at: Date.now(),
+    });
     showMutationFeedback(result.data, "cleanup");
     setSelectedFiles(new Set());
     setCleanupPreview(null);
@@ -343,13 +483,37 @@ export default function LogsPage() {
     void refreshLogsPage();
   }, [refreshLogsPage]);
 
-  const handleManagementCleanup = useCallback(async () => {
-    const result = await cleanupLogs();
-    if (result.ok && result.data.status !== "failed") {
-      setCleanupPreview(null);
-    }
-    return result;
-  }, [cleanupLogs]);
+  const handleManagementCleanup = useCallback(
+    async (options: LogCleanupOptions) => {
+      const result = await cleanupLogs(options);
+      if (result.ok) {
+        setLastMutationSummary({
+          mode: "cleanup",
+          summary: result.data,
+          at: Date.now(),
+        });
+      }
+      if (result.ok && result.data.status !== "failed") {
+        setCleanupPreview(null);
+      }
+      return result;
+    },
+    [cleanupLogs],
+  );
+
+  const activeDeleteCount = deleteIntent?.fileNames.length ?? 0;
+  const deleteIncludesCurrentSession =
+    (deleteIntent?.fileNames ?? []).includes(logFiles[0]?.name ?? "") ||
+    deleteIntent?.mode === "batch";
+
+  const handleDeleteDialogOpenChange = useCallback(
+    (open: boolean) => {
+      if (!open && !deleting) {
+        setDeleteIntent(null);
+      }
+    },
+    [deleting],
+  );
 
   return (
     <div className="flex flex-col h-full">
@@ -496,6 +660,7 @@ export default function LogsPage() {
                 </span>
               </div>
             </section>
+            {renderResultSummarySection()}
 
             <section className="min-h-0 flex-1">
               <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4 h-full min-h-0">
@@ -519,7 +684,7 @@ export default function LogsPage() {
                     <Button
                       variant="destructive"
                       size="sm"
-                      onClick={handleDeleteSelected}
+                      onClick={handleDeleteSelectedRequest}
                       className="h-8"
                     >
                       <Trash2 className="h-3.5 w-3.5 mr-1.5" />
@@ -648,7 +813,7 @@ export default function LogsPage() {
                                   className="h-8 w-8 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-destructive"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    void handleDeleteSingle(file.name);
+                                    handleDeleteSingleRequest(file.name);
                                   }}
                                   title={t("common.delete")}
                                 >
@@ -782,6 +947,7 @@ export default function LogsPage() {
                 </span>
               </div>
             </section>
+            {renderResultSummarySection()}
             <section className="min-h-0 flex-1">
               {isTauri() && (
                 <LogManagementCard
@@ -797,6 +963,42 @@ export default function LogsPage() {
           </div>
         </TabsContent>
       </Tabs>
+
+      <AlertDialog
+        open={Boolean(deleteIntent)}
+        onOpenChange={handleDeleteDialogOpenChange}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("logs.deleteConfirmTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("logs.deleteConfirm", { count: activeDeleteCount })}
+            </AlertDialogDescription>
+            {deleteIncludesCurrentSession && (
+              <p className="text-xs text-muted-foreground">
+                {t("logs.currentSessionProtectedNotice")}
+              </p>
+            )}
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>
+              {t("common.cancel")}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault();
+                void handleConfirmDelete();
+              }}
+              disabled={deleting}
+            >
+              {deleting ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
+              {t("common.delete")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <LogFileViewer
         open={Boolean(selectedLogFile)}

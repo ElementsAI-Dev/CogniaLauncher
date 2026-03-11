@@ -40,7 +40,7 @@ fn invalid_content_issues(invalid_contents: &[String]) -> Vec<BackupOperationIss
         .collect()
 }
 
-fn empty_manifest(note: Option<String>) -> BackupManifest {
+fn fallback_manifest(note: Option<String>) -> BackupManifest {
     BackupManifest {
         format_version: 1,
         app_version: env!("CARGO_PKG_VERSION").to_string(),
@@ -76,7 +76,7 @@ pub async fn backup_create(
             reason_code: Some("invalid_content_types".to_string()),
             issues: invalid_content_issues(&invalid_contents),
             path: String::new(),
-            manifest: empty_manifest(note.clone()),
+            manifest: fallback_manifest(note.clone()),
             duration_ms: 0,
             error: Some(msg),
         });
@@ -87,23 +87,15 @@ pub async fn backup_create(
     let pm = profile_manager.read().await;
     let cdm = custom_detection_manager.read().await;
 
-    match backup::create_backup(&s, &content_types, note.as_deref(), &tm, &pm, &cdm).await {
-        Ok(result) => Ok(result),
-        Err(e) => Ok(BackupResult {
-            success: false,
-            status: BackupOperationStatus::Failed,
-            reason_code: Some("backup_create_failed".to_string()),
-            issues: vec![BackupOperationIssue {
-                code: "backup_create_failed".to_string(),
-                message: e.to_string(),
-                content_type: None,
-            }],
-            path: String::new(),
-            manifest: empty_manifest(note),
-            duration_ms: 0,
-            error: Some(e.to_string()),
-        }),
-    }
+    Ok(backup::create_backup_with_result(
+        &s,
+        &content_types,
+        note.as_deref(),
+        &tm,
+        &pm,
+        &cdm,
+    )
+    .await)
 }
 
 #[tauri::command]
@@ -136,7 +128,7 @@ pub async fn backup_restore(
     let mut pm = profile_manager.write().await;
     let mut cdm = custom_detection_manager.write().await;
 
-    match backup::restore_backup(
+    Ok(backup::restore_backup_with_result(
         &PathBuf::from(&backup_path),
         &content_types,
         &mut s,
@@ -144,23 +136,7 @@ pub async fn backup_restore(
         &mut pm,
         &mut cdm,
     )
-    .await
-    {
-        Ok(result) => Ok(result),
-        Err(e) => Ok(RestoreResult {
-            success: false,
-            status: BackupOperationStatus::Failed,
-            reason_code: Some("backup_restore_failed".to_string()),
-            issues: vec![BackupOperationIssue {
-                code: "backup_restore_failed".to_string(),
-                message: e.to_string(),
-                content_type: None,
-            }],
-            restored: vec![],
-            skipped: vec![],
-            error: Some(e.to_string()),
-        }),
-    }
+    .await)
 }
 
 #[tauri::command]
@@ -258,4 +234,35 @@ pub async fn db_get_info(settings: State<'_, SharedSettings>) -> Result<Database
         .get_db_info()
         .await
         .map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_content_types_defaults_to_all_when_empty() {
+        let (parsed, invalid) = parse_content_types(&[]);
+        assert_eq!(parsed.len(), BackupContentType::all().len());
+        assert!(invalid.is_empty());
+    }
+
+    #[test]
+    fn test_parse_content_types_collects_invalid_values() {
+        let (parsed, invalid) = parse_content_types(&[
+            "config".to_string(),
+            "invalid_item".to_string(),
+            "cache_database".to_string(),
+        ]);
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(invalid, vec!["invalid_item".to_string()]);
+    }
+
+    #[test]
+    fn test_invalid_content_issues_include_content_type() {
+        let issues = invalid_content_issues(&["bad-type".to_string()]);
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].code, "invalid_content_type");
+        assert_eq!(issues[0].content_type.as_deref(), Some("bad-type"));
+    }
 }

@@ -7,7 +7,7 @@ import type {
 } from '@/types/git';
 
 const TAGGED_ERROR_RE =
-  /^\[git:(environment|precondition|conflict|execution|cancelled)\]\s*/i;
+  /^\[git:(environment|precondition|conflict|execution|cancelled|timeout)\]\s*/i;
 
 function stripTaggedPrefix(message: string): string {
   return message.replace(TAGGED_ERROR_RE, '').trim();
@@ -27,6 +27,8 @@ function defaultNextSteps(category: GitActionErrorCategory): string[] {
       return ['Resolve repository conflicts, then continue or retry.'];
     case 'cancelled':
       return ['Operation was cancelled. Retry when ready.'];
+    case 'timeout':
+      return ['Operation timed out. Retry and check repository/environment responsiveness.'];
     case 'environment':
       return ['Verify Git/runtime environment and repository path.'];
     case 'execution':
@@ -49,6 +51,12 @@ export function classifyGitActionError(raw: string): GitActionError {
       lower.includes('terminated by signal')
     ) {
       category = 'cancelled';
+    } else if (
+      lower.includes('[git:timeout]') ||
+      lower.includes('timed out') ||
+      lower.includes('timeout')
+    ) {
+      category = 'timeout';
     } else if (
       lower.includes('not in tauri environment') ||
       lower.includes('not a git repository') ||
@@ -78,7 +86,8 @@ export function classifyGitActionError(raw: string): GitActionError {
   const recoverable =
     category === 'precondition' ||
     category === 'conflict' ||
-    category === 'cancelled';
+    category === 'cancelled' ||
+    category === 'timeout';
 
   return {
     category,

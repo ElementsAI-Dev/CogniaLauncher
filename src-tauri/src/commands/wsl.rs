@@ -57,6 +57,42 @@ pub struct WslCapabilitiesDto {
     pub version: Option<String>,
 }
 
+/// Per-probe runtime detection result used by staged runtime snapshot.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WslRuntimeProbeDto {
+    pub id: String,
+    pub command: String,
+    pub success: bool,
+    pub reason_code: String,
+    pub detail: Option<String>,
+}
+
+/// Status for one non-command runtime stage (status/capability/distro probes).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WslRuntimeStageDto {
+    pub ready: bool,
+    pub reason_code: String,
+    pub detail: Option<String>,
+}
+
+/// Frontend-facing staged runtime snapshot contract.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WslRuntimeSnapshotDto {
+    pub state: String,
+    pub available: bool,
+    pub reason_code: String,
+    pub reason: String,
+    pub runtime_probes: Vec<WslRuntimeProbeDto>,
+    pub status_probe: WslRuntimeStageDto,
+    pub capability_probe: WslRuntimeStageDto,
+    pub distro_probe: WslRuntimeStageDto,
+    pub distro_count: usize,
+    pub degraded_reasons: Vec<String>,
+}
+
 /// Options for WSL import operation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -105,6 +141,21 @@ fn map_capabilities(capabilities: WslCapabilities) -> WslCapabilitiesDto {
     }
 }
 
+fn map_runtime_probes(
+    probes: Vec<crate::provider::wsl::WslRuntimeProbeResult>,
+) -> Vec<WslRuntimeProbeDto> {
+    probes
+        .into_iter()
+        .map(|probe| WslRuntimeProbeDto {
+            id: probe.id,
+            command: probe.command,
+            success: probe.success,
+            reason_code: probe.reason_code,
+            detail: probe.detail,
+        })
+        .collect()
+}
+
 fn classify_wsl_error_category(message: &str) -> &'static str {
     let lower = message.to_lowercase();
     if lower.contains("[wsl_unsupported")
@@ -122,7 +173,9 @@ fn classify_wsl_error_category(message: &str) -> &'static str {
     {
         return "permission";
     }
-    if lower.contains("wsl is unavailable")
+    if lower.contains("[wsl_runtime:")
+        || lower.contains("runtime unavailable")
+        || lower.contains("wsl is unavailable")
         || lower.contains("distribution")
         || lower.contains("not running")
         || lower.contains("kernel")
@@ -149,12 +202,98 @@ fn unsupported_feature_error(feature: &str, version: Option<&str>) -> String {
     )
 }
 
+fn runtime_precondition_error(feature: &str, reason: &str) -> String {
+    format!("[WSL_RUNTIME:{}] {}", feature, reason)
+}
+
+fn distro_precondition_error(feature: &str, distro: &str) -> String {
+    format!(
+        "[WSL_RUNTIME:{}] Distribution '{}' is unavailable. Refresh distro inventory and retry.",
+        feature, distro
+    )
+}
+
 async fn ensure_runtime_available(provider: &WslProvider, feature: &str) -> Result<(), String> {
-    use crate::provider::traits::Provider;
-    if !provider.is_available().await {
-        return Err(unsupported_feature_error(feature, None));
+    let snapshot = provider.detect_runtime_snapshot().await;
+    if !snapshot.available {
+        let reason = if snapshot.reason.trim().is_empty() {
+            "WSL runtime is unavailable on this host. Install or enable WSL and retry."
+        } else {
+            snapshot.reason.as_str()
+        };
+        return Err(runtime_precondition_error(feature, reason));
     }
     Ok(())
+}
+
+async fn ensure_distro_exists(
+    provider: &WslProvider,
+    feature: &str,
+    distro: &str,
+) -> Result<(), String> {
+    let exists = provider
+        .get_distro_detail(distro)
+        .await
+        .map_err(|e| normalize_wsl_error(e.to_string()))?
+        .is_some();
+    if !exists {
+        return Err(distro_precondition_error(feature, distro));
+    }
+    Ok(())
+}
+
+fn evaluate_runtime_state(
+    available: bool,
+    status_ready: bool,
+    capability_ready: bool,
+    distro_ready: bool,
+    distro_count: usize,
+    unavailable_reason: &str,
+) -> (String, String, Vec<String>, String) {
+    if !available {
+        return (
+            "unavailable".to_string(),
+            "runtime_unavailable".to_string(),
+            vec![unavailable_reason.to_string()],
+            unavailable_reason.to_string(),
+        );
+    }
+
+    if distro_ready && distro_count == 0 {
+        return (
+            "empty".to_string(),
+            "runtime_empty".to_string(),
+            Vec::new(),
+            "Runtime is available, but no distributions are installed.".to_string(),
+        );
+    }
+
+    let mut degraded_reasons = Vec::new();
+    if !status_ready {
+        degraded_reasons.push("Runtime status data is unavailable.".to_string());
+    }
+    if !capability_ready {
+        degraded_reasons.push("Runtime capabilities could not be detected.".to_string());
+    }
+    if !distro_ready {
+        degraded_reasons.push("Distribution inventory could not be detected.".to_string());
+    }
+
+    if degraded_reasons.is_empty() {
+        return (
+            "ready".to_string(),
+            "runtime_ready".to_string(),
+            Vec::new(),
+            "Runtime and management probes passed.".to_string(),
+        );
+    }
+
+    (
+        "degraded".to_string(),
+        "runtime_degraded".to_string(),
+        degraded_reasons.clone(),
+        degraded_reasons.join(" "),
+    )
 }
 
 async fn ensure_wsl_capability<F>(
@@ -381,10 +520,143 @@ pub async fn wsl_get_capabilities() -> Result<WslCapabilitiesDto, String> {
     Ok(map_capabilities(capabilities))
 }
 
+/// Get staged runtime detection snapshot for frontend readiness decisions.
+#[tauri::command]
+pub async fn wsl_get_runtime_snapshot() -> Result<WslRuntimeSnapshotDto, String> {
+    let provider = get_provider();
+    let runtime = provider.detect_runtime_snapshot().await;
+    let runtime_probes = map_runtime_probes(runtime.probes);
+
+    if !runtime.available {
+        return Ok(WslRuntimeSnapshotDto {
+            state: "unavailable".to_string(),
+            available: false,
+            reason_code: runtime.reason_code,
+            reason: runtime.reason.clone(),
+            runtime_probes,
+            status_probe: WslRuntimeStageDto {
+                ready: false,
+                reason_code: "runtime_unavailable".to_string(),
+                detail: Some("Runtime status probe skipped because runtime is unavailable.".to_string()),
+            },
+            capability_probe: WslRuntimeStageDto {
+                ready: false,
+                reason_code: "runtime_unavailable".to_string(),
+                detail: Some(
+                    "Capability probe skipped because runtime is unavailable.".to_string(),
+                ),
+            },
+            distro_probe: WslRuntimeStageDto {
+                ready: false,
+                reason_code: "runtime_unavailable".to_string(),
+                detail: Some("Distro probe skipped because runtime is unavailable.".to_string()),
+            },
+            distro_count: 0,
+            degraded_reasons: vec![runtime.reason],
+        });
+    }
+
+    let (status_probe, status_ready) = match provider.get_wsl_status().await {
+        Ok(_) => {
+            let running = provider.list_running().await.unwrap_or_default();
+            (
+            WslRuntimeStageDto {
+                ready: true,
+                reason_code: "ok".to_string(),
+                detail: Some(format!(
+                    "Runtime status available; running distros={}.",
+                    running.len()
+                )),
+            },
+            true,
+        )
+        }
+        Err(err) => (
+            WslRuntimeStageDto {
+                ready: false,
+                reason_code: "status_probe_failed".to_string(),
+                detail: Some(normalize_wsl_error(err.to_string())),
+            },
+            false,
+        ),
+    };
+
+    let (capability_probe, capability_ready) = match provider.get_capabilities().await {
+        Ok(capabilities) => (
+            WslRuntimeStageDto {
+                ready: true,
+                reason_code: "ok".to_string(),
+                detail: capabilities
+                    .version
+                    .map(|v| format!("Capabilities detected (WSL {}).", v))
+                    .or(Some("Capabilities detected.".to_string())),
+            },
+            true,
+        ),
+        Err(err) => (
+            WslRuntimeStageDto {
+                ready: false,
+                reason_code: "capability_probe_failed".to_string(),
+                detail: Some(normalize_wsl_error(err.to_string())),
+            },
+            false,
+        ),
+    };
+
+    let (distro_probe, distro_ready, distro_count) =
+        match provider.run_wsl_lenient(&["--list", "--verbose"]).await {
+            Ok(raw) => {
+                let count = WslProvider::parse_list_verbose(&raw).len();
+                (
+                    WslRuntimeStageDto {
+                        ready: true,
+                        reason_code: "ok".to_string(),
+                        detail: Some(format!("Detected {} installed distribution(s).", count)),
+                    },
+                    true,
+                    count,
+                )
+            }
+            Err(err) => (
+                WslRuntimeStageDto {
+                    ready: false,
+                    reason_code: "distro_probe_failed".to_string(),
+                    detail: Some(normalize_wsl_error(err.to_string())),
+                },
+                false,
+                0,
+            ),
+        };
+
+    let (state, reason_code, degraded_reasons, reason) = evaluate_runtime_state(
+        true,
+        status_ready,
+        capability_ready,
+        distro_ready,
+        distro_count,
+        &runtime.reason,
+    );
+
+    Ok(WslRuntimeSnapshotDto {
+        state,
+        available: true,
+        reason_code,
+        reason,
+        runtime_probes,
+        status_probe,
+        capability_probe,
+        distro_probe,
+        distro_count,
+        degraded_reasons,
+    })
+}
+
 /// Terminate a specific WSL distribution
 #[tauri::command]
 pub async fn wsl_terminate(name: String) -> Result<(), String> {
     let provider = get_provider();
+    ensure_runtime_available(&provider, "distro.terminate").await?;
+    ensure_distro_exists(&provider, "distro.terminate", &name).await?;
     provider
         .terminate_distro(&name)
         .await
@@ -395,6 +667,7 @@ pub async fn wsl_terminate(name: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn wsl_shutdown() -> Result<(), String> {
     let provider = get_provider();
+    ensure_runtime_available(&provider, "runtime.shutdown").await?;
     provider
         .shutdown_all()
         .await
@@ -405,6 +678,8 @@ pub async fn wsl_shutdown() -> Result<(), String> {
 #[tauri::command]
 pub async fn wsl_set_default(name: String) -> Result<(), String> {
     let provider = get_provider();
+    ensure_runtime_available(&provider, "distro.setDefault").await?;
+    ensure_distro_exists(&provider, "distro.setDefault", &name).await?;
     provider
         .set_default_distro(&name)
         .await
@@ -418,6 +693,8 @@ pub async fn wsl_set_version(name: String, version: u8) -> Result<(), String> {
         return Err("WSL version must be 1 or 2".into());
     }
     let provider = get_provider();
+    ensure_runtime_available(&provider, "distro.setVersion").await?;
+    ensure_distro_exists(&provider, "distro.setVersion", &name).await?;
     provider
         .set_distro_version(&name, version)
         .await
@@ -431,6 +708,7 @@ pub async fn wsl_set_default_version(version: u8) -> Result<(), String> {
         return Err("WSL version must be 1 or 2".into());
     }
     let provider = get_provider();
+    ensure_runtime_available(&provider, "runtime.setDefaultVersion").await?;
     provider
         .set_default_version(version)
         .await
@@ -441,6 +719,8 @@ pub async fn wsl_set_default_version(version: u8) -> Result<(), String> {
 #[tauri::command]
 pub async fn wsl_move_distro(name: String, location: String) -> Result<String, String> {
     let provider = get_provider();
+    ensure_runtime_available(&provider, "distro.move").await?;
+    ensure_distro_exists(&provider, "distro.move", &name).await?;
     provider
         .move_distro(&name, &location)
         .await
@@ -451,6 +731,8 @@ pub async fn wsl_move_distro(name: String, location: String) -> Result<String, S
 #[tauri::command]
 pub async fn wsl_resize_distro(name: String, size: String) -> Result<String, String> {
     let provider = get_provider();
+    ensure_runtime_available(&provider, "distro.resize").await?;
+    ensure_distro_exists(&provider, "distro.resize", &name).await?;
     provider
         .resize_distro(&name, &size)
         .await
@@ -465,6 +747,8 @@ pub async fn wsl_export(
     as_vhd: Option<bool>,
 ) -> Result<(), String> {
     let provider = get_provider();
+    ensure_runtime_available(&provider, "distro.export").await?;
+    ensure_distro_exists(&provider, "distro.export", &name).await?;
     provider
         .export_distro(&name, &file_path, as_vhd.unwrap_or(false))
         .await
@@ -475,6 +759,7 @@ pub async fn wsl_export(
 #[tauri::command]
 pub async fn wsl_import(options: WslImportOptions) -> Result<(), String> {
     let provider = get_provider();
+    ensure_runtime_available(&provider, "distro.import").await?;
     provider
         .import_distro(
             &options.name,
@@ -491,6 +776,7 @@ pub async fn wsl_import(options: WslImportOptions) -> Result<(), String> {
 #[tauri::command]
 pub async fn wsl_update() -> Result<String, String> {
     let provider = get_provider();
+    ensure_runtime_available(&provider, "runtime.update").await?;
     provider
         .update_wsl()
         .await
@@ -501,6 +787,8 @@ pub async fn wsl_update() -> Result<String, String> {
 #[tauri::command]
 pub async fn wsl_launch(name: String, user: Option<String>) -> Result<(), String> {
     let provider = get_provider();
+    ensure_runtime_available(&provider, "distro.launch").await?;
+    ensure_distro_exists(&provider, "distro.launch", &name).await?;
     provider
         .launch_distro(&name, user.as_deref())
         .await
@@ -533,6 +821,8 @@ pub async fn wsl_exec(
     user: Option<String>,
 ) -> Result<WslExecResult, String> {
     let provider = get_provider();
+    ensure_runtime_available(&provider, "distro.exec").await?;
+    ensure_distro_exists(&provider, "distro.exec", &distro).await?;
     let (stdout, stderr, exit_code) = provider
         .exec_command(&distro, &command, user.as_deref())
         .await
@@ -571,6 +861,8 @@ pub async fn wsl_set_config(
     key: String,
     value: Option<String>,
 ) -> Result<(), String> {
+    let provider = get_provider();
+    ensure_runtime_available(&provider, "runtime.setConfig").await?;
     if let Some(val) = value {
         WslProvider::write_wslconfig(&section, &key, &val)
             .map_err(|e| normalize_wsl_error(e.to_string()))
@@ -585,6 +877,8 @@ pub async fn wsl_set_config(
 #[tauri::command]
 pub async fn wsl_disk_usage(name: String) -> Result<WslDiskUsage, String> {
     let provider = get_provider();
+    ensure_runtime_available(&provider, "distro.diskUsage").await?;
+    ensure_distro_exists(&provider, "distro.diskUsage", &name).await?;
     let (total_bytes, used_bytes) = provider
         .get_disk_usage(&name)
         .await
@@ -653,6 +947,7 @@ pub async fn wsl_mount(options: WslMountOptions) -> Result<String, String> {
 #[tauri::command]
 pub async fn wsl_unmount(disk_path: Option<String>) -> Result<(), String> {
     let provider = get_provider();
+    ensure_runtime_available(&provider, "runtime.unmount").await?;
     provider
         .unmount_disk(disk_path.as_deref())
         .await
@@ -673,6 +968,8 @@ pub async fn wsl_get_ip(distro: Option<String>) -> Result<String, String> {
 #[tauri::command]
 pub async fn wsl_change_default_user(distro: String, username: String) -> Result<(), String> {
     let provider = get_provider();
+    ensure_runtime_available(&provider, "distro.changeDefaultUser").await?;
+    ensure_distro_exists(&provider, "distro.changeDefaultUser", &distro).await?;
     provider
         .change_default_user(&distro, &username)
         .await
@@ -685,6 +982,8 @@ pub async fn wsl_get_distro_config(
     distro: String,
 ) -> Result<HashMap<String, HashMap<String, String>>, String> {
     let provider = get_provider();
+    ensure_runtime_available(&provider, "distro.getConfig").await?;
+    ensure_distro_exists(&provider, "distro.getConfig", &distro).await?;
     provider
         .read_distro_config(&distro)
         .await
@@ -732,6 +1031,8 @@ pub async fn wsl_set_distro_config(
     value: Option<String>,
 ) -> Result<(), String> {
     let provider = get_provider();
+    ensure_runtime_available(&provider, "distro.setConfig").await?;
+    ensure_distro_exists(&provider, "distro.setConfig", &distro).await?;
     if let Some(val) = value {
         provider
             .write_distro_config(&distro, &section, &key, &val)
@@ -758,10 +1059,20 @@ pub async fn wsl_detect_distro_env(
     distro: String,
 ) -> Result<crate::provider::wsl::WslDistroEnvironment, String> {
     let provider = get_provider();
+    ensure_runtime_available(&provider, "distro.detectEnvironment").await?;
+    ensure_distro_exists(&provider, "distro.detectEnvironment", &distro).await?;
     provider
         .detect_distro_environment(&distro)
         .await
-        .map_err(|e| normalize_wsl_error(e.to_string()))
+        .map_err(|e| {
+            runtime_precondition_error(
+                "distro.detectEnvironment",
+                &format!(
+                    "{} Retry by launching the target distribution and running detection again.",
+                    normalize_wsl_error(e.to_string())
+                ),
+            )
+        })
 }
 
 /// Get live resource usage (memory, swap, CPU, load) from a running WSL distribution.
@@ -861,6 +1172,8 @@ pub async fn wsl_clone_distro(
     location: String,
 ) -> Result<String, String> {
     let provider = get_provider();
+    ensure_runtime_available(&provider, "distro.clone").await?;
+    ensure_distro_exists(&provider, "distro.clone", &name).await?;
     provider
         .clone_distro(&name, &new_name, &location)
         .await
@@ -871,6 +1184,7 @@ pub async fn wsl_clone_distro(
 #[tauri::command]
 pub async fn wsl_batch_launch(names: Vec<String>) -> Result<Vec<(String, bool, String)>, String> {
     let provider = get_provider();
+    ensure_runtime_available(&provider, "distro.batchLaunch").await?;
     Ok(provider.batch_launch(&names).await)
 }
 
@@ -880,6 +1194,7 @@ pub async fn wsl_batch_terminate(
     names: Vec<String>,
 ) -> Result<Vec<(String, bool, String)>, String> {
     let provider = get_provider();
+    ensure_runtime_available(&provider, "distro.batchTerminate").await?;
     Ok(provider.batch_terminate(&names).await)
 }
 
@@ -890,6 +1205,8 @@ pub async fn wsl_backup_distro(
     dest_dir: String,
 ) -> Result<crate::provider::wsl::WslBackupEntry, String> {
     let provider = get_provider();
+    ensure_runtime_available(&provider, "distro.backup").await?;
+    ensure_distro_exists(&provider, "distro.backup", &name).await?;
     provider
         .backup_distro(&name, &dest_dir)
         .await
@@ -912,6 +1229,7 @@ pub async fn wsl_restore_backup(
     install_location: String,
 ) -> Result<(), String> {
     let provider = get_provider();
+    ensure_runtime_available(&provider, "distro.restoreBackup").await?;
     provider
         .restore_backup(&backup_path, &name, &install_location)
         .await
@@ -980,7 +1298,10 @@ pub async fn wsl_remove_port_forward(listen_port: u16) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{classify_wsl_error_category, normalize_wsl_error, unsupported_feature_error};
+    use super::{
+        classify_wsl_error_category, evaluate_runtime_state, normalize_wsl_error,
+        runtime_precondition_error, unsupported_feature_error,
+    };
 
     #[test]
     fn classify_error_category_detects_unsupported() {
@@ -999,6 +1320,14 @@ mod tests {
     }
 
     #[test]
+    fn classify_error_category_detects_runtime_precondition() {
+        assert_eq!(
+            classify_wsl_error_category("[WSL_RUNTIME:distro.launch] runtime unavailable"),
+            "runtime"
+        );
+    }
+
+    #[test]
     fn normalize_wsl_error_prefixes_category() {
         let normalized = normalize_wsl_error("Some runtime timeout".to_string());
         assert!(normalized.starts_with("[WSL_RUNTIME]"));
@@ -1009,5 +1338,57 @@ mod tests {
         let message = unsupported_feature_error("runtime.importInPlace", Some("2.4.0"));
         assert!(message.contains("[WSL_UNSUPPORTED:runtime.importInPlace]"));
         assert!(message.contains("WSL 2.4.0"));
+    }
+
+    #[test]
+    fn runtime_precondition_error_contains_feature_id() {
+        let message = runtime_precondition_error(
+            "distro.detectEnvironment",
+            "Distribution is unavailable.",
+        );
+        assert!(message.contains("[WSL_RUNTIME:distro.detectEnvironment]"));
+    }
+
+    #[test]
+    fn evaluate_runtime_state_reports_unavailable() {
+        let (state, reason_code, degraded_reasons, _) = evaluate_runtime_state(
+            false,
+            false,
+            false,
+            false,
+            0,
+            "runtime unavailable",
+        );
+        assert_eq!(state, "unavailable");
+        assert_eq!(reason_code, "runtime_unavailable");
+        assert_eq!(degraded_reasons.len(), 1);
+    }
+
+    #[test]
+    fn evaluate_runtime_state_reports_empty() {
+        let (state, reason_code, degraded_reasons, _) =
+            evaluate_runtime_state(true, true, true, true, 0, "");
+        assert_eq!(state, "empty");
+        assert_eq!(reason_code, "runtime_empty");
+        assert!(degraded_reasons.is_empty());
+    }
+
+    #[test]
+    fn evaluate_runtime_state_reports_degraded() {
+        let (state, reason_code, degraded_reasons, reason) =
+            evaluate_runtime_state(true, false, true, true, 1, "");
+        assert_eq!(state, "degraded");
+        assert_eq!(reason_code, "runtime_degraded");
+        assert!(degraded_reasons.iter().any(|r| r.contains("status data")));
+        assert!(reason.contains("status data"));
+    }
+
+    #[test]
+    fn evaluate_runtime_state_reports_ready() {
+        let (state, reason_code, degraded_reasons, _) =
+            evaluate_runtime_state(true, true, true, true, 1, "");
+        assert_eq!(state, "ready");
+        assert_eq!(reason_code, "runtime_ready");
+        assert!(degraded_reasons.is_empty());
     }
 }

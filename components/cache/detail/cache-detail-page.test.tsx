@@ -11,6 +11,7 @@ jest.mock("@/components/providers/locale-provider", () => ({
 }));
 
 const mockCacheCleanEnhanced = jest.fn();
+const mockCacheCleanPreview = jest.fn();
 const mockCacheVerify = jest.fn();
 const mockDeleteCacheEntries = jest.fn();
 const mockDeleteCacheEntry = jest.fn();
@@ -31,6 +32,9 @@ jest.mock("@/lib/tauri", () => ({
   },
   get cacheCleanEnhanced() {
     return mockCacheCleanEnhanced;
+  },
+  get cacheCleanPreview() {
+    return mockCacheCleanPreview;
   },
   get cacheVerify() {
     return mockCacheVerify;
@@ -119,6 +123,20 @@ describe("CacheDetailPage", () => {
     mockCacheInfo.mockResolvedValue(cacheInfoData);
     mockGetCacheAccessStats.mockResolvedValue(accessStatsData);
     mockListCacheEntries.mockResolvedValue(entriesResult);
+    mockCacheCleanPreview.mockResolvedValue({
+      files: [
+        {
+          path: 'C:\\cache\\downloads\\react-19.0.0.tgz',
+          size: 1258291,
+          size_human: '1.2 MB',
+          entry_type: 'download',
+          created_at: '2025-01-01T00:00:00Z',
+        },
+      ],
+      total_count: 1,
+      total_size: 1258291,
+      total_size_human: '1.2 MB',
+    });
   });
 
   it("renders without crashing for invalid type", () => {
@@ -323,7 +341,7 @@ describe("CacheDetailPage", () => {
 
   it("calls cacheCleanEnhanced when clean confirmed", async () => {
     mockIsTauri = true;
-    mockCacheCleanEnhanced.mockResolvedValue({ freed_human: "1.5 GB" });
+    mockCacheCleanEnhanced.mockResolvedValue({ freed_human: "1.5 GB", use_trash: true });
     const { toast } = jest.requireMock("sonner");
     await act(async () => {
       render(<CacheDetailPageClient cacheType="download" />);
@@ -333,12 +351,12 @@ describe("CacheDetailPage", () => {
     await act(async () => {
       cleanBtn.click();
     });
-    // Confirm
-    const confirmBtn = screen.getByText("cache.confirmClean");
+    const confirmBtn = await screen.findByText("cache.confirmClean");
     await act(async () => {
       confirmBtn.click();
     });
     await act(async () => {});
+    expect(mockCacheCleanPreview).toHaveBeenCalledWith("downloads");
     expect(mockCacheCleanEnhanced).toHaveBeenCalledWith("downloads", true);
     expect(toast.success).toHaveBeenCalled();
   });
@@ -503,7 +521,7 @@ describe("CacheDetailPage", () => {
 
   it("cleans metadata type cache correctly", async () => {
     mockIsTauri = true;
-    mockCacheCleanEnhanced.mockResolvedValue({ freed_human: "256 MB" });
+    mockCacheCleanEnhanced.mockResolvedValue({ freed_human: "256 MB", use_trash: true });
     await act(async () => {
       render(<CacheDetailPageClient cacheType="metadata" />);
     });
@@ -511,11 +529,12 @@ describe("CacheDetailPage", () => {
     await act(async () => {
       cleanBtn.click();
     });
-    const confirmBtn = screen.getByText("cache.confirmClean");
+    const confirmBtn = await screen.findByText("cache.confirmClean");
     await act(async () => {
       confirmBtn.click();
     });
     await act(async () => {});
+    expect(mockCacheCleanPreview).toHaveBeenCalledWith("metadata");
     expect(mockCacheCleanEnhanced).toHaveBeenCalledWith("metadata", true);
   });
 });

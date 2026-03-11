@@ -84,8 +84,19 @@ interface TargetChangeIntent {
 
 interface SavePreflightSummary {
   lineDelta: number;
-  changedCategories: string[];
-  riskFlags: string[];
+  changedCategories: PreflightChangedCategory[];
+  riskFlags: PreflightRiskCode[];
+}
+
+interface RefreshIntent {
+  signal: number;
+  configEntries: boolean;
+  configMetadata: boolean;
+}
+
+interface RefreshHandledResult {
+  configEntries: boolean;
+  configMetadata: boolean;
 }
 
 const EMPTY_ENTRIES: ShellConfigEntries = {
@@ -163,10 +174,14 @@ function serializeEntries(entries: ShellConfigEntries, shellType: ShellType) {
   return [...aliasLines, ...exportLines, ...sourceLines].join("\n");
 }
 
+interface StructuredFallbackReason {
+  unsupportedLine: string;
+}
+
 function detectStructuredFallbackReason(
   content: string,
   shellType: ShellType,
-): string | null {
+): StructuredFallbackReason | null {
   const lines = content
     .split("\n")
     .map((line) => line.trim())
@@ -210,23 +225,30 @@ function detectStructuredFallbackReason(
 
   const unsupported = lines.find((line) => !supportsLine(line));
   if (!unsupported) return null;
-  return `Found advanced syntax that cannot be round-tripped safely: ${unsupported}`;
+  return { unsupportedLine: unsupported };
 }
 
-function detectHighRiskPatterns(content: string, shellType: ShellType): string[] {
-  const risks: string[] = [];
+type PreflightRiskCode =
+  | "destructiveRootDelete"
+  | "pathOverwrite"
+  | "sourceSystemProfile";
+
+type PreflightChangedCategory = "aliases" | "exports" | "sources";
+
+function detectHighRiskPatterns(content: string, shellType: ShellType): PreflightRiskCode[] {
+  const risks: PreflightRiskCode[] = [];
   if (/\brm\s+-rf\s+\/\b/.test(content)) {
-    risks.push("Contains potentially destructive root delete command.");
+    risks.push("destructiveRootDelete");
   }
   if (
     shellType !== "powershell" &&
     /\bexport\s+PATH\s*=/.test(content) &&
     !/\$PATH/.test(content)
   ) {
-    risks.push("PATH is overwritten without preserving existing PATH.");
+    risks.push("pathOverwrite");
   }
   if (/^\s*source\s+["']?\/etc\//m.test(content) || /^\s*\. ["']?\/etc\//m.test(content)) {
-    risks.push("Sources a global system profile directly.");
+    risks.push("sourceSystemProfile");
   }
   return risks;
 }
@@ -274,8 +296,8 @@ interface TerminalShellConfigProps {
   onDirtyChange?: (dirty: boolean) => void;
   onRequestDiscard?: () => void;
   discardSignal?: number;
-  refreshSignal?: number;
-  onRefreshHandled?: (didRefresh: boolean) => void;
+  refreshIntent?: RefreshIntent;
+  onRefreshHandled?: (handled: RefreshHandledResult) => void;
 }
 
 export function TerminalShellConfig({
@@ -294,7 +316,7 @@ export function TerminalShellConfig({
   onClearMutationState,
   onDirtyChange,
   discardSignal = 0,
-  refreshSignal = 0,
+  refreshIntent = { signal: 0, configEntries: false, configMetadata: false },
   onRefreshHandled,
 }: TerminalShellConfigProps) {
   const { t } = useLocale();
@@ -322,7 +344,7 @@ export function TerminalShellConfig({
   const [loaded, setLoaded] = useState(false);
   const [pendingTargetChange, setPendingTargetChange] = useState<TargetChangeIntent | null>(null);
   const [lastDiscardSignal, setLastDiscardSignal] = useState(discardSignal);
-  const [lastRefreshSignal, setLastRefreshSignal] = useState(refreshSignal);
+  const [lastRefreshSignal, setLastRefreshSignal] = useState(refreshIntent.signal);
 
   const selectedShell = shells.find((s) => s.id === selectedShellId);
   const configFiles = selectedShell?.configFiles.filter((f) => f.exists) ?? [];
@@ -342,15 +364,19 @@ export function TerminalShellConfig({
     draftContent !== persistedBaseline;
   const structuredFallbackReason = useMemo(() => {
     if (!selectedShell || !editing) return null;
-    return detectStructuredFallbackReason(draftContent, selectedShell.shellType);
-  }, [draftContent, editing, selectedShell]);
+    const fallback = detectStructuredFallbackReason(draftContent, selectedShell.shellType);
+    if (!fallback) return null;
+    return t("terminal.structuredFallbackAdvancedSyntax", {
+      line: fallback.unsupportedLine,
+    });
+  }, [draftContent, editing, selectedShell, t]);
   const preflightSummary = useMemo<SavePreflightSummary | null>(() => {
     if (!persistedBaseline || !selectedShell) return null;
     const lineDelta =
       draftContent.split("\n").length - persistedBaseline.split("\n").length;
     const baseEntries = baselineEntries ?? EMPTY_ENTRIES;
     const currentEntries = entries ?? EMPTY_ENTRIES;
-    const changedCategories: string[] = [];
+    const changedCategories: PreflightChangedCategory[] = [];
     if (!tupleListEqual(baseEntries.aliases, currentEntries.aliases)) {
       changedCategories.push("aliases");
     }
@@ -366,6 +392,24 @@ export function TerminalShellConfig({
       riskFlags: detectHighRiskPatterns(draftContent, selectedShell.shellType),
     };
   }, [baselineEntries, draftContent, entries, persistedBaseline, selectedShell]);
+  const sessionStatusLabel = useMemo(() => {
+    switch (sessionStatus) {
+      case "loading":
+        return t("terminal.sessionStatusLoading");
+      case "loaded":
+        return t("terminal.sessionStatusLoaded");
+      case "editing":
+        return t("terminal.sessionStatusEditing");
+      case "saving":
+        return t("terminal.sessionStatusSaving");
+      case "error":
+        return t("terminal.sessionStatusError");
+      case "conflict":
+        return t("terminal.sessionStatusConflict");
+      default:
+        return t("terminal.sessionStatusIdle");
+    }
+  }, [sessionStatus, t]);
 
   const clearMutationFeedback = useCallback(() => {
     onClearMutationState?.();
@@ -492,30 +536,47 @@ export function TerminalShellConfig({
     await onBackupConfig(selectedConfigPath);
   };
 
-  const refreshFromBackend = useCallback(async () => {
-    if (!selectedConfigPath || !selectedShell) return;
-    const refreshed = await onReadConfig(selectedConfigPath);
-    setPersistedBaseline(refreshed);
-    setDraftContent(refreshed);
-    const parsed = onParseConfigContent
-      ? await onParseConfigContent(refreshed, selectedShell.shellType)
-      : await onFetchConfigEntries(selectedConfigPath, selectedShell.shellType);
-    const parsedEntries = parsed ?? EMPTY_ENTRIES;
-    setEntries(parsedEntries);
-    setBaselineEntries(parsedEntries);
-    if (onValidateConfigContent) {
-      const validated = await onValidateConfigContent(refreshed, selectedShell.shellType);
-      setLiveDiagnostics(validated);
-    } else {
-      setLiveDiagnostics([]);
+  const refreshFromBackend = useCallback(async (
+    scope: RefreshHandledResult = { configEntries: true, configMetadata: true },
+  ): Promise<RefreshHandledResult> => {
+    if (!selectedConfigPath || !selectedShell) {
+      return { configEntries: false, configMetadata: false };
     }
-    if (onGetConfigEditorMetadata) {
+
+    const handled: RefreshHandledResult = {
+      configEntries: false,
+      configMetadata: false,
+    };
+
+    if (scope.configEntries) {
+      const refreshed = await onReadConfig(selectedConfigPath);
+      setPersistedBaseline(refreshed);
+      setDraftContent(refreshed);
+      const parsed = onParseConfigContent
+        ? await onParseConfigContent(refreshed, selectedShell.shellType)
+        : await onFetchConfigEntries(selectedConfigPath, selectedShell.shellType);
+      const parsedEntries = parsed ?? EMPTY_ENTRIES;
+      setEntries(parsedEntries);
+      setBaselineEntries(parsedEntries);
+      if (onValidateConfigContent) {
+        const validated = await onValidateConfigContent(refreshed, selectedShell.shellType);
+        setLiveDiagnostics(validated);
+      } else {
+        setLiveDiagnostics([]);
+      }
+      handled.configEntries = true;
+    }
+
+    if (scope.configMetadata && onGetConfigEditorMetadata) {
       const metadata = await onGetConfigEditorMetadata(
         selectedConfigPath,
         selectedShell.shellType,
       );
       setEditorMetadata(metadata);
+      handled.configMetadata = true;
     }
+
+    return handled;
   }, [
     onFetchConfigEntries,
     onGetConfigEditorMetadata,
@@ -544,7 +605,10 @@ export function TerminalShellConfig({
 
     setSessionStatus("conflict");
     setConflictMessage(
-      `Config changed on disk (${currentFingerprint.slice(0, 8)} -> ${latestFingerprint.slice(0, 8)}).`,
+      t("terminal.configConflictMessage", {
+        from: currentFingerprint.slice(0, 8),
+        to: latestFingerprint.slice(0, 8),
+      }),
     );
     return true;
   };
@@ -632,20 +696,27 @@ export function TerminalShellConfig({
   ]);
 
   useEffect(() => {
-    if (refreshSignal === lastRefreshSignal) return;
-    setLastRefreshSignal(refreshSignal);
+    if (refreshIntent.signal === lastRefreshSignal) return;
+    setLastRefreshSignal(refreshIntent.signal);
     if (!loaded || !selectedConfigPath || !selectedShell) {
-      onRefreshHandled?.(false);
+      onRefreshHandled?.({ configEntries: false, configMetadata: false });
       return;
     }
-    void refreshFromBackend()
-      .then(() => onRefreshHandled?.(true))
-      .catch(() => onRefreshHandled?.(false));
+    if (!refreshIntent.configEntries && !refreshIntent.configMetadata) {
+      onRefreshHandled?.({ configEntries: false, configMetadata: false });
+      return;
+    }
+    void refreshFromBackend({
+      configEntries: refreshIntent.configEntries,
+      configMetadata: refreshIntent.configMetadata,
+    })
+      .then((handled) => onRefreshHandled?.(handled))
+      .catch(() => onRefreshHandled?.({ configEntries: false, configMetadata: false }));
   }, [
     loaded,
     onRefreshHandled,
     refreshFromBackend,
-    refreshSignal,
+    refreshIntent,
     lastRefreshSignal,
     selectedConfigPath,
     selectedShell,
@@ -662,8 +733,8 @@ export function TerminalShellConfig({
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="outline">{`Session ${sessionStatus}`}</Badge>
-          {isDirty && <Badge variant="secondary">Unsaved Draft</Badge>}
+          <Badge variant="outline">{t("terminal.sessionLabel", { status: sessionStatusLabel })}</Badge>
+          {isDirty && <Badge variant="secondary">{t("terminal.unsavedDraft")}</Badge>}
         </div>
 
         <div className="flex gap-3">
@@ -727,16 +798,16 @@ export function TerminalShellConfig({
         {conflictMessage && (
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Conflict Detected</AlertTitle>
+            <AlertTitle>{t("terminal.conflictDetected")}</AlertTitle>
             <AlertDescription className="space-y-2">
               <p>{conflictMessage}</p>
               <div className="flex flex-wrap gap-2">
                 <Button size="sm" variant="outline" onClick={handleLoadConfig}>
-                  Reload from Disk
+                  {t("terminal.reloadFromDisk")}
                 </Button>
                 {editing && onWriteConfig && (
                   <Button size="sm" onClick={() => void handleSaveDraft(true)}>
-                    Save Anyway
+                    {t("terminal.saveAnyway")}
                   </Button>
                 )}
               </div>
@@ -799,12 +870,18 @@ export function TerminalShellConfig({
             {mutationResult && (
               <div className="rounded-md border border-border/60 bg-background/60 p-2 text-xs">
                 <div className="flex flex-wrap gap-2">
-                  <Badge variant="outline">{`verified: ${String(mutationResult.verified)}`}</Badge>
+                  <Badge variant="outline">
+                    {t("terminal.resultVerified", { value: String(mutationResult.verified) })}
+                  </Badge>
                   {getResultSnapshotPath(mutationResult) && (
-                    <Badge variant="secondary">{`snapshot: ${getResultSnapshotPath(mutationResult)}`}</Badge>
+                    <Badge variant="secondary">
+                      {t("terminal.resultSnapshot", { value: getResultSnapshotPath(mutationResult)! })}
+                    </Badge>
                   )}
                   {getResultFingerprint(mutationResult) && (
-                    <Badge variant="secondary">{`fingerprint: ${getResultFingerprint(mutationResult)}`}</Badge>
+                    <Badge variant="secondary">
+                      {t("terminal.resultFingerprint", { value: getResultFingerprint(mutationResult)! })}
+                    </Badge>
                   )}
                 </div>
                 {mutationResult.diagnostics.length > 0 && (
@@ -1045,7 +1122,7 @@ export function TerminalShellConfig({
                     onClick={() => void handleRestoreSnapshot()}
                   >
                     <RotateCcw className="h-3.5 w-3.5 mr-1" />
-                    Restore Snapshot
+                    {t("terminal.restoreSnapshot")}
                   </Button>
                 )}
               </div>
@@ -1054,12 +1131,12 @@ export function TerminalShellConfig({
         )}
       </CardContent>
     </Card>
-    <Dialog open={targetDialogOpen} onOpenChange={setTargetDialogOpen}>
+      <Dialog open={targetDialogOpen} onOpenChange={setTargetDialogOpen}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Unsaved Draft</DialogTitle>
+          <DialogTitle>{t("terminal.unsavedDraft")}</DialogTitle>
           <DialogDescription>
-            You have unsaved terminal config changes. Choose how to continue.
+            {t("terminal.unsavedDraftSwitchDesc")}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter className="gap-2">
@@ -1070,7 +1147,7 @@ export function TerminalShellConfig({
               setTargetDialogOpen(false);
             }}
           >
-            Stay
+            {t("terminal.stay")}
           </Button>
           <Button
             variant="destructive"
@@ -1082,7 +1159,7 @@ export function TerminalShellConfig({
               setTargetDialogOpen(false);
             }}
           >
-            Discard and Switch
+            {t("terminal.discardAndSwitch")}
           </Button>
           <Button
             disabled={!onWriteConfig || switchSaving}
@@ -1097,7 +1174,7 @@ export function TerminalShellConfig({
               setTargetDialogOpen(false);
             }}
           >
-            Save and Switch
+            {t("terminal.saveAndSwitch")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1106,30 +1183,45 @@ export function TerminalShellConfig({
     <Dialog open={saveDialogOpen} onOpenChange={setSaveDialogOpen}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Save Preflight</DialogTitle>
+          <DialogTitle>{t("terminal.savePreflightTitle")}</DialogTitle>
           <DialogDescription>
-            Review changes and confirm before writing this config file.
+            {t("terminal.savePreflightDesc")}
           </DialogDescription>
         </DialogHeader>
         {preflightSummary && (
           <div className="space-y-3 text-sm">
             <div className="rounded-md border p-2">
-              <p>{`Line delta: ${preflightSummary.lineDelta >= 0 ? "+" : ""}${preflightSummary.lineDelta}`}</p>
+              <p>{t("terminal.preflightLineDelta", {
+                value: `${preflightSummary.lineDelta >= 0 ? "+" : ""}${preflightSummary.lineDelta}`,
+              })}</p>
               <p>
-                Changed categories:{" "}
+                {t("terminal.preflightChangedCategories")}:{" "}
                 {preflightSummary.changedCategories.length > 0
-                  ? preflightSummary.changedCategories.join(", ")
-                  : "none"}
+                  ? preflightSummary.changedCategories.map((category) => {
+                      switch (category) {
+                        case "aliases":
+                          return t("terminal.aliases");
+                        case "exports":
+                          return t("terminal.envExports");
+                        case "sources":
+                          return t("terminal.sources");
+                      }
+                    }).join(", ")
+                  : t("terminal.preflightNone")}
               </p>
             </div>
             {preflightSummary.riskFlags.length > 0 && (
               <Alert variant="destructive">
                 <AlertCircle className="h-4 w-4" />
-                <AlertTitle>High-Risk Patterns</AlertTitle>
+                <AlertTitle>{t("terminal.preflightHighRiskPatterns")}</AlertTitle>
                 <AlertDescription>
                   <ul className="list-disc space-y-1 pl-4">
                     {preflightSummary.riskFlags.map((risk) => (
-                      <li key={risk}>{risk}</li>
+                      <li key={risk}>
+                        {risk === "destructiveRootDelete" && t("terminal.preflightRiskDestructiveRootDelete")}
+                        {risk === "pathOverwrite" && t("terminal.preflightRiskPathOverwrite")}
+                        {risk === "sourceSystemProfile" && t("terminal.preflightRiskSourceSystemProfile")}
+                      </li>
                     ))}
                   </ul>
                 </AlertDescription>
@@ -1149,7 +1241,7 @@ export function TerminalShellConfig({
               }
             }}
           >
-            Confirm Save
+            {t("terminal.confirmSave")}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -12,6 +12,7 @@ import type {
   WslConfig,
   WslDistroConfig,
   WslMountOptions,
+  WslRuntimeSnapshot,
   WslDistroEnvironment,
   WslDistroResources,
   WslUser,
@@ -43,6 +44,7 @@ export interface UseWslReturn {
   runningDistros: string[];
   config: WslConfig | null;
   capabilities: WslCapabilities | null;
+  runtimeSnapshot: WslRuntimeSnapshot | null;
   completeness: WslCompletenessSnapshot;
   lastFailure: WslOperationFailure | null;
   loading: boolean;
@@ -55,6 +57,7 @@ export interface UseWslReturn {
   refreshStatus: () => Promise<void>;
   refreshRunning: () => Promise<void>;
   refreshCapabilities: () => Promise<void>;
+  refreshRuntimeSnapshot: () => Promise<WslRuntimeSnapshot | null>;
   refreshAll: () => Promise<void>;
   terminate: (name: string) => Promise<void>;
   shutdown: () => Promise<void>;
@@ -163,6 +166,7 @@ export function useWsl(): UseWslReturn {
   const [runningDistros, setRunningDistros] = useState<string[]>([]);
   const [config, setConfig] = useState<WslConfig | null>(null);
   const [capabilities, setCapabilities] = useState<WslCapabilities | null>(null);
+  const [runtimeSnapshot, setRuntimeSnapshot] = useState<WslRuntimeSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastFailure, setLastFailure] = useState<WslOperationFailure | null>(null);
@@ -180,31 +184,49 @@ export function useWsl(): UseWslReturn {
   }, []);
 
   const assertOperationSupported = useCallback((operationId: WslOperationId) => {
-    const gate = resolveWslOperationGate(operationId, available, capabilities);
+    const gate = resolveWslOperationGate(
+      operationId,
+      available,
+      capabilities,
+      runtimeSnapshot
+    );
     if (gate.supported) {
       return;
     }
     const raw = `[WSL_UNSUPPORTED:${operationId}] ${gate.reason ?? 'Operation is unsupported in current runtime.'}`;
     recordWslFailure(raw);
-  }, [available, capabilities, recordWslFailure]);
+  }, [available, capabilities, recordWslFailure, runtimeSnapshot]);
 
   const checkAvailability = useCallback(async (): Promise<boolean> => {
     if (!tauri.isTauri()) {
       setAvailable(false);
       setCapabilities(null);
+      setRuntimeSnapshot(null);
       return false;
     }
     try {
-      const result = await tauri.wslIsAvailable();
-      setAvailable(result);
-      if (!result) {
+      const snapshot = await tauri.wslGetRuntimeSnapshot();
+      setRuntimeSnapshot(snapshot);
+      setAvailable(snapshot.available);
+      if (!snapshot.available) {
         setCapabilities(null);
       }
-      return result;
+      return snapshot.available;
     } catch {
-      setAvailable(false);
-      setCapabilities(null);
-      return false;
+      try {
+        const result = await tauri.wslIsAvailable();
+        setAvailable(result);
+        setRuntimeSnapshot(null);
+        if (!result) {
+          setCapabilities(null);
+        }
+        return result;
+      } catch {
+        setAvailable(false);
+        setCapabilities(null);
+        setRuntimeSnapshot(null);
+        return false;
+      }
     }
   }, []);
 
@@ -267,6 +289,20 @@ export function useWsl(): UseWslReturn {
     }
   }, []);
 
+  const refreshRuntimeSnapshot = useCallback(async (): Promise<WslRuntimeSnapshot | null> => {
+    if (!tauri.isTauri()) return null;
+    try {
+      const snapshot = await tauri.wslGetRuntimeSnapshot();
+      setRuntimeSnapshot(snapshot);
+      setAvailable(snapshot.available);
+      return snapshot;
+    } catch (err) {
+      console.error('Failed to detect staged WSL runtime snapshot:', err);
+      setRuntimeSnapshot(null);
+      return null;
+    }
+  }, []);
+
   const refreshConfig = useCallback(async () => {
     if (!tauri.isTauri()) return;
     try {
@@ -282,8 +318,9 @@ export function useWsl(): UseWslReturn {
     setLoading(true);
     setError(null);
     try {
-      const [distroResult, onlineResult, statusResult, runningResult, configResult, capabilitiesResult] =
+      const [runtimeResult, distroResult, onlineResult, statusResult, runningResult, configResult, capabilitiesResult] =
         await Promise.allSettled([
+          tauri.wslGetRuntimeSnapshot(),
           tauri.wslListDistros(),
           tauri.wslListOnline(),
           tauri.wslGetStatus(),
@@ -292,6 +329,12 @@ export function useWsl(): UseWslReturn {
           tauri.wslGetCapabilities(),
         ]);
 
+      if (runtimeResult.status === 'fulfilled') {
+        setRuntimeSnapshot(runtimeResult.value);
+        setAvailable(runtimeResult.value.available);
+      } else {
+        setRuntimeSnapshot(null);
+      }
       if (distroResult.status === 'fulfilled') setDistros(distroResult.value);
       if (onlineResult.status === 'fulfilled') setOnlineDistros(onlineResult.value);
       if (statusResult.status === 'fulfilled') setStatus(statusResult.value);
@@ -306,18 +349,31 @@ export function useWsl(): UseWslReturn {
   }, []);
 
   const refreshInventoryState = useCallback(async () => {
-    await Promise.all([refreshDistros(), refreshRunning(), refreshStatus()]);
-  }, [refreshDistros, refreshRunning, refreshStatus]);
+    await Promise.all([
+      refreshRuntimeSnapshot(),
+      refreshDistros(),
+      refreshRunning(),
+      refreshStatus(),
+    ]);
+  }, [refreshDistros, refreshRunning, refreshRuntimeSnapshot, refreshStatus]);
 
   const refreshRuntimeState = useCallback(async () => {
     await Promise.all([
+      refreshRuntimeSnapshot(),
       refreshDistros(),
       refreshRunning(),
       refreshStatus(),
       refreshConfig(),
       refreshCapabilities(),
     ]);
-  }, [refreshCapabilities, refreshConfig, refreshDistros, refreshRunning, refreshStatus]);
+  }, [
+    refreshCapabilities,
+    refreshConfig,
+    refreshDistros,
+    refreshRunning,
+    refreshRuntimeSnapshot,
+    refreshStatus,
+  ]);
 
   const terminate = useCallback(async (name: string) => {
     if (!tauri.isTauri()) return;
@@ -732,8 +788,8 @@ export function useWsl(): UseWslReturn {
   }, [autoRefreshEnabled]);
 
   const completeness = useMemo(
-    () => deriveWslCompleteness(available, distros, status, capabilities),
-    [available, capabilities, distros, status]
+    () => deriveWslCompleteness(available, distros, status, capabilities, runtimeSnapshot),
+    [available, capabilities, distros, runtimeSnapshot, status]
   );
 
   const openInExplorer = useCallback(async (name: string): Promise<void> => {
@@ -1027,20 +1083,52 @@ export function useWsl(): UseWslReturn {
     const checks: WslAssistancePreflightCheck[] = [];
     const recommendations: string[] = [];
 
-    const availableNow = await checkAvailability();
+    const stagedSnapshot = await refreshRuntimeSnapshot();
+    const availableNow = stagedSnapshot?.available ?? await checkAvailability();
     checks.push({
       id: 'runtime-availability',
       label: 'Runtime Availability',
       status: availableNow ? 'healthy' : 'error',
-      detail: availableNow ? 'WSL runtime is available.' : 'WSL runtime is unavailable.',
+      detail: availableNow
+        ? stagedSnapshot?.reason ?? 'WSL runtime is available.'
+        : stagedSnapshot?.reason ?? 'WSL runtime is unavailable.',
       recommendation: availableNow ? undefined : 'Install or enable WSL before retrying.',
     });
+
+    if (stagedSnapshot?.state === 'degraded') {
+      checks.push({
+        id: 'runtime-detection-state',
+        label: 'Runtime Detection State',
+        status: 'warning',
+        detail: stagedSnapshot.reason || 'Runtime is degraded due to incomplete probes.',
+        recommendation: 'Refresh runtime state and address missing probe prerequisites.',
+      });
+      recommendations.push(...stagedSnapshot.degradedReasons);
+      recommendations.push('Refresh runtime state and address missing probe prerequisites.');
+    }
+
+    if (stagedSnapshot?.state === 'empty') {
+      checks.push({
+        id: 'runtime-detection-state',
+        label: 'Runtime Detection State',
+        status: 'warning',
+        detail: stagedSnapshot.reason || 'Runtime is available, but no distributions were found.',
+        recommendation: 'Install or import a distribution before running distro workflows.',
+      });
+      recommendations.push('Install or import a distribution before running distro workflows.');
+    }
+
     if (!availableNow) {
       return {
         status: 'error',
         timestamp,
         checks,
-        recommendations: ['Install or enable WSL before retrying.'],
+        recommendations: Array.from(
+          new Set([
+            stagedSnapshot?.reason ?? 'Install or enable WSL before retrying.',
+            'Install or enable WSL before retrying.',
+          ])
+        ),
       };
     }
 
@@ -1150,7 +1238,14 @@ export function useWsl(): UseWslReturn {
       checks,
       recommendations: Array.from(new Set(recommendations)),
     };
-  }, [capabilities, checkAvailability, distros, runningDistros, status]);
+  }, [
+    capabilities,
+    checkAvailability,
+    distros,
+    refreshRuntimeSnapshot,
+    runningDistros,
+    status,
+  ]);
 
   const executeAssistanceAction = useCallback(async (
     actionId: string,
@@ -1461,6 +1556,7 @@ export function useWsl(): UseWslReturn {
     runningDistros,
     config,
     capabilities,
+    runtimeSnapshot,
     completeness,
     lastFailure,
     loading,
@@ -1471,6 +1567,7 @@ export function useWsl(): UseWslReturn {
     refreshStatus,
     refreshRunning,
     refreshCapabilities,
+    refreshRuntimeSnapshot,
     refreshAll,
     terminate,
     shutdown,

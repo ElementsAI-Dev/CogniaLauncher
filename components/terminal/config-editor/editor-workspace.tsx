@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { useLocale } from "@/components/providers/locale-provider";
 import {
   getDiagnosticSummaryLabel,
   TerminalConfigEditorDiagnosticsPanel,
@@ -31,6 +32,7 @@ export function TerminalConfigEditorWorkspace({
   structuredFallbackReason = null,
   value,
 }: TerminalConfigEditorWorkspaceProps) {
+  const { t } = useLocale();
   const lineCount = useMemo(
     () => Math.max(1, value.split("\n").length),
     [value],
@@ -81,10 +83,17 @@ export function TerminalConfigEditorWorkspace({
 
         {hasDiagnostics && (
           <Alert variant="destructive">
-            <AlertTitle>{getDiagnosticSummaryLabel(diagnostics.length)}</AlertTitle>
+            <AlertTitle>{getDiagnosticSummaryLabel(diagnostics.length, t)}</AlertTitle>
             <AlertDescription>
-              Review diagnostics before applying terminal config changes.
+              {t("terminal.editorDiagnosticsApplyHint")}
             </AlertDescription>
+          </Alert>
+        )}
+
+        {structuredFallback && (
+          <Alert>
+            <AlertTitle>{t("terminal.structuredEditingUnavailable")}</AlertTitle>
+            <AlertDescription>{structuredFallback}</AlertDescription>
           </Alert>
         )}
 
@@ -95,17 +104,17 @@ export function TerminalConfigEditorWorkspace({
           }
         >
           <TabsList className="w-full justify-start overflow-x-auto whitespace-nowrap">
-            <TabsTrigger value="editor">Editor</TabsTrigger>
+            <TabsTrigger value="editor">{t("terminal.editorViewEditor")}</TabsTrigger>
             {hasStructuredEntries && (
               <TabsTrigger value="structured" disabled={Boolean(structuredFallback)}>
-                Structured
+                {t("terminal.editorViewStructured")}
               </TabsTrigger>
             )}
             {hasDiagnostics && (
-              <TabsTrigger value="diagnostics">Diagnostics</TabsTrigger>
+              <TabsTrigger value="diagnostics">{t("terminal.editorViewDiagnostics")}</TabsTrigger>
             )}
             {hasPendingChanges && (
-              <TabsTrigger value="changes">Changes</TabsTrigger>
+              <TabsTrigger value="changes">{t("terminal.editorViewChanges")}</TabsTrigger>
             )}
           </TabsList>
 

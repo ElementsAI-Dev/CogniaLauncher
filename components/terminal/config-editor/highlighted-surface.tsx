@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Textarea } from '@/components/ui/textarea';
+import { useLocale } from '@/components/providers/locale-provider';
 import { highlightShellConfig } from '@/lib/highlight-shell';
 import { applyPairInsert, applyTabIndent, EDITOR_PAIR_MAP } from './keyboard-helpers';
 import type { TerminalConfigEditorSurfaceProps } from './types';
@@ -14,6 +15,7 @@ export function TerminalConfigEditorHighlighted({
   diagnostics = [],
   onChange,
 }: TerminalConfigEditorSurfaceProps) {
+  const { t } = useLocale();
   const highlighted = useMemo(() => highlightShellConfig(value, language), [value, language]);
   const lineCount = Math.max(1, value.split('\n').length);
   const diagnosticLines = useMemo(
@@ -31,7 +33,7 @@ export function TerminalConfigEditorHighlighted({
       <Card className="gap-0 overflow-hidden py-0">
         <CardHeader className="border-b py-2">
           <CardTitle className="text-xs uppercase tracking-wide text-muted-foreground">
-            Editor
+            {t('terminal.editorViewEditor')}
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
@@ -91,7 +93,7 @@ export function TerminalConfigEditorHighlighted({
       <Card className="gap-0 overflow-hidden py-0">
         <CardHeader className="border-b py-2">
           <CardTitle className="text-xs uppercase tracking-wide text-muted-foreground">
-            Highlight Preview
+            {t('terminal.editorHighlightPreview')}
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">

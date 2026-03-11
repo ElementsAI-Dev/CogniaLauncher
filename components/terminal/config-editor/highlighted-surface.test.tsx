@@ -1,6 +1,10 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { TerminalConfigEditorHighlighted } from './highlighted-surface';
 
+jest.mock('@/components/providers/locale-provider', () => ({
+  useLocale: () => ({ t: (key: string) => key }),
+}));
+
 describe('TerminalConfigEditorHighlighted', () => {
   it('renders editor and highlight preview surfaces', () => {
     const { container } = render(
@@ -11,8 +15,8 @@ describe('TerminalConfigEditorHighlighted', () => {
       />,
     );
 
-    expect(screen.getByText('Editor')).toBeInTheDocument();
-    expect(screen.getByText('Highlight Preview')).toBeInTheDocument();
+    expect(screen.getByText('terminal.editorViewEditor')).toBeInTheDocument();
+    expect(screen.getByText('terminal.editorHighlightPreview')).toBeInTheDocument();
     expect(screen.getByTestId('terminal-config-editor-highlighted')).toBeInTheDocument();
     expect(container.querySelectorAll('.border-r > div')).toHaveLength(2);
   });

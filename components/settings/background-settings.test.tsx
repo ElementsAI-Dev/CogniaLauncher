@@ -3,13 +3,12 @@ import { BackgroundSettings } from "./background-settings";
 import { useAppearanceStore } from "@/lib/stores/appearance";
 
 const mockGetBackgroundImage = jest.fn((): string | null => null);
-const mockNotifyBackgroundChange = jest.fn();
+const mockRemoveBackgroundImage = jest.fn();
 
 jest.mock("@/lib/theme/background", () => ({
   getBackgroundImage: () => mockGetBackgroundImage(),
-  removeBackgroundImage: jest.fn(),
+  removeBackgroundImage: (...args: unknown[]) => mockRemoveBackgroundImage(...args),
   setBackgroundImageData: jest.fn(),
-  notifyBackgroundChange: (...args: unknown[]) => mockNotifyBackgroundChange(...args),
   compressImage: jest.fn(() => Promise.resolve("data:image/jpeg;base64,test")),
   BG_CHANGE_EVENT: "cognia-bg-change",
 }));
@@ -24,6 +23,7 @@ const t = (key: string) => {
     "settings.backgroundImageDesc": "Set a custom background image",
     "settings.backgroundEnabled": "Enable Background",
     "settings.backgroundEnabledDesc": "Show a custom background image",
+    "settings.backgroundMissingImage": "Background is enabled, but no image is selected. Choose an image to continue.",
     "settings.backgroundOpacity": "Image Opacity",
     "settings.backgroundOpacityDesc": "Adjust visibility",
     "settings.backgroundBlur": "Blur Amount",
@@ -123,15 +123,28 @@ describe("BackgroundSettings", () => {
     expect(screen.getByText("Clear Image")).toBeInTheDocument();
   });
 
-  it("calls notifyBackgroundChange when clear is clicked", () => {
+  it("calls removeBackgroundImage when clear is clicked", () => {
     mockGetBackgroundImage.mockReturnValue("data:image/jpeg;base64,test");
 
     render(<BackgroundSettings t={t} />);
 
-    mockNotifyBackgroundChange.mockClear();
+    mockRemoveBackgroundImage.mockClear();
     fireEvent.click(screen.getByText("Clear Image"));
 
-    expect(mockNotifyBackgroundChange).toHaveBeenCalled();
+    expect(mockRemoveBackgroundImage).toHaveBeenCalled();
+  });
+
+  it("shows a warning when background is enabled but no image is stored", () => {
+    useAppearanceStore.getState().setBackgroundEnabled(true);
+    mockGetBackgroundImage.mockReturnValue(null);
+
+    render(<BackgroundSettings t={t} />);
+
+    expect(
+      screen.getByText(
+        "Background is enabled, but no image is selected. Choose an image to continue.",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("handles file input change", () => {

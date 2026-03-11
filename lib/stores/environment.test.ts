@@ -601,6 +601,15 @@ describe('getLogicalEnvType', () => {
     const providers = [{ id: 'fnm', env_type: 'custom-node' }];
     expect(getLogicalEnvType('fnm', providers)).toBe('custom-node');
   });
+
+  it('uses backend mapping for sdkman gradle/maven providers when available', () => {
+    const providers = [
+      { id: 'sdkman-gradle', env_type: 'gradle' },
+      { id: 'sdkman-maven', env_type: 'maven' },
+    ];
+    expect(getLogicalEnvType('sdkman-gradle', providers)).toBe('gradle');
+    expect(getLogicalEnvType('sdkman-maven', providers)).toBe('maven');
+  });
 });
 
 describe('PROVIDER_ENV_TYPE_MAP', () => {
@@ -622,6 +631,8 @@ describe('PROVIDER_ENV_TYPE_MAP', () => {
     expect(PROVIDER_ENV_TYPE_MAP['goenv']).toBe('go');
     expect(PROVIDER_ENV_TYPE_MAP['rbenv']).toBe('ruby');
     expect(PROVIDER_ENV_TYPE_MAP['sdkman']).toBe('java');
+    expect(PROVIDER_ENV_TYPE_MAP['sdkman-gradle']).toBe('java');
+    expect(PROVIDER_ENV_TYPE_MAP['sdkman-maven']).toBe('java');
     expect(PROVIDER_ENV_TYPE_MAP['dotnet']).toBe('dotnet');
     expect(PROVIDER_ENV_TYPE_MAP['deno']).toBe('deno');
     expect(PROVIDER_ENV_TYPE_MAP['msvc']).toBe('cpp');

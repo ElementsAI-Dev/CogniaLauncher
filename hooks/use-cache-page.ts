@@ -78,6 +78,7 @@ export function useCachePage({ t }: UseCachePageOptions) {
   const [browserEntries, setBrowserEntries] = useState<CacheEntryItem[]>([]);
   const [browserTotalCount, setBrowserTotalCount] = useState(0);
   const [browserLoading, setBrowserLoading] = useState(false);
+  const [browserDeleting, setBrowserDeleting] = useState(false);
   const [browserSearch, setBrowserSearch] = useState('');
   const [browserTypeFilter, setBrowserTypeFilter] = useState<CacheBrowserTypeFilter>('all');
   const [browserSortBy, setBrowserSortBy] = useState<string>('created_desc');
@@ -170,6 +171,7 @@ export function useCachePage({ t }: UseCachePageOptions) {
       });
       setBrowserEntries(result.entries);
       setBrowserTotalCount(result.total_count);
+      setBrowserSelectedKeys(new Set());
     } catch (err) {
       console.error('Failed to fetch cache entries:', err);
     } finally {
@@ -259,8 +261,9 @@ export function useCachePage({ t }: UseCachePageOptions) {
     setOperationLoading('clean');
     try {
       const result = await cleanCache(type);
-      toast.success(t('cache.freed', { size: result.freed_human }));
+      toast.success(`${t('cache.freed', { size: result.freed_human })} (${t('cache.permanentlyDeleted')})`);
       await refreshOverviewState({ includeCacheInfo: false });
+      await fetchCleanupHistory();
       emitInvalidations(
         ['cache_overview', 'cache_entries', 'about_cache_stats'],
         'cache-page:clean',
@@ -351,6 +354,7 @@ export function useCachePage({ t }: UseCachePageOptions) {
 
   const handleDeleteSelectedEntries = async () => {
     if (!isTauri() || browserSelectedKeys.size === 0) return;
+    setBrowserDeleting(true);
     try {
       const keys = Array.from(browserSelectedKeys);
       const deleted = await tauri.deleteCacheEntries(keys, useTrash);
@@ -364,6 +368,8 @@ export function useCachePage({ t }: UseCachePageOptions) {
       );
     } catch (err) {
       toast.error(`${t('cache.deleteEntriesFailed')}: ${err}`);
+    } finally {
+      setBrowserDeleting(false);
     }
   };
 
@@ -375,6 +381,10 @@ export function useCachePage({ t }: UseCachePageOptions) {
       toast.success(t('cache.historyCleared', { count }));
       setCleanupHistory([]);
       setHistorySummary(null);
+      emitInvalidations(
+        ['cache_overview'],
+        'cache-page:clear-history',
+      );
     } catch (err) {
       toast.error(`${t('cache.historyClearFailed')}: ${err}`);
     }
@@ -398,6 +408,7 @@ export function useCachePage({ t }: UseCachePageOptions) {
       const result = await cacheForceClean(useTrash);
       toast.success(t('cache.forceCleanSuccess', { count: result.deleted_count, size: result.freed_human }));
       await refreshOverviewState();
+      await fetchCleanupHistory();
       emitInvalidations(
         ['cache_overview', 'cache_entries', 'external_cache', 'about_cache_stats'],
         'cache-page:force-clean',
@@ -557,6 +568,7 @@ export function useCachePage({ t }: UseCachePageOptions) {
     browserEntries,
     browserTotalCount,
     browserLoading,
+    browserDeleting,
     browserSearch,
     setBrowserSearch,
     browserTypeFilter,

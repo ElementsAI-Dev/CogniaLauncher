@@ -9,6 +9,7 @@ import type {
   CacheEntryItem,
   CacheInfo,
   CacheAccessStats,
+  CleanPreview,
 } from '@/lib/tauri';
 import { ENTRIES_PER_PAGE, formatCacheDate } from '@/lib/constants/cache';
 import {
@@ -47,7 +48,9 @@ export function useCacheDetail({ cacheType, t }: UseCacheDetailOptions) {
   const [cleaning, setCleaning] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [useTrash, setUseTrash] = useState(true);
-  const [cleanConfirmOpen, setCleanConfirmOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewData, setPreviewData] = useState<CleanPreview | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
   const titleKey = cacheType === 'download' ? 'cache.detail.downloadTitle' : 'cache.detail.metadataTitle';
@@ -174,7 +177,8 @@ export function useCacheDetail({ cacheType, t }: UseCacheDetailOptions) {
       const { cacheCleanEnhanced } = await import('@/lib/tauri');
       const cleanType = cacheType === 'download' ? 'downloads' : 'metadata';
       const result = await cacheCleanEnhanced(cleanType, useTrash);
-      toast.success(t('cache.freed', { size: result.freed_human }));
+      const method = result.use_trash ? t('cache.movedToTrash') : t('cache.permanentlyDeleted');
+      toast.success(`${t('cache.freed', { size: result.freed_human })} (${method})`);
       setSelectedKeys(new Set());
       await Promise.all([fetchInfo(), fetchEntries(true)]);
       emitInvalidations(
@@ -185,7 +189,25 @@ export function useCacheDetail({ cacheType, t }: UseCacheDetailOptions) {
       toast.error(`${t('cache.clearCache')}: ${err}`);
     } finally {
       setCleaning(false);
-      setCleanConfirmOpen(false);
+      setPreviewOpen(false);
+      setPreviewData(null);
+    }
+  };
+
+  const handlePreviewClean = async () => {
+    if (!isTauri()) return;
+    setPreviewOpen(true);
+    setPreviewLoading(true);
+    try {
+      const { cacheCleanPreview } = await import('@/lib/tauri');
+      const cleanType = cacheType === 'download' ? 'downloads' : 'metadata';
+      const preview = await cacheCleanPreview(cleanType);
+      setPreviewData(preview);
+    } catch (err) {
+      toast.error(`${t('cache.previewFailed')}: ${err}`);
+      setPreviewOpen(false);
+    } finally {
+      setPreviewLoading(false);
     }
   };
 
@@ -294,8 +316,10 @@ export function useCacheDetail({ cacheType, t }: UseCacheDetailOptions) {
     verifying,
     useTrash,
     setUseTrash,
-    cleanConfirmOpen,
-    setCleanConfirmOpen,
+    previewOpen,
+    setPreviewOpen,
+    previewData,
+    previewLoading,
     deleteConfirmOpen,
     setDeleteConfirmOpen,
 
@@ -307,6 +331,7 @@ export function useCacheDetail({ cacheType, t }: UseCacheDetailOptions) {
 
     // Actions
     handleRefresh,
+    handlePreviewClean,
     handleClean,
     handleVerify,
     handleDeleteSelected,

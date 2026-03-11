@@ -140,6 +140,7 @@ pub async fn log_export(
         } else {
             "success".to_string()
         },
+        reason_code: None,
         redacted_count,
         sanitized: sanitize_sensitive,
         warnings: Vec::new(),
@@ -201,11 +202,40 @@ pub struct LogExportOptions {
 pub struct LogExportResult {
     pub size_bytes: usize,
     pub status: String,
+    pub reason_code: Option<String>,
     pub redacted_count: usize,
     pub sanitized: bool,
     pub warnings: Vec<String>,
     pub content: String,
     pub file_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct LogCleanupPolicyInput {
+    pub max_retention_days: Option<u32>,
+    pub max_total_size_mb: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct LogCleanupOptions {
+    pub policy: Option<LogCleanupPolicyInput>,
+    pub expected_policy_fingerprint: Option<String>,
+}
+
+const MAX_RETENTION_DAYS_LIMIT: u32 = 365;
+const MAX_TOTAL_SIZE_MB_LIMIT: u32 = 10_000;
+
+fn policy_fingerprint(max_retention_days: u32, max_total_size_mb: u32) -> String {
+    format!("v1:{max_retention_days}:{max_total_size_mb}")
+}
+
+fn normalize_cleanup_policy(max_retention_days: u32, max_total_size_mb: u32) -> (u32, u32) {
+    (
+        max_retention_days.min(MAX_RETENTION_DAYS_LIMIT),
+        max_total_size_mb.min(MAX_TOTAL_SIZE_MB_LIMIT),
+    )
 }
 
 fn is_gzip_log(path: &std::path::Path) -> bool {
@@ -860,30 +890,102 @@ pub async fn log_query(app: AppHandle, options: LogQueryOptions) -> Result<LogQu
 }
 
 #[tauri::command]
-pub async fn log_clear(app: AppHandle, file_name: Option<String>) -> Result<(), String> {
+pub async fn log_clear(
+    app: AppHandle,
+    file_name: Option<String>,
+) -> Result<LogCleanupResult, String> {
     let log_dir = get_log_dir(&app).ok_or("Failed to get log directory")?;
+    let mut deleted_count = 0usize;
+    let mut freed_bytes = 0u64;
+    let mut protected_count = 0usize;
+    let mut skipped_count = 0usize;
+    let mut warnings = Vec::new();
 
     if let Some(file_name) = file_name {
-        // Clear specific file
+        let files = log_list_files(app.clone()).await?;
+        if files.first().is_some_and(|f| f.name == file_name) {
+            protected_count = 1;
+            skipped_count = 1;
+            warnings.push(format!("Skipped current session log file: {}", file_name));
+            return Ok(LogCleanupResult {
+                deleted_count,
+                freed_bytes,
+                protected_count,
+                skipped_count,
+                status: build_cleanup_status(deleted_count, &warnings),
+                reason_code: Some("current_session_protected".to_string()),
+                warnings,
+                policy_fingerprint: None,
+                max_retention_days: None,
+                max_total_size_mb: None,
+            });
+        }
+
         let log_path = log_dir.join(&file_name);
         if log_path.exists() {
-            fs::remove_file(&log_path)
-                .await
-                .map_err(|e| format!("Failed to delete log file: {}", e))?;
+            if let Ok(meta) = fs::metadata(&log_path).await {
+                freed_bytes = meta.len();
+            }
+            match fs::remove_file(&log_path).await {
+                Ok(()) => {
+                    deleted_count = 1;
+                }
+                Err(err) => {
+                    warnings.push(format!("Failed to delete log file: {}", err));
+                }
+            }
+        } else {
+            skipped_count = 1;
+            warnings.push(format!("Log file does not exist: {}", file_name));
+            return Ok(LogCleanupResult {
+                deleted_count,
+                freed_bytes,
+                protected_count,
+                skipped_count,
+                status: build_cleanup_status(deleted_count, &warnings),
+                reason_code: Some("log_file_not_found".to_string()),
+                warnings,
+                policy_fingerprint: None,
+                max_retention_days: None,
+                max_total_size_mb: None,
+            });
         }
     } else {
-        // Clear all log files except the current one
+        // Clear all historical log files while preserving the current session file.
         let files = log_list_files(app.clone()).await?;
+        if files.first().is_some() {
+            protected_count = 1;
+            skipped_count = 1;
+        }
+
         for file in files.iter().skip(1) {
-            // Skip the first (current) log file
             let path = PathBuf::from(&file.path);
             if path.exists() {
-                let _ = fs::remove_file(&path).await;
+                match fs::remove_file(&path).await {
+                    Ok(()) => {
+                        deleted_count += 1;
+                        freed_bytes += file.size;
+                    }
+                    Err(err) => {
+                        warnings.push(format!("Failed to delete {}: {}", file.name, err));
+                    }
+                }
             }
         }
     }
 
-    Ok(())
+    Ok(LogCleanupResult {
+        deleted_count,
+        freed_bytes,
+        protected_count,
+        skipped_count,
+        status: build_cleanup_status(deleted_count, &warnings),
+        reason_code: None,
+        warnings,
+        policy_fingerprint: None,
+        max_retention_days: None,
+        max_total_size_mb: None,
+    })
 }
 
 #[tauri::command]
@@ -904,8 +1006,14 @@ pub async fn log_get_total_size(app: AppHandle) -> Result<u64, String> {
 pub struct LogCleanupResult {
     pub deleted_count: usize,
     pub freed_bytes: u64,
+    pub protected_count: usize,
+    pub skipped_count: usize,
     pub status: String,
+    pub reason_code: Option<String>,
     pub warnings: Vec<String>,
+    pub policy_fingerprint: Option<String>,
+    pub max_retention_days: Option<u32>,
+    pub max_total_size_mb: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -914,56 +1022,176 @@ pub struct LogCleanupPreviewResult {
     pub deleted_count: usize,
     pub freed_bytes: u64,
     pub protected_count: usize,
+    pub skipped_count: usize,
     pub status: String,
+    pub reason_code: Option<String>,
     pub warnings: Vec<String>,
+    pub policy_fingerprint: String,
+    pub max_retention_days: u32,
+    pub max_total_size_mb: u32,
+}
+
+fn build_cleanup_status(deleted_count: usize, warnings: &[String]) -> String {
+    if warnings.is_empty() {
+        "success".to_string()
+    } else if deleted_count > 0 {
+        "partial_success".to_string()
+    } else {
+        "failed".to_string()
+    }
 }
 
 #[tauri::command]
 pub async fn log_cleanup(
     app: AppHandle,
     settings: tauri::State<'_, SharedSettings>,
+    options: Option<LogCleanupOptions>,
 ) -> Result<LogCleanupResult, String> {
     let settings_guard = settings.read().await;
-    let max_retention_days = settings_guard.log.max_retention_days;
-    let max_total_size_mb = settings_guard.log.max_total_size_mb;
+    let default_retention_days = settings_guard.log.max_retention_days;
+    let default_max_total_size_mb = settings_guard.log.max_total_size_mb;
     drop(settings_guard);
 
-    cleanup_logs_with_policy(&app, max_retention_days, max_total_size_mb).await
+    let policy_input = options
+        .as_ref()
+        .and_then(|item| item.policy.as_ref())
+        .cloned()
+        .unwrap_or_default();
+    let raw_retention_days = policy_input
+        .max_retention_days
+        .unwrap_or(default_retention_days);
+    let raw_max_total_size_mb = policy_input
+        .max_total_size_mb
+        .unwrap_or(default_max_total_size_mb);
+    let (max_retention_days, max_total_size_mb) =
+        normalize_cleanup_policy(raw_retention_days, raw_max_total_size_mb);
+    let effective_fingerprint = policy_fingerprint(max_retention_days, max_total_size_mb);
+
+    if let Some(expected_fingerprint) = options
+        .as_ref()
+        .and_then(|item| item.expected_policy_fingerprint.as_ref())
+    {
+        if expected_fingerprint != &effective_fingerprint {
+            let warnings =
+                vec!["Cleanup policy changed since preview. Please refresh preview before confirming cleanup."
+                    .to_string()];
+            return Ok(LogCleanupResult {
+                deleted_count: 0,
+                freed_bytes: 0,
+                protected_count: 0,
+                skipped_count: 0,
+                status: build_cleanup_status(0, &warnings),
+                reason_code: Some("stale_policy_context".to_string()),
+                warnings,
+                policy_fingerprint: Some(effective_fingerprint),
+                max_retention_days: Some(max_retention_days),
+                max_total_size_mb: Some(max_total_size_mb),
+            });
+        }
+    }
+
+    let mut result = cleanup_logs_with_policy(&app, max_retention_days, max_total_size_mb).await?;
+    result.policy_fingerprint = Some(effective_fingerprint);
+    result.max_retention_days = Some(max_retention_days);
+    result.max_total_size_mb = Some(max_total_size_mb);
+    Ok(result)
 }
 
 #[tauri::command]
 pub async fn log_cleanup_preview(
     app: AppHandle,
     settings: tauri::State<'_, SharedSettings>,
+    policy: Option<LogCleanupPolicyInput>,
 ) -> Result<LogCleanupPreviewResult, String> {
     let settings_guard = settings.read().await;
-    let max_retention_days = settings_guard.log.max_retention_days;
-    let max_total_size_mb = settings_guard.log.max_total_size_mb;
+    let default_retention_days = settings_guard.log.max_retention_days;
+    let default_max_total_size_mb = settings_guard.log.max_total_size_mb;
     drop(settings_guard);
+
+    let policy_input = policy.unwrap_or_default();
+    let raw_retention_days = policy_input
+        .max_retention_days
+        .unwrap_or(default_retention_days);
+    let raw_max_total_size_mb = policy_input
+        .max_total_size_mb
+        .unwrap_or(default_max_total_size_mb);
+    let (max_retention_days, max_total_size_mb) =
+        normalize_cleanup_policy(raw_retention_days, raw_max_total_size_mb);
 
     cleanup_preview_with_policy(&app, max_retention_days, max_total_size_mb).await
 }
 
 #[tauri::command]
-pub async fn log_delete_file(app: AppHandle, file_name: String) -> Result<(), String> {
+pub async fn log_delete_file(app: AppHandle, file_name: String) -> Result<LogCleanupResult, String> {
     let log_dir = get_log_dir(&app).ok_or("Failed to get log directory")?;
     let log_path = log_dir.join(&file_name);
 
     if !log_path.exists() {
-        return Err(format!("Log file does not exist: {}", file_name));
+        let warnings = vec![format!("Log file does not exist: {}", file_name)];
+        return Ok(LogCleanupResult {
+            deleted_count: 0,
+            freed_bytes: 0,
+            protected_count: 0,
+            skipped_count: 1,
+            status: build_cleanup_status(0, &warnings),
+            reason_code: Some("log_file_not_found".to_string()),
+            warnings,
+            policy_fingerprint: None,
+            max_retention_days: None,
+            max_total_size_mb: None,
+        });
     }
 
     // Don't allow deleting the current session log (newest file)
     let files = log_list_files(app).await?;
     if let Some(first) = files.first() {
         if first.name == file_name {
-            return Err("Cannot delete the current session log file".to_string());
+            let warnings = vec![format!("Skipped current session log file: {}", file_name)];
+            return Ok(LogCleanupResult {
+                deleted_count: 0,
+                freed_bytes: 0,
+                protected_count: 1,
+                skipped_count: 1,
+                status: build_cleanup_status(0, &warnings),
+                reason_code: Some("current_session_protected".to_string()),
+                warnings,
+                policy_fingerprint: None,
+                max_retention_days: None,
+                max_total_size_mb: None,
+            });
         }
     }
 
-    fs::remove_file(&log_path)
-        .await
-        .map_err(|e| format!("Failed to delete log file: {}", e))
+    let freed_bytes = fs::metadata(&log_path).await.map(|meta| meta.len()).unwrap_or(0);
+    match fs::remove_file(&log_path).await {
+        Ok(()) => Ok(LogCleanupResult {
+            deleted_count: 1,
+            freed_bytes,
+            protected_count: 0,
+            skipped_count: 0,
+            status: "success".to_string(),
+            reason_code: None,
+            warnings: Vec::new(),
+            policy_fingerprint: None,
+            max_retention_days: None,
+            max_total_size_mb: None,
+        }),
+        Err(err) => {
+            let warnings = vec![format!("Failed to delete log file: {}", err)];
+            Ok(LogCleanupResult {
+                deleted_count: 0,
+                freed_bytes: 0,
+                protected_count: 0,
+                skipped_count: 0,
+                status: build_cleanup_status(0, &warnings),
+                reason_code: Some("log_delete_failed".to_string()),
+                warnings,
+                policy_fingerprint: None,
+                max_retention_days: None,
+                max_total_size_mb: None,
+            })
+        }
+    }
 }
 
 #[tauri::command]
@@ -979,10 +1207,14 @@ pub async fn log_delete_batch(
 
     let mut deleted_count = 0usize;
     let mut freed_bytes = 0u64;
+    let mut protected_count = 0usize;
+    let mut skipped_count = 0usize;
     let mut warnings = Vec::new();
 
     for name in &file_names {
         if current_log.as_deref() == Some(name.as_str()) {
+            protected_count += 1;
+            skipped_count += 1;
             warnings.push(format!("Skipped current session log file: {}", name));
             continue; // Skip current session log
         }
@@ -999,20 +1231,31 @@ pub async fn log_delete_batch(
                     warnings.push(format!("Failed to delete {}: {}", name, err));
                 }
             }
+        } else {
+            skipped_count += 1;
+            warnings.push(format!("Log file does not exist: {}", name));
         }
     }
+
+    let reason_code = if protected_count > 0 && deleted_count == 0 {
+        Some("current_session_protected".to_string())
+    } else if deleted_count == 0 && !warnings.is_empty() {
+        Some("log_delete_failed".to_string())
+    } else {
+        None
+    };
 
     Ok(LogCleanupResult {
         deleted_count,
         freed_bytes,
-        status: if warnings.is_empty() {
-            "success".to_string()
-        } else if deleted_count > 0 {
-            "partial_success".to_string()
-        } else {
-            "failed".to_string()
-        },
+        protected_count,
+        skipped_count,
+        status: build_cleanup_status(deleted_count, &warnings),
+        reason_code,
         warnings,
+        policy_fingerprint: None,
+        max_retention_days: None,
+        max_total_size_mb: None,
     })
 }
 
@@ -1065,13 +1308,23 @@ pub async fn cleanup_logs_with_policy(
     max_retention_days: u32,
     max_total_size_mb: u32,
 ) -> Result<LogCleanupResult, String> {
+    let (max_retention_days, max_total_size_mb) =
+        normalize_cleanup_policy(max_retention_days, max_total_size_mb);
     let files = log_list_files(app.clone()).await?;
+    let has_current_session = !files.is_empty();
+    let effective_fingerprint = policy_fingerprint(max_retention_days, max_total_size_mb);
     if files.len() <= 1 {
         return Ok(LogCleanupResult {
             deleted_count: 0,
             freed_bytes: 0,
+            protected_count: usize::from(has_current_session),
+            skipped_count: usize::from(has_current_session),
             status: "success".to_string(),
+            reason_code: None,
             warnings: Vec::new(),
+            policy_fingerprint: Some(effective_fingerprint),
+            max_retention_days: Some(max_retention_days),
+            max_total_size_mb: Some(max_total_size_mb),
         });
     }
 
@@ -1137,14 +1390,14 @@ pub async fn cleanup_logs_with_policy(
     Ok(LogCleanupResult {
         deleted_count,
         freed_bytes,
-        status: if warnings.is_empty() {
-            "success".to_string()
-        } else if deleted_count > 0 {
-            "partial_success".to_string()
-        } else {
-            "failed".to_string()
-        },
+        protected_count: usize::from(has_current_session),
+        skipped_count: usize::from(has_current_session),
+        status: build_cleanup_status(deleted_count, &warnings),
+        reason_code: None,
         warnings,
+        policy_fingerprint: Some(effective_fingerprint),
+        max_retention_days: Some(max_retention_days),
+        max_total_size_mb: Some(max_total_size_mb),
     })
 }
 
@@ -1154,13 +1407,21 @@ fn preview_cleanup_from_files(
     max_retention_days: u32,
     max_total_size_mb: u32,
 ) -> LogCleanupPreviewResult {
+    let (max_retention_days, max_total_size_mb) =
+        normalize_cleanup_policy(max_retention_days, max_total_size_mb);
+    let effective_fingerprint = policy_fingerprint(max_retention_days, max_total_size_mb);
     if files.is_empty() {
         return LogCleanupPreviewResult {
             deleted_count: 0,
             freed_bytes: 0,
             protected_count: 0,
+            skipped_count: 0,
             status: "success".to_string(),
+            reason_code: None,
             warnings: Vec::new(),
+            policy_fingerprint: effective_fingerprint,
+            max_retention_days,
+            max_total_size_mb,
         };
     }
 
@@ -1193,8 +1454,13 @@ fn preview_cleanup_from_files(
         deleted_count,
         freed_bytes,
         protected_count: 1,
+        skipped_count: 1,
         status: "success".to_string(),
+        reason_code: None,
         warnings: Vec::new(),
+        policy_fingerprint: effective_fingerprint,
+        max_retention_days,
+        max_total_size_mb,
     }
 }
 
@@ -1203,6 +1469,8 @@ pub async fn cleanup_preview_with_policy(
     max_retention_days: u32,
     max_total_size_mb: u32,
 ) -> Result<LogCleanupPreviewResult, String> {
+    let (max_retention_days, max_total_size_mb) =
+        normalize_cleanup_policy(max_retention_days, max_total_size_mb);
     let files = log_list_files(app.clone()).await?;
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -1538,10 +1806,34 @@ mod tests {
         assert_eq!(preview.deleted_count, 1);
         assert_eq!(preview.freed_bytes, 600);
         assert_eq!(preview.protected_count, 1);
+        assert_eq!(preview.skipped_count, 1);
         assert_eq!(preview.status, "success");
+        assert_eq!(preview.reason_code, None);
+        assert_eq!(preview.policy_fingerprint, policy_fingerprint(7, 0));
+        assert_eq!(preview.max_retention_days, 7);
+        assert_eq!(preview.max_total_size_mb, 0);
 
         // Ensure preview path does not mutate source file metadata.
         assert_eq!(files, snapshot);
+    }
+
+    #[test]
+    fn cleanup_status_reports_partial_success_when_warnings_exist_and_some_files_removed() {
+        let warnings = vec!["failed to remove a file".to_string()];
+        assert_eq!(build_cleanup_status(2, &warnings), "partial_success");
+    }
+
+    #[test]
+    fn cleanup_status_reports_failed_when_only_warnings_exist() {
+        let warnings = vec!["failed to remove file".to_string()];
+        assert_eq!(build_cleanup_status(0, &warnings), "failed");
+    }
+
+    #[test]
+    fn cleanup_policy_inputs_are_clamped_to_expected_bounds() {
+        let (days, size) = normalize_cleanup_policy(1_000, 20_000);
+        assert_eq!(days, MAX_RETENTION_DAYS_LIMIT);
+        assert_eq!(size, MAX_TOTAL_SIZE_MB_LIMIT);
     }
 
     #[test]
@@ -1555,6 +1847,7 @@ mod tests {
         let payload = serde_json::to_value(LogExportResult {
             size_bytes: sanitized.len(),
             status: "partial_success".to_string(),
+            reason_code: None,
             redacted_count,
             sanitized: true,
             warnings: Vec::new(),

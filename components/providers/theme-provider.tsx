@@ -1,9 +1,18 @@
 "use client";
 
-import { type ReactNode, type ComponentProps, useEffect, useRef } from "react";
+import { type ReactNode, type ComponentProps, useEffect, useRef, useSyncExternalStore } from "react";
 import { ThemeProvider as NextThemesProvider, useTheme } from "next-themes";
 import { useAppearanceStore } from "@/lib/stores/appearance";
 import { applyAccentColor, applyChartColorTheme } from "@/lib/theme/colors";
+import { BG_CHANGE_EVENT, getBackgroundImage } from "@/lib/theme/background";
+
+const emptyUnsubscribe = () => {};
+
+function subscribeBackgroundImageChange(callback: () => void) {
+  if (typeof window === "undefined") return emptyUnsubscribe;
+  window.addEventListener(BG_CHANGE_EVENT, callback);
+  return () => window.removeEventListener(BG_CHANGE_EVENT, callback);
+}
 
 /**
  * Manages accent color application based on theme and user preferences.
@@ -13,6 +22,11 @@ function AccentColorManager({ children }: { children: ReactNode }) {
   const { resolvedTheme } = useTheme();
   const { accentColor, chartColorTheme, interfaceRadius, interfaceDensity, reducedMotion, setReducedMotion, backgroundEnabled } = useAppearanceStore();
   const osMotionSynced = useRef(false);
+  const hasBackgroundImage = useSyncExternalStore(
+    subscribeBackgroundImageChange,
+    () => getBackgroundImage() !== null,
+    () => false,
+  );
 
   // Sync OS-level prefers-reduced-motion on first mount (only if user hasn't explicitly set it)
   useEffect(() => {
@@ -59,12 +73,12 @@ function AccentColorManager({ children }: { children: ReactNode }) {
   }, [reducedMotion]);
 
   useEffect(() => {
-    if (backgroundEnabled) {
+    if (backgroundEnabled && hasBackgroundImage) {
       document.documentElement.dataset.bgActive = "";
     } else {
       delete document.documentElement.dataset.bgActive;
     }
-  }, [backgroundEnabled]);
+  }, [backgroundEnabled, hasBackgroundImage]);
 
   return <>{children}</>;
 }

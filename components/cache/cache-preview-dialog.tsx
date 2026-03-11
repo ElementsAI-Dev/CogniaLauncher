@@ -18,6 +18,7 @@ import {
 import { Eye, FileText, Recycle, RefreshCw, Trash2 } from 'lucide-react';
 import type { CleanPreview } from '@/lib/tauri';
 import type { CleanType } from '@/types/cache';
+import { cleanTypeLabelKey } from '@/lib/cache/scopes';
 
 export interface CachePreviewDialogProps {
   previewOpen: boolean;
@@ -25,6 +26,7 @@ export interface CachePreviewDialogProps {
   previewData: CleanPreview | null;
   previewType: CleanType;
   previewLoading: boolean;
+  defaultDownloadsRoot?: string | null;
   useTrash: boolean;
   setUseTrash: (value: boolean) => void;
   operationLoading: string | null;
@@ -37,21 +39,15 @@ export function CachePreviewDialog({
   previewData,
   previewType,
   previewLoading,
+  defaultDownloadsRoot,
   useTrash,
   setUseTrash,
   operationLoading,
   handleEnhancedClean,
 }: CachePreviewDialogProps) {
   const { t } = useLocale();
-  const previewTypeLabel = previewType === 'downloads'
-    ? t('cache.typeDownload')
-    : previewType === 'metadata'
-      ? t('cache.typeMetadata')
-      : previewType === 'default_downloads'
-        ? t('cache.typeDefaultDownloads')
-      : previewType === 'expired'
-        ? t('cache.typeExpired')
-        : t('cache.allTypes');
+  const previewTypeLabel = t(cleanTypeLabelKey(previewType));
+  const isDefaultDownloads = previewType === 'default_downloads';
 
   return (
     <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
@@ -74,6 +70,19 @@ export function CachePreviewDialog({
           </div>
         ) : previewData ? (
           <div className="space-y-4">
+            {isDefaultDownloads && (
+              <div className="rounded-lg border bg-muted/20 p-3 space-y-1">
+                {defaultDownloadsRoot && (
+                  <p className="text-xs text-muted-foreground">
+                    {t('cache.defaultDownloadsRoot')}:{' '}
+                    <span className="font-mono break-all">{defaultDownloadsRoot}</span>
+                  </p>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  {t('cache.defaultDownloadsSafetyNote')}
+                </p>
+              </div>
+            )}
             <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
               <div>
                 <p className="text-sm text-muted-foreground">{t('cache.filesToClean')}</p>
@@ -109,6 +118,27 @@ export function CachePreviewDialog({
                   )}
                 </div>
               </ScrollArea>
+            )}
+
+            {isDefaultDownloads && (previewData.skipped_count ?? 0) > 0 && previewData.skipped && (
+              <div className="rounded-md border p-3 space-y-2">
+                <p className="text-sm font-medium">
+                  {t('cache.skippedFiles', { count: previewData.skipped_count ?? previewData.skipped.length })}
+                </p>
+                <div className="space-y-1 text-xs text-muted-foreground">
+                  {previewData.skipped.slice(0, 8).map((item, idx) => (
+                    <div key={idx} className="flex items-start justify-between gap-3">
+                      <span className="font-mono break-all flex-1">{item.path}</span>
+                      <span className="shrink-0">{item.reason}</span>
+                    </div>
+                  ))}
+                  {previewData.skipped.length > 8 && (
+                    <p className="pt-1">
+                      ... {t('cache.andMore', { count: previewData.skipped.length - 8 })}
+                    </p>
+                  )}
+                </div>
+              </div>
             )}
 
             <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">

@@ -78,6 +78,7 @@ export default function CachePage() {
     browserEntries,
     browserTotalCount,
     browserLoading,
+    browserDeleting,
     browserSearch,
     setBrowserSearch,
     browserTypeFilter,
@@ -99,7 +100,6 @@ export default function CachePage() {
     isRepairing,
     isSavingSettings,
     totalIssues,
-    handleClean,
     handlePreview,
     handleEnhancedClean,
     fetchCleanupHistory,
@@ -129,31 +129,15 @@ export default function CachePage() {
         description={t('cache.description')}
         actions={(
           <>
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="destructive" size="sm" disabled={isLoading}>
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  {isCleaning && cleaningType === 'all' ? t('cache.clearing') : t('cache.clearAll')}
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>{t('cache.clearConfirmTitle')}</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    {t('cache.clearAllConfirmDesc')}
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
-                  <AlertDialogAction
-                    onClick={() => handleClean('all')}
-                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                  >
-                    {t('cache.clearAll')}
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => handlePreview('all')}
+              disabled={isLoading || previewLoading}
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              {isCleaning && cleaningType === 'all' ? t('cache.clearing') : t('cache.clearAll')}
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -416,35 +400,8 @@ export default function CachePage() {
                   onClick={() => handlePreview('downloads')}
                 >
                   <Eye className="h-4 w-4 mr-2" />
-                  {t('cache.preview')}
+                  {isCleaning && cleaningType === 'downloads' ? t('cache.clearing') : t('cache.previewAndClean')}
                 </Button>
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={isLoading || (cacheInfo?.download_cache.entry_count || 0) === 0}
-                    >
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      {isCleaning && cleaningType === 'downloads' ? t('cache.clearing') : t('cache.clearCache')}
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>{t('cache.clearDownload')}</AlertDialogTitle>
-                      <AlertDialogDescription>{t('cache.clearDownloadConfirmDesc')}</AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
-                      <AlertDialogAction
-                        onClick={() => handleClean('downloads')}
-                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                      >
-                        {t('cache.clearCache')}
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
               </div>
             </div>
           </CardContent>
@@ -498,39 +455,8 @@ export default function CachePage() {
                   onClick={() => handlePreview('default_downloads')}
                 >
                   <Eye className="h-4 w-4 mr-2" />
-                  {t('cache.preview')}
+                  {isCleaning && cleaningType === 'default_downloads' ? t('cache.clearing') : t('cache.previewAndClean')}
                 </Button>
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={
-                        isLoading
-                        || !cacheInfo?.default_downloads?.is_available
-                        || (cacheInfo?.default_downloads?.entry_count || 0) === 0
-                      }
-                    >
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      {isCleaning && cleaningType === 'default_downloads' ? t('cache.clearing') : t('cache.clearCache')}
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>{t('cache.clearDefaultDownloads')}</AlertDialogTitle>
-                      <AlertDialogDescription>{t('cache.clearDefaultDownloadsConfirmDesc')}</AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
-                      <AlertDialogAction
-                        onClick={() => handleClean('default_downloads')}
-                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                      >
-                        {t('cache.clearCache')}
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
               </div>
             </div>
           </CardContent>
@@ -576,35 +502,8 @@ export default function CachePage() {
                   onClick={() => handlePreview('metadata')}
                 >
                   <Eye className="h-4 w-4 mr-2" />
-                  {t('cache.preview')}
+                  {isCleaning && cleaningType === 'metadata' ? t('cache.clearing') : t('cache.previewAndClean')}
                 </Button>
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={isLoading || (cacheInfo?.metadata_cache.entry_count || 0) === 0}
-                    >
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      {isCleaning && cleaningType === 'metadata' ? t('cache.clearing') : t('cache.clearCache')}
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>{t('cache.clearMetadata')}</AlertDialogTitle>
-                      <AlertDialogDescription>{t('cache.clearMetadataConfirmDesc')}</AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
-                      <AlertDialogAction
-                        onClick={() => handleClean('metadata')}
-                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                      >
-                        {t('cache.clearCache')}
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
               </div>
             </div>
           </CardContent>
@@ -666,6 +565,7 @@ export default function CachePage() {
         previewData={previewData}
         previewType={previewType}
         previewLoading={previewLoading}
+        defaultDownloadsRoot={cacheInfo?.default_downloads?.location ?? null}
         useTrash={useTrash}
         setUseTrash={setUseTrash}
         operationLoading={operationLoading}
@@ -679,6 +579,7 @@ export default function CachePage() {
         browserEntries={browserEntries}
         browserTotalCount={browserTotalCount}
         browserLoading={browserLoading}
+        browserDeleting={browserDeleting}
         browserSearch={browserSearch}
         setBrowserSearch={setBrowserSearch}
         browserTypeFilter={browserTypeFilter}

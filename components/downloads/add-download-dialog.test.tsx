@@ -167,20 +167,20 @@ describe("AddDownloadDialog", () => {
       </TestWrapper>,
     );
 
-    // Fill all required fields manually
-    await userEvent.type(
-      screen.getByLabelText("URL"),
-      "https://example.com/file.zip",
-    );
-    // Destination is inside DestinationPicker, find by placeholder
-    await userEvent.type(
-      screen.getByPlaceholderText("/path/to/file.zip"),
-      "/downloads/file.zip",
-    );
-    await userEvent.type(screen.getByLabelText("Name"), "custom-name.zip");
-    await userEvent.type(screen.getByLabelText("Provider"), "npm");
+    fireEvent.change(screen.getByLabelText("URL"), {
+      target: { value: "https://example.com/file.zip" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("/path/to/file.zip"), {
+      target: { value: "/downloads/file.zip" },
+    });
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "custom-name.zip" },
+    });
+    fireEvent.change(screen.getByLabelText("Provider"), {
+      target: { value: "npm" },
+    });
 
-    await userEvent.click(screen.getByRole("button", { name: "Add" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
 
     await waitFor(() => {
       expect(onSubmit).toHaveBeenCalled();

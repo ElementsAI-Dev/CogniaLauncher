@@ -17,6 +17,17 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -43,6 +54,7 @@ export interface CacheBrowserDialogProps {
   browserEntries: CacheEntryItem[];
   browserTotalCount: number;
   browserLoading: boolean;
+  browserDeleting: boolean;
   browserSearch: string;
   setBrowserSearch: (value: string) => void;
   browserTypeFilter: CacheBrowserTypeFilter;
@@ -65,6 +77,7 @@ export function CacheBrowserDialog({
   browserEntries,
   browserTotalCount,
   browserLoading,
+  browserDeleting,
   browserSearch,
   setBrowserSearch,
   browserTypeFilter,
@@ -81,6 +94,15 @@ export function CacheBrowserDialog({
   handleDeleteSelectedEntries,
 }: CacheBrowserDialogProps) {
   const { t } = useLocale();
+
+  const selectedOnPage = browserEntries.reduce((acc, e) => acc + (browserSelectedKeys.has(e.key) ? 1 : 0), 0);
+  const isAllSelected = browserEntries.length > 0 && selectedOnPage === browserEntries.length;
+  const isIndeterminate = selectedOnPage > 0 && selectedOnPage < browserEntries.length;
+  const headerChecked: boolean | 'indeterminate' = isAllSelected ? true : isIndeterminate ? 'indeterminate' : false;
+  const disableInteractions = browserLoading || browserDeleting;
+
+  const from = browserTotalCount === 0 ? 0 : browserPage * ENTRIES_PER_PAGE + 1;
+  const to = browserTotalCount === 0 ? 0 : Math.min((browserPage + 1) * ENTRIES_PER_PAGE, browserTotalCount);
 
   return (
     <Dialog open={browserOpen} onOpenChange={setBrowserOpen}>
@@ -102,6 +124,7 @@ export function CacheBrowserDialog({
             value={browserSearch}
             onChange={(e) => setBrowserSearch(e.target.value)}
             className="max-w-xs"
+            disabled={disableInteractions}
           />
           <Select value={browserTypeFilter} onValueChange={setBrowserTypeFilter}>
             <SelectTrigger className="w-[140px]">
@@ -131,7 +154,7 @@ export function CacheBrowserDialog({
             variant="outline"
             size="sm"
             onClick={() => fetchBrowserEntries(true)}
-            disabled={browserLoading}
+            disabled={disableInteractions}
           >
             <RefreshCw className={`h-4 w-4 ${browserLoading ? 'animate-spin' : ''}`} />
           </Button>
@@ -155,9 +178,10 @@ export function CacheBrowserDialog({
                 <TableRow>
                   <TableHead className="w-12">
                     <Checkbox
-                      checked={browserSelectedKeys.size === browserEntries.length && browserEntries.length > 0}
+                      checked={headerChecked}
+                      disabled={disableInteractions || browserEntries.length === 0}
                       onCheckedChange={(checked) => {
-                        if (checked) {
+                        if (checked === true) {
                           setBrowserSelectedKeys(new Set(browserEntries.map(e => e.key)));
                         } else {
                           setBrowserSelectedKeys(new Set());
@@ -177,9 +201,10 @@ export function CacheBrowserDialog({
                     <TableCell>
                       <Checkbox
                         checked={browserSelectedKeys.has(entry.key)}
+                        disabled={disableInteractions}
                         onCheckedChange={(checked) => {
                           const newSet = new Set(browserSelectedKeys);
-                          if (checked) {
+                          if (checked === true) {
                             newSet.add(entry.key);
                           } else {
                             newSet.delete(entry.key);
@@ -207,8 +232,8 @@ export function CacheBrowserDialog({
         <div className="flex items-center justify-between">
           <div className="text-sm text-muted-foreground">
             {t('cache.showingEntries', {
-              from: browserPage * ENTRIES_PER_PAGE + 1,
-              to: Math.min((browserPage + 1) * ENTRIES_PER_PAGE, browserTotalCount),
+              from,
+              to,
               total: browserTotalCount,
             })}
           </div>
@@ -216,7 +241,7 @@ export function CacheBrowserDialog({
             <Button
               variant="outline"
               size="sm"
-              disabled={browserPage === 0}
+              disabled={disableInteractions || browserPage === 0}
               onClick={() => {
                 const newPage = browserPage - 1;
                 setBrowserPage(newPage);
@@ -228,7 +253,7 @@ export function CacheBrowserDialog({
             <Button
               variant="outline"
               size="sm"
-              disabled={(browserPage + 1) * ENTRIES_PER_PAGE >= browserTotalCount}
+              disabled={disableInteractions || (browserPage + 1) * ENTRIES_PER_PAGE >= browserTotalCount}
               onClick={() => {
                 const newPage = browserPage + 1;
                 setBrowserPage(newPage);
@@ -246,19 +271,40 @@ export function CacheBrowserDialog({
               id="browser-trash"
               checked={useTrash}
               onCheckedChange={setUseTrash}
+              disabled={disableInteractions}
             />
             <Label htmlFor="browser-trash" className="text-sm">
               {t('cache.moveToTrash')}
             </Label>
           </div>
-          <Button
-            variant="destructive"
-            disabled={browserSelectedKeys.size === 0}
-            onClick={handleDeleteSelectedEntries}
-          >
-            <Trash2 className="h-4 w-4 mr-2" />
-            {t('cache.deleteSelected', { count: browserSelectedKeys.size })}
-          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="destructive"
+                disabled={disableInteractions || browserSelectedKeys.size === 0}
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                {t('cache.deleteSelected', { count: browserSelectedKeys.size })}
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>{t('cache.deleteEntriesConfirmTitle')}</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {t('cache.deleteEntriesConfirmDesc', { count: browserSelectedKeys.size })}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={handleDeleteSelectedEntries}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  {t('cache.deleteSelected', { count: browserSelectedKeys.size })}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </DialogFooter>
       </DialogContent>
     </Dialog>

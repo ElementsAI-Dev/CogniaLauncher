@@ -1,6 +1,10 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { TerminalConfigStructuredEditor } from './structured-editor';
 
+jest.mock('@/components/providers/locale-provider', () => ({
+  useLocale: () => ({ t: (key: string) => key }),
+}));
+
 describe('TerminalConfigStructuredEditor', () => {
   it('shows fallback alert when structured editing is unavailable', () => {
     render(
@@ -11,7 +15,7 @@ describe('TerminalConfigStructuredEditor', () => {
       />,
     );
 
-    expect(screen.getByText('Structured Editing Unavailable')).toBeInTheDocument();
+    expect(screen.getByText('terminal.structuredEditingUnavailable')).toBeInTheDocument();
     expect(screen.getByText('unsupported syntax')).toBeInTheDocument();
   });
 
@@ -24,7 +28,7 @@ describe('TerminalConfigStructuredEditor', () => {
       />,
     );
 
-    const addButtons = screen.getAllByRole('button', { name: /^Add$/i });
+    const addButtons = screen.getAllByRole('button', { name: /^terminal\.addEnvVar$/i });
     fireEvent.click(addButtons[0]);
 
     expect(onChange).toHaveBeenCalledWith({
@@ -43,7 +47,7 @@ describe('TerminalConfigStructuredEditor', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /remove alias ll/i }));
+    fireEvent.click(screen.getByRole('button', { name: /terminal\.structuredRemoveAlias/i }));
 
     expect(onChange).toHaveBeenCalledWith({
       aliases: [],
