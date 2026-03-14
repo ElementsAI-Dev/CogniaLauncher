@@ -6,6 +6,8 @@ import { EnvironmentErrorBoundary } from '@/components/environments/environment-
 import { useLocale } from '@/components/providers/locale-provider';
 import { useToolboxStore } from '@/lib/stores/toolbox';
 import { getToolById } from '@/lib/constants/toolbox';
+import { isTauri } from '@/lib/tauri';
+import { ToolRuntimeState } from '@/components/toolbox/tool-runtime-state';
 import type { ToolComponentProps } from '@/types/toolbox';
 
 export function ToolLoadingFallback() {
@@ -40,16 +42,33 @@ function loadBuiltInComponent(builtInId: string): Promise<ComponentType<ToolComp
 function BuiltInToolRendererInner({
   builtInId,
   onReady,
+  onEmpty,
+  emptyTitle,
+  emptyDescription,
 }: {
   builtInId: string;
   onReady?: () => void;
+  onEmpty?: () => void;
+  emptyTitle: string;
+  emptyDescription: string;
 }) {
   /* eslint-disable -- dynamic component loaded from module-level promise cache */
   const Component = use(loadBuiltInComponent(builtInId));
   useEffect(() => {
-    onReady?.();
-  }, [onReady]);
-  if (!Component) return null;
+    if (Component) {
+      onReady?.();
+      return;
+    }
+    onEmpty?.();
+  }, [Component, onEmpty, onReady]);
+  if (!Component) {
+    return (
+      <ToolRuntimeState
+        title={emptyTitle}
+        description={emptyDescription}
+      />
+    );
+  }
   return <Component />;
   /* eslint-enable */
 }
@@ -59,16 +78,50 @@ export function BuiltInToolRenderer({ builtInId }: { builtInId: string }) {
   const setToolLifecycle = useToolboxStore((state) => state.setToolLifecycle);
   const clearToolLifecycle = useToolboxStore((state) => state.clearToolLifecycle);
   const unifiedToolId = `builtin:${builtInId}`;
+  const tool = getToolById(builtInId);
+  const requiresDesktop = Boolean(tool?.requiresTauri && !isTauri());
 
   useEffect(() => {
+    if (requiresDesktop) {
+      setToolLifecycle(unifiedToolId, 'failure', t('toolbox.runtime.desktopRequiredDescription'));
+      return () => clearToolLifecycle(unifiedToolId);
+    }
+
+    if (!tool) {
+      setToolLifecycle(unifiedToolId, 'failure', t('toolbox.runtime.emptyDescription'));
+      return () => clearToolLifecycle(unifiedToolId);
+    }
+
     setToolLifecycle(unifiedToolId, 'prepare');
     return () => clearToolLifecycle(unifiedToolId);
-  }, [unifiedToolId, setToolLifecycle, clearToolLifecycle]);
+  }, [clearToolLifecycle, requiresDesktop, setToolLifecycle, t, tool, unifiedToolId]);
 
   const handleReady = useCallback(() => {
     setToolLifecycle(unifiedToolId, 'postProcess');
     setToolLifecycle(unifiedToolId, 'success');
   }, [setToolLifecycle, unifiedToolId]);
+
+  const handleEmpty = useCallback(() => {
+    setToolLifecycle(unifiedToolId, 'failure', t('toolbox.runtime.emptyDescription'));
+  }, [setToolLifecycle, t, unifiedToolId]);
+
+  if (requiresDesktop) {
+    return (
+      <ToolRuntimeState
+        title={t('toolbox.runtime.desktopRequiredTitle')}
+        description={t('toolbox.runtime.desktopRequiredDescription')}
+      />
+    );
+  }
+
+  if (!tool) {
+    return (
+      <ToolRuntimeState
+        title={t('toolbox.runtime.emptyTitle')}
+        description={t('toolbox.runtime.emptyDescription')}
+      />
+    );
+  }
 
   return (
     <EnvironmentErrorBoundary
@@ -77,7 +130,13 @@ export function BuiltInToolRenderer({ builtInId }: { builtInId: string }) {
       retryLabel={t('toolbox.errorBoundary.retry')}
     >
       <Suspense fallback={<ToolLoadingFallback />}>
-        <BuiltInToolRendererInner builtInId={builtInId} onReady={handleReady} />
+        <BuiltInToolRendererInner
+          builtInId={builtInId}
+          onReady={handleReady}
+          onEmpty={handleEmpty}
+          emptyTitle={t('toolbox.runtime.emptyTitle')}
+          emptyDescription={t('toolbox.runtime.emptyDescription')}
+        />
       </Suspense>
     </EnvironmentErrorBoundary>
   );

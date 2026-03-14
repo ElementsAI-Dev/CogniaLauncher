@@ -11,11 +11,32 @@ global.ResizeObserver = global.ResizeObserver || class ResizeObserver {
 
 const mockFetchProviders = jest.fn();
 const mockProviderCheck = jest.fn().mockResolvedValue(true);
+const mockProviderStatus = jest.fn().mockResolvedValue({
+  id: 'nvm',
+  display_name: 'nvm',
+  installed: false,
+  platforms: ['linux', 'macos'],
+  scope_state: 'timeout',
+  reason: 'Timed out',
+});
 const mockProviderEnable = jest.fn().mockResolvedValue(undefined);
 const mockProviderDisable = jest.fn().mockResolvedValue(undefined);
 const mockProviderStatusAll = jest.fn().mockResolvedValue([
-  { id: 'npm', display_name: 'npm', installed: true, platforms: ['windows', 'linux', 'macos'] },
-  { id: 'nvm', display_name: 'nvm', installed: false, platforms: ['linux', 'macos'] },
+  {
+    id: 'npm',
+    display_name: 'npm',
+    installed: true,
+    platforms: ['windows', 'linux', 'macos'],
+    scope_state: 'available',
+  },
+  {
+    id: 'nvm',
+    display_name: 'nvm',
+    installed: false,
+    platforms: ['linux', 'macos'],
+    scope_state: 'timeout',
+    reason: 'Timed out',
+  },
 ]);
 
 const mockProviders = [
@@ -95,6 +116,8 @@ jest.mock('@/components/providers/locale-provider', () => ({
         'providers.filterDisabled': 'Disabled',
         'providers.statusAvailable': 'Available',
         'providers.statusUnavailable': 'Unavailable',
+        'providers.statusTimeout': 'Timeout',
+        'providers.statusUnsupported': 'Unsupported',
         'providers.enabled': 'Enabled',
         'providers.platforms': 'Supported Platforms',
         'providers.capabilities': 'Capabilities',
@@ -147,6 +170,7 @@ jest.mock('@/components/providers/locale-provider', () => ({
 
 jest.mock('@/lib/tauri', () => ({
   providerCheck: () => mockProviderCheck(),
+  providerStatus: () => mockProviderStatus(),
   providerEnable: (id: string) => mockProviderEnable(id),
   providerDisable: (id: string) => mockProviderDisable(id),
   providerStatusAll: () => mockProviderStatusAll(),
@@ -295,6 +319,18 @@ describe('ProvidersPage', () => {
 
     await waitFor(() => {
       expect(mockProviderStatusAll).toHaveBeenCalled();
+    });
+  });
+
+  it('renders normalized timeout status after status refresh', async () => {
+    const user = userEvent.setup();
+    render(<ProvidersPage />);
+
+    const checkButton = screen.getByText('Check Status');
+    await user.click(checkButton);
+
+    await waitFor(() => {
+      expect(screen.getByText('Timeout')).toBeInTheDocument();
     });
   });
 

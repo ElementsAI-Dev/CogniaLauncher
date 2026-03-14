@@ -24,6 +24,9 @@ import {
   WslInstallLocationDialog,
   WslCloneDialog,
   WslBackupCard,
+  WslBatchWorkflowCard,
+  WslBatchWorkflowPreviewDialog,
+  WslBatchWorkflowSummaryCard,
 } from '@/components/wsl';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -57,12 +60,22 @@ import {
   ArrowUpCircle,
   Info,
   HardDrive,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { PRESET_COMMANDS } from '@/lib/constants/wsl';
 import { formatBytes } from '@/lib/utils';
 import type { WslImportOptions, WslMountOptions, WslTotalDiskUsage, WslVersionInfo } from '@/types/tauri';
-import type { WslAssistanceActionDescriptor, WslAssistanceSummary } from '@/types/wsl';
+import type {
+  WslAssistanceActionDescriptor,
+  WslAssistanceSummary,
+  WslBatchWorkflowPreflight,
+  WslBatchWorkflowPreset,
+  WslBatchWorkflowSummary,
+} from '@/types/wsl';
 import {
+  buildWslBatchWorkflowPreflight,
   buildWslDistroHref,
   buildWslOverviewHref,
   normalizeSelectedDistros,
@@ -74,6 +87,25 @@ interface WslLifecycleFeedback {
   status: 'running' | 'success' | 'failed';
   title: string;
   details?: string;
+}
+
+function createWorkflowDraft(t: (key: string, params?: Record<string, string | number>) => string): WslBatchWorkflowPreset {
+  const timestamp = new Date().toISOString();
+  const defaultCommand = PRESET_COMMANDS[0];
+  return {
+    id: 'workflow-draft',
+    name: '',
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    target: { mode: 'selected' },
+    action: {
+      kind: 'command',
+      command: defaultCommand?.command ?? '',
+      user: defaultCommand?.user,
+      savedCommandId: defaultCommand?.id,
+      label: defaultCommand?.name ?? t('wsl.batchWorkflow.command'),
+    },
+  };
 }
 
 export default function WslPage() {
@@ -129,6 +161,8 @@ export default function WslPage() {
     cloneDistro,
     batchLaunch,
     batchTerminate,
+    runBatchWorkflow,
+    retryBatchWorkflowFailures,
     backupDistro,
     listBackups,
     restoreBackup,
@@ -140,9 +174,17 @@ export default function WslPage() {
 
   const initializedRef = useRef(false);
   const retryActionRef = useRef<(() => void) | null>(null);
+  const workflowDraftRef = useRef<WslBatchWorkflowPreset | null>(null);
   const {
     distroTags,
     availableTags,
+    savedCommands,
+    workflowPresets,
+    workflowSummaries,
+    addWorkflowPreset,
+    updateWorkflowPreset,
+    removeWorkflowPreset,
+    recordWorkflowSummary,
     overviewContext,
     setOverviewContext,
   } = useWslStore();
@@ -181,6 +223,26 @@ export default function WslPage() {
   const [assistanceSummary, setAssistanceSummary] = useState<WslAssistanceSummary | null>(null);
   const [assistanceOrigin, setAssistanceOrigin] = useState<'panel' | 'error' | null>(null);
   const [lifecycleFeedback, setLifecycleFeedback] = useState<WslLifecycleFeedback | null>(null);
+  const [workflowDraft, setWorkflowDraft] = useState<WslBatchWorkflowPreset>(() => createWorkflowDraft(t));
+  const [editingWorkflowId, setEditingWorkflowId] = useState<string | null>(null);
+  const [workflowPreview, setWorkflowPreview] = useState<WslBatchWorkflowPreflight | null>(null);
+  const [workflowPreviewOpen, setWorkflowPreviewOpen] = useState(false);
+  const [workflowPreviewCandidate, setWorkflowPreviewCandidate] = useState<WslBatchWorkflowPreset | null>(null);
+  const [workflowRunning, setWorkflowRunning] = useState(false);
+
+  useEffect(() => {
+    workflowDraftRef.current = workflowDraft;
+  }, [workflowDraft]);
+
+  // Auto-dismiss success lifecycle feedback after 5 seconds
+  useEffect(() => {
+    if (lifecycleFeedback?.status !== 'success') return;
+    const timer = setTimeout(() => {
+      setLifecycleFeedback(null);
+      retryActionRef.current = null;
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [lifecycleFeedback]);
 
   const filteredDistros = activeTagFilter
     ? distros.filter((d) => (distroTags[d.name] ?? []).includes(activeTagFilter))
@@ -200,6 +262,14 @@ export default function WslPage() {
     return null;
   }, [completeness.degradedReasons, completeness.state, runtimeSnapshot, t]);
   const runtimeAssistanceActions = getAssistanceActions('runtime');
+  const batchAssistanceActions = useMemo(() => {
+    const referenceDistro = filteredDistros[0]?.name ?? distros[0]?.name;
+    return referenceDistro ? getAssistanceActions('distro', referenceDistro) : [];
+  }, [distros, filteredDistros, getAssistanceActions]);
+  const workflowCommandOptions = useMemo(
+    () => [...PRESET_COMMANDS, ...savedCommands],
+    [savedCommands]
+  );
 
   const assistanceActionById = runtimeAssistanceActions.reduce<Record<string, WslAssistanceActionDescriptor>>(
     (acc, action) => {
@@ -753,6 +823,101 @@ export default function WslPage() {
     });
   }, [filteredDistros]);
 
+  const handleWorkflowDraftChange = useCallback((nextDraft: WslBatchWorkflowPreset) => {
+    workflowDraftRef.current = nextDraft;
+    setWorkflowDraft(nextDraft);
+  }, []);
+
+  const openWorkflowPreview = useCallback((workflow: WslBatchWorkflowPreset) => {
+    const preview = buildWslBatchWorkflowPreflight({
+      workflow,
+      distros,
+      selectedDistros,
+      distroTags,
+      capabilities,
+      resolveAssistanceAction: (distroName, actionId) =>
+        getAssistanceActions('distro', distroName).find((action) => action.id === actionId),
+    });
+    setWorkflowPreview(preview);
+    setWorkflowPreviewCandidate(workflow);
+    setWorkflowPreviewOpen(true);
+  }, [capabilities, distros, distroTags, getAssistanceActions, selectedDistros]);
+
+  const handleSaveWorkflowPreset = useCallback(() => {
+    const activeDraft = workflowDraftRef.current ?? workflowDraft;
+    const trimmedName = activeDraft.name.trim();
+    if (!trimmedName) {
+      toast.error(t('wsl.batchWorkflow.nameRequired'));
+      return;
+    }
+
+    if (editingWorkflowId) {
+      updateWorkflowPreset(editingWorkflowId, {
+        name: trimmedName,
+        target: activeDraft.target,
+        action: activeDraft.action,
+      });
+    } else {
+      addWorkflowPreset({
+        name: trimmedName,
+        target: activeDraft.target,
+        action: activeDraft.action,
+      });
+    }
+
+    setEditingWorkflowId(null);
+    const resetDraft = createWorkflowDraft(t);
+    workflowDraftRef.current = resetDraft;
+    setWorkflowDraft(resetDraft);
+  }, [addWorkflowPreset, editingWorkflowId, t, updateWorkflowPreset, workflowDraft]);
+
+  const handleRunWorkflowDraft = useCallback(() => {
+    openWorkflowPreview(workflowDraftRef.current ?? workflowDraft);
+  }, [openWorkflowPreview, workflowDraft]);
+
+  const handleEditWorkflowPreset = useCallback((preset: WslBatchWorkflowPreset) => {
+    setEditingWorkflowId(preset.id);
+    workflowDraftRef.current = preset;
+    setWorkflowDraft(preset);
+  }, []);
+
+  const handleRunWorkflowPreset = useCallback((preset: WslBatchWorkflowPreset) => {
+    openWorkflowPreview(preset);
+  }, [openWorkflowPreview]);
+
+  const handleConfirmWorkflowRun = useCallback(async () => {
+    if (!workflowPreviewCandidate) return;
+
+    setWorkflowRunning(true);
+    try {
+      const summary = await runBatchWorkflow(workflowPreviewCandidate, {
+        selectedDistros,
+        distroTags,
+      });
+      recordWorkflowSummary(summary);
+      setWorkflowPreviewOpen(false);
+    } catch (err) {
+      toast.error(String(err));
+    } finally {
+      setWorkflowRunning(false);
+    }
+  }, [distroTags, recordWorkflowSummary, runBatchWorkflow, selectedDistros, workflowPreviewCandidate]);
+
+  const handleRetryWorkflowSummary = useCallback(async (summary?: WslBatchWorkflowSummary | null) => {
+    const activeSummary = summary ?? workflowSummaries[0] ?? null;
+    if (!activeSummary) return;
+
+    setWorkflowRunning(true);
+    try {
+      const retriedSummary = await retryBatchWorkflowFailures(activeSummary, { distroTags });
+      recordWorkflowSummary(retriedSummary);
+    } catch (err) {
+      toast.error(String(err));
+    } finally {
+      setWorkflowRunning(false);
+    }
+  }, [distroTags, recordWorkflowSummary, retryBatchWorkflowFailures, workflowSummaries]);
+
   const confirmAndExecute = useCallback(async () => {
     if (!confirmAction) return;
     if (confirmAction.type === 'unregister') {
@@ -979,6 +1144,21 @@ export default function WslPage() {
                       </div>
                     ) : distros.length === 0 ? (
                       <WslEmptyState t={t} />
+                    ) : filteredDistros.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-10 text-center">
+                        <p className="text-sm text-muted-foreground">{t('wsl.noFilterResults')}</p>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="mt-2"
+                          onClick={() => {
+                            setActiveTagFilter(null);
+                            syncOverviewContext(activeTab, null);
+                          }}
+                        >
+                          {t('wsl.clearFilter')}
+                        </Button>
+                      </div>
                     ) : (
                       <>
                         {filteredDistros.length > 1 && (
@@ -1004,6 +1184,7 @@ export default function WslPage() {
                             )}
                           </div>
                         )}
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-3">
                         {filteredDistros.map((distro) => (
                           <div key={distro.name} className="flex items-start gap-2">
                             {filteredDistros.length > 1 && (
@@ -1039,6 +1220,7 @@ export default function WslPage() {
                             </div>
                           </div>
                         ))}
+                        </div>
                       </>
                     )}
                   </TabsContent>
@@ -1122,15 +1304,42 @@ export default function WslPage() {
                   <CardContent className="space-y-2">
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-muted-foreground">{t('wsl.wslVersion')}</span>
-                      <span className="font-mono">{versionInfo?.wslVersion ?? status?.version ?? '—'}</span>
+                      <span
+                        className="cursor-pointer truncate font-mono text-xs transition-colors hover:text-primary"
+                        title={t('common.clickToCopy')}
+                        onClick={() => {
+                          const v = versionInfo?.wslVersion ?? status?.version;
+                          if (v) { void navigator.clipboard.writeText(v); toast.success(t('common.copied')); }
+                        }}
+                      >
+                        {versionInfo?.wslVersion ?? status?.version ?? '—'}
+                      </span>
                     </div>
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-muted-foreground">{t('wsl.kernelVersion')}</span>
-                      <span className="font-mono">{versionInfo?.kernelVersion ?? status?.kernelVersion ?? '—'}</span>
+                      <span
+                        className="cursor-pointer truncate font-mono text-xs transition-colors hover:text-primary"
+                        title={t('common.clickToCopy')}
+                        onClick={() => {
+                          const v = versionInfo?.kernelVersion ?? status?.kernelVersion;
+                          if (v) { void navigator.clipboard.writeText(v); toast.success(t('common.copied')); }
+                        }}
+                      >
+                        {versionInfo?.kernelVersion ?? status?.kernelVersion ?? '—'}
+                      </span>
                     </div>
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-muted-foreground">{t('wsl.wslgVersion')}</span>
-                      <span className="font-mono">{versionInfo?.wslgVersion ?? status?.wslgVersion ?? '—'}</span>
+                      <span
+                        className="cursor-pointer truncate font-mono text-xs transition-colors hover:text-primary"
+                        title={t('common.clickToCopy')}
+                        onClick={() => {
+                          const v = versionInfo?.wslgVersion ?? status?.wslgVersion;
+                          if (v) { void navigator.clipboard.writeText(v); toast.success(t('common.copied')); }
+                        }}
+                      >
+                        {versionInfo?.wslgVersion ?? status?.wslgVersion ?? '—'}
+                      </span>
                     </div>
                     <Separator />
                     <div className="flex items-center justify-between text-sm">
@@ -1156,13 +1365,20 @@ export default function WslPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-7 w-full justify-center text-xs"
+                            className="h-7 w-full justify-center gap-1 text-xs"
                             onClick={() => setShowAllDiskUsage((prev) => !prev)}
                           >
-                            {showAllDiskUsage
-                              ? t('wsl.showLess')
-                              : t('wsl.viewAllDistros')
-                                  .replace('{count}', String(totalDiskUsage.perDistro.length))}
+                            {showAllDiskUsage ? (
+                              <>
+                                {t('wsl.showLess')}
+                                <ChevronUp className="h-3 w-3" />
+                              </>
+                            ) : (
+                              <>
+                                {t('wsl.viewAllDistros').replace('{count}', String(totalDiskUsage.perDistro.length))}
+                                <ChevronDown className="h-3 w-3" />
+                              </>
+                            )}
                           </Button>
                         )}
                       </div>
@@ -1331,6 +1547,28 @@ export default function WslPage() {
                   onMutationSuccess={refreshSidebarMeta}
                   t={t}
                 />
+                <WslBatchWorkflowCard
+                  draft={workflowDraft}
+                  editingPresetId={editingWorkflowId}
+                  presets={workflowPresets}
+                  distros={distros}
+                  availableTags={availableTags}
+                  selectedCount={selectedDistros.size}
+                  commandOptions={workflowCommandOptions}
+                  assistanceActions={batchAssistanceActions}
+                  onDraftChange={handleWorkflowDraftChange}
+                  onSavePreset={handleSaveWorkflowPreset}
+                  onRunDraft={handleRunWorkflowDraft}
+                  onEditPreset={handleEditWorkflowPreset}
+                  onRunPreset={handleRunWorkflowPreset}
+                  onDeletePreset={removeWorkflowPreset}
+                  t={t}
+                />
+                <WslBatchWorkflowSummaryCard
+                  summary={workflowSummaries[0] ?? null}
+                  onRetry={() => handleRetryWorkflowSummary(workflowSummaries[0] ?? null)}
+                  t={t}
+                />
               </section>
 
               <section data-testid="wsl-config-support-section" className="space-y-4">
@@ -1438,6 +1676,16 @@ export default function WslPage() {
         distroName={cloneSourceDistro}
         onOpenChange={setCloneDialogOpen}
         onConfirm={handleCloneConfirm}
+        t={t}
+      />
+
+      <WslBatchWorkflowPreviewDialog
+        open={workflowPreviewOpen}
+        workflowName={workflowPreviewCandidate?.name ?? ''}
+        preview={workflowPreview}
+        running={workflowRunning}
+        onOpenChange={setWorkflowPreviewOpen}
+        onConfirm={handleConfirmWorkflowRun}
         t={t}
       />
 

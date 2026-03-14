@@ -815,6 +815,85 @@ pub fn generate_env_file(vars: &[(String, String)], format: EnvFileFormat) -> St
     lines.join("\n")
 }
 
+pub fn render_shell_variable_command(shell_id: &str, key: &str, value: &str) -> Option<String> {
+    let shell = ShellType::from_id(shell_id)?;
+
+    let command = match shell {
+        ShellType::Fish => {
+            let escaped = value.replace('\\', "\\\\").replace('"', "\\\"");
+            format!("set -gx {} \"{}\"", key, escaped)
+        }
+        ShellType::Nushell => {
+            let escaped = value.replace('\\', "\\\\").replace('"', "\\\"");
+            format!("$env.{} = \"{}\"", key, escaped)
+        }
+        ShellType::PowerShell => {
+            let escaped = value.replace('`', "``").replace('"', "`\"");
+            format!("$env:{} = \"{}\"", key, escaped)
+        }
+        ShellType::Cmd => {
+            let escaped = value.replace('"', "\"\"");
+            format!("set {}={}", key, escaped)
+        }
+        ShellType::Bash | ShellType::Zsh => {
+            let escaped = value.replace('\\', "\\\\").replace('"', "\\\"");
+            format!("export {}=\"{}\"", key, escaped)
+        }
+    };
+
+    Some(command)
+}
+
+pub fn render_shell_path_command(shell_id: &str, entries: &[String]) -> Option<String> {
+    let shell = ShellType::from_id(shell_id)?;
+    let path_separator = if cfg!(windows) { ';' } else { ':' };
+    let joined_entries = entries.join(&path_separator.to_string());
+
+    let command = match shell {
+        ShellType::Fish => {
+            let mut tokens = entries
+                .iter()
+                .map(|entry| {
+                    let escaped = entry.replace('\\', "\\\\").replace('"', "\\\"");
+                    format!("\"{}\"", escaped)
+                })
+                .collect::<Vec<_>>();
+            tokens.push("$PATH".to_string());
+            format!("set -gx PATH {}", tokens.join(" "))
+        }
+        ShellType::Nushell => {
+            let escaped = joined_entries.replace('\\', "\\\\").replace('"', "\\\"");
+            format!("$env.PATH = \"{}\"", escaped)
+        }
+        ShellType::PowerShell => {
+            let escaped = joined_entries.replace('`', "``").replace('"', "`\"");
+            if cfg!(windows) {
+                format!("$env:PATH = \"{};$env:PATH\"", escaped)
+            } else {
+                format!("$env:PATH = \"{}:$env:PATH\"", escaped)
+            }
+        }
+        ShellType::Cmd => {
+            let escaped = joined_entries.replace('"', "\"\"");
+            if cfg!(windows) {
+                format!("set PATH={};%PATH%", escaped)
+            } else {
+                format!("set PATH={}", escaped)
+            }
+        }
+        ShellType::Bash | ShellType::Zsh => {
+            let escaped = joined_entries.replace('\\', "\\\\").replace('"', "\\\"");
+            if cfg!(windows) {
+                format!("export PATH=\"{};$PATH\"", escaped)
+            } else {
+                format!("export PATH=\"{}:$PATH\"", escaped)
+            }
+        }
+    };
+
+    Some(command)
+}
+
 // ============================================================================
 // Platform-specific implementations
 // ============================================================================

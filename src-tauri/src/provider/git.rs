@@ -359,6 +359,28 @@ pub struct GitAheadBehind {
     pub behind: u32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GitSupportFeature {
+    pub key: String,
+    pub status: String,
+    pub supported: bool,
+    pub reason: Option<String>,
+    pub next_steps: Vec<String>,
+    pub requires_repo: bool,
+    pub min_version: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GitSupportSnapshot {
+    pub git_available: bool,
+    pub git_version: Option<String>,
+    pub executable_path: Option<String>,
+    pub repo_ready: bool,
+    pub features: Vec<GitSupportFeature>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitDayActivity {
@@ -512,6 +534,102 @@ pub fn parse_version(output: &str) -> Option<String> {
     re.captures(output.trim())
         .and_then(|caps| caps.get(1))
         .map(|m| m.as_str().to_string())
+}
+
+fn parse_version_tuple(version: &str) -> Option<(u32, u32, u32)> {
+    let mut parts = version.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next()?.parse().ok()?;
+    let patch = parts.next()?.parse().ok()?;
+    Some((major, minor, patch))
+}
+
+fn version_at_least(current: Option<&str>, min_required: &str) -> Option<bool> {
+    let current_tuple = parse_version_tuple(current?)?;
+    let min_tuple = parse_version_tuple(min_required)?;
+    Some(current_tuple >= min_tuple)
+}
+
+fn parse_help_commands(output: &str) -> HashSet<String> {
+    let mut commands = HashSet::new();
+    for line in output.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if trimmed.ends_with(':')
+            || trimmed.starts_with("usage")
+            || trimmed.starts_with("git version")
+        {
+            continue;
+        }
+        for token in trimmed.split_whitespace() {
+            if token
+                .chars()
+                .all(|ch| ch.is_ascii_lowercase() || ch == '-')
+            {
+                commands.insert(token.to_string());
+            }
+        }
+    }
+    commands
+}
+
+fn build_support_feature(
+    key: &str,
+    min_version: Option<&str>,
+    requires_repo: bool,
+    git_available: bool,
+    repo_ready: bool,
+    version_ok: Option<bool>,
+    command_ok: Option<bool>,
+) -> GitSupportFeature {
+    let (status, reason, next_steps) = if !git_available {
+        (
+            "unsupported".to_string(),
+            Some("Git runtime is not available.".to_string()),
+            vec!["Install Git and refresh support status.".to_string()],
+        )
+    } else if requires_repo && !repo_ready {
+        (
+            "unsupported".to_string(),
+            Some("Select a repository to enable this feature.".to_string()),
+            vec!["Open the Repository tab and select or initialize a repository.".to_string()],
+        )
+    } else if matches!(version_ok, Some(false)) {
+        (
+            "unsupported".to_string(),
+            Some(format!(
+                "Current Git version does not satisfy minimum requirement {}.",
+                min_version.unwrap_or_default()
+            )),
+            vec!["Upgrade Git and retry this operation.".to_string()],
+        )
+    } else if matches!(command_ok, Some(false)) {
+        (
+            "unsupported".to_string(),
+            Some("Required Git command is not available in this runtime.".to_string()),
+            vec!["Install or upgrade Git distribution with full command support.".to_string()],
+        )
+    } else if version_ok.is_none() || command_ok.is_none() {
+        (
+            "unknown".to_string(),
+            Some("Unable to determine feature support deterministically.".to_string()),
+            vec!["Retry support detection after confirming Git installation integrity.".to_string()],
+        )
+    } else {
+        ("supported".to_string(), None, vec![])
+    };
+
+    GitSupportFeature {
+        key: key.to_string(),
+        status: status.clone(),
+        supported: status == "supported",
+        reason,
+        next_steps,
+        requires_repo,
+        min_version: min_version.map(|value| value.to_string()),
+    }
 }
 
 /// Parse `git config --global --list` output → Vec<GitConfigEntry>
@@ -1407,6 +1525,118 @@ impl Default for GitProvider {
 impl GitProvider {
     pub fn new() -> Self {
         Self
+    }
+
+    async fn detect_builtin_commands(&self) -> Option<HashSet<String>> {
+        let out = process::execute("git", &["help", "-a"], Some(make_opts()))
+            .await
+            .ok()?;
+        let combined = if out.stderr.trim().is_empty() {
+            out.stdout
+        } else if out.stdout.trim().is_empty() {
+            out.stderr
+        } else {
+            format!("{}\n{}", out.stdout, out.stderr)
+        };
+        let parsed = parse_help_commands(&combined);
+        if parsed.is_empty() {
+            None
+        } else {
+            Some(parsed)
+        }
+    }
+
+    pub async fn get_support_snapshot(
+        &self,
+        repo_path: Option<&str>,
+    ) -> CogniaResult<GitSupportSnapshot> {
+        let git_available = self.is_available().await;
+        let git_version = self.get_git_version().await?;
+        let executable_path = self.get_git_path().await;
+        let repo_ready = if let Some(path) = repo_path {
+            run_git_in(path, &["rev-parse", "--git-dir"]).await.is_ok()
+        } else {
+            false
+        };
+        let commands = if git_available {
+            self.detect_builtin_commands().await
+        } else {
+            None
+        };
+        let lfs_available = if git_available {
+            self.lfs_is_available().await
+        } else {
+            false
+        };
+        let version_ref = git_version.as_deref();
+
+        let mut features: Vec<GitSupportFeature> = Vec::new();
+        let mut push_feature =
+            |key: &str,
+             min_version: Option<&str>,
+             requires_repo: bool,
+             command_keys: &[&str],
+             manual_command_ok: Option<bool>| {
+                let command_ok = if let Some(value) = manual_command_ok {
+                    Some(value)
+                } else {
+                    commands.as_ref().map(|set| {
+                        command_keys.is_empty()
+                            || command_keys.iter().all(|command| set.contains(*command))
+                    })
+                };
+                let version_ok = min_version.and_then(|min| version_at_least(version_ref, min));
+                features.push(build_support_feature(
+                    key,
+                    min_version,
+                    requires_repo,
+                    git_available,
+                    repo_ready,
+                    version_ok,
+                    command_ok,
+                ));
+            };
+
+        push_feature("rebaseSquash", Some("2.22.0"), true, &["rebase"], None);
+        push_feature(
+            "interactiveRebase",
+            Some("2.22.0"),
+            true,
+            &["rebase"],
+            None,
+        );
+        push_feature("bisect", Some("2.0.0"), true, &["bisect"], None);
+        push_feature(
+            "sparseCheckout",
+            Some("2.25.0"),
+            true,
+            &["sparse-checkout"],
+            None,
+        );
+        push_feature(
+            "signatureVerify",
+            Some("2.0.0"),
+            true,
+            &["verify-commit", "verify-tag"],
+            None,
+        );
+        push_feature("archive", Some("2.0.0"), true, &["archive"], None);
+        push_feature(
+            "patch",
+            Some("2.0.0"),
+            true,
+            &["format-patch", "apply", "am"],
+            None,
+        );
+        push_feature("lfs", Some("2.13.0"), false, &[], Some(lfs_available));
+
+        Ok(GitSupportSnapshot {
+            git_available,
+            git_version,
+            executable_path,
+            repo_ready,
+            features,
+        })
     }
 
     /// Detect which system package manager is available for installing git
@@ -4166,6 +4396,72 @@ mod tests {
     #[test]
     fn test_parse_version_empty() {
         assert_eq!(parse_version(""), None);
+    }
+
+    #[test]
+    fn test_version_at_least_comparison() {
+        assert_eq!(version_at_least(Some("2.47.1"), "2.25.0"), Some(true));
+        assert_eq!(version_at_least(Some("2.10.0"), "2.25.0"), Some(false));
+        assert_eq!(version_at_least(None, "2.25.0"), None);
+    }
+
+    #[test]
+    fn test_parse_help_commands_extracts_builtin_names() {
+        let output = "\
+Main Porcelain Commands\n\
+   add                bisect             branch\n\
+   checkout           cherry-pick        sparse-checkout\n\
+";
+        let commands = parse_help_commands(output);
+        assert!(commands.contains("add"));
+        assert!(commands.contains("bisect"));
+        assert!(commands.contains("sparse-checkout"));
+    }
+
+    #[test]
+    fn test_build_support_feature_blocks_when_repo_required_and_missing() {
+        let feature = build_support_feature(
+            "interactiveRebase",
+            Some("2.22.0"),
+            true,
+            true,
+            false,
+            Some(true),
+            Some(true),
+        );
+        assert_eq!(feature.status, "unsupported");
+        assert!(!feature.supported);
+        assert_eq!(
+            feature.reason,
+            Some("Select a repository to enable this feature.".to_string())
+        );
+    }
+
+    #[test]
+    fn test_build_support_feature_blocks_on_missing_command() {
+        let feature = build_support_feature(
+            "sparseCheckout",
+            Some("2.25.0"),
+            true,
+            true,
+            true,
+            Some(true),
+            Some(false),
+        );
+        assert_eq!(feature.status, "unsupported");
+        assert!(!feature.supported);
+        assert!(feature
+            .reason
+            .unwrap_or_default()
+            .contains("Required Git command"));
+    }
+
+    #[test]
+    fn test_build_support_feature_unknown_when_probe_missing() {
+        let feature =
+            build_support_feature("patch", Some("2.0.0"), true, true, true, Some(true), None);
+        assert_eq!(feature.status, "unknown");
+        assert!(!feature.supported);
     }
 
     #[test]

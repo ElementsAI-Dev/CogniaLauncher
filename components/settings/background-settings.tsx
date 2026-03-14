@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { SwitchSettingItem, SliderSettingItem, SelectSettingItem } from "./setting-item";
-import { AlertCircle, ImagePlus, Trash2 } from "lucide-react";
+import { AlertCircle, ImagePlus, RotateCcw, Trash2 } from "lucide-react";
 import { useBackgroundImage } from "@/hooks/use-background-image";
 import type { BackgroundFit } from "@/lib/stores/appearance";
 
@@ -24,6 +24,13 @@ export function BackgroundSettings({ t }: BackgroundSettingsProps) {
     setBackgroundBlur,
     backgroundFit,
     setBackgroundFit,
+    backgroundScale,
+    setBackgroundScale,
+    backgroundPositionX,
+    setBackgroundPositionX,
+    backgroundPositionY,
+    setBackgroundPositionY,
+    resetBackgroundTuning,
   } = useAppearanceStore();
 
   const {
@@ -32,10 +39,14 @@ export function BackgroundSettings({ t }: BackgroundSettingsProps) {
     fileInputRef,
     handleSelectImage,
     handleFileInputChange,
+    handleDragOver,
+    handleDrop,
+    handlePaste,
     handleClear,
   } = useBackgroundImage(t);
 
   const paramsDisabled = !backgroundEnabled || !hasImage;
+  const scaleDisabled = paramsDisabled || backgroundFit === "tile";
 
   return (
     <div className="flex flex-col gap-4">
@@ -65,7 +76,15 @@ export function BackgroundSettings({ t }: BackgroundSettingsProps) {
         </Alert>
       ) : null}
 
-      <div className="flex items-center gap-3">
+      <div
+        className="flex items-center gap-3 rounded-md border border-dashed border-border p-3"
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+        onPaste={handlePaste}
+        tabIndex={0}
+        role="group"
+        aria-label={t("settings.backgroundDropPasteHint")}
+      >
         <input
           ref={fileInputRef}
           type="file"
@@ -107,8 +126,20 @@ export function BackgroundSettings({ t }: BackgroundSettingsProps) {
               {t("settings.backgroundClear")}
             </Button>
           )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={resetBackgroundTuning}
+            disabled={!hasImage && !backgroundEnabled}
+          >
+            <RotateCcw className="h-4 w-4 mr-2" />
+            {t("settings.backgroundResetTuning")}
+          </Button>
         </div>
       </div>
+      <p className="text-xs text-muted-foreground">
+        {t("settings.backgroundDropPasteHint")}
+      </p>
 
       <Separator />
 
@@ -153,6 +184,45 @@ export function BackgroundSettings({ t }: BackgroundSettingsProps) {
         placeholder={t("settings.backgroundFit")}
         disabled={paramsDisabled}
         triggerClassName="w-40"
+      />
+
+      <SliderSettingItem
+        id="background-scale"
+        label={t("settings.backgroundScale")}
+        description={t("settings.backgroundScaleDesc")}
+        value={backgroundScale}
+        onValueChange={setBackgroundScale}
+        min={50}
+        max={200}
+        step={5}
+        disabled={scaleDisabled}
+        unit="%"
+      />
+
+      <SliderSettingItem
+        id="background-position-x"
+        label={t("settings.backgroundPositionX")}
+        description={t("settings.backgroundPositionXDesc")}
+        value={backgroundPositionX}
+        onValueChange={setBackgroundPositionX}
+        min={0}
+        max={100}
+        step={1}
+        disabled={paramsDisabled}
+        unit="%"
+      />
+
+      <SliderSettingItem
+        id="background-position-y"
+        label={t("settings.backgroundPositionY")}
+        description={t("settings.backgroundPositionYDesc")}
+        value={backgroundPositionY}
+        onValueChange={setBackgroundPositionY}
+        min={0}
+        max={100}
+        step={1}
+        disabled={paramsDisabled}
+        unit="%"
       />
     </div>
   );

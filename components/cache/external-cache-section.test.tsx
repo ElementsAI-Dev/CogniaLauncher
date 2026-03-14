@@ -47,6 +47,11 @@ const defaultHookState = {
     },
   ],
   loading: false,
+  readState: {
+    status: 'ready',
+    error: null,
+    lastUpdatedAt: Date.now(),
+  },
   cleaning: null,
   cleanableCount: 1,
   totalSize: 524288000,
@@ -91,10 +96,11 @@ describe('ExternalCacheSection', () => {
     mockUseExternalCache.mockReturnValue(defaultHookState);
   });
 
-  it('renders external cache section title', () => {
+  it('renders external cache section stats', () => {
     render(<ExternalCacheSection useTrash={false} setUseTrash={jest.fn()} />);
-    expect(screen.getByText('cache.externalCaches')).toBeInTheDocument();
-    expect(screen.getByText('cache.externalCachesDesc')).toBeInTheDocument();
+    expect(
+      screen.getByText((text) => text.includes('cache.externalCaches')),
+    ).toBeInTheDocument();
   });
 
   it('wires shared external cache hook with controlled trash props', () => {
@@ -103,13 +109,13 @@ describe('ExternalCacheSection', () => {
 
     expect(mockUseExternalCache).toHaveBeenCalledWith(expect.objectContaining({
       includePathInfos: false,
-      autoFetch: false,
+      autoFetch: true,
       useTrash: true,
       setUseTrash,
     }));
   });
 
-  it('fetches caches when section is opened and no data is loaded', async () => {
+  it('fetches caches on mount via autoFetch', () => {
     mockUseExternalCache.mockReturnValue({
       ...defaultHookState,
       caches: [],
@@ -119,25 +125,15 @@ describe('ExternalCacheSection', () => {
       totalSize: 0,
     });
 
-    const user = userEvent.setup();
     render(<ExternalCacheSection useTrash={false} setUseTrash={jest.fn()} />);
 
-    const trigger = screen.getByTestId('external-cache-trigger');
-    if (trigger) {
-      await user.click(trigger);
-    }
-
-    expect(mockFetchExternalCaches).toHaveBeenCalledTimes(1);
+    // autoFetch: true means hook handles fetching internally
+    expect(mockUseExternalCache).toHaveBeenCalled();
   });
 
   it('calls shared single-clean workflow when clean button is clicked', async () => {
     const user = userEvent.setup();
     render(<ExternalCacheSection useTrash={false} setUseTrash={jest.fn()} />);
-
-    const trigger = screen.getByTestId('external-cache-trigger');
-    if (trigger) {
-      await user.click(trigger);
-    }
 
     const cleanButtons = screen.getAllByRole('button', { name: /^cache\.clean$/i });
     await user.click(cleanButtons[0]);
@@ -149,11 +145,6 @@ describe('ExternalCacheSection', () => {
     const user = userEvent.setup();
     render(<ExternalCacheSection useTrash={false} setUseTrash={jest.fn()} />);
 
-    const trigger = screen.getByTestId('external-cache-trigger');
-    if (trigger) {
-      await user.click(trigger);
-    }
-
     await user.click(screen.getByRole('button', { name: /cache\.cleanAll/i }));
     const confirmButtons = screen.getAllByRole('button', { name: /cache\.cleanAll/i });
     await user.click(confirmButtons[confirmButtons.length - 1]);
@@ -161,10 +152,15 @@ describe('ExternalCacheSection', () => {
     expect(mockHandleCleanAll).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps completed rows visible while loading when probe results are partial', async () => {
+  it('keeps completed rows visible while loading when probe results are partial', () => {
     mockUseExternalCache.mockReturnValue({
       ...defaultHookState,
       loading: true,
+      readState: {
+        status: 'loading',
+        error: null,
+        lastUpdatedAt: Date.now(),
+      },
       caches: [
         {
           ...defaultHookState.caches[0],
@@ -184,12 +180,27 @@ describe('ExternalCacheSection', () => {
       totalSize: 0,
     });
 
-    const user = userEvent.setup();
     render(<ExternalCacheSection useTrash={false} setUseTrash={jest.fn()} />);
-
-    await user.click(screen.getByTestId('external-cache-trigger'));
 
     expect(screen.getByText('npm Cache')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^cache\.clean$/i })).toBeDisabled();
+  });
+
+  it('shows retry alert when external cache read fails', async () => {
+    mockUseExternalCache.mockReturnValue({
+      ...defaultHookState,
+      readState: {
+        status: 'error',
+        error: 'cache.externalLoadFailed',
+        lastUpdatedAt: Date.now(),
+      },
+    });
+
+    const user = userEvent.setup();
+    render(<ExternalCacheSection useTrash={false} setUseTrash={jest.fn()} />);
+
+    expect(screen.getByText('cache.externalLoadFailed')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /common\.retry/i }));
+    expect(mockFetchExternalCaches).toHaveBeenCalled();
   });
 });

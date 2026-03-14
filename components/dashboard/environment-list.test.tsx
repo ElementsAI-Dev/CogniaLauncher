@@ -27,6 +27,10 @@ jest.mock("@/components/providers/locale-provider", () => ({
           "Currently available environment managers",
         "dashboard.noEnvironments": "No environments detected",
         "dashboard.packageList.viewAll": "View All",
+        "dashboard.quickActions.addEnvironment": "Add Environment",
+        "dashboard.widgets.sectionLoading": "Loading data for this widget",
+        "dashboard.widgets.sectionNeedsAttention": "This widget needs attention",
+        "dashboard.widgets.retry": "Retry",
         "environments.details.versions": "versions",
         "common.none": "None",
       };
@@ -172,5 +176,19 @@ describe("EnvironmentList", () => {
     fireEvent.click(viewAllButton);
 
     expect(mockPush).toHaveBeenCalledWith("/environments");
+  });
+
+  it("shows local loading state when data is pending", () => {
+    render(<EnvironmentList environments={[]} isLoading={true} />);
+
+    expect(screen.getByText("Loading data for this widget")).toBeInTheDocument();
+  });
+
+  it("shows recovery action when the widget has an error", () => {
+    const onRecover = jest.fn();
+    render(<EnvironmentList environments={[]} error="Environment load failed" onRecover={onRecover} />);
+
+    fireEvent.click(screen.getByText("Retry"));
+    expect(onRecover).toHaveBeenCalledTimes(1);
   });
 });

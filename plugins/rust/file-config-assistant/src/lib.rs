@@ -6,9 +6,6 @@ use serde::{Deserialize, Serialize};
 #[cfg(test)]
 use std::collections::HashMap;
 
-#[cfg(test)]
-type FnResult<T> = Result<T, String>;
-
 const PROFILE_DIR: &str = "profiles";
 const ACTIVE_PROFILE_KEY: &str = "active_profile_id";
 
@@ -35,6 +32,7 @@ struct AssistantSuccess {
     recommendations: Vec<String>,
 }
 
+#[cfg(not(test))]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct AssistantFailure {
@@ -48,6 +46,7 @@ struct AssistantFailure {
 struct PluginError {
     code: &'static str,
     message: String,
+    #[cfg_attr(test, allow(dead_code))]
     recommendations: Vec<String>,
 }
 

@@ -36,6 +36,7 @@ export function WslImportDialog({
   const [wslVersion, setWslVersion] = useState<string>('2');
   const [asVhd, setAsVhd] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
   const supportsVhd = capabilities?.exportFormat !== false;
 
   useEffect(() => {
@@ -43,6 +44,16 @@ export function WslImportDialog({
       setAsVhd(false);
     }
   }, [asVhd, supportsVhd]);
+
+  // Auto-detect format from file extension
+  useEffect(() => {
+    const ext = filePath.toLowerCase();
+    if (ext.endsWith('.vhdx')) {
+      setAsVhd(true);
+    } else if (ext.endsWith('.tar') || ext.endsWith('.tar.gz') || ext.endsWith('.tgz')) {
+      setAsVhd(false);
+    }
+  }, [filePath]);
 
   const handleBrowseFile = async () => {
     try {
@@ -77,6 +88,7 @@ export function WslImportDialog({
   };
 
   const handleImport = async () => {
+    setSubmitted(true);
     if (!name.trim() || !installLocation.trim() || !filePath.trim()) return;
     setImporting(true);
     try {
@@ -102,13 +114,14 @@ export function WslImportDialog({
     setFilePath('');
     setWslVersion('2');
     setAsVhd(false);
+    setSubmitted(false);
   };
 
   const isValid = name.trim() && installLocation.trim() && filePath.trim();
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[480px]">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Upload className="h-5 w-5" />
@@ -125,7 +138,11 @@ export function WslImportDialog({
               placeholder="MyDistro"
               value={name}
               onChange={(e) => setName(e.target.value)}
+              className={`h-9${submitted && !name.trim() ? ' border-destructive' : ''}`}
             />
+            {submitted && !name.trim() && (
+              <p className="text-destructive text-xs mt-1">{t('wsl.required')}</p>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -136,12 +153,15 @@ export function WslImportDialog({
                 placeholder="/path/to/distro.tar"
                 value={filePath}
                 onChange={(e) => setFilePath(e.target.value)}
-                className="flex-1"
+                className={`h-9 flex-1${submitted && !filePath.trim() ? ' border-destructive' : ''}`}
               />
               <Button variant="outline" size="sm" onClick={handleBrowseFile}>
                 {t('common.browse')}
               </Button>
             </div>
+            {submitted && !filePath.trim() && (
+              <p className="text-destructive text-xs mt-1">{t('wsl.required')}</p>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -152,12 +172,15 @@ export function WslImportDialog({
                 placeholder="C:\\WSL\\MyDistro"
                 value={installLocation}
                 onChange={(e) => setInstallLocation(e.target.value)}
-                className="flex-1"
+                className={`h-9 flex-1${submitted && !installLocation.trim() ? ' border-destructive' : ''}`}
               />
               <Button variant="outline" size="sm" onClick={handleBrowseLocation}>
                 {t('common.browse')}
               </Button>
             </div>
+            {submitted && !installLocation.trim() && (
+              <p className="text-destructive text-xs mt-1">{t('wsl.required')}</p>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">

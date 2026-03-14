@@ -10,7 +10,16 @@ function hello(): number {
 
     // Get platform info
     const platform = cognia.platform.info();
-    cognia.log.info(`Hello tool invoked on ${platform.os} ${platform.arch}`);
+    const uiContext = cognia.ui.getContext();
+    cognia.log.info({
+        message: `Hello tool invoked on ${platform.os} ${platform.arch}`,
+        target: 'plugin.hello',
+        fields: {
+            os: platform.os,
+            arch: platform.arch,
+        },
+        tags: ['example', 'hello'],
+    });
 
     // Determine user name from input or hostname
     const name = input.trim() || platform.hostname;
@@ -28,6 +37,7 @@ function hello(): number {
     Host.outputString(JSON.stringify({
         greeting,
         pluginId,
+        uiContext,
         platform: {
             os: platform.os,
             arch: platform.arch,
@@ -94,6 +104,7 @@ function env_dashboard(): number {
     const action = cognia.ui.parseAction(input);
     if (action && action.action === 'button_click' && action.buttonId === 'refresh') {
         cognia.log.info('Dashboard refresh requested');
+        cognia.ui.toast('Refreshing environment dashboard', { level: 'info' });
     }
 
     if (action && action.action === 'form_submit') {
@@ -212,4 +223,19 @@ function custom_view(): number {
     return 0;
 }
 
-module.exports = { hello, env_check, env_dashboard, custom_view };
+function cognia_on_log(): number {
+    const envelope = cognia.log.parseEnvelope<{ os?: string; arch?: string }>(
+        Host.inputString(),
+    );
+
+    Host.outputString(JSON.stringify({
+        observed: true,
+        sourceType: envelope?.sourceType ?? null,
+        level: envelope?.level ?? null,
+        sourcePluginId: envelope?.sourcePluginId ?? null,
+        sourceOs: envelope?.fields?.os ?? null,
+    }));
+    return 0;
+}
+
+module.exports = { hello, env_check, env_dashboard, custom_view, cognia_on_log };

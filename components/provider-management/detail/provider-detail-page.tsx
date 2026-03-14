@@ -38,6 +38,7 @@ export function ProviderDetailPageClient({ providerId }: ProviderDetailPageClien
   const {
     provider,
     isAvailable,
+    providerStatusInfo,
     loading,
     error,
     installedPackages,
@@ -61,6 +62,7 @@ export function ProviderDetailPageClient({ providerId }: ProviderDetailPageClien
     refreshAll,
     checkAvailability,
     toggleProvider,
+    setProviderPriority,
     fetchInstalledPackages,
     searchPackages,
     installPackage,
@@ -78,6 +80,7 @@ export function ProviderDetailPageClient({ providerId }: ProviderDetailPageClien
   const router = useRouter();
   const [isToggling, setIsToggling] = useState(false);
   const [isCheckingStatus, setIsCheckingStatus] = useState(false);
+  const [isSavingPriority, setIsSavingPriority] = useState(false);
 
   useEffect(() => {
     initialize();
@@ -124,6 +127,18 @@ export function ProviderDetailPageClient({ providerId }: ProviderDetailPageClien
     toast.success(t('providerDetail.refreshed'));
   }, [refreshAll, t]);
 
+  const handlePrioritySave = useCallback(async (priority: number) => {
+    setIsSavingPriority(true);
+    try {
+      await setProviderPriority(priority);
+      toast.success(t('providerDetail.prioritySaved'));
+    } catch {
+      toast.error(t('providerDetail.prioritySaveError'));
+    } finally {
+      setIsSavingPriority(false);
+    }
+  }, [setProviderPriority, t]);
+
   const handleViewPackageDetails = useCallback((name: string) => {
     router.push(`/packages/detail?name=${encodeURIComponent(name)}&provider=${encodeURIComponent(providerId)}`);
   }, [router, providerId]);
@@ -154,11 +169,14 @@ export function ProviderDetailPageClient({ providerId }: ProviderDetailPageClien
       <ProviderDetailHeader
         provider={provider}
         isAvailable={isAvailable}
+        statusInfo={providerStatusInfo}
         isToggling={isToggling}
         isCheckingStatus={isCheckingStatus}
+        isSavingPriority={isSavingPriority}
         onToggle={handleToggle}
         onCheckStatus={handleCheckStatus}
         onRefresh={handleRefresh}
+        onPrioritySave={handlePrioritySave}
         t={t}
       />
 
@@ -218,6 +236,7 @@ export function ProviderDetailPageClient({ providerId }: ProviderDetailPageClien
           <ProviderOverviewTab
             provider={provider}
             isAvailable={isAvailable}
+            providerStatusInfo={providerStatusInfo}
             healthResult={healthResult}
             environmentProviderInfo={environmentProviderInfo}
             installedCount={installedPackages.length}

@@ -174,6 +174,9 @@ function normalizePluginTools(
       normalizedDescription,
       descriptionZh: normalizeOptionalText(tool.descriptionZh),
       descriptionFallbackNeeded: normalizedDescription === null,
+      pluginPointId: normalizeOptionalText(tool.pluginPointId),
+      exclusionReason: normalizeOptionalText(tool.exclusionReason),
+      discoverable: tool.discoverable ?? true,
       deprecationWarnings: deprecations.length > 0 ? deprecations : undefined,
     };
   });
@@ -329,6 +332,7 @@ export function usePlugins() {
         const initialPlugins = installedPlugins.map((plugin) => {
           return {
             ...plugin,
+            pluginPoints: plugin.pluginPoints ?? [],
             ...buildPluginDescriptionState(plugin.description),
             ...buildPluginPreviewLoadingState(plugin.toolCount),
           };

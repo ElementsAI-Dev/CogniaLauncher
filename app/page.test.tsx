@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import DashboardPage from "./page";
 import { LocaleProvider } from "@/components/providers/locale-provider";
 
@@ -184,6 +184,19 @@ const mockMessages = {
         updateAvailable: "Update available",
         showMore: "Show {count} more",
       },
+      overview: {
+        readyTitle: "Homepage overview is ready",
+        readyDesc: "{ready}/{total} sections are up to date.",
+        loadingTitle: "{count} section(s) are still loading",
+        loadingDesc: "Ready widgets stay interactive while the remaining sections finish loading.",
+        attentionTitle: "{count} section(s) need attention",
+        attentionDesc: "You can keep using the homepage and refresh or open the affected surfaces.",
+        sections: {
+          environments: "Environments",
+          packages: "Packages",
+          system: "System",
+        },
+      },
       stats: {
         clickToView: "Click to view details",
       },
@@ -263,6 +276,16 @@ describe("Dashboard Page", () => {
     // Check for the stats grid
     const statsGrid = container.querySelector(".grid");
     expect(statsGrid).toBeInTheDocument();
+  });
+
+  it("renders workspace status summary", async () => {
+    renderWithProviders(<DashboardPage />);
+
+    const status = await screen.findByTestId("dashboard-workspace-status");
+    expect(within(status).getByText("Homepage overview is ready")).toBeInTheDocument();
+    expect(within(status).getAllByText("Environments").length).toBeGreaterThan(0);
+    expect(within(status).getAllByText("Packages").length).toBeGreaterThan(0);
+    expect(within(status).getByText("System")).toBeInTheDocument();
   });
 
   it("displays platform information", async () => {
@@ -448,13 +471,13 @@ describe("Dashboard Page", () => {
     const view = renderWithProviders(<DashboardPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Environment fetch failed")).toBeInTheDocument();
+      expect(screen.getAllByText("Environment fetch failed").length).toBeGreaterThan(0);
     });
 
     fireEvent.click(screen.getByLabelText(/close/i));
 
     await waitFor(() => {
-      expect(screen.queryByText("Environment fetch failed")).not.toBeInTheDocument();
+      expect(screen.getAllByText("Environment fetch failed")).toHaveLength(1);
     });
 
     mockEnvsError = null;
@@ -462,7 +485,7 @@ describe("Dashboard Page", () => {
     view.rerender(<DashboardPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Package fetch failed")).toBeInTheDocument();
+      expect(screen.getAllByText("Package fetch failed").length).toBeGreaterThan(0);
     });
   });
 });

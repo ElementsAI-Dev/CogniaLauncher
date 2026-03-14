@@ -127,6 +127,109 @@ export interface WslAssistanceSuggestion {
 }
 
 // ============================================================================
+// WSL batch workflow types
+// ============================================================================
+
+export type WslBatchWorkflowTargetMode = 'selected' | 'tag' | 'explicit';
+export type WslBatchWorkflowActionKind = 'lifecycle' | 'command' | 'health-check' | 'assistance';
+export type WslBatchWorkflowLifecycleOperation = 'launch' | 'terminate';
+export type WslBatchWorkflowTargetStatus = 'runnable' | 'blocked' | 'skipped' | 'missing';
+export type WslBatchWorkflowItemStatus = 'success' | 'failed' | 'skipped';
+
+export interface WslBatchWorkflowTarget {
+  mode: WslBatchWorkflowTargetMode;
+  tag?: string;
+  distroNames?: string[];
+}
+
+export interface WslBatchWorkflowLifecycleAction {
+  kind: 'lifecycle';
+  operation: WslBatchWorkflowLifecycleOperation;
+  label?: string;
+}
+
+export interface WslBatchWorkflowCommandAction {
+  kind: 'command';
+  command: string;
+  user?: string;
+  savedCommandId?: string;
+  label?: string;
+}
+
+export interface WslBatchWorkflowHealthCheckAction {
+  kind: 'health-check';
+  label?: string;
+}
+
+export interface WslBatchWorkflowAssistanceAction {
+  kind: 'assistance';
+  actionId: string;
+  label?: string;
+}
+
+export type WslBatchWorkflowAction =
+  | WslBatchWorkflowLifecycleAction
+  | WslBatchWorkflowCommandAction
+  | WslBatchWorkflowHealthCheckAction
+  | WslBatchWorkflowAssistanceAction;
+
+export interface WslBatchWorkflowPreset {
+  id: string;
+  name: string;
+  target: WslBatchWorkflowTarget;
+  action: WslBatchWorkflowAction;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WslBatchWorkflowResolvedTarget {
+  distroName: string;
+  status: WslBatchWorkflowTargetStatus;
+  reason?: string;
+}
+
+export interface WslBatchWorkflowTargetResolution {
+  resolvedNames: string[];
+  missingNames: string[];
+}
+
+export interface WslBatchWorkflowPreflight {
+  workflowName: string;
+  actionLabel: string;
+  risk: 'safe' | 'high';
+  longRunning: boolean;
+  requiresConfirmation: boolean;
+  refreshTargets: Array<'inventory' | 'runtime' | 'config' | 'backup' | 'network'>;
+  targets: WslBatchWorkflowResolvedTarget[];
+  runnableCount: number;
+  blockedCount: number;
+  skippedCount: number;
+  missingCount: number;
+}
+
+export interface WslBatchWorkflowItemResult {
+  distroName: string;
+  status: WslBatchWorkflowItemStatus;
+  detail?: string;
+  retryable: boolean;
+}
+
+export interface WslBatchWorkflowSummary {
+  id: string;
+  workflowName: string;
+  actionLabel: string;
+  startedAt: string;
+  completedAt: string;
+  total: number;
+  succeeded: number;
+  failed: number;
+  skipped: number;
+  refreshTargets: Array<'inventory' | 'runtime' | 'config' | 'backup' | 'network'>;
+  workflow: WslBatchWorkflowPreset;
+  results: WslBatchWorkflowItemResult[];
+}
+
+// ============================================================================
 // WSL completeness contract
 // ============================================================================
 
@@ -332,6 +435,40 @@ export interface WslChangeUserDialogProps {
   onOpenChange: (open: boolean) => void;
   onConfirm: (distro: string, username: string) => Promise<void>;
   listUsers: (distro: string) => Promise<WslUser[]>;
+  t: (key: string, params?: Record<string, string | number>) => string;
+}
+
+export interface WslBatchWorkflowCardProps {
+  draft: WslBatchWorkflowPreset;
+  editingPresetId: string | null;
+  presets: WslBatchWorkflowPreset[];
+  distros: WslDistroStatus[];
+  availableTags: string[];
+  selectedCount: number;
+  commandOptions: Array<{ id: string; name: string; command: string; user?: string }>;
+  assistanceActions: WslAssistanceActionDescriptor[];
+  onDraftChange: (draft: WslBatchWorkflowPreset) => void;
+  onSavePreset: () => void;
+  onRunDraft: () => void;
+  onEditPreset: (preset: WslBatchWorkflowPreset) => void;
+  onRunPreset: (preset: WslBatchWorkflowPreset) => void;
+  onDeletePreset: (id: string) => void;
+  t: (key: string, params?: Record<string, string | number>) => string;
+}
+
+export interface WslBatchWorkflowPreviewDialogProps {
+  open: boolean;
+  workflowName: string;
+  preview: WslBatchWorkflowPreflight | null;
+  running?: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => void;
+  t: (key: string, params?: Record<string, string | number>) => string;
+}
+
+export interface WslBatchWorkflowSummaryCardProps {
+  summary: WslBatchWorkflowSummary | null;
+  onRetry: () => void;
   t: (key: string, params?: Record<string, string | number>) => string;
 }
 

@@ -1,12 +1,31 @@
 import { renderHook, act } from '@testing-library/react';
 import { useGit } from './use-git';
 
+const mockSupportSnapshot = {
+  gitAvailable: true,
+  gitVersion: '2.47.1',
+  executablePath: '/usr/bin/git',
+  repoReady: true,
+  features: [
+    {
+      key: 'rebaseSquash',
+      status: 'supported',
+      supported: true,
+      reason: null,
+      nextSteps: [],
+      requiresRepo: true,
+      minVersion: '2.22.0',
+    },
+  ],
+};
+
 // Mock the entire tauri module
 jest.mock('@/lib/tauri', () => ({
   isTauri: () => true,
   gitIsAvailable: jest.fn().mockResolvedValue(true),
   gitGetVersion: jest.fn().mockResolvedValue('2.47.1'),
   gitGetExecutablePath: jest.fn().mockResolvedValue('/usr/bin/git'),
+  gitGetSupportSnapshot: jest.fn(),
   gitInstall: jest.fn().mockResolvedValue('Installed via brew'),
   gitUpdate: jest.fn().mockResolvedValue('Updated via brew'),
   gitGetConfig: jest.fn().mockResolvedValue([{ key: 'user.name', value: 'Test' }]),
@@ -110,6 +129,7 @@ describe('useGit', () => {
     tauri.gitGetConfigFilePath.mockResolvedValue('/home/user/.gitconfig');
     tauri.gitListAliases.mockResolvedValue([{ key: 'co', value: 'checkout' }]);
     tauri.gitSetConfigIfUnset.mockResolvedValue(true);
+    tauri.gitGetSupportSnapshot.mockResolvedValue(mockSupportSnapshot);
   });
 
   // ===== State initialization =====
@@ -259,6 +279,8 @@ describe('useGit', () => {
     expect(result.current.repoPath).toBe('/my/repo');
     expect(tauri.gitGetRepoInfo).toHaveBeenCalledWith('/my/repo');
     expect(tauri.gitGetStatus).toHaveBeenCalledWith('/my/repo');
+    expect(tauri.gitGetSupportSnapshot).toHaveBeenCalledWith('/my/repo');
+    expect(result.current.supportSnapshot).toEqual(mockSupportSnapshot);
   });
 
   // ===== refreshAll =====
@@ -270,6 +292,54 @@ describe('useGit', () => {
     expect(tauri.gitIsAvailable).toHaveBeenCalled();
     expect(tauri.gitGetVersion).toHaveBeenCalled();
     expect(tauri.gitGetConfig).toHaveBeenCalled();
+    expect(tauri.gitGetSupportSnapshot).toHaveBeenCalled();
+  });
+
+  it('refreshSupportSnapshot updates snapshot state and supportByFeature map', async () => {
+    const snapshot = {
+      ...mockSupportSnapshot,
+      features: [
+        ...mockSupportSnapshot.features,
+        {
+          key: 'patch',
+          status: 'unsupported',
+          supported: false,
+          reason: 'Required Git command is not available in this runtime.',
+          nextSteps: ['Install or upgrade Git distribution with full command support.'],
+          requiresRepo: true,
+          minVersion: '2.0.0',
+        },
+      ],
+    };
+    tauri.gitGetSupportSnapshot.mockResolvedValueOnce(snapshot);
+    const { result } = renderHook(() => useGit());
+
+    await act(async () => {
+      await result.current.refreshSupportSnapshot('/repo');
+    });
+
+    expect(tauri.gitGetSupportSnapshot).toHaveBeenCalledWith('/repo');
+    expect(result.current.supportSnapshot).toEqual(snapshot);
+    expect(result.current.supportByFeature.patch?.supported).toBe(false);
+  });
+
+  it('refreshByScopes aheadBehind updates deterministically and resets on errors', async () => {
+    const { result } = renderHook(() => useGit());
+    await act(async () => {
+      await result.current.setRepoPath('/repo');
+    });
+
+    tauri.gitGetAheadBehind.mockResolvedValueOnce({ ahead: 3, behind: 1 });
+    await act(async () => {
+      await result.current.refreshByScopes(['aheadBehind']);
+    });
+    expect(result.current.aheadBehind).toEqual({ ahead: 3, behind: 1 });
+
+    tauri.gitGetAheadBehind.mockRejectedValueOnce(new Error('upstream missing'));
+    await act(async () => {
+      await result.current.refreshByScopes(['aheadBehind']);
+    });
+    expect(result.current.aheadBehind).toEqual({ ahead: 0, behind: 0 });
   });
 
   // ===== Branch operations =====

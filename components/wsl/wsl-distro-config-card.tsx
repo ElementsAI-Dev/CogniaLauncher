@@ -15,8 +15,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Settings, Plus, Trash2, AlertCircle, RefreshCw } from 'lucide-react';
+import { Settings, Plus, Trash2, AlertCircle, RefreshCw, ChevronDown } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { QUICK_SETTINGS } from '@/lib/constants/wsl';
 import { toast } from 'sonner';
 import {
@@ -41,6 +53,8 @@ export function WslDistroConfigCard({
   const [customSection, setCustomSection] = useState('wsl2');
   const mutationInFlightRef = useRef(false);
   const customKeyInputRef = useRef<HTMLInputElement | null>(null);
+  const [quickSettingsOpen, setQuickSettingsOpen] = useState(true);
+  const [customEntriesOpen, setCustomEntriesOpen] = useState(true);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -212,86 +226,119 @@ export function WslDistroConfigCard({
         </Alert>
 
         {/* Quick Settings */}
-        <div className="space-y-3">
-          {QUICK_SETTINGS.map((setting) => {
-            const value = getValue(setting.section, setting.key, setting.defaultValue);
-            return (
-              <div key={`${setting.section}.${setting.key}`} className="flex items-center justify-between gap-4">
-                <div className="min-w-0 flex-1">
-                  <Label className="text-sm">{t(setting.labelKey)}</Label>
-                  <p className="text-xs text-muted-foreground">{t(setting.descKey)}</p>
+        <Collapsible open={quickSettingsOpen} onOpenChange={setQuickSettingsOpen}>
+          <CollapsibleTrigger asChild>
+            <button type="button" className="flex w-full items-center justify-between rounded-md px-1 py-1.5 text-sm font-medium hover:bg-muted/50 transition-colors">
+              {t('wsl.distroConfig.title')}
+              <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${quickSettingsOpen ? '' : '-rotate-90'}`} />
+            </button>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="space-y-3 pt-2">
+            {QUICK_SETTINGS.map((setting) => {
+              const value = getValue(setting.section, setting.key, setting.defaultValue);
+              return (
+                <div key={`${setting.section}.${setting.key}`} className="flex items-center justify-between gap-4">
+                  <div className="min-w-0 flex-1">
+                    <Label className="text-sm">{t(setting.labelKey)}</Label>
+                    <p className="text-xs text-muted-foreground">{t(setting.descKey)}</p>
+                  </div>
+                  {setting.type === 'boolean' ? (
+                    <Switch
+                      checked={value === 'true'}
+                      onCheckedChange={() => handleToggle(setting.section, setting.key, value)}
+                      disabled={saving}
+                    />
+                  ) : setting.type === 'select' && setting.options ? (
+                    <Select
+                      value={value || ''}
+                      onValueChange={(val) => handleSetText(setting.section, setting.key, val)}
+                      disabled={saving}
+                    >
+                      <SelectTrigger className="h-9 w-32 text-xs">
+                        <SelectValue placeholder={setting.defaultValue} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {setting.options.map((opt) => (
+                          <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Input
+                      className="h-9 w-40 text-xs"
+                      placeholder={setting.defaultValue || '...'}
+                      defaultValue={config?.[setting.section]?.[setting.key] ?? ''}
+                      disabled={saving}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          handleSetText(setting.section, setting.key, (e.target as HTMLInputElement).value);
+                        }
+                      }}
+                      onBlur={(e) => {
+                        const current = config?.[setting.section]?.[setting.key] ?? '';
+                        if (e.target.value !== current) {
+                          handleSetText(setting.section, setting.key, e.target.value);
+                        }
+                      }}
+                    />
+                  )}
                 </div>
-                {setting.type === 'boolean' ? (
-                  <Switch
-                    checked={value === 'true'}
-                    onCheckedChange={() => handleToggle(setting.section, setting.key, value)}
-                    disabled={saving}
-                  />
-                ) : setting.type === 'select' && setting.options ? (
-                  <Select
-                    value={value || ''}
-                    onValueChange={(val) => handleSetText(setting.section, setting.key, val)}
-                    disabled={saving}
-                  >
-                    <SelectTrigger className="h-7 w-32 text-xs">
-                      <SelectValue placeholder={setting.defaultValue} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {setting.options.map((opt) => (
-                        <SelectItem key={opt} value={opt}>{opt}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <Input
-                    className="h-7 w-40 text-xs"
-                    placeholder={setting.defaultValue || '...'}
-                    defaultValue={config?.[setting.section]?.[setting.key] ?? ''}
-                    disabled={saving}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        handleSetText(setting.section, setting.key, (e.target as HTMLInputElement).value);
-                      }
-                    }}
-                    onBlur={(e) => {
-                      const current = config?.[setting.section]?.[setting.key] ?? '';
-                      if (e.target.value !== current) {
-                        handleSetText(setting.section, setting.key, e.target.value);
-                      }
-                    }}
-                  />
-                )}
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </CollapsibleContent>
+        </Collapsible>
 
         {/* Custom entries */}
         {customEntries.length > 0 && (
-          <div className="space-y-2">
-            {customEntries.map(({ section, key, value }) => (
-              <div key={`${section}.${key}`} className="flex items-start gap-2 rounded-md border px-3 py-2 text-sm">
-                <span className="text-muted-foreground font-mono shrink-0">[{section}]</span>
-                <span className="font-mono shrink-0">{key}</span>
-                <span className="text-muted-foreground">=</span>
-                <span className="font-mono min-w-0 flex-1 break-all text-xs">{value}</span>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-6 w-6 shrink-0"
-                      onClick={() => handleRemove(section, key)}
-                      disabled={saving}
-                    >
-                      <Trash2 className="h-3 w-3 text-destructive" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>{t('common.delete')}</TooltipContent>
-                </Tooltip>
-              </div>
-            ))}
-          </div>
+          <Collapsible open={customEntriesOpen} onOpenChange={setCustomEntriesOpen}>
+            <CollapsibleTrigger asChild>
+              <button type="button" className="flex w-full items-center justify-between rounded-md px-1 py-1.5 text-sm font-medium hover:bg-muted/50 transition-colors">
+                {t('wsl.config.keyLabel')} ({customEntries.length})
+                <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${customEntriesOpen ? '' : '-rotate-90'}`} />
+              </button>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="space-y-2 pt-2">
+              {customEntries.map(({ section, key, value }) => (
+                <div key={`${section}.${key}`} className="flex items-start gap-2 rounded-md border px-3 py-2 text-sm">
+                  <span className="text-muted-foreground font-mono shrink-0">[{section}]</span>
+                  <span className="font-mono shrink-0">{key}</span>
+                  <span className="text-muted-foreground">=</span>
+                  <span className="font-mono min-w-0 flex-1 break-all text-xs">{value}</span>
+                  <AlertDialog>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 shrink-0"
+                            disabled={saving}
+                          >
+                            <Trash2 className="h-3 w-3 text-destructive" />
+                          </Button>
+                        </AlertDialogTrigger>
+                      </TooltipTrigger>
+                      <TooltipContent>{t('common.delete')}</TooltipContent>
+                    </Tooltip>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>{t('common.delete')}</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          [{section}] {key} = {value}
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+                        <AlertDialogAction onClick={() => handleRemove(section, key)}>
+                          {t('common.delete')}
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </div>
+              ))}
+            </CollapsibleContent>
+          </Collapsible>
         )}
 
         {/* Add custom setting */}
@@ -309,7 +356,7 @@ export function WslDistroConfigCard({
               }}
               onKeyDown={handleCustomInputEnter}
               placeholder="wsl2"
-              className="h-8 text-xs"
+              className={`h-9 text-xs ${addError ? 'border-destructive' : ''}`}
               disabled={saving}
             />
           </div>
@@ -324,7 +371,7 @@ export function WslDistroConfigCard({
               }}
               onKeyDown={handleCustomInputEnter}
               placeholder={t('wsl.config.keyPlaceholder')}
-              className="h-8 text-xs"
+              className={`h-9 text-xs ${addError ? 'border-destructive' : ''}`}
               disabled={saving}
             />
           </div>
@@ -338,14 +385,14 @@ export function WslDistroConfigCard({
               }}
               onKeyDown={handleCustomInputEnter}
               placeholder={t('wsl.config.valuePlaceholder')}
-              className="h-8 text-xs"
+              className={`h-9 text-xs ${addError ? 'border-destructive' : ''}`}
               disabled={saving}
             />
           </div>
           <Button
             variant="outline"
             size="sm"
-            className="h-8 w-full gap-1 sm:w-auto"
+            className="h-9 w-full gap-2 sm:w-auto"
             onClick={() => void handleAddCustom()}
             disabled={!customKey.trim() || !customValue.trim() || saving}
           >

@@ -25,6 +25,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { ToolbarCluster, ToolbarRow, denseToolbarControl } from "@/components/ui/toolbar";
 import {
   Accordion,
   AccordionContent,
@@ -225,27 +226,27 @@ export function ChangelogDialog({
           aria-label={t("about.changelog")}
           data-testid="changelog-controls"
         >
-            <div className="flex items-center gap-2">
+            <ToolbarRow density="dense">
               <Search className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
               <Input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder={t("about.changelogSearchPlaceholder")}
                 aria-label={t("about.changelogSearchPlaceholder")}
-                className="h-8"
+                className={denseToolbarControl.input}
               />
               {query ? (
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8"
+                  className={denseToolbarControl.iconButtonInset}
                   onClick={() => setQuery("")}
                   aria-label={t("about.changelogClearSearch")}
                 >
                   <X className="h-4 w-4" aria-hidden="true" />
                 </Button>
               ) : null}
-            </div>
+            </ToolbarRow>
 
             <div className="flex flex-col gap-2">
               {hasFilterControls ? (
@@ -254,33 +255,35 @@ export function ChangelogDialog({
                     <Filter className="h-3.5 w-3.5" aria-hidden="true" />
                     <span>{t("about.changelogFilterByType")}</span>
                   </div>
-                  <ToggleGroup
-                    type="single"
-                    value={effectiveTypeFilter}
-                    onValueChange={(value) => {
-                      setTypeFilter((value || FILTER_ALL) as ChangelogFilterValue);
-                    }}
-                    variant="outline"
-                    size="sm"
-                    spacing={1}
-                    className="flex w-full flex-wrap"
-                    aria-label={t("about.changelogFilterByType")}
-                  >
-                    <ToggleGroupItem value={FILTER_ALL}>
-                      {t("about.changelogAllTypes")}
-                    </ToggleGroupItem>
-                    {availableTypes.map((type) => (
-                      <ToggleGroupItem key={type} value={type}>
-                        {getTypeLabel(type, t)}
+                  <ToolbarCluster wrap className="w-full">
+                    <ToggleGroup
+                      type="single"
+                      value={effectiveTypeFilter}
+                      onValueChange={(value) => {
+                        setTypeFilter((value || FILTER_ALL) as ChangelogFilterValue);
+                      }}
+                      variant="outline"
+                      size="sm"
+                      spacing={1}
+                      className="flex w-full flex-wrap bg-transparent"
+                      aria-label={t("about.changelogFilterByType")}
+                    >
+                      <ToggleGroupItem value={FILTER_ALL}>
+                        {t("about.changelogAllTypes")}
                       </ToggleGroupItem>
-                    ))}
-                  </ToggleGroup>
+                      {availableTypes.map((type) => (
+                        <ToggleGroupItem key={type} value={type}>
+                          {getTypeLabel(type, t)}
+                        </ToggleGroupItem>
+                      ))}
+                    </ToggleGroup>
+                  </ToolbarCluster>
                 </div>
               ) : null}
 
-              <div className="flex flex-wrap items-center gap-2 justify-between">
+              <ToolbarRow density="dense" className="justify-between">
                 {hasSourceControls ? (
-                  <div className="flex items-center gap-2">
+                  <ToolbarCluster wrap>
                     <span className="text-xs text-muted-foreground">
                       {t("about.changelogFilterBySource")}
                     </span>
@@ -306,11 +309,11 @@ export function ChangelogDialog({
                         {t("about.changelogRemote")}
                       </ToggleGroupItem>
                     </ToggleGroup>
-                  </div>
+                  </ToolbarCluster>
                 ) : null}
 
                 {hasPrerelease ? (
-                  <div className="flex items-center gap-2">
+                  <ToolbarCluster compact>
                     <Switch
                       id="changelog-prerelease"
                       checked={showPrerelease}
@@ -320,7 +323,7 @@ export function ChangelogDialog({
                     <Label htmlFor="changelog-prerelease" className="text-xs text-muted-foreground">
                       {t("about.changelogShowPrerelease")}
                     </Label>
-                  </div>
+                  </ToolbarCluster>
                 ) : null}
 
                 {hasDisclosureControls ? (
@@ -336,7 +339,7 @@ export function ChangelogDialog({
                       : t("about.changelogExpandAll")}
                   </Button>
                 ) : null}
-              </div>
+              </ToolbarRow>
             </div>
         </div>
 

@@ -193,17 +193,28 @@ export function WslDistroFilesystem({ distroName, isRunning = true, onExec, t }:
         {error && (
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{error}</AlertDescription>
+            <AlertDescription>
+              {t('common.error')}
+              <code className="block mt-1 text-xs font-mono whitespace-pre-wrap">{error}</code>
+            </AlertDescription>
           </Alert>
         )}
 
         {/* Loading */}
-        {loading && (
-          <div className="space-y-2">
-            {[1, 2, 3, 4, 5].map((i) => (
-              <Skeleton key={i} className="h-8 w-full" />
-            ))}
-          </div>
+        {loading && entries.length === 0 && (
+          <Table>
+            <TableBody>
+              {Array.from({ length: 5 }, (_, i) => (
+                <TableRow key={i}>
+                  <TableCell><Skeleton className="h-4 w-32" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-16" /></TableCell>
+                  <TableCell className="text-right"><Skeleton className="h-4 w-12 ml-auto" /></TableCell>
+                  <TableCell className="hidden lg:table-cell"><Skeleton className="h-4 w-24" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-4" /></TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         )}
 
         {/* File list */}
@@ -237,9 +248,9 @@ export function WslDistroFilesystem({ distroName, isRunning = true, onExec, t }:
                 {currentPath !== '/' && (
                   <TableRow className="cursor-pointer" onClick={() => navigateTo('..')}>
                     <TableCell className="font-mono">
-                      <span className="flex items-center gap-2">
+                      <span className="flex items-center gap-2 italic text-muted-foreground">
                         <Folder className="h-4 w-4 text-blue-500 shrink-0" />
-                        ..
+                        .. <span className="text-[11px]">(parent)</span>
                       </span>
                     </TableCell>
                     <TableCell />
@@ -282,7 +293,7 @@ export function WslDistroFilesystem({ distroName, isRunning = true, onExec, t }:
                         )}
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline" className="text-[10px] font-mono">
+                        <Badge variant="outline" className="text-xs font-mono">
                           {entry.permissions}
                         </Badge>
                       </TableCell>
@@ -298,7 +309,7 @@ export function WslDistroFilesystem({ distroName, isRunning = true, onExec, t }:
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                              className="h-6 w-6 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
                               onClick={() => handleCopyPath(entry.name)}
                             >
                               <Copy className="h-3 w-3" />

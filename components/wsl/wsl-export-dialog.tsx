@@ -51,6 +51,7 @@ export function WslExportDialog({
   const [filePath, setFilePath] = useState('');
   const [format, setFormat] = useState<ExportFormat>('tar');
   const [exporting, setExporting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const supportsVhd = capabilities?.exportFormat !== false;
 
   useEffect(() => {
@@ -79,17 +80,25 @@ export function WslExportDialog({
     }
   };
 
+  const handlePathBlur = () => {
+    if (filePath.trim() && !filePath.match(/\.(tar|tar\.gz|tgz|vhdx)$/i)) {
+      const ext = format === 'vhd' ? '.vhdx' : '.tar';
+      setFilePath(filePath.trim() + ext);
+    }
+  };
+
   const handleExport = async () => {
     if (!filePath.trim()) return;
     setExporting(true);
+    setError(null);
     try {
       const normalizedPath = normalizeExportPath(filePath, format);
       await onExport(distroName, normalizedPath, format === 'vhd');
       onOpenChange(false);
       setFilePath('');
       setFormat('tar');
-    } catch {
-      // Error handled by parent
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
     } finally {
       setExporting(false);
     }
@@ -97,7 +106,7 @@ export function WslExportDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[440px]">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Download className="h-5 w-5" />
@@ -137,7 +146,8 @@ export function WslExportDialog({
                 placeholder={`C:\\Backup\\${distroName}.${ext}`}
                 value={filePath}
                 onChange={(e) => setFilePath(e.target.value)}
-                className="flex-1"
+                onBlur={handlePathBlur}
+                className="h-9 flex-1"
               />
               <Button variant="outline" size="sm" onClick={handleBrowse}>
                 {t('common.browse')}
@@ -145,6 +155,13 @@ export function WslExportDialog({
             </div>
           </div>
         </div>
+
+        {error && (
+          <div className="text-sm text-destructive">
+            {t('common.error')}:
+            <code className="text-xs bg-muted px-2 py-1 rounded block mt-1 whitespace-pre-wrap break-all">{error}</code>
+          </div>
+        )}
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
@@ -156,7 +173,7 @@ export function WslExportDialog({
             className="gap-2"
           >
             {exporting && <Loader2 className="h-4 w-4 animate-spin" />}
-            {t('wsl.export')}
+            {exporting ? t('common.exporting') ?? 'Exporting...' : t('wsl.export')}
           </Button>
         </DialogFooter>
       </DialogContent>

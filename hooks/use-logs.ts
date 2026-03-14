@@ -18,6 +18,8 @@ import type {
   LogCleanupPolicyInput,
   LogCleanupPreviewResult,
   LogCleanupResult,
+  LogQueryMeta,
+  LogQueryResult,
   LogOperationReasonCode,
   LogOperationStatus,
 } from '@/types/tauri';
@@ -176,6 +178,56 @@ function normalizeQueryLogFileOptions(options: QueryLogFileOptions): QueryLogFil
   };
 }
 
+function normalizeOptionalPositiveInt(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return null;
+  }
+  const normalized = Math.floor(value);
+  return normalized > 0 ? normalized : null;
+}
+
+function normalizeQueryMeta(result: Partial<LogQueryResult>): LogQueryMeta {
+  const totalCount = typeof result.totalCount === 'number' && Number.isFinite(result.totalCount)
+    ? Math.max(0, Math.floor(result.totalCount))
+    : 0;
+  const meta = result.meta;
+  const sourceLineCount = normalizeOptionalPositiveInt(meta?.sourceLineCount) ?? 0;
+  const scannedLines = normalizeOptionalPositiveInt(meta?.scannedLines) ?? sourceLineCount;
+
+  return {
+    scannedLines: Math.max(0, scannedLines),
+    sourceLineCount: Math.max(0, sourceLineCount),
+    matchedCount:
+      normalizeOptionalPositiveInt(meta?.matchedCount) ??
+      totalCount,
+    effectiveMaxScanLines: normalizeOptionalPositiveInt(meta?.effectiveMaxScanLines),
+    scanTruncated: Boolean(meta?.scanTruncated),
+    windowStartLine: normalizeOptionalPositiveInt(meta?.windowStartLine),
+    windowEndLine: normalizeOptionalPositiveInt(meta?.windowEndLine),
+    queryFingerprint:
+      typeof meta?.queryFingerprint === 'string' ? meta.queryFingerprint : '',
+  };
+}
+
+function normalizeQueryResult(result: Partial<LogQueryResult>): LogQueryResult {
+  const entries = Array.isArray(result.entries) ? result.entries : [];
+  const totalCount = typeof result.totalCount === 'number' && Number.isFinite(result.totalCount)
+    ? Math.max(0, Math.floor(result.totalCount))
+    : entries.length;
+  const hasMore = Boolean(result.hasMore);
+  const meta = normalizeQueryMeta({ ...result, totalCount });
+
+  return {
+    entries,
+    totalCount,
+    hasMore,
+    meta: {
+      ...meta,
+      matchedCount: Math.max(meta.matchedCount, totalCount),
+    },
+  };
+}
+
 /**
  * Hook for log management operations.
  * 
@@ -236,7 +288,10 @@ export function useLogs() {
 
     try {
       const result = await logQuery(normalizeQueryLogFileOptions(options));
-      return { ok: true, data: result } satisfies LogActionResult<typeof result>;
+      return {
+        ok: true,
+        data: normalizeQueryResult(result),
+      } satisfies LogActionResult<LogQueryResult>;
     } catch (error) {
       console.error('Failed to query log file:', error);
       return {

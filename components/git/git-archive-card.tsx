@@ -9,7 +9,7 @@ import { useLocale } from '@/components/providers/locale-provider';
 import { toast } from 'sonner';
 import type { GitArchiveCardProps } from '@/types/git';
 
-export function GitArchiveCard({ loading, onArchive }: GitArchiveCardProps) {
+export function GitArchiveCard({ loading, supportReason, onArchive }: GitArchiveCardProps) {
   const { t } = useLocale();
   const [format, setFormat] = useState('zip');
   const [outputPath, setOutputPath] = useState('');
@@ -17,7 +17,8 @@ export function GitArchiveCard({ loading, onArchive }: GitArchiveCardProps) {
   const [prefix, setPrefix] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const disabled = loading || busy;
+  const blocked = Boolean(supportReason);
+  const disabled = blocked || loading || busy;
 
   return (
     <Card>
@@ -28,6 +29,9 @@ export function GitArchiveCard({ loading, onArchive }: GitArchiveCardProps) {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-2">
+        {supportReason && (
+          <p className="text-xs text-muted-foreground">{supportReason}</p>
+        )}
         <div className="grid gap-2 sm:grid-cols-2">
           <Input
             value={format}

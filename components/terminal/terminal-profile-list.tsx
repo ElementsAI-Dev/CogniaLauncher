@@ -12,7 +12,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
-import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
@@ -31,10 +31,40 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Play, Pencil, Trash2, Star, Plus, Loader2, Copy, Download, Upload, MoreVertical, Terminal, LayoutTemplate, Bookmark, Search } from 'lucide-react';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Play, Pencil, Trash2, Star, Plus, Loader2, Copy, Download, Upload, MoreVertical, Terminal, LayoutTemplate, Bookmark, Search, Shield, Fish, Monitor, Atom, ChevronDown } from 'lucide-react';
 import type { LaunchResult, TerminalProfile } from '@/types/tauri';
 import { useLocale } from '@/components/providers/locale-provider';
 import { toast } from 'sonner';
+import { writeClipboard } from '@/lib/clipboard';
+
+function getShellIcon(shellType: string) {
+  const lower = shellType.toLowerCase();
+  if (lower.includes('powershell')) return <Shield className="h-4 w-4 text-blue-500" />;
+  if (lower.includes('fish')) return <Fish className="h-4 w-4 text-orange-500" />;
+  if (lower.includes('cmd')) return <Monitor className="h-4 w-4 text-gray-500" />;
+  if (lower.includes('nushell')) return <Atom className="h-4 w-4 text-purple-500" />;
+  if (lower.includes('zsh')) return <Terminal className="h-4 w-4 text-emerald-500" />;
+  return <Terminal className="h-4 w-4" />;
+}
+
+function getRelativeTime(dateStr: string): string {
+  const date = new Date(dateStr);
+  if (isNaN(date.getTime())) return '';
+  const now = Date.now();
+  const diffMs = now - date.getTime();
+  if (diffMs < 0) return '';
+  const seconds = Math.floor(diffMs / 1000);
+  if (seconds < 60) return 'just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} minute${minutes !== 1 ? 's' : ''} ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hour${hours !== 1 ? 's' : ''} ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days} day${days !== 1 ? 's' : ''} ago`;
+  const months = Math.floor(days / 30);
+  return `${months} month${months !== 1 ? 's' : ''} ago`;
+}
 
 type ImportStrategy = 'merge' | 'replace';
 
@@ -275,18 +305,54 @@ export function TerminalProfileList({
             </CardAction>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="space-y-1">
-              <p className="text-xs text-muted-foreground">stdout</p>
-              <pre className="max-h-40 overflow-auto rounded-md border bg-muted/30 p-2 text-xs whitespace-pre-wrap">
-                {lastLaunchResult.result.stdout || t('terminal.noOutput')}
-              </pre>
-            </div>
-            <div className="space-y-1">
-              <p className="text-xs text-muted-foreground">stderr</p>
-              <pre className="max-h-40 overflow-auto rounded-md border bg-muted/30 p-2 text-xs whitespace-pre-wrap">
-                {lastLaunchResult.result.stderr || t('terminal.noOutput')}
-              </pre>
-            </div>
+            <Collapsible defaultOpen>
+              <div className="flex items-center justify-between">
+                <CollapsibleTrigger className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
+                  <ChevronDown className="h-3 w-3 transition-transform [[data-state=closed]_&]:rotate-(-90)" />
+                  stdout
+                </CollapsibleTrigger>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  onClick={async () => {
+                    await writeClipboard(lastLaunchResult.result.stdout || '');
+                    toast.success(t('terminal.copied'));
+                  }}
+                >
+                  <Copy className="h-3 w-3" />
+                </Button>
+              </div>
+              <CollapsibleContent>
+                <pre className="max-h-40 overflow-auto rounded-md border bg-muted/30 p-2 text-xs whitespace-pre-wrap mt-1">
+                  {lastLaunchResult.result.stdout || t('terminal.noOutput')}
+                </pre>
+              </CollapsibleContent>
+            </Collapsible>
+            <Collapsible defaultOpen>
+              <div className="flex items-center justify-between">
+                <CollapsibleTrigger className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
+                  <ChevronDown className="h-3 w-3 transition-transform [[data-state=closed]_&]:rotate-(-90)" />
+                  stderr
+                </CollapsibleTrigger>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  onClick={async () => {
+                    await writeClipboard(lastLaunchResult.result.stderr || '');
+                    toast.success(t('terminal.copied'));
+                  }}
+                >
+                  <Copy className="h-3 w-3" />
+                </Button>
+              </div>
+              <CollapsibleContent>
+                <pre className="max-h-40 overflow-auto rounded-md border bg-muted/30 p-2 text-xs whitespace-pre-wrap mt-1">
+                  {lastLaunchResult.result.stderr || t('terminal.noOutput')}
+                </pre>
+              </CollapsibleContent>
+            </Collapsible>
           </CardContent>
         </Card>
       )}
@@ -385,6 +451,15 @@ export function TerminalProfileList({
             {t('terminal.createFirst')}
           </Button>
         </Empty>
+      ) : sortedProfiles.length === 0 && search.trim() ? (
+        <Empty className="border-dashed py-8">
+          <EmptyHeader>
+            <EmptyMedia variant="icon"><Search /></EmptyMedia>
+            <EmptyTitle className="text-sm font-normal text-muted-foreground">
+              {t('terminal.noSearchResults')}
+            </EmptyTitle>
+          </EmptyHeader>
+        </Empty>
       ) : (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           {sortedProfiles.map((profile) => {
@@ -397,7 +472,10 @@ export function TerminalProfileList({
                 )}
                 <CardHeader className="pb-2">
                   <div className="flex items-center justify-between">
-                    <CardTitle className="text-base">{profile.name}</CardTitle>
+                    <div className="flex items-center gap-2">
+                      {getShellIcon(profile.shellId)}
+                      <CardTitle className="text-base">{profile.name}</CardTitle>
+                    </div>
                     {profile.isDefault && (
                       <Badge variant="secondary" className="gap-1">
                         <Star className="h-3 w-3" />
@@ -409,9 +487,15 @@ export function TerminalProfileList({
                     {profile.shellId}
                     {profile.envType && ` + ${profile.envType}${profile.envVersion ? ` ${profile.envVersion}` : ''}`}
                   </CardDescription>
+                  {profile.cwd && (
+                    <p className="text-xs font-mono text-muted-foreground truncate" title={profile.cwd}>{profile.cwd}</p>
+                  )}
+                  {profile.updatedAt && getRelativeTime(profile.updatedAt) && (
+                    <p className="text-xs text-muted-foreground">{getRelativeTime(profile.updatedAt)}</p>
+                  )}
                 </CardHeader>
-                <CardContent>
-                  <div className="flex items-center gap-2">
+                <CardContent />
+                <CardFooter className="flex items-center gap-2 border-t pt-3">
                     <Button
                       size="sm"
                       variant="default"
@@ -470,8 +554,7 @@ export function TerminalProfileList({
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
-                  </div>
-                </CardContent>
+                </CardFooter>
               </Card>
             );
           })}

@@ -1,11 +1,18 @@
 'use client';
 
 import { useState, useCallback } from 'react';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Card, CardContent } from '@/components/ui/card';
-import { ToolActionRow, ToolValidationMessage } from '@/components/toolbox/tool-layout';
+import { Badge } from '@/components/ui/badge';
+import {
+  ToolActionRow,
+  ToolValidationMessage,
+  ToolSection,
+  ToolOptionGroup,
+} from '@/components/toolbox/tool-layout';
 import { useLocale } from '@/components/providers/locale-provider';
 import { useToolPreferences } from '@/hooks/use-tool-preferences';
 import { TOOLBOX_LIMITS } from '@/lib/constants/toolbox-limits';
@@ -22,6 +29,20 @@ const DEFAULT_PREFERENCES = {
   uppercaseHex: true,
   showPrefix: false,
 } as const;
+
+const QUICK_VALUES = [
+  { key: 'zero', value: '0' },
+  { key: 'maxI32', value: '2147483647' },
+  { key: 'maxI64', value: '9223372036854775807' },
+  { key: 'byteMask', value: '255' },
+] as const;
+
+function groupDigits(value: string, size: number): string {
+  const sign = value.startsWith('-') ? '-' : '';
+  const body = sign ? value.slice(1) : value;
+  const grouped = body.replace(new RegExp(`(.{${size}})`, 'g'), '$1 ').trim();
+  return `${sign}${grouped}`;
+}
 
 export default function NumberBaseConverter({ className }: ToolComponentProps) {
   const { t } = useLocale();
@@ -67,47 +88,102 @@ export default function NumberBaseConverter({ className }: ToolComponentProps) {
     }
   }, [preferences.uppercaseHex, t]);
 
+  const applyDecimal = useCallback((decimal: string) => {
+    handleChange(10, decimal);
+  }, [handleChange]);
+
+  const asciiPreview = (() => {
+    if (!values[10]) return null;
+    try {
+      const n = Number(values[10]);
+      if (!Number.isFinite(n) || n < 0 || n > 255) return null;
+      const ch = String.fromCharCode(n);
+      return /[\x20-\x7e]/.test(ch) ? ch : null;
+    } catch {
+      return null;
+    }
+  })();
+
+  const formattedBinary = values[2] ? groupDigits(values[2], 4) : '';
+  const formattedDecimal = values[10] ? groupDigits(values[10], 3) : '';
+  const formattedHex = values[16] ? groupDigits(values[16], 2) : '';
+
   return (
     <div className={className}>
       <div className="space-y-4">
-        <ToolActionRow
-          rightSlot={(
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                <Switch
-                  id="number-base-uppercase"
-                  checked={preferences.uppercaseHex}
-                  onCheckedChange={(checked) => setPreferences({ uppercaseHex: checked })}
-                />
-                <Label htmlFor="number-base-uppercase" className="text-xs">{t('toolbox.tools.numberBaseConverter.uppercaseHex')}</Label>
-              </div>
-              <div className="flex items-center gap-2">
-                <Switch
-                  id="number-base-prefix"
-                  checked={preferences.showPrefix}
-                  onCheckedChange={(checked) => setPreferences({ showPrefix: checked })}
-                />
-                <Label htmlFor="number-base-prefix" className="text-xs">{t('toolbox.tools.numberBaseConverter.showPrefix')}</Label>
-              </div>
+        <ToolSection title={t('toolbox.tools.numberBaseConverter.name')} description={t('toolbox.tools.numberBaseConverter.desc')}>
+          <ToolOptionGroup>
+            <div className="flex items-center gap-2">
+              <Switch
+                id="number-base-uppercase"
+                checked={preferences.uppercaseHex}
+                onCheckedChange={(checked) => setPreferences({ uppercaseHex: checked })}
+              />
+              <Label htmlFor="number-base-uppercase" className="text-xs">{t('toolbox.tools.numberBaseConverter.uppercaseHex')}</Label>
             </div>
-          )}
-        />
-        <Card>
-          <CardContent className="p-4 space-y-4">
-            {BASES.map(({ labelKey, base, prefix }) => (
-              <div key={base} className="space-y-1.5">
-                <Label htmlFor={`number-base-input-${base}`} className="text-sm">{t(labelKey)}</Label>
-                <Input
-                  id={`number-base-input-${base}`}
-                  value={preferences.showPrefix && values[base] ? `${prefix}${values[base]}` : values[base]}
-                  onChange={(e) => handleChange(base, e.target.value)}
-                  placeholder="0"
-                  className="font-mono"
-                />
-              </div>
+            <div className="flex items-center gap-2">
+              <Switch
+                id="number-base-prefix"
+                checked={preferences.showPrefix}
+                onCheckedChange={(checked) => setPreferences({ showPrefix: checked })}
+              />
+              <Label htmlFor="number-base-prefix" className="text-xs">{t('toolbox.tools.numberBaseConverter.showPrefix')}</Label>
+            </div>
+          </ToolOptionGroup>
+
+          <ToolActionRow className="mt-3">
+            {QUICK_VALUES.map((item) => (
+              <Button
+                key={item.key}
+                size="sm"
+                variant="outline"
+                onClick={() => applyDecimal(item.value)}
+              >
+                {t(`toolbox.tools.numberBaseConverter.quick.${item.key}`)}
+              </Button>
             ))}
-          </CardContent>
-        </Card>
+          </ToolActionRow>
+        </ToolSection>
+
+        <ToolSection title={t('toolbox.tools.numberBaseConverter.values')}>
+          <Card>
+            <CardContent className="p-4 space-y-4">
+              {BASES.map(({ labelKey, base, prefix }) => (
+                <div key={base} className="space-y-1.5">
+                  <Label htmlFor={`number-base-input-${base}`} className="text-sm">{t(labelKey)}</Label>
+                  <Input
+                    id={`number-base-input-${base}`}
+                    value={preferences.showPrefix && values[base] ? `${prefix}${values[base]}` : values[base]}
+                    onChange={(e) => handleChange(base, e.target.value)}
+                    placeholder="0"
+                    className="font-mono"
+                    maxLength={TOOLBOX_LIMITS.numberBaseChars}
+                  />
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        </ToolSection>
+
+        <ToolSection title={t('toolbox.tools.numberBaseConverter.visualization')}>
+          <div className="space-y-2 text-xs">
+            <div className="rounded border p-2 font-mono">
+              <p className="text-muted-foreground mb-1">Binary (grouped by nibble)</p>
+              <p className="break-all">{formattedBinary || '-'}</p>
+            </div>
+            <div className="rounded border p-2 font-mono">
+              <p className="text-muted-foreground mb-1">Decimal (grouped)</p>
+              <p className="break-all">{formattedDecimal || '-'}</p>
+            </div>
+            <div className="rounded border p-2 font-mono">
+              <p className="text-muted-foreground mb-1">Hex (grouped by byte)</p>
+              <p className="break-all">{formattedHex || '-'}</p>
+            </div>
+            {asciiPreview && (
+              <Badge variant="secondary" className="mt-1">ASCII: {asciiPreview}</Badge>
+            )}
+          </div>
+        </ToolSection>
         {error && <ToolValidationMessage message={error} />}
       </div>
     </div>

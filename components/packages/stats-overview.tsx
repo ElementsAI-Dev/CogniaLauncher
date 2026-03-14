@@ -19,6 +19,7 @@ import {
   ChevronUp,
 } from "lucide-react";
 import { useLocale } from "@/components/providers/locale-provider";
+import { isPackageSurfaceProvider } from "@/lib/constants/providers";
 import type { StatCardProps, StatsOverviewProps } from "@/types/packages";
 
 function StatCard({
@@ -73,7 +74,7 @@ export function StatsOverview({
   }, [installedPackages]);
 
   const enabledProviders = useMemo(
-    () => providers.filter((p) => p.enabled && !p.is_environment_provider),
+    () => providers.filter((p) => p.enabled && isPackageSurfaceProvider(p)),
     [providers],
   );
 

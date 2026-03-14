@@ -30,6 +30,8 @@ import type {
   GitStashEntry,
   GitStatusFile,
   GitSubmoduleInfo,
+  GitSupportFeature,
+  GitSupportSnapshot,
   GitTagInfo,
   GitWorktreeInfo,
 } from './tauri';
@@ -401,6 +403,7 @@ export interface GitSparseCheckoutCardProps {
   isSparseCheckout: boolean;
   sparsePatterns: string[];
   loading?: boolean;
+  supportReason?: string | null;
   onRefresh: () => Promise<void>;
   onInit: (cone?: boolean) => Promise<string>;
   onSet: (patterns: string[]) => Promise<string>;
@@ -416,18 +419,21 @@ export interface GitRemotePruneCardProps {
 
 export interface GitSignatureVerifyCardProps {
   loading?: boolean;
+  supportReason?: string | null;
   onVerifyCommit: (hash: string) => Promise<string>;
   onVerifyTag: (tag: string) => Promise<string>;
 }
 
 export interface GitInteractiveRebaseCardProps {
   loading?: boolean;
+  supportReason?: string | null;
   onPreview: (base: string) => Promise<GitRebaseTodoItem[]>;
   onStart: (base: string, todo: GitRebaseTodoItem[]) => Promise<string>;
 }
 
 export interface GitRebaseSquashCardProps {
   loading?: boolean;
+  supportReason?: string | null;
   onRebase: (onto: string, confirmRisk?: boolean) => Promise<string>;
   onSquash: (count: number, message: string, confirmRisk?: boolean) => Promise<string>;
 }
@@ -435,6 +441,7 @@ export interface GitRebaseSquashCardProps {
 export interface GitBisectCardProps {
   bisectState: GitBisectState;
   loading?: boolean;
+  supportReason?: string | null;
   onRefreshState: () => Promise<void>;
   onStart: (badRef: string, goodRef: string) => Promise<string>;
   onGood: () => Promise<string>;
@@ -446,11 +453,13 @@ export interface GitBisectCardProps {
 
 export interface GitArchiveCardProps {
   loading?: boolean;
+  supportReason?: string | null;
   onArchive: (format: string, outputPath: string, refName: string, prefix?: string) => Promise<string>;
 }
 
 export interface GitPatchCardProps {
   loading?: boolean;
+  supportReason?: string | null;
   onFormatPatch: (range: string, outputDir: string) => Promise<string[]>;
   onApplyPatch: (patchPath: string, checkOnly?: boolean) => Promise<string>;
   onApplyMailbox: (patchPath: string) => Promise<string>;
@@ -543,6 +552,15 @@ export type GitHistoryView =
   | 'reflog';
 
 export type GitHistoryState = Record<GitHistoryView, GitHistoryQueryState>;
+
+export type GitSupportFeatureState = GitSupportFeature;
+
+export type GitSupportFeatureMap = Record<string, GitSupportFeatureState>;
+
+export interface GitSupportState {
+  snapshot: GitSupportSnapshot | null;
+  byFeature: GitSupportFeatureMap;
+}
 
 export type GitRefreshScope =
   | 'repoInfo'

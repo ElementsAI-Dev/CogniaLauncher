@@ -62,6 +62,9 @@ describe('syncAppearancePresetConfig', () => {
         backgroundOpacity: 35,
         backgroundBlur: 4,
         backgroundFit: 'contain',
+        backgroundScale: 120,
+        backgroundPositionX: 40,
+        backgroundPositionY: 65,
         windowEffect: 'mica',
       },
       updateConfigValue,
@@ -75,6 +78,9 @@ describe('syncAppearancePresetConfig', () => {
     expect(canonical.interfaceDensity).toBe('compact');
     expect(canonical.reducedMotion).toBe(true);
     expect(canonical.windowEffect).toBe('mica');
+    expect(canonical.backgroundScale).toBe(120);
+    expect(canonical.backgroundPositionX).toBe(40);
+    expect(canonical.backgroundPositionY).toBe(65);
     expect(updateConfigValue).toHaveBeenCalledWith('appearance.theme', 'dark');
     expect(updateConfigValue).toHaveBeenCalledWith('appearance.accent_color', 'rose');
     expect(updateConfigValue).toHaveBeenCalledWith('appearance.chart_color_theme', 'ocean');
@@ -108,6 +114,9 @@ describe('syncAppearancePresetConfig', () => {
         backgroundOpacity: 140 as never,
         backgroundBlur: -3 as never,
         backgroundFit: 'stretch' as never,
+        backgroundScale: 300 as never,
+        backgroundPositionX: -10 as never,
+        backgroundPositionY: 300 as never,
         windowEffect: 'glass' as never,
       },
       updateConfigValue,
@@ -125,5 +134,8 @@ describe('syncAppearancePresetConfig', () => {
     expect(canonical.backgroundOpacity).toBe(100);
     expect(canonical.backgroundBlur).toBe(0);
     expect(canonical.backgroundFit).toBe('cover');
+    expect(canonical.backgroundScale).toBe(200);
+    expect(canonical.backgroundPositionX).toBe(0);
+    expect(canonical.backgroundPositionY).toBe(100);
   });
 });

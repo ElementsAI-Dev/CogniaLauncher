@@ -18,7 +18,7 @@ CogniaLauncher 后端提供 289 条 Tauri 命令，跨 21 个模块，通过 IPC
 - `list`：`--provider`、`--outdated`
 - `env`：`list`、`install`、`use`、`detect`、`remove`、`resolve`
 - `config`：`get`、`set`、`list`、`reset`、`export`、`import`
-- `envvar`：`list`、`get`、`set`、`remove`、`list-persistent`、`list-persistent-typed`、`set-persistent`、`remove-persistent`、`get-path`、`add-path`、`remove-path`、`reorder-path`、`deduplicate-path`、`detect-conflicts`、`list-shell-profiles`、`read-shell-profile`、`expand-path`、`export`、`import`
+- `envvar`：`list`、`get`、`set`、`remove`、`list-persistent`、`list-persistent-typed`、`set-persistent`、`remove-persistent`、`get-path`、`add-path`、`remove-path`、`reorder-path`、`deduplicate-path`、`detect-conflicts`、`list-shell-profiles`、`read-shell-profile`、`expand-path`、`export`、`import`、`preview-import`、`apply-import`、`preview-path-repair`、`apply-path-repair`、`resolve-conflict`、`shell-guidance`
 
 ---
 

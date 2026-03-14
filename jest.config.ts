@@ -249,6 +249,7 @@ const config: Config = {
     "/out/",
     "/src-tauri/",
     "/e2e/",
+    "/plugin-sdk-ts/tests/",
   ],
 
   // The regexp pattern or array of patterns that Jest uses to detect test files

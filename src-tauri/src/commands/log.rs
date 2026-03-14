@@ -180,6 +180,20 @@ pub struct LogQueryResult {
     pub entries: Vec<LogEntry>,
     pub total_count: usize,
     pub has_more: bool,
+    pub meta: LogQueryMeta,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LogQueryMeta {
+    pub scanned_lines: usize,
+    pub source_line_count: usize,
+    pub matched_count: usize,
+    pub effective_max_scan_lines: Option<usize>,
+    pub scan_truncated: bool,
+    pub window_start_line: Option<usize>,
+    pub window_end_line: Option<usize>,
+    pub query_fingerprint: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -653,10 +667,7 @@ fn push_tail_line(
 async fn collect_tail_lines_with_numbers(
     path: &std::path::Path,
     max_scan_lines: usize,
-) -> Result<Vec<(usize, String)>, String> {
-    if max_scan_lines == 0 {
-        return Ok(Vec::new());
-    }
+) -> Result<TailLinesWithCount, String> {
 
     let file = fs::File::open(path)
         .await
@@ -676,7 +687,83 @@ async fn collect_tail_lines_with_numbers(
         push_tail_line(&mut tail, max_scan_lines, line_number, line);
     }
 
-    Ok(tail.into_iter().collect())
+    Ok(TailLinesWithCount {
+        total_lines: line_number,
+        tail_lines: tail.into_iter().collect(),
+    })
+}
+
+#[derive(Debug, Clone)]
+struct TailLinesWithCount {
+    total_lines: usize,
+    tail_lines: Vec<(usize, String)>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct QueryMetaContext {
+    scanned_lines: usize,
+    source_line_count: usize,
+    effective_max_scan_lines: Option<usize>,
+    scan_truncated: bool,
+}
+
+fn effective_meta_scan_limit(filtered: bool, options: &LogQueryOptions) -> Option<usize> {
+    if filtered {
+        options.max_scan_lines
+    } else {
+        None
+    }
+}
+
+fn build_query_fingerprint(
+    options: &LogQueryOptions,
+    filtered: bool,
+    offset: usize,
+    limit: usize,
+) -> String {
+    let levels = options
+        .level_filter
+        .as_ref()
+        .map(|items| items.join(","))
+        .unwrap_or_default();
+    let target = options.target.as_deref().unwrap_or_default();
+    let search = options.search.as_deref().unwrap_or_default();
+    let start_time = options
+        .start_time
+        .map(|value| value.to_string())
+        .unwrap_or_default();
+    let end_time = options
+        .end_time
+        .map(|value| value.to_string())
+        .unwrap_or_default();
+    let file_name = options.file_name.as_deref().unwrap_or_default();
+    let max_scan_lines = options
+        .max_scan_lines
+        .map(|value| value.to_string())
+        .unwrap_or_default();
+
+    format!(
+        "file={file_name}|levels={levels}|target={target}|search={search}|regex={}|start={start_time}|end={end_time}|offset={offset}|limit={limit}|maxScan={max_scan_lines}|filtered={filtered}",
+        options.use_regex.unwrap_or(false),
+    )
+}
+
+fn build_query_meta(
+    entries: &[LogEntry],
+    total_count: usize,
+    context: QueryMetaContext,
+    query_fingerprint: String,
+) -> LogQueryMeta {
+    LogQueryMeta {
+        scanned_lines: context.scanned_lines,
+        source_line_count: context.source_line_count,
+        matched_count: total_count,
+        effective_max_scan_lines: context.effective_max_scan_lines,
+        scan_truncated: context.scan_truncated,
+        window_start_line: entries.first().map(|entry| entry.line_number),
+        window_end_line: entries.last().map(|entry| entry.line_number),
+        query_fingerprint,
+    }
 }
 
 fn build_query_result_from_window(
@@ -684,35 +771,58 @@ fn build_query_result_from_window(
     total_count: usize,
     offset: usize,
     limit: usize,
+    context: QueryMetaContext,
+    query_fingerprint: String,
 ) -> LogQueryResult {
     // Query contract:
     // - `offset` is counted from the newest matching entry toward older entries.
     // - Each page is returned in chronological order (older -> newer) for stable rendering.
     // - `has_more` indicates whether there are older matching entries beyond this page.
-    if total_count <= offset {
-        return LogQueryResult {
-            entries: Vec::new(),
-            total_count,
-            has_more: false,
-        };
-    }
-
-    let window_len = window.len();
-    let end = window_len.saturating_sub(offset);
-    let start = end.saturating_sub(limit);
-    let entries = window
-        .iter()
-        .skip(start)
-        .take(end.saturating_sub(start))
-        .cloned()
-        .collect::<Vec<_>>();
+    let entries = if total_count <= offset {
+        Vec::new()
+    } else {
+        let window_len = window.len();
+        let end = window_len.saturating_sub(offset);
+        let start = end.saturating_sub(limit);
+        window
+            .iter()
+            .skip(start)
+            .take(end.saturating_sub(start))
+            .cloned()
+            .collect::<Vec<_>>()
+    };
     let has_more = total_count > offset.saturating_add(limit);
+    let meta = build_query_meta(&entries, total_count, context, query_fingerprint);
 
     LogQueryResult {
         entries,
         total_count,
         has_more,
+        meta,
     }
+}
+
+fn build_empty_query_result(
+    options: &LogQueryOptions,
+    filtered: bool,
+    offset: usize,
+    limit: usize,
+) -> LogQueryResult {
+    let window: VecDeque<LogEntry> = VecDeque::new();
+    let context = QueryMetaContext {
+        scanned_lines: 0,
+        source_line_count: 0,
+        effective_max_scan_lines: effective_meta_scan_limit(filtered, options),
+        scan_truncated: false,
+    };
+    build_query_result_from_window(
+        &window,
+        0,
+        offset,
+        limit,
+        context,
+        build_query_fingerprint(options, filtered, offset, limit),
+    )
 }
 
 fn query_from_cached_lines(
@@ -752,40 +862,69 @@ fn query_from_cached_lines(
         }
     }
 
-    build_query_result_from_window(&window, total_count, offset, limit)
+    let source_line_count = lines.len();
+    let scanned_lines = if filtered {
+        options
+            .max_scan_lines
+            .map(|max_scan| source_line_count.min(max_scan))
+            .unwrap_or(source_line_count)
+    } else {
+        source_line_count
+    };
+    let scan_truncated = filtered
+        && options
+            .max_scan_lines
+            .is_some_and(|max_scan| source_line_count > max_scan);
+
+    build_query_result_from_window(
+        &window,
+        total_count,
+        offset,
+        limit,
+        QueryMetaContext {
+            scanned_lines,
+            source_line_count,
+            effective_max_scan_lines: effective_meta_scan_limit(filtered, options),
+            scan_truncated,
+        },
+        build_query_fingerprint(options, filtered, offset, limit),
+    )
 }
 
 #[tauri::command]
 pub async fn log_query(app: AppHandle, options: LogQueryOptions) -> Result<LogQueryResult, String> {
-    let log_path = match resolve_log_path(&app, &options.file_name).await {
-        Ok(path) => path,
-        Err(_) => {
-            return Ok(LogQueryResult {
-                entries: Vec::new(),
-                total_count: 0,
-                has_more: false,
-            });
-        }
-    };
-
-    if !log_path.exists() {
-        return Ok(LogQueryResult {
-            entries: Vec::new(),
-            total_count: 0,
-            has_more: false,
-        });
-    }
-
     let mut effective_options = options.clone();
     effective_options.max_scan_lines = cap_max_scan_lines(options.max_scan_lines);
 
     let offset = effective_options.offset.unwrap_or(0);
     let limit = effective_options.limit.unwrap_or(100);
+    let filtered = has_active_filters(&effective_options);
+    let query_fingerprint = build_query_fingerprint(&effective_options, filtered, offset, limit);
+    let log_path = match resolve_log_path(&app, &effective_options.file_name).await {
+        Ok(path) => path,
+        Err(_) => {
+            return Ok(build_empty_query_result(
+                &effective_options,
+                filtered,
+                offset,
+                limit,
+            ));
+        }
+    };
+
+    if !log_path.exists() {
+        return Ok(build_empty_query_result(
+            &effective_options,
+            filtered,
+            offset,
+            limit,
+        ));
+    }
+
     let regex = build_search_regex(
         &effective_options.search,
         effective_options.use_regex.unwrap_or(false),
     );
-    let filtered = has_active_filters(&effective_options);
 
     if is_gzip_log(&log_path) {
         let lines = read_gzip_lines(&log_path).await?;
@@ -807,8 +946,11 @@ pub async fn log_query(app: AppHandle, options: LogQueryOptions) -> Result<LogQu
             let mut window: VecDeque<LogEntry> = VecDeque::with_capacity(need.saturating_add(1));
             let mut total_count = 0usize;
             let tail_lines = collect_tail_lines_with_numbers(&log_path, max_scan_lines).await?;
+            let scanned_lines = tail_lines.tail_lines.len();
+            let source_line_count = tail_lines.total_lines;
+            let scan_truncated = source_line_count > scanned_lines;
 
-            for (line_number, line) in tail_lines {
+            for (line_number, line) in tail_lines.tail_lines {
                 if let Some(entry) = parse_log_line(&line, line_number) {
                     if matches_filters(&entry, &effective_options, regex.as_ref()) {
                         total_count += 1;
@@ -822,6 +964,16 @@ pub async fn log_query(app: AppHandle, options: LogQueryOptions) -> Result<LogQu
                 total_count,
                 offset,
                 limit,
+                QueryMetaContext {
+                    scanned_lines,
+                    source_line_count,
+                    effective_max_scan_lines: effective_meta_scan_limit(
+                        filtered,
+                        &effective_options,
+                    ),
+                    scan_truncated,
+                },
+                query_fingerprint.clone(),
             ));
         }
 
@@ -849,11 +1001,19 @@ pub async fn log_query(app: AppHandle, options: LogQueryOptions) -> Result<LogQu
             }
         }
 
+        let source_line_count = line_number;
         Ok(build_query_result_from_window(
             &window,
             total_count,
             offset,
             limit,
+            QueryMetaContext {
+                scanned_lines: source_line_count,
+                source_line_count,
+                effective_max_scan_lines: effective_meta_scan_limit(filtered, &effective_options),
+                scan_truncated: false,
+            },
+            query_fingerprint.clone(),
         ))
     } else {
         // No filters: collect all parsed entries into a ring buffer of the last (offset + limit)
@@ -880,11 +1040,19 @@ pub async fn log_query(app: AppHandle, options: LogQueryOptions) -> Result<LogQu
             }
         }
 
+        let source_line_count = line_number;
         Ok(build_query_result_from_window(
             &ring,
             total_count,
             offset,
             limit,
+            QueryMetaContext {
+                scanned_lines: source_line_count,
+                source_line_count,
+                effective_max_scan_lines: effective_meta_scan_limit(filtered, &effective_options),
+                scan_truncated: false,
+            },
+            query_fingerprint,
         ))
     }
 }
@@ -1608,6 +1776,14 @@ mod tests {
         assert_eq!(result.total_count, 5);
         assert!(result.has_more);
         assert_eq!(messages, vec!["msg-8".to_string(), "msg-9".to_string()]);
+        assert_eq!(result.meta.scanned_lines, 5);
+        assert_eq!(result.meta.source_line_count, 10);
+        assert_eq!(result.meta.matched_count, 5);
+        assert_eq!(result.meta.effective_max_scan_lines, Some(5));
+        assert!(result.meta.scan_truncated);
+        assert_eq!(result.meta.window_start_line, Some(8));
+        assert_eq!(result.meta.window_end_line, Some(9));
+        assert!(!result.meta.query_fingerprint.is_empty());
     }
 
     #[test]
@@ -1664,6 +1840,15 @@ mod tests {
             .map(|entry| entry.line_number)
             .collect::<std::collections::HashSet<_>>();
         assert!(newest_set.is_disjoint(&older_set));
+        assert_eq!(newest_page.meta.scanned_lines, 12);
+        assert_eq!(newest_page.meta.source_line_count, 12);
+        assert_eq!(newest_page.meta.matched_count, 12);
+        assert_eq!(newest_page.meta.effective_max_scan_lines, None);
+        assert!(!newest_page.meta.scan_truncated);
+        assert_eq!(newest_page.meta.window_start_line, Some(10));
+        assert_eq!(newest_page.meta.window_end_line, Some(12));
+        assert_eq!(older_page.meta.window_start_line, Some(7));
+        assert_eq!(older_page.meta.window_end_line, Some(9));
     }
 
     #[test]
@@ -1697,6 +1882,86 @@ mod tests {
             collect_messages(&older_page.entries),
             vec!["tail-msg-17".to_string(), "tail-msg-18".to_string()]
         );
+        assert_eq!(newest_page.meta.scanned_lines, 6);
+        assert_eq!(newest_page.meta.source_line_count, 20);
+        assert_eq!(newest_page.meta.matched_count, 6);
+        assert_eq!(newest_page.meta.effective_max_scan_lines, Some(6));
+        assert!(newest_page.meta.scan_truncated);
+        assert_eq!(newest_page.meta.window_start_line, Some(19));
+        assert_eq!(newest_page.meta.window_end_line, Some(20));
+        assert_eq!(older_page.meta.window_start_line, Some(17));
+        assert_eq!(older_page.meta.window_end_line, Some(18));
+    }
+
+    #[test]
+    fn cached_and_tail_scan_paths_keep_consistent_pagination_metadata() {
+        let lines = (1..=24)
+            .map(|i| format!("[2026-03-04 08:00:{i:02}.000][INFO][app] parity-msg-{i}"))
+            .collect::<Vec<_>>();
+        let options = LogQueryOptions {
+            file_name: Some("parity.log".to_string()),
+            level_filter: Some(vec!["INFO".to_string()]),
+            target: Some("app".to_string()),
+            search: Some("parity-msg".to_string()),
+            use_regex: Some(false),
+            start_time: None,
+            end_time: None,
+            limit: Some(2),
+            offset: Some(2),
+            max_scan_lines: Some(8),
+        };
+        let regex = build_search_regex(&options.search, options.use_regex.unwrap_or(false));
+
+        let cached_result = query_from_cached_lines(&lines, &options, regex.as_ref(), true, 2, 2);
+
+        let max_scan_lines = options.max_scan_lines.expect("max_scan_lines");
+        let skip = lines.len().saturating_sub(max_scan_lines);
+        let tail_lines = lines
+            .iter()
+            .enumerate()
+            .skip(skip)
+            .map(|(idx, line)| (idx + 1, line.clone()))
+            .collect::<Vec<_>>();
+
+        let need = 2usize.saturating_add(2);
+        let mut window: VecDeque<LogEntry> = VecDeque::with_capacity(need.saturating_add(1));
+        let mut total_count = 0usize;
+        for (line_number, line) in tail_lines {
+            if let Some(entry) = parse_log_line(&line, line_number) {
+                if matches_filters(&entry, &options, regex.as_ref()) {
+                    total_count += 1;
+                    push_window_entry(&mut window, need, entry);
+                }
+            }
+        }
+
+        let source_line_count = lines.len();
+        let tail_scan_result = build_query_result_from_window(
+            &window,
+            total_count,
+            2,
+            2,
+            QueryMetaContext {
+                scanned_lines: max_scan_lines.min(source_line_count),
+                source_line_count,
+                effective_max_scan_lines: effective_meta_scan_limit(true, &options),
+                scan_truncated: source_line_count > max_scan_lines,
+            },
+            build_query_fingerprint(&options, true, 2, 2),
+        );
+
+        assert_eq!(
+            collect_messages(&cached_result.entries),
+            collect_messages(&tail_scan_result.entries)
+        );
+        assert_eq!(cached_result.meta.window_start_line, tail_scan_result.meta.window_start_line);
+        assert_eq!(cached_result.meta.window_end_line, tail_scan_result.meta.window_end_line);
+        assert_eq!(cached_result.meta.scanned_lines, tail_scan_result.meta.scanned_lines);
+        assert_eq!(
+            cached_result.meta.source_line_count,
+            tail_scan_result.meta.source_line_count
+        );
+        assert_eq!(cached_result.meta.scan_truncated, tail_scan_result.meta.scan_truncated);
     }
 
     #[test]

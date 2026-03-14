@@ -149,6 +149,9 @@ describe('useAppearanceStore', () => {
       expect(state.backgroundOpacity).toBe(20);
       expect(state.backgroundBlur).toBe(0);
       expect(state.backgroundFit).toBe('cover');
+      expect(state.backgroundScale).toBe(100);
+      expect(state.backgroundPositionX).toBe(50);
+      expect(state.backgroundPositionY).toBe(50);
     });
 
     it('updates backgroundEnabled', () => {
@@ -171,13 +174,31 @@ describe('useAppearanceStore', () => {
       expect(useAppearanceStore.getState().backgroundFit).toBe('tile');
     });
 
-    it('clamps out-of-range background opacity and blur values', () => {
+    it('updates backgroundScale', () => {
+      useAppearanceStore.getState().setBackgroundScale(130);
+      expect(useAppearanceStore.getState().backgroundScale).toBe(130);
+    });
+
+    it('updates background positions', () => {
+      useAppearanceStore.getState().setBackgroundPositionX(10);
+      useAppearanceStore.getState().setBackgroundPositionY(90);
+      expect(useAppearanceStore.getState().backgroundPositionX).toBe(10);
+      expect(useAppearanceStore.getState().backgroundPositionY).toBe(90);
+    });
+
+    it('clamps out-of-range background values', () => {
       useAppearanceStore.getState().setBackgroundOpacity(200);
       useAppearanceStore.getState().setBackgroundBlur(-2);
+      useAppearanceStore.getState().setBackgroundScale(220);
+      useAppearanceStore.getState().setBackgroundPositionX(-5);
+      useAppearanceStore.getState().setBackgroundPositionY(120);
 
       const state = useAppearanceStore.getState();
       expect(state.backgroundOpacity).toBe(100);
       expect(state.backgroundBlur).toBe(0);
+      expect(state.backgroundScale).toBe(200);
+      expect(state.backgroundPositionX).toBe(0);
+      expect(state.backgroundPositionY).toBe(100);
     });
 
     it('clearBackground resets background fields', () => {
@@ -185,6 +206,9 @@ describe('useAppearanceStore', () => {
       useAppearanceStore.getState().setBackgroundOpacity(80);
       useAppearanceStore.getState().setBackgroundBlur(5);
       useAppearanceStore.getState().setBackgroundFit('contain');
+      useAppearanceStore.getState().setBackgroundScale(140);
+      useAppearanceStore.getState().setBackgroundPositionX(20);
+      useAppearanceStore.getState().setBackgroundPositionY(80);
 
       useAppearanceStore.getState().clearBackground();
 
@@ -193,6 +217,30 @@ describe('useAppearanceStore', () => {
       expect(state.backgroundOpacity).toBe(20);
       expect(state.backgroundBlur).toBe(0);
       expect(state.backgroundFit).toBe('cover');
+      expect(state.backgroundScale).toBe(100);
+      expect(state.backgroundPositionX).toBe(50);
+      expect(state.backgroundPositionY).toBe(50);
+    });
+
+    it('resetBackgroundTuning keeps image toggle while restoring tuning defaults', () => {
+      useAppearanceStore.getState().setBackgroundEnabled(true);
+      useAppearanceStore.getState().setBackgroundOpacity(80);
+      useAppearanceStore.getState().setBackgroundBlur(5);
+      useAppearanceStore.getState().setBackgroundFit('contain');
+      useAppearanceStore.getState().setBackgroundScale(140);
+      useAppearanceStore.getState().setBackgroundPositionX(20);
+      useAppearanceStore.getState().setBackgroundPositionY(80);
+
+      useAppearanceStore.getState().resetBackgroundTuning();
+
+      const state = useAppearanceStore.getState();
+      expect(state.backgroundEnabled).toBe(true);
+      expect(state.backgroundOpacity).toBe(20);
+      expect(state.backgroundBlur).toBe(0);
+      expect(state.backgroundFit).toBe('cover');
+      expect(state.backgroundScale).toBe(100);
+      expect(state.backgroundPositionX).toBe(50);
+      expect(state.backgroundPositionY).toBe(50);
     });
   });
 
@@ -210,6 +258,9 @@ describe('useAppearanceStore', () => {
         backgroundOpacity: 60,
         backgroundBlur: 4,
         backgroundFit: 'contain',
+        backgroundScale: 120,
+        backgroundPositionX: 35,
+        backgroundPositionY: 65,
         windowEffect: 'mica',
       });
 
@@ -231,6 +282,9 @@ describe('useAppearanceStore', () => {
         backgroundOpacity: 20,
         backgroundBlur: 0,
         backgroundFit: 'cover',
+        backgroundScale: 100,
+        backgroundPositionX: 50,
+        backgroundPositionY: 50,
         windowEffect: 'auto',
       });
 
@@ -259,6 +313,9 @@ describe('useAppearanceStore', () => {
               backgroundOpacity: 20,
               backgroundBlur: 0,
               backgroundFit: 'cover',
+              backgroundScale: 100,
+              backgroundPositionX: 50,
+              backgroundPositionY: 50,
               windowEffect: 'auto',
             },
           },
@@ -276,6 +333,9 @@ describe('useAppearanceStore', () => {
               backgroundOpacity: 180 as never,
               backgroundBlur: -4 as never,
               backgroundFit: 'stretch' as never,
+              backgroundScale: 260 as never,
+              backgroundPositionX: -8 as never,
+              backgroundPositionY: 240 as never,
               windowEffect: 'glass' as never,
             },
           },
@@ -294,6 +354,9 @@ describe('useAppearanceStore', () => {
       expect(useAppearanceStore.getState().backgroundOpacity).toBe(100);
       expect(useAppearanceStore.getState().backgroundBlur).toBe(0);
       expect(useAppearanceStore.getState().backgroundFit).toBe('cover');
+      expect(useAppearanceStore.getState().backgroundScale).toBe(200);
+      expect(useAppearanceStore.getState().backgroundPositionX).toBe(0);
+      expect(useAppearanceStore.getState().backgroundPositionY).toBe(100);
       expect(useAppearanceStore.getState().windowEffect).toBe('auto');
     });
   });
@@ -303,7 +366,7 @@ describe('useAppearanceStore', () => {
     const getPersistConfig = () =>
       (useAppearanceStore as unknown as { persist: { getOptions: () => { migrate: (state: unknown, version: number) => unknown } } }).persist.getOptions();
 
-    it('v1 → v8: adds all missing fields', () => {
+    it('v1 → v9: adds all missing fields', () => {
       const v1State = { accentColor: 'rose' };
       const migrated = getPersistConfig().migrate(v1State, 1) as Record<string, unknown>;
 
@@ -315,6 +378,9 @@ describe('useAppearanceStore', () => {
       expect(migrated.backgroundOpacity).toBe(20);
       expect(migrated.backgroundBlur).toBe(0);
       expect(migrated.backgroundFit).toBe('cover');
+      expect(migrated.backgroundScale).toBe(100);
+      expect(migrated.backgroundPositionX).toBe(50);
+      expect(migrated.backgroundPositionY).toBe(50);
       expect(migrated.windowEffect).toBe('auto');
       expect(migrated.activePresetId).toBe(DEFAULT_APPEARANCE_PRESET_ID);
       expect(Array.isArray(migrated.presets)).toBe(true);
@@ -322,7 +388,7 @@ describe('useAppearanceStore', () => {
       expect(migrated.accentColor).toBe('rose');
     });
 
-    it('v2 → v8: skips reducedMotion, adds rest', () => {
+    it('v2 → v9: skips reducedMotion, adds rest', () => {
       const v2State = { accentColor: 'blue', reducedMotion: true };
       const migrated = getPersistConfig().migrate(v2State, 2) as Record<string, unknown>;
 
@@ -335,7 +401,7 @@ describe('useAppearanceStore', () => {
       expect(migrated.activePresetId).toBe(DEFAULT_APPEARANCE_PRESET_ID);
     });
 
-    it('v3 → v8: skips chartColorTheme, adds rest', () => {
+    it('v3 → v9: skips chartColorTheme, adds rest', () => {
       const v3State = { chartColorTheme: 'ocean', reducedMotion: false };
       const migrated = getPersistConfig().migrate(v3State, 3) as Record<string, unknown>;
 
@@ -345,7 +411,7 @@ describe('useAppearanceStore', () => {
       expect(migrated.backgroundEnabled).toBe(false);
     });
 
-    it('v4 → v8: skips interfaceRadius, adds rest', () => {
+    it('v4 → v9: skips interfaceRadius, adds rest', () => {
       const v4State = { interfaceRadius: 1.0 };
       const migrated = getPersistConfig().migrate(v4State, 4) as Record<string, unknown>;
 
@@ -354,7 +420,7 @@ describe('useAppearanceStore', () => {
       expect(migrated.backgroundEnabled).toBe(false);
     });
 
-    it('v5 → v8: adds background and newer fields', () => {
+    it('v5 → v9: adds background and newer fields', () => {
       const v5State = { interfaceDensity: 'compact' };
       const migrated = getPersistConfig().migrate(v5State, 5) as Record<string, unknown>;
 
@@ -363,10 +429,13 @@ describe('useAppearanceStore', () => {
       expect(migrated.backgroundOpacity).toBe(20);
       expect(migrated.backgroundBlur).toBe(0);
       expect(migrated.backgroundFit).toBe('cover');
+      expect(migrated.backgroundScale).toBe(100);
+      expect(migrated.backgroundPositionX).toBe(50);
+      expect(migrated.backgroundPositionY).toBe(50);
       expect(migrated.windowEffect).toBe('auto');
     });
 
-    it('v6 → v8: adds windowEffect and presets', () => {
+    it('v6 → v9: adds windowEffect and presets', () => {
       const v6State = { accentColor: 'green', backgroundEnabled: true };
       const migrated = getPersistConfig().migrate(v6State, 6) as Record<string, unknown>;
 
@@ -376,7 +445,7 @@ describe('useAppearanceStore', () => {
       expect(migrated.activePresetId).toBe(DEFAULT_APPEARANCE_PRESET_ID);
     });
 
-    it('v7 → v8: adds presets while preserving v7 values', () => {
+    it('v7 → v9: adds presets while preserving v7 values', () => {
       const v7State = { accentColor: 'green', windowEffect: 'mica' };
       const migrated = getPersistConfig().migrate(v7State, 7) as Record<string, unknown>;
 
@@ -386,7 +455,7 @@ describe('useAppearanceStore', () => {
       expect(Array.isArray(migrated.presets)).toBe(true);
     });
 
-    it('v8: no migration needed', () => {
+    it('v8 → v9: adds advanced background transform defaults', () => {
       const v8State = {
         accentColor: 'green',
         windowEffect: 'mica',
@@ -406,6 +475,9 @@ describe('useAppearanceStore', () => {
               backgroundOpacity: 20,
               backgroundBlur: 0,
               backgroundFit: 'cover',
+              backgroundScale: 100,
+              backgroundPositionX: 50,
+              backgroundPositionY: 50,
               windowEffect: 'mica',
             },
           },
@@ -413,6 +485,9 @@ describe('useAppearanceStore', () => {
       };
       const migrated = getPersistConfig().migrate(v8State, 8) as Record<string, unknown>;
       expect(migrated.windowEffect).toBe('mica');
+      expect(migrated.backgroundScale).toBe(100);
+      expect(migrated.backgroundPositionX).toBe(50);
+      expect(migrated.backgroundPositionY).toBe(50);
       expect(migrated.activePresetId).toBe(DEFAULT_APPEARANCE_PRESET_ID);
     });
 
@@ -426,6 +501,9 @@ describe('useAppearanceStore', () => {
         backgroundOpacity: 50,
         backgroundBlur: 5,
         backgroundFit: 'tile',
+        backgroundScale: 130,
+        backgroundPositionX: 20,
+        backgroundPositionY: 80,
       };
       const migrated = getPersistConfig().migrate(state, 1) as Record<string, unknown>;
 
@@ -437,6 +515,9 @@ describe('useAppearanceStore', () => {
       expect(migrated.backgroundOpacity).toBe(50);
       expect(migrated.backgroundBlur).toBe(5);
       expect(migrated.backgroundFit).toBe('tile');
+      expect(migrated.backgroundScale).toBe(130);
+      expect(migrated.backgroundPositionX).toBe(20);
+      expect(migrated.backgroundPositionY).toBe(80);
       expect(migrated.windowEffect).toBe('auto');
     });
 
@@ -451,6 +532,9 @@ describe('useAppearanceStore', () => {
         backgroundOpacity: 150,
         backgroundBlur: -9,
         backgroundFit: 'stretch',
+        backgroundScale: 300,
+        backgroundPositionX: -10,
+        backgroundPositionY: 140,
         windowEffect: 'glass',
         activePresetId: 'legacy',
         presets: [
@@ -468,6 +552,9 @@ describe('useAppearanceStore', () => {
               backgroundOpacity: 160,
               backgroundBlur: -7,
               backgroundFit: 'stretch',
+              backgroundScale: 280,
+              backgroundPositionX: -30,
+              backgroundPositionY: 220,
               windowEffect: 'frosted',
             },
           },
@@ -484,6 +571,9 @@ describe('useAppearanceStore', () => {
       expect(migrated.backgroundOpacity).toBe(100);
       expect(migrated.backgroundBlur).toBe(0);
       expect(migrated.backgroundFit).toBe('cover');
+      expect(migrated.backgroundScale).toBe(200);
+      expect(migrated.backgroundPositionX).toBe(0);
+      expect(migrated.backgroundPositionY).toBe(100);
       expect(migrated.windowEffect).toBe('auto');
       expect(migrated.activePresetId).toBe('legacy');
     });
@@ -501,6 +591,9 @@ describe('useAppearanceStore', () => {
       useAppearanceStore.getState().setBackgroundOpacity(50);
       useAppearanceStore.getState().setBackgroundBlur(8);
       useAppearanceStore.getState().setBackgroundFit('tile');
+      useAppearanceStore.getState().setBackgroundScale(150);
+      useAppearanceStore.getState().setBackgroundPositionX(25);
+      useAppearanceStore.getState().setBackgroundPositionY(75);
       useAppearanceStore.getState().setWindowEffect('mica');
 
       // Reset
@@ -517,6 +610,9 @@ describe('useAppearanceStore', () => {
       expect(state.backgroundOpacity).toBe(20);
       expect(state.backgroundBlur).toBe(0);
       expect(state.backgroundFit).toBe('cover');
+      expect(state.backgroundScale).toBe(100);
+      expect(state.backgroundPositionX).toBe(50);
+      expect(state.backgroundPositionY).toBe(50);
       expect(state.windowEffect).toBe('auto');
       expect(state.activePresetId).toBe(DEFAULT_APPEARANCE_PRESET_ID);
       expect(state.presets).toHaveLength(1);

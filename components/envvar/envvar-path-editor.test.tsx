@@ -19,6 +19,13 @@ const mockT = (key: string) => {
     'envvar.pathEditor.missingCount': '{count} missing',
     'envvar.pathEditor.duplicateCount': '{count} duplicates',
     'envvar.pathEditor.deduplicate': 'Deduplicate',
+    'envvar.pathEditor.previewRepair': 'Preview Repair',
+    'envvar.pathEditor.applyRepair': 'Apply Repair',
+    'envvar.pathEditor.repairPreviewReady': 'Repair preview ready',
+    'envvar.pathEditor.repairSummary': 'Repair summary',
+    'envvar.pathEditor.repairTarget': 'Repair target',
+    'envvar.pathEditor.repairPreviewStale': 'Repair preview stale',
+    'envvar.pathEditor.repairSuccess': 'Repair success',
     'envvar.pathEditor.addPlaceholder': 'Add new path...',
     'envvar.pathEditor.add': 'Add',
     'envvar.pathEditor.empty': 'No PATH entries',
@@ -76,10 +83,10 @@ describe('EnvVarPathEditor', () => {
     jest.clearAllMocks();
   });
 
-  it('renders path entries with exists badge', () => {
+  it('renders path entries with healthy status icon', () => {
     render(<EnvVarPathEditor {...defaultProps} />);
     expect(screen.getByText('/usr/local/bin')).toBeInTheDocument();
-    expect(screen.getByText('Exists')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Remove entry' })).toHaveLength(2);
   });
 
   it('renders summary, controls, and list shells', () => {
@@ -157,7 +164,7 @@ describe('EnvVarPathEditor', () => {
 
   it('shows entry count summary', () => {
     render(<EnvVarPathEditor {...defaultProps} />);
-    expect(screen.getByText(/2/)).toBeInTheDocument();
+    expect(screen.getByText('2 entries')).toBeInTheDocument();
   });
 
   it('calls onRemove when delete is confirmed', async () => {
@@ -216,5 +223,31 @@ describe('EnvVarPathEditor', () => {
     );
     await userEvent.click(downButtons[0]);
     expect(onReorder).toHaveBeenCalledWith(['/nonexistent/path', '/usr/local/bin']);
+  });
+
+  it('renders path repair preview and applies it', async () => {
+    const onApplyRepair = jest.fn().mockResolvedValue(2);
+    render(
+      <EnvVarPathEditor
+        {...defaultProps}
+        repairPreview={{
+          scope: 'process',
+          fingerprint: 'repair-fingerprint',
+          currentEntries: ['/usr/local/bin', '/missing'],
+          repairedEntries: ['/usr/local/bin'],
+          duplicateCount: 0,
+          missingCount: 1,
+          removedCount: 1,
+          primaryShellTarget: '/home/user/.bashrc',
+          shellGuidance: [],
+        }}
+        onApplyRepair={onApplyRepair}
+      />,
+    );
+
+    expect(screen.getByTestId('envvar-path-repair-preview')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /Repair preview ready/i }));
+    await userEvent.click(screen.getByRole('button', { name: 'Apply Repair' }));
+    expect(onApplyRepair).toHaveBeenCalledWith('repair-fingerprint');
   });
 });

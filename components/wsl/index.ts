@@ -23,3 +23,6 @@ export { WslMoveDialog } from './wsl-move-dialog';
 export { WslResizeDialog } from './wsl-resize-dialog';
 export { WslInstallLocationDialog } from './wsl-install-location-dialog';
 export { WslCloneDialog } from './wsl-clone-dialog';
+export { WslBatchWorkflowCard } from './wsl-batch-workflow-card';
+export { WslBatchWorkflowPreviewDialog } from './wsl-batch-workflow-preview-dialog';
+export { WslBatchWorkflowSummaryCard } from './wsl-batch-workflow-summary-card';

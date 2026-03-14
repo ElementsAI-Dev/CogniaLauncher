@@ -386,6 +386,10 @@ describe('usePlugins', () => {
     tauri.pluginGetPermissionMode.mockResolvedValue('strict');
     tauri.pluginGetPermissions.mockResolvedValue({
       declared: {
+        uiFeedback: false,
+        uiDialog: false,
+        uiFilePicker: false,
+        uiNavigation: false,
         fsRead: [],
         fsWrite: [],
         http: [],
@@ -451,6 +455,10 @@ describe('usePlugins', () => {
     tauri.pluginGetPermissionMode.mockResolvedValue('compat');
     tauri.pluginGetPermissions.mockResolvedValue({
       declared: {
+        uiFeedback: false,
+        uiDialog: false,
+        uiFilePicker: false,
+        uiNavigation: false,
         fsRead: [],
         fsWrite: [],
         http: [],
@@ -487,6 +495,7 @@ describe('usePlugins', () => {
       return result.current.scaffoldPlugin({
         name: 'Test', id: 'test', description: '', author: '', outputDir: '/tmp',
         language: 'rust', permissions: {
+          uiFeedback: false, uiDialog: false, uiFilePicker: false, uiNavigation: false,
           configRead: true, envRead: true, pkgSearch: false,
           clipboard: false, notification: false, processExec: false,
           fsRead: false, fsWrite: false, http: [],

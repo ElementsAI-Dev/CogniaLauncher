@@ -32,6 +32,49 @@ describe("AuthSection", () => {
     expect(screen.getByText("downloads.auth.configured")).toBeInTheDocument();
   });
 
+  it("shows saved-token-hidden and vault unlock controls when secure storage is locked", async () => {
+    const onVaultPasswordChange = jest.fn();
+    const onUnlockVault = jest.fn();
+
+    render(
+      <AuthSection
+        {...defaultProps}
+        configured={true}
+        tokenStatus={{
+          provider: "github",
+          configured: true,
+          configuredInVault: true,
+          configuredInEnv: false,
+          needsUnlock: true,
+          legacyPlaintextPresent: false,
+        }}
+        vaultStatus={{
+          initialized: true,
+          unlocked: false,
+          migrationPending: false,
+        }}
+        vaultPassword=""
+        onVaultPasswordChange={onVaultPasswordChange}
+        onUnlockVault={onUnlockVault}
+      />,
+    );
+
+    await openSection();
+
+    expect(screen.getByText("downloads.auth.secureStorage")).toBeInTheDocument();
+    expect(screen.getByText("downloads.auth.savedTokenLocked")).toBeInTheDocument();
+    expect(screen.getByText("downloads.auth.savedTokenHidden")).toBeInTheDocument();
+
+    const passwordInput = screen.getByPlaceholderText(
+      "downloads.auth.vaultPasswordPlaceholder",
+    );
+    await userEvent.type(passwordInput, "secret");
+    expect(onVaultPasswordChange).toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole("button", { name: "downloads.auth.unlockVault" }));
+    expect(onUnlockVault).toHaveBeenCalled();
+  });
+
   it("updates token and supports show/hide toggle", async () => {
     const onTokenChange = jest.fn();
     const { rerender } = render(

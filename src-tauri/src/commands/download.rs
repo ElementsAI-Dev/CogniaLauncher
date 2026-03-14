@@ -6,7 +6,7 @@ use crate::cache::download_history::{
 use crate::config::Settings;
 use crate::download::{
     DownloadConfig, DownloadEvent, DownloadManager, DownloadManagerConfig, DownloadState,
-    DownloadTask,
+    DownloadTask, ShutdownOutcome,
 };
 use crate::platform::disk::{self, format_size, DiskSpace};
 use serde::{Deserialize, Serialize};
@@ -51,6 +51,7 @@ pub struct DownloadTaskInfo {
     pub delete_after_extract: bool,
     pub auto_rename: bool,
     pub recoverable: Option<bool>,
+    pub failure_reason_code: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -118,6 +119,7 @@ impl From<&DownloadTask> for DownloadTaskInfo {
                 DownloadState::Failed { recoverable, .. } => Some(*recoverable),
                 _ => None,
             },
+            failure_reason_code: task.failure_reason_code.clone(),
         }
     }
 }
@@ -319,7 +321,7 @@ pub async fn setup_download_manager(
                     }
                     drop(mgr);
                 }
-                DownloadEvent::TaskFailed { task_id, error } => {
+                DownloadEvent::TaskFailed { task_id, error, .. } => {
                     let mgr = manager_clone.read().await;
                     if let Some(task) = mgr.get_task(task_id).await {
                         let _ = app_clone
@@ -391,7 +393,7 @@ pub async fn setup_download_manager(
                         }
                     }
                 }
-                DownloadEvent::TaskFailed { task_id, error } => {
+                DownloadEvent::TaskFailed { task_id, error, .. } => {
                     let mgr = manager_clone.read().await;
                     if let Some(task) = mgr.get_task(task_id).await {
                         let record = DownloadRecord::failed(
@@ -789,10 +791,11 @@ pub async fn download_set_max_concurrent(
 
 /// Gracefully shut down the download manager (call on app exit)
 #[tauri::command]
-pub async fn download_shutdown(manager: State<'_, SharedDownloadManager>) -> Result<(), String> {
+pub async fn download_shutdown(
+    manager: State<'_, SharedDownloadManager>,
+) -> Result<ShutdownOutcome, String> {
     let mgr = manager.read().await;
-    mgr.shutdown().await;
-    Ok(())
+    Ok(mgr.shutdown().await)
 }
 
 /// Get max concurrent downloads

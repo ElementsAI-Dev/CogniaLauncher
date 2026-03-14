@@ -1,8 +1,9 @@
 use super::api::{get_api_client, DEFAULT_NPM_REGISTRY};
 use super::node_base::{
-    parse_dependency_constraints_from_json_output, parse_node_list_json_line,
-    parse_node_list_json_output,
+    parse_dependency_constraints_from_json_output, parse_node_list_json_output,
 };
+#[cfg(test)]
+use super::node_base::parse_node_list_json_line;
 use super::traits::*;
 use crate::error::{CogniaError, CogniaResult};
 use crate::platform::{
@@ -14,26 +15,32 @@ use async_trait::async_trait;
 
 use std::collections::HashSet;
 use std::path::PathBuf;
-use std::time::Duration;
-use tokio::sync::OnceCell;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tokio::sync::Mutex;
 
 /// Yarn package manager for Node.js
 ///
 /// Supports both Yarn Classic (v1) and Yarn Berry (v2+/v4+).
 /// Yarn Berry removed `yarn global` — global package operations are
 /// only available on Yarn Classic.
+struct CachedVersion {
+    version: u32,
+    cached_at: Instant,
+}
+
 pub struct YarnProvider {
     /// Custom registry URL
     registry_url: Option<String>,
-    /// Cached major version (detected lazily)
-    major_version: OnceCell<u32>,
+    /// Cached major version with TTL (5 min)
+    cached_major_version: Arc<Mutex<Option<CachedVersion>>>,
 }
 
 impl YarnProvider {
     pub fn new() -> Self {
         Self {
             registry_url: None,
-            major_version: OnceCell::new(),
+            cached_major_version: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -97,29 +104,37 @@ impl YarnProvider {
 
     /// Parse a single JSON line from `yarn global list --json` into package entries.
     /// Supports both classic `data: "<tree text>"` and structured `data.trees` forms.
+    #[cfg(test)]
     fn parse_yarn_global_list_line(line: &str) -> Vec<(String, String)> {
         parse_node_list_json_line(line)
     }
 
-    /// Detect and cache the Yarn major version (1 for Classic, 2+ for Berry)
+    /// Detect and cache the Yarn major version (1 for Classic, 2+ for Berry).
+    /// Cache has a 5-minute TTL so version changes during a session are picked up.
     async fn get_major_version(&self) -> u32 {
-        *self
-            .major_version
-            .get_or_init(|| async {
-                let opts = ProcessOptions::new().with_timeout(Duration::from_secs(10));
-                match process::execute("yarn", &["--version"], Some(opts)).await {
-                    Ok(output) if output.success => {
-                        let version_str = output.stdout.trim();
-                        version_str
-                            .split('.')
-                            .next()
-                            .and_then(|s| s.parse::<u32>().ok())
-                            .unwrap_or(1)
-                    }
-                    _ => 1,
-                }
-            })
-            .await
+        let mut cache = self.cached_major_version.lock().await;
+        if let Some(ref cached) = *cache {
+            if cached.cached_at.elapsed() < Duration::from_secs(300) {
+                return cached.version;
+            }
+        }
+        let opts = ProcessOptions::new().with_timeout(Duration::from_secs(10));
+        let version = match process::execute("yarn", &["--version"], Some(opts)).await {
+            Ok(output) if output.success => {
+                let version_str = output.stdout.trim();
+                version_str
+                    .split('.')
+                    .next()
+                    .and_then(|s| s.parse::<u32>().ok())
+                    .unwrap_or(1)
+            }
+            _ => 1,
+        };
+        *cache = Some(CachedVersion {
+            version,
+            cached_at: Instant::now(),
+        });
+        version
     }
 
     /// Check if this is Yarn Berry (v2+)
@@ -581,8 +596,8 @@ mod tests {
     #[test]
     fn test_yarn_default_version() {
         let provider = YarnProvider::new();
-        // major_version is lazily initialized, default state is unset
-        assert!(provider.major_version.get().is_none());
+        let cache = provider.cached_major_version.blocking_lock();
+        assert!(cache.is_none());
     }
 
     #[test]

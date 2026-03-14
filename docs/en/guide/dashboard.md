@@ -34,6 +34,25 @@ Behavior guarantees:
 - **Deterministic reset** — Reset always restores the canonical default widget set and order.
 - **Persistence and migration safety** — Stored layouts are normalized on restore/migration (invalid size, duplicate IDs, unknown widgets, malformed payload fallback).
 
+### Homepage Overview and Feedback
+
+The homepage now exposes a workspace status strip above the widget grid:
+
+- **Overview readiness summary** — Quickly shows whether environment, package, and system sections are ready, still loading, or need attention.
+- **Partial readiness** — Widgets with ready data stay usable while other sections continue loading.
+- **Actionable degraded states** — Affected widgets surface local retry or deep-link actions instead of relying only on a page-level error banner.
+
+Key widget behavior:
+
+- **Welcome / Workspace Ready** — New users see setup steps; configured users see a compact "workspace ready" card with direct links back to environments, packages, and settings.
+- **Environment / Package lists** — Empty states now provide direct setup actions, and load or error states keep recovery actions close to the affected widget.
+- **Health / Updates / System Info** — Each widget can now prompt for the next step (run check, check now, retry) when no data or degraded data is available.
+
+### Default Layout Upgrades
+
+- **Fresh and reset layouts** — New users and reset-to-default flows get the newest canonical homepage ordering, with overview and actions ahead of diagnostics and detail widgets.
+- **Existing custom layouts stay intact** — Updating CogniaLauncher does not silently replace a previously customized homepage. The new canonical layout applies only to fresh layouts or explicit reset.
+
 ### System Status
 
 - Provider availability checks

@@ -9,12 +9,17 @@ const mockEnvvarRemoveProcess = jest.fn();
 const mockEnvvarGetPath = jest.fn();
 const mockEnvvarListShellProfiles = jest.fn();
 const mockEnvvarImportEnvFile = jest.fn();
+const mockEnvvarPreviewImportEnvFile = jest.fn();
+const mockEnvvarApplyImportPreview = jest.fn();
 const mockEnvvarExportEnvFile = jest.fn();
 const mockEnvvarListPersistent = jest.fn();
 const mockEnvvarExpand = jest.fn();
 const mockEnvvarDeduplicatePath = jest.fn();
+const mockEnvvarPreviewPathRepair = jest.fn();
+const mockEnvvarApplyPathRepair = jest.fn();
 const mockEnvvarListPersistentTyped = jest.fn();
 const mockEnvvarDetectConflicts = jest.fn();
+const mockEnvvarResolveConflict = jest.fn();
 const mockEnvvarAddPathEntry = jest.fn();
 const mockEnvvarRemovePathEntry = jest.fn();
 const mockEnvvarReorderPath = jest.fn();
@@ -36,12 +41,17 @@ jest.mock('@/lib/tauri', () => ({
   envvarListShellProfiles: (...args: unknown[]) => mockEnvvarListShellProfiles(...args),
   envvarReadShellProfile: (...args: unknown[]) => mockEnvvarReadShellProfile(...args),
   envvarImportEnvFile: (...args: unknown[]) => mockEnvvarImportEnvFile(...args),
+  envvarPreviewImportEnvFile: (...args: unknown[]) => mockEnvvarPreviewImportEnvFile(...args),
+  envvarApplyImportPreview: (...args: unknown[]) => mockEnvvarApplyImportPreview(...args),
   envvarExportEnvFile: (...args: unknown[]) => mockEnvvarExportEnvFile(...args),
   envvarListPersistent: (...args: unknown[]) => mockEnvvarListPersistent(...args),
   envvarExpand: (...args: unknown[]) => mockEnvvarExpand(...args),
   envvarDeduplicatePath: (...args: unknown[]) => mockEnvvarDeduplicatePath(...args),
+  envvarPreviewPathRepair: (...args: unknown[]) => mockEnvvarPreviewPathRepair(...args),
+  envvarApplyPathRepair: (...args: unknown[]) => mockEnvvarApplyPathRepair(...args),
   envvarListPersistentTyped: (...args: unknown[]) => mockEnvvarListPersistentTyped(...args),
   envvarDetectConflicts: (...args: unknown[]) => mockEnvvarDetectConflicts(...args),
+  envvarResolveConflict: (...args: unknown[]) => mockEnvvarResolveConflict(...args),
 }));
 
 jest.mock('@/lib/errors', () => ({
@@ -710,5 +720,95 @@ describe('useEnvVar', () => {
 
     expect(result.current.envVars).toEqual({ PATH: '/newest' });
     expect(result.current.detectionState).toBe('showing-fresh');
+  });
+
+  it('stores import preview and shell guidance', async () => {
+    mockEnvvarPreviewImportEnvFile.mockResolvedValue({
+      scope: 'user',
+      fingerprint: 'preview-fingerprint',
+      additions: 1,
+      updates: 0,
+      noops: 0,
+      invalid: 0,
+      skipped: 0,
+      items: [{ key: 'JAVA_HOME', value: '/jdk', action: 'add', reason: null }],
+      primaryShellTarget: '/home/user/.bashrc',
+      shellGuidance: [{ shell: 'bash', configPath: '/home/user/.bashrc', command: 'export JAVA_HOME="/jdk"', autoApplied: true }],
+    });
+
+    const { result } = renderHook(() => useEnvVar());
+
+    await act(async () => {
+      await result.current.previewImportEnvFile('JAVA_HOME=/jdk', 'user');
+    });
+
+    expect(result.current.importPreview?.fingerprint).toBe('preview-fingerprint');
+    expect(result.current.importPreviewStale).toBe(false);
+    expect(result.current.shellGuidance).toHaveLength(1);
+  });
+
+  it('marks import preview stale when apply rejects stale preview', async () => {
+    mockEnvvarApplyImportPreview.mockRejectedValue(new Error('stale_preview: changed'));
+
+    const { result } = renderHook(() => useEnvVar());
+
+    await act(async () => {
+      await result.current.applyImportPreview('JAVA_HOME=/jdk', 'user', 'stale-fingerprint');
+    });
+
+    expect(result.current.importPreviewStale).toBe(true);
+    expect(result.current.error).toContain('stale_preview');
+  });
+
+  it('stores path repair preview and stale state', async () => {
+    mockEnvvarPreviewPathRepair.mockResolvedValue({
+      scope: 'user',
+      fingerprint: 'path-fingerprint',
+      currentEntries: ['/missing', '/dup', '/dup'],
+      repairedEntries: ['/dup'],
+      duplicateCount: 1,
+      missingCount: 1,
+      removedCount: 2,
+      primaryShellTarget: '/home/user/.bashrc',
+      shellGuidance: [{ shell: 'bash', configPath: '/home/user/.bashrc', command: 'export PATH="/dup:$PATH"', autoApplied: true }],
+    });
+    mockEnvvarApplyPathRepair.mockRejectedValue(new Error('stale_preview: path changed'));
+
+    const { result } = renderHook(() => useEnvVar());
+
+    await act(async () => {
+      await result.current.previewPathRepair('user');
+    });
+
+    expect(result.current.pathRepairPreview?.fingerprint).toBe('path-fingerprint');
+
+    await act(async () => {
+      await result.current.applyPathRepair('user', 'path-fingerprint');
+    });
+
+    expect(result.current.pathRepairPreviewStale).toBe(true);
+  });
+
+  it('resolves conflict and refreshes shell guidance', async () => {
+    mockEnvvarResolveConflict.mockResolvedValue({
+      key: 'JAVA_HOME',
+      sourceScope: 'system',
+      targetScope: 'user',
+      appliedValue: '/jdk-21',
+      primaryShellTarget: '/home/user/.bashrc',
+      shellGuidance: [{ shell: 'bash', configPath: '/home/user/.bashrc', command: 'export JAVA_HOME="/jdk-21"', autoApplied: true }],
+    });
+    mockEnvvarListAll.mockResolvedValue({});
+    mockEnvvarListPersistentTyped.mockResolvedValue([]);
+    mockEnvvarDetectConflicts.mockResolvedValue([]);
+
+    const { result } = renderHook(() => useEnvVar());
+
+    await act(async () => {
+      await result.current.resolveConflict('JAVA_HOME', 'system', 'user');
+    });
+
+    expect(mockEnvvarResolveConflict).toHaveBeenCalledWith('JAVA_HOME', 'system', 'user');
+    expect(result.current.shellGuidance).toHaveLength(1);
   });
 });

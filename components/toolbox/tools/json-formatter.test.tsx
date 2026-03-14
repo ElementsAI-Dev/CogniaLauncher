@@ -25,7 +25,7 @@ describe('JsonFormatter', () => {
     });
     fireEvent.click(screen.getByText('toolbox.tools.jsonFormatter.format'));
 
-    expect(screen.getByRole('alert')).toBeInTheDocument();
+    expect(screen.getByText(/Line 1, Column 2/)).toBeInTheDocument();
   });
 
   it('shows guardrail error for oversized input', () => {

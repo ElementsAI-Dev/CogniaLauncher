@@ -54,7 +54,7 @@ describe('useDashboardStore', () => {
     it('returns per-type counts', () => {
       const widgets = useDashboardStore.getState().widgets;
       expect(getWidgetTypeCount(widgets, 'quick-search')).toBe(1);
-      expect(getWidgetTypeCount(widgets, 'quick-actions')).toBe(0);
+      expect(getWidgetTypeCount(widgets, 'quick-actions')).toBe(1);
     });
 
     it('blocks adding single-instance widget when already present', () => {
@@ -159,7 +159,7 @@ describe('useDashboardStore', () => {
     });
 
     it('moves widget from one position to another', () => {
-      useDashboardStore.getState().reorderWidgets(13, 0);
+      useDashboardStore.getState().reorderWidgets(14, 0);
 
       const widgets = useDashboardStore.getState().widgets;
       expect(widgets[0].id).toBe('w-wsl');
@@ -189,12 +189,13 @@ describe('useDashboardStore', () => {
 
     it('resets widgets to canonical defaults', () => {
       useDashboardStore.getState().removeWidget('w-stats');
-      useDashboardStore.getState().addWidget('quick-actions');
+      useDashboardStore.getState().addWidget('environment-chart');
 
       useDashboardStore.getState().resetToDefault();
 
       const widgets = useDashboardStore.getState().widgets;
       expect(widgets).toEqual(getDefaultWidgets());
+      expect(widgets[2].id).toBe('w-actions');
     });
   });
 

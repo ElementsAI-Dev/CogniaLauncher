@@ -141,6 +141,7 @@ import {
   buildAppSettingsFromConfigSnapshot,
   clearSectionValidationErrors,
 } from "@/lib/settings/reset-mapping";
+import { emitInvalidations } from "@/lib/cache/invalidation";
 import {
   getAffectedSections,
   getSectionForConfigKey,
@@ -230,6 +231,9 @@ export default function SettingsPage() {
     backgroundOpacity,
     backgroundBlur,
     backgroundFit,
+    backgroundScale,
+    backgroundPositionX,
+    backgroundPositionY,
     windowEffect,
     setWindowEffect,
     presets,
@@ -515,6 +519,19 @@ export default function SettingsPage() {
           }
           return next;
         });
+
+        if (
+          succeeded.some(
+            ([key]) =>
+              key.startsWith("providers.") ||
+              key.startsWith("provider_settings."),
+          )
+        ) {
+          emitInvalidations(
+            ["provider_data", "package_data", "environment_data"],
+            "settings:provider-config-save",
+          );
+        }
       }
 
       const nextFailedKeys = Object.keys(failed);
@@ -583,6 +600,9 @@ export default function SettingsPage() {
               backgroundOpacity: 20,
               backgroundBlur: 0,
               backgroundFit: "cover",
+              backgroundScale: 100,
+              backgroundPositionX: 50,
+              backgroundPositionY: 50,
               windowEffect: parsedAppearance.windowEffect,
             },
           },
@@ -611,6 +631,10 @@ export default function SettingsPage() {
       setDraftConflictKeys([]);
       setFailedSaveKeys([]);
       setFailedSaveMessages({});
+      emitInvalidations(
+        ["provider_data", "package_data", "environment_data"],
+        "settings:reset",
+      );
       toast.success(t("settings.settingsReset"));
     } catch (err) {
       toast.error(`${t("settings.resetFailed")}: ${err}`);
@@ -671,6 +695,21 @@ export default function SettingsPage() {
         normalized.autoInstallUpdates = raw.autoInstallUpdates;
       if (typeof raw.notifyOnUpdates === "boolean")
         normalized.notifyOnUpdates = raw.notifyOnUpdates;
+      if (
+        raw.updateSourceMode === "official" ||
+        raw.updateSourceMode === "mirror" ||
+        raw.updateSourceMode === "custom"
+      ) {
+        normalized.updateSourceMode = raw.updateSourceMode;
+      }
+      if (Array.isArray(raw.updateCustomEndpoints)) {
+        normalized.updateCustomEndpoints = raw.updateCustomEndpoints.filter(
+          (value): value is string => typeof value === "string",
+        );
+      }
+      if (typeof raw.updateFallbackToOfficial === "boolean") {
+        normalized.updateFallbackToOfficial = raw.updateFallbackToOfficial;
+      }
       if (typeof raw.minimizeToTray === "boolean")
         normalized.minimizeToTray = raw.minimizeToTray;
       if (typeof raw.startMinimized === "boolean")
@@ -724,6 +763,9 @@ export default function SettingsPage() {
         backgroundOpacity,
         backgroundBlur,
         backgroundFit,
+        backgroundScale,
+        backgroundPositionX,
+        backgroundPositionY,
         windowEffect: parsed.windowEffect,
       };
     },
@@ -732,6 +774,9 @@ export default function SettingsPage() {
       backgroundOpacity,
       backgroundBlur,
       backgroundFit,
+      backgroundScale,
+      backgroundPositionX,
+      backgroundPositionY,
     ],
   );
 
@@ -1213,6 +1258,9 @@ export default function SettingsPage() {
       backgroundOpacity,
       backgroundBlur,
       backgroundFit,
+      backgroundScale,
+      backgroundPositionX,
+      backgroundPositionY,
       windowEffect: normalizeWindowEffect(windowEffect),
     };
   }, [
@@ -1226,6 +1274,9 @@ export default function SettingsPage() {
     backgroundOpacity,
     backgroundBlur,
     backgroundFit,
+    backgroundScale,
+    backgroundPositionX,
+    backgroundPositionY,
     windowEffect,
   ]);
 
@@ -1383,6 +1434,9 @@ export default function SettingsPage() {
                 backgroundOpacity: 20,
                 backgroundBlur: 0,
                 backgroundFit: "cover",
+                backgroundScale: 100,
+                backgroundPositionX: 50,
+                backgroundPositionY: 50,
                 windowEffect: APPEARANCE_DEFAULTS.windowEffect,
               },
             },
@@ -2151,6 +2205,7 @@ export default function SettingsPage() {
             >
               <ProviderSettings
                 localConfig={localConfig}
+                savedConfig={originalConfig}
                 errors={validationErrors}
                 onValueChange={handleChange}
                 t={t}

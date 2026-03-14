@@ -57,6 +57,12 @@ describe("UpdatesWidget", () => {
     expect(screen.getByText("dashboard.widgets.updatesAvailableDesc")).toBeInTheDocument();
   });
 
+  it("shows check prompt before the first update run", () => {
+    render(<UpdatesWidget />);
+    expect(screen.getByText("dashboard.widgets.updatesCheckPrompt")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "dashboard.widgets.updatesCheckNow" }).length).toBeGreaterThan(0);
+  });
+
   it("shows up-to-date message when no updates and last check exists", () => {
     mockLastUpdateCheck = Date.now();
     render(<UpdatesWidget />);

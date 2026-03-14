@@ -20,6 +20,10 @@ const mockGitlabSetToken = jest.fn();
 const mockGitlabClearToken = jest.fn();
 const mockGitlabGetInstanceUrl = jest.fn();
 const mockGitlabSetInstanceUrl = jest.fn();
+const mockSecretVaultStatus = jest.fn();
+const mockSecretVaultSetup = jest.fn();
+const mockSecretVaultUnlock = jest.fn();
+const mockSecretVaultLock = jest.fn();
 const mockIsTauri = jest.fn(() => true);
 
 jest.mock('@/lib/tauri', () => ({
@@ -43,14 +47,34 @@ jest.mock('@/lib/tauri', () => ({
   gitlabClearToken: (...args: unknown[]) => mockGitlabClearToken(...args),
   gitlabGetInstanceUrl: (...args: unknown[]) => mockGitlabGetInstanceUrl(...args),
   gitlabSetInstanceUrl: (...args: unknown[]) => mockGitlabSetInstanceUrl(...args),
+  secretVaultStatus: (...args: unknown[]) => mockSecretVaultStatus(...args),
+  secretVaultSetup: (...args: unknown[]) => mockSecretVaultSetup(...args),
+  secretVaultUnlock: (...args: unknown[]) => mockSecretVaultUnlock(...args),
+  secretVaultLock: (...args: unknown[]) => mockSecretVaultLock(...args),
 }));
+
+const unsecuredStatus = {
+  initialized: false,
+  unlocked: false,
+  migrationPending: false,
+};
+
+const emptyTokenStatus = {
+  provider: 'gitlab',
+  configured: false,
+  configuredInVault: false,
+  configuredInEnv: false,
+  needsUnlock: false,
+  legacyPlaintextPresent: false,
+};
 
 describe('useGitLabDownloads', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockIsTauri.mockReturnValue(true);
-    mockGitlabGetToken.mockResolvedValue(null);
+    mockGitlabGetToken.mockResolvedValue(emptyTokenStatus);
     mockGitlabGetInstanceUrl.mockResolvedValue(null);
+    mockSecretVaultStatus.mockResolvedValue(unsecuredStatus);
     mockGitlabListPipelines.mockResolvedValue([]);
     mockGitlabListPipelineJobs.mockResolvedValue([]);
     mockGitlabListPackages.mockResolvedValue([]);
@@ -77,16 +101,30 @@ describe('useGitLabDownloads', () => {
     expect(result.current.packageFiles).toEqual([]);
     expect(result.current.loading).toBe(false);
     expect(result.current.error).toBeNull();
+    expect(result.current.tokenStatus).toBeNull();
+    expect(result.current.vaultStatus).toBeNull();
   });
 
-  it('should load saved token on mount', async () => {
-    mockGitlabGetToken.mockResolvedValue('glpat-test123');
+  it('should load saved token status on mount without repopulating the token input', async () => {
+    mockGitlabGetToken.mockResolvedValue({
+      ...emptyTokenStatus,
+      configured: true,
+      configuredInVault: true,
+      needsUnlock: true,
+    });
+    mockSecretVaultStatus.mockResolvedValue({
+      initialized: true,
+      unlocked: false,
+      migrationPending: false,
+    });
 
     const { result } = renderHook(() => useGitLabDownloads());
 
     await waitFor(() => {
-      expect(result.current.token).toBe('glpat-test123');
+      expect(result.current.tokenStatus?.configured).toBe(true);
+      expect(result.current.vaultStatus?.initialized).toBe(true);
     });
+    expect(result.current.token).toBe('');
   });
 
   it('should handle token load failure', async () => {
@@ -97,6 +135,7 @@ describe('useGitLabDownloads', () => {
     await waitFor(() => {
       expect(result.current.token).toBe('');
     });
+    expect(result.current.tokenStatus).toBeNull();
   });
 
   it('should not load token when not in Tauri', async () => {
@@ -343,7 +382,11 @@ describe('useGitLabDownloads', () => {
   });
 
   it('should save token', async () => {
-    mockGitlabSetToken.mockResolvedValue(undefined);
+    mockGitlabSetToken.mockResolvedValue({
+      ...emptyTokenStatus,
+      configured: true,
+      configuredInVault: true,
+    });
 
     const { result } = renderHook(() => useGitLabDownloads());
 
@@ -356,6 +399,7 @@ describe('useGitLabDownloads', () => {
     });
 
     expect(mockGitlabSetToken).toHaveBeenCalledWith('glpat-test');
+    expect(result.current.token).toBe('');
   });
 
   it('should not save empty token', async () => {
@@ -369,7 +413,7 @@ describe('useGitLabDownloads', () => {
   });
 
   it('should clear saved token', async () => {
-    mockGitlabClearToken.mockResolvedValue(undefined);
+    mockGitlabClearToken.mockResolvedValue(emptyTokenStatus);
 
     const { result } = renderHook(() => useGitLabDownloads());
 
@@ -423,15 +467,62 @@ describe('useGitLabDownloads', () => {
   });
 
   it('should load both saved token and instance URL on mount', async () => {
-    mockGitlabGetToken.mockResolvedValue('glpat-saved');
+    mockGitlabGetToken.mockResolvedValue({
+      ...emptyTokenStatus,
+      configured: true,
+      configuredInVault: true,
+    });
     mockGitlabGetInstanceUrl.mockResolvedValue('https://gl.corp.com');
 
     const { result } = renderHook(() => useGitLabDownloads());
 
     await waitFor(() => {
-      expect(result.current.token).toBe('glpat-saved');
+      expect(result.current.tokenStatus?.configured).toBe(true);
       expect(result.current.instanceUrl).toBe('https://gl.corp.com');
     });
+    expect(result.current.token).toBe('');
+  });
+
+  it('should set up secure storage when a password is provided', async () => {
+    mockSecretVaultSetup.mockResolvedValue({
+      initialized: true,
+      unlocked: true,
+      migrationPending: false,
+    });
+
+    const { result } = renderHook(() => useGitLabDownloads());
+
+    act(() => {
+      result.current.setVaultPassword('vault-pass');
+    });
+
+    await act(async () => {
+      await result.current.setupVault();
+    });
+
+    expect(mockSecretVaultSetup).toHaveBeenCalledWith('vault-pass');
+    expect(result.current.vaultPassword).toBe('');
+  });
+
+  it('should unlock secure storage when a password is provided', async () => {
+    mockSecretVaultUnlock.mockResolvedValue({
+      initialized: true,
+      unlocked: true,
+      migrationPending: false,
+    });
+
+    const { result } = renderHook(() => useGitLabDownloads());
+
+    act(() => {
+      result.current.setVaultPassword('vault-pass');
+    });
+
+    await act(async () => {
+      await result.current.unlockVault();
+    });
+
+    expect(mockSecretVaultUnlock).toHaveBeenCalledWith('vault-pass');
+    expect(result.current.vaultPassword).toBe('');
   });
 
   it('should save instance URL', async () => {

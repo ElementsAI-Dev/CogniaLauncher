@@ -133,6 +133,9 @@ const SETTING_FOCUS_IDS: Record<string, string> = {
   "updates.check_on_start": "check-updates-on-start",
   "updates.auto_install": "auto-install-updates",
   "updates.notify": "notify-on-updates",
+  "updates.source_mode": "update-source-mode",
+  "updates.custom_endpoints": "update-custom-endpoints",
+  "updates.fallback_to_official": "update-fallback-to-official",
 
   // Tray
   "tray.minimize_to_tray": "minimize-to-tray",
@@ -148,7 +151,7 @@ const SETTING_FOCUS_IDS: Record<string, string> = {
   "paths.environments": "paths-environments",
 
   // Providers
-  "provider_settings.disabled_providers": "disabled-providers",
+  "provider_settings.disabled_providers": "managed-providers",
 
   // Backup policy
   "backup.auto_backup_enabled": "backup-auto-enabled",
@@ -585,6 +588,33 @@ const SETTINGS_REGISTRY_BASE: SettingDefinition[] = [
     keywords: ['update', 'notify', 'notification', '更新', '通知'],
     tauriOnly: true,
   },
+  {
+    key: 'updates.source_mode',
+    section: 'updates',
+    labelKey: 'settings.updateSourceMode',
+    descKey: 'settings.updateSourceModeDesc',
+    type: 'select',
+    keywords: ['update', 'source', 'official', 'mirror', 'custom', '更新', '源', '官方', '镜像', '自定义'],
+    tauriOnly: true,
+  },
+  {
+    key: 'updates.custom_endpoints',
+    section: 'updates',
+    labelKey: 'settings.updateCustomEndpoints',
+    descKey: 'settings.updateCustomEndpointsDesc',
+    type: 'input',
+    keywords: ['update', 'endpoint', 'custom', 'url', '更新', '端点', '自定义', '地址'],
+    tauriOnly: true,
+  },
+  {
+    key: 'updates.fallback_to_official',
+    section: 'updates',
+    labelKey: 'settings.updateFallbackToOfficial',
+    descKey: 'settings.updateFallbackToOfficialDesc',
+    type: 'switch',
+    keywords: ['update', 'fallback', 'official', 'retry', '更新', '回退', '重试', '官方'],
+    tauriOnly: true,
+  },
 
   // Tray Settings
   {
@@ -684,10 +714,11 @@ const SETTINGS_REGISTRY_BASE: SettingDefinition[] = [
   {
     key: 'provider_settings.disabled_providers',
     section: 'provider',
-    labelKey: 'settings.disabledProviders',
-    descKey: 'settings.disabledProvidersDesc',
+    focusId: 'managed-providers',
+    labelKey: 'settings.providerSettings',
+    descKey: 'settings.providerSettingsDesc',
     type: 'input',
-    keywords: ['provider', 'disable', 'package', 'manager', '提供者', '禁用', '包管理器'],
+    keywords: ['provider', 'priority', 'enable', 'disable', 'package', 'manager', '提供者', '优先级', '启用', '禁用', '包管理器'],
     advanced: true,
   },
 

@@ -62,6 +62,10 @@ export function TerminalShellFramework({
   const [detecting, setDetecting] = useState(false);
   const [cleaningFramework, setCleaningFramework] = useState<string | null>(null);
   const [selectedFramework, setSelectedFramework] = useState<ShellFrameworkInfo | null>(null);
+  const [shellFilter, setShellFilter] = useState<string>('all');
+
+  const shellTypes = Array.from(new Set(frameworks.map(fw => fw.shellType)));
+  const filteredFrameworks = shellFilter === 'all' ? frameworks : frameworks.filter(fw => fw.shellType === shellFilter);
 
   const handleDetectAll = async () => {
     setDetecting(true);
@@ -142,7 +146,30 @@ export function TerminalShellFramework({
           </Empty>
         ) : (
           <div className="space-y-3">
-            {frameworks.map((fw) => {
+            {shellTypes.length > 1 && (
+              <div className="flex flex-wrap gap-1.5">
+                <Button
+                  size="sm"
+                  variant={shellFilter === 'all' ? 'default' : 'outline'}
+                  className="h-7 text-xs"
+                  onClick={() => setShellFilter('all')}
+                >
+                  {t('terminal.filterAll')} ({frameworks.length})
+                </Button>
+                {shellTypes.map(st => (
+                  <Button
+                    key={st}
+                    size="sm"
+                    variant={shellFilter === st ? 'default' : 'outline'}
+                    className="h-7 text-xs"
+                    onClick={() => setShellFilter(st)}
+                  >
+                    {st} ({frameworks.filter(fw => fw.shellType === st).length})
+                  </Button>
+                ))}
+              </div>
+            )}
+            {filteredFrameworks.map((fw) => {
               const catInfo = getCategoryInfo(fw.category);
               const CatIcon = catInfo.icon;
               return (
@@ -276,7 +303,14 @@ export function TerminalShellFramework({
                   >
                     <div className="flex items-center gap-2">
                       <span className={`h-2 w-2 rounded-full ${plugin.enabled ? 'bg-green-500' : 'bg-muted-foreground/30'}`} />
-                      <span className="text-sm font-mono">{plugin.name}</span>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="text-sm font-mono">{plugin.name}</span>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom" className="max-w-sm font-mono text-xs break-all">
+                          {plugin.source}
+                        </TooltipContent>
+                      </Tooltip>
                     </div>
                     <Badge variant="outline" className="text-xs">
                       {plugin.source}
@@ -295,7 +329,7 @@ export function TerminalShellFramework({
                 <Puzzle />
               </EmptyMedia>
               <EmptyTitle className="text-sm font-normal text-muted-foreground">
-                {t('terminal.noPlugins')}
+                {t('terminal.noPlugins')} ({selectedFramework.name})
               </EmptyTitle>
             </EmptyHeader>
           </Empty>
@@ -352,6 +386,14 @@ export function TerminalShellFramework({
                         <Badge variant={cache.totalSize > 0 ? 'default' : 'secondary'} className="text-xs">
                           {cache.totalSizeHuman}
                         </Badge>
+                        {totalCacheSize > 0 && (
+                          <div className="h-1.5 w-24 rounded-full bg-muted overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-primary/70"
+                              style={{ width: `${Math.min(100, Math.round((cache.totalSize / totalCacheSize) * 100))}%` }}
+                            />
+                          </div>
+                        )}
                       </div>
                       {cache.cachePaths.length > 0 && (
                         <Tooltip>

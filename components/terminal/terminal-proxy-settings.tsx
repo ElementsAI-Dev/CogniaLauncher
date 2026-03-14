@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -9,7 +10,9 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Globe, ShieldCheck, Info, Loader2 } from 'lucide-react';
+import { Globe, ShieldCheck, Info, Loader2, Copy } from 'lucide-react';
+import { writeClipboard } from '@/lib/clipboard';
+import { toast } from 'sonner';
 import { useLocale } from '@/components/providers/locale-provider';
 import type { ProxyMode } from '@/types/terminal';
 
@@ -51,6 +54,30 @@ export function TerminalProxySettings({
   loading,
 }: TerminalProxySettingsProps) {
   const { t } = useLocale();
+  const [urlError, setUrlError] = useState<string>('');
+
+  const validateProxyUrl = (url: string) => {
+    if (!url) { setUrlError(''); return; }
+    try {
+      const u = new URL(url);
+      if (!['http:', 'https:', 'socks4:', 'socks5:'].includes(u.protocol)) {
+        setUrlError(t('terminal.invalidProxyProtocol'));
+        return;
+      }
+      setUrlError('');
+    } catch {
+      setUrlError(t('terminal.invalidProxyUrl'));
+    }
+  };
+
+  const getModeDescription = (mode: ProxyMode): string => {
+    switch (mode) {
+      case 'global': return t('terminal.proxyModeGlobalDesc');
+      case 'custom': return t('terminal.proxyModeCustomDesc');
+      case 'none': return t('terminal.proxyModeNoneDesc');
+      default: return '';
+    }
+  };
 
   if (loading) {
     return (
@@ -73,6 +100,9 @@ export function TerminalProxySettings({
         <CardTitle className="text-base flex items-center gap-2">
           <Globe className="h-4 w-4" />
           {t('terminal.proxySettings')}
+          <Badge variant={proxyMode === 'none' ? 'secondary' : 'default'} className="text-xs">
+            {proxyMode}
+          </Badge>
         </CardTitle>
         <CardDescription>{t('terminal.proxySettingsDesc')}</CardDescription>
       </CardHeader>
@@ -99,6 +129,7 @@ export function TerminalProxySettings({
               <SelectItem value="none">{t('terminal.proxyModeNone')}</SelectItem>
             </SelectContent>
           </Select>
+          <p className="text-xs text-muted-foreground mt-1">{getModeDescription(proxyMode)}</p>
         </div>
 
         {proxyMode === 'global' && globalProxy && (
@@ -174,11 +205,12 @@ export function TerminalProxySettings({
                 id="custom-proxy"
                 value={customProxy}
                 onChange={(e) => onCustomProxyChange(e.target.value)}
-                onBlur={onCustomProxyBlur}
+                onBlur={() => { onCustomProxyBlur(); validateProxyUrl(customProxy); }}
                 placeholder="http://proxy.example.com:8080"
                 className="font-mono text-sm"
                 disabled={saving}
               />
+              {urlError && <p className="text-xs text-destructive mt-1">{urlError}</p>}
             </div>
           </div>
         )}
@@ -213,6 +245,19 @@ export function TerminalProxySettings({
                   <span className="text-primary font-semibold min-w-[100px]">{key}</span>
                   <span className="text-muted-foreground">=</span>
                   <span className="truncate">{value}</span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 shrink-0"
+                    onClick={async () => {
+                      try {
+                        await writeClipboard(value);
+                        toast.success(t('terminal.copied'));
+                      } catch { /* ignore */ }
+                    }}
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                  </Button>
                 </div>
               ))}
             </div>

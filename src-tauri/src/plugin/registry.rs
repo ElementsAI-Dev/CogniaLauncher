@@ -2,6 +2,9 @@ use crate::error::{CogniaError, CogniaResult};
 use crate::plugin::contract::{
     evaluate_manifest_compatibility, ToolCompatibility, ToolOrigin, TOOL_CONTRACT_VERSION,
 };
+use crate::plugin::extension_points::{
+    derive_plugin_point_inventory, get_tool_plugin_point, PluginPointInventoryEntry,
+};
 use crate::plugin::manifest::PluginManifest;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -54,6 +57,8 @@ pub struct PluginInfo {
     pub builtin_candidate: bool,
     pub builtin_sync_status: Option<String>,
     pub builtin_sync_message: Option<String>,
+    #[serde(default)]
+    pub plugin_points: Vec<PluginPointInventoryEntry>,
 }
 
 /// A tool from a plugin, with plugin context
@@ -76,6 +81,10 @@ pub struct PluginToolInfo {
     pub contract_version: String,
     pub capability_declarations: Vec<String>,
     pub compatibility: ToolCompatibility,
+    pub plugin_point_id: Option<String>,
+    #[serde(default)]
+    pub discoverable: bool,
+    pub exclusion_reason: Option<String>,
 }
 
 /// Registry that tracks all discovered and loaded plugins
@@ -264,6 +273,7 @@ impl PluginRegistry {
                     builtin_candidate: false,
                     builtin_sync_status: None,
                     builtin_sync_message: None,
+                    plugin_points: derive_plugin_point_inventory(&p.manifest).unwrap_or_default(),
                 }
             })
             .collect()
@@ -284,6 +294,7 @@ impl PluginRegistry {
                 .clone()
                 .unwrap_or_else(|| TOOL_CONTRACT_VERSION.to_string());
             for tool in &plugin.manifest.tools {
+                let point = get_tool_plugin_point(&plugin.manifest, &tool.entry).unwrap_or(None);
                 tools.push(PluginToolInfo {
                     plugin_id: plugin.manifest.plugin.id.clone(),
                     plugin_name: plugin.manifest.plugin.name.clone(),
@@ -301,6 +312,11 @@ impl PluginRegistry {
                     contract_version: contract_version.clone(),
                     capability_declarations: tool.capabilities.clone(),
                     compatibility: compatibility.clone(),
+                    plugin_point_id: point.as_ref().map(|entry| entry.point_id.clone()),
+                    discoverable: point.as_ref().map(|entry| entry.discoverable).unwrap_or(true),
+                    exclusion_reason: point
+                        .as_ref()
+                        .and_then(|entry| entry.blocking_reason.clone()),
                 });
             }
         }
@@ -346,6 +362,7 @@ mod tests {
                 icon: None,
                 update_url: None,
                 listen_events: vec![],
+                listen_logs: vec![],
             },
             tools,
             permissions: PluginPermissions::default(),
@@ -441,6 +458,7 @@ mod tests {
         assert_eq!(p1.name, "Plugin One");
         assert_eq!(p1.tool_count, 1);
         assert!(p1.enabled);
+        assert_eq!(p1.plugin_points.len(), 1);
     }
 
     #[test]
@@ -471,6 +489,7 @@ mod tests {
         assert!(tools
             .iter()
             .any(|t| t.tool_id == "t3" && t.plugin_id == "p2"));
+        assert!(tools.iter().all(|tool| tool.discoverable));
     }
 
     #[test]

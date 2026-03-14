@@ -192,6 +192,22 @@ describe("ChangelogDialog", () => {
     expect(addedFilter).toHaveAttribute("data-state", "on");
   });
 
+  it("uses wrapped toolbar rows and cluster shells for responsive alignment", () => {
+    render(<ChangelogDialog {...defaultProps} />);
+
+    const controls = screen.getByTestId("changelog-controls");
+    const toolbarRows = controls.querySelectorAll('[data-slot="toolbar-row"]');
+    const clusters = controls.querySelectorAll('[data-slot="toolbar-cluster"]');
+    const searchInput = screen.getByPlaceholderText(
+      "Search versions and release notes...",
+    );
+
+    expect(toolbarRows.length).toBeGreaterThanOrEqual(2);
+    expect(Array.from(toolbarRows).every((row) => row.className.includes("flex-wrap"))).toBe(true);
+    expect(clusters.length).toBeGreaterThanOrEqual(2);
+    expect(searchInput.className).toContain("h-9");
+  });
+
   it("renders markdown content for entries with markdownBody", () => {
     // Second entry has markdownBody but is collapsed by default; expand it
     render(<ChangelogDialog {...defaultProps} />);

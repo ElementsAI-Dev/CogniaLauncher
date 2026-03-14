@@ -14,6 +14,16 @@ const flushAsyncEffects = async () => {
   await Promise.resolve();
 };
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 jest.mock('@/lib/tauri', () => ({
   isTauri: () => mockIsTauri(),
   cacheInfo: (...args: unknown[]) => mockCacheInfo(...args),
@@ -91,9 +101,9 @@ describe('useCacheDetail', () => {
       mockListCacheEntries.mockClear();
 
       act(() => {
-        invalidationHandler?.();
-        invalidationHandler?.();
-        invalidationHandler?.();
+        invalidationHandler?.({ domain: 'cache_entries' });
+        invalidationHandler?.({ domain: 'cache_entries' });
+        invalidationHandler?.({ domain: 'cache_entries' });
       });
 
       expect(mockCacheInfo).not.toHaveBeenCalled();
@@ -124,5 +134,44 @@ describe('useCacheDetail', () => {
     expect(mockCacheInfo).not.toHaveBeenCalled();
     expect(mockListCacheEntries).not.toHaveBeenCalled();
     expect(mockSubscribeInvalidation).not.toHaveBeenCalled();
+  });
+
+  it('keeps latest entry response when older request resolves later', async () => {
+    const { result } = renderHook(() => useCacheDetail({ cacheType: 'download', t: (key) => key }));
+
+    await act(async () => {
+      await flushAsyncEffects();
+    });
+
+    mockListCacheEntries.mockReset();
+    const first = deferred<{ entries: Array<{ key: string }>; total_count: number }>();
+    const second = deferred<{ entries: Array<{ key: string }>; total_count: number }>();
+    mockListCacheEntries
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
+
+    let firstTask: Promise<void> | undefined;
+    let secondTask: Promise<void> | undefined;
+    await act(async () => {
+      firstTask = result.current.fetchEntries();
+      secondTask = result.current.fetchEntries();
+      await flushAsyncEffects();
+    });
+
+    await act(async () => {
+      second.resolve({ entries: [{ key: 'newer' }], total_count: 1 });
+      await secondTask;
+      await flushAsyncEffects();
+    });
+
+    await act(async () => {
+      first.resolve({ entries: [{ key: 'older' }], total_count: 1 });
+      await firstTask;
+      await flushAsyncEffects();
+    });
+
+    await waitFor(() => {
+      expect(result.current.entries[0]?.key).toBe('newer');
+    });
   });
 });

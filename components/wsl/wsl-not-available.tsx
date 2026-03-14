@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,11 +35,34 @@ export function WslNotAvailable({ t, onInstallWsl }: WslNotAvailableProps) {
   };
 
   return (
-    <Alert variant="destructive">
-      <AlertCircle className="h-4 w-4" />
-      <AlertTitle>{t('wsl.notAvailable')}</AlertTitle>
-      <AlertDescription className="flex flex-col gap-3">
-        <p>{t('wsl.notAvailableDesc')}</p>
+    <Card className="border-destructive/50">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-destructive">
+          <AlertCircle className="h-5 w-5" />
+          {t('wsl.notAvailable')}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm text-muted-foreground">{t('wsl.notAvailableDesc')}</p>
+
+        <div className="space-y-2">
+          <p className="text-xs font-medium">{t('wsl.installSteps.title')}</p>
+          <ol className="list-inside space-y-1.5 text-xs text-muted-foreground">
+            <li className="flex gap-2">
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-semibold">1</span>
+              <span>{t('wsl.installSteps.step1')}</span>
+            </li>
+            <li className="flex gap-2">
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-semibold">2</span>
+              <span>{t('wsl.installSteps.step2')}</span>
+            </li>
+            <li className="flex gap-2">
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-semibold">3</span>
+              <span>{t('wsl.installSteps.step3')}</span>
+            </li>
+          </ol>
+        </div>
+
         {onInstallWsl && (
           <AlertDialog>
             <AlertDialogTrigger asChild>
@@ -73,7 +96,7 @@ export function WslNotAvailable({ t, onInstallWsl }: WslNotAvailableProps) {
             </AlertDialogContent>
           </AlertDialog>
         )}
-      </AlertDescription>
-    </Alert>
+      </CardContent>
+    </Card>
   );
 }

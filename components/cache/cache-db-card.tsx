@@ -3,8 +3,8 @@
 import { useLocale } from '@/components/providers/locale-provider';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { HardDrive, Eye, Wrench, ChevronDown } from 'lucide-react';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Database, Wrench, Eye, ArrowRight } from 'lucide-react';
 import type { CacheOptimizeResult, DatabaseInfo } from '@/lib/tauri';
 
 export interface CacheDbCardProps {
@@ -30,84 +30,91 @@ export function CacheDbCard({
 
   return (
     <Card>
-      <CardHeader className="pb-2">
+      <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <HardDrive className="h-5 w-5" />
-            <CardTitle className="text-base">{t('cache.optimize')}</CardTitle>
+            <Database className="h-4 w-4" />
+            <CardTitle className="text-sm">{t('cache.dbMaintenanceTitle')}</CardTitle>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <Button
               variant="outline"
               size="sm"
-              onClick={() => { fetchDbInfo(); }}
+              className="h-7 text-xs"
+              onClick={fetchDbInfo}
               disabled={dbInfoLoading}
             >
-              <Eye className="h-4 w-4 mr-2" />
-              {dbInfoLoading ? t('common.loading') : t('cache.dbInfo')}
+              <Eye className="h-3 w-3 mr-1" />
+              {dbInfoLoading ? t('common.loading') : t('cache.viewDbInfo')}
             </Button>
             <Button
-              variant="default"
               size="sm"
+              className="h-7 text-xs"
               onClick={handleOptimize}
               disabled={optimizeLoading || isLoading}
             >
-              <Wrench className={`h-4 w-4 mr-2 ${optimizeLoading ? 'animate-spin' : ''}`} />
-              {optimizeLoading ? t('cache.optimizing') : t('cache.optimize')}
+              <Wrench className={`h-3 w-3 mr-1 ${optimizeLoading ? 'animate-spin' : ''}`} />
+              {optimizeLoading ? t('cache.optimizing') : t('cache.optimizeNow')}
             </Button>
           </div>
         </div>
-        <CardDescription>{t('cache.optimizeDesc')}</CardDescription>
+        <CardDescription className="text-xs">{t('cache.dbMaintenanceDesc')}</CardDescription>
       </CardHeader>
-      <CardContent>
-        <div className="space-y-3">
-          {optimizeResult && (
-            <div className="grid grid-cols-3 gap-4 text-center">
-              <div className="p-3 rounded-lg bg-muted/50">
-                <p className="text-sm font-bold">{optimizeResult.sizeBeforeHuman}</p>
-                <p className="text-xs text-muted-foreground">{t('cache.sizeBefore')}</p>
-              </div>
-              <div className="p-3 rounded-lg bg-muted/50">
-                <p className="text-sm font-bold">{optimizeResult.sizeAfterHuman}</p>
-                <p className="text-xs text-muted-foreground">{t('cache.sizeAfter')}</p>
-              </div>
-              <div className="p-3 rounded-lg bg-green-50 dark:bg-green-950">
-                <p className="text-sm font-bold text-green-600 dark:text-green-400">{optimizeResult.sizeSavedHuman}</p>
-                <p className="text-xs text-muted-foreground">{t('cache.sizeSaved')}</p>
-              </div>
+      <CardContent className="space-y-3">
+        {/* Optimize Result */}
+        {optimizeResult && (
+          <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+            <div className="text-center flex-1">
+              <p className="text-sm font-bold">{optimizeResult.sizeBeforeHuman}</p>
+              <p className="text-[10px] text-muted-foreground">{t('cache.sizeBefore')}</p>
             </div>
-          )}
-          {dbInfo && (
-            <Collapsible>
-              <CollapsibleTrigger asChild>
-                <Button variant="ghost" size="sm" className="w-full justify-between">
-                  {t('cache.dbInfo')}
-                  <ChevronDown className="h-4 w-4" />
-                </Button>
-              </CollapsibleTrigger>
-              <CollapsibleContent className="mt-2">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">{t('cache.dbSize')}</p>
-                    <p className="font-medium">{dbInfo.dbSizeHuman}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">{t('cache.walSize')}</p>
-                    <p className="font-medium">{dbInfo.walSizeHuman}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">{t('cache.pageCount')}</p>
-                    <p className="font-medium">{dbInfo.pageCount.toLocaleString()}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">{t('cache.freePages')}</p>
-                    <p className="font-medium">{dbInfo.freelistCount.toLocaleString()}</p>
-                  </div>
-                </div>
-              </CollapsibleContent>
-            </Collapsible>
-          )}
-        </div>
+            <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
+            <div className="text-center flex-1">
+              <p className="text-sm font-bold">{optimizeResult.sizeAfterHuman}</p>
+              <p className="text-[10px] text-muted-foreground">{t('cache.sizeAfter')}</p>
+            </div>
+            <div className="h-8 w-px bg-border shrink-0" />
+            <div className="text-center flex-1">
+              <p className="text-sm font-bold text-green-600 dark:text-green-400">
+                -{optimizeResult.sizeSavedHuman}
+              </p>
+              <p className="text-[10px] text-muted-foreground">{t('cache.sizeSaved')}</p>
+            </div>
+          </div>
+        )}
+
+        {/* DB Info */}
+        {dbInfoLoading ? (
+          <div className="grid grid-cols-4 gap-3">
+            <Skeleton className="h-12 w-full" />
+            <Skeleton className="h-12 w-full" />
+            <Skeleton className="h-12 w-full" />
+            <Skeleton className="h-12 w-full" />
+          </div>
+        ) : dbInfo ? (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+            <div className="rounded-lg bg-muted/40 p-2.5">
+              <p className="text-muted-foreground">{t('cache.dbSize')}</p>
+              <p className="font-medium text-sm">{dbInfo.dbSizeHuman}</p>
+            </div>
+            <div className="rounded-lg bg-muted/40 p-2.5">
+              <p className="text-muted-foreground">{t('cache.walSize')}</p>
+              <p className="font-medium text-sm">{dbInfo.walSizeHuman}</p>
+            </div>
+            <div className="rounded-lg bg-muted/40 p-2.5">
+              <p className="text-muted-foreground">{t('cache.pageCount')}</p>
+              <p className="font-medium text-sm">{dbInfo.pageCount.toLocaleString()}</p>
+            </div>
+            <div className="rounded-lg bg-muted/40 p-2.5">
+              <p className="text-muted-foreground">{t('cache.freePages')}</p>
+              <p className="font-medium text-sm">{dbInfo.freelistCount.toLocaleString()}</p>
+            </div>
+          </div>
+        ) : !optimizeResult ? (
+          <p className="text-xs text-muted-foreground text-center py-2">
+            {t('cache.noDataYet')}
+          </p>
+        ) : null}
       </CardContent>
     </Card>
   );

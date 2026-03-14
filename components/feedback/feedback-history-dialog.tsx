@@ -12,6 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Empty,
   EmptyDescription,
@@ -73,17 +74,36 @@ export function FeedbackHistoryDialog({
   const { listFeedbacks, deleteFeedback, exportFeedbackJson } = useFeedback();
   const [items, setItems] = useState<FeedbackItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
 
   const tauriMode = isTauri();
+
+  const loadItems = async () => {
+    setLoading(true);
+    setLoadError(null);
+
+    try {
+      const result = await listFeedbacks();
+      setItems(result);
+    } catch (err) {
+      console.error("Failed to load feedback history:", err);
+      setLoadError(t("feedback.historyLoadFailed"));
+      toast.error(t("feedback.historyLoadFailed"));
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (!open || !tauriMode) return;
 
     let cancelled = false;
-    setLoading(true);
 
     const load = async () => {
+      setLoading(true);
+      setLoadError(null);
+
       try {
         const result = await listFeedbacks();
         if (!cancelled) {
@@ -91,6 +111,9 @@ export function FeedbackHistoryDialog({
         }
       } catch (err) {
         console.error("Failed to load feedback history:", err);
+        if (!cancelled) {
+          setLoadError(t("feedback.historyLoadFailed"));
+        }
         toast.error(t("feedback.historyLoadFailed"));
       } finally {
         if (!cancelled) {
@@ -185,6 +208,23 @@ export function FeedbackHistoryDialog({
             />
           </InputGroup>
         </DialogHeader>
+
+        {loadError && (
+          <Alert>
+            <AlertDescription className="flex items-center justify-between gap-2">
+              <span>{loadError}</span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void loadItems()}
+                disabled={loading}
+              >
+                {t("common.retry")}
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
 
         {loading ? (
           <div className="flex min-h-55 flex-1 items-center justify-center">

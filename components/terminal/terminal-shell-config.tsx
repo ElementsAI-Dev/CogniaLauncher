@@ -50,8 +50,14 @@ import {
   Save,
   AlertCircle,
   RotateCcw,
+  Link,
+  Key,
 } from "lucide-react";
-import { getTerminalEditorLanguage } from "@/lib/constants/terminal";
+import { cn } from "@/lib/utils";
+import {
+  getTerminalBootstrapTemplate,
+  getTerminalEditorLanguage,
+} from "@/lib/constants/terminal";
 import { TerminalConfigEditor } from "./terminal-config-editor";
 import type {
   ShellInfo,
@@ -338,7 +344,9 @@ export function TerminalShellConfig({
   const [conflictMessage, setConflictMessage] = useState<string | null>(null);
   const [targetDialogOpen, setTargetDialogOpen] = useState(false);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [initializeDialogOpen, setInitializeDialogOpen] = useState(false);
   const [switchSaving, setSwitchSaving] = useState(false);
+  const [initializing, setInitializing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -347,7 +355,12 @@ export function TerminalShellConfig({
   const [lastRefreshSignal, setLastRefreshSignal] = useState(refreshIntent.signal);
 
   const selectedShell = shells.find((s) => s.id === selectedShellId);
-  const configFiles = selectedShell?.configFiles.filter((f) => f.exists) ?? [];
+  const configFiles = selectedShell?.configFiles ?? [];
+  const selectedConfigFile =
+    configFiles.find((file) => file.path === selectedConfigPath) ?? null;
+  const selectedConfigMissing = selectedConfigFile ? !selectedConfigFile.exists : false;
+  const canInitializeSelectedConfig =
+    Boolean(selectedShell && selectedConfigPath && selectedConfigMissing && onWriteConfig);
   const diagnostics = mutationResult?.diagnosticDetails?.length
     ? mutationResult.diagnosticDetails
     : liveDiagnostics;
@@ -469,7 +482,7 @@ export function TerminalShellConfig({
     }
   };
 
-  const handleLoadConfig = async () => {
+  const handleLoadConfig = async (enterEditingMode = false) => {
     if (!selectedConfigPath || !selectedShell) return;
     clearMutationFeedback();
     setLoading(true);
@@ -505,7 +518,12 @@ export function TerminalShellConfig({
         setEditorMetadata(null);
       }
       setLoaded(true);
-      setSessionStatus("loaded");
+      setEditing(enterEditingMode);
+      setSessionStatus(enterEditingMode ? "editing" : "loaded");
+      onRefreshHandled?.({
+        configEntries: true,
+        configMetadata: Boolean(onGetConfigEditorMetadata),
+      });
     } catch (e) {
       setError(String(e));
       setPersistedBaseline(null);
@@ -518,6 +536,30 @@ export function TerminalShellConfig({
       setSessionStatus("error");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleInitializeConfig = async () => {
+    if (!selectedShell || !selectedConfigPath || !onWriteConfig) return;
+    setInitializing(true);
+    setError(null);
+    setConflictMessage(null);
+    clearMutationFeedback();
+    const starterContent = getTerminalBootstrapTemplate(selectedShell.shellType);
+    try {
+      const result = await onWriteConfig(
+        selectedConfigPath,
+        starterContent,
+        selectedShell.shellType,
+      );
+      if (!result || result.verified === false) {
+        setSessionStatus("error");
+        return;
+      }
+      setInitializeDialogOpen(false);
+      await handleLoadConfig(true);
+    } finally {
+      setInitializing(false);
     }
   };
 
@@ -733,11 +775,17 @@ export function TerminalShellConfig({
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="outline">{t("terminal.sessionLabel", { status: sessionStatusLabel })}</Badge>
+          <Badge variant="outline" className={cn(
+            sessionStatus === 'loaded' && 'border-green-500/50 text-green-600 dark:text-green-400',
+            sessionStatus === 'editing' && 'border-yellow-500/50 text-yellow-600 dark:text-yellow-400',
+            sessionStatus === 'saving' && 'border-blue-500/50 text-blue-600 dark:text-blue-400',
+            sessionStatus === 'error' && 'border-destructive/50 text-destructive',
+            sessionStatus === 'conflict' && 'border-destructive/50 text-destructive',
+          )}>{t("terminal.sessionLabel", { status: sessionStatusLabel })}</Badge>
           {isDirty && <Badge variant="secondary">{t("terminal.unsavedDraft")}</Badge>}
         </div>
 
-        <div className="flex gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row">
           <Select value={selectedShellId} onValueChange={handleShellChange}>
             <SelectTrigger className="w-[180px]">
               <SelectValue placeholder={t("terminal.selectShell")} />
@@ -762,10 +810,13 @@ export function TerminalShellConfig({
               <SelectContent>
                 {configFiles.map((cf) => (
                   <SelectItem key={cf.path} value={cf.path}>
-                    <span className="font-mono text-xs">{cf.path}</span>
-                    <span className="ml-2 text-muted-foreground text-xs">
-                      ({(cf.sizeBytes / 1024).toFixed(1)} KB)
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className={cn('h-1.5 w-1.5 rounded-full shrink-0', cf.exists ? 'bg-green-500' : 'bg-muted-foreground/30')} />
+                      <span className="font-mono text-xs">{cf.path}</span>
+                      <span className="ml-1 text-muted-foreground text-xs">
+                        {cf.exists ? `(${(cf.sizeBytes / 1024).toFixed(1)} KB)` : `(${t("terminal.notExists")})`}
+                      </span>
+                    </div>
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -774,13 +825,38 @@ export function TerminalShellConfig({
 
           <Button
             size="sm"
-            onClick={handleLoadConfig}
-            disabled={!selectedConfigPath || loading}
+            onClick={() => void handleLoadConfig()}
+            disabled={!selectedConfigPath || selectedConfigMissing || loading || initializing}
           >
             <RefreshCw className="h-3.5 w-3.5 mr-1" />
             {t("terminal.loadConfig")}
           </Button>
+          {selectedConfigMissing && (
+            <Button
+              data-testid="terminal-init-open"
+              size="sm"
+              variant="secondary"
+              onClick={() => setInitializeDialogOpen(true)}
+              disabled={!canInitializeSelectedConfig || loading || isBusy || initializing}
+            >
+              <FileText className={`h-3.5 w-3.5 mr-1 ${initializing ? "animate-pulse" : ""}`} />
+              {initializing ? t("terminal.initializingConfig") : t("terminal.initializeConfig")}
+            </Button>
+          )}
         </div>
+
+        {selectedConfigMissing && (
+          <Alert>
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>{t("terminal.configTargetMissingTitle")}</AlertTitle>
+            <AlertDescription>
+              {t("terminal.configTargetMissingDesc", {
+                path: selectedConfigPath,
+                shell: selectedShell?.name ?? selectedShell?.shellType ?? "",
+              })}
+            </AlertDescription>
+          </Alert>
+        )}
 
         {configFiles.length === 0 && selectedShellId && (
           <Empty className="border-dashed py-5">
@@ -802,7 +878,7 @@ export function TerminalShellConfig({
             <AlertDescription className="space-y-2">
               <p>{conflictMessage}</p>
               <div className="flex flex-wrap gap-2">
-                <Button size="sm" variant="outline" onClick={handleLoadConfig}>
+                <Button size="sm" variant="outline" onClick={() => void handleLoadConfig()}>
                   {t("terminal.reloadFromDisk")}
                 </Button>
                 {editing && onWriteConfig && (
@@ -825,7 +901,7 @@ export function TerminalShellConfig({
                 size="sm"
                 variant="outline"
                 className="ml-auto shrink-0"
-                onClick={handleLoadConfig}
+                onClick={() => void handleLoadConfig()}
               >
                 {t("terminal.loadConfig")}
               </Button>
@@ -913,6 +989,7 @@ export function TerminalShellConfig({
               <AccordionItem value="aliases">
                 <AccordionTrigger className="py-3">
                   <span className="flex items-center gap-2 text-sm">
+                    <Link className="h-3.5 w-3.5 text-muted-foreground" />
                     {t("terminal.aliases")}
                     <Badge variant="secondary">{entries.aliases.length}</Badge>
                   </span>
@@ -958,6 +1035,7 @@ export function TerminalShellConfig({
               <AccordionItem value="exports">
                 <AccordionTrigger className="py-3">
                   <span className="flex items-center gap-2 text-sm">
+                    <Key className="h-3.5 w-3.5 text-muted-foreground" />
                     {t("terminal.envExports")}
                     <Badge variant="secondary">{entries.exports.length}</Badge>
                   </span>
@@ -1003,6 +1081,7 @@ export function TerminalShellConfig({
               <AccordionItem value="sources">
                 <AccordionTrigger className="py-3">
                   <span className="flex items-center gap-2 text-sm">
+                    <FileText className="h-3.5 w-3.5 text-muted-foreground" />
                     {t("terminal.sources")}
                     <Badge variant="secondary">{entries.sources.length}</Badge>
                   </span>
@@ -1037,6 +1116,10 @@ export function TerminalShellConfig({
           </Accordion>
         )}
 
+        {entries && entries.aliases.length === 0 && entries.exports.length === 0 && entries.sources.length === 0 && !loading && (
+          <p className="text-xs text-muted-foreground text-center py-2">{t('terminal.noConfigEntries')}</p>
+        )}
+
         {loaded && persistedBaseline != null && !loading && (
           <>
             <Separator />
@@ -1066,7 +1149,7 @@ export function TerminalShellConfig({
                 />
               )}
 
-              <div className="flex gap-2 flex-wrap">
+              <div className="flex gap-2 flex-wrap items-center">
                 <Button size="sm" variant="outline" onClick={handleCopyContent}>
                   <Copy className="h-3.5 w-3.5 mr-1" />
                   {t("terminal.copyConfig")}
@@ -1080,6 +1163,7 @@ export function TerminalShellConfig({
                   <FileText className="h-3.5 w-3.5 mr-1" />
                   {t("terminal.backupConfig")}
                 </Button>
+                <Separator orientation="vertical" className="h-6 mx-1" />
                 {onWriteConfig && (
                   <Button
                     size="sm"
@@ -1175,6 +1259,42 @@ export function TerminalShellConfig({
             }}
           >
             {t("terminal.saveAndSwitch")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <Dialog
+      open={initializeDialogOpen}
+      onOpenChange={(open) => {
+        if (initializing) return;
+        setInitializeDialogOpen(open);
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{t("terminal.initializeConfigTitle")}</DialogTitle>
+          <DialogDescription>
+            {t("terminal.initializeConfigDesc", {
+              path: selectedConfigPath,
+              shell: selectedShell?.name ?? selectedShell?.shellType ?? "",
+            })}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter className="gap-2">
+          <Button
+            variant="outline"
+            disabled={initializing}
+            onClick={() => setInitializeDialogOpen(false)}
+          >
+            {t("terminal.cancel")}
+          </Button>
+          <Button
+            data-testid="terminal-init-confirm"
+            disabled={!canInitializeSelectedConfig || initializing}
+            onClick={() => void handleInitializeConfig()}
+          >
+            {initializing ? t("terminal.initializingConfig") : t("terminal.initializeConfig")}
           </Button>
         </DialogFooter>
       </DialogContent>

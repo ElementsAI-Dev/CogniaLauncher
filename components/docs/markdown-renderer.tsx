@@ -16,6 +16,7 @@ import { useState } from 'react';
 import { handleAnchorClick } from '@/lib/docs/scroll';
 import { resolveDocLink } from '@/lib/docs/resolve-link';
 import { parseCallout, getCalloutIcon } from '@/lib/docs/remark-callout';
+import { MermaidDiagram } from './mermaid-diagram';
 
 interface MarkdownRendererProps {
   content: string;
@@ -78,6 +79,42 @@ function createHeading(Tag: 'h1' | 'h2' | 'h3' | 'h4') {
   return HeadingComponent;
 }
 
+function getCodeBlockInfo(children: React.ReactNode) {
+  let textContent = '';
+  let language = '';
+  let filename = '';
+
+  if (
+    children &&
+    typeof children === 'object' &&
+    'props' in (children as React.ReactElement)
+  ) {
+    const codeEl = children as React.ReactElement<{
+      children?: React.ReactNode;
+      className?: string;
+      'data-meta'?: string;
+    }>;
+
+    if (typeof codeEl.props.children === 'string') {
+      textContent = codeEl.props.children;
+    }
+
+    const cls = codeEl.props.className ?? '';
+    const langMatch = cls.match(/(?:language-|hljs language-)([\w-]+)/);
+    if (langMatch) {
+      language = langMatch[1];
+    }
+
+    const meta = codeEl.props['data-meta'] ?? '';
+    const titleMatch = meta.match(/title=["']([^"']+)["']/);
+    if (titleMatch) {
+      filename = titleMatch[1];
+    }
+  }
+
+  return { textContent, language, filename };
+}
+
 const headingComponents = {
   h1: createHeading('h1'),
   h2: createHeading('h2'),
@@ -94,29 +131,12 @@ export function MarkdownRenderer({ content, className, basePath }: MarkdownRende
         components={{
           ...headingComponents,
           pre: ({ children, ...props }: ComponentPropsWithoutRef<'pre'>) => {
-            let textContent = '';
-            let language = '';
-            let filename = '';
-            if (
-              children &&
-              typeof children === 'object' &&
-              'props' in (children as React.ReactElement)
-            ) {
-              const codeEl = children as React.ReactElement<{ children?: React.ReactNode; className?: string; 'data-meta'?: string }>;
-              if (typeof codeEl.props.children === 'string') {
-                textContent = codeEl.props.children;
-              }
-              const cls = codeEl.props.className ?? '';
-              const langMatch = cls.match(/(?:language-|hljs language-)([\w-]+)/);
-              if (langMatch) {
-                language = langMatch[1];
-              }
-              const meta = codeEl.props['data-meta'] ?? '';
-              const titleMatch = meta.match(/title=["']([^"']+)["']/);
-              if (titleMatch) {
-                filename = titleMatch[1];
-              }
+            const { textContent, language, filename } = getCodeBlockInfo(children);
+
+            if (language === 'mermaid' && textContent) {
+              return <MermaidDiagram source={textContent} />;
             }
+
             return (
               <div className="group/code relative">
                 {filename && (

@@ -10,6 +10,9 @@ const appSettingsFallback: AppSettings = {
   checkUpdatesOnStart: true,
   autoInstallUpdates: false,
   notifyOnUpdates: true,
+  updateSourceMode: "official",
+  updateCustomEndpoints: [],
+  updateFallbackToOfficial: true,
   minimizeToTray: true,
   startMinimized: false,
   autostart: false,
@@ -58,12 +61,20 @@ describe("reset-mapping", () => {
     const appSettings = buildAppSettingsFromConfigSnapshot({
       configSnapshot: {
         "updates.check_on_start": "false",
+        "updates.source_mode": "mirror",
+        "updates.custom_endpoints": '["https://updates.example.com/latest.json"]',
+        "updates.fallback_to_official": "false",
         "tray.notification_level": "none",
       },
       currentAppSettings: appSettingsFallback,
     });
 
     expect(appSettings.checkUpdatesOnStart).toBe(false);
+    expect(appSettings.updateSourceMode).toBe("mirror");
+    expect(appSettings.updateCustomEndpoints).toEqual([
+      "https://updates.example.com/latest.json",
+    ]);
+    expect(appSettings.updateFallbackToOfficial).toBe(false);
     expect(appSettings.trayNotificationLevel).toBe("none");
   });
 });

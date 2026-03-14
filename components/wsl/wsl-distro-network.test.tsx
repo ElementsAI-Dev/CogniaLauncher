@@ -108,7 +108,7 @@ describe('WslDistroNetwork', () => {
 
   it('shows not running message when isRunning is false', () => {
     render(<WslDistroNetwork {...defaultProps} />);
-    expect(screen.getByText('Distro is not running')).toBeInTheDocument();
+    expect(screen.getAllByText('Distro is not running').length).toBeGreaterThan(0);
   });
 
   it('auto-loads network info and port-forward rules when running', async () => {
@@ -127,7 +127,9 @@ describe('WslDistroNetwork', () => {
 
     const [listenInput, connectPortInput] = screen.getAllByRole('spinbutton');
     await user.type(listenInput, '5000');
-    await user.type(screen.getByRole('textbox'), '172.20.0.5');
+    const addressInput = screen.getByRole('textbox');
+    await user.clear(addressInput);
+    await user.type(addressInput, '172.20.0.5');
     await user.type(connectPortInput, '5000');
 
     await user.click(screen.getByLabelText('add-port-forward-rule'));
@@ -167,7 +169,9 @@ describe('WslDistroNetwork', () => {
 
     const [listenInput, connectPortInput] = screen.getAllByRole('spinbutton');
     await user.type(listenInput, '5001');
-    await user.type(screen.getByRole('textbox'), '172.20.0.5');
+    const addressInput = screen.getByRole('textbox');
+    await user.clear(addressInput);
+    await user.type(addressInput, '172.20.0.5');
     await user.type(connectPortInput, '5001');
 
     await user.click(screen.getByLabelText('add-port-forward-rule'));

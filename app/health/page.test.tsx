@@ -1,5 +1,6 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import HealthPage from './page';
+import { writeClipboard } from '@/lib/clipboard';
 
 jest.mock('@/components/providers/locale-provider', () => ({
   useLocale: () => ({ t: (key: string) => key }),
@@ -12,7 +13,25 @@ let mockProgress: Record<string, unknown> | null = null;
 const mockCheckAll = jest.fn();
 const mockCheckEnvironment = jest.fn();
 const mockClearResults = jest.fn();
+const mockPreviewRemediation = jest.fn();
+const mockApplyRemediation = jest.fn();
 const mockIsTauri = jest.fn(() => true);
+const mockSummary = {
+  environmentCount: 0,
+  healthyCount: 0,
+  warningCount: 0,
+  errorCount: 0,
+  unavailableCount: 0,
+  unavailableScopeCount: 0,
+  timeoutScopeCount: 0,
+  unsupportedScopeCount: 0,
+  packageManagerCount: 0,
+  unavailablePackageManagerCount: 0,
+  issueCount: 0,
+  verifiedIssueCount: 0,
+  advisoryIssueCount: 0,
+  actionableIssueCount: 0,
+};
 
 jest.mock('@/hooks/use-health-check', () => ({
   useHealthCheck: () => ({
@@ -21,6 +40,10 @@ jest.mock('@/hooks/use-health-check', () => ({
     loading: mockLoading,
     error: mockError,
     progress: mockProgress,
+    summary: mockSummary,
+    activeRemediationId: null,
+    previewRemediation: mockPreviewRemediation,
+    applyRemediation: mockApplyRemediation,
     checkAll: mockCheckAll,
     checkEnvironment: mockCheckEnvironment,
     getStatusColor: jest.fn(() => ''),
@@ -52,6 +75,20 @@ describe('HealthPage', () => {
     mockError = null;
     mockProgress = null;
     mockIsTauri.mockReturnValue(true);
+    mockSummary.environmentCount = 0;
+    mockSummary.healthyCount = 0;
+    mockSummary.warningCount = 0;
+    mockSummary.errorCount = 0;
+    mockSummary.unavailableCount = 0;
+    mockSummary.unavailableScopeCount = 0;
+    mockSummary.timeoutScopeCount = 0;
+    mockSummary.unsupportedScopeCount = 0;
+    mockSummary.packageManagerCount = 0;
+    mockSummary.unavailablePackageManagerCount = 0;
+    mockSummary.issueCount = 0;
+    mockSummary.verifiedIssueCount = 0;
+    mockSummary.advisoryIssueCount = 0;
+    mockSummary.actionableIssueCount = 0;
     jest.clearAllMocks();
   });
 
@@ -126,6 +163,11 @@ describe('HealthPage', () => {
       package_managers: [],
       skipped_providers: [],
     };
+    mockSummary.environmentCount = 3;
+    mockSummary.healthyCount = 1;
+    mockSummary.warningCount = 1;
+    mockSummary.errorCount = 1;
+    mockSummary.unavailableCount = 0;
     render(<HealthPage />);
     expect(screen.getAllByText('1').length).toBeGreaterThan(0); // healthy card count appears
   });
@@ -169,5 +211,68 @@ describe('HealthPage', () => {
     render(<HealthPage />);
     fireEvent.click(screen.getByText('environments.healthCheck.clearResults'));
     expect(mockClearResults).toHaveBeenCalled();
+  });
+
+  it('exports diagnostics with scope and evidence metadata', () => {
+    mockSystemHealth = {
+      overall_status: 'warning',
+      checked_at: new Date().toISOString(),
+      system_issues: [
+        {
+          severity: 'warning',
+          message: 'System issue',
+          fix_command: null,
+          signal_source: 'path_heuristic',
+          confidence: 'inferred',
+          check_id: 'path_duplicate_entries',
+        },
+      ],
+      environments: [
+        {
+          env_type: 'node',
+          provider_id: 'fnm',
+          status: 'warning',
+          scope_state: 'available',
+          scope_reason: null,
+          issues: [
+            {
+              severity: 'warning',
+              message: 'Node warning',
+              fix_command: 'fix-node',
+              signal_source: 'runtime_probe',
+              confidence: 'verified',
+              check_id: 'environment_missing_active_version:fnm',
+            },
+          ],
+          suggestions: [],
+        },
+      ],
+      package_managers: [
+        {
+          provider_id: 'npm',
+          display_name: 'npm',
+          status: 'healthy',
+          scope_state: 'timeout',
+          scope_reason: 'health_check_timeout',
+          version: '10.0.0',
+          issues: [],
+        },
+      ],
+      skipped_providers: [],
+    };
+    mockSummary.issueCount = 2;
+    mockSummary.verifiedIssueCount = 1;
+    mockSummary.advisoryIssueCount = 1;
+
+    render(<HealthPage />);
+    fireEvent.click(screen.getByText('environments.healthCheck.exportDiagnostics'));
+
+    const clipboardSpy = writeClipboard as jest.Mock;
+    expect(clipboardSpy).toHaveBeenCalledTimes(1);
+    const exported = clipboardSpy.mock.calls[0]?.[0] as string;
+    expect(exported).toContain('scope=timeout');
+    expect(exported).toContain('source=runtime_probe');
+    expect(exported).toContain('confidence=verified');
+    expect(exported).toContain('check=environment_missing_active_version:fnm');
   });
 });

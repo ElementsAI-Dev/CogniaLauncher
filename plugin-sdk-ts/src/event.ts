@@ -1,4 +1,5 @@
 import { callHost, callHostJson } from './host';
+import type { PluginEventEnvelope } from './types';
 
 /**
  * Emit an event that can be observed by the host and other plugins.
@@ -26,4 +27,17 @@ export function getPluginId(): string {
     '',
   );
   return result.pluginId;
+}
+
+/**
+ * Parse the host event-listener callback envelope received by `cognia_on_event`.
+ */
+export function parseEnvelope<TPayload = unknown>(
+  input: string,
+): PluginEventEnvelope<TPayload> | null {
+  try {
+    return JSON.parse(input) as PluginEventEnvelope<TPayload>;
+  } catch {
+    return null;
+  }
 }

@@ -7,6 +7,7 @@ import {
   parseMaintainerArgs,
   printRunSummary,
   readCatalog,
+  readExtensionPointMatrix,
   readSdkCapabilityMatrix,
   recordRunFailure,
   recordRunSuccess,
@@ -16,6 +17,7 @@ import {
   runPluginTests,
   sha256File,
   validateCatalogShape,
+  validateExtensionPointMatrixShape,
   validatePluginCapabilityMatrixEntry,
   validateSdkCapabilityMatrixShape,
   validatePluginProjectMetadata,
@@ -45,6 +47,7 @@ let parsedArgs = {
 let catalog;
 let summary;
 let sdkCapabilityMatrix;
+let extensionPointMatrix;
 
 try {
   parsedArgs = parseMaintainerArgs(process.argv.slice(2), {
@@ -53,6 +56,8 @@ try {
   });
   catalog = readCatalog();
   validateCatalogShape(catalog);
+  extensionPointMatrix = readExtensionPointMatrix();
+  validateExtensionPointMatrixShape(extensionPointMatrix);
   sdkCapabilityMatrix = readSdkCapabilityMatrix();
   validateSdkCapabilityMatrixShape(sdkCapabilityMatrix, catalog);
 

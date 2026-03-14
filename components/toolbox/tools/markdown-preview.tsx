@@ -5,7 +5,12 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import { Button } from '@/components/ui/button';
-import { ToolActionRow, ToolTextArea, ToolValidationMessage } from '@/components/toolbox/tool-layout';
+import {
+  ToolActionRow,
+  ToolTextArea,
+  ToolValidationMessage,
+  ToolSection,
+} from '@/components/toolbox/tool-layout';
 import { useLocale } from '@/components/providers/locale-provider';
 import { useToolPreferences } from '@/hooks/use-tool-preferences';
 import { TOOLBOX_LIMITS } from '@/lib/constants/toolbox-limits';
@@ -51,25 +56,66 @@ export default function MarkdownPreview({ className }: ToolComponentProps) {
   const previewContent = truncated ? input.slice(0, TOOLBOX_LIMITS.markdownPreviewChars) : input;
   const previewMode = preferences.previewMode;
 
+  const wordCount = input.trim() ? input.trim().split(/\s+/).length : 0;
+  const charCount = input.length;
+
+  const appendAtEnd = (snippet: string) => {
+    setInput((prev) => `${prev}${prev.endsWith('\n') ? '' : '\n'}${snippet}`);
+  };
+
+  const exportHtml = () => {
+    const html = `<article>\n${previewContent}\n</article>`;
+    navigator.clipboard.writeText(html).catch(() => {
+      // ignore clipboard failures in browser restriction cases
+    });
+  };
+
   return (
     <div className={className}>
       <div className="space-y-4">
-        <ToolActionRow>
-          <Button
-            size="sm"
-            variant={previewMode === 'split' ? 'default' : 'outline'}
-            onClick={() => setPreferences({ previewMode: 'split' })}
-          >
-            {t('toolbox.tools.markdownPreview.modeSplit')}
-          </Button>
-          <Button
-            size="sm"
-            variant={previewMode === 'preview' ? 'default' : 'outline'}
-            onClick={() => setPreferences({ previewMode: 'preview' })}
-          >
-            {t('toolbox.tools.markdownPreview.modePreview')}
-          </Button>
-        </ToolActionRow>
+        <ToolSection title={t('toolbox.tools.markdownPreview.name')} description={t('toolbox.tools.markdownPreview.desc')}>
+          <ToolActionRow>
+            <Button
+              size="sm"
+              variant={previewMode === 'split' ? 'default' : 'outline'}
+              onClick={() => setPreferences({ previewMode: 'split' })}
+            >
+              {t('toolbox.tools.markdownPreview.modeSplit')}
+            </Button>
+            <Button
+              size="sm"
+              variant={previewMode === 'preview' ? 'default' : 'outline'}
+              onClick={() => setPreferences({ previewMode: 'preview' })}
+            >
+              {t('toolbox.tools.markdownPreview.modePreview')}
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => appendAtEnd('**bold**')}>
+              **B**
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => appendAtEnd('*italic*')}>
+              *I*
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => appendAtEnd('## Heading')}>
+              H2
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => appendAtEnd('- item')}>
+              List
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => appendAtEnd('[link](https://example.com)')}>
+              Link
+            </Button>
+            <Button size="sm" variant="outline" onClick={exportHtml}>
+              {t('toolbox.tools.markdownPreview.exportHtml')}
+            </Button>
+          </ToolActionRow>
+
+          <p className="mt-2 text-xs text-muted-foreground">
+            {t('toolbox.tools.markdownPreview.stats', {
+              words: wordCount,
+              chars: charCount,
+            })}
+          </p>
+        </ToolSection>
 
         {truncated && (
           <ToolValidationMessage
@@ -80,9 +126,9 @@ export default function MarkdownPreview({ className }: ToolComponentProps) {
           />
         )}
 
-        <div className={previewMode === 'split' ? 'grid gap-4 md:grid-cols-2 h-[500px]' : 'space-y-4'}>
+        <div className={previewMode === 'split' ? 'grid gap-4 md:grid-cols-2 min-h-130' : 'space-y-4'}>
           {previewMode === 'split' && (
-            <div className="flex flex-col">
+            <ToolSection title={t('toolbox.tools.markdownPreview.editor')} className="h-full">
               <ToolTextArea
                 label={t('toolbox.tools.markdownPreview.editor')}
                 value={input}
@@ -90,28 +136,32 @@ export default function MarkdownPreview({ className }: ToolComponentProps) {
                 placeholder="# Write markdown here..."
                 showClear
                 rows={20}
-                className="flex-1"
+                className="h-full"
+                maxLength={TOOLBOX_LIMITS.markdownPreviewChars}
               />
-            </div>
+            </ToolSection>
           )}
           {previewMode === 'preview' && (
-            <ToolTextArea
-              label={t('toolbox.tools.markdownPreview.editor')}
-              value={input}
-              onChange={setInput}
-              placeholder="# Write markdown here..."
-              showClear
-              rows={12}
-            />
+            <ToolSection title={t('toolbox.tools.markdownPreview.editor')}>
+              <ToolTextArea
+                label={t('toolbox.tools.markdownPreview.editor')}
+                value={input}
+                onChange={setInput}
+                placeholder="# Write markdown here..."
+                showClear
+                rows={12}
+                maxLength={TOOLBOX_LIMITS.markdownPreviewChars}
+              />
+            </ToolSection>
           )}
-          <div className="flex flex-col">
-            <span className="text-sm font-medium mb-2">{t('toolbox.tools.markdownPreview.preview')}</span>
-            <div className="flex-1 rounded-md border p-4 overflow-auto prose prose-sm dark:prose-invert max-w-none">
+
+          <ToolSection title={t('toolbox.tools.markdownPreview.preview')}>
+            <div className="rounded-md border p-4 overflow-auto min-h-105 prose prose-sm dark:prose-invert max-w-none">
               <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
                 {previewContent}
               </ReactMarkdown>
             </div>
-          </div>
+          </ToolSection>
         </div>
       </div>
     </div>

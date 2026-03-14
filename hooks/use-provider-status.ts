@@ -1,6 +1,12 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { ProviderStatusInfo } from '@/types/tauri';
+import {
+  isProviderStatusAvailable,
+  normalizeProviderStatus,
+  type ProviderStatusLike,
+} from '@/lib/utils/provider';
 
 /**
  * Shared hook for provider availability check with local state.
@@ -8,25 +14,34 @@ import { useState, useCallback } from 'react';
  */
 export function useProviderStatus(
   providerId: string,
-  initialAvailable: boolean | undefined,
-  onCheckStatus: (providerId: string) => Promise<boolean>,
+  initialStatus: ProviderStatusLike,
+  onCheckStatus: (providerId: string) => Promise<ProviderStatusLike>,
 ) {
   const [isChecking, setIsChecking] = useState(false);
-  const [localAvailable, setLocalAvailable] = useState<boolean | undefined>(
-    initialAvailable,
+  const normalizedInitialStatus = useMemo(
+    () => normalizeProviderStatus(providerId, initialStatus),
+    [providerId, initialStatus],
   );
+  const [localStatus, setLocalStatus] = useState<ProviderStatusInfo | undefined>(
+    normalizedInitialStatus,
+  );
+
+  useEffect(() => {
+    setLocalStatus(normalizedInitialStatus);
+  }, [normalizedInitialStatus]);
 
   const handleCheckStatus = useCallback(async () => {
     setIsChecking(true);
     try {
-      const available = await onCheckStatus(providerId);
-      setLocalAvailable(available);
+      const nextStatus = await onCheckStatus(providerId);
+      setLocalStatus(normalizeProviderStatus(providerId, nextStatus));
     } finally {
       setIsChecking(false);
     }
   }, [onCheckStatus, providerId]);
 
-  const availabilityStatus = localAvailable ?? initialAvailable;
+  const statusInfo = localStatus ?? normalizedInitialStatus;
+  const availabilityStatus = isProviderStatusAvailable(statusInfo);
 
-  return { isChecking, availabilityStatus, handleCheckStatus };
+  return { isChecking, statusInfo, availabilityStatus, handleCheckStatus };
 }

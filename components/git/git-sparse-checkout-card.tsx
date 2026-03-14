@@ -15,6 +15,7 @@ export function GitSparseCheckoutCard({
   isSparseCheckout,
   sparsePatterns,
   loading,
+  supportReason,
   onRefresh,
   onInit,
   onSet,
@@ -26,7 +27,8 @@ export function GitSparseCheckoutCard({
   const [coneMode, setConeMode] = useState(true);
   const [busy, setBusy] = useState(false);
 
-  const disabled = loading || busy;
+  const blocked = Boolean(supportReason);
+  const disabled = blocked || loading || busy;
 
   const run = async (fn: () => Promise<string>, successMessage?: string) => {
     setBusy(true);
@@ -53,6 +55,9 @@ export function GitSparseCheckoutCard({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
+        {supportReason && (
+          <p className="text-xs text-muted-foreground">{supportReason}</p>
+        )}
         <div className="flex flex-wrap gap-2">
           <Button
             variant="outline"

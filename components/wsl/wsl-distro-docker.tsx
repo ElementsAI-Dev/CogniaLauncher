@@ -16,6 +16,17 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Input } from '@/components/ui/input';
+import {
   Container,
   RefreshCw,
   Play,
@@ -59,6 +70,8 @@ export function WslDistroDocker({ distroName, isRunning, onExec, t }: WslDistroD
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [pruneConfirmOpen, setPruneConfirmOpen] = useState(false);
+  const [containerSearch, setContainerSearch] = useState('');
 
   const refresh = useCallback(async () => {
     if (!isRunning) return;
@@ -154,6 +167,22 @@ export function WslDistroDocker({ distroName, isRunning, onExec, t }: WslDistroD
     }
   }, [distroName, onExec, refresh, t]);
 
+  const getImageSizeClass = (size: string): string => {
+    const upper = size.toUpperCase();
+    if (upper.includes('GB')) return 'text-red-600 dark:text-red-400 font-medium';
+    if (upper.includes('MB')) {
+      const num = parseFloat(size);
+      if (!isNaN(num) && num > 500) return 'text-amber-600 dark:text-amber-400 font-medium';
+    }
+    return 'text-muted-foreground';
+  };
+
+  const filteredContainers = containers.filter((c) => {
+    if (!containerSearch) return true;
+    const search = containerSearch.toLowerCase();
+    return c.name.toLowerCase().includes(search) || c.image.toLowerCase().includes(search);
+  });
+
   if (!isRunning) {
     return (
       <Card>
@@ -191,7 +220,7 @@ export function WslDistroDocker({ distroName, isRunning, onExec, t }: WslDistroD
                     variant="outline"
                     size="sm"
                     className="h-7 text-xs gap-1"
-                    onClick={handlePrune}
+                    onClick={() => setPruneConfirmOpen(true)}
                     disabled={!!actionLoading}
                   >
                     {actionLoading === 'prune' ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
@@ -235,10 +264,18 @@ export function WslDistroDocker({ distroName, isRunning, onExec, t }: WslDistroD
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {containers.length === 0 ? (
+            {containers.length > 0 && (
+              <Input
+                placeholder={t('wsl.detail.dockerSearchContainers')}
+                value={containerSearch}
+                onChange={(e) => setContainerSearch(e.target.value)}
+                className="h-9 mb-3"
+              />
+            )}
+            {filteredContainers.length === 0 ? (
               <p className="text-xs text-muted-foreground">{t('wsl.detail.docker.noContainers')}</p>
             ) : (
-              <ScrollArea className="max-h-[300px]">
+              <ScrollArea className="max-h-[400px]">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -249,7 +286,7 @@ export function WslDistroDocker({ distroName, isRunning, onExec, t }: WslDistroD
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {containers.map((c) => {
+                    {filteredContainers.map((c) => {
                       const isActive = c.state === 'running';
                       return (
                         <TableRow key={c.id} className="group">
@@ -261,7 +298,7 @@ export function WslDistroDocker({ distroName, isRunning, onExec, t }: WslDistroD
                             </Badge>
                           </TableCell>
                           <TableCell className="text-right">
-                            <div className="flex items-center gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className="flex items-center gap-1.5 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
                               {!isActive ? (
                                 <Button variant="ghost" size="icon" className="h-6 w-6" disabled={!!actionLoading} onClick={() => handleContainerAction(c.id, 'start')}>
                                   {actionLoading === `${c.id}-start` ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
@@ -311,7 +348,7 @@ export function WslDistroDocker({ distroName, isRunning, onExec, t }: WslDistroD
                     <TableRow key={`${img.repository}:${img.tag}`}>
                       <TableCell className="font-mono text-xs">{img.repository}</TableCell>
                       <TableCell className="text-xs"><Badge variant="outline" className="text-[10px]">{img.tag}</Badge></TableCell>
-                      <TableCell className="text-right text-xs text-muted-foreground">{img.size}</TableCell>
+                      <TableCell className={`text-right text-xs ${getImageSizeClass(img.size)}`}>{img.size}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -320,6 +357,21 @@ export function WslDistroDocker({ distroName, isRunning, onExec, t }: WslDistroD
           </CardContent>
         </Card>
       )}
+
+      <AlertDialog open={pruneConfirmOpen} onOpenChange={setPruneConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('wsl.detail.dockerPruneConfirmTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>{t('wsl.detail.dockerPruneConfirmDesc')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogAction onClick={handlePrune} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              {t('wsl.detail.docker.prune')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

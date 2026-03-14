@@ -7,7 +7,6 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   Table,
@@ -24,7 +23,6 @@ import {
   Square,
   RotateCw,
   Search,
-  AlertCircle,
   CheckCircle2,
   XCircle,
   Clock,
@@ -48,6 +46,22 @@ function getStatusIcon(status: ServiceInfo['status']) {
       return <Square className="h-3.5 w-3.5 text-muted-foreground" />;
     default:
       return <Cog className="h-3.5 w-3.5 text-muted-foreground" />;
+  }
+}
+
+function getStatusClassName(status: ServiceInfo['status']) {
+  switch (status) {
+    case 'running':
+      return 'bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20';
+    case 'failed':
+      return 'bg-destructive/10 text-destructive border-destructive/20';
+    case 'exited':
+      return 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20';
+    case 'inactive':
+    case 'stopped':
+      return 'bg-muted text-muted-foreground border-muted';
+    default:
+      return '';
   }
 }
 
@@ -130,8 +144,9 @@ export function WslDistroServices({ distroName, isRunning, onExec, t }: WslDistr
     return s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q);
   });
 
-  const runningCount = services.filter((s) => s.status === 'running').length;
-  const failedCount = services.filter((s) => s.status === 'failed').length;
+  const countSource = search ? filteredServices : services;
+  const runningCount = countSource.filter((s) => s.status === 'running').length;
+  const failedCount = countSource.filter((s) => s.status === 'failed').length;
 
   return (
     <div className="space-y-4">
@@ -196,12 +211,13 @@ export function WslDistroServices({ distroName, isRunning, onExec, t }: WslDistr
 
           {/* No systemd */}
           {!loading && loaded && hasSystemd === false && (
-            <Alert>
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>
-                {t('wsl.detail.noSystemd')}
-              </AlertDescription>
-            </Alert>
+            <div className="text-center py-8 space-y-3">
+              <Cog className="h-10 w-10 mx-auto text-muted-foreground/50" />
+              <div className="space-y-1">
+                <p className="text-sm font-medium">{t('wsl.detail.noSystemd')}</p>
+                <p className="text-xs text-muted-foreground max-w-md mx-auto">{t('wsl.detail.noSystemdDesc')}</p>
+              </div>
+            </div>
           )}
 
           {/* Services list */}
@@ -251,7 +267,7 @@ export function WslDistroServices({ distroName, isRunning, onExec, t }: WslDistr
                             <TableCell>
                               <div className="flex items-center gap-2">
                                 <span className="text-sm font-mono font-medium truncate">{service.name}</span>
-                                <Badge variant={getStatusVariant(service.status)} className="text-[10px]">
+                                <Badge variant={getStatusVariant(service.status)} className={`text-[10px] ${getStatusClassName(service.status)}`}>
                                   {service.subState}
                                 </Badge>
                               </div>
@@ -260,7 +276,7 @@ export function WslDistroServices({ distroName, isRunning, onExec, t }: WslDistr
                               {service.description || '—'}
                             </TableCell>
                             <TableCell className="text-right">
-                              <div className="flex items-center gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                              <div className="flex items-center gap-1 justify-end sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                                 {!isActive ? (
                                   <Tooltip>
                                     <TooltipTrigger asChild>

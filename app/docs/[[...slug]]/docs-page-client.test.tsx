@@ -12,15 +12,15 @@ jest.mock('@/components/providers/locale-provider', () => ({
 }));
 
 jest.mock('@/components/docs', () => ({
-  MarkdownRenderer: ({ content }: { content: string }) => <div data-testid="markdown">{content.slice(0, 50)}</div>,
+  MarkdownRenderer: ({ content }: { content: string }) => <div data-testid="markdown">{content}</div>,
   DocsSidebar: ({ searchIndex, className }: { searchIndex?: unknown[]; className?: string }) => (
     <div data-testid="sidebar" data-class={className ?? ''} data-index-count={searchIndex?.length ?? 0} />
   ),
   DocsMobileSidebar: ({ searchIndex }: { searchIndex?: unknown[]; className?: string }) => (
     <div data-testid="mobile-sidebar" data-index-count={searchIndex?.length ?? 0} />
   ),
-  DocsToc: ({ mode, className }: { mode?: string; className?: string }) => (
-    <div data-testid={`toc-${mode}`} data-class={className ?? ''} />
+  DocsToc: ({ mode, className, headings }: { mode?: string; className?: string; headings?: unknown[] }) => (
+    <div data-testid={`toc-${mode}`} data-class={className ?? ''} data-headings-count={headings?.length ?? 0} />
   ),
   DocsNavFooter: ({ prev, next }: { prev?: { slug: string }; next?: { slug: string } }) => (
     <div data-testid="nav-footer" data-prev={prev?.slug ?? ''} data-next={next?.slug ?? ''} />
@@ -133,6 +133,16 @@ describe('DocsPageClient', () => {
   it('passes basePath to MarkdownRenderer', () => {
     render(<DocsPageClient contentZh="# A" contentEn="# B" slug={['guide', 'sub']} basePath="guide" />);
     expect(screen.getByTestId('markdown')).toBeInTheDocument();
+  });
+
+  it('keeps heading extraction stable for mermaid-heavy content', () => {
+    const content = ['# Overview', '```mermaid', 'graph TD', 'A-->B', '```', '## After Diagram'].join('\n');
+
+    render(<DocsPageClient contentZh={content} contentEn={content} slug={['architecture', 'overview']} />);
+
+    expect(screen.getByTestId('markdown')).toHaveTextContent('```mermaid');
+    expect(screen.getByTestId('toc-mobile')).toHaveAttribute('data-headings-count', '1');
+    expect(screen.getByTestId('toc-desktop')).toHaveAttribute('data-headings-count', '1');
   });
 
   it('renders breadcrumb with current slug', () => {

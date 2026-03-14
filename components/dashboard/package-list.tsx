@@ -10,6 +10,11 @@ import {
   CardDescription,
   CardAction,
 } from "@/components/ui/card";
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -25,6 +30,7 @@ import {
   ExternalLink,
   ChevronDown,
   ChevronUp,
+  Loader2,
 } from "lucide-react";
 import { useLocale } from "@/components/providers/locale-provider";
 import { cn } from "@/lib/utils";
@@ -39,12 +45,18 @@ interface PackageListProps {
   packages: InstalledPackage[];
   className?: string;
   initialLimit?: number;
+  isLoading?: boolean;
+  error?: string | null;
+  onRecover?: () => void;
 }
 
 export function PackageList({
   packages,
   className,
   initialLimit = 5,
+  isLoading = false,
+  error = null,
+  onRecover,
 }: PackageListProps) {
   const router = useRouter();
   const { t } = useLocale();
@@ -105,6 +117,20 @@ export function PackageList({
         </CardAction>
       </CardHeader>
       <CardContent>
+        {error && (
+          <Alert variant="destructive" className="mb-3">
+            <AlertTitle>{t("dashboard.widgets.sectionNeedsAttention")}</AlertTitle>
+            <AlertDescription className="space-y-2">
+              <p>{error}</p>
+              {onRecover && (
+                <Button variant="outline" size="sm" onClick={onRecover}>
+                  {t("dashboard.widgets.retry")}
+                </Button>
+              )}
+            </AlertDescription>
+          </Alert>
+        )}
+
         {/* Search Input */}
         {packages.length > 3 && (
           <div className="relative mb-3">
@@ -131,7 +157,12 @@ export function PackageList({
         )}
 
         {/* Package List */}
-        {filteredPackages.length === 0 ? (
+        {isLoading && packages.length === 0 ? (
+          <DashboardEmptyState
+            icon={<Loader2 className="h-8 w-8 animate-spin text-muted-foreground/70" />}
+            message={t("dashboard.widgets.sectionLoading")}
+          />
+        ) : filteredPackages.length === 0 ? (
           <DashboardEmptyState
             icon={<Package className="h-8 w-8 text-muted-foreground/70" />}
             message={
@@ -139,6 +170,17 @@ export function PackageList({
                 ? t("dashboard.noPackages")
                 : t("dashboard.packageList.noResults")
             }
+            action={(
+              <Button
+                variant="link"
+                size="sm"
+                className="mt-1 gap-1"
+                onClick={handleViewAll}
+              >
+                {t("dashboard.quickActions.installPackage")}
+                <ExternalLink className="h-3.5 w-3.5" />
+              </Button>
+            )}
           />
         ) : (
           <Collapsible open={expanded} onOpenChange={setExpanded}>

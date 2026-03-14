@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useWsl } from '@/hooks/use-wsl';
 import { useLocale } from '@/components/providers/locale-provider';
 import { isTauri } from '@/lib/tauri';
@@ -32,6 +32,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
   WslExportDialog,
   WslChangeUserDialog,
@@ -66,6 +73,7 @@ import {
   Copy,
   Container,
   Activity,
+  MoreHorizontal,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { WslDistroDetailPageProps } from '@/types/wsl';
@@ -130,6 +138,9 @@ export function WslDistroDetailPage({
   } = useWsl();
 
   const initializedRef = useRef(false);
+  const searchParams = useSearchParams();
+  const initialTab = searchParams.get('tab') ?? 'overview';
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [exportOpen, setExportOpen] = useState(false);
   const [changeUserOpen, setChangeUserOpen] = useState(false);
   const [moveDialogOpen, setMoveDialogOpen] = useState(false);
@@ -146,6 +157,13 @@ export function WslDistroDetailPage({
   const [assistanceSummary, setAssistanceSummary] = useState<WslAssistanceSummary | null>(null);
   const [assistanceOrigin, setAssistanceOrigin] = useState<'panel' | 'error' | null>(null);
   const [lifecycleFeedback, setLifecycleFeedback] = useState<DistroLifecycleFeedback | null>(null);
+  // Auto-dismiss success feedback after 5 seconds
+  useEffect(() => {
+    if (lifecycleFeedback?.status !== 'success') return;
+    const timer = setTimeout(() => setLifecycleFeedback(null), 5000);
+    return () => clearTimeout(timer);
+  }, [lifecycleFeedback]);
+
   const [confirmAction, setConfirmAction] = useState<
     | { type: 'unregister' | 'terminate' }
     | { type: 'move'; location: string }
@@ -584,14 +602,17 @@ export function WslDistroDetailPage({
                 )}
               </div>
               <div className="flex items-center gap-2 mt-1">
-                <Badge variant={isRunning ? 'default' : 'secondary'} className="text-xs">
+                <Badge
+                  variant={isRunning ? 'default' : 'secondary'}
+                  className={isRunning ? 'bg-green-500/10 text-green-700 dark:text-green-400 text-xs' : 'text-xs'}
+                >
                   {isRunning ? t('wsl.running') : t('wsl.stopped')}
                 </Badge>
                 <Badge variant="outline" className="text-xs">
                   WSL {distro?.wslVersion ?? '?'}
                 </Badge>
                 {distro?.isDefault && (
-                  <Badge variant="outline" className="text-xs text-yellow-600 border-yellow-300">
+                  <Badge variant="outline" className="text-xs bg-amber-100 text-amber-700 border-amber-300 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-700">
                     {t('wsl.defaultBadge')}
                   </Badge>
                 )}
@@ -600,7 +621,7 @@ export function WslDistroDetailPage({
           </div>
         }
         actions={
-          <div className="flex flex-wrap items-center justify-end gap-2">
+          <div className="flex items-center gap-2">
             <Button variant="ghost" size="sm" asChild>
               <Link href={returnHref}>{returnLabel}</Link>
             </Button>
@@ -609,7 +630,7 @@ export function WslDistroDetailPage({
                 variant="outline"
                 size="sm"
                 onClick={() => setConfirmAction({ type: 'terminate' })}
-                className="gap-1.5 whitespace-nowrap"
+                className="gap-1.5"
               >
                 <Square className="h-3.5 w-3.5" />
                 {t('wsl.terminate')}
@@ -619,47 +640,12 @@ export function WslDistroDetailPage({
                 variant="default"
                 size="sm"
                 onClick={handleLaunch}
-                className="gap-1.5 whitespace-nowrap"
+                className="gap-1.5"
               >
                 <Play className="h-3.5 w-3.5" />
                 {t('wsl.launch')}
               </Button>
             )}
-            {!distro?.isDefault && (
-              <Button variant="outline" size="sm" onClick={handleSetDefault} className="gap-1.5 whitespace-nowrap">
-                <Star className="h-3.5 w-3.5" />
-                {t('wsl.setDefault')}
-              </Button>
-            )}
-            <Button variant="outline" size="sm" onClick={handleSetVersion} className="gap-1.5 whitespace-nowrap">
-              <ArrowUpDown className="h-3.5 w-3.5" />
-              WSL {targetVersion}
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => setChangeUserOpen(true)} className="gap-1.5 whitespace-nowrap">
-              <UserCog className="h-3.5 w-3.5" />
-              {t('wsl.changeDefaultUser')}
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => setExportOpen(true)} className="gap-1.5 whitespace-nowrap">
-              <Download className="h-3.5 w-3.5" />
-              {t('wsl.export')}
-            </Button>
-            <Button variant="outline" size="sm" onClick={handleOpenInExplorer} className="gap-1.5 whitespace-nowrap">
-              <FolderOpen className="h-3.5 w-3.5" />
-              {t('wsl.openInExplorer')}
-            </Button>
-            <Button variant="outline" size="sm" onClick={handleOpenInTerminal} className="gap-1.5 whitespace-nowrap">
-              <TerminalSquare className="h-3.5 w-3.5" />
-              {t('wsl.openInTerminal')}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setConfirmAction({ type: 'unregister' })}
-              className="gap-1.5 whitespace-nowrap text-destructive hover:text-destructive"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              {t('wsl.unregister')}
-            </Button>
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -674,6 +660,55 @@ export function WslDistroDetailPage({
               </TooltipTrigger>
               <TooltipContent>{t('common.refresh')}</TooltipContent>
             </Tooltip>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="icon" className="h-8 w-8">
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                {!distro?.isDefault && (
+                  <DropdownMenuItem onClick={handleSetDefault}>
+                    <Star className="mr-2 h-4 w-4" />
+                    {t('wsl.setDefault')}
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem onClick={handleSetVersion}>
+                  <ArrowUpDown className="mr-2 h-4 w-4" />
+                  {t('wsl.setVersion')} WSL {targetVersion}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setChangeUserOpen(true)}>
+                  <UserCog className="mr-2 h-4 w-4" />
+                  {t('wsl.changeDefaultUser')}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setExportOpen(true)}>
+                  <Download className="mr-2 h-4 w-4" />
+                  {t('wsl.export')}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setCloneDialogOpen(true)}>
+                  <Copy className="mr-2 h-4 w-4" />
+                  {t('wsl.clone')}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleOpenInExplorer}>
+                  <FolderOpen className="mr-2 h-4 w-4" />
+                  {t('wsl.openInExplorer')}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleOpenInTerminal}>
+                  <TerminalSquare className="mr-2 h-4 w-4" />
+                  {t('wsl.openInTerminal')}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onClick={() => setConfirmAction({ type: 'unregister' })}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  {t('wsl.unregister')}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         }
       />
@@ -927,12 +962,34 @@ export function WslDistroDetailPage({
               {healthResult.issues.length === 0 ? (
                 <p className="text-sm text-muted-foreground">{t('wsl.detail.healthNoIssues')}</p>
               ) : (
-                <div className="space-y-1">
+                <div className="space-y-1.5">
                   {healthResult.issues.map((issue, index) => (
-                    <div key={`${issue.category}-${index}`} className="text-sm">
-                      <span className="font-medium">{issue.category}</span>
-                      {': '}
-                      {issue.message}
+                    <div
+                      key={`${issue.category}-${index}`}
+                      className={`flex items-start gap-2 rounded-md border px-3 py-2 text-sm ${
+                        issue.severity === 'error' || issue.severity === 'critical'
+                          ? 'border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30'
+                          : issue.severity === 'warning'
+                            ? 'border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/30'
+                            : 'border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950/30'
+                      }`}
+                    >
+                      <Badge
+                        variant="outline"
+                        className={`shrink-0 text-[10px] ${
+                          issue.severity === 'error' || issue.severity === 'critical'
+                            ? 'border-red-300 text-red-700 dark:text-red-400'
+                            : issue.severity === 'warning'
+                              ? 'border-amber-300 text-amber-700 dark:text-amber-400'
+                              : 'border-green-300 text-green-700 dark:text-green-400'
+                        }`}
+                      >
+                        {issue.severity}
+                      </Badge>
+                      <div>
+                        <span className="font-medium">{issue.category}</span>
+                        <span className="text-muted-foreground">{': '}{issue.message}</span>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -943,7 +1000,12 @@ export function WslDistroDetailPage({
       </Card>
 
       {/* Tabs */}
-      <Tabs defaultValue="overview" className="space-y-4">
+      <Tabs value={activeTab} onValueChange={(v) => {
+        setActiveTab(v);
+        const url = new URL(window.location.href);
+        url.searchParams.set('tab', v);
+        window.history.replaceState(null, '', url.toString());
+      }} className="space-y-4">
         <TabsList>
           <TabsTrigger value="overview" className="gap-1.5">
             <LayoutDashboard className="h-3.5 w-3.5" />

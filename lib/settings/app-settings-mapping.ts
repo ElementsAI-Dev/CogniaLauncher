@@ -10,6 +10,9 @@ export const APP_SETTINGS_CONFIG_KEY_MAP = {
   checkUpdatesOnStart: "updates.check_on_start",
   autoInstallUpdates: "updates.auto_install",
   notifyOnUpdates: "updates.notify",
+  updateSourceMode: "updates.source_mode",
+  updateCustomEndpoints: "updates.custom_endpoints",
+  updateFallbackToOfficial: "updates.fallback_to_official",
   minimizeToTray: "tray.minimize_to_tray",
   startMinimized: "tray.start_minimized",
   trayClickBehavior: "tray.click_behavior",
@@ -58,6 +61,55 @@ function parseTrayNotificationLevel(
   return fallback;
 }
 
+function parseUpdateSourceMode(
+  value: string | undefined,
+  fallback: AppSettings["updateSourceMode"],
+): AppSettings["updateSourceMode"] {
+  if (!value) return fallback;
+  if (value === "official" || value === "mirror" || value === "custom") {
+    return value;
+  }
+  return fallback;
+}
+
+function parseUpdateCustomEndpoints(
+  value: string | undefined,
+  fallback: string[],
+): string[] {
+  if (!value) return fallback;
+
+  const trimmed = value.trim();
+  if (!trimmed) return [];
+
+  const rawItems = (() => {
+    if (trimmed.startsWith("[")) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) {
+          return parsed.filter((item): item is string => typeof item === "string");
+        }
+      } catch {
+        return fallback;
+      }
+    }
+
+    return trimmed
+      .replace(/\r/g, "")
+      .replace(/\n/g, ",")
+      .split(",")
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
+  })();
+
+  const deduped: string[] = [];
+  for (const item of rawItems) {
+    const normalized = item.trim();
+    if (!normalized || deduped.includes(normalized)) continue;
+    deduped.push(normalized);
+  }
+  return deduped;
+}
+
 export function configToAppSettings(
   config: Record<string, string>,
   fallback: AppSettings,
@@ -75,6 +127,18 @@ export function configToAppSettings(
     notifyOnUpdates: parseBoolean(
       config[APP_SETTINGS_CONFIG_KEY_MAP.notifyOnUpdates],
       fallback.notifyOnUpdates,
+    ),
+    updateSourceMode: parseUpdateSourceMode(
+      config[APP_SETTINGS_CONFIG_KEY_MAP.updateSourceMode],
+      fallback.updateSourceMode,
+    ),
+    updateCustomEndpoints: parseUpdateCustomEndpoints(
+      config[APP_SETTINGS_CONFIG_KEY_MAP.updateCustomEndpoints],
+      fallback.updateCustomEndpoints,
+    ),
+    updateFallbackToOfficial: parseBoolean(
+      config[APP_SETTINGS_CONFIG_KEY_MAP.updateFallbackToOfficial],
+      fallback.updateFallbackToOfficial,
     ),
     minimizeToTray: parseBoolean(
       config[APP_SETTINGS_CONFIG_KEY_MAP.minimizeToTray],
@@ -111,6 +175,10 @@ export function appSettingValueToConfigValue(
   value: AppSettings[keyof AppSettings],
 ): string | null {
   if (key === "autostart" || key === "sidebarItemOrder") return null;
+  if (key === "updateSourceMode") return String(value);
+  if (key === "updateCustomEndpoints") {
+    return JSON.stringify(Array.isArray(value) ? value : []);
+  }
   if (key === "trayClickBehavior") return String(value);
   if (key === "trayNotificationLevel") return String(value);
   if (typeof value === "boolean") return String(value);
@@ -152,7 +220,9 @@ export function toConfigEntriesFromAppSettings(
     const key = appKey as ConfigBackedAppSettingKey;
     const value = appSettings[key];
     if (value === undefined) continue;
-    entries.push([configKey, String(value)]);
+    const configValue = appSettingValueToConfigValue(key, value as AppSettings[typeof key]);
+    if (configValue === null) continue;
+    entries.push([configKey, configValue]);
   }
 
   return entries;

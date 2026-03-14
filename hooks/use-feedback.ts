@@ -9,7 +9,7 @@ import { useFeedbackStore } from '@/lib/stores/feedback';
 import type {
   FeedbackFormData,
   FeedbackItem,
-  FeedbackSaveResult,
+  FeedbackSubmitOutcome,
   FeedbackCategory,
   FeedbackErrorContext,
 } from '@/types/feedback';
@@ -19,7 +19,7 @@ export interface UseFeedbackReturn {
   submitFeedback: (
     data: FeedbackFormData,
     t: (key: string) => string,
-  ) => Promise<FeedbackSaveResult | null>;
+  ) => Promise<FeedbackSubmitOutcome>;
   openFeedbackDialog: (options?: {
     category?: FeedbackCategory;
     errorContext?: FeedbackErrorContext;
@@ -39,7 +39,7 @@ export function useFeedback(): UseFeedbackReturn {
     async (
       data: FeedbackFormData,
       t: (key: string) => string,
-    ): Promise<FeedbackSaveResult | null> => {
+    ): Promise<FeedbackSubmitOutcome> => {
       setSubmitting(true);
       try {
         const systemInfo = await getBasicSystemInfo();
@@ -81,7 +81,11 @@ export function useFeedback(): UseFeedbackReturn {
             });
           }
 
-          return result;
+          return {
+            success: true,
+            mode: 'tauri',
+            result,
+          };
         }
 
         // Web mode: download as JSON
@@ -109,11 +113,16 @@ export function useFeedback(): UseFeedbackReturn {
 
         toast.success(t('feedback.submitSuccessWeb'));
 
-        return null;
+        return {
+          success: true,
+          mode: 'web',
+        };
       } catch (err) {
         console.error('Failed to submit feedback:', err);
         toast.error(t('feedback.submitFailed'));
-        return null;
+        return {
+          success: false,
+        };
       } finally {
         setSubmitting(false);
       }

@@ -111,9 +111,9 @@ Provider 是 CogniaLauncher 的核心抽象，每个 Provider 封装一个具体
 
 ## Provider 优先级
 
-Provider 按优先级排序，高优先级 Provider 优先使用。可在设置中调整优先级和启用/禁用状态。
+Provider 会按“生效优先级”排序，优先级更高的 Provider 会优先被使用。内置 Provider 自带默认优先级，你也可以在结构化的“提供商设置”区域或 Provider 详情页中覆盖启用状态与优先级。
 
-优先级范围：0-100，数值越大优先级越高。
+自定义优先级覆盖会按 Provider 单独持久化，并立即影响 Provider 列表排序以及依赖优先级的运行时选择路径。数值越大优先级越高。
 
 ---
 

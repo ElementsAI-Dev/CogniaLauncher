@@ -1259,4 +1259,86 @@ describe('useWsl', () => {
     expect(mockPackageInstall).not.toHaveBeenCalled();
     expect(mockPackageUninstall).not.toHaveBeenCalled();
   });
+
+  it('runs batch workflows with preflight skips and normalized summaries', async () => {
+    mockWslExec.mockResolvedValue({ stdout: 'done', stderr: '', exitCode: 0 });
+    mockWslListDistros.mockResolvedValue([
+      { name: 'Ubuntu', state: 'Running', wslVersion: '2', isDefault: true },
+      { name: 'Debian', state: 'Stopped', wslVersion: '2', isDefault: false },
+    ]);
+
+    const { result } = renderHook(() => useWsl());
+
+    await act(async () => {
+      await result.current.refreshDistros();
+    });
+
+    let summary;
+    await act(async () => {
+      summary = await result.current.runBatchWorkflow(
+        {
+          id: 'workflow-1',
+          name: 'Batch command',
+          createdAt: '2026-03-12T00:00:00.000Z',
+          updatedAt: '2026-03-12T00:00:00.000Z',
+          target: { mode: 'selected' },
+          action: { kind: 'command', command: 'echo ok', user: 'root', label: 'Echo ok' },
+        },
+        {
+          selectedDistros: new Set(['Ubuntu', 'Debian']),
+          distroTags: {},
+        }
+      );
+    });
+
+    expect(mockWslExec).toHaveBeenCalledTimes(1);
+    expect(mockWslExec).toHaveBeenCalledWith('Ubuntu', 'echo ok', 'root');
+    expect(summary).toMatchObject({
+      workflowName: 'Batch command',
+      succeeded: 1,
+      skipped: 1,
+      failed: 0,
+    });
+  });
+
+  it('retries only retryable failed workflow targets', async () => {
+    mockWslExec
+      .mockResolvedValueOnce({ stdout: '', stderr: 'boom', exitCode: 1 })
+      .mockResolvedValueOnce({ stdout: 'recovered', stderr: '', exitCode: 0 });
+    mockWslListDistros.mockResolvedValue([
+      { name: 'Ubuntu', state: 'Running', wslVersion: '2', isDefault: true },
+    ]);
+
+    const { result } = renderHook(() => useWsl());
+
+    await act(async () => {
+      await result.current.refreshDistros();
+    });
+
+    let summary;
+    await act(async () => {
+      summary = await result.current.runBatchWorkflow(
+        {
+          id: 'workflow-2',
+          name: 'Retry command',
+          createdAt: '2026-03-12T00:00:00.000Z',
+          updatedAt: '2026-03-12T00:00:00.000Z',
+          target: { mode: 'explicit', distroNames: ['Ubuntu'] },
+          action: { kind: 'command', command: 'echo ok', label: 'Echo ok' },
+        },
+        {
+          selectedDistros: new Set(),
+          distroTags: {},
+        }
+      );
+    });
+
+    let retried;
+    await act(async () => {
+      retried = await result.current.retryBatchWorkflowFailures(summary!, { distroTags: {} });
+    });
+
+    expect(mockWslExec).toHaveBeenCalledTimes(2);
+    expect(retried).toMatchObject({ succeeded: 1, failed: 0, skipped: 0 });
+  });
 });

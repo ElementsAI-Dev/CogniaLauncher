@@ -53,7 +53,9 @@ jest.mock("@dnd-kit/utilities", () => ({
 
 // Mock all widget sub-components to simplify rendering
 jest.mock("@/components/dashboard/stats-card", () => ({
-  StatsCard: ({ title }: { title: string }) => <div data-testid="stats-card">{title}</div>,
+  StatsCard: ({ title, loading }: { title: string; loading?: boolean }) => (
+    loading ? <div data-testid="stats-skeleton">Loading...</div> : <div data-testid="stats-card">{title}</div>
+  ),
   StatsCardSkeleton: () => <div data-testid="stats-skeleton">Loading...</div>,
 }));
 
@@ -123,6 +125,11 @@ const defaultProps = {
   isLoading: false,
   onRefreshAll: jest.fn(),
   isRefreshing: false,
+  feedback: {
+    environments: { isLoading: false, error: null },
+    packages: { isLoading: false, error: null },
+    settings: { isLoading: false, error: null },
+  },
 };
 
 describe("WidgetGrid", () => {
@@ -143,7 +150,17 @@ describe("WidgetGrid", () => {
 
   it("renders stats-overview loading skeletons when isLoading", () => {
     mockWidgets = [{ id: "w-1", type: "stats-overview", size: "full", visible: true }];
-    render(<WidgetGrid {...defaultProps} isLoading={true} />);
+    render(
+      <WidgetGrid
+        {...defaultProps}
+        isLoading={true}
+        feedback={{
+          environments: { isLoading: true, error: null },
+          packages: { isLoading: true, error: null },
+          settings: { isLoading: true, error: null },
+        }}
+      />,
+    );
     const skeletons = screen.getAllByTestId("stats-skeleton");
     expect(skeletons.length).toBe(4);
   });

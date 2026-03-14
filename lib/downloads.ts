@@ -13,6 +13,7 @@ export interface DownloadFailureInput {
   state: DownloadTask["state"] | "extracting";
   error?: string | null;
   recoverable?: boolean | null;
+  reasonCode?: string | null;
 }
 
 export interface DownloadFailureInfo {
@@ -119,10 +120,39 @@ export function normalizeDownloadFailure(
     return { failureClass: "cancelled", retryable: true };
   }
 
+  const reason = (input.reasonCode ?? "").toLowerCase();
   const raw = (input.error ?? "").toLowerCase();
   let failureClass: DownloadFailureClass = "network_error";
 
   if (
+    reason === "invalid_url" ||
+    reason === "not_found" ||
+    reason === "unauthorized" ||
+    reason === "forbidden" ||
+    reason === "task_not_found" ||
+    reason === "invalid_operation"
+  ) {
+    failureClass = "selection_error";
+  } else if (reason === "checksum_mismatch") {
+    failureClass = "integrity_error";
+  } else if (reason === "timeout") {
+    failureClass = "timeout";
+  } else if (
+    reason === "cache_error" ||
+    reason === "cache_validation_failed"
+  ) {
+    failureClass = "cache_error";
+  } else if (
+    reason === "network_error" ||
+    reason === "http_error" ||
+    reason === "http_server_error" ||
+    reason === "rate_limited" ||
+    reason === "interrupted" ||
+    reason === "filesystem_error" ||
+    reason === "insufficient_space"
+  ) {
+    failureClass = "network_error";
+  } else if (
     raw.includes("invalid url") ||
     raw.includes("not found") ||
     raw.includes("unauthorized") ||

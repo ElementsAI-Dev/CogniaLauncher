@@ -104,6 +104,7 @@ impl Provider for VoltaProvider {
             Capability::Uninstall,
             Capability::List,
             Capability::VersionSwitch,
+            Capability::Search,
         ])
     }
     fn supported_platforms(&self) -> Vec<Platform> {
@@ -531,6 +532,7 @@ mod tests {
         assert!(caps.contains(&Capability::Uninstall));
         assert!(caps.contains(&Capability::List));
         assert!(caps.contains(&Capability::VersionSwitch));
+        assert!(caps.contains(&Capability::Search));
     }
 
     #[test]

@@ -128,4 +128,33 @@ describe("EnvironmentToolbar", () => {
     render(<EnvironmentToolbar {...defaultProps} />);
     expect(screen.queryByText("Active filters:")).not.toBeInTheDocument();
   });
+
+  it("keeps dense control heights aligned across input, select, toggle, and actions", () => {
+    render(
+      <EnvironmentToolbar
+        {...defaultProps}
+        searchQuery="python"
+        onCheckAllUpdates={jest.fn()}
+      />,
+    );
+
+    const searchInput = screen.getByPlaceholderText("Search environments...");
+    const clearButton = screen.getByLabelText("Clear");
+    const statusTrigger = screen.getByText("All Status").closest("button");
+    const sortTrigger = screen.getByText("Sort by Name").closest("button");
+    const gridToggle = screen.getByLabelText("environments.toolbar.viewGrid");
+    const listToggle = screen.getByLabelText("environments.toolbar.viewList");
+    const refreshButton = screen.getByText("Refresh").closest("button");
+
+    expect(searchInput.className).toContain("h-9");
+    expect(clearButton.className).toContain("h-8");
+    expect(clearButton.className).toContain("w-8");
+    expect(statusTrigger?.className).toContain("h-9");
+    expect(sortTrigger?.className).toContain("h-9");
+    expect(gridToggle.className).toContain("h-9");
+    expect(gridToggle.className).toContain("w-9");
+    expect(listToggle.className).toContain("h-9");
+    expect(listToggle.className).toContain("w-9");
+    expect(refreshButton?.className).toContain("h-9");
+  });
 });

@@ -204,6 +204,26 @@ describe('ToolboxPage plugin bootstrap', () => {
     expect(listScrollArea.className).toContain('overflow-y-auto');
   });
 
+  it('uses dense toolbar clusters for header actions to keep controls aligned', () => {
+    render(<ToolboxPage />);
+
+    const headerToolbar = screen.getByTestId('toolbox-header-toolbar');
+    const marketGroup = screen.getByTestId('toolbox-header-market-group');
+    const pluginsGroup = screen.getByTestId('toolbox-header-plugins-group');
+    const viewGroup = screen.getByTestId('toolbox-header-view-group');
+    const gridToggle = screen.getByLabelText('toolbox.viewMode.grid');
+    const listToggle = screen.getByLabelText('toolbox.viewMode.list');
+
+    expect(headerToolbar.className).toContain('flex-wrap');
+    expect(marketGroup).toHaveAttribute('data-slot', 'toolbar-cluster');
+    expect(pluginsGroup).toHaveAttribute('data-slot', 'toolbar-cluster');
+    expect(viewGroup).toHaveAttribute('data-slot', 'toolbar-cluster');
+    expect(gridToggle.className).toContain('h-9');
+    expect(gridToggle.className).toContain('w-9');
+    expect(listToggle.className).toContain('h-9');
+    expect(listToggle.className).toContain('w-9');
+  });
+
   it('keeps empty state reachable inside the list scroll area', () => {
     mockToolboxState = createToolboxState({ selectedCategory: 'favorites' });
     render(<ToolboxPage />);

@@ -5,9 +5,6 @@ use extism_pdk::plugin_fn;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-#[cfg(test)]
-type FnResult<T> = Result<T, String>;
-
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct JsonWorkbenchInput {
@@ -63,6 +60,7 @@ struct DifferenceSummary {
     changed: usize,
 }
 
+#[cfg(not(test))]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct JsonWorkbenchFailure {
@@ -75,7 +73,9 @@ struct JsonWorkbenchFailure {
 #[derive(Debug)]
 struct PluginError {
     code: &'static str,
+    #[cfg_attr(test, allow(dead_code))]
     message: String,
+    #[cfg_attr(test, allow(dead_code))]
     recommendations: Vec<String>,
 }
 
@@ -89,6 +89,7 @@ impl PluginError {
     }
 }
 
+#[cfg(not(test))]
 fn execute_json_workbench(input: String) -> FnResult<String> {
     match parse_and_execute(&input) {
         Ok(success) => Ok(serde_json::to_string(&success).unwrap_or_else(|_| {

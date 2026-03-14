@@ -29,8 +29,70 @@ export function WelcomeWidget({ hasEnvironments, hasPackages, className }: Welco
   const router = useRouter();
   const { completed: onboardingCompleted, tourCompleted, startTour } = useOnboardingStore();
 
-  // Don't show if user already has both environments and packages
-  if (hasEnvironments && hasPackages) return null;
+  if (hasEnvironments && hasPackages) {
+    return (
+      <Card className={className}>
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-green-100 text-green-600 dark:bg-green-950/50 dark:text-green-300">
+              <CheckCircle2 className="h-5 w-5" />
+            </div>
+            <div>
+              <CardTitle className="text-base font-semibold">
+                {t('dashboard.widgets.workspaceReadyTitle')}
+              </CardTitle>
+              <CardDescription>
+                {t('dashboard.widgets.workspaceReadyDesc')}
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid gap-2 sm:grid-cols-2">
+            <Button
+              variant="secondary"
+              className="justify-between"
+              onClick={() => router.push('/environments')}
+            >
+              {t('dashboard.widgets.welcomeReviewEnvironments')}
+              <ArrowRight className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="secondary"
+              className="justify-between"
+              onClick={() => router.push('/packages')}
+            >
+              {t('dashboard.widgets.welcomeReviewPackages')}
+              <ArrowRight className="h-4 w-4" />
+            </Button>
+          </div>
+
+          {!onboardingCompleted && (
+            <Button
+              variant="outline"
+              className="w-full justify-between"
+              onClick={() => router.push('/settings')}
+            >
+              {t('dashboard.quickActions.openSettings')}
+              <ArrowRight className="h-4 w-4" />
+            </Button>
+          )}
+
+          {!tourCompleted && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full gap-2"
+              onClick={startTour}
+            >
+              <Map className="h-4 w-4" />
+              {t('dashboard.widgets.welcomeTakeTour')}
+            </Button>
+          )}
+        </CardContent>
+      </Card>
+    );
+  }
 
   const steps = [
     {

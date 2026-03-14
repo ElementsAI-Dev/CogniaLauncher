@@ -22,26 +22,31 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from '@/components/ui/empty';
-import { FileCode, Eye, EyeOff, Terminal, ExternalLink, FolderOpen } from 'lucide-react';
+import { FileCode, Eye, EyeOff, Terminal, ExternalLink, FolderOpen, Copy, Check, Info } from 'lucide-react';
 import { highlightShellConfig } from '@/lib/highlight-shell';
 import { isTauri } from '@/lib/tauri';
 import { toast } from 'sonner';
-import type { ShellProfileInfo } from '@/types/tauri';
+import { writeClipboard } from '@/lib/clipboard';
+import { cn } from '@/lib/utils';
+import type { ShellProfileInfo, EnvVarShellGuidance } from '@/types/tauri';
 
 interface EnvVarShellProfilesProps {
   profiles: ShellProfileInfo[];
   onReadProfile: (path: string) => Promise<string | null>;
+  guidance?: EnvVarShellGuidance[];
   t: (key: string) => string;
 }
 
 export function EnvVarShellProfiles({
   profiles,
   onReadProfile,
+  guidance = [],
   t,
 }: EnvVarShellProfilesProps) {
   const [expandedProfile, setExpandedProfile] = useState<string | null>(null);
   const [profileContent, setProfileContent] = useState<string>('');
   const [loadingProfile, setLoadingProfile] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const handleOpenFile = useCallback(async (path: string) => {
     if (!isTauri()) return;
@@ -73,9 +78,17 @@ export function EnvVarShellProfiles({
     setLoadingProfile(true);
     setExpandedProfile(configPath);
     const content = await onReadProfile(configPath);
-    setProfileContent(content || t('envvar.shellProfiles.noContent'));
+    setProfileContent(content || '');
     setLoadingProfile(false);
-  }, [expandedProfile, onReadProfile, t]);
+  }, [expandedProfile, onReadProfile]);
+
+  const handleCopyContent = useCallback(async () => {
+    if (!profileContent) return;
+    await writeClipboard(profileContent);
+    setCopied(true);
+    toast.success(t('envvar.table.copied'));
+    setTimeout(() => setCopied(false), 2000);
+  }, [profileContent, t]);
 
   const expandedShell = profiles.find((p) => p.configPath === expandedProfile)?.shell ?? 'bash';
   const highlightedHtml = useMemo(
@@ -83,13 +96,58 @@ export function EnvVarShellProfiles({
     [profileContent, expandedShell],
   );
 
+  const lineCount = profileContent ? profileContent.split('\n').length : 0;
+
   return (
     <Card className="min-h-0 flex-1 gap-0 py-0" data-testid="envvar-shell-profiles-panel">
       <CardHeader className="border-b px-3 py-3 sm:px-4">
-        <CardTitle className="text-sm">{t('envvar.shellProfiles.title')}</CardTitle>
-        <CardDescription>{t('envvar.description')}</CardDescription>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="text-sm">{t('envvar.shellProfiles.title')}</CardTitle>
+            <CardDescription className="mt-1">{t('envvar.description')}</CardDescription>
+          </div>
+          <Badge variant="secondary" className="text-[10px]">
+            {profiles.length}
+          </Badge>
+        </div>
       </CardHeader>
       <CardContent className="min-h-0 flex-1 p-0">
+        {guidance.length > 0 && (
+          <div
+            className="border-b bg-blue-500/5 px-4 py-3 dark:bg-blue-500/10"
+            data-testid="envvar-shell-guidance"
+          >
+            <div className="flex items-center gap-2">
+              <Info className="h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400" />
+              <p className="text-sm font-medium">{t('envvar.shellProfiles.guidanceTitle')}</p>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">{t('envvar.shellProfiles.guidanceDescription')}</p>
+            <div className="mt-3 grid gap-2">
+              {guidance.map((entry) => (
+                <Card key={`${entry.shell}-${entry.configPath}`} className="gap-0 py-0">
+                  <CardHeader className="px-3 py-3">
+                    <CardTitle className="flex items-center gap-2 text-sm">
+                      <span className="capitalize">{entry.shell}</span>
+                      {entry.autoApplied && (
+                        <Badge variant="secondary" className="text-[10px]">
+                          {t('envvar.shellProfiles.guidanceAutoApplied')}
+                        </Badge>
+                      )}
+                    </CardTitle>
+                    <CardDescription className="font-mono text-[11px] break-all">
+                      {entry.configPath}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="px-3 pb-3 pt-0">
+                    <pre className="rounded-md border bg-muted/30 p-3 font-mono text-xs whitespace-pre-wrap break-all">
+                      {entry.command}
+                    </pre>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </div>
+        )}
         {profiles.length === 0 ? (
           <Empty className="border-none py-10">
             <EmptyHeader>
@@ -107,7 +165,14 @@ export function EnvVarShellProfiles({
               {profiles.map((profile) => {
                 const isExpanded = expandedProfile === profile.configPath;
                 return (
-                  <Card key={profile.configPath} className="overflow-hidden">
+                  <Card
+                    key={profile.configPath}
+                    className={cn(
+                      'overflow-hidden',
+                      profile.isCurrent && 'border-l-2 border-l-primary',
+                      !profile.exists && 'border-dashed',
+                    )}
+                  >
                     <Collapsible open={isExpanded}>
                       <CardHeader className="px-4 py-3">
                         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -180,22 +245,55 @@ export function EnvVarShellProfiles({
                       </CardHeader>
                       <CollapsibleContent>
                         <CardContent className="px-4 pb-3 pt-0">
-                          <ScrollArea className="h-75 rounded-md border bg-muted/30 p-3">
+                          {isExpanded && profileContent && !loadingProfile && (
+                            <div className="mb-2 flex items-center justify-end">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 gap-1.5 text-xs"
+                                onClick={handleCopyContent}
+                              >
+                                {copied ? (
+                                  <Check className="h-3 w-3" />
+                                ) : (
+                                  <Copy className="h-3 w-3" />
+                                )}
+                                {copied ? t('envvar.table.copied') : t('common.copy')}
+                              </Button>
+                            </div>
+                          )}
+                          <ScrollArea className="h-75 rounded-md border bg-muted/30">
                             {loadingProfile ? (
-                              <div className="space-y-2">
+                              <div className="space-y-2 p-3">
                                 <Skeleton className="h-4 w-full" />
                                 <Skeleton className="h-4 w-3/4" />
                                 <Skeleton className="h-4 w-5/6" />
                                 <Skeleton className="h-4 w-2/3" />
                                 <Skeleton className="h-4 w-full" />
                               </div>
+                            ) : !profileContent ? (
+                              <div className="flex items-center justify-center p-6 text-xs text-muted-foreground">
+                                {t('envvar.shellProfiles.noContent')}
+                              </div>
                             ) : (
-                              <pre
-                                className="hljs text-xs font-mono whitespace-pre-wrap break-all"
-                                dangerouslySetInnerHTML={{
-                                  __html: highlightedHtml,
-                                }}
-                              />
+                              <div className="flex">
+                                {/* Line numbers gutter */}
+                                <div
+                                  className="shrink-0 select-none border-r bg-muted/40 px-2 py-3 text-right font-mono text-[10px] leading-[1.625rem] text-muted-foreground/50"
+                                  aria-hidden="true"
+                                >
+                                  {Array.from({ length: lineCount }, (_, i) => (
+                                    <div key={i}>{i + 1}</div>
+                                  ))}
+                                </div>
+                                {/* Code content */}
+                                <pre
+                                  className="hljs min-w-0 flex-1 p-3 font-mono text-xs whitespace-pre-wrap break-all"
+                                  dangerouslySetInnerHTML={{
+                                    __html: highlightedHtml,
+                                  }}
+                                />
+                              </div>
                             )}
                           </ScrollArea>
                         </CardContent>

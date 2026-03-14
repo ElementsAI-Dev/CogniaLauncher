@@ -4,3 +4,4 @@ export { EnvVarPathEditor } from './envvar-path-editor';
 export { EnvVarShellProfiles } from './envvar-shell-profiles';
 export { EnvVarImportExport } from './envvar-import-export';
 export { EnvVarToolbar } from './envvar-toolbar';
+export { EnvVarConflictPanel } from './envvar-conflict-panel';

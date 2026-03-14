@@ -38,6 +38,11 @@ export function useVersionBrowser(
   const [batchProcessing, setBatchProcessing] = useState(false);
   const [displayLimit, setDisplayLimit] = useState(50);
 
+  const versionCacheKey = useMemo(
+    () => (providerId ? `${envType}::${providerId}` : envType),
+    [envType, providerId],
+  );
+
   // Get selected versions for this environment type
   const selectedForEnv = useMemo(
     () =>
@@ -60,8 +65,8 @@ export function useVersionBrowser(
   );
 
   const versions = useMemo(
-    () => availableVersions[envType] || [],
-    [availableVersions, envType],
+    () => availableVersions[versionCacheKey] || [],
+    [availableVersions, versionCacheKey],
   );
 
   const fetchVersions = useCallback(
@@ -70,8 +75,8 @@ export function useVersionBrowser(
       setLoading(true);
       setError(null);
       try {
-        const result = await tauri.envAvailableVersions(envType);
-        setAvailableVersions(envType, result);
+        const result = await tauri.envAvailableVersions(envType, providerId);
+        setAvailableVersions(versionCacheKey, result);
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err);
         setError(errorMsg);
@@ -80,7 +85,7 @@ export function useVersionBrowser(
         setLoading(false);
       }
     },
-    [envType, versions.length, setAvailableVersions, t],
+    [envType, providerId, setAvailableVersions, t, versionCacheKey, versions.length],
   );
 
   const handleRefresh = useCallback(() => {

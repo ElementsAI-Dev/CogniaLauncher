@@ -56,14 +56,147 @@ impl ZigProvider {
         Ok(self.zig_dir()?.join("versions"))
     }
 
-    async fn run_zig(&self, args: &[&str]) -> CogniaResult<String> {
-        let opts = ProcessOptions::new().with_timeout(Duration::from_secs(30));
-        let output = process::execute("zig", args, Some(opts)).await?;
-        if output.success {
-            Ok(output.stdout)
+    fn managed_current_binary_path(&self) -> Option<PathBuf> {
+        let zig_dir = self.zig_dir.clone()?;
+        let current_dir = zig_dir.join("current");
+        if cfg!(windows) {
+            // Keep script fallbacks to make managed-current probing robust in tests
+            // and custom installations where an .exe shim may not exist yet.
+            for candidate in ["zig.exe", "zig.cmd", "zig.bat"] {
+                let path = current_dir.join(candidate);
+                if path.exists() {
+                    return Some(path);
+                }
+            }
+            Some(current_dir.join("zig.exe"))
         } else {
-            Err(CogniaError::Provider(output.stderr))
+            Some(current_dir.join("zig"))
         }
+    }
+
+    async fn is_executable_runnable(&self, executable: &Path, args: &[&str]) -> bool {
+        if !executable.exists() {
+            return false;
+        }
+        let Some(executable_str) = executable.to_str() else {
+            return false;
+        };
+        let opts = ProcessOptions::new().with_timeout(Duration::from_secs(10));
+        match process::execute(executable_str, args, Some(opts)).await {
+            Ok(output) => output.success,
+            Err(_) => false,
+        }
+    }
+
+    async fn detect_runnable_executable_with_path_candidate(
+        &self,
+        path_candidate: Option<PathBuf>,
+    ) -> Option<PathBuf> {
+        if let Some(path) = path_candidate {
+            if self.is_executable_runnable(&path, &["version"]).await {
+                return Some(path);
+            }
+        }
+
+        if let Some(path) = self.managed_current_binary_path() {
+            if self.is_executable_runnable(&path, &["version"]).await {
+                return Some(path);
+            }
+        }
+
+        None
+    }
+
+    async fn detect_runnable_executable(&self) -> Option<PathBuf> {
+        let path_candidate = process::which("zig").await.map(PathBuf::from);
+        self.detect_runnable_executable_with_path_candidate(path_candidate)
+            .await
+    }
+
+    async fn availability_diagnostic_context(&self) -> String {
+        let path_detail = match process::which("zig").await {
+            Some(path) => format!("PATH candidate '{}' is not runnable", path),
+            None => "zig not found in PATH".to_string(),
+        };
+
+        let managed_detail = match self.managed_current_binary_path() {
+            Some(path) if path.exists() => {
+                format!(
+                    "managed current candidate '{}' is not runnable",
+                    path.display()
+                )
+            }
+            Some(path) => format!(
+                "managed current candidate '{}' does not exist",
+                path.display()
+            ),
+            None => "managed Zig directory is not configured".to_string(),
+        };
+
+        format!(
+            "zig executable is not runnable ({}; {})",
+            path_detail, managed_detail
+        )
+    }
+
+    async fn run_zig_with_executable(&self, executable: &str, args: &[&str]) -> CogniaResult<String> {
+        let opts = ProcessOptions::new().with_timeout(Duration::from_secs(30));
+        let output = process::execute(executable, args, Some(opts))
+            .await
+            .map_err(|e| CogniaError::Provider(e.to_string()))?;
+        if output.success {
+            if output.stdout.trim().is_empty() {
+                Ok(output.stderr)
+            } else {
+                Ok(output.stdout)
+            }
+        } else if !output.stderr.trim().is_empty() {
+            Err(CogniaError::Provider(output.stderr))
+        } else {
+            Err(CogniaError::Provider(format!(
+                "zig command failed: {}",
+                output.stdout
+            )))
+        }
+    }
+
+    async fn run_zig(&self, args: &[&str]) -> CogniaResult<String> {
+        let mut failures = Vec::new();
+
+        if let Some(path) = process::which("zig").await {
+            match self.run_zig_with_executable(&path, args).await {
+                Ok(output) => return Ok(output),
+                Err(err) => failures.push(format!("PATH zig '{}' failed: {}", path, err)),
+            }
+        } else {
+            failures.push("zig not found in PATH".to_string());
+        }
+
+        if let Some(path) = self.managed_current_binary_path() {
+            let display = path.display().to_string();
+            if let Some(path_str) = path.to_str() {
+                match self.run_zig_with_executable(path_str, args).await {
+                    Ok(output) => return Ok(output),
+                    Err(err) => failures.push(format!(
+                        "managed current zig '{}' failed: {}",
+                        display, err
+                    )),
+                }
+            } else {
+                failures.push(format!(
+                    "managed current zig path '{}' is not valid UTF-8",
+                    display
+                ));
+            }
+        } else {
+            failures.push("managed Zig directory is not configured".to_string());
+        }
+
+        Err(CogniaError::Provider(format!(
+            "failed to execute zig {}: {}",
+            args.join(" "),
+            failures.join("; ")
+        )))
     }
 
     /// Parse the output of `zig version` to extract the version string.
@@ -333,6 +466,34 @@ impl ZigProvider {
                 dt.to_rfc3339()
             })
     }
+
+    fn remove_current_link(current_link: &Path) {
+        if !(current_link.exists() || current_link.is_symlink()) {
+            return;
+        }
+        #[cfg(windows)]
+        {
+            if current_link.is_dir() {
+                let _ = std::fs::remove_dir(current_link);
+            } else {
+                let _ = std::fs::remove_file(current_link);
+            }
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = std::fs::remove_file(current_link);
+        }
+    }
+
+    fn path_points_to(link_or_dir: &Path, expected_target: &Path) -> bool {
+        let expected = expected_target
+            .canonicalize()
+            .unwrap_or_else(|_| expected_target.to_path_buf());
+        let actual = link_or_dir
+            .canonicalize()
+            .unwrap_or_else(|_| link_or_dir.to_path_buf());
+        actual == expected
+    }
 }
 
 impl Default for ZigProvider {
@@ -373,16 +534,7 @@ impl Provider for ZigProvider {
     }
 
     async fn is_available(&self) -> bool {
-        // The provider is always "available" in the registry sense — it can manage
-        // versions even if zig is not yet installed on PATH.
-        // Check if we have a usable zig_dir or zig is on PATH.
-        if self.zig_dir.is_some() {
-            return true;
-        }
-        if process::which("zig").await.is_some() {
-            return true;
-        }
-        false
+        self.detect_runnable_executable().await.is_some()
     }
 
     async fn search(
@@ -475,6 +627,26 @@ impl Provider for ZigProvider {
                 yanked: false,
             })
             .collect())
+    }
+
+    async fn get_dependencies(
+        &self,
+        name: &str,
+        version: &str,
+    ) -> CogniaResult<Vec<crate::resolver::Dependency>> {
+        let target = format!("{}@{}", name, version);
+        if !self.is_available().await {
+            let context = self.availability_diagnostic_context().await;
+            return Err(CogniaError::Provider(format!(
+                "cannot resolve dependencies for {}: {}",
+                target, context
+            )));
+        }
+
+        Err(CogniaError::Provider(format!(
+            "dependency resolution is not supported for Zig package target '{}'",
+            target
+        )))
     }
 
     async fn install(&self, req: InstallRequest) -> CogniaResult<InstallReceipt> {
@@ -619,9 +791,28 @@ impl Provider for ZigProvider {
             )));
         }
 
+        let current_link = self
+            .zig_dir
+            .as_ref()
+            .map(|dir| dir.join("current"));
+        let removed_was_current = current_link
+            .as_ref()
+            .map(|link| Self::path_points_to(link, &install_path))
+            .unwrap_or(false);
+
         tokio::fs::remove_dir_all(&install_path)
             .await
             .map_err(|e| CogniaError::Io(std::io::Error::other(e.to_string())))?;
+
+        if removed_was_current {
+            if let Some(link) = current_link {
+                Self::remove_current_link(&link);
+            }
+            let fallback = self.scan_installed_versions()?.into_iter().next();
+            if let Some((fallback_version, _)) = fallback {
+                self.set_global_version(&fallback_version).await?;
+            }
+        }
 
         Ok(())
     }
@@ -653,12 +844,30 @@ impl Provider for ZigProvider {
     }
 
     async fn check_updates(&self, _packages: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
-        let installed = self.scan_installed_versions().unwrap_or_default();
+        if !self.is_available().await {
+            let context = self.availability_diagnostic_context().await;
+            return Err(CogniaError::Provider(format!(
+                "cannot check Zig updates: {}",
+                context
+            )));
+        }
+
+        let installed = self.scan_installed_versions().map_err(|e| {
+            CogniaError::Provider(format!(
+                "failed to enumerate installed Zig versions for update check: {}",
+                e
+            ))
+        })?;
         if installed.is_empty() {
             return Ok(vec![]);
         }
 
-        let versions = self.fetch_available_versions().await.unwrap_or_default();
+        let versions = self.fetch_available_versions().await.map_err(|e| {
+            CogniaError::Provider(format!(
+                "failed to fetch Zig release index for update check: {}",
+                e
+            ))
+        })?;
         let latest_stable = versions
             .iter()
             .find(|(v, _)| !v.contains('-'))
@@ -723,22 +932,8 @@ impl EnvironmentProvider for ZigProvider {
 
         let current_link = self.zig_dir()?.join("current");
 
-        // Remove existing symlink/junction
-        if current_link.exists() || current_link.is_symlink() {
-            #[cfg(windows)]
-            {
-                if current_link.is_dir() {
-                    // On Windows, junctions are removed with remove_dir
-                    let _ = std::fs::remove_dir(&current_link);
-                } else {
-                    let _ = std::fs::remove_file(&current_link);
-                }
-            }
-            #[cfg(not(windows))]
-            {
-                let _ = std::fs::remove_file(&current_link);
-            }
-        }
+        // Remove existing symlink/junction before repointing to the target version.
+        Self::remove_current_link(&current_link);
 
         // Create symlink/junction
         #[cfg(unix)]
@@ -827,21 +1022,12 @@ impl SystemPackageProvider for ZigProvider {
     }
 
     async fn get_executable_path(&self) -> CogniaResult<PathBuf> {
-        if let Some(path) = process::which("zig").await {
-            return Ok(PathBuf::from(path));
+        if let Some(path) = self.detect_runnable_executable().await {
+            return Ok(path);
         }
-        // Fallback to managed current symlink
-        if let Ok(zig_dir) = self.zig_dir() {
-            let current_bin = if cfg!(windows) {
-                zig_dir.join("current").join("zig.exe")
-            } else {
-                zig_dir.join("current").join("zig")
-            };
-            if current_bin.exists() {
-                return Ok(current_bin);
-            }
-        }
-        Err(CogniaError::Provider("zig not found in PATH".into()))
+        Err(CogniaError::Provider(
+            self.availability_diagnostic_context().await,
+        ))
     }
 
     fn get_install_instructions(&self) -> Option<String> {
@@ -885,6 +1071,8 @@ impl ZigProvider {
 mod tests {
     use super::*;
     use std::fs;
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
 
     // ── Helper: create a ZigProvider with a custom zig_dir ──
 
@@ -902,6 +1090,32 @@ mod tests {
         let binary_name = if cfg!(windows) { "zig.exe" } else { "zig" };
         fs::write(version_path.join(binary_name), b"fake-zig-binary").unwrap();
         version_path
+    }
+
+    fn create_runnable_current_zig(root: &Path, version: &str) -> PathBuf {
+        let current_dir = root.join("current");
+        fs::create_dir_all(&current_dir).unwrap();
+
+        #[cfg(windows)]
+        {
+            let script = current_dir.join("zig.cmd");
+            fs::write(
+                &script,
+                format!("@echo off\r\necho {}\r\nexit /b 0\r\n", version),
+            )
+            .unwrap();
+            script
+        }
+
+        #[cfg(not(windows))]
+        {
+            let binary = current_dir.join("zig");
+            fs::write(&binary, format!("#!/bin/sh\necho \"{}\"\n", version)).unwrap();
+            let mut perms = fs::metadata(&binary).unwrap().permissions();
+            perms.set_mode(0o755);
+            fs::set_permissions(&binary, perms).unwrap();
+            binary
+        }
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -1541,10 +1755,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_is_available_with_zig_dir() {
+    async fn test_detect_runnable_executable_does_not_treat_dir_as_available() {
         let tmp = tempfile::tempdir().unwrap();
         let provider = provider_with_dir(tmp.path());
-        assert!(provider.is_available().await);
+        let detected = provider
+            .detect_runnable_executable_with_path_candidate(None)
+            .await;
+        assert!(detected.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_detect_runnable_executable_uses_managed_current_when_path_unavailable() {
+        let tmp = tempfile::tempdir().unwrap();
+        let managed = create_runnable_current_zig(tmp.path(), "0.13.0");
+        let provider = provider_with_dir(tmp.path());
+        let detected = provider
+            .detect_runnable_executable_with_path_candidate(None)
+            .await;
+        assert_eq!(detected, Some(managed));
     }
 
     #[tokio::test]
@@ -1599,6 +1827,11 @@ mod tests {
             packages[0].installed_at.contains('T'),
             "installed_at should be RFC3339: {}",
             packages[0].installed_at
+        );
+        assert_eq!(packages[0].provider, "zig");
+        assert!(
+            packages[0].name.starts_with("zig@"),
+            "installed package name should be normalized to zig@<version>"
         );
     }
 
@@ -1693,6 +1926,51 @@ mod tests {
         assert!(
             !version_path.exists(),
             "Version directory should be removed"
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_uninstall_current_version_reconciles_to_fallback() {
+        let tmp = tempfile::tempdir().unwrap();
+        let versions_dir = tmp.path().join("versions");
+        create_fake_zig_install(&versions_dir, "0.13.0");
+        let fallback_path = create_fake_zig_install(&versions_dir, "0.12.0");
+
+        let provider = provider_with_dir(tmp.path());
+        provider.set_global_version("0.13.0").await.unwrap();
+        provider
+            .uninstall(UninstallRequest {
+                name: "zig".into(),
+                version: Some("0.13.0".into()),
+                force: false,
+            })
+            .await
+            .unwrap();
+
+        let current_link = tmp.path().join("current");
+        assert!(
+            current_link.exists() || current_link.is_symlink(),
+            "current link should be reconciled"
+        );
+        assert!(
+            ZigProvider::path_points_to(&current_link, &fallback_path),
+            "current link should point to fallback version"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_dependencies_returns_structured_unsupported_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        let provider = provider_with_dir(tmp.path());
+        let result = provider.get_dependencies("zig", "0.13.0").await;
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("cannot resolve dependencies")
+                || err.contains("dependency resolution is not supported"),
+            "Error should include dependency resolution diagnostics: {}",
+            err
         );
     }
 

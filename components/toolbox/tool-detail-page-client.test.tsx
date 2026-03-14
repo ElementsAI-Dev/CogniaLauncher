@@ -2,6 +2,9 @@ import { render, screen } from '@testing-library/react';
 import { ToolDetailPageClient } from './tool-detail-page-client';
 
 const mockAddRecent = jest.fn();
+const mockIsTauri = jest.fn(() => true);
+const mockPush = jest.fn();
+let mockToolRegistry: Array<Record<string, unknown>> = [];
 const mockBuiltInTool = {
   id: 'builtin:json-formatter',
   name: 'JSON Formatter',
@@ -31,6 +34,23 @@ jest.mock('@/components/providers/locale-provider', () => ({
   useLocale: () => ({
     t: (key: string) => key,
   }),
+}));
+
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({
+    push: mockPush,
+  }),
+}));
+
+jest.mock('@/lib/tauri', () => ({
+  isTauri: () => mockIsTauri(),
+}));
+
+jest.mock('@/lib/constants/toolbox', () => ({
+  get TOOL_REGISTRY() {
+    return mockToolRegistry;
+  },
+  getToolById: (toolId: string) => mockToolRegistry.find((tool) => tool.id === toolId),
 }));
 
 jest.mock('@/hooks/use-toolbox', () => ({
@@ -69,7 +89,10 @@ jest.mock('@/components/toolbox/plugin-tool-runner', () => ({
 describe('ToolDetailPageClient', () => {
   beforeEach(() => {
     mockAddRecent.mockReset();
+    mockPush.mockReset();
+    mockIsTauri.mockReturnValue(true);
     mockAllTools = [mockBuiltInTool];
+    mockToolRegistry = [];
     mockPluginStoreState = {
       installedPlugins: [],
       healthMap: {},
@@ -86,6 +109,65 @@ describe('ToolDetailPageClient', () => {
   it('shows fallback when tool is unknown', () => {
     render(<ToolDetailPageClient toolId="unknown-tool" />);
     expect(screen.getByText('toolbox.search.noResults')).toBeInTheDocument();
+  });
+
+  it('shows unsupported-host recovery state for plugin tools outside Tauri', () => {
+    mockIsTauri.mockReturnValue(false);
+    mockAllTools = [
+      {
+        id: 'plugin:com.example:run',
+        name: 'Plugin Run',
+        description: 'Run governed tool',
+        icon: 'Plug',
+        category: 'developer',
+        keywords: [],
+        isBuiltIn: false,
+        isNew: false,
+        isBeta: false,
+        pluginTool: {
+          pluginId: 'com.example',
+          pluginName: 'Example',
+          toolId: 'run',
+          nameEn: 'Plugin Run',
+          nameZh: null,
+          descriptionEn: 'Run governed tool',
+          descriptionZh: null,
+          category: 'developer',
+          keywords: [],
+          icon: 'Plug',
+          entry: 'run',
+          uiMode: 'text',
+        },
+      },
+    ];
+
+    render(<ToolDetailPageClient toolId="plugin:com.example:run" />);
+
+    expect(screen.getByText('toolbox.runtime.desktopRequiredDescription')).toBeInTheDocument();
+    expect(screen.queryByText('plugin-tool')).not.toBeInTheDocument();
+  });
+
+  it('shows unsupported-host recovery state for built-in tools hidden from discoverable toolbox', () => {
+    mockIsTauri.mockReturnValue(false);
+    mockAllTools = [];
+    mockToolRegistry = [
+      {
+        id: 'desktop-only-tool',
+        nameKey: 'toolbox.tools.desktopOnly.name',
+        descriptionKey: 'toolbox.tools.desktopOnly.desc',
+        icon: 'Laptop',
+        category: 'developer',
+        keywords: [],
+        requiresTauri: true,
+        isNew: false,
+        component: jest.fn().mockResolvedValue({ default: () => <div>desktop-only</div> }),
+      },
+    ];
+
+    render(<ToolDetailPageClient toolId="desktop-only-tool" />);
+
+    expect(screen.getByText('toolbox.tools.desktopOnly.name')).toBeInTheDocument();
+    expect(screen.getByText('toolbox.runtime.desktopRequiredDescription')).toBeInTheDocument();
   });
 
   it('shows governance summary for plugin tools in detail page', () => {

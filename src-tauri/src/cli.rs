@@ -91,6 +91,12 @@ const ENVVAR_SUBCOMMANDS: &[&str] = &[
     "expand-path",
     "export",
     "import",
+    "preview-import",
+    "apply-import",
+    "preview-path-repair",
+    "apply-path-repair",
+    "resolve-conflict",
+    "shell-guidance",
 ];
 const LOG_SUBCOMMANDS: &[&str] = &["list", "export", "clear", "size", "cleanup"];
 const DOWNLOAD_SUBCOMMANDS: &[&str] = &[
@@ -3596,6 +3602,203 @@ async fn cmd_envvar(
                 EXIT_ERROR
             }
         }
+        "preview-import" => {
+            let command = "envvar.preview-import";
+            let file_path = match get_string(&subcmd.matches.args, "file") {
+                Some(value) => value,
+                None => return usage_error(command, json_mode, "input file path is required"),
+            };
+            let scope =
+                match parse_env_scope(get_string(&subcmd.matches.args, "scope"), EnvVarScope::User)
+                {
+                    Ok(value) => value,
+                    Err(msg) => return usage_error(command, json_mode, msg),
+                };
+            let content = match read_text_file(&file_path) {
+                Ok(text) => text,
+                Err(msg) => return runtime_error(command, json_mode, msg),
+            };
+
+            match crate::commands::envvar::envvar_preview_import_env_file(content, scope).await {
+                Ok(preview) => {
+                    if json_mode {
+                        print_command_json(command, &preview);
+                    } else {
+                        println!(
+                            "Preview ready: {} add, {} update, {} noop, {} invalid, {} skipped",
+                            preview.additions,
+                            preview.updates,
+                            preview.noops,
+                            preview.invalid,
+                            preview.skipped
+                        );
+                        println!("Fingerprint: {}", preview.fingerprint);
+                    }
+                    EXIT_OK
+                }
+                Err(e) => runtime_error(command, json_mode, format!("Preview import error: {}", e)),
+            }
+        }
+        "apply-import" => {
+            let command = "envvar.apply-import";
+            let file_path = match get_string(&subcmd.matches.args, "file") {
+                Some(value) => value,
+                None => return usage_error(command, json_mode, "input file path is required"),
+            };
+            let fingerprint = match get_string(&subcmd.matches.args, "fingerprint") {
+                Some(value) => value,
+                None => return usage_error(command, json_mode, "preview fingerprint is required"),
+            };
+            let scope =
+                match parse_env_scope(get_string(&subcmd.matches.args, "scope"), EnvVarScope::User)
+                {
+                    Ok(value) => value,
+                    Err(msg) => return usage_error(command, json_mode, msg),
+                };
+            let content = match read_text_file(&file_path) {
+                Ok(text) => text,
+                Err(msg) => return runtime_error(command, json_mode, msg),
+            };
+
+            match crate::commands::envvar::envvar_apply_import_preview(content, scope, fingerprint).await {
+                Ok(result) => {
+                    if json_mode {
+                        print_command_json(command, &result);
+                    } else {
+                        println!("Imported {} variable(s), skipped {}", result.imported, result.skipped);
+                    }
+                    if result.errors.is_empty() { EXIT_OK } else { EXIT_ERROR }
+                }
+                Err(e) => runtime_error(command, json_mode, format!("Apply import error: {}", e)),
+            }
+        }
+        "preview-path-repair" => {
+            let command = "envvar.preview-path-repair";
+            let scope = match parse_env_scope(
+                get_string(&subcmd.matches.args, "scope"),
+                EnvVarScope::Process,
+            ) {
+                Ok(value) => value,
+                Err(msg) => return usage_error(command, json_mode, msg),
+            };
+
+            match crate::commands::envvar::envvar_preview_path_repair(scope).await {
+                Ok(preview) => {
+                    if json_mode {
+                        print_command_json(command, &preview);
+                    } else {
+                        println!(
+                            "PATH repair preview: {} duplicate, {} missing, {} removed",
+                            preview.duplicate_count, preview.missing_count, preview.removed_count
+                        );
+                        println!("Fingerprint: {}", preview.fingerprint);
+                    }
+                    EXIT_OK
+                }
+                Err(e) => runtime_error(command, json_mode, format!("Preview PATH repair error: {}", e)),
+            }
+        }
+        "apply-path-repair" => {
+            let command = "envvar.apply-path-repair";
+            let fingerprint = match get_string(&subcmd.matches.args, "fingerprint") {
+                Some(value) => value,
+                None => return usage_error(command, json_mode, "preview fingerprint is required"),
+            };
+            let scope = match parse_env_scope(
+                get_string(&subcmd.matches.args, "scope"),
+                EnvVarScope::Process,
+            ) {
+                Ok(value) => value,
+                Err(msg) => return usage_error(command, json_mode, msg),
+            };
+
+            match crate::commands::envvar::envvar_apply_path_repair(scope, fingerprint).await {
+                Ok(removed) => {
+                    if json_mode {
+                        print_command_json(command, &json!({ "removed": removed, "scope": scope_to_string(scope) }));
+                    } else {
+                        println!("Removed {} PATH entrie(s)", removed);
+                    }
+                    EXIT_OK
+                }
+                Err(e) => runtime_error(command, json_mode, format!("Apply PATH repair error: {}", e)),
+            }
+        }
+        "resolve-conflict" => {
+            let command = "envvar.resolve-conflict";
+            let key = match get_string(&subcmd.matches.args, "key") {
+                Some(value) => value,
+                None => return usage_error(command, json_mode, "environment variable key is required"),
+            };
+            let source_scope = match parse_env_scope(
+                get_string(&subcmd.matches.args, "source-scope"),
+                EnvVarScope::User,
+            ) {
+                Ok(value) => value,
+                Err(msg) => return usage_error(command, json_mode, msg),
+            };
+            let target_scope = match parse_env_scope(
+                get_string(&subcmd.matches.args, "target-scope"),
+                EnvVarScope::System,
+            ) {
+                Ok(value) => value,
+                Err(msg) => return usage_error(command, json_mode, msg),
+            };
+
+            match crate::commands::envvar::envvar_resolve_conflict(key, source_scope, target_scope).await {
+                Ok(result) => {
+                    if json_mode {
+                        print_command_json(command, &result);
+                    } else {
+                        println!(
+                            "Resolved conflict to {} using {} scope value",
+                            scope_to_string(result.target_scope),
+                            scope_to_string(result.source_scope)
+                        );
+                    }
+                    EXIT_OK
+                }
+                Err(e) => runtime_error(command, json_mode, format!("Resolve conflict error: {}", e)),
+            }
+        }
+        "shell-guidance" => {
+            let command = "envvar.shell-guidance";
+            let key = get_string(&subcmd.matches.args, "key");
+            let value = get_string(&subcmd.matches.args, "value");
+            let entries = get_string_list(&subcmd.matches.args, "entries");
+            let auto_applied_shell = get_string(&subcmd.matches.args, "auto-applied-shell");
+
+            let path_entries = if entries.is_empty() { None } else { Some(entries) };
+
+            match crate::commands::envvar::envvar_generate_shell_guidance(
+                key,
+                value,
+                path_entries,
+                auto_applied_shell,
+            ) {
+                Ok(guidance) => {
+                    if json_mode {
+                        print_command_json(command, &guidance);
+                    } else if guidance.is_empty() {
+                        println!("No shell guidance generated");
+                    } else {
+                        let rows: Vec<Vec<String>> = guidance
+                            .iter()
+                            .map(|entry| {
+                                vec![
+                                    entry.shell.clone(),
+                                    entry.config_path.clone(),
+                                    if entry.auto_applied { "yes".into() } else { "no".into() },
+                                ]
+                            })
+                            .collect();
+                        print_table(&["SHELL", "CONFIG", "AUTO_APPLIED"], &rows);
+                    }
+                    EXIT_OK
+                }
+                Err(e) => runtime_error(command, json_mode, format!("Shell guidance error: {}", e)),
+            }
+        }
         other => usage_error(
             COMMAND,
             json_mode,
@@ -4148,6 +4351,12 @@ mod tests {
             "expand-path",
             "export",
             "import",
+            "preview-import",
+            "apply-import",
+            "preview-path-repair",
+            "apply-path-repair",
+            "resolve-conflict",
+            "shell-guidance",
         ];
         for cmd in &envvar_expected {
             assert!(
@@ -4444,6 +4653,75 @@ mod tests {
             .filter_map(|a| a.get("name").and_then(|n| n.as_str()))
             .collect();
         assert!(envvar_expand_path_names.contains(&"path"));
+
+        let envvar_preview_import_args = subcommands_obj["envvar"]["subcommands"]["preview-import"]
+            ["args"]
+            .as_array()
+            .expect("envvar.preview-import args");
+        let envvar_preview_import_names: Vec<&str> = envvar_preview_import_args
+            .iter()
+            .filter_map(|a| a.get("name").and_then(|n| n.as_str()))
+            .collect();
+        assert!(envvar_preview_import_names.contains(&"file"));
+        assert!(envvar_preview_import_names.contains(&"scope"));
+
+        let envvar_apply_import_args = subcommands_obj["envvar"]["subcommands"]["apply-import"]
+            ["args"]
+            .as_array()
+            .expect("envvar.apply-import args");
+        let envvar_apply_import_names: Vec<&str> = envvar_apply_import_args
+            .iter()
+            .filter_map(|a| a.get("name").and_then(|n| n.as_str()))
+            .collect();
+        assert!(envvar_apply_import_names.contains(&"file"));
+        assert!(envvar_apply_import_names.contains(&"scope"));
+        assert!(envvar_apply_import_names.contains(&"fingerprint"));
+
+        let envvar_preview_path_repair_args = subcommands_obj["envvar"]["subcommands"]
+            ["preview-path-repair"]["args"]
+            .as_array()
+            .expect("envvar.preview-path-repair args");
+        let envvar_preview_path_repair_names: Vec<&str> = envvar_preview_path_repair_args
+            .iter()
+            .filter_map(|a| a.get("name").and_then(|n| n.as_str()))
+            .collect();
+        assert!(envvar_preview_path_repair_names.contains(&"scope"));
+
+        let envvar_apply_path_repair_args = subcommands_obj["envvar"]["subcommands"]
+            ["apply-path-repair"]["args"]
+            .as_array()
+            .expect("envvar.apply-path-repair args");
+        let envvar_apply_path_repair_names: Vec<&str> = envvar_apply_path_repair_args
+            .iter()
+            .filter_map(|a| a.get("name").and_then(|n| n.as_str()))
+            .collect();
+        assert!(envvar_apply_path_repair_names.contains(&"scope"));
+        assert!(envvar_apply_path_repair_names.contains(&"fingerprint"));
+
+        let envvar_resolve_conflict_args = subcommands_obj["envvar"]["subcommands"]
+            ["resolve-conflict"]["args"]
+            .as_array()
+            .expect("envvar.resolve-conflict args");
+        let envvar_resolve_conflict_names: Vec<&str> = envvar_resolve_conflict_args
+            .iter()
+            .filter_map(|a| a.get("name").and_then(|n| n.as_str()))
+            .collect();
+        assert!(envvar_resolve_conflict_names.contains(&"key"));
+        assert!(envvar_resolve_conflict_names.contains(&"source-scope"));
+        assert!(envvar_resolve_conflict_names.contains(&"target-scope"));
+
+        let envvar_shell_guidance_args = subcommands_obj["envvar"]["subcommands"]
+            ["shell-guidance"]["args"]
+            .as_array()
+            .expect("envvar.shell-guidance args");
+        let envvar_shell_guidance_names: Vec<&str> = envvar_shell_guidance_args
+            .iter()
+            .filter_map(|a| a.get("name").and_then(|n| n.as_str()))
+            .collect();
+        assert!(envvar_shell_guidance_names.contains(&"key"));
+        assert!(envvar_shell_guidance_names.contains(&"value"));
+        assert!(envvar_shell_guidance_names.contains(&"entries"));
+        assert!(envvar_shell_guidance_names.contains(&"auto-applied-shell"));
 
         let log_export_args = subcommands_obj["log"]["subcommands"]["export"]["args"]
             .as_array()

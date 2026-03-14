@@ -46,6 +46,13 @@ const mockUseGitLabDownloads = {
   loading: false,
   error: null as string | null,
   releases: [] as GitLabReleaseInfo[],
+  tokenStatus: null,
+  vaultStatus: null,
+  vaultPassword: "",
+  setVaultPassword: jest.fn(),
+  setupVault: jest.fn().mockResolvedValue(undefined),
+  unlockVault: jest.fn().mockResolvedValue(undefined),
+  lockVault: jest.fn().mockResolvedValue(undefined),
   validateAndFetch: jest.fn(),
   fetchPipelines: jest.fn().mockResolvedValue([]),
   fetchPipelineJobs: jest.fn().mockResolvedValue([]),
@@ -90,6 +97,9 @@ function resetMocks() {
   mockUseGitLabDownloads.packageFiles = [];
   mockUseGitLabDownloads.error = null;
   mockUseGitLabDownloads.token = "";
+  mockUseGitLabDownloads.tokenStatus = null;
+  mockUseGitLabDownloads.vaultStatus = null;
+  mockUseGitLabDownloads.vaultPassword = "";
   mockUseGitLabDownloads.instanceUrl = "";
   mockUseGitLabDownloads.loading = false;
   mockUseGitLabDownloads.sourceType = "release";

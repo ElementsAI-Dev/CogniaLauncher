@@ -44,12 +44,12 @@ describe("CacheMonitorCard", () => {
 
   it("renders monitor card title", () => {
     render(<CacheMonitorCard />);
-    expect(screen.getByText("cache.sizeMonitor")).toBeInTheDocument();
+    expect(screen.getByText("cache.overviewMonitorTitle")).toBeInTheDocument();
   });
 
   it("renders description", () => {
     render(<CacheMonitorCard />);
-    expect(screen.getByText("cache.sizeMonitorDesc")).toBeInTheDocument();
+    expect(screen.getByText("cache.overviewMonitorDesc")).toBeInTheDocument();
   });
 
   it("shows no cache data message in non-Tauri environment", () => {
@@ -65,19 +65,19 @@ describe("CacheMonitorCard", () => {
     });
     expect(screen.getByText("1.2 GB")).toBeInTheDocument();
     expect(screen.getByText("1.5 GB")).toBeInTheDocument();
-    expect(screen.getByText("100 GB")).toBeInTheDocument();
+    expect(screen.queryByText("100 GB")).not.toBeInTheDocument();
   });
 
-  it("displays usage percentage", async () => {
+  it("displays internal size from monitor", async () => {
     mockIsTauri = true;
     mockCacheSizeMonitor.mockResolvedValue(monitorData);
     await act(async () => {
       render(<CacheMonitorCard />);
     });
-    expect(screen.getByText("45%")).toBeInTheDocument();
+    expect(screen.getByText("1.2 GB")).toBeInTheDocument();
   });
 
-  it("shows threshold warning when exceeded", async () => {
+  it("renders monitor data when threshold is exceeded", async () => {
     mockIsTauri = true;
     mockCacheSizeMonitor.mockResolvedValue({
       ...monitorData,
@@ -88,7 +88,8 @@ describe("CacheMonitorCard", () => {
     await act(async () => {
       render(<CacheMonitorCard />);
     });
-    expect(screen.getByText("cache.thresholdExceeded")).toBeInTheDocument();
+    // Monitor still renders the breakdown grid
+    expect(screen.getByText("cache.internalCache")).toBeInTheDocument();
   });
 
   it("shows external caches when present", async () => {
@@ -120,22 +121,14 @@ describe("CacheMonitorCard", () => {
     expect(screen.getByText("cache.externalCaches")).toBeInTheDocument();
   });
 
-  it("displays threshold value in footer", async () => {
+  it("displays internal size in breakdown grid", async () => {
     mockIsTauri = true;
     mockCacheSizeMonitor.mockResolvedValue(monitorData);
     await act(async () => {
       render(<CacheMonitorCard />);
     });
-    expect(screen.getByText("cache.threshold")).toBeInTheDocument();
-  });
-
-  it("shows internal/max size ratio", async () => {
-    mockIsTauri = true;
-    mockCacheSizeMonitor.mockResolvedValue(monitorData);
-    await act(async () => {
-      render(<CacheMonitorCard />);
-    });
-    expect(screen.getByText("1.2 GB / 5.0 GB")).toBeInTheDocument();
+    expect(screen.getByText("cache.internalCache")).toBeInTheDocument();
+    expect(screen.getByText("cache.combinedTotal")).toBeInTheDocument();
   });
 
   it("shows no size history message when fewer than 2 snapshots", async () => {
@@ -148,7 +141,7 @@ describe("CacheMonitorCard", () => {
     expect(screen.getByText("cache.noSizeHistory")).toBeInTheDocument();
   });
 
-  it("shows size history title when snapshots are available", async () => {
+  it("renders chart when snapshots are available", async () => {
     mockIsTauri = true;
     mockCacheSizeMonitor.mockResolvedValue(monitorData);
     mockGetCacheSizeHistory.mockResolvedValue([
@@ -170,7 +163,8 @@ describe("CacheMonitorCard", () => {
     await act(async () => {
       render(<CacheMonitorCard />);
     });
-    expect(screen.getByText("cache.sizeHistory")).toBeInTheDocument();
+    // When there are snapshots, noSizeHistory is NOT shown
+    expect(screen.queryByText("cache.noSizeHistory")).not.toBeInTheDocument();
   });
 
   it("calls getCacheSizeHistory on mount in Tauri environment", async () => {

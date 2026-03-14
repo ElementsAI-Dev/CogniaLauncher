@@ -340,4 +340,26 @@ describe('normalizeDownloadFailure', () => {
     expect(info.failureClass).toBe('timeout');
     expect(info.retryable).toBe(true);
   });
+
+  it('prefers stable reasonCode mapping over error text', () => {
+    const info = normalizeDownloadFailure({
+      state: 'failed',
+      error: 'some localized text',
+      reasonCode: 'checksum_mismatch',
+    });
+
+    expect(info.failureClass).toBe('integrity_error');
+  });
+
+  it('uses recoverable flag to gate retry when reasonCode is transient', () => {
+    const info = normalizeDownloadFailure({
+      state: 'failed',
+      error: 'network issue',
+      reasonCode: 'network_error',
+      recoverable: false,
+    });
+
+    expect(info.failureClass).toBe('network_error');
+    expect(info.retryable).toBe(false);
+  });
 });

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { TerminalShellConfig } from './terminal-shell-config';
 import type { ShellInfo, ShellConfigEntries } from '@/types/tauri';
@@ -80,6 +80,18 @@ const shellNoConfig: ShellInfo[] = [
   },
 ];
 
+const shellWithoutCandidates: ShellInfo[] = [
+  {
+    id: 'fish-empty',
+    name: 'Fish',
+    shellType: 'fish',
+    version: '3.6',
+    executablePath: '/usr/bin/fish',
+    configFiles: [],
+    isDefault: false,
+  },
+];
+
 const mockEntries: ShellConfigEntries = {
   aliases: [['ll', 'ls -la']],
   exports: [['EDITOR', 'vim']],
@@ -141,10 +153,10 @@ describe('TerminalShellConfig', () => {
     expect(loadButton).toBeDisabled();
   });
 
-  it('shows noConfigFiles when shell has no existing config files', () => {
+  it('shows noConfigFiles when shell has no config candidates', () => {
     render(
       <TerminalShellConfig
-        shells={shellNoConfig}
+        shells={shellWithoutCandidates}
         onReadConfig={jest.fn()}
         onFetchConfigEntries={jest.fn()}
         onBackupConfig={jest.fn()}
@@ -152,6 +164,131 @@ describe('TerminalShellConfig', () => {
     );
 
     expect(screen.getByText('terminal.noConfigFiles')).toBeInTheDocument();
+  });
+
+  it('shows missing target state and initialization action for non-existing config file', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <TerminalShellConfig
+        shells={shellNoConfig}
+        onReadConfig={jest.fn()}
+        onFetchConfigEntries={jest.fn()}
+        onBackupConfig={jest.fn()}
+        onWriteConfig={jest.fn()}
+      />,
+    );
+
+    const [, configSelect] = screen.getAllByRole('combobox');
+    await user.click(configSelect);
+    await user.click(await screen.findByRole('option', { name: /config\.fish/i }));
+
+    expect(screen.getByText('terminal.configTargetMissingTitle')).toBeInTheDocument();
+    expect(screen.getByTestId('terminal-init-open')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /terminal\.loadConfig/i })).toBeDisabled();
+  });
+
+  it('initializes a missing config target and enters editable session', async () => {
+    const user = userEvent.setup();
+    const onWriteConfig = jest.fn().mockResolvedValue({
+      operation: 'write',
+      path: '/home/user/.config/fish/config.fish',
+      backupPath: null,
+      bytesWritten: 128,
+      verified: true,
+      diagnostics: [],
+      diagnosticDetails: [],
+      snapshotPath: '/tmp/snapshot',
+      fingerprint: 'abc123',
+    });
+    const onReadConfig = jest.fn().mockResolvedValue('# Cognia bootstrap');
+    const onFetchConfigEntries = jest.fn().mockResolvedValue(mockEntries);
+
+    render(
+      <TerminalShellConfig
+        shells={shellNoConfig}
+        onReadConfig={onReadConfig}
+        onFetchConfigEntries={onFetchConfigEntries}
+        onBackupConfig={jest.fn()}
+        onWriteConfig={onWriteConfig}
+      />,
+    );
+
+    const [, configSelect] = screen.getAllByRole('combobox');
+    await user.click(configSelect);
+    await user.click(await screen.findByRole('option', { name: /config\.fish/i }));
+
+    await user.click(screen.getByTestId('terminal-init-open'));
+    const confirmDialog = await screen.findByRole('dialog');
+    const confirmButton = within(confirmDialog).getByTestId('terminal-init-confirm');
+    expect(confirmButton).toBeEnabled();
+    await user.click(confirmButton);
+
+    await waitFor(() => {
+      expect(onWriteConfig).toHaveBeenCalledWith(
+        '/home/user/.config/fish/config.fish',
+        expect.stringContaining('CogniaLauncher bootstrap'),
+        'fish',
+      );
+      expect(onReadConfig).toHaveBeenCalledWith('/home/user/.config/fish/config.fish');
+      expect(screen.getByTestId('terminal-config-editor')).toBeInTheDocument();
+    });
+  });
+
+  it('keeps missing target context and supports retry when initialization fails', async () => {
+    const user = userEvent.setup();
+    const onWriteConfig = jest
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({
+        operation: 'write',
+        path: '/home/user/.config/fish/config.fish',
+        backupPath: null,
+        bytesWritten: 128,
+        verified: true,
+        diagnostics: [],
+        diagnosticDetails: [],
+        snapshotPath: '/tmp/snapshot',
+        fingerprint: 'abc123',
+      });
+    const onReadConfig = jest.fn().mockResolvedValue('# Cognia bootstrap');
+    const onFetchConfigEntries = jest.fn().mockResolvedValue(mockEntries);
+
+    render(
+      <TerminalShellConfig
+        shells={shellNoConfig}
+        onReadConfig={onReadConfig}
+        onFetchConfigEntries={onFetchConfigEntries}
+        onBackupConfig={jest.fn()}
+        onWriteConfig={onWriteConfig}
+      />,
+    );
+
+    const [, configSelect] = screen.getAllByRole('combobox');
+    await user.click(configSelect);
+    await user.click(await screen.findByRole('option', { name: /config\.fish/i }));
+
+    await user.click(screen.getByTestId('terminal-init-open'));
+    let confirmDialog = await screen.findByRole('dialog');
+    let confirmButton = within(confirmDialog).getByTestId('terminal-init-confirm');
+    expect(confirmButton).toBeEnabled();
+    await user.click(confirmButton);
+
+    await waitFor(() => {
+      expect(onWriteConfig).toHaveBeenCalledTimes(1);
+      expect(screen.getByText('terminal.initializeConfigTitle')).toBeInTheDocument();
+      expect(screen.getByText('terminal.configTargetMissingTitle')).toBeInTheDocument();
+    });
+
+    confirmDialog = await screen.findByRole('dialog');
+    confirmButton = within(confirmDialog).getByTestId('terminal-init-confirm');
+    expect(confirmButton).toBeEnabled();
+    await user.click(confirmButton);
+
+    await waitFor(() => {
+      expect(onWriteConfig).toHaveBeenCalledTimes(2);
+      expect(screen.getByTestId('terminal-config-editor')).toBeInTheDocument();
+    });
   });
 
   it('renders config file dropdown for shell with existing config files', () => {

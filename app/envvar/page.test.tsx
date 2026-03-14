@@ -11,9 +11,14 @@ const mockRemovePathEntry = jest.fn().mockResolvedValue(true);
 const mockReorderPath = jest.fn().mockResolvedValue(true);
 const mockFetchShellProfiles = jest.fn().mockResolvedValue([]);
 const mockReadShellProfile = jest.fn().mockResolvedValue('');
+const mockPreviewImportEnvFile = jest.fn().mockResolvedValue(null);
+const mockApplyImportPreview = jest.fn().mockResolvedValue(null);
 const mockImportEnvFile = jest.fn().mockResolvedValue(null);
 const mockExportEnvFile = jest.fn().mockResolvedValue(null);
 const mockDeduplicatePath = jest.fn().mockResolvedValue(0);
+const mockPreviewPathRepair = jest.fn().mockResolvedValue(null);
+const mockApplyPathRepair = jest.fn().mockResolvedValue(null);
+const mockResolveConflict = jest.fn().mockResolvedValue(null);
 let mockIsTauri = false;
 
 const hookState = {
@@ -23,6 +28,11 @@ const hookState = {
   pathEntries: [] as never[],
   shellProfiles: [] as never[],
   conflicts: [] as Array<{ key: string; userValue: string; systemValue: string; effectiveValue: string }>,
+  importPreview: null as null | { fingerprint: string },
+  importPreviewStale: false,
+  pathRepairPreview: null as null | { fingerprint: string },
+  pathRepairPreviewStale: false,
+  shellGuidance: [] as Array<{ shell: string; configPath: string; command: string; autoApplied: boolean }>,
   loading: false,
   error: null as string | null,
   detectionState: 'idle' as 'idle' | 'loading-no-cache' | 'showing-cache-refreshing' | 'showing-fresh' | 'empty' | 'error',
@@ -37,9 +47,16 @@ const hookState = {
   reorderPath: mockReorderPath,
   fetchShellProfiles: mockFetchShellProfiles,
   readShellProfile: mockReadShellProfile,
+  previewImportEnvFile: mockPreviewImportEnvFile,
+  applyImportPreview: mockApplyImportPreview,
+  clearImportPreview: jest.fn(),
   importEnvFile: mockImportEnvFile,
   exportEnvFile: mockExportEnvFile,
   deduplicatePath: mockDeduplicatePath,
+  previewPathRepair: mockPreviewPathRepair,
+  applyPathRepair: mockApplyPathRepair,
+  clearPathRepairPreview: jest.fn(),
+  resolveConflict: mockResolveConflict,
   loadDetection: mockLoadDetection,
 };
 
@@ -70,6 +87,11 @@ describe('EnvVarPage', () => {
     hookState.pathEntries = [];
     hookState.shellProfiles = [];
     hookState.conflicts = [];
+    hookState.importPreview = null;
+    hookState.importPreviewStale = false;
+    hookState.pathRepairPreview = null;
+    hookState.pathRepairPreviewStale = false;
+    hookState.shellGuidance = [];
     hookState.loading = false;
     hookState.error = null;
     hookState.detectionState = 'idle';
@@ -103,7 +125,7 @@ describe('EnvVarPage', () => {
     render(<EnvVarPage />);
 
     await waitFor(() => {
-      expect(mockLoadDetection).toHaveBeenCalledWith('all', undefined);
+      expect(mockLoadDetection).toHaveBeenCalledWith('all', { forceRefresh: true });
     });
   });
 
@@ -139,11 +161,15 @@ describe('EnvVarPage', () => {
 
     expect(screen.getByTestId('envvar-variables-content')).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('tab', { name: 'envvar.tabs.pathEditor' }));
+    await userEvent.click(
+      screen.getByRole('tab', { name: /^envvar\.tabs\.pathEditor(?:\s+\d+)?$/ }),
+    );
     expect(screen.getByTestId('envvar-path-content')).toBeInTheDocument();
     expect(screen.getByTestId('envvar-path-editor')).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('tab', { name: 'envvar.tabs.shellProfiles' }));
+    await userEvent.click(
+      screen.getByRole('tab', { name: /^envvar\.tabs\.shellProfiles(?:\s+\d+)?$/ }),
+    );
     expect(screen.getByTestId('envvar-shells-content')).toBeInTheDocument();
     expect(screen.getByTestId('envvar-shell-profiles-panel')).toBeInTheDocument();
   });
@@ -392,5 +418,56 @@ describe('EnvVarPage', () => {
       expect(screen.getByTestId('envvar-operation-error')).toBeInTheDocument();
     });
     expect(screen.getByTestId('envvar-operation-error')).toHaveTextContent('envvar.actions.add');
+  });
+
+  it('resolves conflicts from conflict actions', async () => {
+    mockIsTauri = true;
+    hookState.conflicts = [
+      { key: 'JAVA_HOME', userValue: 'A', systemValue: 'B', effectiveValue: 'A' },
+    ];
+    hookState.detectionState = 'showing-fresh';
+    mockResolveConflict.mockResolvedValue({
+      key: 'JAVA_HOME',
+      sourceScope: 'system',
+      targetScope: 'user',
+      appliedValue: 'B',
+      primaryShellTarget: '/home/user/.bashrc',
+      shellGuidance: [],
+    });
+
+    render(<EnvVarPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('envvar-conflicts-table')).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByTestId('envvar-conflict-system-to-user-JAVA_HOME'));
+
+    await waitFor(() => {
+      expect(mockResolveConflict).toHaveBeenCalledWith('JAVA_HOME', 'system', 'user');
+    });
+  });
+
+  it('shows shell guidance banner and opens shell tab from shortcut', async () => {
+    mockIsTauri = true;
+    hookState.detectionState = 'showing-fresh';
+    hookState.shellGuidance = [
+      {
+        shell: 'bash',
+        configPath: '/home/user/.bashrc',
+        command: 'export JAVA_HOME="/jdk"',
+        autoApplied: true,
+      },
+    ];
+
+    render(<EnvVarPage />);
+
+    expect(screen.getByTestId('envvar-shell-guidance-banner')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByTestId('envvar-shell-guidance-open'));
+
+    await waitFor(() => {
+      expect(mockFetchShellProfiles).toHaveBeenCalled();
+    });
   });
 });

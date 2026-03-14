@@ -4,6 +4,7 @@ import {
   PS_VALID_POLICIES,
   PS_ALLOWED_SCOPES,
   TERMINAL_EDITOR_LANGUAGE_BY_SHELL,
+  getTerminalBootstrapTemplate,
   getTerminalEditorLanguage,
 } from './terminal';
 
@@ -82,5 +83,20 @@ describe('editor language mapping', () => {
     expect(getTerminalEditorLanguage('bash')).toBe('bash');
     expect(getTerminalEditorLanguage('powershell')).toBe('powershell');
     expect(getTerminalEditorLanguage('cmd')).toBe('dos');
+  });
+});
+
+describe('bootstrap templates', () => {
+  it.each(['bash', 'zsh', 'fish', 'powershell', 'cmd', 'nushell'] as const)(
+    'returns non-empty template for %s',
+    (shellType) => {
+      expect(getTerminalBootstrapTemplate(shellType).trim().length).toBeGreaterThan(0);
+    },
+  );
+
+  it('uses shell-appropriate comment style', () => {
+    expect(getTerminalBootstrapTemplate('bash')).toContain('# CogniaLauncher bootstrap');
+    expect(getTerminalBootstrapTemplate('powershell')).toContain('# CogniaLauncher bootstrap');
+    expect(getTerminalBootstrapTemplate('cmd')).toContain(':: CogniaLauncher bootstrap');
   });
 });

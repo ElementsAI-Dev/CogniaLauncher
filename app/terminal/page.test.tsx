@@ -136,10 +136,24 @@ jest.mock('@/components/terminal', () => ({
   ),
   TerminalProfileList: () => <div data-testid="profile-list">Profiles</div>,
   TerminalProfileDialog: () => null,
-  TerminalShellConfig: ({ onDirtyChange, onRequestDiscard }: { onDirtyChange?: (value: boolean) => void; onRequestDiscard?: () => void }) => (
+  TerminalShellConfig: ({
+    onDirtyChange,
+    onRequestDiscard,
+    onRefreshHandled,
+  }: {
+    onDirtyChange?: (value: boolean) => void;
+    onRequestDiscard?: () => void;
+    onRefreshHandled?: (handled: { configEntries: boolean; configMetadata: boolean }) => void;
+  }) => (
     <div data-testid="shell-config">
       <button type="button" onClick={() => onDirtyChange?.(true)}>set-config-dirty</button>
       <button type="button" onClick={() => onRequestDiscard?.()}>request-config-discard</button>
+      <button
+        type="button"
+        onClick={() => onRefreshHandled?.({ configEntries: true, configMetadata: true })}
+      >
+        acknowledge-config-refresh
+      </button>
       Shell Config
     </div>
   ),
@@ -315,6 +329,34 @@ describe('TerminalPage', () => {
     expect(screen.queryByTestId('profile-list')).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('tab', { name: /profiles/i }));
+    await user.click(screen.getByRole('button', { name: /terminal\.discardAndContinue/i }));
+    await waitFor(() => {
+      expect(screen.getByTestId('profile-list')).toBeInTheDocument();
+    });
+  });
+
+  it('keeps dirty-guard behavior after config refresh is acknowledged', async () => {
+    const user = userEvent.setup();
+    mockTerminalHookState.resourceStale = {
+      ...mockTerminalHookState.resourceStale,
+      configEntries: true,
+      configMetadata: true,
+    };
+
+    render(<TerminalPage />);
+
+    await user.click(screen.getByRole('tab', { name: /config/i }));
+    await waitFor(() => {
+      expect(screen.getByTestId('shell-config')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: /acknowledge-config-refresh/i }));
+    expect(mockTerminalHookState.markResourcesFresh).toHaveBeenCalledWith(['configEntries', 'configMetadata']);
+
+    await user.click(screen.getByRole('button', { name: /set-config-dirty/i }));
+    await user.click(screen.getByRole('tab', { name: /profiles/i }));
+
+    expect(screen.getByText('terminal.unsavedChangesTitle')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /terminal\.discardAndContinue/i }));
     await waitFor(() => {
       expect(screen.getByTestId('profile-list')).toBeInTheDocument();

@@ -95,6 +95,13 @@ export function GitHubDownloadDialog({
     releases,
     loading,
     error,
+    tokenStatus,
+    vaultStatus,
+    vaultPassword,
+    setVaultPassword,
+    setupVault,
+    unlockVault,
+    lockVault,
     validateAndFetch,
     downloadAsset,
     downloadSource,
@@ -151,14 +158,49 @@ export function GitHubDownloadDialog({
   }, [currentRelease, getRecommendedAsset]);
 
   const handleSaveToken = useCallback(async () => {
-    await saveToken();
-    toast.success(t("downloads.github.tokenSaved"));
+    try {
+      await saveToken();
+      toast.success(t("downloads.github.tokenSaved"));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    }
   }, [saveToken, t]);
 
   const handleClearToken = useCallback(async () => {
-    await clearSavedToken();
-    toast.success(t("downloads.github.tokenCleared"));
+    try {
+      await clearSavedToken();
+      toast.success(t("downloads.github.tokenCleared"));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    }
   }, [clearSavedToken, t]);
+
+  const handleSetupVault = useCallback(async () => {
+    try {
+      await setupVault();
+      toast.success(t("downloads.auth.vaultReady"));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    }
+  }, [setupVault, t]);
+
+  const handleUnlockVault = useCallback(async () => {
+    try {
+      await unlockVault();
+      toast.success(t("downloads.auth.vaultReady"));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    }
+  }, [t, unlockVault]);
+
+  const handleLockVault = useCallback(async () => {
+    try {
+      await lockVault();
+      toast.success(t("downloads.auth.vaultLocked"));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    }
+  }, [lockVault, t]);
 
   const handleDownload = useCallback(async () => {
     if (!destination.trim()) {
@@ -326,7 +368,15 @@ export function GitHubDownloadDialog({
             saveLabel={t("downloads.github.saveToken")}
             clearLabel={t("downloads.github.clearToken")}
             hint={t("downloads.auth.githubHint")}
-            configured={!!token.trim()}
+            configured={!!token.trim() || !!tokenStatus?.configured}
+            tokenStatus={tokenStatus}
+            vaultStatus={vaultStatus}
+            vaultPassword={vaultPassword}
+            onVaultPasswordChange={setVaultPassword}
+            onSetupVault={handleSetupVault}
+            onUnlockVault={handleUnlockVault}
+            onLockVault={handleLockVault}
+            vaultActionDisabled={!isDesktop || !vaultPassword.trim()}
             t={t}
           />
 

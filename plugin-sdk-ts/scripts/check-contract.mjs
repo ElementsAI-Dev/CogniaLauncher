@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 import {
   loadContract,
   parseDeclarationFunctions,
+  parseRustDeclarationFunctions,
+  parseRustWrapperFunctions,
   parseRuntimeFunctions,
   parseWrapperFunctions,
   validateContractParity,
@@ -56,12 +58,19 @@ function main() {
   const runtimePath = asAbs(sdkDir, contract.runtimeSource);
   const declarationPath = asAbs(sdkDir, contract.declarationSource);
   const srcDirPath = asAbs(sdkDir, "src");
+  const rustDeclarationPath = asAbs(
+    sdkDir,
+    contract.rustDeclarationSource ?? "../plugin-sdk/src/host.rs",
+  );
+  const rustSrcDirPath = path.dirname(rustDeclarationPath);
 
   const result = validateContractParity({
     contractFunctions: contract.functions,
     runtimeFunctions: parseRuntimeFunctions(runtimePath),
     declarationFunctions: parseDeclarationFunctions(declarationPath),
     wrapperFunctions: parseWrapperFunctions(srcDirPath),
+    rustDeclarationFunctions: parseRustDeclarationFunctions(rustDeclarationPath),
+    rustWrapperFunctions: parseRustWrapperFunctions(rustSrcDirPath),
   });
 
   if (jsonMode) {

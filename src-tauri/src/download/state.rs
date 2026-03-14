@@ -142,6 +142,31 @@ impl std::fmt::Display for DownloadError {
 impl std::error::Error for DownloadError {}
 
 impl DownloadError {
+    /// Stable machine-readable reason code for UI guidance and telemetry.
+    pub fn reason_code(&self) -> &'static str {
+        match self {
+            Self::Network { .. } => "network_error",
+            Self::FileSystem { .. } => "filesystem_error",
+            Self::ChecksumMismatch { .. } => "checksum_mismatch",
+            Self::InsufficientSpace { .. } => "insufficient_space",
+            Self::Interrupted => "interrupted",
+            Self::InvalidUrl { .. } => "invalid_url",
+            Self::HttpError { status, .. } => match *status {
+                401 => "unauthorized",
+                403 => "forbidden",
+                404 => "not_found",
+                408 => "timeout",
+                429 => "rate_limited",
+                500..=599 => "http_server_error",
+                _ => "http_error",
+            },
+            Self::Timeout { .. } => "timeout",
+            Self::RateLimited { .. } => "rate_limited",
+            Self::TaskNotFound { .. } => "task_not_found",
+            Self::InvalidOperation { .. } => "invalid_operation",
+        }
+    }
+
     /// Check if the error is recoverable (can be retried)
     pub fn is_recoverable(&self) -> bool {
         match self {
@@ -244,6 +269,45 @@ mod tests {
             available: 1024 * 1024 * 50,
         };
         assert!(err.to_string().contains("Insufficient disk space"));
+    }
+
+    #[test]
+    fn test_download_error_reason_code_mapping() {
+        assert_eq!(
+            DownloadError::Network {
+                message: "reset".into()
+            }
+            .reason_code(),
+            "network_error"
+        );
+        assert_eq!(
+            DownloadError::ChecksumMismatch {
+                expected: "a".into(),
+                actual: "b".into()
+            }
+            .reason_code(),
+            "checksum_mismatch"
+        );
+        assert_eq!(
+            DownloadError::InsufficientSpace {
+                required: 100,
+                available: 10
+            }
+            .reason_code(),
+            "insufficient_space"
+        );
+        assert_eq!(
+            DownloadError::HttpError {
+                status: 404,
+                message: "Not Found".into()
+            }
+            .reason_code(),
+            "not_found"
+        );
+        assert_eq!(
+            DownloadError::RateLimited { retry_after: 30 }.reason_code(),
+            "rate_limited"
+        );
     }
 
     #[test]

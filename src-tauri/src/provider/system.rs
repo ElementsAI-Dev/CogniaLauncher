@@ -200,7 +200,7 @@ impl SystemEnvironmentType {
             Self::Java => SystemDetectionConfig {
                 commands: vec!["java"],
                 version_args: vec!["-version"],
-                version_pattern: r#"version "(\d+(?:\.\d+)*)""#,
+                version_pattern: r#"version "(\d+(?:[\._]\d+)*)""#,
                 version_files: vec![".java-version", ".sdkmanrc", ".tool-versions"],
                 manifest_files: vec![
                     ("pom.xml", ""),
@@ -478,7 +478,14 @@ impl SystemEnvironmentProvider {
                         if let Ok(re) = Regex::new(config.version_pattern) {
                             if let Some(caps) = re.captures(output_text) {
                                 if let Some(version) = caps.get(1) {
-                                    return Ok(Some((version.as_str().to_string(), path)));
+                                    let mut ver = version.as_str().to_string();
+                                    // Normalize Lua versions: "5.4" -> "5.4.0"
+                                    if matches!(self.env_type, SystemEnvironmentType::Lua) {
+                                        if ver.matches('.').count() == 1 {
+                                            ver.push_str(".0");
+                                        }
+                                    }
+                                    return Ok(Some((ver, path)));
                                 }
                             }
                         }
@@ -1093,5 +1100,210 @@ mod tests {
             println!("C++ compiler version: {:?}", version);
             assert!(version.is_some());
         }
+    }
+
+    #[test]
+    fn test_all_version_patterns() {
+        let test_cases: Vec<(SystemEnvironmentType, &str, &str)> = vec![
+            (SystemEnvironmentType::Node, "v22.12.0", "22.12.0"),
+            (SystemEnvironmentType::Python, "Python 3.12.4", "3.12.4"),
+            (SystemEnvironmentType::Go, "go version go1.23.4 windows/amd64", "1.23.4"),
+            (SystemEnvironmentType::Rust, "rustc 1.83.0 (90b35a623 2024-11-26)", "1.83.0"),
+            (SystemEnvironmentType::Ruby, "ruby 3.3.6 (2024-11-05 revision 75015d4c1f) [x86_64-linux]", "3.3.6"),
+            (SystemEnvironmentType::Java, "openjdk version \"21.0.5\" 2024-10-15", "21.0.5"),
+            (SystemEnvironmentType::Java, "java version \"1.8.0_412\" 2024-04-16", "1.8.0_412"),
+            (SystemEnvironmentType::Kotlin, "kotlinc-jvm 2.1.0 (JRE 21.0.5+11)", "2.1.0"),
+            (SystemEnvironmentType::Php, "PHP 8.3.14 (cli) (built: Nov 21 2024 16:53:30) (NTS)", "8.3.14"),
+            (SystemEnvironmentType::Dotnet, "9.0.101", "9.0.101"),
+            (SystemEnvironmentType::Deno, "deno 2.1.4 (stable, release, x86_64-pc-windows-msvc)", "2.1.4"),
+            (SystemEnvironmentType::Bun, "1.1.42", "1.1.42"),
+            (SystemEnvironmentType::Zig, "0.13.0", "0.13.0"),
+            (SystemEnvironmentType::Zig, "0.14.0-dev.2851+b074a1aea", "0.14.0-dev.2851+b074a1aea"),
+            (SystemEnvironmentType::Dart, "Dart SDK version: 3.6.0 (stable) (Tue Dec 3 14:09:13 2024 +0000) on \"windows_x64\"", "3.6.0"),
+            (SystemEnvironmentType::Lua, "Lua 5.4.7  Copyright (C) 1994-2024 Lua.org, PUC-Rio", "5.4.7"),
+            (SystemEnvironmentType::Lua, "Lua 5.4  Copyright (C) 1994-2024 Lua.org, PUC-Rio", "5.4"),
+            (SystemEnvironmentType::Scala, "Scala code runner version 3.6.2 -- Copyright 2002-2024, LAMP/EPFL", "3.6.2"),
+            (SystemEnvironmentType::Groovy, "Groovy Version: 4.0.24 JVM: 21.0.5 Vendor: Eclipse Adoptium", "4.0.24"),
+            (SystemEnvironmentType::Elixir, "Elixir 1.18.1 (compiled with Erlang/OTP 27)", "1.18.1"),
+            (SystemEnvironmentType::Erlang, "27", "27"),
+            (SystemEnvironmentType::Swift, "Swift version 6.0.3 (swift-6.0.3-RELEASE)", "6.0.3"),
+            (SystemEnvironmentType::Swift, "Apple Swift version 6.0.3 (swiftlang-6.0.3.1.10 clang-1600.0.30.1)", "6.0.3"),
+            (SystemEnvironmentType::Julia, "julia version 1.11.2", "1.11.2"),
+            (SystemEnvironmentType::Perl, "v5.40.0", "5.40.0"),
+            (SystemEnvironmentType::R, "R version 4.4.2 (2024-10-31)", "4.4.2"),
+            (SystemEnvironmentType::R, "R scripting front-end version 4.4.2 (2024-10-31)", "4.4.2"),
+            (SystemEnvironmentType::Haskell, "The Glorious Glasgow Haskell Compilation System, version 9.10.1", "9.10.1"),
+            (SystemEnvironmentType::Clojure, "Clojure CLI version 1.12.0.1530", "1.12.0.1530"),
+            (SystemEnvironmentType::Crystal, "Crystal 1.14.0 (2024-10-09)", "1.14.0"),
+            (SystemEnvironmentType::Nim, "Nim Compiler Version 2.2.0 [Windows: amd64]", "2.2.0"),
+            (SystemEnvironmentType::Ocaml, "The OCaml toplevel, version 5.2.1", "5.2.1"),
+            (SystemEnvironmentType::Fortran, "GNU Fortran (Ubuntu 13.2.0-23ubuntu4) 13.2.0", "13.2.0"),
+            (SystemEnvironmentType::C, "gcc (Ubuntu 13.2.0-23ubuntu4) 13.2.0", "13.2.0"),
+            (SystemEnvironmentType::C, "Apple clang version 16.0.0 (clang-1600.0.26.6)", "16.0.0"),
+            (SystemEnvironmentType::Cpp, "g++ (GCC) 14.2.0", "14.2.0"),
+            (SystemEnvironmentType::Cpp, "clang version 19.1.0", "19.1.0"),
+        ];
+
+        for (env_type, output, expected) in test_cases {
+            let config = env_type.detection_config();
+            let re = regex::Regex::new(config.version_pattern).unwrap();
+            if let Some(caps) = re.captures(output) {
+                let version = caps.get(1).map(|m| m.as_str()).unwrap_or("");
+                assert_eq!(
+                    version, expected,
+                    "Failed for {:?} with output: {}",
+                    env_type, output
+                );
+            } else {
+                panic!("No match for {:?} with output: {}", env_type, output);
+            }
+        }
+    }
+
+    #[test]
+    fn test_manifest_version_patterns() {
+        let test_cases: Vec<(&str, SystemEnvironmentType, &str, &str, &str)> = vec![
+            // (label, env_type, manifest_file, content, expected_version)
+            (
+                "node_package_json",
+                SystemEnvironmentType::Node,
+                "package.json",
+                r#"{ "engines": { "node": ">=18.0.0" } }"#,
+                ">=18.0.0",
+            ),
+            (
+                "python_pyproject",
+                SystemEnvironmentType::Python,
+                "pyproject.toml",
+                r#"requires-python = ">=3.11""#,
+                "3.11",
+            ),
+            (
+                "python_pipfile",
+                SystemEnvironmentType::Python,
+                "Pipfile",
+                r#"python_version = "3.11""#,
+                "3.11",
+            ),
+            (
+                "go_mod",
+                SystemEnvironmentType::Go,
+                "go.mod",
+                "go 1.23\n\nrequire (\n)",
+                "1.23",
+            ),
+            (
+                "rust_cargo",
+                SystemEnvironmentType::Rust,
+                "Cargo.toml",
+                "[package]\nname = \"myapp\"\nrust-version = \"1.75\"",
+                "1.75",
+            ),
+            (
+                "ruby_gemfile",
+                SystemEnvironmentType::Ruby,
+                "Gemfile",
+                "source 'https://rubygems.org'\nruby '3.3.0'",
+                "3.3.0",
+            ),
+            (
+                "php_composer",
+                SystemEnvironmentType::Php,
+                "composer.json",
+                r#"{ "require": { "php": "^8.2" } }"#,
+                "8.2",
+            ),
+            (
+                "dart_pubspec",
+                SystemEnvironmentType::Dart,
+                "pubspec.yaml",
+                "environment:\n  sdk: \"^3.0.0\"",
+                "3.0.0",
+            ),
+            (
+                "swift_package",
+                SystemEnvironmentType::Swift,
+                "Package.swift",
+                "// swift-tools-version: 5.10\nimport PackageDescription",
+                "5.10",
+            ),
+        ];
+
+        for (label, env_type, manifest_file, content, expected) in test_cases {
+            let config = env_type.detection_config();
+            let manifest = config
+                .manifest_files
+                .iter()
+                .find(|(f, _)| *f == manifest_file);
+            assert!(
+                manifest.is_some(),
+                "Manifest file '{}' not found in config for {:?} (label: {})",
+                manifest_file,
+                env_type,
+                label
+            );
+            let (_, pattern) = manifest.unwrap();
+            let pattern: &str = pattern;
+            assert!(
+                !pattern.is_empty(),
+                "Pattern is empty for {} (label: {})",
+                manifest_file,
+                label
+            );
+            let re = regex::Regex::new(pattern)
+                .unwrap_or_else(|e| panic!("Invalid regex for {} (label: {}): {}", manifest_file, label, e));
+            if let Some(caps) = re.captures(content) {
+                let version = caps.get(1).map(|m| m.as_str()).unwrap_or("");
+                assert_eq!(
+                    version, expected,
+                    "Failed for manifest {} (label: {}) with content: {}",
+                    manifest_file, label, content
+                );
+            } else {
+                panic!(
+                    "No match for manifest {} (label: {}) with content: {}",
+                    manifest_file, label, content
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_lua_version_normalization_logic() {
+        // Verify the normalization logic: 2-part Lua versions get ".0" appended
+        let two_part = "5.4";
+        let three_part = "5.4.7";
+        assert_eq!(two_part.matches('.').count(), 1);
+        assert_eq!(three_part.matches('.').count(), 2);
+
+        let mut ver = two_part.to_string();
+        if ver.matches('.').count() == 1 {
+            ver.push_str(".0");
+        }
+        assert_eq!(ver, "5.4.0");
+
+        let mut ver = three_part.to_string();
+        if ver.matches('.').count() == 1 {
+            ver.push_str(".0");
+        }
+        assert_eq!(ver, "5.4.7");
+    }
+
+    #[test]
+    fn test_java_version_pattern_handles_underscore() {
+        let config = SystemEnvironmentType::Java.detection_config();
+        let re = regex::Regex::new(config.version_pattern).unwrap();
+
+        // OpenJDK modern
+        let caps = re.captures("openjdk version \"21.0.5\" 2024-10-15").unwrap();
+        assert_eq!(caps.get(1).unwrap().as_str(), "21.0.5");
+
+        // Oracle JDK 8 with underscore build number
+        let caps = re.captures("java version \"1.8.0_412\" 2024-04-16").unwrap();
+        assert_eq!(caps.get(1).unwrap().as_str(), "1.8.0_412");
+
+        // Simple major version
+        let caps = re.captures("openjdk version \"17\" 2021-09-14").unwrap();
+        assert_eq!(caps.get(1).unwrap().as_str(), "17");
     }
 }

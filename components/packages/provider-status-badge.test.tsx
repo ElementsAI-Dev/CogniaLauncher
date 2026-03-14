@@ -62,6 +62,15 @@ const mockProviders: ProviderInfo[] = [
     is_environment_provider: true,
     enabled: false,
   },
+  {
+    id: "zig",
+    display_name: "Zig",
+    capabilities: ["Search", "Install", "List", "VersionSwitch"],
+    platforms: ["Windows"],
+    priority: 4,
+    is_environment_provider: true,
+    enabled: true,
+  },
 ];
 
 describe("ProviderStatusBadge", () => {
@@ -76,8 +85,8 @@ describe("ProviderStatusBadge", () => {
 
   it("shows enabled/total count badge", () => {
     render(<ProviderStatusBadge providers={mockProviders} />);
-    // 2 enabled out of 3 total
-    expect(screen.getByText("2/3")).toBeInTheDocument();
+    // 3 enabled out of 4 total
+    expect(screen.getByText("3/4")).toBeInTheDocument();
   });
 
   it("opens popover with provider list on click", async () => {
@@ -88,24 +97,25 @@ describe("ProviderStatusBadge", () => {
     expect(screen.getByText("Provider Management")).toBeInTheDocument();
   });
 
-  it("shows non-environment providers in popover", async () => {
+  it("shows package-surface providers in popover", async () => {
     const user = userEvent.setup();
     render(<ProviderStatusBadge providers={mockProviders} />);
 
     await user.click(screen.getByRole("button"));
-    // pip and NPM should be listed (not environment providers)
-    // pip appears both as label and as id, NPM is unique
+    // pip and NPM should be listed, and zig should be included as a dual-role provider.
     expect(screen.getByText("NPM")).toBeInTheDocument();
+    expect(screen.getByText("Zig")).toBeInTheDocument();
     expect(screen.getByText("Enable or disable package providers")).toBeInTheDocument();
   });
 
-  it("filters out environment providers from list", async () => {
+  it("filters out environment-only providers from list", async () => {
     const user = userEvent.setup();
     render(<ProviderStatusBadge providers={mockProviders} />);
 
     await user.click(screen.getByRole("button"));
     // Conda is environment provider, should not be in the list
     expect(screen.queryByText("Conda")).not.toBeInTheDocument();
+    expect(screen.getByText("Zig")).toBeInTheDocument();
   });
 
   it("shows check all status button in popover", async () => {

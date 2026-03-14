@@ -1,6 +1,22 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MarkdownRenderer } from './markdown-renderer';
 
+let mockResolvedTheme = 'light';
+const mockMermaidInitialize = jest.fn();
+const mockMermaidRender = jest.fn().mockResolvedValue({ svg: '<svg data-testid="mermaid-svg"><text>diagram</text></svg>' });
+
+jest.mock('next-themes', () => ({
+  useTheme: () => ({ resolvedTheme: mockResolvedTheme }),
+}));
+
+jest.mock('mermaid', () => ({
+  __esModule: true,
+  default: {
+    initialize: (...args: unknown[]) => mockMermaidInitialize(...args),
+    render: (...args: unknown[]) => mockMermaidRender(...args),
+  },
+}));
+
 jest.mock('next/link', () => {
   function MockLink({ children, href, ...props }: { children: React.ReactNode; href: string; [key: string]: unknown }) {
     return <a href={href} {...props}>{children}</a>;
@@ -170,6 +186,10 @@ jest.mock('rehype-slug', () => ({ __esModule: true, default: () => {} }));
 describe('MarkdownRenderer', () => {
   beforeEach(() => {
     mockWriteClipboard.mockClear();
+    mockMermaidInitialize.mockClear();
+    mockMermaidRender.mockClear();
+    mockMermaidRender.mockResolvedValue({ svg: '<svg data-testid="mermaid-svg"><text>diagram</text></svg>' });
+    mockResolvedTheme = 'light';
   });
 
   it('renders markdown content in a docs-prose wrapper', () => {
@@ -228,6 +248,44 @@ describe('MarkdownRenderer', () => {
     // After copy, label changes to "Copied"
     await waitFor(() => {
       expect(screen.getByLabelText('Copied')).toBeInTheDocument();
+    });
+  });
+
+  it('renders mermaid code fences as diagrams', async () => {
+    const { container } = render(<MarkdownRenderer content={"```mermaid\ngraph TD\nA-->B\n```"} />);
+
+    await waitFor(() => {
+      expect(mockMermaidRender).toHaveBeenCalledWith(expect.stringMatching(/^docs-mermaid-/), 'graph TD\nA-->B');
+    });
+
+    expect(container.querySelector('svg')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Copy code')).not.toBeInTheDocument();
+  });
+
+  it('shows a recoverable fallback when mermaid rendering fails', async () => {
+    mockMermaidRender.mockRejectedValueOnce(new Error('broken diagram'));
+
+    render(<MarkdownRenderer content={"```mermaid\ngraph TD\nA-->B\n```"} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Diagram unavailable')).toBeInTheDocument();
+    });
+
+    expect(screen.getByText('Diagram source')).toBeInTheDocument();
+    expect(screen.getAllByText((_, node) => node?.textContent === 'graph TD\nA-->B')).toHaveLength(2);
+  });
+
+  it('passes the active theme to mermaid rendering', async () => {
+    mockResolvedTheme = 'dark';
+
+    render(<MarkdownRenderer content={"```mermaid\ngraph TD\nA-->B\n```"} />);
+
+    await waitFor(() => {
+      expect(mockMermaidInitialize).toHaveBeenCalledWith(expect.objectContaining({
+        startOnLoad: false,
+        securityLevel: 'loose',
+        theme: 'dark',
+      }));
     });
   });
 

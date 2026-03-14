@@ -80,6 +80,20 @@ CogniaLauncher/
 | `pnpm tauri dev` | Start desktop dev mode |
 | `pnpm tauri build` | Build desktop application |
 
+### Desktop Debugging with CrabNebula DevTools
+
+Use CrabNebula DevTools when you need to inspect Tauri command calls, emitted events, spans, or backend logs in a desktop debug build.
+
+1. Install the standalone CrabNebula DevTools app from the official guide: <https://docs.crabnebula.dev/devtools/get-started/>.
+2. Start CogniaLauncher in desktop debug mode with `pnpm tauri dev`.
+3. Connect the running app from CrabNebula DevTools and inspect commands, events, logs, and spans there.
+
+Notes:
+
+- Desktop debug builds register `tauri-plugin-devtools` and do **not** initialize `tauri-plugin-log` in the same process.
+- Production/release builds continue to use `tauri-plugin-log` for log files, WebView forwarding, and the in-app log management workflow.
+- If the in-app log panel warns that the backend bridge is unavailable during debug work, that is expected; use CrabNebula DevTools for backend inspection.
+
 ---
 
 ## IDE Configuration

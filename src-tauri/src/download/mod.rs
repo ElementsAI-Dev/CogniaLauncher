@@ -20,7 +20,7 @@ mod throttle;
 pub use asset_picker::{
     detect_arch, detect_platform, AssetLike, AssetMatch, AssetPicker, LibcType,
 };
-pub use manager::{DownloadEvent, DownloadManager, DownloadManagerConfig};
+pub use manager::{DownloadEvent, DownloadManager, DownloadManagerConfig, ShutdownOutcome};
 pub use persistence::QueuePersistence;
 pub use queue::DownloadQueue;
 pub use state::{DownloadError, DownloadState};

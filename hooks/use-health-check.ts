@@ -29,6 +29,8 @@ interface HealthSummary {
   packageManagerCount: number;
   unavailablePackageManagerCount: number;
   issueCount: number;
+  verifiedIssueCount: number;
+  advisoryIssueCount: number;
   actionableIssueCount: number;
 }
 
@@ -197,6 +199,7 @@ export function useHealthCheck(): UseHealthCheckReturn {
       ...environments.flatMap((env) => env.issues),
       ...packageManagers.flatMap((provider) => provider.issues),
     ];
+    const advisoryIssues = allIssues.filter((issue) => issue.confidence === 'inferred');
 
     return {
       environmentCount: environments.length,
@@ -214,6 +217,8 @@ export function useHealthCheck(): UseHealthCheckReturn {
         (provider) => (provider.scope_state ?? 'available') !== 'available' || provider.status === 'unknown',
       ).length,
       issueCount: allIssues.length,
+      verifiedIssueCount: allIssues.length - advisoryIssues.length,
+      advisoryIssueCount: advisoryIssues.length,
       actionableIssueCount: allIssues.filter((issue) => issue.remediation_id || issue.fix_command).length,
     };
   }, [systemHealth]);

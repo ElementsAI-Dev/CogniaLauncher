@@ -85,7 +85,7 @@ describe('ToolGrid', () => {
   it('passes toolUseCounts to cards', () => {
     const useCounts = { 'builtin:json-formatter': 3 };
     render(<ToolGrid {...defaultProps} toolUseCounts={useCounts} />);
-    expect(screen.getByText('3×')).toBeInTheDocument();
+    expect(screen.getByText('toolbox.categories.mostUsed: 3x')).toBeInTheDocument();
   });
 
   it('marks favorites correctly', () => {

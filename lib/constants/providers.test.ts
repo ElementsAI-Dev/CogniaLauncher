@@ -1,4 +1,11 @@
-import { SYSTEM_PROVIDER_IDS, PACKAGE_MANAGER_IDS, ALL_PROVIDER_IDS, isPackageManagerProvider } from './providers';
+import {
+  SYSTEM_PROVIDER_IDS,
+  PACKAGE_MANAGER_IDS,
+  DUAL_ROLE_PACKAGE_PROVIDER_IDS,
+  ALL_PROVIDER_IDS,
+  isPackageManagerProvider,
+  isPackageSurfaceProvider,
+} from './providers';
 
 describe('SYSTEM_PROVIDER_IDS', () => {
   it('is a Set', () => {
@@ -63,6 +70,23 @@ describe('PACKAGE_MANAGER_IDS', () => {
     expect(isPackageManagerProvider({
       id: 'system-node',
       capabilities: ['version_switch'],
+      is_environment_provider: true,
+    })).toBe(false);
+  });
+
+  it('keeps dual-role package providers visible in package surfaces', () => {
+    expect(DUAL_ROLE_PACKAGE_PROVIDER_IDS.has('zig')).toBe(true);
+    expect(isPackageSurfaceProvider({
+      id: 'zig',
+      capabilities: ['install', 'list', 'search', 'version_switch'],
+      is_environment_provider: true,
+    })).toBe(true);
+  });
+
+  it('keeps environment-only providers out of package surfaces', () => {
+    expect(isPackageSurfaceProvider({
+      id: 'system-node',
+      capabilities: ['version_switch', 'multi_version'],
       is_environment_provider: true,
     })).toBe(false);
   });

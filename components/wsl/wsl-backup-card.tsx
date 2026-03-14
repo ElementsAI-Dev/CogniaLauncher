@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import {
   Card,
   CardContent,
@@ -133,6 +133,28 @@ export function WslBackupCard({
       setSelectedDistro(distroNames[0]);
     }
   }, [distroNames, selectedDistro]);
+
+  // Auto-dismiss success feedback after 5 seconds
+  useEffect(() => {
+    if (lifecycleState?.status === "success") {
+      const timer = setTimeout(() => setLifecycleState(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [lifecycleState]);
+
+  const sortedBackups = useMemo(
+    () =>
+      [...backups].sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      ),
+    [backups],
+  );
+
+  const totalSize = useMemo(
+    () => backups.reduce((sum, b) => sum + b.sizeBytes, 0),
+    [backups],
+  );
 
   const handleCreate = useCallback(async () => {
     if (!selectedDistro) return;
@@ -284,12 +306,12 @@ export function WslBackupCard({
               </AlertDescription>
             </Alert>
           )}
-          <div className="flex items-end gap-2">
+          <div className="flex flex-col sm:flex-row sm:items-end gap-3">
             <div className="flex-1 space-y-1">
               <Label className="text-xs">{t("wsl.backupMgmt.backupDir")}</Label>
               <div className="flex gap-1">
                 <Input
-                  className="h-7 text-xs flex-1"
+                  className="h-9 text-xs flex-1"
                   value={backupDir}
                   onChange={(e) => setBackupDir(e.target.value)}
                   placeholder={DEFAULT_BACKUP_DIR}
@@ -297,7 +319,7 @@ export function WslBackupCard({
                 <Button
                   variant="outline"
                   size="icon"
-                  className="h-7 w-7 shrink-0"
+                  className="h-9 w-9 shrink-0"
                   onClick={async () => {
                     try {
                       const { open } =
@@ -315,10 +337,10 @@ export function WslBackupCard({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
             {distroNames.length > 1 ? (
               <select
-                className="h-7 text-xs border rounded px-2 flex-1 bg-background"
+                className="h-9 text-xs border rounded px-2 flex-1 bg-background"
                 value={selectedDistro}
                 onChange={(e) => setSelectedDistro(e.target.value)}
               >
@@ -336,8 +358,8 @@ export function WslBackupCard({
             <Button
               variant="outline"
               size="sm"
-              className="h-7 gap-1 text-xs"
-              disabled={creating || !selectedDistro}
+              className="h-9 gap-1 text-xs w-full sm:w-auto"
+              disabled={creating || !selectedDistro || !backupDir.trim()}
               onClick={handleCreate}
             >
               {creating ? (
@@ -372,7 +394,7 @@ export function WslBackupCard({
           ) : (
             <ScrollArea className="max-h-[200px]">
               <div className="space-y-1.5">
-                {backups.map((b) => (
+                {sortedBackups.map((b) => (
                   <div
                     key={b.filePath}
                     className="flex items-center justify-between rounded-md border px-3 py-2 group"
@@ -397,6 +419,7 @@ export function WslBackupCard({
                             onClick={() => {
                               setRestoreTarget(b);
                               setRestoreName(b.distroName + "-restored");
+                              setRestoreLocation(`C:\\WSL\\${b.distroName}-restored`);
                             }}
                           >
                             <RotateCw className="h-3 w-3" />
@@ -425,6 +448,11 @@ export function WslBackupCard({
                   </div>
                 ))}
               </div>
+              {sortedBackups.length > 0 && (
+                <div className="text-xs text-muted-foreground text-right pt-2">
+                  {t("wsl.backupMgmt.totalSize")}: {formatBytes(totalSize)}
+                </div>
+              )}
             </ScrollArea>
           )}
         </CardContent>
@@ -448,7 +476,7 @@ export function WslBackupCard({
                 {t("wsl.backupMgmt.distroName")}
               </Label>
               <Input
-                className="h-8 text-xs"
+                className="h-9 text-xs"
                 value={restoreName}
                 onChange={(e) => setRestoreName(e.target.value)}
                 placeholder="Ubuntu-restored"
@@ -459,7 +487,7 @@ export function WslBackupCard({
                 {t("wsl.backupMgmt.installLocation")}
               </Label>
               <Input
-                className="h-8 text-xs"
+                className="h-9 text-xs"
                 value={restoreLocation}
                 onChange={(e) => setRestoreLocation(e.target.value)}
                 placeholder="C:\\WSL\\restored"

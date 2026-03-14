@@ -25,6 +25,10 @@ import {
   subscribeInvalidation,
   withThrottle,
 } from '@/lib/cache/invalidation';
+import {
+  isRequestWaveCurrent,
+  startRequestWave,
+} from '@/lib/cache/request-wave';
 
 interface UseCachePageOptions {
   t: (key: string, params?: Record<string, string | number>) => string;
@@ -37,6 +41,20 @@ interface RefreshOverviewStateOptions {
   includeHotFiles?: boolean;
   includeMonitor?: boolean;
 }
+
+export type CacheReadStatus = 'idle' | 'loading' | 'ready' | 'error';
+
+export interface CacheReadState {
+  status: CacheReadStatus;
+  error: string | null;
+  lastUpdatedAt: number | null;
+}
+
+const INITIAL_READ_STATE: CacheReadState = {
+  status: 'idle',
+  error: null,
+  lastUpdatedAt: null,
+};
 
 export function useCachePage({ t }: UseCachePageOptions) {
   const {
@@ -55,9 +73,9 @@ export function useCachePage({ t }: UseCachePageOptions) {
     updateCacheSettings,
   } = useSettings();
 
+  const [activeTab, setActiveTab] = useState('overview');
   const [operationLoading, setOperationLoading] = useState<OperationType | null>(null);
   const [cleaningType, setCleaningType] = useState<CleanType | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [localSettings, setLocalSettings] = useState<CacheSettings | null>(null);
   const [settingsDirty, setSettingsDirty] = useState(false);
 
@@ -66,15 +84,15 @@ export function useCachePage({ t }: UseCachePageOptions) {
   const [previewData, setPreviewData] = useState<CleanPreview | null>(null);
   const [previewType, setPreviewType] = useState<CleanType>('all');
   const [previewLoading, setPreviewLoading] = useState(false);
-  const [historyOpen, setHistoryOpen] = useState(false);
   const [cleanupHistory, setCleanupHistory] = useState<CleanupRecord[]>([]);
   const [historySummary, setHistorySummary] = useState<CleanupHistorySummary | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyReadState, setHistoryReadState] = useState<CacheReadState>(INITIAL_READ_STATE);
 
   const [accessStats, setAccessStats] = useState<CacheAccessStats | null>(null);
   const [accessStatsLoading, setAccessStatsLoading] = useState(false);
+  const [accessStatsReadState, setAccessStatsReadState] = useState<CacheReadState>(INITIAL_READ_STATE);
 
-  const [browserOpen, setBrowserOpen] = useState(false);
   const [browserEntries, setBrowserEntries] = useState<CacheEntryItem[]>([]);
   const [browserTotalCount, setBrowserTotalCount] = useState(0);
   const [browserLoading, setBrowserLoading] = useState(false);
@@ -84,10 +102,12 @@ export function useCachePage({ t }: UseCachePageOptions) {
   const [browserSortBy, setBrowserSortBy] = useState<string>('created_desc');
   const [browserPage, setBrowserPage] = useState(0);
   const [browserSelectedKeys, setBrowserSelectedKeys] = useState<Set<string>>(new Set());
+  const [browserReadState, setBrowserReadState] = useState<CacheReadState>(INITIAL_READ_STATE);
   const browserSearchRef = useRef(browserSearch);
   const browserRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [hotFiles, setHotFiles] = useState<CacheEntryItem[]>([]);
+  const [hotFilesReadState, setHotFilesReadState] = useState<CacheReadState>(INITIAL_READ_STATE);
 
   const [forceCleanLoading, setForceCleanLoading] = useState(false);
   const [monitorRefreshTrigger, setMonitorRefreshTrigger] = useState(0);
@@ -97,6 +117,10 @@ export function useCachePage({ t }: UseCachePageOptions) {
   const [dbInfo, setDbInfo] = useState<DatabaseInfo | null>(null);
   const [dbInfoLoading, setDbInfoLoading] = useState(false);
   const debouncedBrowserSearch = useDebounce(browserSearch, 300);
+  const accessStatsWaveRef = useRef(0);
+  const hotFilesWaveRef = useRef(0);
+  const historyWaveRef = useRef(0);
+  const browserWaveRef = useRef(0);
 
   useEffect(() => {
     browserSearchRef.current = browserSearch;
@@ -104,26 +128,63 @@ export function useCachePage({ t }: UseCachePageOptions) {
 
   const fetchAccessStats = useCallback(async () => {
     if (!isTauri()) return;
+    const wave = startRequestWave(accessStatsWaveRef);
     setAccessStatsLoading(true);
+    setAccessStatsReadState((prev) => ({
+      ...prev,
+      status: 'loading',
+      error: null,
+    }));
     try {
       const stats = await tauri.getCacheAccessStats();
+      if (!isRequestWaveCurrent(accessStatsWaveRef, wave)) return;
       setAccessStats(stats);
+      setAccessStatsReadState({
+        status: 'ready',
+        error: null,
+        lastUpdatedAt: Date.now(),
+      });
     } catch (err) {
+      if (!isRequestWaveCurrent(accessStatsWaveRef, wave)) return;
       console.error('Failed to fetch access stats:', err);
+      setAccessStatsReadState((prev) => ({
+        status: 'error',
+        error: t('cache.accessStatsLoadFailed', { error: String(err) }),
+        lastUpdatedAt: prev.lastUpdatedAt,
+      }));
     } finally {
+      if (!isRequestWaveCurrent(accessStatsWaveRef, wave)) return;
       setAccessStatsLoading(false);
     }
-  }, []);
+  }, [t]);
 
   const fetchHotFiles = useCallback(async () => {
     if (!isTauri()) return;
+    const wave = startRequestWave(hotFilesWaveRef);
+    setHotFilesReadState((prev) => ({
+      ...prev,
+      status: 'loading',
+      error: null,
+    }));
     try {
       const entries = await tauri.getTopAccessedEntries(5);
+      if (!isRequestWaveCurrent(hotFilesWaveRef, wave)) return;
       setHotFiles(entries);
+      setHotFilesReadState({
+        status: 'ready',
+        error: null,
+        lastUpdatedAt: Date.now(),
+      });
     } catch (err) {
+      if (!isRequestWaveCurrent(hotFilesWaveRef, wave)) return;
       console.error('Failed to fetch hot files:', err);
+      setHotFilesReadState((prev) => ({
+        status: 'error',
+        error: t('cache.hotFilesLoadFailed', { error: String(err) }),
+        lastUpdatedAt: prev.lastUpdatedAt,
+      }));
     }
-  }, []);
+  }, [t]);
 
   const refreshOverviewState = useCallback(async ({
     includeCacheInfo = true,
@@ -157,7 +218,13 @@ export function useCachePage({ t }: UseCachePageOptions) {
     searchOverride?: string,
   ) => {
     if (!isTauri()) return;
+    const wave = startRequestWave(browserWaveRef);
     setBrowserLoading(true);
+    setBrowserReadState((prev) => ({
+      ...prev,
+      status: 'loading',
+      error: null,
+    }));
     const page = resetPage ? 0 : (explicitPage ?? browserPage);
     if (resetPage) setBrowserPage(0);
     try {
@@ -169,24 +236,37 @@ export function useCachePage({ t }: UseCachePageOptions) {
         limit: ENTRIES_PER_PAGE,
         offset: page * ENTRIES_PER_PAGE,
       });
+      if (!isRequestWaveCurrent(browserWaveRef, wave)) return;
       setBrowserEntries(result.entries);
       setBrowserTotalCount(result.total_count);
       setBrowserSelectedKeys(new Set());
+      setBrowserReadState({
+        status: 'ready',
+        error: null,
+        lastUpdatedAt: Date.now(),
+      });
     } catch (err) {
+      if (!isRequestWaveCurrent(browserWaveRef, wave)) return;
       console.error('Failed to fetch cache entries:', err);
+      setBrowserReadState((prev) => ({
+        status: 'error',
+        error: t('cache.browserLoadFailed', { error: String(err) }),
+        lastUpdatedAt: prev.lastUpdatedAt,
+      }));
     } finally {
+      if (!isRequestWaveCurrent(browserWaveRef, wave)) return;
       setBrowserLoading(false);
     }
-  }, [browserPage, browserSortBy, browserTypeFilter]);
+  }, [browserPage, browserSortBy, browserTypeFilter, t]);
 
   const scheduleBrowserRefresh = useCallback(() => {
-    if (!browserOpen || !isTauri()) return;
+    if (activeTab !== 'entries' || !isTauri()) return;
     if (browserRefreshTimeoutRef.current) return;
     browserRefreshTimeoutRef.current = setTimeout(() => {
       browserRefreshTimeoutRef.current = null;
       void fetchBrowserEntries(false, undefined, debouncedBrowserSearch);
     }, 350);
-  }, [browserOpen, debouncedBrowserSearch, fetchBrowserEntries]);
+  }, [activeTab, debouncedBrowserSearch, fetchBrowserEntries]);
 
   useEffect(() => {
     fetchPlatformInfo();
@@ -203,14 +283,19 @@ export function useCachePage({ t }: UseCachePageOptions) {
       withThrottle((event: CacheInvalidationEvent) => {
         if (event.domain === 'external_cache') {
           void refreshOverviewState({
-            includeCacheInfo: false,
+            includeCacheInfo: true,
             includeAccessStats: false,
             includeHotFiles: false,
+            includeMonitor: false,
           });
           return;
         }
 
-        void refreshOverviewState();
+        void refreshOverviewState({
+          includeCacheInfo: true,
+          includeAccessStats: false,
+          includeHotFiles: false,
+        });
 
         if (event.reason !== 'backend:auto-cleaned') return;
         const payload = event.payload as Partial<{
@@ -236,6 +321,12 @@ export function useCachePage({ t }: UseCachePageOptions) {
     const disposeEntries = subscribeInvalidation(
       'cache_entries',
       withThrottle(() => {
+        void refreshOverviewState({
+          includeCacheInfo: true,
+          includeAccessStats: false,
+          includeHotFiles: true,
+          includeMonitor: false,
+        });
         scheduleBrowserRefresh();
       }, 350),
     );
@@ -262,7 +353,11 @@ export function useCachePage({ t }: UseCachePageOptions) {
     try {
       const result = await cleanCache(type);
       toast.success(`${t('cache.freed', { size: result.freed_human })} (${t('cache.permanentlyDeleted')})`);
-      await refreshOverviewState({ includeCacheInfo: false });
+      await refreshOverviewState({
+        includeCacheInfo: true,
+        includeAccessStats: false,
+        includeHotFiles: true,
+      });
       await fetchCleanupHistory();
       emitInvalidations(
         ['cache_overview', 'cache_entries', 'about_cache_stats'],
@@ -293,23 +388,42 @@ export function useCachePage({ t }: UseCachePageOptions) {
     }
   };
 
-  const fetchCleanupHistory = async () => {
+  const fetchCleanupHistory = useCallback(async () => {
     if (!isTauri()) return;
+    const wave = startRequestWave(historyWaveRef);
     setHistoryLoading(true);
+    setHistoryReadState((prev) => ({
+      ...prev,
+      status: 'loading',
+      error: null,
+    }));
     try {
       const { getCleanupHistory, getCleanupSummary } = await import('@/lib/tauri');
       const [history, summary] = await Promise.all([
         getCleanupHistory(10),
         getCleanupSummary(),
       ]);
+      if (!isRequestWaveCurrent(historyWaveRef, wave)) return;
       setCleanupHistory(history);
       setHistorySummary(summary);
+      setHistoryReadState({
+        status: 'ready',
+        error: null,
+        lastUpdatedAt: Date.now(),
+      });
     } catch (err) {
+      if (!isRequestWaveCurrent(historyWaveRef, wave)) return;
       console.error('Failed to fetch cleanup history:', err);
+      setHistoryReadState((prev) => ({
+        status: 'error',
+        error: t('cache.historyLoadFailed', { error: String(err) }),
+        lastUpdatedAt: prev.lastUpdatedAt,
+      }));
     } finally {
+      if (!isRequestWaveCurrent(historyWaveRef, wave)) return;
       setHistoryLoading(false);
     }
-  };
+  }, [t]);
 
   const handleEnhancedClean = async () => {
     if (!isTauri()) return;
@@ -321,7 +435,11 @@ export function useCachePage({ t }: UseCachePageOptions) {
       const result = await cacheCleanEnhanced(previewType, useTrash);
       const method = useTrash ? t('cache.movedToTrash') : t('cache.permanentlyDeleted');
       toast.success(`${t('cache.freed', { size: result.freed_human })} (${method})`);
-      await refreshOverviewState();
+      await refreshOverviewState({
+        includeCacheInfo: true,
+        includeAccessStats: false,
+        includeHotFiles: true,
+      });
       await fetchCleanupHistory();
       emitInvalidations(
         ['cache_overview', 'cache_entries', 'about_cache_stats'],
@@ -348,9 +466,9 @@ export function useCachePage({ t }: UseCachePageOptions) {
   };
 
   useEffect(() => {
-    if (!browserOpen || !isTauri()) return;
+    if (activeTab !== 'entries' || !isTauri()) return;
     void fetchBrowserEntries(true, 0, debouncedBrowserSearch);
-  }, [browserOpen, debouncedBrowserSearch, browserTypeFilter, browserSortBy, fetchBrowserEntries]);
+  }, [activeTab, debouncedBrowserSearch, browserTypeFilter, browserSortBy, fetchBrowserEntries]);
 
   const handleDeleteSelectedEntries = async () => {
     if (!isTauri() || browserSelectedKeys.size === 0) return;
@@ -361,7 +479,11 @@ export function useCachePage({ t }: UseCachePageOptions) {
       toast.success(t('cache.entriesDeleted', { count: deleted }));
       setBrowserSelectedKeys(new Set());
       await fetchBrowserEntries();
-      await refreshOverviewState();
+      await refreshOverviewState({
+        includeCacheInfo: true,
+        includeAccessStats: false,
+        includeHotFiles: true,
+      });
       emitInvalidations(
         ['cache_entries', 'cache_overview', 'about_cache_stats'],
         'cache-page:delete-entries',
@@ -407,7 +529,11 @@ export function useCachePage({ t }: UseCachePageOptions) {
       const { cacheForceClean } = await import('@/lib/tauri');
       const result = await cacheForceClean(useTrash);
       toast.success(t('cache.forceCleanSuccess', { count: result.deleted_count, size: result.freed_human }));
-      await refreshOverviewState();
+      await refreshOverviewState({
+        includeCacheInfo: true,
+        includeAccessStats: false,
+        includeHotFiles: true,
+      });
       await fetchCleanupHistory();
       emitInvalidations(
         ['cache_overview', 'cache_entries', 'external_cache', 'about_cache_stats'],
@@ -443,7 +569,11 @@ export function useCachePage({ t }: UseCachePageOptions) {
       const result = await repairCache('all');
       const repairedCount = result.removed_entries + result.recovered_entries;
       toast.success(t('cache.repairSuccess', { count: repairedCount, size: result.freed_human }));
-      await refreshOverviewState({ includeCacheInfo: false });
+      await refreshOverviewState({
+        includeCacheInfo: true,
+        includeAccessStats: false,
+        includeHotFiles: true,
+      });
       emitInvalidations(
         ['cache_overview', 'cache_entries', 'about_cache_stats'],
         'cache-page:repair',
@@ -491,6 +621,22 @@ export function useCachePage({ t }: UseCachePageOptions) {
     }
   };
 
+  const retryAccessStats = useCallback(() => {
+    void fetchAccessStats();
+  }, [fetchAccessStats]);
+
+  const retryHotFiles = useCallback(() => {
+    void fetchHotFiles();
+  }, [fetchHotFiles]);
+
+  const retryHistory = useCallback(() => {
+    void fetchCleanupHistory();
+  }, [fetchCleanupHistory]);
+
+  const retryBrowser = useCallback(() => {
+    void fetchBrowserEntries(false, undefined, debouncedBrowserSearch);
+  }, [debouncedBrowserSearch, fetchBrowserEntries]);
+
   const handleSettingsChange = (key: keyof CacheSettings, value: number | boolean) => {
     if (localSettings) {
       setLocalSettings({ ...localSettings, [key]: value });
@@ -534,11 +680,13 @@ export function useCachePage({ t }: UseCachePageOptions) {
     error,
     cogniaDir,
 
+    // Tab state
+    activeTab,
+    setActiveTab,
+
     // Operation state
     operationLoading,
     cleaningType,
-    settingsOpen,
-    setSettingsOpen,
     localSettings,
     settingsDirty,
 
@@ -552,19 +700,17 @@ export function useCachePage({ t }: UseCachePageOptions) {
     previewLoading,
 
     // History state
-    historyOpen,
-    setHistoryOpen,
     cleanupHistory,
     historySummary,
     historyLoading,
+    historyReadState,
 
     // Access stats state
     accessStats,
     accessStatsLoading,
+    accessStatsReadState,
 
     // Browser state
-    browserOpen,
-    setBrowserOpen,
     browserEntries,
     browserTotalCount,
     browserLoading,
@@ -579,9 +725,11 @@ export function useCachePage({ t }: UseCachePageOptions) {
     setBrowserPage,
     browserSelectedKeys,
     setBrowserSelectedKeys,
+    browserReadState,
 
     // Hot files
     hotFiles,
+    hotFilesReadState,
 
     // Force clean & monitor
     forceCleanLoading,
@@ -609,8 +757,12 @@ export function useCachePage({ t }: UseCachePageOptions) {
     handlePreview,
     handleEnhancedClean,
     fetchCleanupHistory,
+    retryHistory,
     handleResetAccessStats,
+    retryAccessStats,
+    retryHotFiles,
     fetchBrowserEntries,
+    retryBrowser,
     handleDeleteSelectedEntries,
     handleClearHistory,
     handleRefresh,

@@ -12,8 +12,8 @@ describe('CronParser', () => {
   it('renders localized preset and field labels', () => {
     render(<CronParser />);
 
-    expect(screen.getByText('toolbox.tools.cronParser.presets.everyMinute')).toBeInTheDocument();
-    expect(screen.getByText('toolbox.tools.cronParser.fields.minute')).toBeInTheDocument();
+    expect(screen.getByText('Every minute')).toBeInTheDocument();
+    expect(screen.getAllByText('toolbox.tools.cronParser.fields.minute').length).toBeGreaterThan(0);
   });
 
   it('shows guardrail error for oversized expressions', () => {
@@ -22,15 +22,14 @@ describe('CronParser', () => {
     fireEvent.change(screen.getByPlaceholderText('* * * * *'), {
       target: { value: '*'.repeat(TOOLBOX_LIMITS.cronExpressionChars + 1) },
     });
-    fireEvent.click(screen.getByText('toolbox.tools.cronParser.parse'));
-
     expect(screen.getByText('toolbox.tools.shared.inputTooLarge')).toBeInTheDocument();
   });
 
-  it('shows bounded feedback when preview count exceeds limit', () => {
+  it('shows bounded feedback when preview count exceeds limit', async () => {
     render(<CronParser />);
 
-    fireEvent.change(screen.getByLabelText('toolbox.tools.cronParser.previewCount'), {
+    const previewCountInput = await screen.findByLabelText('toolbox.tools.cronParser.previewCount');
+    fireEvent.change(previewCountInput, {
       target: { value: String(TOOLBOX_LIMITS.cronPreviewCount + 5) },
     });
 

@@ -318,8 +318,21 @@ export function LogProvider({ children }: LogProviderProps) {
         try {
           const { attachConsole } = await import("@tauri-apps/plugin-log");
           detachConsole = await attachConsole();
-        } catch {
-          // plugin-log not available, continue with other listeners
+        } catch (error) {
+          const description = t("logs.backendBridgeUnavailableDescription");
+          addLog({
+            timestamp: Date.now(),
+            level: "warn",
+            message: description,
+            target: "runtime",
+            context: {
+              bridge: "plugin-log",
+              error: toRuntimeMessage(error),
+            },
+          });
+          toast.warning(t("logs.backendBridgeUnavailableTitle"), {
+            description,
+          });
         }
 
         // Command output listener
@@ -534,13 +547,18 @@ export function LogProvider({ children }: LogProviderProps) {
         unlistenFns.push(unlistenDlCompleted);
 
         const unlistenDlFailed = await listenDownloadTaskFailed(
-          (taskId, error) => {
+          (taskId, error, reasonCode, recoverable) => {
             addLog({
               timestamp: Date.now(),
               level: "error",
               message: t("logs.messages.downloadFailed", { taskId, error }),
               target: "download",
-              context: { taskId, error: error ?? "" },
+              context: {
+                taskId,
+                error: error ?? "",
+                reasonCode: reasonCode ?? "",
+                recoverable: String(recoverable),
+              },
             });
           },
         );

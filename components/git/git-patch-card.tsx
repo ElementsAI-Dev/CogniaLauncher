@@ -13,6 +13,7 @@ import type { GitPatchCardProps } from '@/types/git';
 
 export function GitPatchCard({
   loading,
+  supportReason,
   onFormatPatch,
   onApplyPatch,
   onApplyMailbox,
@@ -25,7 +26,8 @@ export function GitPatchCard({
   const [createdPatches, setCreatedPatches] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
 
-  const disabled = loading || busy;
+  const blocked = Boolean(supportReason);
+  const disabled = blocked || loading || busy;
 
   return (
     <Card>
@@ -36,6 +38,9 @@ export function GitPatchCard({
         </CardTitle>
       </CardHeader>
       <CardContent>
+        {supportReason && (
+          <p className="mb-3 text-xs text-muted-foreground">{supportReason}</p>
+        )}
         <Tabs defaultValue="create" className="space-y-3">
           <TabsList>
             <TabsTrigger value="create">{t('git.patch.createTab')}</TabsTrigger>

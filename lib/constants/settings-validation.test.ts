@@ -95,4 +95,10 @@ describe('validateField', () => {
     expect(validateField('general.update_check_concurrency', '1', mockT)).toBeNull();
     expect(validateField('general.update_check_concurrency', '32', mockT)).toBeNull();
   });
+
+  it('validates dynamic provider priority keys as numeric-or-empty', () => {
+    expect(validateField('providers.npm.priority', '', mockT)).toBeNull();
+    expect(validateField('providers.npm.priority', '120', mockT)).toBeNull();
+    expect(validateField('providers.npm.priority', 'abc', mockT)).toContain('mustBeNumber');
+  });
 });

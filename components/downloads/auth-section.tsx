@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import type { ProviderSecretStatus, SecretVaultStatus } from "@/lib/tauri";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -38,6 +39,14 @@ interface AuthSectionProps {
   instanceUrlLabel?: string;
   instanceUrlSaveLabel?: string;
   instanceUrlSaveDisabled?: boolean;
+  tokenStatus?: ProviderSecretStatus | null;
+  vaultStatus?: SecretVaultStatus | null;
+  vaultPassword?: string;
+  onVaultPasswordChange?: (value: string) => void;
+  onSetupVault?: () => void;
+  onUnlockVault?: () => void;
+  onLockVault?: () => void;
+  vaultActionDisabled?: boolean;
   t: (key: string) => string;
 }
 
@@ -58,6 +67,14 @@ export function AuthSection({
   instanceUrlLabel,
   instanceUrlSaveLabel,
   instanceUrlSaveDisabled,
+  tokenStatus,
+  vaultStatus,
+  vaultPassword,
+  onVaultPasswordChange,
+  onSetupVault,
+  onUnlockVault,
+  onLockVault,
+  vaultActionDisabled,
   t,
 }: AuthSectionProps) {
   const [open, setOpen] = useState(false);
@@ -87,8 +104,80 @@ export function AuthSection({
       <CollapsibleContent>
         <div className="px-3 pb-3 space-y-3">
           <p className="text-xs text-muted-foreground">{hint}</p>
+          {vaultStatus && (
+            <div className="rounded-lg border bg-background p-3 space-y-2">
+              <div className="flex items-start justify-between gap-3">
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-foreground">
+                    {t("downloads.auth.secureStorage")}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {!vaultStatus.initialized
+                      ? t("downloads.auth.vaultNotSetup")
+                      : vaultStatus.unlocked
+                        ? t("downloads.auth.vaultReady")
+                        : t("downloads.auth.vaultLocked")}
+                  </p>
+                  {tokenStatus?.needsUnlock && (
+                    <p className="text-xs text-amber-600 dark:text-amber-500">
+                      {t("downloads.auth.savedTokenLocked")}
+                    </p>
+                  )}
+                  {tokenStatus?.configuredInEnv && (
+                    <p className="text-xs text-muted-foreground">
+                      {t("downloads.auth.envFallback")}
+                    </p>
+                  )}
+                </div>
+                {vaultStatus.initialized && vaultStatus.unlocked && onLockVault && (
+                  <Button type="button" variant="outline" size="sm" onClick={onLockVault}>
+                    {t("downloads.auth.lockVault")}
+                  </Button>
+                )}
+              </div>
+              {onVaultPasswordChange && ((!vaultStatus.initialized && onSetupVault) || (!vaultStatus.unlocked && onUnlockVault)) && (
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="password"
+                    value={vaultPassword ?? ""}
+                    onChange={(e) => onVaultPasswordChange(e.target.value)}
+                    placeholder={t("downloads.auth.vaultPasswordPlaceholder")}
+                    className="text-sm"
+                  />
+                  {!vaultStatus.initialized && onSetupVault ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={onSetupVault}
+                      disabled={vaultActionDisabled}
+                    >
+                      {t("downloads.auth.setupVault")}
+                    </Button>
+                  ) : (
+                    onUnlockVault && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={onUnlockVault}
+                        disabled={vaultActionDisabled}
+                      >
+                        {t("downloads.auth.unlockVault")}
+                      </Button>
+                    )
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           <div className="space-y-2">
             <Label className="text-xs">{t("downloads.auth.token")}</Label>
+            {tokenStatus?.configuredInVault && !token.trim() && (
+              <p className="text-xs text-muted-foreground">
+                {t("downloads.auth.savedTokenHidden")}
+              </p>
+            )}
             <div className="flex items-center gap-2">
               <div className="relative flex-1">
                 <Input

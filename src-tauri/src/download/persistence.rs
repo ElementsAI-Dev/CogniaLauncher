@@ -94,11 +94,13 @@ impl QueuePersistence {
                 DownloadState::Downloading | DownloadState::Queued | DownloadState::Paused => {
                     task.state = DownloadState::Queued;
                     task.error = None;
+                    task.failure_reason_code = None;
                 }
                 _ => {
                     // Terminal tasks shouldn't be in the file, but handle gracefully
                     task.state = DownloadState::Queued;
                     task.error = None;
+                    task.failure_reason_code = None;
                     task.retries = 0;
                 }
             }

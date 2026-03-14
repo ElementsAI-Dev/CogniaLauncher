@@ -268,7 +268,37 @@ describe('useAboutData', () => {
 
       await act(async () => {});
 
-      expect(result.current.error).toBe('update_check_failed');
+      expect(result.current.error).toBe('unknown_error');
+    });
+
+    it('should surface source_unavailable diagnostics from self check response', async () => {
+      mockSelfCheckUpdate.mockResolvedValue({
+        current_version: '1.0.0',
+        latest_version: null,
+        update_available: false,
+        release_notes: null,
+        selected_source: null,
+        attempted_sources: ['mirror', 'official'],
+        error_category: 'source_unavailable',
+        error_message: 'mirror unavailable',
+      });
+      mockGetPlatformInfo.mockResolvedValue({
+        os: 'windows', arch: 'x86_64', osVersion: '', osLongVersion: '',
+        kernelVersion: '', hostname: '', osName: '', distributionId: '',
+        cpuArch: '', cpuModel: '', cpuVendorId: '', cpuFrequency: 0,
+        cpuCores: 0, physicalCoreCount: null, globalCpuUsage: 0,
+        totalMemory: 0, availableMemory: 0, usedMemory: 0,
+        totalSwap: 0, usedSwap: 0, uptime: 0, bootTime: 0,
+        loadAverage: [0, 0, 0], gpus: [], appVersion: '1.0.0',
+      });
+      mockGetCogniaDir.mockResolvedValue('/home/test/.cognia');
+
+      const { result } = renderHook(() => useAboutData('en'));
+      await act(async () => {});
+
+      expect(result.current.updateStatus).toBe('error');
+      expect(result.current.error).toBe('source_unavailable_error');
+      expect(result.current.updateErrorCategory).toBe('source_unavailable_error');
     });
 
     it('should load system info from backend', async () => {

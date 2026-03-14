@@ -52,6 +52,18 @@ impl PluginPermissionState {
         if declared.notification {
             granted.insert("notification".to_string());
         }
+        if declared.ui_feedback {
+            granted.insert("ui_feedback".to_string());
+        }
+        if declared.ui_dialog {
+            granted.insert("ui_dialog".to_string());
+        }
+        if declared.ui_file_picker {
+            granted.insert("ui_file_picker".to_string());
+        }
+        if declared.ui_navigation {
+            granted.insert("ui_navigation".to_string());
+        }
         // Dangerous permissions require explicit grant
         // config_write, pkg_install, and process_exec are NOT auto-granted
         if !declared.fs_read.is_empty() {
@@ -63,6 +75,30 @@ impl PluginPermissionState {
         if !declared.http.is_empty() {
             granted.insert("http".to_string());
         }
+        // Extended SDK v1.1: auto-grant read-only permissions
+        if declared.download_read {
+            granted.insert("download_read".to_string());
+        }
+        if declared.git_read {
+            granted.insert("git_read".to_string());
+        }
+        if declared.health_read {
+            granted.insert("health_read".to_string());
+        }
+        if declared.profiles_read {
+            granted.insert("profiles_read".to_string());
+        }
+        if declared.cache_read {
+            granted.insert("cache_read".to_string());
+        }
+        if declared.shell_read {
+            granted.insert("shell_read".to_string());
+        }
+        if declared.wsl_read {
+            granted.insert("wsl_read".to_string());
+        }
+        // Dangerous SDK v1.1 permissions: NOT auto-granted
+        // download_write, git_write, profiles_write, cache_write, launch
 
         Self {
             declared,
@@ -131,10 +167,27 @@ impl PermissionManager {
             "pkg_install" => state.declared.pkg_install,
             "clipboard" => state.declared.clipboard,
             "notification" => state.declared.notification,
+            "ui_feedback" => state.declared.ui_feedback,
+            "ui_dialog" => state.declared.ui_dialog,
+            "ui_file_picker" => state.declared.ui_file_picker,
+            "ui_navigation" => state.declared.ui_navigation,
             "process_exec" => state.declared.process_exec,
             "fs_read" => !state.declared.fs_read.is_empty(),
             "fs_write" => !state.declared.fs_write.is_empty(),
             "http" => !state.declared.http.is_empty(),
+            // Extended SDK v1.1
+            "download_read" => state.declared.download_read,
+            "download_write" => state.declared.download_write,
+            "git_read" => state.declared.git_read,
+            "git_write" => state.declared.git_write,
+            "health_read" => state.declared.health_read,
+            "profiles_read" => state.declared.profiles_read,
+            "profiles_write" => state.declared.profiles_write,
+            "cache_read" => state.declared.cache_read,
+            "cache_write" => state.declared.cache_write,
+            "shell_read" => state.declared.shell_read,
+            "wsl_read" => state.declared.wsl_read,
+            "launch" => state.declared.launch,
             _ => false,
         }
     }

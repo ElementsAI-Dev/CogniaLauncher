@@ -1,5 +1,7 @@
 use crate::config::Settings;
 use crate::core::system_info::BatteryInfo;
+use crate::commands::package::{invalidate_package_caches, refresh_provider_registry};
+use crate::SharedRegistry;
 use crate::platform::disk::format_size;
 use serde::Serialize;
 use std::sync::Arc;
@@ -17,6 +19,10 @@ fn should_refresh_network_clients_for_key(key: &str) -> bool {
     key.starts_with("network.") || key.starts_with("security.") || key.starts_with("mirrors.")
 }
 
+fn is_provider_config_key(key: &str) -> bool {
+    key.starts_with("provider_settings.") || key.starts_with("providers.")
+}
+
 #[tauri::command]
 pub async fn config_get(
     key: String,
@@ -31,6 +37,7 @@ pub async fn config_set(
     key: String,
     value: String,
     settings: State<'_, SharedSettings>,
+    registry: State<'_, SharedRegistry>,
 ) -> Result<(), String> {
     let mut s = settings.write().await;
     s.set_value(&key, &value).map_err(|e| e.to_string())?;
@@ -38,6 +45,13 @@ pub async fn config_set(
 
     if should_refresh_network_clients_for_key(&key) {
         refresh_network_clients(&s);
+    }
+
+    drop(s);
+
+    if is_provider_config_key(&key) {
+        refresh_provider_registry(settings.inner(), registry.inner()).await?;
+        invalidate_package_caches(settings.inner()).await;
     }
 
     Ok(())
@@ -86,6 +100,9 @@ const CONFIG_LIST_STATIC_KEYS: &[&str] = &[
     "updates.check_on_start",
     "updates.auto_install",
     "updates.notify",
+    "updates.source_mode",
+    "updates.custom_endpoints",
+    "updates.fallback_to_official",
     "tray.minimize_to_tray",
     "tray.start_minimized",
     "tray.show_notifications",
@@ -136,25 +153,37 @@ pub fn collect_config_list(settings: &Settings) -> Vec<(String, String)> {
         result.push((format!("{}.verify_ssl", key), config.verify_ssl.to_string()));
     }
 
-    // Add provider tokens/URLs (GitHub, GitLab)
+    // Add provider URLs (GitLab etc.)
     for provider_name in &["github", "gitlab"] {
         if let Some(ps) = settings.providers.get(*provider_name) {
-            if let Some(token) = ps.extra.get("token").and_then(|v| v.as_str()) {
-                if !token.is_empty() {
-                    // Mask token for display (show first 4 chars + asterisks)
-                    let masked = if token.len() > 8 {
-                        format!("{}****{}", &token[..4], &token[token.len() - 4..])
-                    } else {
-                        "****".to_string()
-                    };
-                    result.push((format!("providers.{}.token", provider_name), masked));
-                }
-            }
             if let Some(url) = ps.extra.get("url").and_then(|v| v.as_str()) {
                 if !url.is_empty() {
                     result.push((format!("providers.{}.url", provider_name), url.to_string()));
                 }
             }
+        }
+    }
+
+    for (provider_name, provider_settings) in &settings.providers {
+        if let Some(enabled) = provider_settings.enabled {
+            result.push((
+                format!("providers.{}.enabled", provider_name),
+                enabled.to_string(),
+            ));
+        }
+
+        if let Some(priority) = provider_settings.priority {
+            result.push((
+                format!("providers.{}.priority", provider_name),
+                priority.to_string(),
+            ));
+        }
+    }
+
+    for provider_name in &settings.provider_settings.disabled_providers {
+        let enabled_key = format!("providers.{}.enabled", provider_name);
+        if !result.iter().any(|(key, _)| key == &enabled_key) {
+            result.push((enabled_key, "false".to_string()));
         }
     }
 
@@ -332,6 +361,9 @@ mod tests {
         assert!(CONFIG_LIST_STATIC_KEYS.contains(&"updates.check_on_start"));
         assert!(CONFIG_LIST_STATIC_KEYS.contains(&"updates.auto_install"));
         assert!(CONFIG_LIST_STATIC_KEYS.contains(&"updates.notify"));
+        assert!(CONFIG_LIST_STATIC_KEYS.contains(&"updates.source_mode"));
+        assert!(CONFIG_LIST_STATIC_KEYS.contains(&"updates.custom_endpoints"));
+        assert!(CONFIG_LIST_STATIC_KEYS.contains(&"updates.fallback_to_official"));
         assert!(CONFIG_LIST_STATIC_KEYS.contains(&"tray.minimize_to_tray"));
         assert!(CONFIG_LIST_STATIC_KEYS.contains(&"tray.start_minimized"));
         assert!(CONFIG_LIST_STATIC_KEYS.contains(&"tray.show_notifications"));
@@ -413,6 +445,26 @@ mod tests {
         assert!(
             keys.contains(&"mirrors.pypi"),
             "Should contain mirrors.pypi"
+        );
+    }
+
+    #[test]
+    fn collect_config_list_omits_provider_token_entries() {
+        use super::collect_config_list;
+
+        let mut settings = crate::config::Settings::default();
+        settings
+            .set_provider_legacy_token("github", "ghp_legacy_secret")
+            .unwrap();
+        settings.set_value("providers.gitlab.url", "https://gitlab.example.com").unwrap();
+
+        let entries = collect_config_list(&settings);
+        let map: std::collections::HashMap<_, _> = entries.into_iter().collect();
+
+        assert!(!map.contains_key("providers.github.token"));
+        assert_eq!(
+            map.get("providers.gitlab.url").map(std::string::String::as_str),
+            Some("https://gitlab.example.com")
         );
     }
 

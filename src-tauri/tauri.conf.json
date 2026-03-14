@@ -794,6 +794,115 @@
                   "description": "Scope: process|user|system"
                 }
               ]
+            },
+            "preview-import": {
+              "description": "Preview environment variable import from file",
+              "args": [
+                {
+                  "name": "file",
+                  "index": 1,
+                  "takesValue": true,
+                  "description": "Input file path"
+                },
+                {
+                  "name": "scope",
+                  "takesValue": true,
+                  "description": "Scope: process|user|system"
+                }
+              ]
+            },
+            "apply-import": {
+              "description": "Apply environment variable import using preview fingerprint",
+              "args": [
+                {
+                  "name": "file",
+                  "index": 1,
+                  "takesValue": true,
+                  "description": "Input file path"
+                },
+                {
+                  "name": "scope",
+                  "takesValue": true,
+                  "description": "Scope: process|user|system"
+                },
+                {
+                  "name": "fingerprint",
+                  "takesValue": true,
+                  "description": "Preview fingerprint"
+                }
+              ]
+            },
+            "preview-path-repair": {
+              "description": "Preview PATH repair for duplicate or missing entries",
+              "args": [
+                {
+                  "name": "scope",
+                  "takesValue": true,
+                  "description": "Scope: process|user|system"
+                }
+              ]
+            },
+            "apply-path-repair": {
+              "description": "Apply PATH repair using preview fingerprint",
+              "args": [
+                {
+                  "name": "scope",
+                  "takesValue": true,
+                  "description": "Scope: process|user|system"
+                },
+                {
+                  "name": "fingerprint",
+                  "takesValue": true,
+                  "description": "Preview fingerprint"
+                }
+              ]
+            },
+            "resolve-conflict": {
+              "description": "Resolve an environment variable conflict by copying one scope value to another",
+              "args": [
+                {
+                  "name": "key",
+                  "index": 1,
+                  "takesValue": true,
+                  "description": "Environment variable key"
+                },
+                {
+                  "name": "source-scope",
+                  "takesValue": true,
+                  "description": "Source scope: process|user|system"
+                },
+                {
+                  "name": "target-scope",
+                  "takesValue": true,
+                  "description": "Target scope: process|user|system"
+                }
+              ]
+            },
+            "shell-guidance": {
+              "description": "Generate shell-specific follow-up guidance",
+              "args": [
+                {
+                  "name": "key",
+                  "takesValue": true,
+                  "description": "Environment variable key"
+                },
+                {
+                  "name": "value",
+                  "takesValue": true,
+                  "description": "Environment variable value"
+                },
+                {
+                  "name": "entries",
+                  "takesValue": true,
+                  "multiple": true,
+                  "description": "PATH entries to render as guidance"
+                },
+                {
+                  "name": "auto-applied-shell",
+                  "takesValue": true,
+                  "description": "Shell id already updated automatically"
+                }
+              ]
             }
           }
         },

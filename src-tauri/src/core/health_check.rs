@@ -57,6 +57,26 @@ pub enum HealthScopeState {
     Unsupported,
 }
 
+/// Source of a health diagnostic signal
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum HealthSignalSource {
+    RuntimeProbe,
+    PathHeuristic,
+    ShellHeuristic,
+    NetworkProbe,
+    ApiProbe,
+    SystemProbe,
+}
+
+/// Confidence level of a health diagnostic signal
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum HealthEvidenceConfidence {
+    Verified,
+    Inferred,
+}
+
 /// A single health issue
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HealthIssue {
@@ -67,6 +87,9 @@ pub struct HealthIssue {
     pub fix_command: Option<String>,
     pub fix_description: Option<String>,
     pub remediation_id: Option<String>,
+    pub signal_source: Option<HealthSignalSource>,
+    pub confidence: Option<HealthEvidenceConfidence>,
+    pub check_id: Option<String>,
 }
 
 impl HealthIssue {
@@ -79,6 +102,9 @@ impl HealthIssue {
             fix_command: None,
             fix_description: None,
             remediation_id: None,
+            signal_source: None,
+            confidence: None,
+            check_id: None,
         }
     }
 
@@ -93,6 +119,33 @@ impl HealthIssue {
         self
     }
 
+    pub fn with_signal_source(mut self, signal_source: HealthSignalSource) -> Self {
+        self.signal_source = Some(signal_source);
+        self
+    }
+
+    pub fn with_confidence(mut self, confidence: HealthEvidenceConfidence) -> Self {
+        self.confidence = Some(confidence);
+        self
+    }
+
+    pub fn with_check_id(mut self, check_id: impl Into<String>) -> Self {
+        self.check_id = Some(check_id.into());
+        self
+    }
+
+    pub fn with_evidence(
+        mut self,
+        signal_source: HealthSignalSource,
+        confidence: HealthEvidenceConfidence,
+        check_id: impl Into<String>,
+    ) -> Self {
+        self.signal_source = Some(signal_source);
+        self.confidence = Some(confidence);
+        self.check_id = Some(check_id.into());
+        self
+    }
+
     pub fn with_remediation(
         mut self,
         remediation_id: impl Into<String>,
@@ -103,6 +156,10 @@ impl HealthIssue {
         self.fix_command = Some(command.into());
         self.fix_description = Some(description.into());
         self
+    }
+
+    fn is_verified_for_escalation(&self) -> bool {
+        !matches!(self.confidence, Some(HealthEvidenceConfidence::Inferred))
     }
 }
 
@@ -143,17 +200,18 @@ impl EnvironmentHealthResult {
     }
 
     pub fn add_issue(&mut self, issue: HealthIssue) {
+        let verified_for_escalation = issue.is_verified_for_escalation();
         // Update status based on issue severity
-        match issue.severity {
-            Severity::Critical | Severity::Error => {
+        match (&issue.severity, verified_for_escalation) {
+            (Severity::Critical | Severity::Error, true) => {
                 self.status = HealthStatus::Error;
             }
-            Severity::Warning => {
+            (Severity::Warning, true) => {
                 if self.status != HealthStatus::Error {
                     self.status = HealthStatus::Warning;
                 }
             }
-            Severity::Info => {}
+            _ => {}
         }
         self.issues.push(issue);
     }
@@ -163,6 +221,9 @@ impl EnvironmentHealthResult {
     }
 
     pub fn set_scope_state(&mut self, scope_state: HealthScopeState, reason: impl Into<String>) {
+        if self.scope_state != HealthScopeState::Available {
+            return;
+        }
         self.scope_state = scope_state;
         self.scope_reason = Some(reason.into());
     }
@@ -212,21 +273,25 @@ impl PackageManagerHealthResult {
     }
 
     pub fn add_issue(&mut self, issue: HealthIssue) {
-        match issue.severity {
-            Severity::Critical | Severity::Error => {
+        let verified_for_escalation = issue.is_verified_for_escalation();
+        match (&issue.severity, verified_for_escalation) {
+            (Severity::Critical | Severity::Error, true) => {
                 self.status = HealthStatus::Error;
             }
-            Severity::Warning => {
+            (Severity::Warning, true) => {
                 if self.status != HealthStatus::Error {
                     self.status = HealthStatus::Warning;
                 }
             }
-            Severity::Info => {}
+            _ => {}
         }
         self.issues.push(issue);
     }
 
     pub fn set_scope_state(&mut self, scope_state: HealthScopeState, reason: impl Into<String>) {
+        if self.scope_state != HealthScopeState::Available {
+            return;
+        }
         self.scope_state = scope_state;
         self.scope_reason = Some(reason.into());
     }
@@ -298,11 +363,12 @@ impl SystemHealthResult {
     }
 
     pub fn add_system_issue(&mut self, issue: HealthIssue) {
-        match issue.severity {
-            Severity::Critical | Severity::Error => {
+        let verified_for_escalation = issue.is_verified_for_escalation();
+        match (&issue.severity, verified_for_escalation) {
+            (Severity::Critical | Severity::Error, true) => {
                 self.overall_status = HealthStatus::Error;
             }
-            Severity::Warning => {
+            (Severity::Warning, true) => {
                 if self.overall_status != HealthStatus::Error {
                     self.overall_status = HealthStatus::Warning;
                 }
@@ -415,6 +481,11 @@ impl HealthCheckManager {
             IssueCategory::ProviderNotFound,
             format!("{} is not installed", display_name),
         )
+        .with_evidence(
+            HealthSignalSource::RuntimeProbe,
+            HealthEvidenceConfidence::Verified,
+            format!("provider_install_missing:{}", provider_id),
+        )
         .with_details(details)
         .with_remediation(
             Self::remediation_id("install-provider", provider_id),
@@ -431,6 +502,11 @@ impl HealthCheckManager {
                 Severity::Warning,
                 IssueCategory::Other,
                 format!("{} health check timed out", env_type),
+            )
+            .with_evidence(
+                HealthSignalSource::RuntimeProbe,
+                HealthEvidenceConfidence::Verified,
+                format!("environment_timeout:{}", env_type),
             )
             .with_details(
                 "The environment health check did not finish within the configured timeout.",
@@ -453,6 +529,11 @@ impl HealthCheckManager {
                 IssueCategory::Other,
                 format!("{} health check timed out", display_name),
             )
+            .with_evidence(
+                HealthSignalSource::RuntimeProbe,
+                HealthEvidenceConfidence::Verified,
+                format!("provider_timeout:{}", provider_id),
+            )
             .with_details(
                 "The provider health check did not finish within the configured timeout.",
             ),
@@ -474,6 +555,11 @@ impl HealthCheckManager {
                 IssueCategory::Other,
                 format!("{} health check did not complete", env_type),
             )
+            .with_evidence(
+                HealthSignalSource::RuntimeProbe,
+                HealthEvidenceConfidence::Verified,
+                format!("environment_task_failed:{}", env_type),
+            )
             .with_details(details),
         );
         result.finalize();
@@ -493,6 +579,11 @@ impl HealthCheckManager {
                 Severity::Warning,
                 IssueCategory::Other,
                 format!("{} health check did not complete", display_name),
+            )
+            .with_evidence(
+                HealthSignalSource::RuntimeProbe,
+                HealthEvidenceConfidence::Verified,
+                format!("provider_task_failed:{}", provider_id),
             )
             .with_details(details),
         );
@@ -816,6 +907,11 @@ impl HealthCheckManager {
                             IssueCategory::Other,
                             format!("{} health check timed out", provider.display_name()),
                         )
+                        .with_evidence(
+                            HealthSignalSource::RuntimeProbe,
+                            HealthEvidenceConfidence::Verified,
+                            format!("provider_scope_timeout:{}", provider.id()),
+                        )
                         .with_details(format!(
                             "The provider did not respond within {} seconds.",
                             timeout_budget.as_secs()
@@ -831,6 +927,11 @@ impl HealthCheckManager {
                                 "{} is not supported on this platform",
                                 provider.display_name()
                             ),
+                        )
+                        .with_evidence(
+                            HealthSignalSource::RuntimeProbe,
+                            HealthEvidenceConfidence::Verified,
+                            format!("provider_scope_unsupported:{}", provider.id()),
                         )
                         .with_details(
                             runtime_reason
@@ -885,6 +986,11 @@ impl HealthCheckManager {
                                 provider.display_name()
                             ),
                         )
+                        .with_evidence(
+                            HealthSignalSource::RuntimeProbe,
+                            HealthEvidenceConfidence::Verified,
+                            format!("provider_system_requirements:{}", provider.id()),
+                        )
                         .with_details("Some system prerequisites may be missing or misconfigured"),
                     );
                 }
@@ -894,6 +1000,11 @@ impl HealthCheckManager {
                             Severity::Warning,
                             IssueCategory::ConfigError,
                             format!("{} requirements check failed", provider.display_name()),
+                        )
+                        .with_evidence(
+                            HealthSignalSource::RuntimeProbe,
+                            HealthEvidenceConfidence::Verified,
+                            format!("provider_system_requirements_error:{}", provider.id()),
                         )
                         .with_details(format!("{}", e)),
                     );
@@ -933,6 +1044,11 @@ impl HealthCheckManager {
                     IssueCategory::NetworkError,
                     format!("Package registry returned HTTP {}", resp.status()),
                 )
+                .with_evidence(
+                    HealthSignalSource::NetworkProbe,
+                    HealthEvidenceConfidence::Inferred,
+                    format!("registry_http_status:{}", provider_id),
+                )
                 .with_details(format!(
                     "The {} package registry at {} may be experiencing issues",
                     provider_id, url
@@ -946,6 +1062,11 @@ impl HealthCheckManager {
                 };
                 Some(
                     HealthIssue::new(Severity::Warning, IssueCategory::NetworkError, msg)
+                        .with_evidence(
+                            HealthSignalSource::NetworkProbe,
+                            HealthEvidenceConfidence::Inferred,
+                            format!("registry_network_error:{}", provider_id),
+                        )
                         .with_details(format!("Failed to reach {}: {}", url, e)),
                 )
             }
@@ -971,6 +1092,11 @@ impl HealthCheckManager {
                         Severity::Info,
                         IssueCategory::ConfigError,
                         "No API token configured (rate limits may apply)",
+                    )
+                    .with_evidence(
+                        HealthSignalSource::SystemProbe,
+                        HealthEvidenceConfidence::Inferred,
+                        format!("api_token_missing:{}", provider_id),
                     )
                     .with_details(
                         "Configure a personal access token in Settings to increase API limits.",
@@ -1011,21 +1137,33 @@ impl HealthCheckManager {
                         IssueCategory::NetworkError,
                         format!("API returned {}", resp.status()),
                     )
+                    .with_evidence(
+                        HealthSignalSource::ApiProbe,
+                        HealthEvidenceConfidence::Inferred,
+                        format!("api_non_success:{}", provider_id),
+                    )
                     .with_details("The remote API endpoint returned a non-success response."),
                 );
             }
             Err(e) => {
-                if e.is_timeout() {
-                    result
-                        .set_scope_state(HealthScopeState::Timeout, provider_timeout_reason().code);
-                } else {
-                    result.set_scope_state(HealthScopeState::Unavailable, "api_request_failed");
-                }
                 result.add_issue(
                     HealthIssue::new(
-                        Severity::Error,
+                        Severity::Warning,
                         IssueCategory::NetworkError,
                         "Failed to reach API endpoint",
+                    )
+                    .with_evidence(
+                        HealthSignalSource::ApiProbe,
+                        HealthEvidenceConfidence::Inferred,
+                        format!(
+                            "api_request_error:{}:{}",
+                            provider_id,
+                            if e.is_timeout() {
+                                provider_timeout_reason().code
+                            } else {
+                                "api_request_failed"
+                            }
+                        ),
                     )
                     .with_details(format!("Request error: {}", e)),
                 );
@@ -1196,6 +1334,11 @@ impl HealthCheckManager {
                         space.available_human()
                     ),
                 )
+                .with_evidence(
+                    HealthSignalSource::SystemProbe,
+                    HealthEvidenceConfidence::Verified,
+                    "disk_space_critical",
+                )
                 .with_details(
                     "Package installations and version management may fail. Free up disk space.",
                 ),
@@ -1206,6 +1349,11 @@ impl HealthCheckManager {
                     Severity::Warning,
                     IssueCategory::Other,
                     format!("Low disk space: {} available", space.available_human()),
+                )
+                .with_evidence(
+                    HealthSignalSource::SystemProbe,
+                    HealthEvidenceConfidence::Verified,
+                    "disk_space_low",
                 )
                 .with_details(
                     "Some large package installations may fail. Consider freeing up disk space.",
@@ -1264,6 +1412,11 @@ impl HealthCheckManager {
                             available.join(", ")
                         ),
                     )
+                    .with_evidence(
+                        HealthSignalSource::SystemProbe,
+                        HealthEvidenceConfidence::Verified,
+                        format!("version_manager_conflict:{}", env_type),
+                    )
                     .with_details(
                         "Having multiple version managers for the same language can cause PATH conflicts and unexpected version switching.",
                     ),
@@ -1285,6 +1438,7 @@ impl HealthCheckManager {
     ) -> EnvironmentHealthResult {
         let env_type = self.provider_to_env_type(provider.id());
         let mut result = EnvironmentHealthResult::new(&env_type).with_provider(provider.id());
+        let mut runtime_probe_failed = false;
 
         // Check 1: Provider availability
         if !provider.is_available().await {
@@ -1312,21 +1466,33 @@ impl HealthCheckManager {
                 result.current_version = Some(version);
             }
             Ok(None) => {
+                runtime_probe_failed = true;
                 result.add_issue(
                     HealthIssue::new(
                         Severity::Warning,
                         IssueCategory::ConfigError,
                         format!("No {} version is currently active", env_type),
                     )
+                    .with_evidence(
+                        HealthSignalSource::RuntimeProbe,
+                        HealthEvidenceConfidence::Verified,
+                        format!("environment_missing_active_version:{}", provider.id()),
+                    )
                     .with_details("You may need to install and set a default version"),
                 );
             }
             Err(e) => {
+                runtime_probe_failed = true;
                 result.add_issue(
                     HealthIssue::new(
                         Severity::Warning,
                         IssueCategory::Other,
                         format!("Could not determine current {} version", env_type),
+                    )
+                    .with_evidence(
+                        HealthSignalSource::RuntimeProbe,
+                        HealthEvidenceConfidence::Verified,
+                        format!("environment_current_version_error:{}", provider.id()),
                     )
                     .with_details(e.to_string()),
                 );
@@ -1343,6 +1509,11 @@ impl HealthCheckManager {
                             IssueCategory::ConfigError,
                             format!("No {} versions installed", env_type),
                         )
+                        .with_evidence(
+                            HealthSignalSource::RuntimeProbe,
+                            HealthEvidenceConfidence::Verified,
+                            format!("environment_no_versions_installed:{}", provider.id()),
+                        )
                         .with_details("Install at least one version to use this environment"),
                     );
                 } else {
@@ -1350,19 +1521,27 @@ impl HealthCheckManager {
                 }
             }
             Err(e) => {
+                runtime_probe_failed = true;
                 result.add_issue(
                     HealthIssue::new(
                         Severity::Warning,
                         IssueCategory::Other,
                         format!("Could not list installed {} versions", env_type),
                     )
+                    .with_evidence(
+                        HealthSignalSource::RuntimeProbe,
+                        HealthEvidenceConfidence::Verified,
+                        format!("environment_list_versions_error:{}", provider.id()),
+                    )
                     .with_details(e.to_string()),
                 );
             }
         }
 
-        // Check 4: PATH configuration for this provider
-        self.check_provider_path(provider, &mut result).await;
+        // Check 4: PATH configuration for this provider (heuristic, run only if runtime probe already looks unhealthy)
+        if runtime_probe_failed || result.current_version.is_none() {
+            self.check_provider_path(provider, &mut result).await;
+        }
 
         result.finalize();
         result
@@ -1395,6 +1574,11 @@ impl HealthCheckManager {
                     IssueCategory::PathConflict,
                     "Duplicate entries found in PATH",
                 )
+                .with_evidence(
+                    HealthSignalSource::PathHeuristic,
+                    HealthEvidenceConfidence::Inferred,
+                    "path_duplicate_entries",
+                )
                 .with_details(format!("Duplicates: {}", duplicates.join(", "))),
             );
         }
@@ -1416,6 +1600,11 @@ impl HealthCheckManager {
                     Severity::Info,
                     IssueCategory::PathConflict,
                     "Some PATH entries point to non-existent directories",
+                )
+                .with_evidence(
+                    HealthSignalSource::PathHeuristic,
+                    HealthEvidenceConfidence::Inferred,
+                    "path_missing_entries",
                 )
                 .with_details(format!("Missing: {}", missing_paths.join(", "))),
             );
@@ -1487,12 +1676,17 @@ impl HealthCheckManager {
                 if !init_pattern.is_empty() && !content.contains(&init_pattern) {
                     issues.push(
                     HealthIssue::new(
-                        Severity::Warning,
+                        Severity::Info,
                         IssueCategory::ShellIntegration,
                         format!(
                             "{} shell initialization not found",
                             provider.display_name()
                         ),
+                    )
+                    .with_evidence(
+                        HealthSignalSource::ShellHeuristic,
+                        HealthEvidenceConfidence::Inferred,
+                        format!("shell_init_missing:{}", provider_id),
                     )
                     .with_details(format!(
                         "Expected '{}' in shell config. The provider is installed but may not activate in new shell sessions.",
@@ -1573,12 +1767,17 @@ impl HealthCheckManager {
             if !found {
                 result.add_issue(
                     HealthIssue::new(
-                        Severity::Warning,
+                        Severity::Info,
                         IssueCategory::ShellIntegration,
                         format!(
                             "{} may not be properly configured in your shell",
                             provider.display_name()
                         ),
+                    )
+                    .with_evidence(
+                        HealthSignalSource::PathHeuristic,
+                        HealthEvidenceConfidence::Inferred,
+                        format!("provider_path_missing:{}:{}", provider_id, pattern),
                     )
                     .with_details(format!("Expected to find '{}' in PATH", pattern))
                     .with_remediation(
@@ -1815,6 +2014,9 @@ mod tests {
         assert_eq!(issue.message, "Test issue");
         assert!(issue.details.is_none());
         assert!(issue.fix_command.is_none());
+        assert!(issue.signal_source.is_none());
+        assert!(issue.confidence.is_none());
+        assert!(issue.check_id.is_none());
     }
 
     #[test]
@@ -1843,6 +2045,28 @@ mod tests {
             issue.fix_description,
             Some("Install the package".to_string())
         );
+    }
+
+    #[test]
+    fn test_health_issue_evidence_json_round_trip() {
+        let issue = HealthIssue::new(Severity::Warning, IssueCategory::NetworkError, "Network flaky")
+            .with_evidence(
+                HealthSignalSource::NetworkProbe,
+                HealthEvidenceConfidence::Inferred,
+                "registry_probe",
+            );
+        let json = serde_json::to_string(&issue).unwrap();
+        let decoded: HealthIssue = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(
+            decoded.signal_source,
+            Some(HealthSignalSource::NetworkProbe)
+        );
+        assert_eq!(
+            decoded.confidence,
+            Some(HealthEvidenceConfidence::Inferred)
+        );
+        assert_eq!(decoded.check_id.as_deref(), Some("registry_probe"));
     }
 
     #[test]
@@ -1905,6 +2129,27 @@ mod tests {
 
         // Status should remain Warning, not change to Healthy
         assert!(matches!(result.status, HealthStatus::Warning));
+    }
+
+    #[test]
+    fn test_inferred_warning_stays_advisory_for_package_manager() {
+        let mut result = PackageManagerHealthResult::new("npm", "npm");
+        result.add_issue(
+            HealthIssue::new(
+                Severity::Warning,
+                IssueCategory::NetworkError,
+                "Registry timeout",
+            )
+            .with_evidence(
+                HealthSignalSource::NetworkProbe,
+                HealthEvidenceConfidence::Inferred,
+                "registry_timeout",
+            ),
+        );
+        result.finalize();
+
+        assert!(matches!(result.status, HealthStatus::Healthy));
+        assert_eq!(result.issues.len(), 1);
     }
 
     #[test]
@@ -2033,6 +2278,22 @@ mod tests {
         let cmd_cpp = mgr.get_shell_setup_command("system-cpp");
         assert!(cmd_c.contains("System compilers"));
         assert!(cmd_cpp.contains("System compilers"));
+    }
+
+    #[test]
+    fn test_zig_health_metadata_mappings() {
+        let mgr = make_test_manager();
+        assert_eq!(mgr.provider_to_env_type("zig"), "zig");
+        assert!(
+            mgr.get_install_command("zig")
+                .to_lowercase()
+                .contains("ziglang.org"),
+            "zig install command should include official download hint"
+        );
+        assert!(
+            mgr.get_shell_setup_command("zig").contains(".zig/current"),
+            "zig shell setup should include managed current path guidance"
+        );
     }
 
     // ── Adoptium / SDKMAN-Gradle / SDKMAN-Maven / SDKMAN-Groovy ──
@@ -2169,6 +2430,79 @@ mod tests {
 
         assert!(matches!(result.status, HealthStatus::Warning));
         assert_eq!(result.issues.len(), 2);
+    }
+
+    #[test]
+    fn test_environment_inferred_warning_does_not_escalate() {
+        let mut result = EnvironmentHealthResult::new("node");
+        result.add_issue(
+            HealthIssue::new(
+                Severity::Warning,
+                IssueCategory::ShellIntegration,
+                "PATH pattern missing",
+            )
+            .with_evidence(
+                HealthSignalSource::PathHeuristic,
+                HealthEvidenceConfidence::Inferred,
+                "provider_path_missing:fnm",
+            ),
+        );
+        result.finalize();
+
+        assert!(matches!(result.status, HealthStatus::Healthy));
+    }
+
+    #[test]
+    fn test_environment_verified_warning_with_inferred_signals_still_escalates() {
+        let mut result = EnvironmentHealthResult::new("python");
+        result.add_issue(
+            HealthIssue::new(
+                Severity::Warning,
+                IssueCategory::ConfigError,
+                "No active python version",
+            )
+            .with_evidence(
+                HealthSignalSource::RuntimeProbe,
+                HealthEvidenceConfidence::Verified,
+                "environment_missing_active_version:pyenv",
+            ),
+        );
+        result.add_issue(
+            HealthIssue::new(
+                Severity::Warning,
+                IssueCategory::ShellIntegration,
+                "pyenv init not found in shell config",
+            )
+            .with_evidence(
+                HealthSignalSource::ShellHeuristic,
+                HealthEvidenceConfidence::Inferred,
+                "shell_init_missing:pyenv",
+            ),
+        );
+        result.finalize();
+
+        assert!(matches!(result.status, HealthStatus::Warning));
+        assert_eq!(result.issues.len(), 2);
+    }
+
+    #[test]
+    fn test_system_result_inferred_warning_issue_is_advisory() {
+        let mut system = SystemHealthResult::new();
+        system.add_system_issue(
+            HealthIssue::new(
+                Severity::Warning,
+                IssueCategory::PathConflict,
+                "Duplicate entries found in PATH",
+            )
+            .with_evidence(
+                HealthSignalSource::PathHeuristic,
+                HealthEvidenceConfidence::Inferred,
+                "path_duplicate_entries",
+            ),
+        );
+
+        assert!(matches!(system.overall_status, HealthStatus::Healthy));
+        assert_eq!(system.system_issues.len(), 1);
     }
 
     #[test]
@@ -2364,5 +2698,20 @@ mod tests {
             Some("health_check_task_failed")
         );
         assert_eq!(pm_failure.issues.len(), 1);
+    }
+
+    #[test]
+    fn test_scope_state_does_not_get_overwritten_once_degraded() {
+        let mut env = EnvironmentHealthResult::new("node");
+        env.set_scope_state(HealthScopeState::Timeout, "health_check_timeout");
+        env.set_scope_state(HealthScopeState::Unavailable, "provider_unavailable");
+        assert!(matches!(env.scope_state, HealthScopeState::Timeout));
+        assert_eq!(env.scope_reason.as_deref(), Some("health_check_timeout"));
+
+        let mut pm = PackageManagerHealthResult::new("npm", "npm");
+        pm.set_scope_state(HealthScopeState::Unsupported, "platform_unsupported");
+        pm.set_scope_state(HealthScopeState::Timeout, "health_check_timeout");
+        assert!(matches!(pm.scope_state, HealthScopeState::Unsupported));
+        assert_eq!(pm.scope_reason.as_deref(), Some("platform_unsupported"));
     }
 }

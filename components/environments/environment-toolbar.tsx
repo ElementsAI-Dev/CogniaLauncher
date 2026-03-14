@@ -12,6 +12,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Search, X, RefreshCw, ArrowUpDown, Filter, LayoutGrid, List, ArrowUpCircle } from "lucide-react";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { ToolbarRow, denseToolbarControl } from "@/components/ui/toolbar";
 import type {
   EnvironmentStatusFilter,
   EnvironmentSortBy,
@@ -58,7 +59,7 @@ export function EnvironmentToolbar({
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap gap-2 items-center">
+      <ToolbarRow>
         {/* Search Input */}
         <div className="relative flex-1 min-w-[200px] max-w-[400px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -66,14 +67,14 @@ export function EnvironmentToolbar({
             placeholder={t("environments.toolbar.searchPlaceholder")}
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
-            className="h-9 pl-9 pr-9 bg-background"
+            className={`${denseToolbarControl.input} pl-9 pr-9 bg-background`}
           />
           {searchQuery && (
             <Button
               variant="ghost"
               size="icon"
               onClick={() => onSearchChange("")}
-              className="absolute right-2 top-1/2 -translate-y-1/2 h-7 w-7"
+              className={`absolute right-2 top-1/2 -translate-y-1/2 ${denseToolbarControl.iconButtonInset}`}
               title={t("common.clear")}
               aria-label={t("common.clear")}
             >
@@ -87,7 +88,7 @@ export function EnvironmentToolbar({
           value={statusFilter}
           onValueChange={(v) => onStatusChange(v as EnvironmentStatusFilter)}
         >
-          <SelectTrigger className="h-9 w-[140px]">
+          <SelectTrigger className={`${denseToolbarControl.selectTrigger} w-[140px]`}>
             <Filter className="h-4 w-4 mr-2 text-muted-foreground" />
             <SelectValue />
           </SelectTrigger>
@@ -109,7 +110,7 @@ export function EnvironmentToolbar({
           value={sortBy}
           onValueChange={(v) => onSortChange(v as EnvironmentSortBy)}
         >
-          <SelectTrigger className="h-9 w-[160px]">
+          <SelectTrigger className={`${denseToolbarControl.selectTrigger} w-[160px]`}>
             <ArrowUpDown className="h-4 w-4 mr-2 text-muted-foreground" />
             <SelectValue />
           </SelectTrigger>
@@ -131,12 +132,20 @@ export function EnvironmentToolbar({
           type="single"
           value={viewMode}
           onValueChange={(v) => v && onViewModeChange(v as EnvironmentViewMode)}
-          className="h-9"
+          className={denseToolbarControl.button}
         >
-          <ToggleGroupItem value="grid" className="h-9 w-9 px-0" aria-label={t("environments.toolbar.viewGrid")}>
+          <ToggleGroupItem
+            value="grid"
+            className={denseToolbarControl.toggleIconItem}
+            aria-label={t("environments.toolbar.viewGrid")}
+          >
             <LayoutGrid className="h-4 w-4" />
           </ToggleGroupItem>
-          <ToggleGroupItem value="list" className="h-9 w-9 px-0" aria-label={t("environments.toolbar.viewList")}>
+          <ToggleGroupItem
+            value="list"
+            className={denseToolbarControl.toggleIconItem}
+            aria-label={t("environments.toolbar.viewList")}
+          >
             <List className="h-4 w-4" />
           </ToggleGroupItem>
         </ToggleGroup>
@@ -148,7 +157,7 @@ export function EnvironmentToolbar({
             size="sm"
             onClick={onCheckAllUpdates}
             disabled={isLoading}
-            className="h-9 gap-2"
+            className={`${denseToolbarControl.button} gap-2`}
           >
             <ArrowUpCircle className="h-4 w-4" />
             {t("environments.updates.checkAll")}
@@ -161,12 +170,12 @@ export function EnvironmentToolbar({
           size="sm"
           onClick={onRefresh}
           disabled={isLoading}
-          className="h-9 gap-2"
+          className={`${denseToolbarControl.button} gap-2`}
         >
           <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
           {t("common.refresh")}
         </Button>
-      </div>
+      </ToolbarRow>
 
       {/* Active Filters & Results Count */}
       {(hasActiveFilters || isFiltered) && (

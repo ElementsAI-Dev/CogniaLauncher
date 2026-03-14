@@ -689,6 +689,10 @@ describe('PluginsPage plugin bootstrap', () => {
     mockPermissionStates = {
       'com.example.governed': {
         declared: {
+          uiFeedback: false,
+          uiDialog: false,
+          uiFilePicker: false,
+          uiNavigation: false,
           fsRead: [],
           fsWrite: [],
           http: [],

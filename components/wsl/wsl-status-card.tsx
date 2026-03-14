@@ -7,7 +7,8 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Activity, RefreshCw, Power, Info, Network, Globe } from 'lucide-react';
+import { Activity, RefreshCw, Power, Info, Network, Globe, Copy } from 'lucide-react';
+import { toast } from 'sonner';
 import { NETWORKING_MODE_INFO } from '@/lib/constants/wsl';
 import type { WslStatusCardProps } from '@/types/wsl';
 
@@ -110,6 +111,16 @@ export function WslStatusCard({
               {t('wsl.ipAddress')}
             </span>
             <span className="truncate text-sm font-mono">{ipToShow}</span>
+            {ipAddress && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 shrink-0 ml-1"
+                onClick={() => { void navigator.clipboard.writeText(ipAddress); toast.success(t('common.copied')); }}
+              >
+                <Copy className="h-3 w-3" />
+              </Button>
+            )}
           </div>
         )}
 
@@ -136,7 +147,7 @@ export function WslStatusCard({
           );
         })()}
 
-        <Separator />
+        <Separator className="my-2" />
 
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-3">
@@ -150,7 +161,7 @@ export function WslStatusCard({
           </div>
 
           {status?.runningDistros.length ? (
-            <div className="flex max-h-24 flex-wrap gap-1.5 overflow-y-auto pr-1">
+            <div className="flex max-h-24 flex-wrap gap-1 overflow-y-auto scrollbar-thin">
               {status.runningDistros.map((name) => (
                 <Badge key={name} variant="outline" className="text-xs">
                   {name}
@@ -164,9 +175,9 @@ export function WslStatusCard({
 
         {status?.runningDistros.length ? (
           <Button
-            variant="destructive"
+            variant="outline"
             size="sm"
-            className="w-full gap-2"
+            className="gap-1.5 text-amber-600 hover:text-amber-700 border-amber-300 hover:border-amber-400"
             onClick={onShutdownAll}
           >
             <Power className="h-3.5 w-3.5" />

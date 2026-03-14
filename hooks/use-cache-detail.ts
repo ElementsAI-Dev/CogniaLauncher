@@ -18,11 +18,29 @@ import {
   subscribeInvalidation,
   withThrottle,
 } from '@/lib/cache/invalidation';
+import {
+  isRequestWaveCurrent,
+  startRequestWave,
+} from '@/lib/cache/request-wave';
 
 interface UseCacheDetailOptions {
   cacheType: 'download' | 'metadata';
   t: (key: string, params?: Record<string, string | number>) => string;
 }
+
+type ReadStatus = 'idle' | 'loading' | 'ready' | 'error';
+
+interface ReadState {
+  status: ReadStatus;
+  error: string | null;
+  lastUpdatedAt: number | null;
+}
+
+const INITIAL_READ_STATE: ReadState = {
+  status: 'idle',
+  error: null,
+  lastUpdatedAt: null,
+};
 
 export function useCacheDetail({ cacheType, t }: UseCacheDetailOptions) {
   const initializedRef = useRef(false);
@@ -31,11 +49,13 @@ export function useCacheDetail({ cacheType, t }: UseCacheDetailOptions) {
   // Cache info state
   const [cacheInfo, setCacheInfo] = useState<CacheInfo | null>(null);
   const [accessStats, setAccessStats] = useState<CacheAccessStats | null>(null);
+  const [infoReadState, setInfoReadState] = useState<ReadState>(INITIAL_READ_STATE);
 
   // Entry browser state
   const [entries, setEntries] = useState<CacheEntryItem[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [entriesReadState, setEntriesReadState] = useState<ReadState>(INITIAL_READ_STATE);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState('created_desc');
   const [page, setPage] = useState(0);
@@ -52,6 +72,12 @@ export function useCacheDetail({ cacheType, t }: UseCacheDetailOptions) {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewData, setPreviewData] = useState<CleanPreview | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const infoWaveRef = useRef(0);
+  const entriesWaveRef = useRef(0);
+  const pendingRefreshRef = useRef<{ info: boolean; entries: boolean }>({
+    info: false,
+    entries: false,
+  });
 
   const titleKey = cacheType === 'download' ? 'cache.detail.downloadTitle' : 'cache.detail.metadataTitle';
   const descKey = cacheType === 'download' ? 'cache.detail.downloadDescription' : 'cache.detail.metadataDescription';
@@ -60,23 +86,47 @@ export function useCacheDetail({ cacheType, t }: UseCacheDetailOptions) {
   // Fetch cache info
   const fetchInfo = useCallback(async () => {
     if (!isTauri()) return;
+    const wave = startRequestWave(infoWaveRef);
+    setInfoReadState((prev) => ({
+      ...prev,
+      status: 'loading',
+      error: null,
+    }));
     try {
       const { cacheInfo: fetchCacheInfo, getCacheAccessStats } = await import('@/lib/tauri');
       const [info, stats] = await Promise.all([
         fetchCacheInfo(),
         getCacheAccessStats(),
       ]);
+      if (!isRequestWaveCurrent(infoWaveRef, wave)) return;
       setCacheInfo(info);
       setAccessStats(stats);
+      setInfoReadState({
+        status: 'ready',
+        error: null,
+        lastUpdatedAt: Date.now(),
+      });
     } catch (err) {
+      if (!isRequestWaveCurrent(infoWaveRef, wave)) return;
       console.error('Failed to fetch cache info:', err);
+      setInfoReadState((prev) => ({
+        status: 'error',
+        error: `cache.readFailed: ${String(err)}`,
+        lastUpdatedAt: prev.lastUpdatedAt,
+      }));
     }
   }, []);
 
   // Fetch entries
   const fetchEntries = useCallback(async (resetPage = false) => {
     if (!isTauri()) return;
+    const wave = startRequestWave(entriesWaveRef);
     setLoading(true);
+    setEntriesReadState((prev) => ({
+      ...prev,
+      status: 'loading',
+      error: null,
+    }));
     const currentPage = resetPage ? 0 : page;
     if (resetPage) setPage(0);
 
@@ -89,22 +139,44 @@ export function useCacheDetail({ cacheType, t }: UseCacheDetailOptions) {
         limit: ENTRIES_PER_PAGE,
         offset: currentPage * ENTRIES_PER_PAGE,
       });
+      if (!isRequestWaveCurrent(entriesWaveRef, wave)) return;
       setEntries(result.entries);
       setTotalCount(result.total_count);
+      setEntriesReadState({
+        status: 'ready',
+        error: null,
+        lastUpdatedAt: Date.now(),
+      });
     } catch (err) {
+      if (!isRequestWaveCurrent(entriesWaveRef, wave)) return;
       console.error('Failed to fetch cache entries:', err);
+      setEntriesReadState((prev) => ({
+        status: 'error',
+        error: `cache.browserLoadFailed: ${String(err)}`,
+        lastUpdatedAt: prev.lastUpdatedAt,
+      }));
     } finally {
+      if (!isRequestWaveCurrent(entriesWaveRef, wave)) return;
       setLoading(false);
     }
   }, [entryTypeFilter, searchQuery, sortBy, page]);
 
-  const scheduleRefresh = useCallback(() => {
+  const scheduleRefresh = useCallback((options?: { info?: boolean; entries?: boolean }) => {
     if (!isTauri() || !initializedRef.current) return;
+    pendingRefreshRef.current.info = pendingRefreshRef.current.info || options?.info !== false;
+    pendingRefreshRef.current.entries = pendingRefreshRef.current.entries || options?.entries !== false;
     if (refreshTimeoutRef.current) return;
 
     refreshTimeoutRef.current = setTimeout(() => {
       refreshTimeoutRef.current = null;
-      void Promise.all([fetchInfo(), fetchEntries()]);
+      const next = pendingRefreshRef.current;
+      pendingRefreshRef.current = { info: false, entries: false };
+      const tasks: Array<Promise<unknown>> = [];
+      if (next.info) tasks.push(fetchInfo());
+      if (next.entries) tasks.push(fetchEntries());
+      if (tasks.length > 0) {
+        void Promise.all(tasks);
+      }
     }, 350);
   }, [fetchEntries, fetchInfo]);
 
@@ -141,8 +213,12 @@ export function useCacheDetail({ cacheType, t }: UseCacheDetailOptions) {
     void ensureCacheInvalidationBridge();
     const dispose = subscribeInvalidation(
       ['cache_overview', 'cache_entries'],
-      withThrottle(() => {
-        scheduleRefresh();
+      withThrottle((event) => {
+        if (event.domain === 'cache_overview') {
+          scheduleRefresh({ info: true, entries: false });
+          return;
+        }
+        scheduleRefresh({ info: true, entries: true });
       }, 350),
     );
 
@@ -151,6 +227,7 @@ export function useCacheDetail({ cacheType, t }: UseCacheDetailOptions) {
         clearTimeout(refreshTimeoutRef.current);
         refreshTimeoutRef.current = null;
       }
+      pendingRefreshRef.current = { info: false, entries: false };
       dispose();
     };
   }, [scheduleRefresh]);
@@ -300,9 +377,11 @@ export function useCacheDetail({ cacheType, t }: UseCacheDetailOptions) {
     // State
     cacheInfo,
     accessStats,
+    infoReadState,
     entries,
     totalCount,
     loading,
+    entriesReadState,
     searchQuery,
     setSearchQuery,
     sortBy,
@@ -331,6 +410,8 @@ export function useCacheDetail({ cacheType, t }: UseCacheDetailOptions) {
 
     // Actions
     handleRefresh,
+    fetchInfo,
+    fetchEntries,
     handlePreviewClean,
     handleClean,
     handleVerify,

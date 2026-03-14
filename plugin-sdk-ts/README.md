@@ -206,11 +206,53 @@ import { cognia } from '@cognia/plugin-sdk';
 |----------|-----------|-------------|
 | `send(title, body)` | notification | Send system notification |
 
+### cognia.ui
+
+Declarative block builders remain available as before. The SDK now also exposes launcher-mediated UI helpers for bounded host effects.
+
+| Function | Permission | Description |
+|----------|-----------|-------------|
+| `getContext()` | none | Read launcher UI context such as locale/theme/window effect |
+| `toast(message, options?)` | ui_feedback | Show in-app feedback through the active launcher window |
+| `navigate(path)` | ui_navigation | Navigate to an internal launcher route |
+| `confirm(message, options?)` | ui_dialog | Ask the user for confirmation |
+| `pickFile(options?)` | ui_file_picker | Open the native file picker |
+| `pickDirectory(options?)` | ui_file_picker | Open the native directory picker |
+| `saveFile(options?)` | ui_file_picker | Open the native save dialog |
+| `openExternal(url)` | ui_navigation | Open an external URL with the host opener |
+| `revealPath(path)` | ui_navigation | Reveal or open a path in the host file manager |
+
+Each helper returns a typed result envelope with `status` (`ok`, `cancelled`, `denied`, `unavailable`, `error`) so plugins can handle failures explicitly.
+
 ### cognia.process
 
 | Function | Permission | Description |
 |----------|-----------|-------------|
-| `exec(command, args?, cwd?)` | process_exec | Execute shell command |
+| `exec(command, args?, cwd?)` | process_exec | Execute direct process command (legacy-compatible) |
+| `exec(command, options)` | process_exec | Execute direct process command with structured options |
+| `execShell(command, options?)` | process_exec | Execute command through the host shell |
+| `which(command)` | process_exec | Resolve a program on the host PATH |
+| `isAvailable(command)` | process_exec | Probe whether a program exists on the host PATH |
+
+```ts
+const legacy = cognia.process.exec('node', ['--version'], null);
+
+const structured = cognia.process.exec('node', {
+  args: ['--version'],
+  cwd: '/workspace/demo',
+  env: { DEMO_FLAG: '1' },
+  timeoutMs: 2000,
+});
+
+const shell = cognia.process.execShell('echo hello', { timeoutMs: 1000 });
+const lookup = cognia.process.which('node');
+const availability = cognia.process.isAvailable('node');
+
+console.log(legacy.success, structured.exitCode, shell.stdout);
+console.log(lookup.path, availability.available);
+```
+
+All process helpers require the plugin manifest permission `process_exec`, which maps to the host capability `process.exec`.
 
 ### cognia.i18n
 
@@ -233,9 +275,12 @@ import { cognia } from '@cognia/plugin-sdk';
 | Function | Permission | Description |
 |----------|-----------|-------------|
 | `info(message)` | none | Log info |
+| `info({ message, target, fields, tags, correlationId })` | none | Log structured info |
 | `warn(message)` | none | Log warning |
 | `error(message)` | none | Log error |
 | `debug(message)` | none | Log debug |
+| `write(record)` | none | Write a structured log record |
+| `parseEnvelope(input)` | none | Parse `cognia_on_log` callback envelope |
 
 ### cognia.event
 
@@ -244,6 +289,7 @@ import { cognia } from '@cognia/plugin-sdk';
 | `emit(name, payload)` | none | Emit an event |
 | `emitStr(name, message)` | none | Emit string event |
 | `getPluginId()` | none | Get plugin ID |
+| `parseEnvelope(input)` | none | Parse `cognia_on_event` callback envelope |
 
 ### cognia.ui (declarative)
 
@@ -303,6 +349,25 @@ const blocks = [
 Host.outputString(cognia.ui.render(blocks));
 ```
 
+## Plugin-Point Mapping
+
+Supported plugin-point governance is declared in `plugins/extension-point-matrix.json`.
+
+| Plugin Point | Manifest Contract | Example |
+|---|---|---|
+| `tool-text` | `[[tools]].entry` |
+`plugin-sdk-ts/examples/hello-world` |
+| `tool-declarative-ui` | `[[tools]].ui_mode = "declarative"` |
+`plugin-sdk-ts/examples/hello-world` |
+| `tool-iframe-ui` | `[[tools]].ui_mode = "iframe"` + `[ui].entry` |
+`plugins/marketplace/hello-world-ts` |
+| `event-listener` | `[plugin].listen_events` + `cognia_on_event` export |
+`plugin-sdk-ts/examples/hello-world` |
+| `log-listener` | `[plugin].listen_logs` + `cognia_on_log` export |
+`plugin-sdk-ts/examples/hello-world` |
+| `settings-schema` | `[[settings]]` declarations |
+`plugins/rust/file-config-assistant` |
+
 ## Built-in Capability Mapping
 
 The built-in plugin workspace includes concrete SDK usage references:
@@ -316,6 +381,7 @@ The built-in plugin workspace includes concrete SDK usage references:
 Governance source:
 
 - `plugins/sdk-capability-matrix.json` defines required plugin IDs, expected permissions, and primary entrypoints used by built-in validation.
+- `plugins/extension-point-matrix.json` defines officially supported plugin points, prerequisites, SDK coverage, and scaffold support.
 
 ## Host Contract Compatibility
 
@@ -328,6 +394,8 @@ pnpm --dir plugin-sdk-ts run check:contract
 
 For HTTP calls, `request()` is the recommended stable path. `get()` and `post()`
 remain supported as compatibility helpers and map to the same host capability set.
+
+Parity validation also checks the Rust SDK host declarations/wrappers against the same contract inventory.
 
 ## Rust SDK Comparison
 

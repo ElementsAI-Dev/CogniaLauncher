@@ -1,12 +1,18 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { ToolActionRow, ToolTextArea, ToolValidationMessage } from '@/components/toolbox/tool-layout';
+import {
+  ToolActionRow,
+  ToolTextArea,
+  ToolValidationMessage,
+  ToolSection,
+  ToolOutputBlock,
+} from '@/components/toolbox/tool-layout';
 import { useLocale } from '@/components/providers/locale-provider';
 import { useCopyToClipboard } from '@/hooks/use-clipboard';
 import { useToolPreferences } from '@/hooks/use-tool-preferences';
@@ -43,6 +49,16 @@ function decodeJwt(token: string, now: number): DecodedJwt | null {
   }
 }
 
+const CLAIM_LABELS: Record<string, string> = {
+  iss: 'Issuer',
+  sub: 'Subject',
+  aud: 'Audience',
+  exp: 'Expires',
+  nbf: 'Not Before',
+  iat: 'Issued At',
+  jti: 'JWT ID',
+};
+
 const DEFAULT_PREFERENCES = {
   showSignature: false,
 } as const;
@@ -53,6 +69,7 @@ export default function JwtDecoder({ className }: ToolComponentProps) {
   const [input, setInput] = useState('');
   const [decoded, setDecoded] = useState<DecodedJwt | null>(null);
   const [errorDetail, setErrorDetail] = useState<string | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const { copy } = useCopyToClipboard();
 
   const handleDecode = useCallback(() => {
@@ -75,9 +92,47 @@ export default function JwtDecoder({ className }: ToolComponentProps) {
     setErrorDetail(result ? null : t('toolbox.tools.jwtDecoder.invalidToken'));
   }, [input, t]);
 
-  const expInfo = decoded?.expDate ? { expDate: decoded.expDate, isExpired: decoded.isExpired } : null;
+  const expInfo = useMemo(
+    () => (decoded?.expDate ? { expDate: decoded.expDate, isExpired: decoded.isExpired } : null),
+    [decoded],
+  );
+
+  useEffect(() => {
+    if (!expInfo?.expDate) return;
+    const timer = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [expInfo]);
 
   const error = input.trim() && !decoded;
+
+  const tokenParts = useMemo(() => {
+    const parts = input.trim().split('.');
+    if (parts.length !== 3) return null;
+    return {
+      header: parts[0],
+      payload: parts[1],
+      signature: parts[2],
+    };
+  }, [input]);
+
+  const expiresInText = useMemo(() => {
+    if (!expInfo) return null;
+    const diffSec = Math.round((expInfo.expDate.getTime() - nowMs) / 1000);
+    const abs = Math.abs(diffSec);
+    const unit = abs >= 86400 ? 'd' : abs >= 3600 ? 'h' : abs >= 60 ? 'm' : 's';
+    const value = unit === 'd' ? Math.floor(abs / 86400) : unit === 'h' ? Math.floor(abs / 3600) : unit === 'm' ? Math.floor(abs / 60) : abs;
+    return diffSec >= 0 ? `${value}${unit}` : `-${value}${unit}`;
+  }, [expInfo, nowMs]);
+
+  const claims = useMemo(() => {
+    if (!decoded) return [] as Array<{ key: string; label: string; value: string }>;
+    const payload = decoded.payload as Record<string, unknown>;
+    return Object.entries(payload).map(([key, value]) => ({
+      key,
+      label: CLAIM_LABELS[key] ?? key,
+      value: typeof value === 'string' ? value : JSON.stringify(value),
+    }));
+  }, [decoded]);
 
   const handleCopySection = useCallback(async (value: unknown) => {
     await copy(JSON.stringify(value, null, 2));
@@ -86,22 +141,22 @@ export default function JwtDecoder({ className }: ToolComponentProps) {
   return (
     <div className={className}>
       <div className="space-y-4">
-        <ToolTextArea
-          label={t('toolbox.tools.jwtDecoder.input')}
-          value={input}
-          onChange={setInput}
-          placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-          showPaste
-          showClear
-          rows={4}
-        />
+        <ToolSection title={t('toolbox.tools.jwtDecoder.input')}>
+          <ToolTextArea
+            label={t('toolbox.tools.jwtDecoder.input')}
+            value={input}
+            onChange={setInput}
+            placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+            showPaste
+            showClear
+            rows={4}
+            maxLength={TOOLBOX_LIMITS.converterChars}
+          />
 
-        <Button onClick={handleDecode} size="sm" disabled={!input.trim()}>
-          {t('toolbox.tools.jwtDecoder.decode')}
-        </Button>
-
-        <ToolActionRow
-          rightSlot={(
+          <ToolActionRow className="mt-3">
+            <Button onClick={handleDecode} size="sm" disabled={!input.trim()}>
+              {t('toolbox.tools.jwtDecoder.decode')}
+            </Button>
             <div className="flex items-center gap-2">
               <Switch
                 id="jwt-show-signature"
@@ -110,15 +165,23 @@ export default function JwtDecoder({ className }: ToolComponentProps) {
               />
               <Label htmlFor="jwt-show-signature" className="text-xs">{t('toolbox.tools.jwtDecoder.showSignature')}</Label>
             </div>
+          </ToolActionRow>
+
+          {tokenParts && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Badge variant="secondary" className="bg-blue-500/10 text-blue-600 dark:text-blue-300">Header</Badge>
+              <Badge variant="secondary" className="bg-green-500/10 text-green-600 dark:text-green-300">Payload</Badge>
+              <Badge variant="secondary" className="bg-red-500/10 text-red-600 dark:text-red-300">Signature</Badge>
+            </div>
           )}
-        />
+        </ToolSection>
 
         {error && (
           <ToolValidationMessage message={errorDetail ?? t('toolbox.tools.jwtDecoder.invalidToken')} />
         )}
 
         {decoded && (
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-4 lg:grid-cols-2">
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm flex items-center gap-2">
@@ -163,19 +226,36 @@ export default function JwtDecoder({ className }: ToolComponentProps) {
                   {t('toolbox.actions.copy')}
                 </Button>
                 {expInfo && (
-                  <p className="text-xs text-muted-foreground mt-2">
-                    {t('toolbox.tools.jwtDecoder.expiresAt')}: {expInfo.expDate.toLocaleString()}
-                  </p>
+                  <div className="mt-2 text-xs text-muted-foreground space-y-0.5">
+                    <p>{t('toolbox.tools.jwtDecoder.expiresAt')}: {expInfo.expDate.toLocaleString()}</p>
+                    <p>{t('toolbox.tools.jwtDecoder.expiresIn')}: {expiresInText}</p>
+                  </div>
                 )}
               </CardContent>
             </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">{t('toolbox.tools.jwtDecoder.claims')}</CardTitle>
+                <CardDescription className="text-xs">{t('toolbox.tools.jwtDecoder.claimsDesc')}</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2 max-h-80 overflow-auto">
+                {claims.map((claim) => (
+                  <div key={claim.key} className="rounded border px-2.5 py-2">
+                    <p className="text-[11px] text-muted-foreground">{claim.label}</p>
+                    <code className="text-xs break-all">{claim.value}</code>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+
             {preferences.showSignature && (
-              <Card className="md:col-span-2">
+              <Card className="lg:col-span-2">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm">{t('toolbox.tools.jwtDecoder.signature')}</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <code className="block rounded-md bg-muted p-2 text-xs break-all">{decoded.signature}</code>
+                  <ToolOutputBlock value={decoded.signature} breakAll />
                 </CardContent>
               </Card>
             )}

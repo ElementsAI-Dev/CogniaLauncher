@@ -10,6 +10,11 @@ import {
   CardDescription,
   CardAction,
 } from "@/components/ui/card";
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
   Collapsible,
@@ -31,6 +36,7 @@ import {
   ChevronDown,
   ChevronUp,
   ExternalLink,
+  Loader2,
 } from "lucide-react";
 import { LanguageIcon, ProviderIcon } from "@/components/provider-management/provider-icon";
 import { useLocale } from "@/components/providers/locale-provider";
@@ -48,12 +54,18 @@ interface EnvironmentListProps {
   environments: EnvironmentInfo[];
   className?: string;
   initialLimit?: number;
+  isLoading?: boolean;
+  error?: string | null;
+  onRecover?: () => void;
 }
 
 export function EnvironmentList({
   environments,
   className,
   initialLimit = 4,
+  isLoading = false,
+  error = null,
+  onRecover,
 }: EnvironmentListProps) {
   const router = useRouter();
   const { t } = useLocale();
@@ -106,7 +118,7 @@ export function EnvironmentList({
           {t("dashboard.activeEnvironmentsDesc")}
         </CardDescription>
         <CardAction>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-col-reverse items-stretch gap-2 sm:flex-row sm:items-center">
             <Select
               value={filter}
               onValueChange={(v) => setFilter(v as EnvironmentFilterType)}
@@ -139,7 +151,26 @@ export function EnvironmentList({
         </CardAction>
       </CardHeader>
       <CardContent>
-        {filteredEnvironments.length === 0 ? (
+        {error && (
+          <Alert variant="destructive" className="mb-3">
+            <AlertTitle>{t("dashboard.widgets.sectionNeedsAttention")}</AlertTitle>
+            <AlertDescription className="space-y-2">
+              <p>{error}</p>
+              {onRecover && (
+                <Button variant="outline" size="sm" onClick={onRecover}>
+                  {t("dashboard.widgets.retry")}
+                </Button>
+              )}
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {isLoading && environments.length === 0 ? (
+          <DashboardEmptyState
+            icon={<Loader2 className="h-8 w-8 animate-spin text-muted-foreground/70" />}
+            message={t("dashboard.widgets.sectionLoading")}
+          />
+        ) : filteredEnvironments.length === 0 ? (
           <DashboardEmptyState
             icon={<Layers className="h-8 w-8 text-muted-foreground/70" />}
             message={
@@ -147,6 +178,17 @@ export function EnvironmentList({
                 ? t("dashboard.noEnvironments")
                 : t("dashboard.environmentList.noResults")
             }
+            action={(
+              <Button
+                variant="link"
+                size="sm"
+                className="mt-1 gap-1"
+                onClick={handleViewAll}
+              >
+                {t("dashboard.quickActions.addEnvironment")}
+                <ExternalLink className="h-3.5 w-3.5" />
+              </Button>
+            )}
           />
         ) : (
           <Collapsible open={expanded} onOpenChange={setExpanded}>

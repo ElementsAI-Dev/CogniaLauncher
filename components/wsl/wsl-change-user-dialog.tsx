@@ -82,7 +82,7 @@ export function WslChangeUserDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[420px]">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <UserCog className="h-5 w-5" />
@@ -101,24 +101,24 @@ export function WslChangeUserDialog({
             <div className="space-y-2">
               <Label>{t('wsl.dialog.selectUser')}</Label>
               <Select value={selectedUser} onValueChange={setSelectedUser}>
-                <SelectTrigger>
+                <SelectTrigger className="h-9">
                   <SelectValue placeholder={t('wsl.dialog.selectUser')} />
                 </SelectTrigger>
                 <SelectContent>
                   {users.map((u) => (
                     <SelectItem key={u.uid} value={u.username}>
-                      <span className="font-medium">{u.username}</span>
-                      <span className="text-muted-foreground ml-2 text-xs">
-                        (uid:{u.uid}, {u.shell})
-                      </span>
+                      <div className="flex flex-col">
+                        <span>{u.username}</span>
+                        <span className="text-xs text-muted-foreground">UID: {u.uid} • {u.shell}</span>
+                      </div>
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
               <Button
-                variant="link"
+                variant="outline"
                 size="sm"
-                className="h-auto p-0 text-xs"
+                className="mt-1 h-7 text-xs"
                 onClick={() => setUseManual(true)}
               >
                 {t('wsl.dialog.manualInput')}
@@ -129,6 +129,7 @@ export function WslChangeUserDialog({
               <Label htmlFor="wsl-username-input">{t('wsl.username')}</Label>
               <Input
                 id="wsl-username-input"
+                className="h-9"
                 placeholder="username"
                 value={manualInput}
                 onChange={(e) => setManualInput(e.target.value)}
@@ -139,9 +140,9 @@ export function WslChangeUserDialog({
               />
               {users.length > 0 && (
                 <Button
-                  variant="link"
+                  variant="outline"
                   size="sm"
-                  className="h-auto p-0 text-xs"
+                  className="mt-1 h-7 text-xs"
                   onClick={() => setUseManual(false)}
                 >
                   {t('wsl.dialog.selectFromList')}

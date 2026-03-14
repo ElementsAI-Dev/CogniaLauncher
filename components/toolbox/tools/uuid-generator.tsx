@@ -6,28 +6,36 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useLocale } from '@/components/providers/locale-provider';
 import { useToolPreferences } from '@/hooks/use-tool-preferences';
 import { TOOLBOX_LIMITS } from '@/lib/constants/toolbox-limits';
-import { ToolValidationMessage } from '@/components/toolbox/tool-layout';
-import { Copy, Check, RefreshCw } from 'lucide-react';
+import {
+  ToolTextArea,
+  ToolSection,
+  ToolOptionGroup,
+  ToolValidationMessage,
+} from '@/components/toolbox/tool-layout';
+import { Copy, Check, RefreshCw, Sparkles } from 'lucide-react';
 import type { ToolComponentProps } from '@/types/toolbox';
+
+function formatUuid(raw: string, uppercase: boolean, noDashes: boolean): string {
+  let uuid = raw;
+  if (noDashes) uuid = uuid.replace(/-/g, '');
+  if (uppercase) uuid = uuid.toUpperCase();
+  return uuid;
+}
 
 function generateUUIDs(count: number, uppercase: boolean, noDashes: boolean): string[] {
   const uuids: string[] = [];
   for (let i = 0; i < count; i++) {
-    let uuid = crypto.randomUUID();
-    if (noDashes) uuid = uuid.replace(/-/g, '');
-    if (uppercase) uuid = uuid.toUpperCase();
-    uuids.push(uuid);
+    uuids.push(formatUuid(crypto.randomUUID(), uppercase, noDashes));
   }
   return uuids;
 }
 
 const DEFAULT_PREFERENCES = {
-  count: 1,
+  count: 5,
   uppercase: false,
   noDashes: false,
   separator: 'newline',
@@ -37,85 +45,157 @@ export default function UuidGenerator({ className }: ToolComponentProps) {
   const { t } = useLocale();
   const { preferences, setPreferences } = useToolPreferences('uuid-generator', DEFAULT_PREFERENCES);
   const [error, setError] = useState<string | null>(null);
-  const [uuids, setUuids] = useState<string[]>(() => generateUUIDs(1, false, false));
+  const [singleUuid, setSingleUuid] = useState(() => formatUuid(crypto.randomUUID(), false, false));
+  const [batchUuids, setBatchUuids] = useState<string[]>([]);
   const { copied, copy } = useCopyToClipboard();
+  const [singleCopied, setSingleCopied] = useState(false);
 
-  const count = Number(preferences.count) || 1;
+  const count = Number(preferences.count) || 5;
   const uppercase = preferences.uppercase;
   const noDashes = preferences.noDashes;
   const separator = preferences.separator;
 
-  const handleGenerate = useCallback(() => {
+  const handleCopySingle = useCallback(async (uuid: string) => {
+    await copy(uuid);
+    setSingleCopied(true);
+    setTimeout(() => setSingleCopied(false), 1500);
+  }, [copy]);
+
+  const handleRegenerate = useCallback(() => {
+    setSingleUuid(formatUuid(crypto.randomUUID(), uppercase, noDashes));
+  }, [uppercase, noDashes]);
+
+  const handleGenerateAndCopy = useCallback(async () => {
+    const uuid = formatUuid(crypto.randomUUID(), uppercase, noDashes);
+    setSingleUuid(uuid);
+    await copy(uuid);
+    setSingleCopied(true);
+    setTimeout(() => setSingleCopied(false), 1500);
+  }, [copy, uppercase, noDashes]);
+
+  const handleBatchGenerate = useCallback(() => {
     if (count > TOOLBOX_LIMITS.generatorCount) {
       setError(t('toolbox.tools.shared.countTooLarge', { limit: TOOLBOX_LIMITS.generatorCount }));
       return;
     }
     setError(null);
-    setUuids(generateUUIDs(Math.max(1, Math.min(TOOLBOX_LIMITS.generatorCount, count)), uppercase, noDashes));
-  }, [count, noDashes, t, uppercase]);
+    setBatchUuids(generateUUIDs(Math.max(1, Math.min(TOOLBOX_LIMITS.generatorCount, count)), uppercase, noDashes));
+  }, [count, uppercase, noDashes, t]);
 
-  const handleCopy = useCallback(async () => {
-    const delimiter = separator === 'comma' ? ', ' : '\n';
-    await copy(uuids.join(delimiter));
-  }, [copy, separator, uuids]);
+  const batchDelimiter = separator === 'comma' ? ', ' : '\n';
+  const batchOutput = batchUuids.join(batchDelimiter);
 
   return (
     <div className={className}>
       <div className="space-y-4">
-        <div className="flex flex-wrap items-end gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="uuid-count">{t('toolbox.tools.uuidGenerator.count')}</Label>
-            <Input
-              id="uuid-count"
-              type="number"
-              min={1}
-              max={TOOLBOX_LIMITS.generatorCount}
-              value={count}
-              onChange={(e) => setPreferences({ count: Math.max(1, Number(e.target.value) || 1) })}
-              className="w-24"
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <Switch id="uuid-upper" checked={uppercase} onCheckedChange={(checked) => setPreferences({ uppercase: checked })} />
-            <Label htmlFor="uuid-upper" className="text-sm">{t('toolbox.tools.uuidGenerator.uppercase')}</Label>
-          </div>
-          <div className="flex items-center gap-2">
-            <Switch id="uuid-nodash" checked={noDashes} onCheckedChange={(checked) => setPreferences({ noDashes: checked })} />
-            <Label htmlFor="uuid-nodash" className="text-sm">{t('toolbox.tools.uuidGenerator.noDashes')}</Label>
-          </div>
-          <div className="space-y-2">
-            <Label>{t('toolbox.tools.uuidGenerator.separator')}</Label>
-            <Select value={separator} onValueChange={(value) => setPreferences({ separator: value })}>
-              <SelectTrigger className="w-32">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="newline">{t('toolbox.tools.uuidGenerator.separatorNewline')}</SelectItem>
-                <SelectItem value="comma">{t('toolbox.tools.uuidGenerator.separatorComma')}</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
+        {/* Quick Generate */}
+        <ToolSection
+          title={t('toolbox.tools.uuidGenerator.name')}
+          description={t('toolbox.tools.uuidGenerator.desc')}
+        >
+          <div className="space-y-3">
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => handleCopySingle(singleUuid)}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleCopySingle(singleUuid); }}
+              className="rounded-lg bg-muted p-4 text-center cursor-pointer transition-colors hover:bg-muted/80 active:bg-muted/60"
+            >
+              <p className="text-lg md:text-xl font-mono tracking-wider select-all break-all">
+                {singleUuid}
+              </p>
+            </div>
 
-        {error && <ToolValidationMessage message={error} />}
+            <p className="text-xs text-muted-foreground text-center">
+              v4 • 122 random bits • crypto.randomUUID()
+              {singleCopied && (
+                <span className="ml-2 text-green-500 inline-flex items-center gap-0.5">
+                  <Check className="h-3 w-3" /> {t('toolbox.actions.copied')}
+                </span>
+              )}
+            </p>
 
-        <div className="flex items-center gap-2">
-          <Button onClick={handleGenerate} size="sm" className="gap-1.5">
-            <RefreshCw className="h-3.5 w-3.5" />
-            {t('toolbox.tools.uuidGenerator.generate')}
-          </Button>
-          <Button onClick={handleCopy} variant="outline" size="sm" className="gap-1.5">
-            {copied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
-            {copied ? t('toolbox.actions.copied') : t('toolbox.actions.copy')}
-          </Button>
-        </div>
+            <div className="flex items-center justify-center gap-2">
+              <Button onClick={handleGenerateAndCopy} size="sm" className="gap-1.5">
+                <Sparkles className="h-3.5 w-3.5" />
+                {t('toolbox.tools.uuidGenerator.generate')} &amp; {t('toolbox.actions.copy')}
+              </Button>
+              <Button onClick={handleRegenerate} variant="outline" size="icon" className="h-8 w-8">
+                <RefreshCw className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </div>
+        </ToolSection>
 
-        <Textarea
-          value={uuids.join(separator === 'comma' ? ', ' : '\n')}
-          readOnly
-          rows={Math.min(10, Math.max(3, uuids.length))}
-          className="font-mono text-sm resize-none bg-muted/50"
-        />
+        {/* Batch Generate */}
+        <ToolSection title={t('toolbox.tools.uuidGenerator.generate')}>
+          <div className="space-y-4">
+            <ToolOptionGroup>
+              <div className="space-y-1">
+                <Label htmlFor="uuid-count" className="text-xs">{t('toolbox.tools.uuidGenerator.count')}</Label>
+                <Input
+                  id="uuid-count"
+                  type="number"
+                  min={1}
+                  max={TOOLBOX_LIMITS.generatorCount}
+                  value={count}
+                  onChange={(e) => setPreferences({ count: Math.max(1, Number(e.target.value) || 1) })}
+                  className="w-24 h-8"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <Switch id="uuid-upper" checked={uppercase} onCheckedChange={(checked) => setPreferences({ uppercase: checked })} />
+                <Label htmlFor="uuid-upper" className="text-sm">{t('toolbox.tools.uuidGenerator.uppercase')}</Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <Switch id="uuid-nodash" checked={noDashes} onCheckedChange={(checked) => setPreferences({ noDashes: checked })} />
+                <Label htmlFor="uuid-nodash" className="text-sm">{t('toolbox.tools.uuidGenerator.noDashes')}</Label>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">{t('toolbox.tools.uuidGenerator.separator')}</Label>
+                <Select value={separator} onValueChange={(value) => setPreferences({ separator: value })}>
+                  <SelectTrigger className="w-32 h-8">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="newline">{t('toolbox.tools.uuidGenerator.separatorNewline')}</SelectItem>
+                    <SelectItem value="comma">{t('toolbox.tools.uuidGenerator.separatorComma')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </ToolOptionGroup>
+
+            {error && <ToolValidationMessage message={error} />}
+
+            <div className="flex items-center gap-2">
+              <Button onClick={handleBatchGenerate} size="sm" className="gap-1.5">
+                <RefreshCw className="h-3.5 w-3.5" />
+                {t('toolbox.tools.uuidGenerator.generate')}
+              </Button>
+              {batchUuids.length > 0 && (
+                <Button
+                  onClick={() => copy(batchOutput)}
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                >
+                  {copied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
+                  {copied ? t('toolbox.actions.copied') : t('toolbox.actions.copy')}
+                </Button>
+              )}
+            </div>
+
+            {batchUuids.length > 0 && (
+              <ToolTextArea
+                label={`${batchUuids.length} UUIDs`}
+                value={batchOutput}
+                readOnly
+                rows={Math.min(count, 10) + 2}
+                showCopy
+              />
+            )}
+          </div>
+        </ToolSection>
       </div>
     </div>
   );

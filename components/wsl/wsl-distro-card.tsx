@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -55,12 +55,22 @@ export function WslDistroCard({
   const wslVer = parseInt(distro.wslVersion, 10);
   const targetVersion = wslVer === 1 ? 2 : 1;
   const [diskUsage, setDiskUsage] = useState<WslDiskUsage | null>(null);
+  const diskCacheRef = useRef<{ bytes: number; used: number; timestamp: number } | null>(null);
   const { distroTags, availableTags, setDistroTags } = useWslStore();
   const tags = distroTags[distro.name] ?? [];
 
   useEffect(() => {
     if (getDiskUsage) {
-      getDiskUsage(distro.name).then(setDiskUsage).catch(() => {});
+      const now = Date.now();
+      if (diskCacheRef.current && now - diskCacheRef.current.timestamp < 30000) {
+        return;
+      }
+      getDiskUsage(distro.name).then((usage) => {
+        setDiskUsage(usage);
+        if (usage) {
+          diskCacheRef.current = { bytes: usage.totalBytes, used: usage.usedBytes, timestamp: Date.now() };
+        }
+      }).catch(() => {});
     }
   }, [distro.name, getDiskUsage]);
 
@@ -87,7 +97,7 @@ export function WslDistroCard({
               <div className="flex items-center gap-2 mt-0.5">
                 <Badge
                   variant={isRunning ? 'default' : 'secondary'}
-                  className="text-xs"
+                  className={isRunning ? 'bg-green-500/10 text-green-700 dark:text-green-400 text-xs' : 'text-xs'}
                 >
                   {isRunning ? t('wsl.running') : t('wsl.stopped')}
                 </Badge>
@@ -95,7 +105,7 @@ export function WslDistroCard({
                   WSL {distro.wslVersion}
                 </Badge>
                 {distro.isDefault && (
-                  <Badge variant="outline" className="text-xs text-yellow-600 border-yellow-300">
+                  <Badge variant="outline" className="text-xs bg-amber-100 text-amber-700 border-amber-300 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-700">
                     {t('wsl.defaultBadge')}
                   </Badge>
                 )}
@@ -110,7 +120,7 @@ export function WslDistroCard({
                   <HardDrive className="h-3 w-3 shrink-0" />
                   <Progress
                     value={(diskUsage.usedBytes / diskUsage.totalBytes) * 100}
-                    className="h-1.5 flex-1 max-w-[120px]"
+                    className="h-1.5 flex-1 max-w-[200px]"
                   />
                   <span>{formatBytes(diskUsage.usedBytes)} / {formatBytes(diskUsage.totalBytes)}</span>
                 </div>

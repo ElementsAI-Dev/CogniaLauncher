@@ -6,8 +6,7 @@ import { ToolDetailPageClient } from '@/components/toolbox/tool-detail-page-clie
 import {
   decodeToolIdFromPath,
   getToolboxDetailPath,
-  isBuiltInToolId,
-  isPluginToolId,
+  shouldUseLegacyToolboxDetailRoute,
 } from '@/lib/toolbox-route';
 
 export default function LegacyToolDetailPage() {
@@ -23,7 +22,7 @@ export default function LegacyToolDetailPage() {
       return;
     }
 
-    if (isPluginToolId(toolId) || isBuiltInToolId(toolId)) {
+    if (shouldUseLegacyToolboxDetailRoute(toolId)) {
       return;
     }
 

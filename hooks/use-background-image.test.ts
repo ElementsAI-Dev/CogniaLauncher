@@ -6,7 +6,6 @@ const mockSetBackgroundEnabled = jest.fn();
 const mockClearBackground = jest.fn();
 const mockCompressImage = jest.fn();
 const mockSetBackgroundImageData = jest.fn();
-const mockNotifyBackgroundChange = jest.fn();
 const mockGetBackgroundImage = jest.fn(() => null);
 const mockToastError = jest.fn();
 
@@ -22,7 +21,6 @@ jest.mock('@/lib/theme/background', () => ({
   compressImage: (...args: unknown[]) => mockCompressImage(...args),
   setBackgroundImageData: (...args: unknown[]) => mockSetBackgroundImageData(...args),
   getBackgroundImage: (...args: unknown[]) => mockGetBackgroundImage(...args),
-  notifyBackgroundChange: (...args: unknown[]) => mockNotifyBackgroundChange(...args),
   BG_CHANGE_EVENT: 'bg-change',
 }));
 
@@ -72,5 +70,93 @@ describe('useBackgroundImage', () => {
 
     expect(mockToastError).toHaveBeenCalledWith('settings.backgroundTooLarge');
   });
-});
 
+  it('imports dropped image via unified processing pipeline', async () => {
+    const { result } = renderHook(() => useBackgroundImage(t));
+    const file = new File(['img'], 'a.png', { type: 'image/png' });
+
+    await act(async () => {
+      result.current.handleDrop({
+        preventDefault: jest.fn(),
+        dataTransfer: { files: [file] },
+      } as unknown as React.DragEvent<HTMLElement>);
+      await Promise.resolve();
+    });
+
+    expect(mockCompressImage).toHaveBeenCalledWith(file);
+    expect(mockSetBackgroundImageData).toHaveBeenCalledWith('data:image/png;base64,abc');
+    expect(mockSetBackgroundEnabled).toHaveBeenCalledWith(true);
+  });
+
+  it('imports pasted image via unified processing pipeline', async () => {
+    const { result } = renderHook(() => useBackgroundImage(t));
+    const file = new File(['img'], 'a.png', { type: 'image/png' });
+    const preventDefault = jest.fn();
+
+    await act(async () => {
+      result.current.handlePaste({
+        preventDefault,
+        clipboardData: {
+          items: [
+            {
+              type: 'image/png',
+              getAsFile: () => file,
+            },
+          ],
+        },
+      } as unknown as React.ClipboardEvent<HTMLElement>);
+      await Promise.resolve();
+    });
+
+    expect(preventDefault).toHaveBeenCalled();
+    expect(mockSetBackgroundImageData).toHaveBeenCalledWith('data:image/png;base64,abc');
+  });
+
+  it('shows deterministic error for unsupported format', async () => {
+    const { result } = renderHook(() => useBackgroundImage(t));
+    const file = new File(['text'], 'a.txt', { type: 'text/plain' });
+
+    await act(async () => {
+      result.current.handleDrop({
+        preventDefault: jest.fn(),
+        dataTransfer: { files: [file] },
+      } as unknown as React.DragEvent<HTMLElement>);
+      await Promise.resolve();
+    });
+
+    expect(mockToastError).toHaveBeenCalledWith('settings.backgroundUnsupportedFormat');
+    expect(mockSetBackgroundImageData).not.toHaveBeenCalled();
+  });
+
+  it('shows deterministic error for empty image payload', async () => {
+    const { result } = renderHook(() => useBackgroundImage(t));
+    const file = new File([], 'a.png', { type: 'image/png' });
+
+    await act(async () => {
+      result.current.handleDrop({
+        preventDefault: jest.fn(),
+        dataTransfer: { files: [file] },
+      } as unknown as React.DragEvent<HTMLElement>);
+      await Promise.resolve();
+    });
+
+    expect(mockToastError).toHaveBeenCalledWith('settings.backgroundInvalidImage');
+    expect(mockSetBackgroundImageData).not.toHaveBeenCalled();
+  });
+
+  it('shows deterministic error when processing fails', async () => {
+    const { result } = renderHook(() => useBackgroundImage(t));
+    const file = new File(['img'], 'a.png', { type: 'image/png' });
+    mockCompressImage.mockRejectedValueOnce(new Error('decode failure'));
+
+    await act(async () => {
+      result.current.handleDrop({
+        preventDefault: jest.fn(),
+        dataTransfer: { files: [file] },
+      } as unknown as React.DragEvent<HTMLElement>);
+      await Promise.resolve();
+    });
+
+    expect(mockToastError).toHaveBeenCalledWith('settings.backgroundProcessFailed');
+  });
+});

@@ -13,6 +13,7 @@ import type { GitRebaseTodoItem } from '@/types/tauri';
 
 export function GitInteractiveRebaseCard({
   loading,
+  supportReason,
   onPreview,
   onStart,
 }: GitInteractiveRebaseCardProps) {
@@ -21,7 +22,8 @@ export function GitInteractiveRebaseCard({
   const [todo, setTodo] = useState<GitRebaseTodoItem[]>([]);
   const [busy, setBusy] = useState(false);
 
-  const disabled = loading || busy;
+  const blocked = Boolean(supportReason);
+  const disabled = blocked || loading || busy;
 
   return (
     <Card>
@@ -33,6 +35,9 @@ export function GitInteractiveRebaseCard({
       </CardHeader>
       <CardContent className="space-y-3">
         <p className="text-xs text-muted-foreground">{t('git.interactiveRebase.description')}</p>
+        {supportReason && (
+          <p className="text-xs text-muted-foreground">{supportReason}</p>
+        )}
         <div className="flex gap-2">
           <Input
             value={base}

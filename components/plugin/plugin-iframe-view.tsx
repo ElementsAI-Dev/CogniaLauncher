@@ -1,11 +1,13 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { useLocale } from '@/components/providers/locale-provider';
 import { usePlugins } from '@/hooks/use-plugins';
+import { isInternalNavigationPath } from '@/lib/plugin-navigation';
 import { pluginGetUiEntry } from '@/lib/tauri';
 import { writeClipboard, readClipboard } from '@/lib/clipboard';
 import { AlertCircle, Shield } from 'lucide-react';
@@ -57,7 +59,16 @@ const BRIDGE_SCRIPT = `
     ui: {
       close: function() { return rpc('ui.close', {}); },
       setTitle: function(title) { return rpc('ui.setTitle', { title: title }); },
-      showToast: function(message, type) { return rpc('ui.showToast', { message: message, type: type }); }
+      showToast: function(message, type) { return rpc('ui.showToast', { message: message, type: type }); },
+      getContext: function() { return rpc('ui.getContext', {}); },
+      toast: function(message, options) { return rpc('ui.toast', Object.assign({ message: message }, options || {})); },
+      navigate: function(path) { return rpc('ui.navigate', { path: path }); },
+      confirm: function(message, options) { return rpc('ui.confirm', Object.assign({ message: message }, options || {})); },
+      pickFile: function(options) { return rpc('ui.pickFile', options || {}); },
+      pickDirectory: function(options) { return rpc('ui.pickDirectory', options || {}); },
+      saveFile: function(options) { return rpc('ui.saveFile', options || {}); },
+      openExternal: function(url) { return rpc('ui.openExternal', { url: url }); },
+      revealPath: function(path) { return rpc('ui.revealPath', { path: path }); }
     },
     clipboard: {
       read: function() { return rpc('clipboard.read', {}); },
@@ -236,10 +247,17 @@ interface PluginIframeViewProps {
   pluginId: string;
   toolEntry: string;
   className?: string;
+  onStateChange?: (state: 'loading' | 'success' | 'error', message?: string) => void;
 }
 
-export function PluginIframeView({ pluginId, toolEntry, className }: PluginIframeViewProps) {
+export function PluginIframeView({
+  pluginId,
+  toolEntry,
+  className,
+  onStateChange,
+}: PluginIframeViewProps) {
   const { t } = useLocale();
+  const router = useRouter();
   const { callTool, getLocales, translatePluginKey, getUiAsset } = usePlugins();
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [entry, setEntry] = useState<PluginUiEntry | null>(null);
@@ -285,10 +303,17 @@ export function PluginIframeView({ pluginId, toolEntry, className }: PluginIfram
       };
 
       const permissions = entry?.permissions ?? [];
+      const hasPermission = (permission: string) => permissions.includes(permission);
+      const makeUiResult = (
+        effect: string,
+        status: 'ok' | 'cancelled' | 'denied' | 'unavailable' | 'error',
+        data?: Record<string, unknown>,
+        message?: string,
+      ) => ({ effect, status, ...(message ? { message } : {}), ...(data ? { data } : {}) });
 
       try {
         switch (msg.method) {
-          // Logging — always allowed
+          // Logging 鈥?always allowed
           case 'log.info':
           case 'log.warn':
           case 'log.error':
@@ -297,7 +322,7 @@ export function PluginIframeView({ pluginId, toolEntry, className }: PluginIfram
             respond({ ok: true });
             break;
 
-          // i18n — always allowed
+          // i18n 鈥?always allowed
           case 'i18n.getLocale': {
             respond({ locale: document.documentElement.lang || 'en' });
             break;
@@ -310,7 +335,7 @@ export function PluginIframeView({ pluginId, toolEntry, className }: PluginIfram
             break;
           }
 
-          // UI controls — always allowed
+          // UI controls 鈥?always allowed
           case 'ui.close':
             respond({ ok: true });
             break;
@@ -321,8 +346,165 @@ export function PluginIframeView({ pluginId, toolEntry, className }: PluginIfram
             toast(msg.params?.message ?? '');
             respond({ ok: true });
             break;
+          case 'ui.getContext': {
+            const isDark = document.documentElement.classList.contains('dark');
+            respond({
+              locale: document.documentElement.lang || 'en',
+              theme: isDark ? 'dark' : 'light',
+              windowEffect: document.documentElement.getAttribute('data-window-effect') ?? 'auto',
+              desktop: true,
+              inAppEffects: true,
+            });
+            break;
+          }
+          case 'ui.toast': {
+            if (!hasPermission('ui_feedback')) {
+              respond(makeUiResult('toast', 'denied', undefined, 'ui_feedback permission not granted'));
+              break;
+            }
+            const level = typeof msg.params?.level === 'string' ? msg.params.level : 'info';
+            const message = msg.params?.message ?? '';
+            if (level === 'success') {
+              toast.success(message);
+            } else if (level === 'warning') {
+              toast.warning(message);
+            } else if (level === 'error') {
+              toast.error(message);
+            } else {
+              toast.info(message);
+            }
+            respond(makeUiResult('toast', 'ok'));
+            break;
+          }
+          case 'ui.navigate': {
+            if (!hasPermission('ui_navigation')) {
+              respond(makeUiResult('navigate', 'denied', undefined, 'ui_navigation permission not granted'));
+              break;
+            }
+            const path = typeof msg.params?.path === 'string' ? msg.params.path : '';
+            if (!isInternalNavigationPath(path)) {
+              respond(makeUiResult('navigate', 'error', undefined, "internal navigation paths must start with '/'."));
+              break;
+            }
+            router.push(path);
+            respond(makeUiResult('navigate', 'ok'));
+            break;
+          }
+          case 'ui.confirm': {
+            if (!hasPermission('ui_dialog')) {
+              respond(makeUiResult('confirm', 'denied', undefined, 'ui_dialog permission not granted'));
+              break;
+            }
+            const dialogModule = await import('@tauri-apps/plugin-dialog').catch(() => null);
+            if (!dialogModule?.confirm) {
+              respond(makeUiResult('confirm', 'unavailable', undefined, 'dialog host is unavailable'));
+              break;
+            }
+            const confirmed = await dialogModule.confirm(msg.params?.message ?? '', msg.params?.title);
+            respond(makeUiResult('confirm', confirmed ? 'ok' : 'cancelled', { confirmed }));
+            break;
+          }
+          case 'ui.pickFile': {
+            if (!hasPermission('ui_file_picker')) {
+              respond(makeUiResult('pick-file', 'denied', undefined, 'ui_file_picker permission not granted'));
+              break;
+            }
+            const dialogModule = await import('@tauri-apps/plugin-dialog').catch(() => null);
+            if (!dialogModule?.open) {
+              respond(makeUiResult('pick-file', 'unavailable', undefined, 'dialog host is unavailable'));
+              break;
+            }
+            const selected = await dialogModule.open({
+              title: msg.params?.title,
+              defaultPath: msg.params?.defaultPath,
+              multiple: Boolean(msg.params?.multiple),
+              filters: Array.isArray(msg.params?.filters) ? msg.params.filters : undefined,
+            });
+            if (!selected || (Array.isArray(selected) && selected.length === 0)) {
+              respond(makeUiResult('pick-file', 'cancelled'));
+              break;
+            }
+            const paths = Array.isArray(selected) ? selected : [selected];
+            respond(makeUiResult('pick-file', 'ok', { paths }));
+            break;
+          }
+          case 'ui.pickDirectory': {
+            if (!hasPermission('ui_file_picker')) {
+              respond(makeUiResult('pick-directory', 'denied', undefined, 'ui_file_picker permission not granted'));
+              break;
+            }
+            const dialogModule = await import('@tauri-apps/plugin-dialog').catch(() => null);
+            if (!dialogModule?.open) {
+              respond(makeUiResult('pick-directory', 'unavailable', undefined, 'dialog host is unavailable'));
+              break;
+            }
+            const selected = await dialogModule.open({
+              title: msg.params?.title,
+              defaultPath: msg.params?.defaultPath,
+              directory: true,
+              multiple: false,
+            });
+            if (!selected || Array.isArray(selected)) {
+              respond(makeUiResult('pick-directory', 'cancelled'));
+              break;
+            }
+            respond(makeUiResult('pick-directory', 'ok', { path: selected }));
+            break;
+          }
+          case 'ui.saveFile': {
+            if (!hasPermission('ui_file_picker')) {
+              respond(makeUiResult('save-file', 'denied', undefined, 'ui_file_picker permission not granted'));
+              break;
+            }
+            const dialogModule = await import('@tauri-apps/plugin-dialog').catch(() => null);
+            if (!dialogModule?.save) {
+              respond(makeUiResult('save-file', 'unavailable', undefined, 'dialog host is unavailable'));
+              break;
+            }
+            const selected = await dialogModule.save({
+              title: msg.params?.title,
+              defaultPath: msg.params?.defaultPath,
+              filters: Array.isArray(msg.params?.filters) ? msg.params.filters : undefined,
+            });
+            if (!selected) {
+              respond(makeUiResult('save-file', 'cancelled'));
+              break;
+            }
+            respond(makeUiResult('save-file', 'ok', { path: selected }));
+            break;
+          }
+          case 'ui.openExternal': {
+            if (!hasPermission('ui_navigation')) {
+              respond(makeUiResult('open-external', 'denied', undefined, 'ui_navigation permission not granted'));
+              break;
+            }
+            const openerModule = await import('@tauri-apps/plugin-opener').catch(() => null);
+            const url = typeof msg.params?.url === 'string' ? msg.params.url : '';
+            if (!openerModule?.openUrl || !url) {
+              respond(makeUiResult('open-external', 'unavailable', undefined, 'external opener is unavailable'));
+              break;
+            }
+            await openerModule.openUrl(url);
+            respond(makeUiResult('open-external', 'ok'));
+            break;
+          }
+          case 'ui.revealPath': {
+            if (!hasPermission('ui_navigation')) {
+              respond(makeUiResult('reveal-path', 'denied', undefined, 'ui_navigation permission not granted'));
+              break;
+            }
+            const openerModule = await import('@tauri-apps/plugin-opener').catch(() => null);
+            const path = typeof msg.params?.path === 'string' ? msg.params.path : '';
+            if (!openerModule?.revealItemInDir || !path) {
+              respond(makeUiResult('reveal-path', 'unavailable', undefined, 'path reveal is unavailable'));
+              break;
+            }
+            await openerModule.revealItemInDir(path);
+            respond(makeUiResult('reveal-path', 'ok', { path }));
+            break;
+          }
 
-          // Clipboard — permission-gated
+          // Clipboard 鈥?permission-gated
           case 'clipboard.read':
             if (!permissions.includes('clipboard')) {
               respond(undefined, 'clipboard permission not granted');
@@ -366,7 +548,7 @@ export function PluginIframeView({ pluginId, toolEntry, className }: PluginIfram
             break;
           }
 
-          // Theme info — always allowed
+          // Theme info 鈥?always allowed
           case 'theme.current': {
             const isDark = document.documentElement.classList.contains('dark');
             respond({ mode: isDark ? 'dark' : 'light' });
@@ -380,13 +562,27 @@ export function PluginIframeView({ pluginId, toolEntry, className }: PluginIfram
         respond(undefined, (e as Error).message ?? String(e));
       }
     },
-    [pluginId, toolEntry, entry, callTool, getLocales, translatePluginKey, getUiAsset],
+    [pluginId, toolEntry, entry, callTool, getLocales, translatePluginKey, getUiAsset, router],
   );
 
   useEffect(() => {
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
   }, [handleMessage]);
+
+  useEffect(() => {
+    if (loading) {
+      onStateChange?.('loading');
+      return;
+    }
+
+    if (error || !entry) {
+      onStateChange?.('error', error ?? t('toolbox.plugin.iframeError'));
+      return;
+    }
+
+    onStateChange?.('success');
+  }, [entry, error, loading, onStateChange, t]);
 
   if (loading) {
     return (

@@ -20,6 +20,7 @@ import {
 import {
   categorizeUpdateError,
   deriveStatusFromUpdateInfo,
+  mapSelfUpdateErrorCategory,
   mapProgressToUpdateStatus,
   normalizeSelfUpdateInfo,
 } from "@/lib/update-lifecycle";
@@ -54,6 +55,30 @@ export interface UseAboutDataReturn {
   exportDiagnostics: (t: (key: string) => string) => Promise<void>;
 }
 
+function toAboutErrorKey(category: UpdateErrorCategory | null): string {
+  switch (category) {
+    case "network_error":
+      return "network_error";
+    case "timeout_error":
+      return "timeout_error";
+    case "source_unavailable_error":
+      return "source_unavailable_error";
+    case "validation_error":
+      return "validation_error";
+    case "signature_error":
+      return "signature_error";
+    case "update_install_failed":
+      return "update_install_failed";
+    case "unknown_error":
+      return "unknown_error";
+    case "update_check_failed":
+    case "permission_error":
+    case "unsupported_error":
+    default:
+      return "update_check_failed";
+  }
+}
+
 export function useAboutData(locale: string): UseAboutDataReturn {
   const [updateInfo, setUpdateInfo] = useState<tauri.SelfUpdateInfo | null>(
     null,
@@ -83,6 +108,10 @@ export function useAboutData(locale: string): UseAboutDataReturn {
           latest_version: APP_VERSION,
           update_available: false,
           release_notes: null,
+          selected_source: null,
+          attempted_sources: [],
+          error_category: null,
+          error_message: null,
         },
         APP_VERSION,
       );
@@ -105,18 +134,20 @@ export function useAboutData(locale: string): UseAboutDataReturn {
         APP_VERSION,
       );
       setUpdateInfo(info);
-      setUpdateStatus(deriveStatusFromUpdateInfo(info));
+      const status = deriveStatusFromUpdateInfo(info);
+      setUpdateStatus(status);
+      if (status === "error") {
+        const category =
+          mapSelfUpdateErrorCategory(info.error_category) ?? "update_check_failed";
+        setUpdateErrorCategory(category);
+        setUpdateErrorMessage(info.error_message ?? null);
+        setError(toAboutErrorKey(category));
+      }
     } catch (err) {
       const category = categorizeUpdateError(err);
       setUpdateErrorCategory(category);
       setUpdateErrorMessage(err instanceof Error ? err.message : String(err));
-      if (category === "network_error") {
-        setError("network_error");
-      } else if (category === "timeout_error") {
-        setError("timeout_error");
-      } else {
-        setError("update_check_failed");
-      }
+      setError(toAboutErrorKey(category));
       setUpdateStatus("error");
       const fallback = normalizeSelfUpdateInfo(
         {
@@ -124,6 +155,10 @@ export function useAboutData(locale: string): UseAboutDataReturn {
           latest_version: APP_VERSION,
           update_available: false,
           release_notes: null,
+          selected_source: null,
+          attempted_sources: [],
+          error_category: null,
+          error_message: null,
         },
         APP_VERSION,
       );
@@ -510,7 +545,12 @@ export function useAboutData(locale: string): UseAboutDataReturn {
           }
           if (event.status === "error") {
             setUpdating(false);
-            setUpdateErrorCategory("update_install_failed");
+            const mapped = mapSelfUpdateErrorCategory(event.errorCategory);
+            setUpdateErrorCategory(mapped ?? "update_install_failed");
+            setUpdateErrorMessage(
+              event.errorMessage ?? "Update progress reported an error",
+            );
+            setError(toAboutErrorKey(mapped ?? "update_install_failed"));
           }
         });
         unlisten = handler;

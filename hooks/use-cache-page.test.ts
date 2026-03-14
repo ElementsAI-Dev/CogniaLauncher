@@ -30,6 +30,15 @@ const mockToastInfo = jest.fn();
 const mockToastWarning = jest.fn();
 const mockEmitInvalidations = jest.fn();
 const mockSubscribeInvalidation = jest.fn(() => () => {});
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
 const mockSettingsState = {
   cacheInfo: { total_size: 1024, max_size: 4096, usage_percent: 25 },
   cacheSettings: { max_size: 4096, retention_days: 7 },
@@ -213,5 +222,37 @@ describe('useCachePage', () => {
       ['cache_overview', 'cache_entries', 'about_cache_stats'],
       'cache-page:optimize',
     );
+  });
+
+  it('keeps latest browser result when older fetch resolves after newer fetch', async () => {
+    const first = deferred<{ entries: Array<{ key: string }>; total_count: number }>();
+    const second = deferred<{ entries: Array<{ key: string }>; total_count: number }>();
+    mockListCacheEntries
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
+
+    const { result } = renderHook(() => useCachePage({ t }));
+
+    let firstTask: Promise<void> | undefined;
+    let secondTask: Promise<void> | undefined;
+    await act(async () => {
+      firstTask = result.current.fetchBrowserEntries(false, 0, 'older');
+      secondTask = result.current.fetchBrowserEntries(false, 0, 'newer');
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      second.resolve({ entries: [{ key: 'newer' }], total_count: 1 });
+      await secondTask;
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      first.resolve({ entries: [{ key: 'older' }], total_count: 1 });
+      await firstTask;
+      await Promise.resolve();
+    });
+
+    expect(result.current.browserEntries[0]?.key).toBe('newer');
   });
 });

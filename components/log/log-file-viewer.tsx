@@ -9,17 +9,19 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { LogToolbar } from "./log-toolbar";
 import { LogEntry } from "./log-entry";
 import { useLogs } from "@/hooks/use-logs";
 import { useLogStore } from "@/lib/stores/log";
 import type { LogEntry as UiLogEntry, LogFilter, LogLevel } from "@/types/log";
+import type { LogQueryMeta } from "@/types/tauri";
 import { normalizeLevel, parseTimestamp } from "@/lib/log";
 import { useLocale } from "@/components/providers/locale-provider";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
-import { FileText, Loader2, RefreshCw, ArrowDownToLine } from "lucide-react";
+import { FileText, Loader2, RefreshCw, ArrowDownToLine, TriangleAlert } from "lucide-react";
 import { Toggle } from "@/components/ui/toggle";
 import { cn } from "@/lib/utils";
 import { writeClipboard } from "@/lib/clipboard";
@@ -45,6 +47,19 @@ const DEFAULT_HISTORICAL_FILTER: LogFilter = {
   startTime: null,
   endTime: null,
 };
+
+const EMPTY_QUERY_META: LogQueryMeta = {
+  scannedLines: 0,
+  sourceLineCount: 0,
+  matchedCount: 0,
+  effectiveMaxScanLines: null,
+  scanTruncated: false,
+  windowStartLine: null,
+  windowEndLine: null,
+  queryFingerprint: "",
+};
+
+type HistoricalViewState = "ready" | "empty" | "truncated" | "error";
 
 function findNearestEntryIndex(offsets: number[], targetOffset: number): number {
   if (offsets.length <= 1) return 0;
@@ -85,6 +100,9 @@ export function LogFileViewer({
   const [entries, setEntries] = useState<UiLogEntry[]>([]);
   const [hasMore, setHasMore] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
+  const [queryMeta, setQueryMeta] = useState<LogQueryMeta>(EMPTY_QUERY_META);
+  const [queryError, setQueryError] = useState<string | null>(null);
+  const [viewState, setViewState] = useState<HistoricalViewState>("empty");
   const [loading, setLoading] = useState(false);
   const [following, setFollowing] = useState(false);
   const [historicalFilter, setHistoricalFilter] = useState<LogFilter>(
@@ -94,6 +112,7 @@ export function LogFileViewer({
   const [viewportHeight, setViewportHeight] = useState(600);
   const [rowHeights, setRowHeights] = useState<Record<string, number>>({});
   const requestSequenceRef = useRef(0);
+  const entriesRef = useRef<UiLogEntry[]>([]);
   const scrollAreaRef = useRef<HTMLDivElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const followingRef = useRef(false);
@@ -204,6 +223,10 @@ export function LogFileViewer({
     [fileName],
   );
 
+  useEffect(() => {
+    entriesRef.current = entries;
+  }, [entries]);
+
   const loadEntries = useCallback(
     async (offset = 0, append = false, maxScanLines?: number) => {
       if (!fileName) return;
@@ -222,27 +245,62 @@ export function LogFileViewer({
         }
 
         if (!result.ok) {
+          const errorMessage = result.error || t("logs.loadEntriesError");
           pendingScrollIntentRef.current = null;
           setEntries([]);
+          entriesRef.current = [];
           setHasMore(false);
           setTotalCount(0);
-          toast.error(result.error || t("logs.loadEntriesError"));
+          setQueryMeta(EMPTY_QUERY_META);
+          setQueryError(errorMessage);
+          setViewState("error");
+          toast.error(errorMessage);
           return;
         }
 
         const nextEntries = result.data.entries.map(mapEntry);
-        setEntries((prev) =>
-          append ? [...nextEntries, ...prev] : nextEntries,
-        );
+        const combinedEntries = append
+          ? [...nextEntries, ...entriesRef.current]
+          : nextEntries;
+        const resultMeta = result.data.meta ?? EMPTY_QUERY_META;
+        setEntries(combinedEntries);
+        entriesRef.current = combinedEntries;
         setHasMore(result.data.hasMore);
         setTotalCount(result.data.totalCount);
+        setQueryMeta({
+          ...resultMeta,
+          matchedCount: resultMeta.matchedCount ?? result.data.totalCount,
+          scannedLines: resultMeta.scannedLines ?? 0,
+          sourceLineCount: resultMeta.sourceLineCount ?? 0,
+          effectiveMaxScanLines: resultMeta.effectiveMaxScanLines ?? null,
+          scanTruncated: Boolean(resultMeta.scanTruncated),
+          windowStartLine: combinedEntries[0]?.line ?? null,
+          windowEndLine: combinedEntries[combinedEntries.length - 1]?.line ?? null,
+          queryFingerprint: resultMeta.queryFingerprint ?? "",
+        });
+        setQueryError(null);
+        if (combinedEntries.length === 0) {
+          setViewState(resultMeta.scanTruncated ? "truncated" : "empty");
+        } else {
+          setViewState(resultMeta.scanTruncated ? "truncated" : "ready");
+        }
       } catch (error) {
         if (requestId !== requestSequenceRef.current) {
           return;
         }
+        const fallbackError = error instanceof Error && error.message
+          ? error.message
+          : t("logs.loadEntriesError");
         pendingScrollIntentRef.current = null;
+        setEntries([]);
+        entriesRef.current = [];
+        setHasMore(false);
+        setTotalCount(0);
+        setQueryMeta(EMPTY_QUERY_META);
+        setQueryError(fallbackError);
+        setViewState("error");
         console.error("Failed to load log entries:", error);
-        toast.error(t("logs.loadEntriesError"));
+        toast.error(fallbackError);
       } finally {
         if (requestId === requestSequenceRef.current) {
           setLoading(false);
@@ -441,6 +499,13 @@ export function LogFileViewer({
       lastLoadedFileRef.current = null;
       viewportRef.current = null;
       setLoading(false);
+      setEntries([]);
+      entriesRef.current = [];
+      setHasMore(false);
+      setTotalCount(0);
+      setQueryMeta(EMPTY_QUERY_META);
+      setQueryError(null);
+      setViewState("empty");
       setFollowing(false);
       followingRef.current = false;
       setScrollTop(0);
@@ -459,6 +524,9 @@ export function LogFileViewer({
   useEffect(() => {
     if (open) return;
     setHistoricalFilter(DEFAULT_HISTORICAL_FILTER);
+    setQueryMeta(EMPTY_QUERY_META);
+    setQueryError(null);
+    setViewState("empty");
   }, [open]);
 
   useEffect(
@@ -608,6 +676,33 @@ export function LogFileViewer({
   const primaryContentRegionLabel = fileName
     ? `${t("logs.fileViewerTitle")}: ${fileName}`
     : t("logs.fileViewerTitle");
+  const windowRangeLabel = queryMeta.windowStartLine != null && queryMeta.windowEndLine != null
+    ? `${queryMeta.windowStartLine}-${queryMeta.windowEndLine}`
+    : "-";
+  const scannedRangeLabel = queryMeta.sourceLineCount > 0
+    ? `${queryMeta.scannedLines}/${queryMeta.sourceLineCount}`
+    : `${queryMeta.scannedLines}`;
+  const historicalFilterSummary = useMemo(() => {
+    const parts: string[] = [];
+    if (historicalFilter.levels.length > 0) {
+      parts.push(`levels=${historicalFilter.levels.join(",")}`);
+    }
+    if (historicalFilter.search.trim().length > 0) {
+      parts.push(`search=${historicalFilter.search.trim()}`);
+    }
+    if (historicalFilter.target && historicalFilter.target.trim().length > 0) {
+      parts.push(`target=${historicalFilter.target.trim()}`);
+    }
+    if (historicalFilter.startTime != null || historicalFilter.endTime != null) {
+      parts.push(
+        `time=${historicalFilter.startTime ?? "min"}..${historicalFilter.endTime ?? "max"}`,
+      );
+    }
+    if (historicalFilter.maxScanLines && historicalFilter.maxScanLines > 0) {
+      parts.push(`maxScan=${historicalFilter.maxScanLines}`);
+    }
+    return parts.length > 0 ? parts.join(" | ") : "none";
+  }, [historicalFilter]);
 
   const handleCopyFilePath = useCallback(async () => {
     if (!selectedLogPath) return;
@@ -704,6 +799,29 @@ export function LogFileViewer({
                 </Button>
               </div>
             </div>
+            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground/90">
+              <span>state={viewState}</span>
+              <span>matched={queryMeta.matchedCount}</span>
+              <span>window={windowRangeLabel}</span>
+              <span>scanned={scannedRangeLabel}</span>
+              <span>
+                scanCap=
+                {queryMeta.effectiveMaxScanLines != null
+                  ? queryMeta.effectiveMaxScanLines
+                  : "none"}
+              </span>
+            </div>
+            <p className="mt-1 truncate text-[11px] text-muted-foreground/80">
+              filters={historicalFilterSummary}
+            </p>
+            {viewState === "truncated" && (
+              <p
+                data-testid="log-file-viewer-truncated-hint"
+                className="mt-1 text-[11px] text-amber-600"
+              >
+                Results are partial because the historical scan window is capped.
+              </p>
+            )}
           </section>
 
           <section
@@ -735,19 +853,56 @@ export function LogFileViewer({
                     </div>
                   ))}
                 </div>
+              ) : viewState === "error" ? (
+                <div className="p-3">
+                  <Alert variant="destructive" data-testid="log-file-viewer-error-state">
+                    <TriangleAlert />
+                    <AlertTitle>Failed to load log history</AlertTitle>
+                    <AlertDescription>
+                      <p>{queryError || t("logs.loadEntriesError")}</p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-2"
+                        onClick={handleRefresh}
+                      >
+                        {t("common.refresh")}
+                      </Button>
+                    </AlertDescription>
+                  </Alert>
+                </div>
               ) : entries.length === 0 ? (
-                <Empty className="h-full border-none">
+                <Empty
+                  className="h-full border-none"
+                  data-testid={
+                    viewState === "truncated"
+                      ? "log-file-viewer-truncated-empty-state"
+                      : "log-file-viewer-empty-state"
+                  }
+                >
                   <EmptyHeader>
                     <EmptyMedia variant="icon">
                       <FileText />
                     </EmptyMedia>
                     <EmptyTitle className="text-sm font-normal text-muted-foreground">
-                      {t("logs.noFileEntries")}
+                      {viewState === "truncated"
+                        ? "No entries found in the scanned window"
+                        : t("logs.noFileEntries")}
                     </EmptyTitle>
+                    {viewState === "truncated" ? (
+                      <p className="text-xs text-muted-foreground">
+                        Increase max scan lines or narrow filters to inspect older history.
+                      </p>
+                    ) : null}
                   </EmptyHeader>
                 </Empty>
               ) : (
                 <div className="divide-y divide-border/50">
+                  {viewState === "truncated" && (
+                    <div className="px-3 py-2 text-xs text-amber-600">
+                      Showing partial history from the newest scanned lines only.
+                    </div>
+                  )}
                   {hasMore && (
                     <div className="p-3 text-center">
                       <Button

@@ -19,7 +19,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { HardDrive } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { HardDrive, Info } from 'lucide-react';
 import type { WslResizeDialogProps } from '@/types/wsl';
 
 export function WslResizeDialog({
@@ -34,16 +35,19 @@ export function WslResizeDialog({
 
   const handleSubmit = () => {
     const val = sizeValue.trim();
-    if (!val) return;
+    if (!val || Number(val) <= 0) return;
     onConfirm(`${val}${sizeUnit}`);
     onOpenChange(false);
     setSizeValue('');
     setSizeUnit('GB');
   };
 
+  const numericValue = Number(sizeValue);
+  const isValidSize = sizeValue.trim() !== '' && numericValue > 0;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[400px]">
+      <DialogContent className="sm:max-w-100">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <HardDrive className="h-5 w-5" />
@@ -53,6 +57,13 @@ export function WslResizeDialog({
         </DialogHeader>
 
         <div className="space-y-4 py-2">
+          <Alert variant="default" className="bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800">
+            <Info className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+            <AlertDescription className="text-xs text-blue-700 dark:text-blue-300">
+              {t('wsl.dialog.resizeHint')}
+            </AlertDescription>
+          </Alert>
+
           <div className="space-y-2">
             <Label htmlFor="wsl-resize-size">{t('wsl.resizeSize')}</Label>
             <div className="flex gap-2">
@@ -64,13 +75,13 @@ export function WslResizeDialog({
                 value={sizeValue}
                 onChange={(e) => setSizeValue(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && sizeValue.trim()) handleSubmit();
+                  if (e.key === 'Enter' && isValidSize) handleSubmit();
                 }}
-                className="flex-1"
+                className="h-9 flex-1"
                 autoFocus
               />
               <Select value={sizeUnit} onValueChange={setSizeUnit}>
-                <SelectTrigger className="w-[80px]">
+                <SelectTrigger className="h-9 w-20">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -89,7 +100,7 @@ export function WslResizeDialog({
           </Button>
           <Button
             onClick={handleSubmit}
-            disabled={!sizeValue.trim()}
+            disabled={!isValidSize}
           >
             {t('wsl.dialog.resize')}
           </Button>

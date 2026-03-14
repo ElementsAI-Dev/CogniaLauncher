@@ -44,7 +44,9 @@ export function VersionCards({ loading, updateInfo, t }: VersionCardsProps) {
               >
                 v{currentVersion}
               </span>
-              {updateInfo?.update_available === false && (
+              {updateInfo?.update_available === false &&
+                !updateInfo?.error_category &&
+                !updateInfo?.error_message && (
                 <Badge
                   variant="secondary"
                   role="status"

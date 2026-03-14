@@ -74,6 +74,37 @@ const CATEGORY_ICONS: Record<FeedbackCategory, React.ElementType> = {
   other: MoreHorizontal,
 };
 
+const SUCCESS_CLOSE_DELAY_MS = 1800;
+
+function shouldPersistDraft(title: string, description: string) {
+  return title.trim().length > 0 || description.trim().length > 0;
+}
+
+function buildDraftData({
+  category,
+  severity,
+  title,
+  description,
+  contactEmail,
+  includeDiagnostics,
+}: {
+  category: FeedbackCategory;
+  severity: FeedbackSeverity;
+  title: string;
+  description: string;
+  contactEmail: string;
+  includeDiagnostics: boolean;
+}): Partial<FeedbackFormData> {
+  return {
+    category,
+    severity: SEVERITY_CATEGORIES.includes(category) ? severity : undefined,
+    title,
+    description,
+    contactEmail: contactEmail || undefined,
+    includeDiagnostics,
+  };
+}
+
 interface FeedbackSubmitSuccessProps {
   thankYouLabel: string;
   thankYouDescription: string;
@@ -124,15 +155,40 @@ export function FeedbackDialog() {
   const [historyOpen, setHistoryOpen] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const successTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearSuccessTimeout = useCallback(() => {
+    if (successTimeoutRef.current) {
+      clearTimeout(successTimeoutRef.current);
+      successTimeoutRef.current = null;
+    }
+  }, []);
+
+  const resetForm = useCallback(() => {
+    clearSuccessTimeout();
+    setCategory("bug");
+    setSeverity("medium");
+    setTitle("");
+    setDescription("");
+    setContactEmail("");
+    setIncludeDiagnostics(true);
+    setScreenshot(null);
+    setCapturingScreenshot(false);
+    setTitleTouched(false);
+    setEmailError(null);
+    setRestoredFromDraft(false);
+    setDragOver(false);
+    setPreviewOpen(false);
+    setSubmitted(false);
+  }, [clearSuccessTimeout]);
 
   useEffect(() => {
     if (!dialogOpen) return;
 
-    if (preSelectedCategory) {
-      setCategory(preSelectedCategory);
-    } else if (draft?.category) {
-      setCategory(draft.category);
-    }
+    resetForm();
+
+    const initialCategory = preSelectedCategory ?? draft?.category ?? "bug";
+    setCategory(initialCategory);
 
     if (preFilledErrorContext) {
       const errMsg = preFilledErrorContext.message || "";
@@ -149,7 +205,7 @@ export function FeedbackDialog() {
           .filter(Boolean)
           .join("\n"),
       );
-      if (preSelectedCategory === "crash" || preSelectedCategory === "bug") {
+      if (initialCategory === "crash" || initialCategory === "bug") {
         setSeverity("high");
       }
       return;
@@ -165,32 +221,27 @@ export function FeedbackDialog() {
       }
       setRestoredFromDraft(true);
     }
-  }, [dialogOpen, preSelectedCategory, preFilledErrorContext, draft]);
+  }, [dialogOpen, preSelectedCategory, preFilledErrorContext, draft, resetForm]);
 
-  const resetForm = useCallback(() => {
-    setCategory("bug");
-    setSeverity("medium");
-    setTitle("");
-    setDescription("");
-    setContactEmail("");
-    setIncludeDiagnostics(true);
-    setScreenshot(null);
-    setTitleTouched(false);
-    setEmailError(null);
-    setRestoredFromDraft(false);
-    setSubmitted(false);
-  }, []);
+  useEffect(() => {
+    return () => {
+      clearSuccessTimeout();
+    };
+  }, [clearSuccessTimeout]);
 
   const handleClose = useCallback(() => {
-    if (title.trim() || description.trim()) {
-      saveDraft({
-        category,
-        severity: SEVERITY_CATEGORIES.includes(category) ? severity : undefined,
-        title,
-        description,
-        contactEmail: contactEmail || undefined,
-        includeDiagnostics,
-      });
+    clearSuccessTimeout();
+    if (shouldPersistDraft(title, description)) {
+      saveDraft(
+        buildDraftData({
+          category,
+          severity,
+          title,
+          description,
+          contactEmail,
+          includeDiagnostics,
+        }),
+      );
     }
     closeDialog();
   }, [
@@ -200,6 +251,7 @@ export function FeedbackDialog() {
     severity,
     contactEmail,
     includeDiagnostics,
+    clearSuccessTimeout,
     saveDraft,
     closeDialog,
   ]);
@@ -218,15 +270,17 @@ export function FeedbackDialog() {
       errorContext: preFilledErrorContext || undefined,
     };
 
-    const result = await submitFeedback(data, t);
-    if (result !== undefined) {
+    const outcome = await submitFeedback(data, t);
+    if (outcome.success) {
       clearDraft();
       resetForm();
       setSubmitted(true);
-      setTimeout(() => {
+      clearSuccessTimeout();
+      successTimeoutRef.current = setTimeout(() => {
         setSubmitted(false);
+        successTimeoutRef.current = null;
         closeDialog();
-      }, 1800);
+      }, SUCCESS_CLOSE_DELAY_MS);
     }
   }, [
     category,
@@ -239,6 +293,7 @@ export function FeedbackDialog() {
     preFilledErrorContext,
     submitFeedback,
     clearDraft,
+    clearSuccessTimeout,
     resetForm,
     closeDialog,
     t,

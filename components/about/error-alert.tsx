@@ -18,12 +18,22 @@ export function ErrorAlert({ error, onRetry, onDismiss, t }: ErrorAlertProps) {
 
   const getErrorMessage = (errorKey: string): string => {
     switch (errorKey) {
+      case "source_unavailable_error":
+        return t("about.sourceUnavailableError");
       case "network_error":
         return t("about.networkError");
       case "timeout_error":
         return t("about.timeoutError");
+      case "validation_error":
+        return t("about.validationError");
+      case "signature_error":
+        return t("about.signatureError");
+      case "update_install_failed":
+        return t("about.updateInstallFailed");
       case "update_check_failed":
         return t("about.updateCheckFailed");
+      case "unknown_error":
+        return t("about.unknownError");
       default:
         return errorKey;
     }

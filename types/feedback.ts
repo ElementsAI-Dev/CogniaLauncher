@@ -54,6 +54,20 @@ export interface FeedbackSaveResult {
   diagnosticError?: string;
 }
 
+export type FeedbackSubmitOutcome =
+  | {
+      success: true;
+      mode: 'tauri';
+      result: FeedbackSaveResult;
+    }
+  | {
+      success: true;
+      mode: 'web';
+    }
+  | {
+      success: false;
+    };
+
 export interface FeedbackListResult {
   items: FeedbackItem[];
   total: number;

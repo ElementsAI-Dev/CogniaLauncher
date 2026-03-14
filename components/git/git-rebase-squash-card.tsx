@@ -11,6 +11,7 @@ import type { GitRebaseSquashCardProps } from '@/types/git';
 
 export function GitRebaseSquashCard({
   loading,
+  supportReason,
   onRebase,
   onSquash,
 }: GitRebaseSquashCardProps) {
@@ -20,7 +21,8 @@ export function GitRebaseSquashCard({
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const disabled = loading || busy;
+  const blocked = Boolean(supportReason);
+  const disabled = blocked || loading || busy;
 
   return (
     <Card>
@@ -32,6 +34,9 @@ export function GitRebaseSquashCard({
       </CardHeader>
       <CardContent className="space-y-3">
         <p className="text-xs text-muted-foreground">{t('git.quickOps.description')}</p>
+        {supportReason && (
+          <p className="text-xs text-muted-foreground">{supportReason}</p>
+        )}
 
         <div className="space-y-2">
           <Input

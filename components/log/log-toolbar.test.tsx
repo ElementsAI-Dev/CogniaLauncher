@@ -113,6 +113,31 @@ describe("LogToolbar", () => {
     expect(screen.getByTestId("log-toolbar-advanced-row")).toBeInTheDocument();
   });
 
+  it("normalizes dense sizing and cluster shells in primary controls", () => {
+    useLogStore.setState({
+      ...useLogStore.getState(),
+      filter: { ...useLogStore.getState().filter, search: "warn" },
+    });
+
+    render(<LogToolbar />);
+
+    const primaryRow = screen.getByTestId("log-toolbar-primary-row");
+    const searchInput = screen.getByRole("searchbox", {
+      name: /search logs/i,
+    });
+    const clearSearch = screen.getByRole("button", {
+      name: /clear search/i,
+    });
+
+    expect(primaryRow.className).toContain("flex-wrap");
+    expect(searchInput.className).toContain("h-9");
+    expect(clearSearch.className).toContain("h-8");
+    expect(clearSearch.className).toContain("w-8");
+    expect(
+      primaryRow.querySelectorAll('[data-slot="toolbar-cluster"]').length,
+    ).toBeGreaterThanOrEqual(3);
+  });
+
   it("shows export format menu", async () => {
     const user = userEvent.setup();
     render(<LogToolbar />);

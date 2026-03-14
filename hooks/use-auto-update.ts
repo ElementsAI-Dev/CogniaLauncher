@@ -9,6 +9,7 @@ import type { UpdateErrorCategory, UpdateStatus } from '@/types/about';
 import {
   categorizeUpdateError,
   deriveStatusFromUpdateInfo,
+  mapSelfUpdateErrorCategory,
   mapProgressToUpdateStatus,
   normalizeSelfUpdateInfo,
 } from '@/lib/update-lifecycle';
@@ -18,6 +19,8 @@ export interface UpdateInfo {
   latestVersion: string | null;
   updateAvailable: boolean;
   releaseNotes: string | null;
+  selectedSource: string | null;
+  attemptedSources: string[];
   checking: boolean;
   progress: number;
   status: UpdateStatus;
@@ -38,6 +41,8 @@ export function useAutoUpdate(options: UseAutoUpdateOptions = {}) {
     latestVersion: null,
     updateAvailable: false,
     releaseNotes: null,
+    selectedSource: null,
+    attemptedSources: [],
     checking: false,
     progress: 0,
     status: 'idle',
@@ -108,14 +113,28 @@ export function useAutoUpdate(options: UseAutoUpdateOptions = {}) {
         latestVersion: info.latest_version,
         updateAvailable: info.update_available,
         releaseNotes: info.release_notes,
+        selectedSource: info.selected_source ?? null,
+        attemptedSources: info.attempted_sources ?? [],
         checking: false,
         progress: 0,
         status,
-        errorCategory: null,
-        errorMessage: null,
-        error: null,
+        errorCategory:
+          status === 'error'
+            ? mapSelfUpdateErrorCategory(info.error_category) ?? 'update_check_failed'
+            : null,
+        errorMessage: status === 'error' ? info.error_message ?? null : null,
+        error: status === 'error' ? info.error_message ?? 'Update check failed' : null,
       };
       setUpdateInfo(newUpdateInfo);
+
+      if (status === 'error') {
+        if (!silent) {
+          toast.error(
+            info.error_message || 'Failed to check for updates from configured sources',
+          );
+        }
+        return;
+      }
 
       if (info.update_available) {
         if (appSettings.autoInstallUpdates) {
@@ -183,12 +202,24 @@ export function useAutoUpdate(options: UseAutoUpdateOptions = {}) {
               checking: false,
               error:
                 event.status === 'error'
-                  ? prev.error || 'Update progress reported an error'
-                  : prev.error,
+                ? prev.error || 'Update progress reported an error'
+                : prev.error,
               errorCategory:
                 event.status === 'error'
-                  ? prev.errorCategory || 'update_install_failed'
+                  ? mapSelfUpdateErrorCategory(event.errorCategory) ||
+                    prev.errorCategory ||
+                    'update_install_failed'
                   : prev.errorCategory,
+              errorMessage:
+                event.status === 'error'
+                  ? event.errorMessage || prev.errorMessage
+                  : prev.errorMessage,
+              selectedSource:
+                event.selectedSource || prev.selectedSource,
+              attemptedSources:
+                event.attemptedSources && event.attemptedSources.length > 0
+                  ? event.attemptedSources
+                  : prev.attemptedSources,
             };
           });
         });

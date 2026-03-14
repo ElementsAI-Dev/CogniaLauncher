@@ -440,6 +440,10 @@ export default function PluginsPage() {
         },
         language: scaffoldForm.language,
         permissions: {
+          uiFeedback: false,
+          uiDialog: false,
+          uiFilePicker: false,
+          uiNavigation: false,
           configRead: scaffoldForm.permConfigRead,
           envRead: scaffoldForm.permEnvRead,
           pkgSearch: scaffoldForm.permPkgSearch,

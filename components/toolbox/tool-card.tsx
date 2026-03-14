@@ -82,9 +82,10 @@ export function ToolCard({ tool, isFavorite, onToggleFavorite, onOpen, viewMode,
 
   return (
     <Card
-      className="group/card cursor-pointer transition-all hover:shadow-md hover:border-primary/30"
+      className="group/card relative cursor-pointer overflow-hidden transition-all hover:shadow-md hover:border-primary/30"
       onClick={() => onOpen(tool.id)}
     >
+      <div className={cn('absolute inset-x-0 top-0 h-1', category?.color)} />
       <CardContent className="relative flex flex-col items-center gap-3 p-5 text-center">
         <Button
           variant="ghost"
@@ -122,10 +123,22 @@ export function ToolCard({ tool, isFavorite, onToggleFavorite, onOpen, viewMode,
           )}
           {useCount > 0 && (
             <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-muted text-muted-foreground">
-              {useCount}×
+              {t('toolbox.categories.mostUsed')}: {useCount}x
             </Badge>
           )}
         </div>
+
+        <Button
+          size="sm"
+          variant="outline"
+          className="mt-1 h-7 px-3 text-xs opacity-0 transition-opacity group-hover/card:opacity-100"
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpen(tool.id);
+          }}
+        >
+          {t('toolbox.actions.open')}
+        </Button>
       </CardContent>
     </Card>
   );

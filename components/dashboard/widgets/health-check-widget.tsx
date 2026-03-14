@@ -18,6 +18,7 @@ import type { HealthStatus } from '@/types/tauri';
 import {
   DashboardMetricGrid,
   DashboardMetricItem,
+  DashboardEmptyState,
   DashboardStatusBadge,
 } from '@/components/dashboard/dashboard-primitives';
 
@@ -27,7 +28,7 @@ interface HealthCheckWidgetProps {
 
 export function HealthCheckWidget({ className }: HealthCheckWidgetProps) {
   const { t } = useLocale();
-  const { systemHealth, loading, summary: hookSummary, checkAll } = useHealthCheck();
+  const { systemHealth, loading, error, summary, checkAll } = useHealthCheck();
   const hasAutoCheckedRef = useRef(false);
 
   useEffect(() => {
@@ -39,17 +40,6 @@ export function HealthCheckWidget({ className }: HealthCheckWidgetProps) {
   const overallStatus: HealthStatus = systemHealth?.overall_status ?? 'unknown';
   const config = HEALTH_STATUS_CONFIG[overallStatus];
   const StatusIcon = config.icon;
-  const summary = hookSummary ?? {
-    environmentCount: systemHealth?.environments.length ?? 0,
-    healthyCount: systemHealth?.environments.filter((e) => e.status === 'healthy').length ?? 0,
-    warningCount: systemHealth?.environments.filter((e) => e.status === 'warning').length ?? 0,
-    errorCount: systemHealth?.environments.filter((e) => e.status === 'error').length ?? 0,
-    unavailableCount: systemHealth?.environments.filter((e) => e.status === 'unknown').length ?? 0,
-    packageManagerCount: (systemHealth?.package_managers ?? []).length,
-    unavailablePackageManagerCount: (systemHealth?.package_managers ?? []).filter((p) => p.status === 'unknown').length,
-    issueCount: systemHealth?.system_issues.length ?? 0,
-    actionableIssueCount: 0,
-  };
 
   const envCount = summary.environmentCount;
   const healthyCount = summary.healthyCount;
@@ -74,6 +64,7 @@ export function HealthCheckWidget({ className }: HealthCheckWidgetProps) {
             className="h-8 w-8"
             onClick={() => checkAll({ force: true })}
             disabled={loading}
+            aria-label={t('dashboard.widgets.healthCheckRun')}
           >
             {loading ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -84,67 +75,97 @@ export function HealthCheckWidget({ className }: HealthCheckWidgetProps) {
         </CardAction>
       </CardHeader>
       <CardContent>
-        {/* Overall Status */}
-        <Alert
-          variant={overallStatus === 'error' ? 'destructive' : 'default'}
-          className="mb-3"
-        >
-          <StatusIcon className={`h-5 w-5 ${config.color}`} />
-          <AlertTitle className={config.color}>
-            {t(`dashboard.widgets.healthStatus_${overallStatus}`)}
-          </AlertTitle>
-          {issueCount > 0 && (
-            <AlertDescription>
-              {t('dashboard.widgets.healthIssues', { count: issueCount })}
+        {error && (
+          <Alert variant="destructive" className="mb-3">
+            <AlertTitle>{t('dashboard.widgets.sectionNeedsAttention')}</AlertTitle>
+            <AlertDescription className="space-y-2">
+              <p>{error}</p>
+              <Button variant="outline" size="sm" onClick={() => checkAll({ force: true })}>
+                {t('dashboard.widgets.retry')}
+              </Button>
             </AlertDescription>
-          )}
-        </Alert>
-
-        {/* Environment Breakdown */}
-        {envCount > 0 && (
-          <DashboardMetricGrid columns={4} className="mb-3">
-            <DashboardMetricItem
-              label={t('dashboard.widgets.healthHealthy')}
-              value={healthyCount}
-              valueClassName="text-lg text-green-600"
-            />
-            <DashboardMetricItem
-              label={t('dashboard.widgets.healthWarnings')}
-              value={warningCount}
-              valueClassName="text-lg text-yellow-600"
-            />
-            <DashboardMetricItem
-              label={t('dashboard.widgets.healthErrors')}
-              value={errorCount}
-              valueClassName="text-lg text-red-600"
-            />
-            <DashboardMetricItem
-              label={t('dashboard.widgets.healthUnavailable')}
-              value={unavailableCount}
-              valueClassName="text-lg text-slate-600"
-            />
-          </DashboardMetricGrid>
+          </Alert>
         )}
 
-        {/* Top Issues */}
-        {systemHealth && systemHealth.system_issues.length > 0 && (
-          <div className="space-y-1.5 mb-3">
-            {systemHealth.system_issues.slice(0, 3).map((issue, i) => (
-              <div key={i} className="flex items-start gap-2 text-xs">
-                <DashboardStatusBadge
-                  tone={issue.severity === 'critical' || issue.severity === 'error'
-                    ? 'danger'
-                    : issue.severity === 'warning'
-                      ? 'warning'
-                      : 'muted'}
-                  className="shrink-0"
-                >
-                  {issue.severity}
-                </DashboardStatusBadge>
-                <span className="text-muted-foreground line-clamp-1">{issue.message}</span>
+        {!systemHealth && (
+          <DashboardEmptyState
+            className="py-4"
+            icon={loading ? <Loader2 className="h-8 w-8 animate-spin text-muted-foreground/70" /> : <StatusIcon className={`h-8 w-8 ${config.color}`} />}
+            message={loading ? t('dashboard.widgets.sectionLoading') : t('dashboard.widgets.healthCheckPrompt')}
+            action={!loading ? (
+              <Button size="sm" className="mt-1 gap-2" onClick={() => checkAll({ force: true })}>
+                <RefreshCw className="h-4 w-4" />
+                {t('dashboard.widgets.healthCheckRun')}
+              </Button>
+            ) : undefined}
+          />
+        )}
+
+        {systemHealth && (
+          <>
+            {/* Overall Status */}
+            <Alert
+              variant={overallStatus === 'error' ? 'destructive' : 'default'}
+              className="mb-3"
+            >
+              <StatusIcon className={`h-5 w-5 ${config.color}`} />
+              <AlertTitle className={config.color}>
+                {t(`dashboard.widgets.healthStatus_${overallStatus}`)}
+              </AlertTitle>
+              {issueCount > 0 && (
+                <AlertDescription>
+                  {t('dashboard.widgets.healthIssues', { count: issueCount })}
+                </AlertDescription>
+              )}
+            </Alert>
+
+            {/* Environment Breakdown */}
+            {envCount > 0 && (
+              <DashboardMetricGrid columns={4} className="mb-3">
+                <DashboardMetricItem
+                  label={t('dashboard.widgets.healthHealthy')}
+                  value={healthyCount}
+                  valueClassName="text-lg text-green-600"
+                />
+                <DashboardMetricItem
+                  label={t('dashboard.widgets.healthWarnings')}
+                  value={warningCount}
+                  valueClassName="text-lg text-yellow-600"
+                />
+                <DashboardMetricItem
+                  label={t('dashboard.widgets.healthErrors')}
+                  value={errorCount}
+                  valueClassName="text-lg text-red-600"
+                />
+                <DashboardMetricItem
+                  label={t('dashboard.widgets.healthUnavailable')}
+                  value={unavailableCount}
+                  valueClassName="text-lg text-slate-600"
+                />
+              </DashboardMetricGrid>
+            )}
+
+            {/* Top Issues */}
+            {systemHealth.system_issues.length > 0 && (
+              <div className="space-y-1.5 mb-3">
+                {systemHealth.system_issues.slice(0, 3).map((issue, i) => (
+                  <div key={i} className="flex items-start gap-2 text-xs">
+                    <DashboardStatusBadge
+                      tone={issue.severity === 'critical' || issue.severity === 'error'
+                        ? 'danger'
+                        : issue.severity === 'warning'
+                          ? 'warning'
+                          : 'muted'}
+                      className="shrink-0"
+                    >
+                      {issue.severity}
+                    </DashboardStatusBadge>
+                    <span className="text-muted-foreground line-clamp-1">{issue.message}</span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            )}
+          </>
         )}
       </CardContent>
       <CardFooter className="border-t pt-4">

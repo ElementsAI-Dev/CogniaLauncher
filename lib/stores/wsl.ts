@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { WslNetworkPreset } from '@/lib/constants/wsl';
+import type { WslBatchWorkflowPreset, WslBatchWorkflowSummary } from '@/types/wsl';
 import {
   DEFAULT_WSL_OVERVIEW_CONTEXT,
   type WslOverviewContext,
@@ -48,8 +49,22 @@ interface WslStoreState {
   removeCustomProfile: (id: string) => void;
   updateCustomProfile: (id: string, updates: Partial<WslNetworkPreset>) => void;
 
+  workflowPresets: WslBatchWorkflowPreset[];
+  workflowSummaries: WslBatchWorkflowSummary[];
+  addWorkflowPreset: (preset: Omit<WslBatchWorkflowPreset, 'id' | 'createdAt' | 'updatedAt'>) => void;
+  updateWorkflowPreset: (
+    id: string,
+    updates: Partial<Omit<WslBatchWorkflowPreset, 'id' | 'createdAt'>>
+  ) => void;
+  removeWorkflowPreset: (id: string) => void;
+  recordWorkflowSummary: (summary: WslBatchWorkflowSummary) => void;
+
   overviewContext: WslOverviewContext;
   setOverviewContext: (context: Partial<WslOverviewContext>) => void;
+}
+
+function createPersistedId(prefix: string) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
 export const useWslStore = create<WslStoreState>()(
@@ -116,6 +131,44 @@ export const useWslStore = create<WslStoreState>()(
           ),
         })),
 
+      workflowPresets: [],
+      workflowSummaries: [],
+      addWorkflowPreset: (preset) =>
+        set((state) => {
+          const timestamp = new Date().toISOString();
+          return {
+            workflowPresets: [
+              ...state.workflowPresets,
+              {
+                ...preset,
+                id: createPersistedId('workflow'),
+                createdAt: timestamp,
+                updatedAt: timestamp,
+              },
+            ],
+          };
+        }),
+      updateWorkflowPreset: (id, updates) =>
+        set((state) => ({
+          workflowPresets: state.workflowPresets.map((preset) =>
+            preset.id === id
+              ? {
+                  ...preset,
+                  ...updates,
+                  updatedAt: new Date().toISOString(),
+                }
+              : preset
+          ),
+        })),
+      removeWorkflowPreset: (id) =>
+        set((state) => ({
+          workflowPresets: state.workflowPresets.filter((preset) => preset.id !== id),
+        })),
+      recordWorkflowSummary: (summary) =>
+        set((state) => ({
+          workflowSummaries: [summary, ...state.workflowSummaries].slice(0, 10),
+        })),
+
       overviewContext: DEFAULT_WSL_OVERVIEW_CONTEXT,
       setOverviewContext: (context) =>
         set((state) => ({
@@ -128,8 +181,24 @@ export const useWslStore = create<WslStoreState>()(
     }),
     {
       name: 'cognia-wsl-store',
-      version: 1,
-      migrate: (persisted) => persisted as WslStoreState,
+      version: 2,
+      migrate: (persisted, version) => {
+        if (!persisted || typeof persisted !== 'object') {
+          return persisted as WslStoreState;
+        }
+
+        const typed = persisted as Partial<WslStoreState>;
+
+        if (version < 2) {
+          return {
+            ...typed,
+            workflowPresets: typed.workflowPresets ?? [],
+            workflowSummaries: typed.workflowSummaries ?? [],
+          } as WslStoreState;
+        }
+
+        return typed as WslStoreState;
+      },
     }
   )
 );

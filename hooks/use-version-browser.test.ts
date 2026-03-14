@@ -74,8 +74,22 @@ describe('useVersionBrowser', () => {
     // Wait for effect
     await act(async () => {});
 
-    expect(mockEnvAvailableVersions).toHaveBeenCalledWith('node');
+    expect(mockEnvAvailableVersions).toHaveBeenCalledWith('node', undefined);
     expect(mockSetAvailableVersions).toHaveBeenCalledWith('node', versions);
+  });
+
+  it('fetches and caches versions by provider key when provider is selected', async () => {
+    const versions = [makeVersion('21.0.0')];
+    mockEnvAvailableVersions.mockResolvedValue(versions);
+
+    renderHook(() =>
+      useVersionBrowser('java', true, [], mockOnInstall, mockOnUninstall, 'sdkman', mockT),
+    );
+
+    await act(async () => {});
+
+    expect(mockEnvAvailableVersions).toHaveBeenCalledWith('java', 'sdkman');
+    expect(mockSetAvailableVersions).toHaveBeenCalledWith('java::sdkman', versions);
   });
 
   it('handles install for a single version', async () => {

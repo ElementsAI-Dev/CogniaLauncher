@@ -1,14 +1,19 @@
 'use client';
 
+import { useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
-import { Terminal, Star, Timer, Loader2, Stethoscope, CheckCircle2, AlertTriangle, XCircle } from 'lucide-react';
-import type { ShellInfo, ShellStartupMeasurement, ShellHealthResult } from '@/types/tauri';
+import {
+  Terminal, Star, Timer, Loader2, Stethoscope, CheckCircle2, AlertTriangle, XCircle,
+  ChevronDown, Shield, Fish, Monitor, Atom,
+} from 'lucide-react';
+import type { ShellInfo, ShellStartupMeasurement, ShellHealthResult, ShellType } from '@/types/tauri';
 import { useLocale } from '@/components/providers/locale-provider';
 
 interface TerminalDetectedShellsProps {
@@ -28,6 +33,35 @@ const STATUS_ICONS = {
   error: <XCircle className="h-3.5 w-3.5 text-destructive" />,
   unknown: null,
 };
+
+function getShellIcon(shellType: ShellType) {
+  switch (shellType) {
+    case 'powershell':
+      return <Shield className="h-4 w-4 text-blue-500" />;
+    case 'fish':
+      return <Fish className="h-4 w-4 text-orange-500" />;
+    case 'cmd':
+      return <Monitor className="h-4 w-4 text-gray-500" />;
+    case 'nushell':
+      return <Atom className="h-4 w-4 text-purple-500" />;
+    case 'zsh':
+      return <Terminal className="h-4 w-4 text-emerald-500" />;
+    case 'bash':
+    default:
+      return <Terminal className="h-4 w-4" />;
+  }
+}
+
+function getFilename(path: string): string {
+  const parts = path.split(/[/\\]/);
+  return parts[parts.length - 1] || path;
+}
+
+function getStartupColorClass(ms: number): string {
+  if (ms < 100) return 'text-green-600 dark:text-green-400';
+  if (ms <= 300) return 'text-yellow-600 dark:text-yellow-400';
+  return 'text-red-600 dark:text-red-400';
+}
 
 export function TerminalDetectedShells({ shells, loading, startupMeasurements = {}, measuringShellId, onMeasureStartup, healthResults = {}, checkingHealthShellId, onCheckShellHealth }: TerminalDetectedShellsProps) {
   const { t } = useLocale();
@@ -67,111 +101,143 @@ export function TerminalDetectedShells({ shells, loading, startupMeasurements = 
     );
   }
 
+  const healthyCount = Object.values(healthResults).filter(r => r.status === 'healthy').length;
+  const defaultShell = shells.find(s => s.isDefault);
+
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      {shells.map((shell) => (
-        <Card key={shell.id} className={cn(shell.isDefault && 'border-primary/50')}>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Terminal className="h-4 w-4" />
-                {shell.name}
-              </CardTitle>
-              {shell.isDefault && (
-                <Badge variant="secondary" className="gap-1">
-                  <Star className="h-3 w-3" />
-                  {t('terminal.default')}
-                </Badge>
-              )}
-            </div>
-            {shell.version && (
-              <CardDescription>v{shell.version}</CardDescription>
-            )}
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            <div>
-              <span className="text-muted-foreground">{t('terminal.path')}: </span>
+    <div className="space-y-4">
+      {shells.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="secondary">
+            {t('terminal.shellsSummary', { count: shells.length })}
+          </Badge>
+          {Object.keys(healthResults).length > 0 && (
+            <Badge variant="outline" className="gap-1">
+              <CheckCircle2 className="h-3 w-3 text-green-500" />
+              {t('terminal.healthySummary', { count: healthyCount })}
+            </Badge>
+          )}
+          {defaultShell && (
+            <Badge variant="outline" className="gap-1">
+              <Star className="h-3 w-3" />
+              {defaultShell.name}
+            </Badge>
+          )}
+        </div>
+      )}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {shells.map((shell) => (
+          <ShellCard
+            key={shell.id}
+            shell={shell}
+            startupMeasurement={startupMeasurements[shell.id]}
+            measuringShellId={measuringShellId}
+            onMeasureStartup={onMeasureStartup}
+            healthResult={healthResults[shell.id]}
+            checkingHealthShellId={checkingHealthShellId}
+            onCheckShellHealth={onCheckShellHealth}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ShellCard({
+  shell,
+  startupMeasurement,
+  measuringShellId,
+  onMeasureStartup,
+  healthResult,
+  checkingHealthShellId,
+  onCheckShellHealth,
+}: {
+  shell: ShellInfo;
+  startupMeasurement?: ShellStartupMeasurement;
+  measuringShellId?: string | null;
+  onMeasureStartup?: (shellId: string) => void;
+  healthResult?: ShellHealthResult;
+  checkingHealthShellId?: string | null;
+  onCheckShellHealth?: (shellId: string) => void;
+}) {
+  const { t } = useLocale();
+  const [issuesOpen, setIssuesOpen] = useState(false);
+  const [configOpen, setConfigOpen] = useState(false);
+
+  const hasActions = !!onMeasureStartup || !!onCheckShellHealth;
+  const issues = healthResult?.issues ?? [];
+
+  return (
+    <Card className={cn('flex flex-col', shell.isDefault && 'border-primary/50')}>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2 text-base">
+            {getShellIcon(shell.shellType)}
+            {shell.name}
+          </CardTitle>
+          {shell.isDefault && (
+            <Badge variant="secondary" className="gap-1">
+              <Star className="h-3 w-3" />
+              {t('terminal.default')}
+            </Badge>
+          )}
+        </div>
+        {shell.version && (
+          <CardDescription>v{shell.version}</CardDescription>
+        )}
+      </CardHeader>
+      <CardContent className="flex-1 space-y-2 text-sm">
+        <div>
+          <span className="text-muted-foreground">{t('terminal.path')}: </span>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <code className="rounded bg-muted px-1 py-0.5 text-xs truncate max-w-[200px] inline-block align-bottom">
+                {getFilename(shell.executablePath)}
+              </code>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="max-w-sm font-mono text-xs break-all">
+              {shell.executablePath}
+            </TooltipContent>
+          </Tooltip>
+        </div>
+        {startupMeasurement && (
+          <div className="flex items-center gap-1.5 text-xs">
+            <Badge variant="outline" className={cn('text-[10px] px-1.5 py-0', getStartupColorClass(startupMeasurement.withProfileMs))}>
+              {startupMeasurement.withProfileMs}ms
+            </Badge>
+            {startupMeasurement.differenceMs > 50 && (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <code className="rounded bg-muted px-1 py-0.5 text-xs truncate max-w-[200px] inline-block align-bottom">
-                    {shell.executablePath}
-                  </code>
+                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                    +{startupMeasurement.differenceMs}ms
+                  </Badge>
                 </TooltipTrigger>
-                <TooltipContent side="bottom" className="max-w-sm font-mono text-xs break-all">
-                  {shell.executablePath}
+                <TooltipContent side="bottom" className="text-xs">
+                  {t('terminal.startupWithProfile')}: {startupMeasurement.withProfileMs}ms | {t('terminal.startupWithoutProfile')}: {startupMeasurement.withoutProfileMs}ms
                 </TooltipContent>
               </Tooltip>
-            </div>
-            {onMeasureStartup && (
-              <div className="flex items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 text-xs gap-1"
-                  onClick={() => onMeasureStartup(shell.id)}
-                  disabled={measuringShellId === shell.id}
-                  aria-label={`${t('terminal.measureStartup')} ${shell.name}`}
-                >
-                  {measuringShellId === shell.id ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : (
-                    <Timer className="h-3 w-3" />
-                  )}
-                  {t('terminal.measureStartup')}
-                </Button>
-                {startupMeasurements[shell.id] && (
-                  <div className="flex items-center gap-1.5 text-xs">
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                      {startupMeasurements[shell.id].withProfileMs}ms
-                    </Badge>
-                    {startupMeasurements[shell.id].differenceMs > 50 && (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                            +{startupMeasurements[shell.id].differenceMs}ms
-                          </Badge>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom" className="text-xs">
-                          {t('terminal.startupWithProfile')}: {startupMeasurements[shell.id].withProfileMs}ms | {t('terminal.startupWithoutProfile')}: {startupMeasurements[shell.id].withoutProfileMs}ms
-                        </TooltipContent>
-                      </Tooltip>
-                    )}
-                  </div>
-                )}
-              </div>
             )}
-            {onCheckShellHealth && (
-              <div className="flex items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 text-xs gap-1"
-                  onClick={() => onCheckShellHealth(shell.id)}
-                  disabled={checkingHealthShellId === shell.id}
-                  aria-label={`${t('terminal.healthCheck')} ${shell.name}`}
-                >
-                  {checkingHealthShellId === shell.id ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : (
-                    <Stethoscope className="h-3 w-3" />
-                  )}
-                  {t('terminal.healthCheck')}
-                </Button>
-                {healthResults[shell.id] && (
-                  <div className="flex items-center gap-1">
-                    {STATUS_ICONS[healthResults[shell.id].status]}
-                    <span className="text-xs text-muted-foreground">
-                      {healthResults[shell.id].issues.length === 0
-                        ? t('terminal.healthHealthy')
-                        : t('terminal.healthIssues', { count: healthResults[shell.id].issues.length })}
-                    </span>
-                  </div>
-                )}
-              </div>
-            )}
-            {healthResults[shell.id]?.issues.length > 0 && (
-              <ul className="space-y-1">
-                {healthResults[shell.id].issues.map((issue, idx) => (
+          </div>
+        )}
+        {healthResult && (
+          <div className="flex items-center gap-1">
+            {STATUS_ICONS[healthResult.status]}
+            <span className="text-xs text-muted-foreground">
+              {issues.length === 0
+                ? t('terminal.healthHealthy')
+                : t('terminal.healthIssues', { count: issues.length })}
+            </span>
+          </div>
+        )}
+        {issues.length > 0 && (
+          <Collapsible open={issuesOpen} onOpenChange={setIssuesOpen}>
+            <CollapsibleTrigger className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
+              <ChevronDown className={cn('h-3 w-3 transition-transform', issuesOpen && 'rotate-180')} />
+              {t('terminal.healthIssues', { count: issues.length })}
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <ul className="mt-1 space-y-1">
+                {issues.map((issue, idx) => (
                   <li key={idx} className="flex items-start gap-1.5 text-xs">
                     <span className={cn(
                       'mt-0.5 h-1.5 w-1.5 rounded-full shrink-0',
@@ -181,40 +247,83 @@ export function TerminalDetectedShells({ shells, loading, startupMeasurements = 
                   </li>
                 ))}
               </ul>
-            )}
-            {shell.configFiles.length > 0 && (
-              <div>
-                <span className="text-muted-foreground">{t('terminal.configFiles')}: </span>
-                <ul className="mt-1 space-y-1">
-                  {shell.configFiles.map((cf) => (
-                    <li key={cf.path} className="flex items-center gap-2 text-xs">
-                      <span className={cn(
-                        'h-1.5 w-1.5 rounded-full',
-                        cf.exists ? 'bg-green-500' : 'bg-muted-foreground/30'
-                      )} />
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <code className="truncate rounded bg-muted px-1 py-0.5 max-w-[200px] inline-block align-bottom">
-                            {cf.path}
-                          </code>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom" className="max-w-sm font-mono text-xs break-all">
-                          {cf.path}
-                        </TooltipContent>
-                      </Tooltip>
-                      {cf.exists && cf.sizeBytes > 0 && (
-                        <span className="text-muted-foreground">
-                          ({(cf.sizeBytes / 1024).toFixed(1)} KB)
-                        </span>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      ))}
-    </div>
+            </CollapsibleContent>
+          </Collapsible>
+        )}
+        {shell.configFiles.length > 0 && (
+          <Collapsible open={configOpen} onOpenChange={setConfigOpen}>
+            <CollapsibleTrigger className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
+              <ChevronDown className={cn('h-3 w-3 transition-transform', configOpen && 'rotate-180')} />
+              {t('terminal.configFilesCount', { count: shell.configFiles.length })}
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <ul className="mt-1 space-y-1">
+                {shell.configFiles.map((cf) => (
+                  <li key={cf.path} className="flex items-center gap-2 text-xs">
+                    <span className={cn(
+                      'h-1.5 w-1.5 rounded-full',
+                      cf.exists ? 'bg-green-500' : 'bg-muted-foreground/30'
+                    )} />
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <code className="truncate rounded bg-muted px-1 py-0.5 max-w-[200px] inline-block align-bottom">
+                          {getFilename(cf.path)}
+                        </code>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="max-w-sm font-mono text-xs break-all">
+                        {cf.path}
+                      </TooltipContent>
+                    </Tooltip>
+                    {cf.exists && cf.sizeBytes > 0 && (
+                      <span className="text-muted-foreground">
+                        ({(cf.sizeBytes / 1024).toFixed(1)} KB)
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </CollapsibleContent>
+          </Collapsible>
+        )}
+      </CardContent>
+      {hasActions && (
+        <CardFooter className="flex gap-2 border-t pt-3">
+          {onMeasureStartup && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs gap-1"
+              onClick={() => onMeasureStartup(shell.id)}
+              disabled={measuringShellId === shell.id}
+              aria-label={`${t('terminal.measureStartup')} ${shell.name}`}
+            >
+              {measuringShellId === shell.id ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Timer className="h-3 w-3" />
+              )}
+              {t('terminal.measureStartup')}
+            </Button>
+          )}
+          {onCheckShellHealth && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs gap-1"
+              onClick={() => onCheckShellHealth(shell.id)}
+              disabled={checkingHealthShellId === shell.id}
+              aria-label={`${t('terminal.healthCheck')} ${shell.name}`}
+            >
+              {checkingHealthShellId === shell.id ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Stethoscope className="h-3 w-3" />
+              )}
+              {t('terminal.healthCheck')}
+            </Button>
+          )}
+        </CardFooter>
+      )}
+    </Card>
   );
 }

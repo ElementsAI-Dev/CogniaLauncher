@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import {
   Table,
@@ -52,6 +53,7 @@ import {
   HardDrive,
   Package,
   RefreshCw,
+  AlertCircle,
   Terminal,
   Trash2,
   Wrench,
@@ -72,6 +74,7 @@ export function CacheDetailExternalView() {
   const {
     caches,
     loading,
+    readState,
     useTrash,
     setUseTrash,
     cleanTarget,
@@ -232,6 +235,19 @@ export function CacheDetailExternalView() {
           <Label htmlFor="detail-external-trash" className="text-muted-foreground">{t('cache.useTrash')}</Label>
         </div>
       </div>
+
+      {readState.error && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription className="flex items-center justify-between gap-3">
+            <span>{readState.error}</span>
+            <Button variant="outline" size="sm" onClick={fetchExternalCaches}>
+              <RefreshCw className="h-3 w-3 mr-1" />
+              {t('common.retry')}
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
 
       {/* Cache List by Category */}
       {loading ? (

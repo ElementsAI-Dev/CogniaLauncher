@@ -768,6 +768,7 @@ pub struct RustupOverride {
 /// Parse `rust-version` field from Cargo.toml content.
 /// Matches `rust-version = "X.Y"` or `rust-version = "X.Y.Z"` anywhere in the file.
 /// The `rust-version` key is unique in the TOML namespace so no section-awareness is needed.
+#[cfg(test)]
 pub(crate) fn parse_cargo_toml_rust_version(content: &str) -> Option<String> {
     for line in content.lines() {
         let line = line.trim();

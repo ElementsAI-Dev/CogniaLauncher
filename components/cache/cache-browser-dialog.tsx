@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   Select,
   SelectContent,
@@ -43,7 +44,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { FolderOpen, RefreshCw, Trash2 } from 'lucide-react';
+import { AlertCircle, FolderOpen, RefreshCw, Trash2 } from 'lucide-react';
 import type { CacheEntryItem } from '@/lib/tauri';
 import { ENTRIES_PER_PAGE } from '@/lib/constants/cache';
 import type { CacheBrowserTypeFilter } from '@/types/cache';
@@ -65,9 +66,11 @@ export interface CacheBrowserDialogProps {
   setBrowserPage: (value: number) => void;
   browserSelectedKeys: Set<string>;
   setBrowserSelectedKeys: (value: Set<string>) => void;
+  browserError: string | null;
   useTrash: boolean;
   setUseTrash: (value: boolean) => void;
   fetchBrowserEntries: (reset?: boolean, page?: number) => void;
+  handleRetryBrowser: () => void;
   handleDeleteSelectedEntries: () => void;
 }
 
@@ -88,9 +91,11 @@ export function CacheBrowserDialog({
   setBrowserPage,
   browserSelectedKeys,
   setBrowserSelectedKeys,
+  browserError,
   useTrash,
   setUseTrash,
   fetchBrowserEntries,
+  handleRetryBrowser,
   handleDeleteSelectedEntries,
 }: CacheBrowserDialogProps) {
   const { t } = useLocale();
@@ -159,6 +164,19 @@ export function CacheBrowserDialog({
             <RefreshCw className={`h-4 w-4 ${browserLoading ? 'animate-spin' : ''}`} />
           </Button>
         </div>
+
+        {browserError && (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription className="flex items-center justify-between gap-3">
+              <span>{browserError}</span>
+              <Button variant="outline" size="sm" onClick={handleRetryBrowser}>
+                <RefreshCw className="h-3 w-3 mr-1" />
+                {t('common.retry')}
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
 
         {/* Entry List */}
         <ScrollArea className="h-[400px] rounded-md border">

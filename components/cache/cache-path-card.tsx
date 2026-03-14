@@ -6,11 +6,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
-import { ChevronDown, FolderOpen, FolderInput, Link2, RotateCcw, Save } from 'lucide-react';
+import { FolderOpen, FolderInput, Link2, RotateCcw, Save } from 'lucide-react';
 import { toast } from 'sonner';
 import { isTauri } from '@/lib/tauri';
 import type { CachePathInfo } from '@/lib/tauri';
@@ -20,7 +18,6 @@ import { CacheMigrationDialog } from './cache-migration-dialog';
 
 export function CachePathCard({ refreshTrigger, onPathChanged }: CachePathCardProps) {
   const { t } = useLocale();
-  const [isOpen, setIsOpen] = useState(false);
   const [pathInfo, setPathInfo] = useState<CachePathInfo | null>(null);
   const [newPath, setNewPath] = useState('');
   const [editing, setEditing] = useState(false);
@@ -84,7 +81,6 @@ export function CachePathCard({ refreshTrigger, onPathChanged }: CachePathCardPr
     }
   };
 
-
   const handleBrowse = useCallback(async () => {
     if (!isTauri()) return;
     try {
@@ -107,146 +103,133 @@ export function CachePathCard({ refreshTrigger, onPathChanged }: CachePathCardPr
   return (
     <>
       <Card>
-        <Collapsible open={isOpen} onOpenChange={(o) => { setIsOpen(o); if (o) fetchPathInfo(); }}>
-          <CardHeader className="pb-2">
-            <CollapsibleTrigger asChild>
-              <div className="flex items-center justify-between cursor-pointer" data-testid="cache-path-trigger">
-                <div className="flex items-center gap-2">
-                  <FolderOpen className="h-5 w-5" />
-                  <CardTitle className="text-base">{t('cache.pathManagement')}</CardTitle>
-                  {pathInfo?.isSymlink && (
-                    <Badge variant="secondary" className="gap-1">
-                      <Link2 className="h-3 w-3" /> {t('cache.symlink')}
-                    </Badge>
-                  )}
-                  {pathInfo?.isCustom && (
-                    <Badge variant="outline">{t('cache.customPath')}</Badge>
-                  )}
-                </div>
-                <ChevronDown className={`h-4 w-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-sm">
+            <FolderOpen className="h-4 w-4" />
+            {t('cache.pathManagement')}
+            {pathInfo?.isSymlink && (
+              <Badge variant="secondary" className="gap-1 text-[10px] px-1.5 py-0">
+                <Link2 className="h-2.5 w-2.5" /> {t('cache.symlink')}
+              </Badge>
+            )}
+            {pathInfo?.isCustom && (
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0">{t('cache.customPath')}</Badge>
+            )}
+          </CardTitle>
+          <CardDescription className="text-xs">{t('cache.pathManagementDesc')}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {!pathInfo ? (
+            <div className="space-y-2">
+              <Skeleton className="h-4 w-20" />
+              <Skeleton className="h-6 w-full" />
+              <div className="flex gap-2">
+                <Skeleton className="h-5 w-14" />
+                <Skeleton className="h-5 w-16" />
               </div>
-            </CollapsibleTrigger>
-            <CardDescription>{t('cache.pathManagementDesc')}</CardDescription>
-          </CardHeader>
-          <CollapsibleContent>
-            <CardContent className="space-y-4">
-              <Separator />
+            </div>
+          ) : (
+            <>
+              {/* Paths Section */}
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground">{t('cache.currentPath')}</p>
+                  <p className="text-xs font-mono bg-muted/50 px-2 py-1.5 rounded break-all">{pathInfo.currentPath}</p>
+                </div>
 
-              {pathInfo ? (
-                <div className="space-y-3">
-                  {/* Current Path */}
+                {pathInfo.isSymlink && pathInfo.symlinkTarget && (
                   <div className="space-y-1">
-                    <p className="text-sm font-medium text-muted-foreground">{t('cache.currentPath')}</p>
-                    <p className="text-sm font-mono bg-muted/50 p-2 rounded break-all">{pathInfo.currentPath}</p>
+                    <p className="text-xs font-medium text-muted-foreground">{t('cache.symlinkTarget')}</p>
+                    <p className="text-xs font-mono bg-muted/50 px-2 py-1.5 rounded break-all">{pathInfo.symlinkTarget}</p>
                   </div>
+                )}
 
-                  {/* Symlink Target */}
-                  {pathInfo.isSymlink && pathInfo.symlinkTarget && (
-                    <div className="space-y-1">
-                      <p className="text-sm font-medium text-muted-foreground">{t('cache.symlinkTarget')}</p>
-                      <p className="text-sm font-mono bg-muted/50 p-2 rounded break-all">{pathInfo.symlinkTarget}</p>
-                    </div>
-                  )}
+                {pathInfo.isCustom && (
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-muted-foreground">{t('cache.defaultPath')}</p>
+                    <p className="text-xs font-mono bg-muted/50 px-2 py-1.5 rounded break-all">{pathInfo.defaultPath}</p>
+                  </div>
+                )}
+              </div>
 
-                  {/* Default Path */}
-                  {pathInfo.isCustom && (
-                    <div className="space-y-1">
-                      <p className="text-sm font-medium text-muted-foreground">{t('cache.defaultPath')}</p>
-                      <p className="text-sm font-mono bg-muted/50 p-2 rounded break-all">{pathInfo.defaultPath}</p>
-                    </div>
-                  )}
+              {/* Status badges */}
+              <div className="flex flex-wrap gap-1.5">
+                <Badge variant={pathInfo.exists ? 'default' : 'destructive'} className="text-[10px] px-1.5 py-0">
+                  {pathInfo.exists ? t('cache.exists') : t('cache.missing')}
+                </Badge>
+                <Badge variant={pathInfo.writable ? 'default' : 'destructive'} className="text-[10px] px-1.5 py-0">
+                  {pathInfo.writable ? t('cache.writable') : t('cache.readOnly')}
+                </Badge>
+                {pathInfo.diskAvailable > 0 && (
+                  <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                    {t('cache.diskAvailable')}: {pathInfo.diskAvailableHuman}
+                  </Badge>
+                )}
+              </div>
 
-                  {/* Status badges */}
-                  <div className="flex flex-wrap gap-2">
-                    <Badge variant={pathInfo.exists ? 'default' : 'destructive'}>
-                      {pathInfo.exists ? t('cache.exists') : t('cache.missing')}
-                    </Badge>
-                    <Badge variant={pathInfo.writable ? 'default' : 'destructive'}>
-                      {pathInfo.writable ? t('cache.writable') : t('cache.readOnly')}
-                    </Badge>
-                    {pathInfo.diskAvailable > 0 && (
-                      <Badge variant="outline">{t('cache.diskAvailable')}: {pathInfo.diskAvailableHuman}</Badge>
+              {/* Change Path */}
+              {editing ? (
+                <div className="space-y-2">
+                  <div className="flex gap-1.5">
+                    <Input
+                      value={newPath}
+                      onChange={(e) => setNewPath(e.target.value)}
+                      placeholder={t('cache.enterNewPath')}
+                      disabled={saving}
+                      className="h-7 text-xs flex-1"
+                    />
+                    {isTauri() && (
+                      <Button size="icon" variant="outline" onClick={handleBrowse} disabled={saving} className="h-7 w-7 shrink-0">
+                        <FolderOpen className="h-3.5 w-3.5" />
+                      </Button>
                     )}
                   </div>
-
-                  {/* Change Path */}
-                  {editing ? (
-                    <div className="space-y-2">
-                      <div className="flex gap-2">
-                        <Input
-                          value={newPath}
-                          onChange={(e) => setNewPath(e.target.value)}
-                          placeholder={t('cache.enterNewPath')}
-                          disabled={saving}
-                          className="flex-1"
-                        />
-                        {isTauri() && (
-                          <Button size="sm" variant="outline" onClick={handleBrowse} disabled={saving}>
-                            <FolderOpen className="h-4 w-4" />
-                          </Button>
-                        )}
-                      </div>
-                      <div className="flex gap-2">
-                        <Button size="sm" onClick={handleChangePath} disabled={!newPath.trim() || saving}>
-                          <Save className="h-4 w-4 mr-1" />
-                          {saving ? '...' : t('cache.changePath')}
-                        </Button>
-                        <Button size="sm" variant="outline" onClick={() => { setEditing(false); setNewPath(''); }}>
-                          {t('common.cancel')}
-                        </Button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex flex-wrap gap-2">
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
-                            <FolderInput className="h-4 w-4 mr-1" />
-                            {t('cache.changePath')}
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>{t('cache.pathManagementDesc')}</TooltipContent>
-                      </Tooltip>
-                      {pathInfo.isCustom && (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button size="sm" variant="outline" onClick={handleResetPath} disabled={saving}>
-                              <RotateCcw className="h-4 w-4 mr-1" />
-                              {t('cache.resetPath')}
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>{t('cache.defaultPath')}</TooltipContent>
-                        </Tooltip>
-                      )}
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button size="sm" variant="outline" onClick={() => setMigrationOpen(true)}>
-                            <FolderInput className="h-4 w-4 mr-1" />
-                            {t('cache.migration')}
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>{t('cache.migrationDesc')}</TooltipContent>
-                      </Tooltip>
-                    </div>
-                  )}
+                  <div className="flex gap-1.5">
+                    <Button size="sm" onClick={handleChangePath} disabled={!newPath.trim() || saving} className="h-7 text-xs">
+                      <Save className="h-3 w-3 mr-1" />
+                      {saving ? '...' : t('cache.changePath')}
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => { setEditing(false); setNewPath(''); }} className="h-7 text-xs">
+                      {t('common.cancel')}
+                    </Button>
+                  </div>
                 </div>
-              ) : isOpen && (
-                <div className="space-y-3">
-                  <Skeleton className="h-4 w-24" />
-                  <Skeleton className="h-8 w-full" />
-                  <div className="flex flex-wrap gap-2">
-                    <Skeleton className="h-5 w-16" />
-                    <Skeleton className="h-5 w-20" />
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Skeleton className="h-8 w-28" />
-                    <Skeleton className="h-8 w-24" />
-                  </div>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button size="sm" variant="outline" onClick={() => setEditing(true)} className="h-7 text-xs">
+                        <FolderInput className="h-3 w-3 mr-1" />
+                        {t('cache.changePath')}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>{t('cache.pathManagementDesc')}</TooltipContent>
+                  </Tooltip>
+                  {pathInfo.isCustom && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button size="sm" variant="outline" onClick={handleResetPath} disabled={saving} className="h-7 text-xs">
+                          <RotateCcw className="h-3 w-3 mr-1" />
+                          {t('cache.resetPath')}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>{t('cache.defaultPath')}</TooltipContent>
+                    </Tooltip>
+                  )}
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button size="sm" variant="outline" onClick={() => setMigrationOpen(true)} className="h-7 text-xs">
+                        <FolderInput className="h-3 w-3 mr-1" />
+                        {t('cache.migration')}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>{t('cache.migrationDesc')}</TooltipContent>
+                  </Tooltip>
                 </div>
               )}
-            </CardContent>
-          </CollapsibleContent>
-        </Collapsible>
+            </>
+          )}
+        </CardContent>
       </Card>
 
       <CacheMigrationDialog

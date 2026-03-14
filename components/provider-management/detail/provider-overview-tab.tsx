@@ -18,14 +18,24 @@ import {
   Zap,
   Shield,
 } from "lucide-react";
-import type { ProviderInfo, PackageManagerHealthResult, EnvironmentProviderInfo } from "@/types/tauri";
+import type {
+  ProviderInfo,
+  PackageManagerHealthResult,
+  EnvironmentProviderInfo,
+  ProviderStatusInfo,
+} from "@/types/tauri";
 import { cn } from "@/lib/utils";
 import { getCapabilityColor, getCapabilityLabel } from "@/lib/constants/provider-capability";
+import {
+  getProviderStatusState,
+  getProviderStatusTextKey,
+} from "@/lib/utils/provider";
 import { PlatformIcon } from "../provider-icon";
 
 interface ProviderOverviewTabProps {
   provider: ProviderInfo;
   isAvailable: boolean | null;
+  providerStatusInfo?: ProviderStatusInfo | null;
   healthResult: PackageManagerHealthResult | null;
   environmentProviderInfo: EnvironmentProviderInfo | null;
   installedCount: number;
@@ -36,12 +46,21 @@ interface ProviderOverviewTabProps {
 export function ProviderOverviewTab({
   provider,
   isAvailable,
+  providerStatusInfo,
   healthResult,
   environmentProviderInfo,
   installedCount,
   updatesCount,
   t,
 }: ProviderOverviewTabProps) {
+  const statusState = providerStatusInfo
+    ? getProviderStatusState(providerStatusInfo)
+    : isAvailable === null
+      ? 'unknown'
+      : isAvailable
+        ? 'available'
+        : 'unavailable';
+
   return (
     <div className="grid gap-4 grid-cols-1 md:grid-cols-2">
       {/* Quick Stats */}
@@ -74,14 +93,19 @@ export function ProviderOverviewTab({
             </div>
             <div className="space-y-1">
               <div className="flex items-center gap-1">
-                {isAvailable ? (
+                {statusState === 'available' ? (
                   <CheckCircle2 className="h-5 w-5 text-green-600" />
-                ) : isAvailable === false ? (
+                ) : statusState !== 'unknown' ? (
                   <XCircle className="h-5 w-5 text-red-600" />
                 ) : (
                   <span className="text-2xl font-bold">-</span>
                 )}
               </div>
+              {statusState !== 'unknown' && (
+                <p className="text-xs text-muted-foreground">
+                  {t(getProviderStatusTextKey(statusState))}
+                </p>
+              )}
               <p className="text-xs text-muted-foreground">
                 {t("providerDetail.status")}
               </p>

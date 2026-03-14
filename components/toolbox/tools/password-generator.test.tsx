@@ -17,15 +17,15 @@ jest.mock('@/hooks/use-clipboard', () => ({
 }));
 
 describe('PasswordGenerator', () => {
-  it('shows error when requested count exceeds guardrail', () => {
+  it('clamps requested count to the guardrail limit', () => {
     render(<PasswordGenerator />);
 
     fireEvent.change(screen.getByLabelText('toolbox.tools.passwordGenerator.count'), {
       target: { value: String(TOOLBOX_LIMITS.generatorCount + 1) },
     });
-    fireEvent.click(screen.getByText('toolbox.tools.passwordGenerator.generate'));
 
-    expect(screen.getByText('toolbox.tools.shared.countTooLarge')).toBeInTheDocument();
+    expect(screen.getByLabelText('toolbox.tools.passwordGenerator.count')).toHaveValue(
+      TOOLBOX_LIMITS.generatorCount,
+    );
   });
 });
-

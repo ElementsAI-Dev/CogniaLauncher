@@ -6,6 +6,7 @@ A minimal example plugin demonstrating the Cognia TypeScript Plugin SDK.
 
 - **hello** — Greets the user with platform info and i18n translation
 - **env-check** — Detects installed development environments (Node.js, Python, Rust)
+- **cognia_on_log** — Observes plugin-origin log envelopes via `listen_logs = ["plugin"]`
 
 ## Unified Contract Notes
 
@@ -73,5 +74,8 @@ Copy this directory into CogniaLauncher's plugins folder, or use the "Install Pl
 - `cognia.i18n.translate(key, params)` — Localized strings with interpolation
 - `cognia.env.detect(envType)` — Check if Node/Python/Rust is installed
 - `cognia.log.info(msg)` — Write to launcher log
+- `cognia.log.write(record)` — Write a structured log record
+- `cognia.log.parseEnvelope(input)` — Parse `cognia_on_log` listener payloads
 - `cognia.event.emitStr(name, data)` — Emit plugin events
 - `cognia.event.getPluginId()` — Get own plugin ID
+- `cognia.event.parseEnvelope(input)` — Parse `cognia_on_event` listener payloads

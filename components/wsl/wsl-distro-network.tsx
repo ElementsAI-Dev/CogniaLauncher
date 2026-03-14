@@ -37,7 +37,9 @@ import {
   Plus,
   Trash2,
   ArrowRightLeft,
+  WifiOff,
 } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import { toast } from 'sonner';
 import { parseListeningPorts, parseInterfaces } from '@/lib/wsl';
@@ -122,6 +124,7 @@ export function WslDistroNetwork({
       }
 
       setInfo({ hostname, ipAddress, dns, listeningPorts, interfaces });
+      setPfConnectAddr((prev) => prev || ipAddress);
       setLoaded(true);
     } catch {
       setInfo(null);
@@ -214,6 +217,13 @@ export function WslDistroNetwork({
 
   return (
     <div className="space-y-4">
+      {!isRunning && (
+        <Alert className="mb-4">
+          <WifiOff className="h-4 w-4" />
+          <AlertDescription>{t('wsl.detail.networkNotRunning')}</AlertDescription>
+        </Alert>
+      )}
+
       {/* Overview card */}
       <Card>
         <CardHeader>
@@ -338,21 +348,47 @@ export function WslDistroNetwork({
                     <div className="flex items-center gap-2">
                       <span className="font-semibold text-sm">{iface.name}</span>
                       {iface.mac && (
-                        <Badge variant="outline" className="text-[10px] font-mono">
-                          {iface.mac}
-                        </Badge>
+                        <div className="flex items-center gap-1">
+                          <Badge variant="outline" className="text-[10px] font-mono">
+                            {iface.mac}
+                          </Badge>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 shrink-0"
+                            onClick={() => handleCopy(iface.mac!)}
+                          >
+                            <Copy className="h-3 w-3" />
+                          </Button>
+                        </div>
                       )}
                     </div>
                     {iface.ipv4 && (
-                      <div className="text-xs text-muted-foreground">
+                      <div className="text-xs text-muted-foreground flex items-center gap-1">
                         <span className="mr-2">IPv4:</span>
                         <span className="font-mono">{iface.ipv4}</span>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 shrink-0"
+                          onClick={() => handleCopy(iface.ipv4!)}
+                        >
+                          <Copy className="h-3 w-3" />
+                        </Button>
                       </div>
                     )}
                     {iface.ipv6 && (
-                      <div className="text-xs text-muted-foreground">
+                      <div className="text-xs text-muted-foreground flex items-center gap-1">
                         <span className="mr-2">IPv6:</span>
                         <span className="font-mono truncate">{iface.ipv6}</span>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 shrink-0"
+                          onClick={() => handleCopy(iface.ipv6!)}
+                        >
+                          <Copy className="h-3 w-3" />
+                        </Button>
                       </div>
                     )}
                   </div>
@@ -490,11 +526,11 @@ export function WslDistroNetwork({
             </ScrollArea>
           )}
 
-          <div className="flex items-end gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
             <div className="flex-1 space-y-1">
               <span className="text-xs text-muted-foreground">{t('wsl.detail.portForward.listenPort')}</span>
               <Input
-                className="h-7 text-xs"
+                className="h-9 text-xs"
                 type="number"
                 placeholder="3000"
                 value={pfListenPort}
@@ -504,8 +540,8 @@ export function WslDistroNetwork({
             <div className="flex-1 space-y-1">
               <span className="text-xs text-muted-foreground">{t('wsl.detail.portForward.connectAddr')}</span>
               <Input
-                className="h-7 text-xs"
-                placeholder={info?.ipAddress || '172.x.x.x'}
+                className="h-9 text-xs"
+                placeholder={info?.ipAddress ?? '172.x.x.x'}
                 value={pfConnectAddr}
                 onChange={(e) => setPfConnectAddr(e.target.value)}
               />
@@ -513,7 +549,7 @@ export function WslDistroNetwork({
             <div className="flex-1 space-y-1">
               <span className="text-xs text-muted-foreground">{t('wsl.detail.portForward.connectPort')}</span>
               <Input
-                className="h-7 text-xs"
+                className="h-9 text-xs"
                 type="number"
                 placeholder="3000"
                 value={pfConnectPort}
@@ -523,7 +559,7 @@ export function WslDistroNetwork({
             <Button
               variant="outline"
               size="sm"
-              className="h-7 gap-1"
+              className="h-9 gap-1"
               aria-label="add-port-forward-rule"
               disabled={pfAdding || !pfListenPort || !pfConnectPort || !pfConnectAddr}
               onClick={handleAddPortForward}

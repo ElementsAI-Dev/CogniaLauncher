@@ -6,11 +6,12 @@ import { Card, CardContent, CardHeader, CardTitle, CardAction } from '@/componen
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { TerminalSquare, Play, Trash2, Copy, CheckCircle2, XCircle, Star, BookmarkPlus } from 'lucide-react';
+import { TerminalSquare, Play, Trash2, Copy, CheckCircle2, XCircle, Star, BookmarkPlus, AlertTriangle } from 'lucide-react';
 import { Kbd } from '@/components/ui/kbd';
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from '@/components/ui/empty';
 import { toast } from 'sonner';
@@ -49,7 +50,7 @@ export function WslDistroTerminal({ distroName, isRunning, onExec, t }: WslDistr
           result,
           timestamp: Date.now(),
         },
-      ]);
+      ].slice(-100));
       setCommandHistory((prev) => [...prev, command.trim()]);
       setHistoryIndex(-1);
       setCommand('');
@@ -118,6 +119,13 @@ export function WslDistroTerminal({ distroName, isRunning, onExec, t }: WslDistr
         )}
       </CardHeader>
       <CardContent className="space-y-3">
+        {!isRunning && (
+          <Alert className="mb-3">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>{t('wsl.detail.terminalNotRunning')}</AlertDescription>
+          </Alert>
+        )}
+
         {/* User field */}
         <div className="space-y-1">
           <Label className="text-xs">{t('wsl.exec.user')}</Label>
@@ -194,7 +202,7 @@ export function WslDistroTerminal({ distroName, isRunning, onExec, t }: WslDistr
           </Popover>
           <Input
             ref={inputRef}
-            className="h-8 text-xs font-mono flex-1"
+            className="h-9 text-xs font-mono flex-1"
             placeholder={t('wsl.exec.commandPlaceholder')}
             value={command}
             onChange={(e) => setCommand(e.target.value)}
@@ -232,7 +240,7 @@ export function WslDistroTerminal({ distroName, isRunning, onExec, t }: WslDistr
                     {entry.user && <span className="text-yellow-400">{entry.user}@</span>}
                     <span className="text-green-400 font-semibold">{distroName}</span>
                     <span className="text-zinc-500">$</span>
-                    <span className="text-zinc-200 flex-1 truncate">{entry.command}</span>
+                    <span className="text-zinc-200 flex-1 whitespace-pre-wrap break-all">{entry.command}</span>
                     {entry.result.exitCode === 0 ? (
                       <CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />
                     ) : (

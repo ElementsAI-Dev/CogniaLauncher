@@ -14,7 +14,7 @@ const _fns: Record<string, (ptr: I64) => I64> = Host.getFunctions();
  * Serialises `input` into Extism shared memory, invokes the host function,
  * and deserialises the returned memory offset back into a string.
  *
- * @param fnName - One of the 37 `cognia_*` host function names.
+ * @param fnName - One of the registered `cognia_*` host function names.
  * @param input  - JSON string (or empty string) to pass as input.
  * @returns The JSON string returned by the host function.
  */

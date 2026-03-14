@@ -89,6 +89,13 @@ export function GitLabDownloadDialog({
     packageFiles,
     loading,
     error,
+    tokenStatus,
+    vaultStatus,
+    vaultPassword,
+    setVaultPassword,
+    setupVault,
+    unlockVault,
+    lockVault,
     validateAndFetch,
     fetchPipelines,
     fetchPipelineJobs,
@@ -146,22 +153,57 @@ export function GitLabDownloadDialog({
   }, []);
 
   const handleSaveToken = useCallback(async () => {
-    await saveToken();
-    if (instanceUrl.trim()) {
-      await saveInstanceUrl();
+    try {
+      await saveToken();
+      if (instanceUrl.trim()) {
+        await saveInstanceUrl();
+      }
+      toast.success(t("downloads.gitlab.tokenSaved"));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
     }
-    toast.success(t("downloads.gitlab.tokenSaved"));
   }, [saveToken, saveInstanceUrl, instanceUrl, t]);
 
   const handleClearToken = useCallback(async () => {
-    await clearSavedToken();
-    toast.success(t("downloads.gitlab.tokenCleared"));
+    try {
+      await clearSavedToken();
+      toast.success(t("downloads.gitlab.tokenCleared"));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    }
   }, [clearSavedToken, t]);
 
   const handleSaveInstanceUrl = useCallback(async () => {
     await saveInstanceUrl();
     toast.success(t("downloads.gitlab.instanceUrlSaved"));
   }, [saveInstanceUrl, t]);
+
+  const handleSetupVault = useCallback(async () => {
+    try {
+      await setupVault();
+      toast.success(t("downloads.auth.vaultReady"));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    }
+  }, [setupVault, t]);
+
+  const handleUnlockVault = useCallback(async () => {
+    try {
+      await unlockVault();
+      toast.success(t("downloads.auth.vaultReady"));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    }
+  }, [t, unlockVault]);
+
+  const handleLockVault = useCallback(async () => {
+    try {
+      await lockVault();
+      toast.success(t("downloads.auth.vaultLocked"));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    }
+  }, [lockVault, t]);
 
   const handleSelectPipeline = useCallback(
     async (pipelineId: number) => {
@@ -490,13 +532,21 @@ export function GitLabDownloadDialog({
             saveLabel={t("downloads.gitlab.saveToken")}
             clearLabel={t("downloads.gitlab.clearToken")}
             hint={t("downloads.auth.gitlabHint")}
-            configured={!!(token.trim() || instanceUrl.trim())}
+            configured={!!token.trim() || !!tokenStatus?.configured}
             instanceUrl={instanceUrl}
             onInstanceUrlChange={setInstanceUrl}
             onSaveInstanceUrl={handleSaveInstanceUrl}
             instanceUrlLabel={t("downloads.auth.instanceUrl")}
             instanceUrlSaveLabel={t("downloads.gitlab.saveInstanceUrl")}
             instanceUrlSaveDisabled={!isDesktop}
+            tokenStatus={tokenStatus}
+            vaultStatus={vaultStatus}
+            vaultPassword={vaultPassword}
+            onVaultPasswordChange={setVaultPassword}
+            onSetupVault={handleSetupVault}
+            onUnlockVault={handleUnlockVault}
+            onLockVault={handleLockVault}
+            vaultActionDisabled={!isDesktop || !vaultPassword.trim()}
             t={t}
           />
 

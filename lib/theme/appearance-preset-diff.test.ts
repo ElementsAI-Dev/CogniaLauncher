@@ -12,6 +12,9 @@ describe('areAppearancePresetConfigsEqual', () => {
     backgroundOpacity: 20,
     backgroundBlur: 0,
     backgroundFit: 'cover',
+    backgroundScale: 100,
+    backgroundPositionX: 50,
+    backgroundPositionY: 50,
     windowEffect: 'auto',
   } as const;
 
@@ -30,5 +33,8 @@ describe('areAppearancePresetConfigsEqual', () => {
   it('returns false when backgroundOpacity differs', () => {
     expect(areAppearancePresetConfigsEqual({ ...base, backgroundOpacity: 60 }, { ...base })).toBe(false);
   });
-});
 
+  it('returns false when backgroundScale differs', () => {
+    expect(areAppearancePresetConfigsEqual({ ...base, backgroundScale: 120 }, { ...base })).toBe(false);
+  });
+});

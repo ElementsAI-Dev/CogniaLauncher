@@ -320,4 +320,16 @@ describe('settings registry focus mappings', () => {
       'background-enabled',
     );
   });
+
+  it('maps update source settings to actionable update controls', () => {
+    expect(findSetting('updates.source_mode')?.focusId).toBe(
+      'update-source-mode',
+    );
+    expect(findSetting('updates.custom_endpoints')?.focusId).toBe(
+      'update-custom-endpoints',
+    );
+    expect(findSetting('updates.fallback_to_official')?.focusId).toBe(
+      'update-fallback-to-official',
+    );
+  });
 });

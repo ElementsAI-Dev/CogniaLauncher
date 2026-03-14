@@ -1,7 +1,15 @@
 use crate::error::{CogniaError, CogniaResult};
+use crate::plugin::extension_points::validate_manifest_plugin_points;
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::path::Path;
+
+pub const SUPPORTED_LOG_LISTEN_FILTERS: &[&str] = &["plugin", "*"];
+
+pub fn is_supported_log_listen_filter(filter: &str) -> bool {
+    SUPPORTED_LOG_LISTEN_FILTERS.contains(&filter)
+}
 
 /// Plugin manifest parsed from plugin.toml
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -106,6 +114,9 @@ pub struct PluginMeta {
     /// System events this plugin wants to listen for (e.g. ["package_installed", "env_changed"])
     #[serde(default, alias = "listen_events")]
     pub listen_events: Vec<String>,
+    /// Log sources this plugin wants to observe (currently "plugin" or "*")
+    #[serde(default, alias = "listen_logs")]
+    pub listen_logs: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -190,6 +201,14 @@ fn default_ui_resizable() -> bool {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct PluginPermissions {
+    #[serde(alias = "ui_feedback")]
+    pub ui_feedback: bool,
+    #[serde(alias = "ui_dialog")]
+    pub ui_dialog: bool,
+    #[serde(alias = "ui_file_picker")]
+    pub ui_file_picker: bool,
+    #[serde(alias = "ui_navigation")]
+    pub ui_navigation: bool,
     #[serde(alias = "fs_read")]
     pub fs_read: Vec<String>,
     #[serde(alias = "fs_write")]
@@ -209,6 +228,31 @@ pub struct PluginPermissions {
     pub notification: bool,
     #[serde(alias = "process_exec")]
     pub process_exec: bool,
+    // Extended SDK v1.1 permissions
+    #[serde(alias = "download_read")]
+    pub download_read: bool,
+    #[serde(alias = "download_write")]
+    pub download_write: bool,
+    #[serde(alias = "git_read")]
+    pub git_read: bool,
+    #[serde(alias = "git_write")]
+    pub git_write: bool,
+    #[serde(alias = "health_read")]
+    pub health_read: bool,
+    #[serde(alias = "profiles_read")]
+    pub profiles_read: bool,
+    #[serde(alias = "profiles_write")]
+    pub profiles_write: bool,
+    #[serde(alias = "cache_read")]
+    pub cache_read: bool,
+    #[serde(alias = "cache_write")]
+    pub cache_write: bool,
+    #[serde(alias = "shell_read")]
+    pub shell_read: bool,
+    #[serde(alias = "wsl_read")]
+    pub wsl_read: bool,
+    #[serde(alias = "launch")]
+    pub launch: bool,
 }
 
 impl PluginManifest {
@@ -277,6 +321,27 @@ impl PluginManifest {
                 ))
             })?;
         }
+        let mut seen_log_filters = HashSet::new();
+        for log_filter in &self.plugin.listen_logs {
+            let trimmed = log_filter.trim();
+            if trimmed.is_empty() {
+                return Err(CogniaError::Plugin(
+                    "plugin.listen_logs must not contain empty values".into(),
+                ));
+            }
+            if !is_supported_log_listen_filter(trimmed) {
+                return Err(CogniaError::Plugin(format!(
+                    "plugin.listen_logs contains unsupported filter '{}'",
+                    trimmed
+                )));
+            }
+            if !seen_log_filters.insert(trimmed.to_string()) {
+                return Err(CogniaError::Plugin(format!(
+                    "plugin.listen_logs contains duplicate filter '{}'",
+                    trimmed
+                )));
+            }
+        }
         // Validate plugin id format (reverse domain notation)
         if !self
             .plugin
@@ -333,6 +398,7 @@ impl PluginManifest {
                 _ => {}
             }
         }
+        validate_manifest_plugin_points(self)?;
         Ok(())
     }
 }
@@ -720,6 +786,62 @@ compatible_cognia_versions = "not-a-range"
 "#;
         let err = PluginManifest::from_str(toml).unwrap_err().to_string();
         assert!(err.contains("Invalid compatible_cognia_versions"));
+    }
+
+    #[test]
+    fn test_listen_logs_accepts_supported_plugin_filter() {
+        let toml = r#"
+[plugin]
+id = "com.example.logs"
+name = "Logs"
+version = "1.0.0"
+listen_logs = ["plugin"]
+"#;
+
+        let manifest = PluginManifest::from_str(toml).unwrap();
+        assert_eq!(manifest.plugin.listen_logs, vec!["plugin"]);
+    }
+
+    #[test]
+    fn test_listen_logs_rejects_empty_value() {
+        let toml = r#"
+[plugin]
+id = "com.example.logs"
+name = "Logs"
+version = "1.0.0"
+listen_logs = [""]
+"#;
+
+        let err = PluginManifest::from_str(toml).unwrap_err().to_string();
+        assert!(err.contains("plugin.listen_logs must not contain empty values"));
+    }
+
+    #[test]
+    fn test_listen_logs_rejects_duplicate_value() {
+        let toml = r#"
+[plugin]
+id = "com.example.logs"
+name = "Logs"
+version = "1.0.0"
+listen_logs = ["plugin", "plugin"]
+"#;
+
+        let err = PluginManifest::from_str(toml).unwrap_err().to_string();
+        assert!(err.contains("plugin.listen_logs contains duplicate filter 'plugin'"));
+    }
+
+    #[test]
+    fn test_listen_logs_rejects_unsupported_value() {
+        let toml = r#"
+[plugin]
+id = "com.example.logs"
+name = "Logs"
+version = "1.0.0"
+listen_logs = ["launcher"]
+"#;
+
+        let err = PluginManifest::from_str(toml).unwrap_err().to_string();
+        assert!(err.contains("plugin.listen_logs contains unsupported filter 'launcher'"));
     }
 
     #[test]

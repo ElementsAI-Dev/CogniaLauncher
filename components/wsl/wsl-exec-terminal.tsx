@@ -16,7 +16,8 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { TerminalSquare, Play, Trash2, Copy, CheckCircle2, XCircle, Star, BookmarkPlus } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { TerminalSquare, Play, Trash2, Copy, CheckCircle2, XCircle, Star, BookmarkPlus, AlertTriangle } from 'lucide-react';
 import { Kbd } from '@/components/ui/kbd';
 import { toast } from 'sonner';
 import { useWslStore } from '@/lib/stores/wsl';
@@ -53,7 +54,7 @@ export function WslExecTerminal({ distros, onExec, t }: WslExecTerminalProps) {
     try {
       const result = await onExec(selectedDistro, command.trim(), user.trim() || undefined);
       setHistory((prev) => [
-        ...prev,
+        ...prev.slice(-99),
         {
           command: command.trim(),
           distro: selectedDistro,
@@ -217,7 +218,12 @@ export function WslExecTerminal({ distros, onExec, t }: WslExecTerminalProps) {
         </div>
 
         {runningDistros.length === 0 && distros.length > 0 && (
-          <p className="text-xs text-amber-600">{t('wsl.exec.noRunningHint')}</p>
+          <Alert variant="default" className="bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800">
+            <AlertTriangle className="h-4 w-4 text-amber-600" />
+            <AlertDescription className="text-xs text-amber-700 dark:text-amber-400">
+              {t('wsl.exec.noRunningHint')}
+            </AlertDescription>
+          </Alert>
         )}
 
         {history.length > 0 && (

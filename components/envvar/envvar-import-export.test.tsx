@@ -2,7 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { EnvVarImportExport } from './envvar-import-export';
 import { toast } from 'sonner';
-import type { EnvVarImportResult } from '@/types/tauri';
+import type { EnvVarImportResult, EnvVarImportPreview } from '@/types/tauri';
 
 jest.mock('sonner', () => ({
   toast: {
@@ -26,6 +26,17 @@ const mockT = (key: string) => {
     'envvar.importExport.importSuccess': 'Imported successfully',
     'envvar.importExport.importPartial': 'Partially imported',
     'envvar.importExport.pasteContent': 'Paste content',
+    'envvar.importExport.preview': 'Preview Import',
+    'envvar.importExport.applyPreview': 'Apply Import',
+    'envvar.importExport.previewSummary': 'Preview summary',
+    'envvar.importExport.previewItems': 'Preview items',
+    'envvar.importExport.previewTarget': 'Preview target',
+    'envvar.importExport.previewStale': 'Preview stale',
+    'envvar.importExport.previewActionAdd': 'Add',
+    'envvar.importExport.previewActionUpdate': 'Update',
+    'envvar.importExport.previewActionNoop': 'Unchanged',
+    'envvar.importExport.previewActionInvalid': 'Invalid',
+    'envvar.importExport.previewActionSkipped': 'Skipped',
     'envvar.importExport.formatDotenv': '.env',
     'envvar.importExport.formatShell': 'Shell',
     'envvar.importExport.formatFish': 'Fish',
@@ -290,5 +301,75 @@ describe('EnvVarImportExport', () => {
     if (importButtons.length > 0) {
       expect(importButtons[0]).toBeDisabled();
     }
+  });
+
+  it('renders import preview summary and applies preview', async () => {
+    const preview: EnvVarImportPreview = {
+      scope: 'process',
+      fingerprint: 'preview-fingerprint',
+      additions: 1,
+      updates: 0,
+      noops: 0,
+      invalid: 0,
+      skipped: 0,
+      items: [{ key: 'JAVA_HOME', value: '/jdk', action: 'add', reason: null }],
+      primaryShellTarget: '/home/user/.bashrc',
+      shellGuidance: [],
+    };
+    const onApplyImportPreview = jest.fn().mockResolvedValue({ imported: 1, skipped: 0, errors: [] } as EnvVarImportResult);
+
+    render(
+      <EnvVarImportExport
+        {...defaultProps}
+        onPreviewImport={jest.fn()}
+        onApplyImportPreview={onApplyImportPreview}
+        importPreview={preview}
+      />,
+    );
+
+    const textarea = screen.getByRole('textbox');
+    await userEvent.type(textarea, 'JAVA_HOME=/jdk');
+
+    expect(screen.getByTestId('envvar-import-preview-summary')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Apply Import' }));
+
+    await waitFor(() => {
+      expect(onApplyImportPreview).toHaveBeenCalledWith('JAVA_HOME=/jdk', 'process', 'preview-fingerprint');
+    });
+  });
+
+  it('renders per-item import preview details', () => {
+    const preview: EnvVarImportPreview = {
+      scope: 'process',
+      fingerprint: 'preview-fingerprint',
+      additions: 1,
+      updates: 1,
+      noops: 0,
+      invalid: 1,
+      skipped: 0,
+      items: [
+        { key: 'JAVA_HOME', value: '/jdk', action: 'add', reason: null },
+        { key: 'NODE_HOME', value: '/node', action: 'update', reason: null },
+        { key: '<empty>', value: '', action: 'invalid', reason: 'Configuration error: invalid key' },
+      ],
+      primaryShellTarget: '/home/user/.bashrc',
+      shellGuidance: [],
+    };
+
+    render(
+      <EnvVarImportExport
+        {...defaultProps}
+        onPreviewImport={jest.fn()}
+        onApplyImportPreview={jest.fn()}
+        importPreview={preview}
+      />,
+    );
+
+    expect(screen.getByTestId('envvar-import-preview-items')).toBeInTheDocument();
+    expect(screen.getByText('JAVA_HOME')).toBeInTheDocument();
+    expect(screen.getByText('NODE_HOME')).toBeInTheDocument();
+    expect(screen.getByText('<empty>')).toBeInTheDocument();
+    expect(screen.getByText('Configuration error: invalid key')).toBeInTheDocument();
   });
 });

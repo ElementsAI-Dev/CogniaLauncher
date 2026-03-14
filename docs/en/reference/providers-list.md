@@ -110,7 +110,7 @@ CogniaLauncher integrates 55 Providers, covering major operating systems and pro
 
 | ID | Name | Type | Capabilities |
 |----|------|------|------|
-| `zig` | Zig | Version manager | Install, Uninstall, List, VersionSwitch |
+| `zig` | Zig | Version manager | Install, Uninstall, Search, List, VersionSwitch, MultiVersion, Update, ProjectLocal |
 
 ## C/C++ Ecosystem
 

@@ -2,9 +2,10 @@ import { renderHook, act } from '@testing-library/react';
 import { useProviderDetail } from './use-provider-detail';
 
 const mockFetchSharedProviders = jest.fn();
-const mockProviderCheck = jest.fn();
+const mockProviderStatus = jest.fn();
 const mockProviderEnable = jest.fn();
 const mockProviderDisable = jest.fn();
+const mockProviderSetPriority = jest.fn();
 const mockFetchSharedInstalledPackages = jest.fn();
 const mockSearchSharedPackages = jest.fn();
 const mockPackageInstall = jest.fn();
@@ -48,9 +49,10 @@ jest.mock('@/hooks/use-package-updates', () => ({
 
 jest.mock('@/lib/tauri', () => ({
   isTauri: () => true,
-  providerCheck: (...args: unknown[]) => mockProviderCheck(...args),
+  providerStatus: (...args: unknown[]) => mockProviderStatus(...args),
   providerEnable: (...args: unknown[]) => mockProviderEnable(...args),
   providerDisable: (...args: unknown[]) => mockProviderDisable(...args),
+  providerSetPriority: (...args: unknown[]) => mockProviderSetPriority(...args),
   packageInstall: (...args: unknown[]) => mockPackageInstall(...args),
   packageUninstall: (...args: unknown[]) => mockPackageUninstall(...args),
   batchUninstall: (...args: unknown[]) => mockBatchUninstall(...args),
@@ -84,10 +86,25 @@ jest.mock('@/lib/errors', () => ({
 }));
 
 const PROVIDER_ID = 'npm';
+const AVAILABLE_PROVIDER_STATUS = {
+  id: PROVIDER_ID,
+  display_name: 'npm',
+  installed: true,
+  platforms: ['windows'],
+  scope_state: 'available',
+  scope_reason: null,
+  status: 'available',
+  reason: null,
+  reason_code: null,
+  update_supported: true,
+  update_reason: null,
+  update_reason_code: null,
+};
 
 describe('useProviderDetail', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockProviderStatus.mockResolvedValue(AVAILABLE_PROVIDER_STATUS);
     mockGetInstallHistory.mockResolvedValue([]);
     mockGetPackageHistory.mockResolvedValue([]);
   });
@@ -97,6 +114,7 @@ describe('useProviderDetail', () => {
 
     expect(result.current.provider).toBeNull();
     expect(result.current.isAvailable).toBeNull();
+    expect(result.current.providerStatusInfo).toBeNull();
     expect(result.current.loading).toBe(false);
     expect(result.current.error).toBeNull();
     expect(result.current.installedPackages).toEqual([]);
@@ -140,7 +158,7 @@ describe('useProviderDetail', () => {
   });
 
   it('should check availability', async () => {
-    mockProviderCheck.mockResolvedValue(true);
+    mockProviderStatus.mockResolvedValue(AVAILABLE_PROVIDER_STATUS);
 
     const { result } = renderHook(() => useProviderDetail(PROVIDER_ID));
 
@@ -151,11 +169,12 @@ describe('useProviderDetail', () => {
 
     expect(available).toBe(true);
     expect(result.current.isAvailable).toBe(true);
-    expect(mockProviderCheck).toHaveBeenCalledWith(PROVIDER_ID);
+    expect(result.current.providerStatusInfo).toEqual(AVAILABLE_PROVIDER_STATUS);
+    expect(mockProviderStatus).toHaveBeenCalledWith(PROVIDER_ID);
   });
 
   it('should handle availability check failure', async () => {
-    mockProviderCheck.mockRejectedValue(new Error('fail'));
+    mockProviderStatus.mockRejectedValue(new Error('fail'));
 
     const { result } = renderHook(() => useProviderDetail(PROVIDER_ID));
 
@@ -166,11 +185,13 @@ describe('useProviderDetail', () => {
 
     expect(available).toBe(false);
     expect(result.current.isAvailable).toBe(false);
+    expect(result.current.providerStatusInfo).toBeNull();
   });
 
   it('should toggle provider enabled', async () => {
     mockProviderEnable.mockResolvedValue(undefined);
     mockFetchSharedProviders.mockResolvedValue([{ id: PROVIDER_ID, enabled: true }]);
+    mockProviderStatus.mockResolvedValue(AVAILABLE_PROVIDER_STATUS);
 
     const { result } = renderHook(() => useProviderDetail(PROVIDER_ID));
 
@@ -184,6 +205,12 @@ describe('useProviderDetail', () => {
   it('should toggle provider disabled', async () => {
     mockProviderDisable.mockResolvedValue(undefined);
     mockFetchSharedProviders.mockResolvedValue([{ id: PROVIDER_ID, enabled: false }]);
+    mockProviderStatus.mockResolvedValue({
+      ...AVAILABLE_PROVIDER_STATUS,
+      installed: false,
+      scope_state: 'unavailable',
+      status: 'unavailable',
+    });
 
     const { result } = renderHook(() => useProviderDetail(PROVIDER_ID));
 
@@ -543,7 +570,7 @@ describe('useProviderDetail', () => {
   it('should initialize all data', async () => {
     const providerInfo = { id: PROVIDER_ID, name: 'npm', is_environment_provider: false };
     mockFetchSharedProviders.mockResolvedValue([providerInfo]);
-    mockProviderCheck.mockResolvedValue(true);
+    mockProviderStatus.mockResolvedValue(AVAILABLE_PROVIDER_STATUS);
     mockFetchSharedInstalledPackages.mockResolvedValue([]);
     mockHealthCheckPackageManager.mockResolvedValue(null);
     mockGetInstallHistory.mockResolvedValue([]);
@@ -563,12 +590,13 @@ describe('useProviderDetail', () => {
 
     expect(result.current.provider).toEqual(providerInfo);
     expect(result.current.isAvailable).toBe(true);
+    expect(result.current.providerStatusInfo).toEqual(AVAILABLE_PROVIDER_STATUS);
   });
 
   it('should not initialize twice (init guard)', async () => {
     const providerInfo = { id: PROVIDER_ID, name: 'npm', is_environment_provider: false };
     mockFetchSharedProviders.mockResolvedValue([providerInfo]);
-    mockProviderCheck.mockResolvedValue(true);
+    mockProviderStatus.mockResolvedValue(AVAILABLE_PROVIDER_STATUS);
     mockFetchSharedInstalledPackages.mockResolvedValue([]);
     mockHealthCheckPackageManager.mockResolvedValue(null);
     mockGetInstallHistory.mockResolvedValue([]);
@@ -599,7 +627,7 @@ describe('useProviderDetail', () => {
   it('should refreshAll bypass init guard', async () => {
     const providerInfo = { id: PROVIDER_ID, name: 'npm', is_environment_provider: false };
     mockFetchSharedProviders.mockResolvedValue([providerInfo]);
-    mockProviderCheck.mockResolvedValue(true);
+    mockProviderStatus.mockResolvedValue(AVAILABLE_PROVIDER_STATUS);
     mockFetchSharedInstalledPackages.mockResolvedValue([]);
     mockHealthCheckPackageManager.mockResolvedValue(null);
     mockGetInstallHistory.mockResolvedValue([]);
@@ -618,7 +646,7 @@ describe('useProviderDetail', () => {
     });
 
     expect(mockFetchSharedProviders).toHaveBeenCalled();
-    expect(mockProviderCheck).toHaveBeenCalled();
+    expect(mockProviderStatus).toHaveBeenCalled();
   });
 
   it('should handle error in fetchInstalledPackages', async () => {

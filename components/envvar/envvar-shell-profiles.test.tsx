@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { EnvVarShellProfiles } from './envvar-shell-profiles';
-import type { ShellProfileInfo } from '@/types/tauri';
+import type { ShellProfileInfo, EnvVarShellGuidance } from '@/types/tauri';
 
 import React from 'react';
 
@@ -27,6 +27,9 @@ const mockT = (key: string) => {
     'envvar.shellProfiles.current': 'Current',
     'envvar.shellProfiles.noContent': 'No content',
     'envvar.shellProfiles.viewConfig': 'View Config',
+    'envvar.shellProfiles.guidanceTitle': 'Shell Guidance',
+    'envvar.shellProfiles.guidanceDescription': 'Follow-up guidance',
+    'envvar.shellProfiles.guidanceAutoApplied': 'Auto Applied',
     'common.close': 'Close',
     'common.loading': 'Loading',
   };
@@ -138,5 +141,22 @@ describe('EnvVarShellProfiles', () => {
     await userEvent.click(closeButton);
 
     expect(screen.queryByText('some content')).not.toBeInTheDocument();
+  });
+
+  it('renders shell guidance cards when provided', () => {
+    const guidance: EnvVarShellGuidance[] = [
+      {
+        shell: 'bash',
+        configPath: '/home/user/.bashrc',
+        command: 'export JAVA_HOME="/jdk"',
+        autoApplied: true,
+      },
+    ];
+
+    render(<EnvVarShellProfiles {...defaultProps} guidance={guidance} />);
+
+    expect(screen.getByTestId('envvar-shell-guidance')).toBeInTheDocument();
+    expect(screen.getByText('Shell Guidance')).toBeInTheDocument();
+    expect(screen.getByText('export JAVA_HOME="/jdk"')).toBeInTheDocument();
   });
 });

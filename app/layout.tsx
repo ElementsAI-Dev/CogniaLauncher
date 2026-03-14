@@ -7,6 +7,7 @@ import {
   ThemeProvider,
   LocaleProvider,
   LogProvider,
+  PluginUiEffectsProvider,
   TrayProvider,
   DeferredProviders,
   DownloadRuntimeProvider,
@@ -46,11 +47,13 @@ export default function RootLayout({
           <LocaleProvider initialLocale="en" messages={{ en, zh }}>
             <DeferredProviders>
               <TrayProvider>
-                <DownloadRuntimeProvider>
-                  <LogProvider>
-                    <AppShell>{children}</AppShell>
-                  </LogProvider>
-                </DownloadRuntimeProvider>
+                <PluginUiEffectsProvider>
+                  <DownloadRuntimeProvider>
+                    <LogProvider>
+                      <AppShell>{children}</AppShell>
+                    </LogProvider>
+                  </DownloadRuntimeProvider>
+                </PluginUiEffectsProvider>
               </TrayProvider>
             </DeferredProviders>
           </LocaleProvider>

@@ -31,11 +31,12 @@ describe("WelcomeWidget", () => {
     expect(container.firstChild).not.toBeNull();
   });
 
-  it("returns null when user has both environments and packages", () => {
-    const { container } = render(
+  it("renders a workspace-ready summary when user has both environments and packages", () => {
+    render(
       <WelcomeWidget hasEnvironments={true} hasPackages={true} />,
     );
-    expect(container.firstChild).toBeNull();
+    expect(screen.getByText("dashboard.widgets.workspaceReadyTitle")).toBeInTheDocument();
+    expect(screen.getByText("dashboard.widgets.workspaceReadyDesc")).toBeInTheDocument();
   });
 
   it("renders when user has environments but no packages", () => {
@@ -114,5 +115,15 @@ describe("WelcomeWidget", () => {
     const tourBtn = screen.getByText("dashboard.widgets.welcomeTakeTour").closest("button");
     if (tourBtn) fireEvent.click(tourBtn);
     expect(mockStartTour).toHaveBeenCalledTimes(1);
+  });
+
+  it("navigates from workspace-ready actions", () => {
+    render(<WelcomeWidget hasEnvironments={true} hasPackages={true} />);
+
+    fireEvent.click(screen.getByText("dashboard.widgets.welcomeReviewEnvironments"));
+    fireEvent.click(screen.getByText("dashboard.widgets.welcomeReviewPackages"));
+
+    expect(mockPush).toHaveBeenCalledWith("/environments");
+    expect(mockPush).toHaveBeenCalledWith("/packages");
   });
 });

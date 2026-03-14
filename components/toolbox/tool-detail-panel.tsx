@@ -54,6 +54,7 @@ export function ToolDetailPanel({ tool, open, onOpenChange }: ToolDetailPanelPro
 
     return {
       pluginId,
+      pluginPointId: tool.pluginTool.pluginPointId ?? null,
       healthStatus,
       declaredCapabilities,
       grantedCapabilities,
@@ -104,6 +105,11 @@ export function ToolDetailPanel({ tool, open, onOpenChange }: ToolDetailPanelPro
                         : t('toolbox.plugin.permissionPolicyModeCompatTag')}
                     </Badge>
                     <span className="font-mono">{pluginGovernance.pluginId}</span>
+                    {pluginGovernance.pluginPointId && (
+                      <Badge variant="outline" className="font-mono">
+                        {pluginGovernance.pluginPointId}
+                      </Badge>
+                    )}
                   </div>
                   <div className="grid gap-2 md:grid-cols-2">
                     <div>

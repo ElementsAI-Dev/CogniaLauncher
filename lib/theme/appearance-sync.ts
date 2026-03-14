@@ -12,6 +12,10 @@ import {
 import type { AppearancePresetConfig, BackgroundFit } from '@/lib/stores/appearance';
 
 const BACKGROUND_FITS: BackgroundFit[] = ['cover', 'contain', 'fill', 'tile'];
+const BACKGROUND_SCALE_MIN = 50;
+const BACKGROUND_SCALE_MAX = 200;
+const BACKGROUND_POSITION_MIN = 0;
+const BACKGROUND_POSITION_MAX = 100;
 
 function clampNumber(value: unknown, min: number, max: number, fallback: number): number {
   const parsed = typeof value === 'number' ? value : Number.parseFloat(String(value ?? ''));
@@ -85,6 +89,24 @@ export async function syncAppearancePresetConfig({
     backgroundOpacity: clampNumber(preset.backgroundOpacity, 0, 100, 20),
     backgroundBlur: clampNumber(preset.backgroundBlur, 0, 20, 0),
     backgroundFit: normalizeBackgroundFit(preset.backgroundFit),
+    backgroundScale: clampNumber(
+      preset.backgroundScale,
+      BACKGROUND_SCALE_MIN,
+      BACKGROUND_SCALE_MAX,
+      100,
+    ),
+    backgroundPositionX: clampNumber(
+      preset.backgroundPositionX,
+      BACKGROUND_POSITION_MIN,
+      BACKGROUND_POSITION_MAX,
+      50,
+    ),
+    backgroundPositionY: clampNumber(
+      preset.backgroundPositionY,
+      BACKGROUND_POSITION_MIN,
+      BACKGROUND_POSITION_MAX,
+      50,
+    ),
     windowEffect: normalizeWindowEffect(preset.windowEffect),
   };
 

@@ -7,14 +7,33 @@ jest.mock("@/components/providers/locale-provider", () => ({
 
 let mockSystemHealth: Record<string, unknown> | null = null;
 let mockLoading = false;
+let mockError: string | null = null;
 const mockCheckAll = jest.fn();
 let mockCheckAllImpl = mockCheckAll;
 const mockIsTauri = jest.fn(() => false);
+const mockSummary = {
+  environmentCount: 0,
+  healthyCount: 0,
+  warningCount: 0,
+  errorCount: 0,
+  unavailableCount: 0,
+  unavailableScopeCount: 0,
+  timeoutScopeCount: 0,
+  unsupportedScopeCount: 0,
+  packageManagerCount: 0,
+  unavailablePackageManagerCount: 0,
+  issueCount: 0,
+  verifiedIssueCount: 0,
+  advisoryIssueCount: 0,
+  actionableIssueCount: 0,
+};
 
 jest.mock("@/hooks/use-health-check", () => ({
   useHealthCheck: () => ({
     systemHealth: mockSystemHealth,
     loading: mockLoading,
+    error: mockError,
+    summary: mockSummary,
     checkAll: mockCheckAllImpl,
   }),
 }));
@@ -35,8 +54,23 @@ describe("HealthCheckWidget", () => {
   beforeEach(() => {
     mockSystemHealth = null;
     mockLoading = false;
+    mockError = null;
     mockCheckAllImpl = mockCheckAll;
     mockIsTauri.mockReturnValue(false);
+    mockSummary.environmentCount = 0;
+    mockSummary.healthyCount = 0;
+    mockSummary.warningCount = 0;
+    mockSummary.errorCount = 0;
+    mockSummary.unavailableCount = 0;
+    mockSummary.unavailableScopeCount = 0;
+    mockSummary.timeoutScopeCount = 0;
+    mockSummary.unsupportedScopeCount = 0;
+    mockSummary.packageManagerCount = 0;
+    mockSummary.unavailablePackageManagerCount = 0;
+    mockSummary.issueCount = 0;
+    mockSummary.verifiedIssueCount = 0;
+    mockSummary.advisoryIssueCount = 0;
+    mockSummary.actionableIssueCount = 0;
     jest.clearAllMocks();
   });
 
@@ -50,9 +84,10 @@ describe("HealthCheckWidget", () => {
     expect(screen.getByText("dashboard.widgets.healthCheckDesc")).toBeInTheDocument();
   });
 
-  it("shows unknown status when systemHealth is null", () => {
+  it("shows prompt state when systemHealth is null", () => {
     render(<HealthCheckWidget />);
-    expect(screen.getByText("dashboard.widgets.healthStatus_unknown")).toBeInTheDocument();
+    expect(screen.getByText("dashboard.widgets.healthCheckPrompt")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "dashboard.widgets.healthCheckRun" }).length).toBeGreaterThan(0);
   });
 
   it("shows healthy status", () => {
@@ -61,6 +96,8 @@ describe("HealthCheckWidget", () => {
       environments: [{ status: "healthy" }, { status: "healthy" }],
       system_issues: [],
     };
+    mockSummary.environmentCount = 2;
+    mockSummary.healthyCount = 2;
     render(<HealthCheckWidget />);
     expect(screen.getByText("dashboard.widgets.healthStatus_healthy")).toBeInTheDocument();
   });
@@ -71,6 +108,9 @@ describe("HealthCheckWidget", () => {
       environments: [{ status: "healthy" }, { status: "warning" }],
       system_issues: [],
     };
+    mockSummary.environmentCount = 2;
+    mockSummary.healthyCount = 1;
+    mockSummary.warningCount = 1;
     render(<HealthCheckWidget />);
     expect(screen.getByText("dashboard.widgets.healthStatus_warning")).toBeInTheDocument();
   });
@@ -81,6 +121,8 @@ describe("HealthCheckWidget", () => {
       environments: [{ status: "error" }],
       system_issues: [],
     };
+    mockSummary.environmentCount = 1;
+    mockSummary.errorCount = 1;
     render(<HealthCheckWidget />);
     expect(screen.getByText("dashboard.widgets.healthStatus_error")).toBeInTheDocument();
   });
@@ -96,6 +138,11 @@ describe("HealthCheckWidget", () => {
       ],
       system_issues: [],
     };
+    mockSummary.environmentCount = 4;
+    mockSummary.healthyCount = 2;
+    mockSummary.warningCount = 1;
+    mockSummary.errorCount = 1;
+    mockSummary.unavailableCount = 0;
     render(<HealthCheckWidget />);
     // healthy: 2, warning: 1, error: 1
     expect(screen.getByText("2")).toBeInTheDocument();
@@ -125,6 +172,7 @@ describe("HealthCheckWidget", () => {
       environments: [],
       system_issues: [{ severity: "warning", message: "Issue 1" }],
     };
+    mockSummary.issueCount = 1;
     render(<HealthCheckWidget />);
     expect(screen.getByText("dashboard.widgets.healthIssues")).toBeInTheDocument();
   });
@@ -161,5 +209,15 @@ describe("HealthCheckWidget", () => {
   it("accepts className prop", () => {
     const { container } = render(<HealthCheckWidget className="custom" />);
     expect(container.firstChild).toHaveClass("custom");
+  });
+
+  it("shows retry action when the hook reports an error", () => {
+    mockError = "Health check failed";
+
+    render(<HealthCheckWidget />);
+
+    expect(screen.getByText("dashboard.widgets.sectionNeedsAttention")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("dashboard.widgets.retry"));
+    expect(mockCheckAll).toHaveBeenCalledWith({ force: true });
   });
 });

@@ -1,4 +1,5 @@
 use crate::host;
+use crate::types::PluginEventEnvelope;
 use extism_pdk::*;
 
 /// Emit an event that can be observed by the host and other plugins.
@@ -20,4 +21,12 @@ pub fn get_plugin_id() -> Result<String, Error> {
     let result = unsafe { host::cognia_get_plugin_id(String::new())? };
     let parsed: serde_json::Value = serde_json::from_str(&result)?;
     Ok(parsed["pluginId"].as_str().unwrap_or("").to_string())
+}
+
+/// Parse the host event-listener callback envelope received by `cognia_on_event`.
+pub fn parse_envelope<TPayload>(input: &str) -> Result<PluginEventEnvelope<TPayload>, Error>
+where
+    TPayload: serde::de::DeserializeOwned,
+{
+    Ok(serde_json::from_str(input)?)
 }

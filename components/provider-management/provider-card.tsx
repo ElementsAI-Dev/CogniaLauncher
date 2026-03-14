@@ -26,8 +26,8 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Loader2, CheckCircle2, XCircle, Activity, ExternalLink, MoreHorizontal, Copy } from "lucide-react";
-import type { ProviderInfo } from "@/lib/tauri";
+import { Loader2, Activity, ExternalLink, MoreHorizontal, Copy } from "lucide-react";
+import type { ProviderInfo, ProviderStatusInfo } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
@@ -36,19 +36,22 @@ import {
 } from "@/lib/constants/provider-capability";
 import { useProviderStatus } from "@/hooks/use-provider-status";
 import { ProviderIcon, PlatformIcon } from "./provider-icon";
+import { ProviderStatusBadge } from "./provider-status-badge";
 
 export interface ProviderCardProps {
   provider: ProviderInfo;
+  statusInfo?: ProviderStatusInfo;
   isAvailable?: boolean;
   version?: string | null;
   isToggling: boolean;
   onToggle: (providerId: string, enabled: boolean) => void;
-  onCheckStatus: (providerId: string) => Promise<boolean>;
+  onCheckStatus: (providerId: string) => Promise<ProviderStatusInfo | boolean>;
   t: (key: string, params?: Record<string, string | number>) => string;
 }
 
 export function ProviderCard({
   provider,
+  statusInfo,
   isAvailable,
   version,
   isToggling,
@@ -56,8 +59,8 @@ export function ProviderCard({
   onCheckStatus,
   t,
 }: ProviderCardProps) {
-  const { isChecking, availabilityStatus, handleCheckStatus } =
-    useProviderStatus(provider.id, isAvailable, onCheckStatus);
+  const { isChecking, statusInfo: resolvedStatus, handleCheckStatus } =
+    useProviderStatus(provider.id, statusInfo ?? isAvailable, onCheckStatus);
 
   return (
     <Card
@@ -88,27 +91,7 @@ export function ProviderCard({
                 {t("providers.filterEnvironment")}
               </Badge>
             )}
-            {availabilityStatus !== undefined && (
-              <Badge
-                variant={availabilityStatus ? "default" : "destructive"}
-                className={cn(
-                  "text-xs whitespace-nowrap gap-1",
-                  availabilityStatus && "bg-green-600 hover:bg-green-700",
-                )}
-              >
-                {availabilityStatus ? (
-                  <>
-                    <CheckCircle2 className="h-3 w-3" />
-                    {t("providers.statusAvailable")}
-                  </>
-                ) : (
-                  <>
-                    <XCircle className="h-3 w-3" />
-                    {t("providers.statusUnavailable")}
-                  </>
-                )}
-              </Badge>
-            )}
+            <ProviderStatusBadge status={resolvedStatus} t={t} />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="sm" className="h-7 w-7 p-0">

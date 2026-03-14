@@ -13,6 +13,7 @@ import { Separator } from '@/components/ui/separator';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import {
@@ -62,6 +63,7 @@ import {
   Search,
   Shield,
   ShieldCheck,
+  AlertCircle,
   Trash2,
   Zap,
 } from 'lucide-react';
@@ -115,9 +117,11 @@ function InternalCacheDetailView({ cacheType }: { cacheType: 'download' | 'metad
   const {
     cacheInfo,
     accessStats,
+    infoReadState,
     entries,
     totalCount,
     loading,
+    entriesReadState,
     searchQuery,
     setSearchQuery,
     sortBy,
@@ -142,6 +146,8 @@ function InternalCacheDetailView({ cacheType }: { cacheType: 'download' | 'metad
     cacheStats,
     totalPages,
     handleRefresh,
+    fetchInfo,
+    fetchEntries,
     handlePreviewClean,
     handleClean,
     handleVerify,
@@ -288,6 +294,19 @@ function InternalCacheDetailView({ cacheType }: { cacheType: 'download' | 'metad
         </div>
       </div>
 
+      {infoReadState.error && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription className="flex items-center justify-between gap-3">
+            <span>{infoReadState.error}</span>
+            <Button variant="outline" size="sm" onClick={() => void fetchInfo()}>
+              <RefreshCw className="h-3 w-3 mr-1" />
+              {t('common.retry')}
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Entry Browser */}
       <Card>
         <CardHeader>
@@ -298,6 +317,19 @@ function InternalCacheDetailView({ cacheType }: { cacheType: 'download' | 'metad
           <CardDescription>{t('cache.detail.entryBrowserDesc')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {entriesReadState.error && (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription className="flex items-center justify-between gap-3">
+                <span>{entriesReadState.error}</span>
+                <Button variant="outline" size="sm" onClick={() => void fetchEntries()}>
+                  <RefreshCw className="h-3 w-3 mr-1" />
+                  {t('common.retry')}
+                </Button>
+              </AlertDescription>
+            </Alert>
+          )}
+
           {/* Search & Filter Bar */}
           <div className="flex flex-col sm:flex-row gap-3">
             <div className="relative flex-1">

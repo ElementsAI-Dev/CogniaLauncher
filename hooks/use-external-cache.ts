@@ -17,6 +17,11 @@ import {
   subscribeInvalidation,
   withThrottle,
 } from '@/lib/cache/invalidation';
+import {
+  invalidateRequestWave,
+  isRequestWaveCurrent,
+  startRequestWave,
+} from '@/lib/cache/request-wave';
 
 interface UseExternalCacheOptions {
   t: (key: string, params?: Record<string, string | number>) => string;
@@ -26,6 +31,20 @@ interface UseExternalCacheOptions {
   setUseTrash?: (next: boolean) => void;
   defaultUseTrash?: boolean;
 }
+
+type ReadStatus = 'idle' | 'loading' | 'ready' | 'error';
+
+interface ReadState {
+  status: ReadStatus;
+  error: string | null;
+  lastUpdatedAt: number | null;
+}
+
+const INITIAL_READ_STATE: ReadState = {
+  status: 'idle',
+  error: null,
+  lastUpdatedAt: null,
+};
 
 function inferDetectionState(cache: ExternalCacheInfo): ExternalCacheDetectionState {
   if (cache.detectionState) return cache.detectionState;
@@ -111,6 +130,7 @@ export function useExternalCache({
   const [caches, setCaches] = useState<ExternalCacheInfo[]>([]);
   const [pathInfos, setPathInfos] = useState<ExternalCachePathInfo[]>([]);
   const [loading, setLoading] = useState(false);
+  const [readState, setReadState] = useState<ReadState>(INITIAL_READ_STATE);
   const [cleanTarget, setCleanTarget] = useState<string | null>(null);
   const [cleanAllOpen, setCleanAllOpen] = useState(false);
   const [cleaning, setCleaning] = useState<string | null>(null);
@@ -126,6 +146,7 @@ export function useExternalCache({
   const abortRef = useRef(false);
   const fetchWaveRef = useRef(0);
   const fetchInFlightRef = useRef<Promise<void> | null>(null);
+  const queuedRefreshRef = useRef(false);
 
   const fillSizesProgressively = useCallback(async (providers: string[], waveId: number) => {
     if (providers.length === 0) return;
@@ -138,12 +159,12 @@ export function useExternalCache({
 
     async function next(): Promise<void> {
       while (idx < queue.length) {
-        if (abortRef.current || fetchWaveRef.current !== waveId) return;
+        if (abortRef.current || !isRequestWaveCurrent(fetchWaveRef, waveId)) return;
         const provId = queue[idx++];
         try {
           const size = await calculateExternalCacheSize(provId);
           setCaches((prev) =>
-            fetchWaveRef.current !== waveId
+            !isRequestWaveCurrent(fetchWaveRef, waveId)
               ? prev
               : prev.map((c) =>
                 c.provider === provId
@@ -162,7 +183,7 @@ export function useExternalCache({
           );
         } catch (err) {
           setCaches((prev) =>
-            fetchWaveRef.current !== waveId
+            !isRequestWaveCurrent(fetchWaveRef, waveId)
               ? prev
               : prev.map((c) =>
                 c.provider === provId
@@ -186,16 +207,20 @@ export function useExternalCache({
 
   const runFetchWave = useCallback(async () => {
     abortRef.current = false;
+    const waveId = startRequestWave(fetchWaveRef);
     setLoading(true);
-    const waveId = fetchWaveRef.current + 1;
-    fetchWaveRef.current = waveId;
+    setReadState((prev) => ({
+      ...prev,
+      status: 'loading',
+      error: null,
+    }));
 
     try {
       const tauri = await import('@/lib/tauri');
       const fetchPathInfos = () => {
         if (!includePathInfos) return;
         tauri.getExternalCachePaths().then((paths) => {
-          if (!abortRef.current && fetchWaveRef.current === waveId) {
+          if (!abortRef.current && isRequestWaveCurrent(fetchWaveRef, waveId)) {
             setPathInfos(paths);
           }
         }).catch(() => {});
@@ -207,11 +232,16 @@ export function useExternalCache({
           ...cache,
           probePending: false,
         }));
-        if (abortRef.current || fetchWaveRef.current !== waveId) return;
+        if (abortRef.current || !isRequestWaveCurrent(fetchWaveRef, waveId)) return;
         setCaches(normalizedFast);
         fetchPathInfos();
-        if (!abortRef.current && fetchWaveRef.current === waveId) {
+        if (!abortRef.current && isRequestWaveCurrent(fetchWaveRef, waveId)) {
           setLoading(false);
+          setReadState({
+            status: 'ready',
+            error: null,
+            lastUpdatedAt: Date.now(),
+          });
         }
         const pendingProviders = normalizedFast
           .filter((cache) => cache.sizePending)
@@ -242,11 +272,16 @@ export function useExternalCache({
         ...cache,
         probePending: cache.probePending ?? true,
       }));
-      if (abortRef.current || fetchWaveRef.current !== waveId) return;
+      if (abortRef.current || !isRequestWaveCurrent(fetchWaveRef, waveId)) return;
       setCaches(normalizedCandidates);
       fetchPathInfos();
-      if (!abortRef.current && fetchWaveRef.current === waveId) {
+      if (!abortRef.current && isRequestWaveCurrent(fetchWaveRef, waveId)) {
         setLoading(false);
+        setReadState({
+          status: 'ready',
+          error: null,
+          lastUpdatedAt: Date.now(),
+        });
       }
 
       const queue = normalizedCandidates.map((cache) => cache.provider);
@@ -257,7 +292,7 @@ export function useExternalCache({
 
       async function probeNext(): Promise<void> {
         while (idx < queue.length) {
-          if (abortRef.current || fetchWaveRef.current !== waveId) return;
+          if (abortRef.current || !isRequestWaveCurrent(fetchWaveRef, waveId)) return;
           const provider = queue[idx++];
           try {
             const probedRaw = await tauri.probeExternalCacheProvider(provider);
@@ -266,7 +301,7 @@ export function useExternalCache({
               probePending: false,
             });
             setCaches((prev) => {
-              if (fetchWaveRef.current !== waveId) return prev;
+              if (!isRequestWaveCurrent(fetchWaveRef, waveId)) return prev;
               const index = prev.findIndex((item) => item.provider === provider);
               if (index === -1) {
                 return [...prev, probed];
@@ -288,7 +323,7 @@ export function useExternalCache({
             }
           } catch (probeErr) {
             setCaches((prev) =>
-              fetchWaveRef.current !== waveId
+              !isRequestWaveCurrent(fetchWaveRef, waveId)
                 ? prev
                 : prev.map((cache) =>
                   cache.provider === provider
@@ -311,8 +346,13 @@ export function useExternalCache({
       await Promise.allSettled(pendingSizeTasks);
     } catch (err) {
       console.error('Failed to fetch external caches:', err);
-      if (!abortRef.current && fetchWaveRef.current === waveId) {
+      if (!abortRef.current && isRequestWaveCurrent(fetchWaveRef, waveId)) {
         setLoading(false);
+        setReadState((prev) => ({
+          status: 'error',
+          error: `cache.externalLoadFailed: ${String(err)}`,
+          lastUpdatedAt: prev.lastUpdatedAt,
+        }));
       }
     }
   }, [includePathInfos, fillSizesProgressively]);
@@ -321,13 +361,24 @@ export function useExternalCache({
     if (!isTauri()) return;
 
     if (fetchInFlightRef.current) {
+      queuedRefreshRef.current = true;
       return fetchInFlightRef.current;
     }
 
-    const task = runFetchWave();
+    queuedRefreshRef.current = false;
+    const task = (async () => {
+      while (!abortRef.current) {
+        await runFetchWave();
+        if (!queuedRefreshRef.current) {
+          break;
+        }
+        queuedRefreshRef.current = false;
+      }
+    })();
 
     fetchInFlightRef.current = task.finally(() => {
       fetchInFlightRef.current = null;
+      queuedRefreshRef.current = false;
     });
 
     return fetchInFlightRef.current;
@@ -352,7 +403,8 @@ export function useExternalCache({
     return () => {
       dispose();
       abortRef.current = true;
-      fetchWaveRef.current += 1;
+      queuedRefreshRef.current = false;
+      invalidateRequestWave(fetchWaveRef);
       fetchInFlightRef.current = null;
     };
   }, [fetchExternalCaches]);
@@ -500,6 +552,7 @@ export function useExternalCache({
     caches,
     pathInfos,
     loading,
+    readState,
     useTrash: resolvedUseTrash,
     setUseTrash: handleUseTrashChange,
     cleanTarget,

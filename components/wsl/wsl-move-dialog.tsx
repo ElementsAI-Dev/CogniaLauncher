@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { FolderOpen, AlertTriangle } from 'lucide-react';
+import { FolderOpen, AlertTriangle, Loader2 } from 'lucide-react';
 import type { WslMoveDialogProps } from '@/types/wsl';
 
 export function WslMoveDialog({
@@ -24,6 +24,7 @@ export function WslMoveDialog({
   t,
 }: WslMoveDialogProps) {
   const [location, setLocation] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   const handleBrowse = async () => {
     try {
@@ -37,16 +38,23 @@ export function WslMoveDialog({
     }
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!location.trim()) return;
-    onConfirm(location.trim());
-    onOpenChange(false);
-    setLocation('');
+    setSubmitting(true);
+    try {
+      await onConfirm(location.trim());
+      onOpenChange(false);
+      setLocation('');
+    } catch {
+      // Error handled by parent
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[440px]">
+      <DialogContent className="sm:max-w-110">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FolderOpen className="h-5 w-5" />
@@ -72,12 +80,12 @@ export function WslMoveDialog({
                 value={location}
                 onChange={(e) => setLocation(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && location.trim()) handleSubmit();
+                  if (e.key === 'Enter' && location.trim() && !submitting) handleSubmit();
                 }}
-                className="flex-1"
+                className="h-9 flex-1"
                 autoFocus
               />
-              <Button variant="outline" size="sm" onClick={handleBrowse}>
+              <Button variant="outline" size="sm" onClick={handleBrowse} disabled={submitting}>
                 {t('common.browse')}
               </Button>
             </div>
@@ -85,14 +93,15 @@ export function WslMoveDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
             {t('common.cancel')}
           </Button>
           <Button
             onClick={handleSubmit}
-            disabled={!location.trim()}
+            disabled={!location.trim() || submitting}
             className="gap-2"
           >
+            {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
             {t('wsl.dialog.move')}
           </Button>
         </DialogFooter>

@@ -37,6 +37,9 @@ const baseConfig: Record<string, string> = {
   'updates.check_on_start': 'true',
   'updates.auto_install': 'false',
   'updates.notify': 'true',
+  'updates.source_mode': 'official',
+  'updates.custom_endpoints': '[]',
+  'updates.fallback_to_official': 'true',
   'tray.minimize_to_tray': 'true',
   'tray.start_minimized': 'false',
   'tray.show_notifications': 'true',
@@ -251,6 +254,23 @@ const mockMessages = {
       autoInstallUpdatesDesc: 'Automatically install updates when available',
       notifyOnUpdates: 'Notify on Updates',
       notifyOnUpdatesDesc: 'Show a notification when updates are available',
+      updateSourceMode: 'Update Source',
+      updateSourceModeDesc: 'Select where self-update metadata is fetched from',
+      updateSourceModeOfficial: 'Official',
+      updateSourceModeMirror: 'Mirror',
+      updateSourceModeCustom: 'Custom',
+      updateCustomEndpoints: 'Custom Endpoints',
+      updateCustomEndpointsDesc: 'One endpoint per line',
+      updateCustomEndpointsPlaceholder:
+        'https://updates.example.com/{{target}}/{{current_version}}',
+      updateCustomEndpointsHint: 'Only HTTPS endpoints are allowed.',
+      updateCustomEndpointsErrorRequired:
+        'At least one valid HTTPS endpoint is required for custom mode.',
+      updateCustomEndpointsErrorInvalid:
+        'Please provide valid HTTPS endpoint URLs (one per line).',
+      updateFallbackToOfficial: 'Fallback to Official',
+      updateFallbackToOfficialDesc:
+        'Retry official source if selected source fails',
       tray: 'Tray',
       trayDesc: 'Configure tray behavior',
       minimizeToTray: 'Minimize to Tray',
@@ -365,7 +385,14 @@ function renderWithProviders(ui: React.ReactElement) {
   return render(ui, { wrapper: TestWrapper });
 }
 
-function setupMocks(overrides?: Partial<{ config: Record<string, string>; appSettings: AppSettings; loading: boolean }>) {
+function setupMocks(
+  overrides?: Partial<{
+    config: Record<string, string>;
+    appSettings: AppSettings;
+    loading: boolean;
+    appearance: Record<string, unknown>;
+  }>,
+) {
   const { useSettings } = jest.requireMock('@/hooks/use-settings') as {
     useSettings: jest.Mock;
   };
@@ -383,6 +410,9 @@ function setupMocks(overrides?: Partial<{ config: Record<string, string>; appSet
     checkUpdatesOnStart: true,
     autoInstallUpdates: false,
     notifyOnUpdates: true,
+    updateSourceMode: 'official',
+    updateCustomEndpoints: [],
+    updateFallbackToOfficial: true,
     minimizeToTray: true,
     startMinimized: false,
     autostart: false,
@@ -424,6 +454,13 @@ function setupMocks(overrides?: Partial<{ config: Record<string, string>; appSet
     backgroundOpacity: 20,
     backgroundBlur: 0,
     backgroundFit: 'cover',
+    backgroundScale: 100,
+    setBackgroundScale: jest.fn(),
+    backgroundPositionX: 50,
+    setBackgroundPositionX: jest.fn(),
+    backgroundPositionY: 50,
+    setBackgroundPositionY: jest.fn(),
+    resetBackgroundTuning: jest.fn(),
     windowEffect: 'auto',
     setWindowEffect: mockSetWindowEffect,
     presets: [
@@ -441,6 +478,9 @@ function setupMocks(overrides?: Partial<{ config: Record<string, string>; appSet
           backgroundOpacity: 20,
           backgroundBlur: 0,
           backgroundFit: 'cover',
+          backgroundScale: 100,
+          backgroundPositionX: 50,
+          backgroundPositionY: 50,
           windowEffect: 'auto',
         },
       },
@@ -461,10 +501,14 @@ function setupMocks(overrides?: Partial<{ config: Record<string, string>; appSet
       backgroundOpacity: 20,
       backgroundBlur: 0,
       backgroundFit: 'cover',
+      backgroundScale: 100,
+      backgroundPositionX: 50,
+      backgroundPositionY: 50,
       windowEffect: 'auto',
     })),
     replacePresetCollection: mockReplacePresetCollection,
     reset: mockResetAppearance,
+    ...overrides?.appearance,
   });
 
   useTheme.mockReturnValue({
@@ -587,6 +631,22 @@ describe('SettingsPage', () => {
       theme: 'dark',
       setTheme: mockSetTheme,
       resolvedTheme: 'dark',
+    });
+
+    renderWithProviders(<SettingsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Customization Workbench')).toBeInTheDocument();
+    });
+
+    expect(screen.getByText('Differs from preset')).toBeInTheDocument();
+  });
+
+  it('shows preset divergence badge when only advanced background fields differ', async () => {
+    setupMocks({
+      appearance: {
+        backgroundScale: 135,
+      },
     });
 
     renderWithProviders(<SettingsPage />);
@@ -784,6 +844,22 @@ describe('SettingsPage', () => {
     expect(mockSetAppSettings).toHaveBeenCalledWith({ checkUpdatesOnStart: false });
     await waitFor(() => {
       expect(mockUpdateConfigValue).toHaveBeenCalledWith('updates.check_on_start', 'false');
+    });
+  });
+
+  it('persists update source mode through config writes', async () => {
+    renderWithProviders(<SettingsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('combobox', { name: /update source/i })).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByRole('combobox', { name: /update source/i }));
+    await userEvent.click(screen.getByRole('option', { name: /mirror/i }));
+
+    expect(mockSetAppSettings).toHaveBeenCalledWith({ updateSourceMode: 'mirror' });
+    await waitFor(() => {
+      expect(mockUpdateConfigValue).toHaveBeenCalledWith('updates.source_mode', 'mirror');
     });
   });
 

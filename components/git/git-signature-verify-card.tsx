@@ -12,6 +12,7 @@ import type { GitSignatureVerifyCardProps } from '@/types/git';
 
 export function GitSignatureVerifyCard({
   loading,
+  supportReason,
   onVerifyCommit,
   onVerifyTag,
 }: GitSignatureVerifyCardProps) {
@@ -21,7 +22,8 @@ export function GitSignatureVerifyCard({
   const [result, setResult] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const disabled = loading || busy;
+  const blocked = Boolean(supportReason);
+  const disabled = blocked || loading || busy;
 
   return (
     <Card>
@@ -32,6 +34,9 @@ export function GitSignatureVerifyCard({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
+        {supportReason && (
+          <p className="text-xs text-muted-foreground">{supportReason}</p>
+        )}
         <div className="flex gap-2">
           <Input
             value={commitHash}

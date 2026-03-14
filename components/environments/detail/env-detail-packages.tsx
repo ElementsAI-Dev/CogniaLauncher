@@ -41,7 +41,7 @@ import { toast } from "sonner";
 import type { UpdateInfo } from "@/types/tauri";
 
 // Map environment types to their associated package manager provider IDs
-const ENV_TYPE_TO_PROVIDERS: Record<string, string[]> = {
+export const ENV_TYPE_TO_PROVIDERS: Record<string, string[]> = {
   node: ["npm", "pnpm", "yarn", "bun"],
   python: ["pip", "uv", "poetry", "conda", "pipx"],
   rust: ["cargo"],
@@ -53,6 +53,25 @@ const ENV_TYPE_TO_PROVIDERS: Record<string, string[]> = {
   dotnet: ["dotnet"],
   deno: ["deno"],
   bun: ["bun", "npm"],
+  c: ["vcpkg", "conan", "xmake"],
+  clojure: [],
+  cpp: ["vcpkg", "conan", "xmake"],
+  crystal: [],
+  dart: ["pub"],
+  elixir: [],
+  erlang: [],
+  fortran: [],
+  groovy: [],
+  haskell: [],
+  julia: [],
+  lua: ["luarocks"],
+  nim: [],
+  ocaml: [],
+  perl: [],
+  r: [],
+  scala: [],
+  swift: [],
+  zig: [],
 };
 
 interface EnvDetailPackagesProps {

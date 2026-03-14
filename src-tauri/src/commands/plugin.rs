@@ -10,7 +10,7 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tauri::State;
+use tauri::{AppHandle, Emitter, State};
 use tokio::sync::RwLock;
 
 pub type SharedPluginManager = Arc<RwLock<PluginManager>>;
@@ -251,11 +251,28 @@ pub async fn plugin_call_tool(
     tool_entry: String,
     input: String,
     manager: State<'_, SharedPluginManager>,
+    app: AppHandle,
 ) -> Result<String, String> {
     let mut mgr = manager.write().await;
-    mgr.call_tool(&plugin_id, &tool_entry, &input)
+    let result = mgr
+        .call_tool(&plugin_id, &tool_entry, &input)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    for effect in &result.ui_effects {
+        if matches!(effect.effect.as_str(), "toast" | "navigate") {
+            if let Err(error) = app.emit("plugin-ui-effect", effect) {
+                log::warn!(
+                    "[plugin-runtime][plugin:{}][operation:emit-ui-effect][stage:app-emit] failed to emit UI effect '{}': {}",
+                    plugin_id,
+                    effect.effect,
+                    error
+                );
+            }
+        }
+    }
+
+    Ok(result.output)
 }
 
 /// Get permissions for a plugin

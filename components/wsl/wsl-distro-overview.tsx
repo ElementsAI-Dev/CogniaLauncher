@@ -60,6 +60,7 @@ export function WslDistroOverview({
   const [autoRefresh, setAutoRefresh] = useState(false);
   const autoRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [updatingPkgs, setUpdatingPkgs] = useState<'update' | 'upgrade' | null>(null);
+  const [lastResourceUpdate, setLastResourceUpdate] = useState<string | null>(null);
 
   const isRunning = distro?.state.toLowerCase() === 'running';
   const loadingEnv = isRunning && !envFetched;
@@ -115,7 +116,10 @@ export function WslDistroOverview({
     let cancelled = false;
     getDistroResources(distroName)
       .then((res) => {
-        if (!cancelled) setResources(res);
+        if (!cancelled) {
+          setResources(res);
+          setLastResourceUpdate(new Date().toLocaleTimeString());
+        }
       })
       .catch(() => {
         if (!cancelled) setResources(null);
@@ -130,7 +134,10 @@ export function WslDistroOverview({
     if (!getDistroResources) return;
     setResourcesFetched(false);
     getDistroResources(distroName)
-      .then(setResources)
+      .then((res) => {
+        setResources(res);
+        setLastResourceUpdate(new Date().toLocaleTimeString());
+      })
       .catch(() => setResources(null))
       .finally(() => setResourcesFetched(true));
   }, [distroName, getDistroResources]);
@@ -140,7 +147,10 @@ export function WslDistroOverview({
     if (autoRefresh && isRunning && getDistroResources) {
       autoRefreshRef.current = setInterval(() => {
         getDistroResources(distroName)
-          .then(setResources)
+          .then((res) => {
+            setResources(res);
+            setLastResourceUpdate(new Date().toLocaleTimeString());
+          })
           .catch(() => {});
       }, 5000);
     }
@@ -223,7 +233,9 @@ export function WslDistroOverview({
                 <p className="text-sm font-semibold">
                   {formatBytes(diskUsage.usedBytes)} / {formatBytes(diskUsage.totalBytes)}
                 </p>
-                <Progress value={diskPercent} className="h-2" />
+                <Progress value={diskPercent} className={`h-2 ${
+                  diskPercent > 80 ? '[&>div]:bg-red-500' : diskPercent > 50 ? '[&>div]:bg-amber-500' : ''
+                }`} />
                 <p className="text-xs text-muted-foreground">{diskPercent.toFixed(1)}%</p>
               </div>
             ) : (
@@ -278,13 +290,13 @@ export function WslDistroOverview({
           </CardHeader>
           <CardContent>
             {loadingEnv ? (
-              <div className="grid gap-3 grid-cols-2 lg:grid-cols-3">
-                {[1, 2, 3, 4, 5, 6].map((i) => (
+              <div className="grid gap-4 grid-cols-2 lg:grid-cols-3">
+                {Array.from({ length: 9 }, (_, i) => i + 1).map((i) => (
                   <Skeleton key={i} className="h-10 w-full" />
                 ))}
               </div>
             ) : env ? (
-              <div className="grid gap-x-6 gap-y-3 grid-cols-2 lg:grid-cols-3">
+              <div className="grid gap-4 grid-cols-2 lg:grid-cols-3">
                 <div className="flex items-start gap-2">
                   <Info className="h-3.5 w-3.5 mt-0.5 text-muted-foreground shrink-0" />
                   <div>
@@ -437,12 +449,15 @@ export function WslDistroOverview({
                 >
                   <RefreshCw className={`h-3.5 w-3.5 ${!resourcesFetched ? 'animate-spin' : ''}`} />
                 </Button>
+                {lastResourceUpdate && (
+                  <span className="text-[11px] text-muted-foreground">{lastResourceUpdate}</span>
+                )}
               </div>
             </CardAction>
           </CardHeader>
           <CardContent>
             {!resourcesFetched ? (
-              <div className="grid gap-3 grid-cols-2 lg:grid-cols-3">
+              <div className="grid gap-4 grid-cols-2 lg:grid-cols-3">
                 {[1, 2, 3].map((i) => (
                   <Skeleton key={i} className="h-16 w-full" />
                 ))}

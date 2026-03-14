@@ -571,6 +571,7 @@ mod tests {
         assert!(caps.contains(&Capability::List));
         assert!(caps.contains(&Capability::VersionSwitch));
         assert!(caps.contains(&Capability::MultiVersion));
+        assert!(caps.contains(&Capability::ProjectLocal));
     }
 
     #[test]
@@ -578,6 +579,12 @@ mod tests {
         let provider = NvmProvider::new();
         assert_eq!(provider.id(), "nvm");
         assert_eq!(provider.display_name(), "Node Version Manager");
+    }
+
+    #[test]
+    fn test_nvm_priority() {
+        let provider = NvmProvider::new();
+        assert_eq!(provider.priority(), 100);
     }
 
     #[test]

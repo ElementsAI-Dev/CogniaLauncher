@@ -6,6 +6,7 @@ This directory hosts first-party production plugins shipped with CogniaLauncher.
 
 - `manifest.json`: Built-in plugin catalog (id/version/framework/checksum metadata).
 - `sdk-capability-matrix.json`: Capability governance for required built-ins (`sdkCapabilities`, `expectedPermissions`, `primaryEntrypoints`).
+- `extension-point-matrix.json`: Official plugin-point support matrix (`manifestPrerequisites`, SDK coverage, scaffold support, reference examples).
 - `rust/*`: Rust SDK built-in plugins.
 - `typescript/*`: TypeScript SDK built-in plugins.
 
@@ -67,6 +68,7 @@ When adding or modifying required built-ins:
 1. Update `plugins/sdk-capability-matrix.json`.
 2. Keep `expectedPermissions` aligned with `plugin.toml` `[permissions]`.
 3. Keep `primaryEntrypoints` aligned with `[[tools]].entry` and source exports.
+4. Keep `plugins/extension-point-matrix.json` reference examples and supported plugin-point coverage aligned with the built-in implementation.
 
 ## Runtime Sync Behavior
 

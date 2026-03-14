@@ -1,5 +1,6 @@
 import React from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { UpdateSettings } from "./update-settings";
 import type { AppSettings } from "@/lib/stores/settings";
 import { DEFAULT_SIDEBAR_ITEM_ORDER } from "@/lib/sidebar/order";
@@ -14,6 +15,22 @@ const mockT = (key: string) => {
     "settings.autoInstallUpdatesDesc": "Auto install",
     "settings.notifyOnUpdates": "Notify on Updates",
     "settings.notifyOnUpdatesDesc": "Notify on updates",
+    "settings.updateSourceMode": "Update Source",
+    "settings.updateSourceModeDesc": "Select update source",
+    "settings.updateSourceModeOfficial": "Official",
+    "settings.updateSourceModeMirror": "Mirror",
+    "settings.updateSourceModeCustom": "Custom",
+    "settings.updateCustomEndpoints": "Custom Endpoints",
+    "settings.updateCustomEndpointsDesc": "One endpoint per line",
+    "settings.updateCustomEndpointsPlaceholder":
+      "https://updates.example.com/{{target}}/{{current_version}}",
+    "settings.updateCustomEndpointsHint": "Only HTTPS endpoints are allowed",
+    "settings.updateCustomEndpointsErrorRequired":
+      "At least one valid HTTPS endpoint is required for custom mode.",
+    "settings.updateCustomEndpointsErrorInvalid":
+      "Please provide valid HTTPS endpoint URLs (one per line).",
+    "settings.updateFallbackToOfficial": "Fallback to Official",
+    "settings.updateFallbackToOfficialDesc": "Retry official source",
   };
   return translations[key] || key;
 };
@@ -23,6 +40,9 @@ describe("UpdateSettings", () => {
     checkUpdatesOnStart: true,
     autoInstallUpdates: false,
     notifyOnUpdates: true,
+    updateSourceMode: "official",
+    updateCustomEndpoints: [],
+    updateFallbackToOfficial: true,
     minimizeToTray: true,
     startMinimized: false,
     autostart: false,
@@ -43,6 +63,8 @@ describe("UpdateSettings", () => {
 
     // Title/description are now provided by parent CollapsibleSection
     expect(screen.getByText("Check on Start")).toBeInTheDocument();
+    expect(screen.getByText("Update Source")).toBeInTheDocument();
+    expect(screen.getByText("Fallback to Official")).toBeInTheDocument();
   });
 
   it("should call onValueChange when toggles change", () => {
@@ -55,13 +77,111 @@ describe("UpdateSettings", () => {
       />,
     );
 
-    const switches = screen.getAllByRole("switch");
-    fireEvent.click(switches[0]);
-    fireEvent.click(switches[1]);
-    fireEvent.click(switches[2]);
+    fireEvent.click(screen.getByRole("switch", { name: "Check on Start" }));
+    fireEvent.click(
+      screen.getByRole("switch", { name: "Auto Install Updates" }),
+    );
+    fireEvent.click(screen.getByRole("switch", { name: "Notify on Updates" }));
+    fireEvent.click(
+      screen.getByRole("switch", { name: "Fallback to Official" }),
+    );
 
     expect(onValueChange).toHaveBeenCalledWith("checkUpdatesOnStart", false);
     expect(onValueChange).toHaveBeenCalledWith("autoInstallUpdates", true);
     expect(onValueChange).toHaveBeenCalledWith("notifyOnUpdates", false);
+    expect(onValueChange).toHaveBeenCalledWith("updateFallbackToOfficial", false);
+  });
+
+  it("switches source mode through select interaction", async () => {
+    const onValueChange = jest.fn();
+    render(
+      <UpdateSettings
+        appSettings={appSettings}
+        onValueChange={onValueChange}
+        t={mockT}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("combobox", { name: "Update Source" }));
+    await userEvent.click(screen.getByRole("option", { name: "Mirror" }));
+
+    expect(onValueChange).toHaveBeenCalledWith("updateSourceMode", "mirror");
+  });
+
+  it("validates and commits custom endpoints in custom mode", async () => {
+    const onValueChange = jest.fn();
+    render(
+      <UpdateSettings
+        appSettings={{
+          ...appSettings,
+          updateSourceMode: "custom",
+          updateCustomEndpoints: [],
+        }}
+        onValueChange={onValueChange}
+        t={mockT}
+      />,
+    );
+
+    const textarea = screen.getByRole("textbox", { name: "Custom Endpoints" });
+    fireEvent.change(textarea, {
+      target: {
+        value: "https://updates.example.com/{{target}}/{{current_version}}",
+      },
+    });
+    fireEvent.blur(textarea);
+
+    expect(onValueChange).toHaveBeenCalledWith("updateCustomEndpoints", [
+      "https://updates.example.com/{{target}}/{{current_version}}",
+    ]);
+  });
+
+  it("resets custom endpoint draft when app settings change", () => {
+    const onValueChange = jest.fn();
+    const { rerender } = render(
+      <UpdateSettings
+        appSettings={{
+          ...appSettings,
+          updateSourceMode: "custom",
+          updateCustomEndpoints: [
+            "https://updates.old.example.com/{{target}}/{{current_version}}",
+          ],
+        }}
+        onValueChange={onValueChange}
+        t={mockT}
+      />,
+    );
+
+    const textarea = screen.getByRole("textbox", { name: "Custom Endpoints" });
+    expect(textarea).toHaveValue(
+      "https://updates.old.example.com/{{target}}/{{current_version}}",
+    );
+
+    fireEvent.change(textarea, {
+      target: {
+        value: "https://draft.example.com/{{target}}/{{current_version}}",
+      },
+    });
+
+    expect(screen.getByRole("textbox", { name: "Custom Endpoints" })).toHaveValue(
+      "https://draft.example.com/{{target}}/{{current_version}}",
+    );
+
+    rerender(
+      <UpdateSettings
+        appSettings={{
+          ...appSettings,
+          updateSourceMode: "custom",
+          updateCustomEndpoints: [
+            "https://updates.new.example.com/{{target}}/{{current_version}}",
+          ],
+        }}
+        onValueChange={onValueChange}
+        t={mockT}
+      />,
+    );
+
+    expect(screen.getByRole("textbox", { name: "Custom Endpoints" })).toHaveValue(
+      "https://updates.new.example.com/{{target}}/{{current_version}}",
+    );
   });
 });

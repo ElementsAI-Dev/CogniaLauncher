@@ -60,7 +60,7 @@ export default function HealthPage() {
     loading,
     error,
     progress,
-    summary: hookSummary,
+    summary,
     activeRemediationId,
     checkAll,
     checkEnvironment,
@@ -68,21 +68,6 @@ export default function HealthPage() {
     applyRemediation,
     clearResults,
   } = useHealthCheck();
-
-  const summary = hookSummary ?? {
-    environmentCount: systemHealth?.environments.length ?? 0,
-    healthyCount: systemHealth?.environments.filter((e) => e.status === 'healthy').length ?? 0,
-    warningCount: systemHealth?.environments.filter((e) => e.status === 'warning').length ?? 0,
-    errorCount: systemHealth?.environments.filter((e) => e.status === 'error').length ?? 0,
-    unavailableCount: systemHealth?.environments.filter((e) => e.status === 'unknown').length ?? 0,
-    packageManagerCount: systemHealth?.package_managers.length ?? 0,
-    unavailablePackageManagerCount: systemHealth?.package_managers.filter((p) => p.status === 'unknown').length ?? 0,
-    issueCount:
-      (systemHealth?.system_issues.length ?? 0) +
-      (systemHealth?.environments.reduce((sum, env) => sum + env.issues.length, 0) ?? 0) +
-      (systemHealth?.package_managers.reduce((sum, pm) => sum + pm.issues.length, 0) ?? 0),
-    actionableIssueCount: 0,
-  };
 
   const [expandedEnvs, setExpandedEnvs] = useState<Set<string>>(new Set());
   const hasAutoCheckedRef = useRef(false);
@@ -116,31 +101,64 @@ export default function HealthPage() {
 
   const copyDiagnostics = useCallback(() => {
     if (!systemHealth) return;
+    const formatIssue = (prefix: string, index: number, issue: {
+      severity: string;
+      message: string;
+      fix_command: string | null;
+      signal_source?: string | null;
+      confidence?: string | null;
+      check_id?: string | null;
+    }) => {
+      const evidence = [
+        issue.signal_source ? `source=${issue.signal_source}` : null,
+        issue.confidence ? `confidence=${issue.confidence}` : null,
+        issue.check_id ? `check=${issue.check_id}` : null,
+      ].filter(Boolean).join(', ');
+      return `  ${prefix} ${index}. [${issue.severity}] ${issue.message}${
+        issue.fix_command ? ` (fix: ${issue.fix_command})` : ''
+      }${evidence ? ` [${evidence}]` : ''}`;
+    };
+
     const lines = [
       `Overall Status: ${systemHealth.overall_status}`,
       `Checked: ${new Date(systemHealth.checked_at).toLocaleString()}`,
+      `Summary: total=${summary.issueCount}, verified=${summary.verifiedIssueCount}, advisory=${summary.advisoryIssueCount}`,
       '',
       `Environments (${systemHealth.environments.length}):`,
       ...systemHealth.environments.map(
-        (e) => `  ${e.env_type} (${e.provider_id ?? 'N/A'}): ${e.status} - ${e.issues.length} issues`,
+        (e) => `  ${e.env_type} (${e.provider_id ?? 'N/A'}): ${e.status} - ${e.issues.length} issues [scope=${e.scope_state ?? 'available'}${e.scope_reason ? `, reason=${e.scope_reason}` : ''}]`,
       ),
       '',
       `System Issues (${systemHealth.system_issues.length}):`,
       ...systemHealth.system_issues.map(
-        (i, idx) => `  ${idx + 1}. [${i.severity}] ${i.message}${i.fix_command ? ` (fix: ${i.fix_command})` : ''}`,
+        (issue, idx) => formatIssue('S', idx + 1, issue),
       ),
     ];
+
+    const environmentIssues = systemHealth.environments.flatMap((env) =>
+      env.issues.map((issue, idx) => formatIssue(`${env.env_type}#`, idx + 1, issue)),
+    );
+    if (environmentIssues.length > 0) {
+      lines.push('', `Environment Issues (${environmentIssues.length}):`, ...environmentIssues);
+    }
+
     if (systemHealth.package_managers?.length) {
       lines.push(
         '',
         `Package Managers (${systemHealth.package_managers.length}):`,
         ...systemHealth.package_managers.map(
-          (pm) => `  ${pm.display_name} (${pm.version ?? 'N/A'}): ${pm.status} - ${pm.issues.length} issues`,
+          (pm) => `  ${pm.display_name} (${pm.version ?? 'N/A'}): ${pm.status} - ${pm.issues.length} issues [scope=${pm.scope_state ?? 'available'}${pm.scope_reason ? `, reason=${pm.scope_reason}` : ''}]`,
         ),
       );
+      const packageManagerIssues = systemHealth.package_managers.flatMap((pm) =>
+        pm.issues.map((issue, idx) => formatIssue(`${pm.provider_id}#`, idx + 1, issue)),
+      );
+      if (packageManagerIssues.length > 0) {
+        lines.push('', `Package Manager Issues (${packageManagerIssues.length}):`, ...packageManagerIssues);
+      }
     }
     writeClipboard(lines.join('\n'));
-  }, [systemHealth]);
+  }, [summary.advisoryIssueCount, summary.issueCount, summary.verifiedIssueCount, systemHealth]);
 
   // Stats
   const envCount = summary.environmentCount;
@@ -444,7 +462,7 @@ export default function HealthPage() {
                                     : 'secondary'
                               }
                             >
-                              {env.issues.filter((i) => i.severity !== 'info').length} {t('issues')}
+                              {env.issues.filter((i) => i.severity !== 'info' && i.confidence !== 'inferred').length} {t('issues')}
                             </Badge>
                             <ChevronDown
                               className={cn(
@@ -551,7 +569,7 @@ export default function HealthPage() {
                                     : 'secondary'
                               }
                             >
-                              {pm.issues.filter((i) => i.severity !== 'info').length} {t('issues')}
+                              {pm.issues.filter((i) => i.severity !== 'info' && i.confidence !== 'inferred').length} {t('issues')}
                             </Badge>
                             <ChevronDown
                               className={cn(

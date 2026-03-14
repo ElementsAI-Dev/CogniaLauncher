@@ -75,6 +75,51 @@ const mockGetTotalDiskUsage = jest
 const mockOpenInExplorer = jest.fn().mockResolvedValue(undefined);
 const mockOpenInTerminal = jest.fn().mockResolvedValue(undefined);
 const mockCloneDistro = jest.fn().mockResolvedValue("cloned");
+const mockRunBatchWorkflow = jest.fn().mockResolvedValue({
+  id: "summary-1",
+  workflowName: "Selected workflow",
+  actionLabel: "Echo ok",
+  startedAt: "2026-03-12T00:00:00.000Z",
+  completedAt: "2026-03-12T00:01:00.000Z",
+  total: 2,
+  succeeded: 1,
+  failed: 1,
+  skipped: 0,
+  refreshTargets: [],
+  workflow: {
+    id: "workflow-1",
+    name: "Selected workflow",
+    createdAt: "2026-03-12T00:00:00.000Z",
+    updatedAt: "2026-03-12T00:00:00.000Z",
+    target: { mode: "selected" },
+    action: { kind: "command", command: "echo ok", label: "Echo ok" },
+  },
+  results: [
+    { distroName: "Ubuntu", status: "success", retryable: false },
+    { distroName: "Debian", status: "failed", retryable: true, detail: "boom" },
+  ],
+});
+const mockRetryBatchWorkflowFailures = jest.fn().mockResolvedValue({
+  id: "summary-2",
+  workflowName: "Selected workflow",
+  actionLabel: "Echo ok",
+  startedAt: "2026-03-12T00:02:00.000Z",
+  completedAt: "2026-03-12T00:03:00.000Z",
+  total: 1,
+  succeeded: 1,
+  failed: 0,
+  skipped: 0,
+  refreshTargets: [],
+  workflow: {
+    id: "workflow-1",
+    name: "Selected workflow",
+    createdAt: "2026-03-12T00:00:00.000Z",
+    updatedAt: "2026-03-12T00:02:00.000Z",
+    target: { mode: "explicit", distroNames: ["Debian"] },
+    action: { kind: "command", command: "echo ok", label: "Echo ok" },
+  },
+  results: [{ distroName: "Debian", status: "success", retryable: false }],
+});
 const mockExecuteAssistanceAction = jest.fn().mockResolvedValue({
   actionId: "runtime.preflight",
   status: "success",
@@ -277,6 +322,8 @@ jest.mock("@/hooks/use-wsl", () => ({
     openInExplorer: mockOpenInExplorer,
     openInTerminal: mockOpenInTerminal,
     cloneDistro: mockCloneDistro,
+    runBatchWorkflow: mockRunBatchWorkflow,
+    retryBatchWorkflowFailures: mockRetryBatchWorkflowFailures,
     backupDistro: jest.fn().mockResolvedValue(undefined),
     listBackups: jest.fn().mockResolvedValue([]),
     restoreBackup: jest.fn().mockResolvedValue(undefined),
@@ -512,6 +559,61 @@ jest.mock("@/components/wsl", () => ({
   WslInstallLocationDialog: () => null,
   WslCloneDialog: () => null,
   WslBackupCard: () => <div data-testid="backup-card">Backup</div>,
+  WslBatchWorkflowCard: ({
+    draft,
+    onDraftChange,
+    onSavePreset,
+    onRunDraft,
+  }: {
+    draft: Record<string, unknown>;
+    onDraftChange: (nextDraft: Record<string, unknown>) => void;
+    onSavePreset: () => void;
+    onRunDraft: () => void;
+  }) => (
+    <div data-testid="wsl-batch-workflow-card">
+      <button data-testid="save-batch-workflow" onClick={onSavePreset}>Save Workflow</button>
+      <button data-testid="run-selected-workflow" onClick={onRunDraft}>Run Selected Workflow</button>
+      <button
+        data-testid="run-tag-workflow"
+        onClick={() => {
+          onDraftChange({
+            ...draft,
+            target: { mode: "tag", tag: "dev" },
+            action: { kind: "command", command: "echo ok", label: "Echo ok" },
+          });
+          onRunDraft();
+        }}
+      >
+        Run Tag Workflow
+      </button>
+    </div>
+  ),
+  WslBatchWorkflowPreviewDialog: ({
+    open,
+    preview,
+    onConfirm,
+  }: {
+    open: boolean;
+    preview?: { runnableCount: number } | null;
+    onConfirm: () => void;
+  }) => open ? (
+    <div data-testid="wsl-batch-workflow-preview">
+      <span>{preview?.runnableCount ?? 0}</span>
+      <button data-testid="confirm-batch-workflow" onClick={onConfirm}>Confirm Workflow</button>
+    </div>
+  ) : null,
+  WslBatchWorkflowSummaryCard: ({
+    summary,
+    onRetry,
+  }: {
+    summary: { workflowName: string } | null;
+    onRetry: () => void;
+  }) => summary ? (
+    <div data-testid="wsl-batch-workflow-summary">
+      <span>{summary.workflowName}</span>
+      <button data-testid="retry-batch-workflow" onClick={onRetry}>Retry Failed</button>
+    </div>
+  ) : null,
 }));
 
 describe("WslPage", () => {
@@ -524,6 +626,8 @@ describe("WslPage", () => {
       availableTags: ["dev", "test", "prod", "experiment"],
       customProfiles: [],
       savedCommands: [],
+      workflowPresets: [],
+      workflowSummaries: [],
       overviewContext: { tab: "installed", tag: null, origin: "overview" },
     });
     mockGetAssistanceActions.mockReturnValue([
@@ -923,6 +1027,49 @@ describe("WslPage - Handlers", () => {
     await waitFor(() => {
       expect(screen.getByTestId("wsl-lifecycle-feedback")).toBeInTheDocument();
       expect(screen.getByText("Launch Ubuntu completed")).toBeInTheDocument();
+    });
+  });
+
+  it("runs a selected batch workflow through preview and confirmation", async () => {
+    const user = userEvent.setup();
+    render(<WslPage />);
+
+    await user.click(screen.getByTestId("run-selected-workflow"));
+    expect(screen.getByTestId("wsl-batch-workflow-preview")).toBeInTheDocument();
+
+    await user.click(screen.getByTestId("confirm-batch-workflow"));
+
+    await waitFor(() => {
+      expect(mockRunBatchWorkflow).toHaveBeenCalled();
+    });
+    expect(await screen.findByTestId("wsl-batch-workflow-summary")).toHaveTextContent("Selected workflow");
+  });
+
+  it("builds tag-based batch workflow previews from current distro tags", async () => {
+    useWslStore.setState({
+      ...useWslStore.getState(),
+      distroTags: { Ubuntu: ["dev"] },
+    });
+    const user = userEvent.setup();
+    render(<WslPage />);
+
+    await user.click(screen.getByTestId("run-tag-workflow"));
+
+    expect(screen.getByTestId("wsl-batch-workflow-preview")).toHaveTextContent("1");
+  });
+
+  it("retries failed workflow items from the latest summary", async () => {
+    const user = userEvent.setup();
+    render(<WslPage />);
+
+    await user.click(screen.getByTestId("run-selected-workflow"));
+    await user.click(screen.getByTestId("confirm-batch-workflow"));
+    await screen.findByTestId("wsl-batch-workflow-summary");
+
+    await user.click(screen.getByTestId("retry-batch-workflow"));
+
+    await waitFor(() => {
+      expect(mockRetryBatchWorkflowFailures).toHaveBeenCalled();
     });
   });
 });

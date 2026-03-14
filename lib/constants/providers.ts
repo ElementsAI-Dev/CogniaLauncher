@@ -21,6 +21,14 @@ export const PACKAGE_MANAGER_IDS = new Set([
   'github', 'gitlab',
 ]);
 
+/**
+ * Providers that are both environment managers and package-surface providers.
+ * These stay visible in package workflows even when `is_environment_provider` is true.
+ */
+export const DUAL_ROLE_PACKAGE_PROVIDER_IDS = new Set([
+  'zig',
+]);
+
 const PACKAGE_PROVIDER_CAPABILITIES = new Set([
   'search',
   'install',
@@ -37,13 +45,23 @@ type ProviderCategorySource = {
   is_environment_provider?: boolean;
 };
 
-export function isPackageManagerProvider(provider: ProviderCategorySource): boolean {
-  if (provider.is_environment_provider) return false;
-  if (SYSTEM_PROVIDER_IDS.has(provider.id)) return false;
-  if (PACKAGE_MANAGER_IDS.has(provider.id)) return true;
+function hasPackageProviderCapabilities(provider: ProviderCategorySource): boolean {
   return provider.capabilities.some((capability) =>
     PACKAGE_PROVIDER_CAPABILITIES.has(capability.toLowerCase()),
   );
+}
+
+export function isPackageSurfaceProvider(provider: ProviderCategorySource): boolean {
+  if (SYSTEM_PROVIDER_IDS.has(provider.id)) return false;
+  const isDualRole = DUAL_ROLE_PACKAGE_PROVIDER_IDS.has(provider.id);
+  if (provider.is_environment_provider && !isDualRole) return false;
+  if (PACKAGE_MANAGER_IDS.has(provider.id)) return true;
+  if (isDualRole) return true;
+  return hasPackageProviderCapabilities(provider);
+}
+
+export function isPackageManagerProvider(provider: ProviderCategorySource): boolean {
+  return isPackageSurfaceProvider(provider);
 }
 
 /**

@@ -138,6 +138,8 @@ impl DownloadQueue {
         }
 
         task.state = DownloadState::Queued;
+        task.error = None;
+        task.failure_reason_code = None;
 
         // Add to front of pending queue
         self.pending.retain(|pid| pid != id);
@@ -250,6 +252,7 @@ impl DownloadQueue {
             task.increment_retry();
             task.state = DownloadState::Queued;
             task.error = Some(error.to_string());
+            task.failure_reason_code = Some(error.reason_code().to_string());
 
             // Add back to pending queue
             self.pending.push_front(id.to_string());
@@ -388,6 +391,7 @@ impl DownloadQueue {
 
         task.state = DownloadState::Queued;
         task.error = None;
+        task.failure_reason_code = None;
         task.retries = 0;
 
         // Remove from any existing position, add to front of pending

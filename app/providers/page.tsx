@@ -21,6 +21,11 @@ import { useLocale } from '@/components/providers/locale-provider';
 import { AlertCircle } from 'lucide-react';
 import * as tauri from '@/lib/tauri';
 import { SYSTEM_PROVIDER_IDS, isPackageManagerProvider } from '@/lib/constants/providers';
+import {
+  getProviderStatusSortValue,
+  getProviderStatusState,
+} from '@/lib/utils/provider';
+import { emitInvalidations } from '@/lib/cache/invalidation';
 import { toast } from 'sonner';
 
 export default function ProvidersPage() {
@@ -32,7 +37,7 @@ export default function ProvidersPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [sortOption, setSortOption] = useState<SortOption>('name-asc');
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
-  const [providerStatus, setProviderStatus] = useState<Record<string, boolean>>({});
+  const [providerStatus, setProviderStatus] = useState<Record<string, tauri.ProviderStatusInfo>>({});
   const [isCheckingStatus, setIsCheckingStatus] = useState(false);
   const initializedRef = useRef(false);
 
@@ -60,23 +65,33 @@ export default function ProvidersPage() {
         : t('providers.disableError', { name: providerId })
       );
     } finally {
+      emitInvalidations(
+        ['provider_data', 'package_data', 'environment_data'],
+        'providers-page:toggle-provider',
+      );
       setTogglingProvider(null);
     }
   }, [fetchProviders, t]);
 
-  const handleCheckStatus = useCallback(async (providerId: string): Promise<boolean> => {
+  const handleCheckStatus = useCallback(async (providerId: string): Promise<tauri.ProviderStatusInfo> => {
     try {
-      const available = await tauri.providerCheck(providerId);
-      setProviderStatus((prev) => ({ ...prev, [providerId]: available }));
-      if (available) {
+      const status = await tauri.providerStatus(providerId);
+      setProviderStatus((prev) => ({ ...prev, [providerId]: status }));
+      if (status.scope_state === 'available' || status.installed) {
         toast.success(t('providers.checkSuccess', { name: providerId }));
       } else {
         toast.warning(t('providers.checkFailed', { name: providerId }));
       }
-      return available;
+      return status;
     } catch {
       toast.error(t('providers.checkError', { name: providerId }));
-      return false;
+      return {
+        id: providerId,
+        display_name: providerId,
+        installed: false,
+        platforms: [],
+        scope_state: 'unavailable',
+      };
     }
   }, [t]);
 
@@ -84,9 +99,9 @@ export default function ProvidersPage() {
     setIsCheckingStatus(true);
     try {
       const statusResults = await tauri.providerStatusAll(true);
-      const newStatus: Record<string, boolean> = {};
+      const newStatus: Record<string, tauri.ProviderStatusInfo> = {};
       for (const status of statusResults) {
-        newStatus[status.id] = status.installed;
+        newStatus[status.id] = status;
       }
       setProviderStatus(newStatus);
       toast.success(t('providers.checkAllSuccess'));
@@ -136,11 +151,14 @@ export default function ProvidersPage() {
       }
 
       if (statusFilter !== 'all') {
-        const isAvailable = providerStatus[provider.id];
-        if (statusFilter === 'available' && isAvailable === false) {
+        const statusState = getProviderStatusState(providerStatus[provider.id]);
+        if (statusFilter === 'available' && statusState !== 'available') {
           return false;
         }
-        if (statusFilter === 'unavailable' && isAvailable !== false) {
+        if (
+          statusFilter === 'unavailable' &&
+          !['unavailable', 'timeout', 'unsupported'].includes(statusState)
+        ) {
           return false;
         }
         if (statusFilter === 'enabled' && !provider.enabled) {
@@ -172,9 +190,10 @@ export default function ProvidersPage() {
         break;
       case 'status':
         sorted.sort((a, b) => {
-          const aAvailable = providerStatus[a.id] ? 1 : 0;
-          const bAvailable = providerStatus[b.id] ? 1 : 0;
-          return bAvailable - aAvailable;
+          return (
+            getProviderStatusSortValue(providerStatus[b.id]) -
+            getProviderStatusSortValue(providerStatus[a.id])
+          );
         });
         break;
     }
@@ -184,10 +203,16 @@ export default function ProvidersPage() {
   const stats = useMemo(() => {
     const total = providers.length;
     const enabled = providers.filter((p) => p.enabled).length;
-    const available = Object.values(providerStatus).filter((v) => v === true).length;
-    const unavailable = Object.values(providerStatus).filter((v) => v === false).length;
+    const available = Object.values(providerStatus).filter(
+      (status) => getProviderStatusState(status) === 'available',
+    ).length;
+    const unavailable = Object.values(providerStatus).filter((status) =>
+      ['unavailable', 'timeout', 'unsupported'].includes(
+        getProviderStatusState(status),
+      ),
+    ).length;
     const environmentCount = providers.filter((p) => p.is_environment_provider).length;
-    const packageCount = providers.filter((p) => !p.is_environment_provider && !SYSTEM_PROVIDER_IDS.has(p.id)).length;
+    const packageCount = providers.filter((p) => isPackageManagerProvider(p)).length;
     const systemCount = providers.filter((p) => SYSTEM_PROVIDER_IDS.has(p.id)).length;
     return { total, enabled, available, unavailable, environmentCount, packageCount, systemCount };
   }, [providers, providerStatus]);
@@ -310,7 +335,8 @@ export default function ProvidersPage() {
             <ProviderCard
               key={provider.id}
               provider={provider}
-              isAvailable={providerStatus[provider.id]}
+              statusInfo={providerStatus[provider.id]}
+              isAvailable={providerStatus[provider.id]?.installed}
               isToggling={togglingProvider === provider.id}
               onToggle={handleToggleProvider}
               onCheckStatus={handleCheckStatus}
@@ -324,7 +350,8 @@ export default function ProvidersPage() {
             <ProviderListItem
               key={provider.id}
               provider={provider}
-              isAvailable={providerStatus[provider.id]}
+              statusInfo={providerStatus[provider.id]}
+              isAvailable={providerStatus[provider.id]?.installed}
               isToggling={togglingProvider === provider.id}
               onToggle={handleToggleProvider}
               onCheckStatus={handleCheckStatus}

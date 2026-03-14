@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { TerminalDetectedShells } from './terminal-detected-shells';
 import type { ShellInfo } from '@/types/tauri';
 
@@ -31,8 +32,8 @@ describe('TerminalDetectedShells', () => {
   it('renders shell cards with name and version', () => {
     render(<TerminalDetectedShells shells={shells} loading={false} />);
 
-    expect(screen.getByText('Bash')).toBeInTheDocument();
-    expect(screen.getByText('PowerShell')).toBeInTheDocument();
+    expect(screen.getAllByText('Bash').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('PowerShell').length).toBeGreaterThan(0);
     expect(screen.getByText('v5.2')).toBeInTheDocument();
   });
 
@@ -54,7 +55,8 @@ describe('TerminalDetectedShells', () => {
     expect(screen.getByText('terminal.default')).toBeInTheDocument();
   });
 
-  it('renders config files with exists indicator and size', () => {
+  it('renders config files with exists indicator and size', async () => {
+    const user = userEvent.setup();
     const shellsWithConfig: ShellInfo[] = [
       {
         id: 'zsh',
@@ -71,9 +73,10 @@ describe('TerminalDetectedShells', () => {
     ];
     render(<TerminalDetectedShells shells={shellsWithConfig} loading={false} />);
 
-    expect(screen.getByText('/home/user/.zshrc')).toBeInTheDocument();
-    expect(screen.getByText('/home/user/.zprofile')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'terminal.configFilesCount' }));
+    expect(screen.getByText('.zshrc')).toBeInTheDocument();
+    expect(screen.getByText('.zprofile')).toBeInTheDocument();
     expect(screen.getByText('(0.5 KB)')).toBeInTheDocument();
-    expect(screen.queryByText('v')).not.toBeInTheDocument();
+    expect(screen.queryByText(/^v\d/)).not.toBeInTheDocument();
   });
 });

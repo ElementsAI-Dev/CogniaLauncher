@@ -9,9 +9,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Sha256, Sha384, Sha512};
 
-#[cfg(test)]
-type FnResult<T> = Result<T, String>;
-
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct JwtInspectInput {
@@ -62,6 +59,7 @@ struct JwtInspectSuccess {
     message: String,
 }
 
+#[cfg(not(test))]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct JwtInspectFailure {
@@ -74,7 +72,9 @@ struct JwtInspectFailure {
 #[derive(Debug)]
 struct PluginError {
     code: &'static str,
+    #[cfg_attr(test, allow(dead_code))]
     message: String,
+    #[cfg_attr(test, allow(dead_code))]
     recommendations: Vec<String>,
 }
 
@@ -88,6 +88,7 @@ impl PluginError {
     }
 }
 
+#[cfg(not(test))]
 fn execute_jwt_inspect(input: String) -> FnResult<String> {
     match parse_and_inspect(&input) {
         Ok(success) => Ok(serde_json::to_string(&success).unwrap_or_else(|_| {

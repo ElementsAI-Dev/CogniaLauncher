@@ -1,6 +1,7 @@
 import {
   categorizeUpdateError,
   deriveStatusFromUpdateInfo,
+  mapSelfUpdateErrorCategory,
   mapProgressToUpdateStatus,
   normalizeSelfUpdateInfo,
 } from './update-lifecycle';
@@ -39,6 +40,16 @@ describe('update-lifecycle', () => {
         release_notes: null,
       }),
     ).toBe('up_to_date');
+
+    expect(
+      deriveStatusFromUpdateInfo({
+        current_version: '1.0.0',
+        latest_version: '1.0.0',
+        update_available: false,
+        release_notes: null,
+        error_category: 'source_unavailable',
+      }),
+    ).toBe('error');
   });
 
   it('maps progress event statuses deterministically', () => {
@@ -61,5 +72,25 @@ describe('update-lifecycle', () => {
     expect(categorizeUpdateError(new Error('unexpected failure'))).toBe(
       'unknown_error',
     );
+    expect(
+      categorizeUpdateError(
+        'source_unavailable: request failed (selected_source=mirror, attempted_sources=mirror,official)',
+      ),
+    ).toBe('source_unavailable_error');
+    expect(categorizeUpdateError({ error_category: 'validation' })).toBe(
+      'validation_error',
+    );
+  });
+
+  it('maps backend self-update error categories', () => {
+    expect(mapSelfUpdateErrorCategory('source_unavailable')).toBe(
+      'source_unavailable_error',
+    );
+    expect(mapSelfUpdateErrorCategory('signature')).toBe('signature_error');
+    expect(mapSelfUpdateErrorCategory('timeout')).toBe('timeout_error');
+    expect(mapSelfUpdateErrorCategory('no_update')).toBe(
+      'update_check_failed',
+    );
+    expect(mapSelfUpdateErrorCategory(null)).toBeNull();
   });
 });

@@ -27,10 +27,12 @@ function createPluginInfo(overrides?: Partial<PluginInfo>): Pick<PluginInfo, 'to
   };
 }
 
-function createTool(overrides?: Partial<PluginToolInfo>): Pick<PluginToolInfo, 'toolId' | 'capabilityDeclarations'> {
+function createTool(overrides?: Partial<PluginToolInfo>): Pick<PluginToolInfo, 'toolId' | 'capabilityDeclarations' | 'discoverable' | 'exclusionReason'> {
   return {
     toolId: 'tool.demo',
     capabilityDeclarations: [],
+    discoverable: true,
+    exclusionReason: null,
     ...overrides,
   };
 }
@@ -130,6 +132,18 @@ describe('discoverability governance', () => {
     expect(getDiscoverabilityDiagnostic(compatibleTool, createHealth({ autoDisabled: true }))).toEqual({
       discoverable: false,
       reason: 'Plugin auto-disabled after repeated failures.',
+    });
+  });
+
+  it('honors backend plugin-point exclusion diagnostics before local policy checks', () => {
+    expect(
+      getDiscoverabilityDiagnostic(
+        createTool({ discoverable: false, exclusionReason: 'Plugin point blocked by validation.' }),
+        null,
+      ),
+    ).toEqual({
+      discoverable: false,
+      reason: 'Plugin point blocked by validation.',
     });
   });
 

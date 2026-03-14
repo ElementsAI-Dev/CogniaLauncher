@@ -80,6 +80,20 @@ CogniaLauncher/
 | `pnpm tauri dev` | 启动桌面开发模式 |
 | `pnpm tauri build` | 构建桌面应用 |
 
+### 使用 CrabNebula DevTools 调试桌面应用
+
+当你需要检查 Tauri 命令调用、事件、spans 或后端日志时，请在桌面 debug 构建中使用 CrabNebula DevTools。
+
+1. 按官方指南安装 standalone 版 CrabNebula DevTools：<https://docs.crabnebula.dev/devtools/get-started/>。
+2. 通过 `pnpm tauri dev` 启动 CogniaLauncher 的桌面 debug 模式。
+3. 在 CrabNebula DevTools 中连接正在运行的应用，并在那里查看 commands、events、logs 与 spans。
+
+说明：
+
+- 桌面 debug 构建会注册 `tauri-plugin-devtools`，不会在同一进程内再初始化 `tauri-plugin-log`。
+- 生产/release 构建仍然使用 `tauri-plugin-log` 提供日志文件、WebView 转发和应用内日志管理能力。
+- 如果 debug 调试时应用内日志面板提示后端桥接不可用，这是预期行为；请改用 CrabNebula DevTools 检查后端信息。
+
 ---
 
 ## IDE 配置

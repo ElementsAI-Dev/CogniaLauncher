@@ -369,11 +369,13 @@ impl EnvironmentProvider for PhpbrewProvider {
                         .and_then(|r| r.get("php"))
                         .and_then(|v| v.as_str())
                     {
-                        // Extract version from requirement like ">=8.0" or "^8.1"
-                        let version = php_req
-                            .trim_start_matches(|c: char| !c.is_ascii_digit())
-                            .split(|c: char| !c.is_ascii_digit() && c != '.')
-                            .next()
+                        // Extract first version-like number from constraint
+                        // Handles: ^8.2, >=7.4, ~8.1, >=8.0 <9.0, 8.2.*
+                        let version_re = regex::Regex::new(r"(\d+\.\d+(?:\.\d+)?)").unwrap();
+                        let version = version_re
+                            .captures(php_req)
+                            .and_then(|c| c.get(1))
+                            .map(|m| m.as_str())
                             .unwrap_or("");
 
                         if !version.is_empty() {

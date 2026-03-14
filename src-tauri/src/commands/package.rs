@@ -67,6 +67,49 @@ pub async fn invalidate_package_caches(settings: &SharedSettings) {
     }
 }
 
+pub async fn refresh_provider_registry(
+    settings: &SharedSettings,
+    registry: &SharedRegistry,
+) -> Result<(), String> {
+    let rebuilt_registry = {
+        let settings_guard = settings.read().await;
+        ProviderRegistry::with_settings(&settings_guard)
+            .await
+            .map_err(|err| err.to_string())?
+    };
+
+    let mut registry_guard = registry.write().await;
+    *registry_guard = rebuilt_registry;
+    Ok(())
+}
+
+async fn update_provider_management_state<F>(
+    provider_id: &str,
+    settings: &SharedSettings,
+    registry: &SharedRegistry,
+    mutate: F,
+) -> Result<(), String>
+where
+    F: FnOnce(&mut Settings, &str) -> Result<(), String>,
+{
+    {
+        let registry_guard = registry.read().await;
+        if registry_guard.get(provider_id).is_none() {
+            return Err(format!("Provider not found: {}", provider_id));
+        }
+    }
+
+    {
+        let mut settings_guard = settings.write().await;
+        mutate(&mut settings_guard, provider_id)?;
+        settings_guard.save().await.map_err(|err| err.to_string())?;
+    }
+
+    refresh_provider_registry(settings, registry).await?;
+    invalidate_package_caches(settings).await;
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn package_search(
     query: String,
@@ -326,8 +369,8 @@ pub async fn provider_check(
     registry: State<'_, SharedRegistry>,
 ) -> Result<bool, String> {
     let reg = registry.read().await;
-    if let Some(provider) = reg.get(&provider_id) {
-        Ok(provider.is_available().await)
+    if reg.get(&provider_id).is_some() {
+        Ok(reg.check_provider_available(&provider_id).await)
     } else {
         Ok(false)
     }
@@ -399,6 +442,41 @@ fn build_provider_status_info(
             update_support.as_ref().map(|r| r.code.to_string())
         },
     }
+}
+
+#[tauri::command]
+pub async fn provider_status(
+    provider_id: String,
+    registry: State<'_, SharedRegistry>,
+) -> Result<ProviderStatusInfo, String> {
+    let platform = current_platform();
+    let info = {
+        let reg = registry.read().await;
+        reg.get_provider_info(&provider_id)
+            .ok_or_else(|| format!("Provider not found: {}", provider_id))?
+    };
+
+    let availability = {
+        let reg = registry.read().await;
+        let is_api_provider = reg.get_api_provider_config(&info.id).is_some();
+        if !info.enabled {
+            ProviderAvailabilityProbe::Unavailable
+        } else {
+            match reg.get(&info.id) {
+                Some(provider) => {
+                    let timeout = provider_health_probe_timeout(&info.id, is_api_provider);
+                    match tokio::time::timeout(timeout, provider.is_available()).await {
+                        Ok(true) => ProviderAvailabilityProbe::Available,
+                        Ok(false) => ProviderAvailabilityProbe::Unavailable,
+                        Err(_) => ProviderAvailabilityProbe::Timeout,
+                    }
+                }
+                None => ProviderAvailabilityProbe::Unavailable,
+            }
+        }
+    };
+
+    Ok(build_provider_status_info(info, platform, availability))
 }
 
 #[tauri::command]
@@ -562,31 +640,16 @@ pub async fn provider_enable(
     registry: State<'_, SharedRegistry>,
     settings: State<'_, SharedSettings>,
 ) -> Result<(), String> {
-    // Check if provider exists
-    {
-        let reg = registry.read().await;
-        if reg.get(&provider_id).is_none() {
-            return Err(format!("Provider not found: {}", provider_id));
-        }
-    }
-
-    // Update settings to enable the provider (remove from disabled list)
-    let mut settings_guard = settings.write().await;
-    settings_guard
-        .provider_settings
-        .disabled_providers
-        .retain(|p| p != &provider_id);
-    settings_guard.save().await.map_err(|e| e.to_string())?;
-    drop(settings_guard); // release write lock before invalidation reads settings
-
-    let mut reg = registry.write().await;
-    reg.set_provider_enabled(&provider_id, true);
-    drop(reg);
-
-    // Invalidate package caches since enabled provider changes installed package set
-    invalidate_package_caches(settings.inner()).await;
-
-    Ok(())
+    update_provider_management_state(
+        &provider_id,
+        settings.inner(),
+        registry.inner(),
+        |settings, provider_id| {
+            settings.set_provider_enabled_override(provider_id, Some(true));
+            Ok(())
+        },
+    )
+    .await
 }
 
 #[tauri::command]
@@ -595,37 +658,35 @@ pub async fn provider_disable(
     registry: State<'_, SharedRegistry>,
     settings: State<'_, SharedSettings>,
 ) -> Result<(), String> {
-    // Check if provider exists
-    {
-        let reg = registry.read().await;
-        if reg.get(&provider_id).is_none() {
-            return Err(format!("Provider not found: {}", provider_id));
-        }
-    }
+    update_provider_management_state(
+        &provider_id,
+        settings.inner(),
+        registry.inner(),
+        |settings, provider_id| {
+            settings.set_provider_enabled_override(provider_id, Some(false));
+            Ok(())
+        },
+    )
+    .await
+}
 
-    // Update settings to disable the provider (add to disabled list)
-    let mut settings_guard = settings.write().await;
-    if !settings_guard
-        .provider_settings
-        .disabled_providers
-        .contains(&provider_id)
-    {
-        settings_guard
-            .provider_settings
-            .disabled_providers
-            .push(provider_id.clone());
-    }
-    settings_guard.save().await.map_err(|e| e.to_string())?;
-    drop(settings_guard); // release write lock before invalidation reads settings
-
-    let mut reg = registry.write().await;
-    reg.set_provider_enabled(&provider_id, false);
-    drop(reg);
-
-    // Invalidate package caches since disabled provider changes installed package set
-    invalidate_package_caches(settings.inner()).await;
-
-    Ok(())
+#[tauri::command]
+pub async fn provider_set_priority(
+    provider_id: String,
+    priority: i32,
+    registry: State<'_, SharedRegistry>,
+    settings: State<'_, SharedSettings>,
+) -> Result<(), String> {
+    update_provider_management_state(
+        &provider_id,
+        settings.inner(),
+        registry.inner(),
+        |settings, provider_id| {
+            settings.set_provider_priority_override(provider_id, Some(priority));
+            Ok(())
+        },
+    )
+    .await
 }
 
 #[cfg(test)]
@@ -758,5 +819,23 @@ mod tests {
         assert!(status.scope_reason.is_none());
         assert_eq!(status.status, "supported");
         assert!(status.update_supported);
+    }
+
+    #[test]
+    fn test_build_provider_status_info_zig_unavailable_maps_to_unsupported() {
+        let info = provider_info("zig", vec![Capability::Update, Capability::VersionSwitch]);
+        let status = build_provider_status_info(
+            info,
+            Platform::Windows,
+            ProviderAvailabilityProbe::Unavailable,
+        );
+
+        assert_eq!(status.id, "zig");
+        assert_eq!(status.scope_state, "unavailable");
+        assert_eq!(status.status, "unsupported");
+        assert_eq!(
+            status.reason_code.as_deref(),
+            Some(REASON_PROVIDER_UNAVAILABLE)
+        );
     }
 }

@@ -22,8 +22,15 @@ import {
 } from '@/components/ui/select';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertTriangle, Loader2, SplitSquareHorizontal } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { validateEnvVarKey } from '@/lib/envvar';
 import type { EnvVarScope } from '@/types/tauri';
+
+const SCOPE_DOT_COLORS: Record<EnvVarScope, string> = {
+  process: 'bg-muted-foreground',
+  user: 'bg-blue-500',
+  system: 'bg-amber-500',
+};
 
 interface EnvVarEditDialogProps {
   open: boolean;
@@ -46,7 +53,7 @@ export function EnvVarEditDialog({
 }: EnvVarEditDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-lg">
         {open && (
           <EnvVarEditDialogContent
             onOpenChange={onOpenChange}
@@ -80,6 +87,15 @@ function EnvVarEditDialogContent({
   const sep = value.includes(';') ? ';' : ':';
   const isPathLike = value.length > 60 && (value.includes(';') || value.includes(':'));
   const useTextarea = value.length > 80 || isPathLike;
+  const isPersistentScope = scope === 'user' || scope === 'system';
+
+  const handleKeyChange = (newKey: string) => {
+    setKey(newKey);
+    if (keyError) {
+      const validation = validateEnvVarKey(newKey.trim());
+      if (validation.valid) setKeyError(null);
+    }
+  };
 
   const handleSave = () => {
     if (pending) return;
@@ -98,6 +114,10 @@ function EnvVarEditDialogContent({
     onOpenChange(false);
   };
 
+  const saveLabel = isEdit
+    ? t('common.save')
+    : `${t('envvar.actions.add')}`;
+
   return (
     <>
       <DialogHeader>
@@ -115,13 +135,13 @@ function EnvVarEditDialogContent({
           <Input
             id="envvar-key"
             value={key}
-            onChange={(e) => {
-              setKey(e.target.value);
-              setKeyError(null);
-            }}
+            onChange={(e) => handleKeyChange(e.target.value)}
             placeholder="MY_VARIABLE"
             disabled={isEdit}
-            className="font-mono text-sm"
+            className={cn(
+              'font-mono text-sm',
+              keyError && 'border-destructive focus-visible:ring-destructive/30',
+            )}
           />
           {keyError && (
             <p className="text-sm text-destructive">{keyError}</p>
@@ -178,17 +198,45 @@ function EnvVarEditDialogContent({
             <Label htmlFor="envvar-scope">{t('envvar.table.scope')}</Label>
             <Select value={scope} onValueChange={(v) => setScope(v as EnvVarScope)}>
               <SelectTrigger id="envvar-scope">
-                <SelectValue />
+                <div className="flex items-center gap-2">
+                  <span className={cn('h-2 w-2 shrink-0 rounded-full', SCOPE_DOT_COLORS[scope])} />
+                  <SelectValue />
+                </div>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="process">{t('envvar.scopes.process')}</SelectItem>
-                <SelectItem value="user">{t('envvar.scopes.user')}</SelectItem>
-                <SelectItem value="system">{t('envvar.scopes.system')}</SelectItem>
+                <SelectItem value="process">
+                  <div className="flex items-center gap-2">
+                    <span className={cn('h-2 w-2 shrink-0 rounded-full', SCOPE_DOT_COLORS.process)} />
+                    {t('envvar.scopes.process')}
+                  </div>
+                </SelectItem>
+                <SelectItem value="user">
+                  <div className="flex items-center gap-2">
+                    <span className={cn('h-2 w-2 shrink-0 rounded-full', SCOPE_DOT_COLORS.user)} />
+                    {t('envvar.scopes.user')}
+                  </div>
+                </SelectItem>
+                <SelectItem value="system">
+                  <div className="flex items-center gap-2">
+                    <span className={cn('h-2 w-2 shrink-0 rounded-full', SCOPE_DOT_COLORS.system)} />
+                    {t('envvar.scopes.system')}
+                  </div>
+                </SelectItem>
               </SelectContent>
             </Select>
+
+            {/* Persistent scope warning - positioned right under scope selector */}
+            {isPersistentScope && (
+              <Alert className="border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-400 [&>svg]:text-amber-500">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle>{t('envvar.confirm.systemWarnTitle')}</AlertTitle>
+                <AlertDescription>{t('envvar.confirm.systemWarnDesc')}</AlertDescription>
+              </Alert>
+            )}
           </div>
         )}
 
+        {/* Scope hint */}
         <Alert className="border-dashed" data-testid="envvar-edit-context">
           <AlertDescription className="text-xs">
             {scope === 'process'
@@ -196,14 +244,6 @@ function EnvVarEditDialogContent({
               : t('envvar.editDialog.persistentScopeHint')}
           </AlertDescription>
         </Alert>
-
-        {(scope === 'user' || scope === 'system') && (
-          <Alert variant="destructive" className="border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-400 [&>svg]:text-amber-500">
-            <AlertTriangle className="h-4 w-4" />
-            <AlertTitle>{t('envvar.confirm.systemWarnTitle')}</AlertTitle>
-            <AlertDescription>{t('envvar.confirm.systemWarnDesc')}</AlertDescription>
-          </Alert>
-        )}
       </div>
 
       <DialogFooter>
@@ -212,7 +252,7 @@ function EnvVarEditDialogContent({
         </Button>
         <Button onClick={handleSave} disabled={!key.trim() || pending}>
           {pending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-          {pending ? t('common.loading') : isEdit ? t('common.save') : t('envvar.actions.add')}
+          {pending ? t('common.loading') : saveLabel}
         </Button>
       </DialogFooter>
     </>

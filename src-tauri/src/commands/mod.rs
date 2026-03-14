@@ -25,6 +25,7 @@ pub mod plugin;
 pub mod poetry;
 pub mod profiles;
 pub mod search;
+pub mod secrets;
 pub mod shim;
 pub mod terminal;
 pub mod updater;
@@ -148,7 +149,7 @@ pub use git::{
     git_start_interactive_rebase, git_stash_apply, git_stash_branch, git_stash_drop, git_stash_pop,
     git_stash_push_files, git_stash_save, git_stash_show, git_sync_submodules, git_toggle_hook,
     git_unshallow, git_unstage_files, git_update, git_update_submodules, git_validate_url,
-    git_verify_commit, git_verify_tag,
+    git_verify_commit, git_verify_tag, git_get_support_snapshot,
 };
 pub use github::{
     github_clear_token, github_download_asset, github_download_source, github_get_release_assets,
@@ -213,6 +214,11 @@ pub use profiles::{
     profile_get, profile_import, profile_list, profile_update,
 };
 pub use search::{advanced_search, compare_packages, search_suggestions};
+pub use secrets::{
+    provider_secret_clear_internal, provider_secret_save_internal, provider_secret_status_internal,
+    resolve_provider_secret, secret_vault_lock, secret_vault_reset, secret_vault_setup,
+    secret_vault_status, secret_vault_unlock, ProviderSecretStatus, SecretVaultStatus,
+};
 pub use shim::{
     path_check, path_get_add_command, path_remove, path_setup, path_status, shim_create, shim_list,
     shim_regenerate_all, shim_remove, shim_update,

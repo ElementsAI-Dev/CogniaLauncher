@@ -6,20 +6,27 @@ const mockFeedbackList = jest.fn();
 const mockFeedbackDelete = jest.fn();
 const mockFeedbackExport = jest.fn();
 const mockFeedbackCount = jest.fn();
-const mockGetPlatformInfo = jest.fn();
+const mockIsTauri = jest.fn(() => false);
+const mockGetOsLabel = jest.fn(() => 'Windows');
+const mockGetOsVersion = jest.fn(() => '11');
+const mockGetArch = jest.fn(() => 'x86_64');
+const mockToastSuccess = jest.fn();
+const mockToastWarning = jest.fn();
+const mockToastError = jest.fn();
 
 jest.mock('@/lib/platform', () => ({
-  isTauri: jest.fn(() => false),
+  isTauri: () => mockIsTauri(),
+  getOsLabel: () => mockGetOsLabel(),
+  getOsVersion: () => mockGetOsVersion(),
+  getArch: () => mockGetArch(),
 }));
 
 jest.mock('@/lib/tauri', () => ({
-  isTauri: jest.fn(() => false),
   feedbackSave: (...args: unknown[]) => mockFeedbackSave(...args),
   feedbackList: (...args: unknown[]) => mockFeedbackList(...args),
   feedbackDelete: (...args: unknown[]) => mockFeedbackDelete(...args),
   feedbackExport: (...args: unknown[]) => mockFeedbackExport(...args),
   feedbackCount: (...args: unknown[]) => mockFeedbackCount(...args),
-  getPlatformInfo: (...args: unknown[]) => mockGetPlatformInfo(...args),
 }));
 
 jest.mock('@/lib/app-version', () => ({
@@ -28,9 +35,9 @@ jest.mock('@/lib/app-version', () => ({
 
 jest.mock('sonner', () => ({
   toast: {
-    success: jest.fn(),
-    warning: jest.fn(),
-    error: jest.fn(),
+    success: (...args: unknown[]) => mockToastSuccess(...args),
+    warning: (...args: unknown[]) => mockToastWarning(...args),
+    error: (...args: unknown[]) => mockToastError(...args),
   },
 }));
 
@@ -48,6 +55,7 @@ const mockT = (key: string) => key;
 describe('useFeedback', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockIsTauri.mockReturnValue(false);
   });
 
   it('returns expected interface', () => {
@@ -90,7 +98,7 @@ describe('useFeedback', () => {
     expect(count).toBe(0);
   });
 
-  it('submitFeedback in web mode triggers JSON download', async () => {
+  it('submitFeedback in web mode returns a success outcome', async () => {
     const mockClick = jest.fn();
     const mockAnchor = { href: '', download: '', click: mockClick };
 
@@ -109,8 +117,10 @@ describe('useFeedback', () => {
 
     const { result } = renderHook(() => useFeedback());
 
+    let outcome;
+
     await act(async () => {
-      await result.current.submitFeedback(
+      outcome = await result.current.submitFeedback(
         {
           category: 'bug',
           title: 'Test bug',
@@ -124,7 +134,76 @@ describe('useFeedback', () => {
     expect(mockClick).toHaveBeenCalled();
     expect(createObjectURL).toHaveBeenCalled();
     expect(revokeObjectURL).toHaveBeenCalled();
+    expect(outcome).toEqual({ success: true, mode: 'web' });
+    expect(mockToastSuccess).toHaveBeenCalledWith('feedback.submitSuccessWeb');
 
     jest.restoreAllMocks();
+  });
+
+  it('submitFeedback in tauri mode returns a tauri success outcome', async () => {
+    mockIsTauri.mockReturnValue(true);
+    mockFeedbackSave.mockResolvedValueOnce({ id: 'fb-1', path: '/tmp/fb-1.json' });
+
+    const { result } = renderHook(() => useFeedback());
+
+    let outcome;
+
+    await act(async () => {
+      outcome = await result.current.submitFeedback(
+        {
+          category: 'bug',
+          title: 'Test bug',
+          description: 'Test desc',
+          includeDiagnostics: false,
+        },
+        mockT,
+      );
+    });
+
+    expect(mockFeedbackSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        category: 'bug',
+        title: 'Test bug',
+        os: 'Windows 11',
+        arch: 'x86_64',
+      }),
+    );
+    expect(outcome).toEqual({
+      success: true,
+      mode: 'tauri',
+      result: { id: 'fb-1', path: '/tmp/fb-1.json' },
+    });
+    expect(mockToastSuccess).toHaveBeenCalledWith('feedback.submitSuccess', {
+      description: 'feedback.submitSuccessDesc',
+    });
+  });
+
+  it('submitFeedback returns a failure outcome when submission throws', async () => {
+    const createObjectURL = jest.fn(() => {
+      throw new Error('blob failed');
+    });
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    global.URL.createObjectURL = createObjectURL;
+
+    const { result } = renderHook(() => useFeedback());
+
+    let outcome;
+
+    await act(async () => {
+      outcome = await result.current.submitFeedback(
+        {
+          category: 'bug',
+          title: 'Test bug',
+          description: 'Test desc',
+          includeDiagnostics: false,
+        },
+        mockT,
+      );
+    });
+
+    expect(outcome).toEqual({ success: false });
+    expect(mockToastError).toHaveBeenCalledWith('feedback.submitFailed');
+
+    consoleErrorSpy.mockRestore();
   });
 });

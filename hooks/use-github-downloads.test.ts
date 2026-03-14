@@ -12,6 +12,10 @@ const mockGithubDownloadSource = jest.fn();
 const mockGithubGetToken = jest.fn();
 const mockGithubSetToken = jest.fn();
 const mockGithubClearToken = jest.fn();
+const mockSecretVaultStatus = jest.fn();
+const mockSecretVaultSetup = jest.fn();
+const mockSecretVaultUnlock = jest.fn();
+const mockSecretVaultLock = jest.fn();
 const mockIsTauri = jest.fn(() => true);
 
 jest.mock('@/lib/tauri', () => ({
@@ -27,13 +31,33 @@ jest.mock('@/lib/tauri', () => ({
   githubGetToken: (...args: unknown[]) => mockGithubGetToken(...args),
   githubSetToken: (...args: unknown[]) => mockGithubSetToken(...args),
   githubClearToken: (...args: unknown[]) => mockGithubClearToken(...args),
+  secretVaultStatus: (...args: unknown[]) => mockSecretVaultStatus(...args),
+  secretVaultSetup: (...args: unknown[]) => mockSecretVaultSetup(...args),
+  secretVaultUnlock: (...args: unknown[]) => mockSecretVaultUnlock(...args),
+  secretVaultLock: (...args: unknown[]) => mockSecretVaultLock(...args),
 }));
+
+const unsecuredStatus = {
+  initialized: false,
+  unlocked: false,
+  migrationPending: false,
+};
+
+const emptyTokenStatus = {
+  provider: 'github',
+  configured: false,
+  configuredInVault: false,
+  configuredInEnv: false,
+  needsUnlock: false,
+  legacyPlaintextPresent: false,
+};
 
 describe('useGitHubDownloads', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockIsTauri.mockReturnValue(true);
-    mockGithubGetToken.mockResolvedValue(null);
+    mockGithubGetToken.mockResolvedValue(emptyTokenStatus);
+    mockSecretVaultStatus.mockResolvedValue(unsecuredStatus);
   });
 
   it('should initialize with default state', () => {
@@ -51,16 +75,30 @@ describe('useGitHubDownloads', () => {
     expect(result.current.releases).toEqual([]);
     expect(result.current.loading).toBe(false);
     expect(result.current.error).toBeNull();
+    expect(result.current.tokenStatus).toBeNull();
+    expect(result.current.vaultStatus).toBeNull();
   });
 
-  it('should load saved token on mount', async () => {
-    mockGithubGetToken.mockResolvedValue('ghp_test123');
+  it('should load saved token status on mount without repopulating the token input', async () => {
+    mockGithubGetToken.mockResolvedValue({
+      ...emptyTokenStatus,
+      configured: true,
+      configuredInVault: true,
+      needsUnlock: true,
+    });
+    mockSecretVaultStatus.mockResolvedValue({
+      initialized: true,
+      unlocked: false,
+      migrationPending: false,
+    });
 
     const { result } = renderHook(() => useGitHubDownloads());
 
     await waitFor(() => {
-      expect(result.current.token).toBe('ghp_test123');
+      expect(result.current.tokenStatus?.configured).toBe(true);
+      expect(result.current.vaultStatus?.initialized).toBe(true);
     });
+    expect(result.current.token).toBe('');
     expect(result.current.tokenLoading).toBe(false);
   });
 
@@ -73,6 +111,7 @@ describe('useGitHubDownloads', () => {
       expect(result.current.tokenLoading).toBe(false);
     });
     expect(result.current.token).toBe('');
+    expect(result.current.tokenStatus).toBeNull();
   });
 
   it('should set tokenLoading false when not in Tauri', async () => {
@@ -278,7 +317,11 @@ describe('useGitHubDownloads', () => {
   });
 
   it('should save token', async () => {
-    mockGithubSetToken.mockResolvedValue(undefined);
+    mockGithubSetToken.mockResolvedValue({
+      ...emptyTokenStatus,
+      configured: true,
+      configuredInVault: true,
+    });
 
     const { result } = renderHook(() => useGitHubDownloads());
 
@@ -291,6 +334,7 @@ describe('useGitHubDownloads', () => {
     });
 
     expect(mockGithubSetToken).toHaveBeenCalledWith('ghp_test');
+    expect(result.current.token).toBe('');
   });
 
   it('should not save empty token', async () => {
@@ -304,7 +348,7 @@ describe('useGitHubDownloads', () => {
   });
 
   it('should clear saved token', async () => {
-    mockGithubClearToken.mockResolvedValue(undefined);
+    mockGithubClearToken.mockResolvedValue(emptyTokenStatus);
 
     const { result } = renderHook(() => useGitHubDownloads());
 
@@ -318,6 +362,48 @@ describe('useGitHubDownloads', () => {
 
     expect(mockGithubClearToken).toHaveBeenCalled();
     expect(result.current.token).toBe('');
+  });
+
+  it('should set up secure storage when a password is provided', async () => {
+    mockSecretVaultSetup.mockResolvedValue({
+      initialized: true,
+      unlocked: true,
+      migrationPending: false,
+    });
+
+    const { result } = renderHook(() => useGitHubDownloads());
+
+    act(() => {
+      result.current.setVaultPassword('vault-pass');
+    });
+
+    await act(async () => {
+      await result.current.setupVault();
+    });
+
+    expect(mockSecretVaultSetup).toHaveBeenCalledWith('vault-pass');
+    expect(result.current.vaultPassword).toBe('');
+  });
+
+  it('should unlock secure storage when a password is provided', async () => {
+    mockSecretVaultUnlock.mockResolvedValue({
+      initialized: true,
+      unlocked: true,
+      migrationPending: false,
+    });
+
+    const { result } = renderHook(() => useGitHubDownloads());
+
+    act(() => {
+      result.current.setVaultPassword('vault-pass');
+    });
+
+    await act(async () => {
+      await result.current.unlockVault();
+    });
+
+    expect(mockSecretVaultUnlock).toHaveBeenCalledWith('vault-pass');
+    expect(result.current.vaultPassword).toBe('');
   });
 
   it('should reset all state', () => {

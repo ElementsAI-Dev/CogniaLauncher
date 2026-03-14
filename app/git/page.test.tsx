@@ -20,7 +20,6 @@ const mockLfsRefreshTracked = jest.fn().mockResolvedValue(undefined);
 const mockLfsRefreshFiles = jest.fn().mockResolvedValue(undefined);
 const mockStashShowDiff = jest.fn().mockResolvedValue('stash diff content');
 const mockResetHead = jest.fn().mockResolvedValue('reset');
-const mockGetAheadBehind = jest.fn().mockResolvedValue({ ahead: 0, behind: 0 });
 const mockGetCommitDetail = jest.fn().mockResolvedValue(null);
 const mockRefreshRepoInfo = jest.fn().mockResolvedValue(undefined);
 const mockRefreshStatus = jest.fn().mockResolvedValue(undefined);
@@ -31,6 +30,83 @@ const mockMerge = jest.fn().mockResolvedValue('merged');
 const mockCommit = jest.fn().mockResolvedValue('committed');
 const mockQuickRebase = jest.fn().mockResolvedValue('ok');
 const mockQuickSquash = jest.fn().mockResolvedValue('ok');
+
+const createSupportSnapshot = () => ({
+  gitAvailable: true,
+  gitVersion: '2.42.0',
+  executablePath: '/usr/bin/git',
+  repoReady: true,
+  features: [
+    {
+      key: 'rebaseSquash',
+      status: 'supported',
+      supported: true,
+      reason: null,
+      nextSteps: [],
+      requiresRepo: true,
+      minVersion: '2.22.0',
+    },
+    {
+      key: 'interactiveRebase',
+      status: 'supported',
+      supported: true,
+      reason: null,
+      nextSteps: [],
+      requiresRepo: true,
+      minVersion: '2.22.0',
+    },
+    {
+      key: 'bisect',
+      status: 'supported',
+      supported: true,
+      reason: null,
+      nextSteps: [],
+      requiresRepo: true,
+      minVersion: '2.0.0',
+    },
+    {
+      key: 'sparseCheckout',
+      status: 'supported',
+      supported: true,
+      reason: null,
+      nextSteps: [],
+      requiresRepo: true,
+      minVersion: '2.25.0',
+    },
+    {
+      key: 'signatureVerify',
+      status: 'supported',
+      supported: true,
+      reason: null,
+      nextSteps: [],
+      requiresRepo: true,
+      minVersion: '2.0.0',
+    },
+    {
+      key: 'archive',
+      status: 'supported',
+      supported: true,
+      reason: null,
+      nextSteps: [],
+      requiresRepo: true,
+      minVersion: '2.0.0',
+    },
+    {
+      key: 'patch',
+      status: 'supported',
+      supported: true,
+      reason: null,
+      nextSteps: [],
+      requiresRepo: true,
+      minVersion: '2.0.0',
+    },
+  ],
+});
+
+let mockSupportSnapshot = createSupportSnapshot();
+const mockRefreshSupportSnapshot = jest
+  .fn()
+  .mockImplementation(async () => mockSupportSnapshot);
 
 jest.mock('@/components/providers/locale-provider', () => ({
   useLocale: () => ({
@@ -86,6 +162,9 @@ jest.mock('@/hooks/use-git', () => ({
     commits: [],
     contributors: [],
     statusFiles: [],
+    aheadBehind: { ahead: 0, behind: 0 },
+    supportSnapshot: mockSupportSnapshot,
+    supportByFeature: {},
     lastActionResult: null,
     graphReloadKey: 0,
     historyState: {
@@ -98,6 +177,7 @@ jest.mock('@/hooks/use-git', () => ({
     },
     refreshAll: mockRefreshAll,
     refreshByScopes: mockRefreshGitByScopes,
+    refreshSupportSnapshot: mockRefreshSupportSnapshot,
     setRepoPath: mockSetRepoPath,
     refreshRepoInfo: mockRefreshRepoInfo,
     refreshStatus: mockRefreshStatus,
@@ -106,7 +186,6 @@ jest.mock('@/hooks/use-git', () => ({
     refreshTags: mockRefreshTags,
     refreshStashes: jest.fn().mockResolvedValue(undefined),
     refreshContributors: jest.fn().mockResolvedValue(undefined),
-    getAheadBehind: mockGetAheadBehind,
     getCommitDetail: mockGetCommitDetail,
     getConfigFilePath: jest.fn().mockRejectedValue(new Error('config path unavailable in test')),
     probeConfigEditor: jest.fn().mockResolvedValue({
@@ -392,15 +471,34 @@ jest.mock('@/components/git', () => ({
   GitRemotePruneCard: () => <div data-testid="remote-prune-card">prune</div>,
   GitSignatureVerifyCard: () => <div data-testid="signature-card">signature</div>,
   GitRebaseSquashCard: ({
+    supportReason,
     onRebase,
     onSquash,
   }: {
+    supportReason?: string | null;
     onRebase?: (onto: string, confirmRisk?: boolean) => Promise<string>;
     onSquash?: (count: number, message: string, confirmRisk?: boolean) => Promise<string>;
   }) => (
     <div data-testid="rebase-squash-card">
-      <button data-testid="quick-rebase" onClick={() => void onRebase?.('main')}>rebase</button>
-      <button data-testid="quick-squash" onClick={() => void onSquash?.(3, 'squash message')}>squash</button>
+      <div data-testid="rebase-support-reason">{supportReason ?? ''}</div>
+      <button
+        data-testid="quick-rebase"
+        onClick={() => {
+          const pending = onRebase?.('main');
+          void pending?.catch(() => undefined);
+        }}
+      >
+        rebase
+      </button>
+      <button
+        data-testid="quick-squash"
+        onClick={() => {
+          const pending = onSquash?.(3, 'squash message');
+          void pending?.catch(() => undefined);
+        }}
+      >
+        squash
+      </button>
     </div>
   ),
   GitInteractiveRebaseCard: () => <div data-testid="interactive-rebase-card">rebase</div>,
@@ -412,6 +510,8 @@ jest.mock('@/components/git', () => ({
 describe('GitPage', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockSupportSnapshot = createSupportSnapshot();
+    mockRefreshSupportSnapshot.mockImplementation(async () => mockSupportSnapshot);
     jest.spyOn(window, 'confirm').mockReturnValue(true);
   });
 
@@ -427,7 +527,7 @@ describe('GitPage', () => {
     });
     await waitFor(() => {
       expect(mockRefreshAll).toHaveBeenCalled();
-      expect(mockGetAheadBehind).toHaveBeenCalled();
+      expect(mockRefreshSupportSnapshot).toHaveBeenCalled();
     });
   };
 
@@ -561,6 +661,40 @@ describe('GitPage', () => {
     await waitFor(() => {
       expect(mockQuickRebase).toHaveBeenCalledWith('main', undefined);
       expect(mockQuickSquash).toHaveBeenCalledWith(3, 'squash message', undefined);
+    });
+  });
+
+  it('blocks unsupported rebase operations and surfaces support reason', async () => {
+    mockSupportSnapshot = {
+      ...createSupportSnapshot(),
+      features: createSupportSnapshot().features.map((feature) =>
+        feature.key === 'rebaseSquash'
+          ? {
+              ...feature,
+              status: 'unsupported',
+              supported: false,
+              reason: 'Current Git version does not satisfy minimum requirement 2.22.0.',
+              nextSteps: ['Upgrade Git and retry this operation.'],
+            }
+          : feature,
+      ),
+    };
+    mockRefreshSupportSnapshot.mockImplementation(async () => mockSupportSnapshot);
+
+    const user = userEvent.setup();
+    await renderGitPage();
+
+    await user.click(screen.getByRole('tab', { name: /operations/i }));
+    expect(screen.getByTestId('rebase-support-reason')).toHaveTextContent(
+      'Current Git version does not satisfy minimum requirement 2.22.0. Upgrade Git and retry this operation.',
+    );
+
+    await user.click(screen.getByTestId('quick-rebase'));
+    await user.click(screen.getByTestId('quick-squash'));
+
+    await waitFor(() => {
+      expect(mockQuickRebase).not.toHaveBeenCalled();
+      expect(mockQuickSquash).not.toHaveBeenCalled();
     });
   });
 

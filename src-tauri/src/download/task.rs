@@ -233,6 +233,9 @@ pub struct DownloadTask {
     pub completed_at: Option<DateTime<Utc>>,
     /// Last error message if failed
     pub error: Option<String>,
+    /// Stable reason code for the most recent failure
+    #[serde(default)]
+    pub failure_reason_code: Option<String>,
     /// Number of retry attempts made
     pub retries: u32,
     /// Task configuration
@@ -273,6 +276,7 @@ impl DownloadTask {
             started_at: None,
             completed_at: None,
             error: None,
+            failure_reason_code: None,
             retries: 0,
             config: DownloadConfig::default(),
             supports_resume: false,
@@ -299,6 +303,8 @@ impl DownloadTask {
     pub fn mark_started(&mut self) {
         self.state = DownloadState::Downloading;
         self.started_at = Some(Utc::now());
+        self.error = None;
+        self.failure_reason_code = None;
     }
 
     /// Mark as completed
@@ -306,11 +312,14 @@ impl DownloadTask {
         self.state = DownloadState::Completed;
         self.completed_at = Some(Utc::now());
         self.progress.percent = 100.0;
+        self.error = None;
+        self.failure_reason_code = None;
     }
 
     /// Mark as failed
     pub fn mark_failed(&mut self, error: DownloadError) {
         self.error = Some(error.to_string());
+        self.failure_reason_code = Some(error.reason_code().to_string());
         self.state = error.to_failed_state();
     }
 
@@ -322,6 +331,7 @@ impl DownloadTask {
     /// Mark as cancelled
     pub fn mark_cancelled(&mut self) {
         self.state = DownloadState::Cancelled;
+        self.failure_reason_code = None;
     }
 
     /// Increment retry count
@@ -462,6 +472,7 @@ mod tests {
         assert!(!task.id.is_empty());
         assert_eq!(task.state, DownloadState::Queued);
         assert_eq!(task.retries, 0);
+        assert!(task.failure_reason_code.is_none());
         assert!(task.can_retry());
     }
 
@@ -564,6 +575,7 @@ mod tests {
             _ => panic!("Expected Failed state"),
         }
         assert!(task.error.is_some());
+        assert_eq!(task.failure_reason_code.as_deref(), Some("network_error"));
     }
 
     #[test]

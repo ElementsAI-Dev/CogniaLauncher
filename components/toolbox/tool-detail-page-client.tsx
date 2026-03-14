@@ -11,15 +11,17 @@ import { useToolboxStore } from '@/lib/stores/toolbox';
 import { usePluginStore } from '@/lib/stores/plugin';
 import { PluginToolRunner } from '@/components/toolbox/plugin-tool-runner';
 import { BuiltInToolRenderer } from '@/components/toolbox/built-in-tool-renderer';
+import { ToolRuntimeState } from '@/components/toolbox/tool-runtime-state';
 import {
   evaluatePluginHealthStatus,
-  getDiscoverabilityDiagnostic,
   mapGrantedPermissionsToCapabilities,
   type PluginHealthStatus,
 } from '@/lib/plugin-governance';
 import { ArrowLeft, Plug } from 'lucide-react';
 import Link from 'next/link';
 import { getPluginMarketplaceHref } from '@/lib/plugin-source';
+import { resolveToolDetailRuntimeContext } from '@/lib/toolbox/tool-detail-runtime';
+import { isTauri } from '@/lib/tauri';
 
 export function ToolDetailPageClient({ toolId }: { toolId: string }) {
   const router = useRouter();
@@ -33,43 +35,28 @@ export function ToolDetailPageClient({ toolId }: { toolId: string }) {
   const permissionStates = usePluginStore((s) => s.permissionStates);
   const { allTools } = useToolbox();
 
-  const tool = useMemo(() => {
-    if (!toolId) return undefined;
-    const exact = allTools.find((t) => t.id === toolId);
-    if (exact) return exact;
-    return allTools.find((t) => t.isBuiltIn && t.builtInDef?.id === toolId);
-  }, [toolId, allTools]);
+  const runtime = useMemo(
+    () =>
+      resolveToolDetailRuntimeContext({
+        toolId,
+        allTools,
+        pluginTools,
+        installedPlugins,
+        healthMap,
+        permissionMode,
+        permissionStates,
+        isDesktop: isTauri(),
+        t,
+      }),
+    [allTools, healthMap, installedPlugins, permissionMode, permissionStates, pluginTools, t, toolId],
+  );
 
-  const blockedToolState = useMemo(() => {
-    if (tool || !toolId.startsWith('plugin:')) return null;
-    const [, pluginId, pluginToolId] = toolId.split(':');
-    if (!pluginId || !pluginToolId) return null;
-
-    const rawTool = pluginTools.find(
-      (candidate) => candidate.pluginId === pluginId && candidate.toolId === pluginToolId,
-    );
-    if (!rawTool) return null;
-
-    const pluginInfo = installedPlugins.find((plugin) => plugin.id === pluginId);
-    const permissionState = permissionStates[pluginId];
-    const discoverability = getDiscoverabilityDiagnostic(rawTool, healthMap[pluginId], {
-      pluginEnabled: pluginInfo?.enabled ?? true,
-      permissionMode,
-      grantedPermissions: permissionState ? [...permissionState.granted] : [],
-    });
-
-    return {
-      pluginId,
-      toolName: rawTool.nameZh ?? rawTool.nameEn,
-      reason: discoverability.reason ?? t('toolbox.marketplace.unavailable'),
-      manageHref: '/toolbox/plugins',
-      marketHref: pluginInfo ? getPluginMarketplaceHref(pluginInfo.source) : null,
-    };
-  }, [healthMap, installedPlugins, permissionMode, permissionStates, pluginTools, t, tool, toolId]);
+  const tool = runtime.tool;
+  const recoveryState = runtime.recoveryState;
 
   useEffect(() => {
-    if (tool) addRecent(tool.id);
-  }, [tool, addRecent]);
+    if (tool && !recoveryState) addRecent(tool.id);
+  }, [addRecent, recoveryState, tool]);
 
   const lifecycle = tool ? toolLifecycles[tool.id] : undefined;
   const pluginGovernance = useMemo(() => {
@@ -94,6 +81,7 @@ export function ToolDetailPageClient({ toolId }: { toolId: string }) {
 
     return {
       pluginId,
+      pluginPointId: tool.pluginTool.pluginPointId ?? null,
       healthStatus,
       declaredCapabilities,
       grantedCapabilities,
@@ -106,31 +94,33 @@ export function ToolDetailPageClient({ toolId }: { toolId: string }) {
     };
   }, [healthMap, installedPlugins, permissionStates, tool]);
 
+  const recoveryActions = recoveryState ? (
+    <>
+      <Button variant="outline" size="sm" onClick={() => router.push('/toolbox')}>
+        {t('toolbox.actions.backToToolbox')}
+      </Button>
+      {recoveryState.manageHref && (
+        <Button variant="outline" size="sm" asChild>
+          <Link href={recoveryState.manageHref}>{t('toolbox.marketplace.managePlugin')}</Link>
+        </Button>
+      )}
+      {recoveryState.marketHref && (
+        <Button size="sm" asChild>
+          <Link href={recoveryState.marketHref}>{t('toolbox.marketplace.title')}</Link>
+        </Button>
+      )}
+    </>
+  ) : null;
+
   if (!tool) {
     return (
       <div className="p-4 md:p-6 space-y-6">
         <PageHeader title={t('toolbox.title')} />
-        <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
-          <p>{blockedToolState?.toolName ?? t('toolbox.search.noResults')}</p>
-          <p className="mt-2 text-sm max-w-md text-center">
-            {blockedToolState?.reason ?? t('toolbox.empty.noResultsDesc')}
-          </p>
-          <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => router.push('/toolbox')}>
-              {t('toolbox.actions.backToToolbox')}
-            </Button>
-            {blockedToolState && (
-              <Button variant="outline" size="sm" asChild>
-                <Link href={blockedToolState.manageHref}>{t('toolbox.marketplace.managePlugin')}</Link>
-              </Button>
-            )}
-            {blockedToolState?.marketHref && (
-              <Button size="sm" asChild>
-                <Link href={blockedToolState.marketHref}>{t('toolbox.marketplace.title')}</Link>
-              </Button>
-            )}
-          </div>
-        </div>
+        <ToolRuntimeState
+          title={recoveryState?.title ?? t('toolbox.search.noResults')}
+          description={recoveryState?.description ?? t('toolbox.empty.noResultsDesc')}
+          actions={recoveryActions}
+        />
       </div>
     );
   }
@@ -184,15 +174,20 @@ export function ToolDetailPageClient({ toolId }: { toolId: string }) {
 
       {pluginGovernance && (
         <div className="space-y-2 rounded-lg border border-amber-300/50 bg-amber-50/50 p-3 text-xs dark:border-amber-700/40 dark:bg-amber-950/20">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="secondary">{t(getHealthStatusLabelKey(pluginGovernance.healthStatus))}</Badge>
-            <Badge variant="outline" className="font-mono">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="secondary">{t(getHealthStatusLabelKey(pluginGovernance.healthStatus))}</Badge>
+                    <Badge variant="outline" className="font-mono">
               {permissionMode === 'strict'
                 ? t('toolbox.plugin.permissionPolicyModeStrictTag')
                 : t('toolbox.plugin.permissionPolicyModeCompatTag')}
-            </Badge>
-            <span className="font-mono">{pluginGovernance.pluginId}</span>
-          </div>
+                    </Badge>
+                    <span className="font-mono">{pluginGovernance.pluginId}</span>
+                    {pluginGovernance.pluginPointId && (
+                      <Badge variant="outline" className="font-mono">
+                        {pluginGovernance.pluginPointId}
+                      </Badge>
+                    )}
+                  </div>
           {pluginGovernance.compatibilityReason && (
             <p className="text-red-700 dark:text-red-300">{pluginGovernance.compatibilityReason}</p>
           )}
@@ -229,15 +224,22 @@ export function ToolDetailPageClient({ toolId }: { toolId: string }) {
         </div>
       )}
 
-      {tool.isBuiltIn && tool.builtInDef ? (
+      {recoveryState?.kind === 'unsupported' && (
+        <ToolRuntimeState
+          title={t('toolbox.runtime.desktopRequiredTitle')}
+          description={recoveryState.description}
+        />
+      )}
+
+      {!recoveryState && tool.isBuiltIn && tool.builtInDef ? (
         <BuiltInToolRenderer builtInId={tool.builtInDef.id} />
-      ) : tool.pluginTool ? (
+      ) : !recoveryState && tool.pluginTool ? (
         <PluginToolRunner tool={tool.pluginTool} />
-      ) : (
+      ) : !recoveryState ? (
         <div className="text-center text-muted-foreground py-8">
           {t('toolbox.search.noResults')}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

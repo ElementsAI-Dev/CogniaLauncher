@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { isTauri } from '@/lib/tauri';
+import type { ProviderSecretStatus, SecretVaultStatus } from '@/lib/tauri';
 import type {
   GitLabBranchInfo,
   GitLabTagInfo,
@@ -37,6 +38,13 @@ interface UseGitLabDownloadsReturn {
   packageFiles: GitLabPackageFileInfo[];
   loading: boolean;
   error: string | null;
+  tokenStatus: ProviderSecretStatus | null;
+  vaultStatus: SecretVaultStatus | null;
+  vaultPassword: string;
+  setVaultPassword: (value: string) => void;
+  setupVault: () => Promise<void>;
+  unlockVault: () => Promise<void>;
+  lockVault: () => Promise<void>;
   validateAndFetch: () => Promise<void>;
   fetchPipelines: (refName?: string, status?: string) => Promise<GitLabPipelineInfo[]>;
   fetchPipelineJobs: (pipelineId: number) => Promise<GitLabJobInfo[]>;
@@ -70,11 +78,15 @@ export function useGitLabDownloads(): UseGitLabDownloadsReturn {
   const [packageFiles, setPackageFiles] = useState<GitLabPackageFileInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [tokenStatus, setTokenStatus] = useState<ProviderSecretStatus | null>(null);
+  const [vaultStatus, setVaultStatus] = useState<SecretVaultStatus | null>(null);
+  const [vaultPassword, setVaultPassword] = useState('');
 
   const reset = useCallback(() => {
     setProjectInput('');
     setToken('');
     setInstanceUrl('');
+    setVaultPassword('');
     setParsedProject(null);
     setProjectInfo(null);
     setIsValid(null);
@@ -89,18 +101,32 @@ export function useGitLabDownloads(): UseGitLabDownloadsReturn {
     setError(null);
   }, []);
 
-  // Load saved token and instance URL on mount
+  const refreshSecurityState = useCallback(async () => {
+    if (!isTauri()) {
+      setTokenStatus(null);
+      setVaultStatus(null);
+      return;
+    }
+
+    const tauri = await import('@/lib/tauri');
+    const [savedStatus, savedUrl, nextVaultStatus] = await Promise.all([
+      tauri.gitlabGetToken().catch(() => null),
+      tauri.gitlabGetInstanceUrl().catch(() => null),
+      tauri.secretVaultStatus().catch(() => null),
+    ]);
+
+    setTokenStatus(savedStatus);
+    if (savedUrl) {
+      setInstanceUrl(savedUrl);
+    }
+    setVaultStatus(nextVaultStatus);
+  }, []);
+
+  // Load secure token status and instance URL on mount
   useEffect(() => {
     if (!isTauri()) return;
-    import('@/lib/tauri').then(async (t) => {
-      const [savedToken, savedUrl] = await Promise.all([
-        t.gitlabGetToken().catch(() => null),
-        t.gitlabGetInstanceUrl().catch(() => null),
-      ]);
-      if (savedToken) setToken(savedToken);
-      if (savedUrl) setInstanceUrl(savedUrl);
-    }).catch(() => {});
-  }, []);
+    refreshSecurityState().catch(() => {});
+  }, [refreshSecurityState]);
 
   const validateAndFetch = useCallback(async () => {
     if (!isTauri() || !projectInput.trim()) {
@@ -333,7 +359,9 @@ export function useGitLabDownloads(): UseGitLabDownloadsReturn {
     if (!isTauri() || !token.trim()) return;
     const tauri = await import('@/lib/tauri');
     await tauri.gitlabSetToken(token.trim());
-  }, [token]);
+    setToken('');
+    await refreshSecurityState();
+  }, [refreshSecurityState, token]);
 
   const saveInstanceUrl = useCallback(async () => {
     if (!isTauri()) return;
@@ -346,7 +374,42 @@ export function useGitLabDownloads(): UseGitLabDownloadsReturn {
     const tauri = await import('@/lib/tauri');
     await tauri.gitlabClearToken();
     setToken('');
-  }, []);
+    await refreshSecurityState();
+  }, [refreshSecurityState]);
+
+  const setupVault = useCallback(async () => {
+    if (!isTauri()) return;
+    const password = vaultPassword.trim();
+    if (!password) {
+      throw new Error('Secure storage password is required.');
+    }
+    const tauri = await import('@/lib/tauri');
+    const nextStatus = await tauri.secretVaultSetup(password);
+    setVaultStatus(nextStatus);
+    setVaultPassword('');
+    await refreshSecurityState();
+  }, [refreshSecurityState, vaultPassword]);
+
+  const unlockVault = useCallback(async () => {
+    if (!isTauri()) return;
+    const password = vaultPassword.trim();
+    if (!password) {
+      throw new Error('Secure storage password is required.');
+    }
+    const tauri = await import('@/lib/tauri');
+    const nextStatus = await tauri.secretVaultUnlock(password);
+    setVaultStatus(nextStatus);
+    setVaultPassword('');
+    await refreshSecurityState();
+  }, [refreshSecurityState, vaultPassword]);
+
+  const lockVault = useCallback(async () => {
+    if (!isTauri()) return;
+    const tauri = await import('@/lib/tauri');
+    const nextStatus = await tauri.secretVaultLock();
+    setVaultStatus(nextStatus);
+    await refreshSecurityState();
+  }, [refreshSecurityState]);
 
   useEffect(() => {
     if (!projectInput.trim()) {
@@ -385,6 +448,13 @@ export function useGitLabDownloads(): UseGitLabDownloadsReturn {
     packageFiles,
     loading,
     error,
+    tokenStatus,
+    vaultStatus,
+    vaultPassword,
+    setVaultPassword,
+    setupVault,
+    unlockVault,
+    lockVault,
     validateAndFetch,
     fetchPipelines,
     fetchPipelineJobs,

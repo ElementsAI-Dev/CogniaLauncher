@@ -29,7 +29,7 @@ export const SETTINGS_SECTION_CONFIG_PREFIXES: Record<
   tray: ["tray."],
   shortcuts: ["shortcuts."],
   paths: ["paths."],
-  provider: ["provider_settings."],
+  provider: ["provider_settings.", "providers."],
   backup: ["backup."],
   startup: ["startup."],
   system: [],

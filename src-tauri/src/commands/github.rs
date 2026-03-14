@@ -1,9 +1,14 @@
 //! GitHub repository commands for download integration
 
+use crate::commands::secrets::{
+    provider_secret_clear_internal, provider_secret_save_internal, provider_secret_status_internal,
+    resolve_provider_secret, ProviderSecretStatus,
+};
 use crate::platform::disk::format_size;
 use crate::provider::github::{
     GitHubAsset, GitHubBranch, GitHubProvider, GitHubRelease, GitHubTag,
 };
+use crate::SharedSecretVault;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -120,18 +125,16 @@ pub async fn github_parse_url(url: String) -> Result<Option<ParsedRepo>, String>
     )
 }
 
-/// Helper to create a GitHubProvider with an optional token.
-/// Falls back to loading token from settings if not provided by the frontend.
-async fn make_github_provider(token: Option<String>) -> GitHubProvider {
-    let effective_token = if token.as_ref().map_or(true, |t| t.is_empty()) {
-        // Fallback: try loading from settings, then env var (handled by GitHubProvider::new)
-        crate::config::Settings::load()
-            .await
-            .ok()
-            .and_then(|s| s.get_value("providers.github.token"))
-            .filter(|t| !t.is_empty())
-    } else {
-        token
+/// Helper to create a GitHubProvider with an optional explicit token.
+/// Resolution order: explicit input, unlocked secure storage, then env var fallback.
+async fn make_github_provider(
+    token: Option<String>,
+    vault: &State<'_, SharedSecretVault>,
+) -> GitHubProvider {
+    let settings = crate::config::Settings::load().await.unwrap_or_default();
+    let effective_token = {
+        let vault_guard = vault.read().await;
+        resolve_provider_secret("github", token, &settings, &vault_guard)
     };
     GitHubProvider::new().with_token(effective_token)
 }
@@ -171,8 +174,12 @@ fn build_github_download_request(
 }
 
 #[tauri::command]
-pub async fn github_validate_repo(repo: String, token: Option<String>) -> Result<bool, String> {
-    let provider = make_github_provider(token).await;
+pub async fn github_validate_repo(
+    repo: String,
+    token: Option<String>,
+    vault: State<'_, SharedSecretVault>,
+) -> Result<bool, String> {
+    let provider = make_github_provider(token, &vault).await;
     Ok(provider.validate_repo(&repo).await)
 }
 
@@ -180,8 +187,9 @@ pub async fn github_validate_repo(repo: String, token: Option<String>) -> Result
 pub async fn github_list_branches(
     repo: String,
     token: Option<String>,
+    vault: State<'_, SharedSecretVault>,
 ) -> Result<Vec<BranchInfo>, String> {
-    let provider = make_github_provider(token).await;
+    let provider = make_github_provider(token, &vault).await;
     provider
         .list_branches(&repo)
         .await
@@ -190,8 +198,12 @@ pub async fn github_list_branches(
 }
 
 #[tauri::command]
-pub async fn github_list_tags(repo: String, token: Option<String>) -> Result<Vec<TagInfo>, String> {
-    let provider = make_github_provider(token).await;
+pub async fn github_list_tags(
+    repo: String,
+    token: Option<String>,
+    vault: State<'_, SharedSecretVault>,
+) -> Result<Vec<TagInfo>, String> {
+    let provider = make_github_provider(token, &vault).await;
     provider
         .list_tags(&repo)
         .await
@@ -203,8 +215,9 @@ pub async fn github_list_tags(repo: String, token: Option<String>) -> Result<Vec
 pub async fn github_list_releases(
     repo: String,
     token: Option<String>,
+    vault: State<'_, SharedSecretVault>,
 ) -> Result<Vec<ReleaseInfo>, String> {
-    let provider = make_github_provider(token).await;
+    let provider = make_github_provider(token, &vault).await;
     provider
         .list_releases(&repo)
         .await
@@ -217,8 +230,9 @@ pub async fn github_get_release_assets(
     repo: String,
     tag: String,
     token: Option<String>,
+    vault: State<'_, SharedSecretVault>,
 ) -> Result<Vec<AssetInfo>, String> {
-    let provider = make_github_provider(token).await;
+    let provider = make_github_provider(token, &vault).await;
     provider
         .get_release_by_tag(&repo, &tag)
         .await
@@ -234,10 +248,11 @@ pub async fn github_download_asset(
     asset_name: String,
     destination: String,
     token: Option<String>,
+    vault: State<'_, SharedSecretVault>,
     manager: State<'_, SharedDownloadManager>,
     settings: State<'_, SharedSettings>,
 ) -> Result<String, String> {
-    let provider = make_github_provider(token).await;
+    let provider = make_github_provider(token, &vault).await;
 
     // For authenticated requests, use the API URL for asset downloads
     let download_url = if provider.has_token() {
@@ -264,10 +279,11 @@ pub async fn github_download_source(
     format: String,
     destination: String,
     token: Option<String>,
+    vault: State<'_, SharedSecretVault>,
     manager: State<'_, SharedDownloadManager>,
     settings: State<'_, SharedSettings>,
 ) -> Result<String, String> {
-    let provider = make_github_provider(token).await;
+    let provider = make_github_provider(token, &vault).await;
     let url = provider.get_source_archive_url(&repo, &ref_name, &format);
 
     let ext = if format == "tar.gz" { "tar.gz" } else { "zip" };
@@ -290,35 +306,28 @@ pub async fn github_download_source(
 }
 
 #[tauri::command]
-pub async fn github_set_token(token: String) -> Result<(), String> {
-    let mut settings = crate::config::Settings::load()
-        .await
-        .map_err(|e| e.to_string())?;
-    settings
-        .set_value("providers.github.token", &token)
-        .map_err(|e| e.to_string())?;
-    settings.save().await.map_err(|e| e.to_string())
+pub async fn github_set_token(
+    token: String,
+    settings: State<'_, crate::SharedSettings>,
+    vault: State<'_, SharedSecretVault>,
+) -> Result<ProviderSecretStatus, String> {
+    provider_secret_save_internal("github", token, &settings, &vault).await
 }
 
 #[tauri::command]
-pub async fn github_get_token() -> Result<Option<String>, String> {
-    let settings = crate::config::Settings::load()
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(settings
-        .get_value("providers.github.token")
-        .or_else(|| std::env::var("GITHUB_TOKEN").ok()))
+pub async fn github_get_token(
+    settings: State<'_, crate::SharedSettings>,
+    vault: State<'_, SharedSecretVault>,
+) -> Result<ProviderSecretStatus, String> {
+    provider_secret_status_internal("github", &settings, &vault).await
 }
 
 #[tauri::command]
-pub async fn github_clear_token() -> Result<(), String> {
-    let mut settings = crate::config::Settings::load()
-        .await
-        .map_err(|e| e.to_string())?;
-    settings
-        .set_value("providers.github.token", "")
-        .map_err(|e| e.to_string())?;
-    settings.save().await.map_err(|e| e.to_string())
+pub async fn github_clear_token(
+    settings: State<'_, crate::SharedSettings>,
+    vault: State<'_, SharedSecretVault>,
+) -> Result<ProviderSecretStatus, String> {
+    provider_secret_clear_internal("github", &settings, &vault).await
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -341,8 +350,9 @@ pub struct RepoInfoResponse {
 pub async fn github_get_repo_info(
     repo: String,
     token: Option<String>,
+    vault: State<'_, SharedSecretVault>,
 ) -> Result<RepoInfoResponse, String> {
-    let provider = make_github_provider(token).await;
+    let provider = make_github_provider(token, &vault).await;
     let info = provider
         .get_repo_info(&repo)
         .await

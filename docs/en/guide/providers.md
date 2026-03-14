@@ -111,9 +111,9 @@ Each Provider declares its supported capabilities:
 
 ## Provider Priority
 
-Providers are sorted by priority, with higher-priority Providers used first. You can adjust priority and enable/disable status in settings.
+Providers are sorted by effective priority, with higher-priority Providers used first. Built-in Providers ship with default priorities, and you can override enabled state and priority from the structured Provider Settings section or from the Provider detail page.
 
-Priority range: 0-100, higher values mean higher priority.
+Custom priority overrides are persisted per provider and immediately affect provider list ordering plus any runtime selection paths that depend on Provider priority. Higher numeric values win.
 
 ---
 

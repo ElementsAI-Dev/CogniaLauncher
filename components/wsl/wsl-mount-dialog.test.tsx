@@ -59,8 +59,9 @@ describe('WslMountDialog', () => {
     expect(switches.length).toBeGreaterThanOrEqual(2);
   });
 
-  it('renders filesystem type and partition inputs', () => {
+  it('renders filesystem type and partition inputs', async () => {
     render(<WslMountDialog {...defaultProps} />);
+    await userEvent.click(screen.getByRole('button', { name: 'wsl.dialog.mountAdvanced' }));
     expect(screen.getByPlaceholderText('ext4')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('0')).toBeInTheDocument();
   });

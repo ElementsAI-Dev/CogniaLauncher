@@ -12,13 +12,24 @@ import { Separator } from '@/components/ui/separator';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Settings2, Save, RefreshCw, Plus, Trash2, ChevronDown } from 'lucide-react';
+import { Settings2, Save, RefreshCw, Plus, Trash2, ChevronDown, FileSliders } from 'lucide-react';
 import { toast } from 'sonner';
 import { COMMON_WSL2_SETTINGS, NETWORK_PRESETS, CONFIG_PROFILES } from '@/lib/constants/wsl';
 import { useWslStore } from '@/lib/stores/wsl';
@@ -208,7 +219,10 @@ export function WslConfigCard({
       </CardHeader>
       <CardContent className="space-y-4">
         {allEntries.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{t('wsl.config.empty')}</p>
+          <div className="flex flex-col items-center justify-center py-8 text-center">
+            <FileSliders className="h-8 w-8 text-muted-foreground/50 mb-2" />
+            <p className="text-sm font-medium text-muted-foreground">{t('wsl.config.empty')}</p>
+          </div>
         ) : (
           <div className="space-y-2">
             {allEntries.map(({ section, key, value }) => (
@@ -227,20 +241,37 @@ export function WslConfigCard({
                     {value}
                   </p>
                 </div>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
-                      onClick={() => handleRemove(section, key)}
-                      disabled={saving}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>{t('common.delete')}</TooltipContent>
-                </Tooltip>
+                <AlertDialog>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+                          disabled={saving}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </AlertDialogTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent>{t('common.delete')}</TooltipContent>
+                  </Tooltip>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>{t('common.confirmDelete')}</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        {t('wsl.config.confirmRemoveEntry', { section, key })}
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+                      <AlertDialogAction onClick={() => handleRemove(section, key)}>
+                        {t('common.delete')}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               </div>
             ))}
           </div>
@@ -267,13 +298,25 @@ export function WslConfigCard({
                       {t(profile.labelKey)}
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent side="bottom" className="max-w-[280px]">
-                    <p className="text-xs">{t(profile.descKey)}</p>
+                  <TooltipContent side="bottom" className="max-w-[320px]">
+                    <p className="text-xs font-medium mb-1">{t(profile.descKey)}</p>
+                    {profile.settings.length > 0 && (
+                      <div className="text-[10px] text-muted-foreground space-y-0.5">
+                        {profile.settings.slice(0, 5).map((s) => (
+                          <div key={`${s.section}-${s.key}`} className="font-mono">
+                            [{s.section}] {s.key} = {s.value}
+                          </div>
+                        ))}
+                        {profile.settings.length > 5 && (
+                          <div>+{profile.settings.length - 5} more</div>
+                        )}
+                      </div>
+                    )}
                   </TooltipContent>
                 </Tooltip>
               ))}
               {customProfiles.map((profile) => (
-                <div key={profile.id} className="flex items-center gap-1">
+                <div key={profile.id} className="flex items-center gap-2">
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
@@ -286,19 +329,48 @@ export function WslConfigCard({
                         {profile.labelKey}
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent side="bottom" className="max-w-[280px]">
-                      <p className="text-xs">{profile.descKey}</p>
+                    <TooltipContent side="bottom" className="max-w-[320px]">
+                      <p className="text-xs font-medium mb-1">{profile.descKey}</p>
+                      {profile.settings.length > 0 && (
+                        <div className="text-[10px] text-muted-foreground space-y-0.5">
+                          {profile.settings.slice(0, 5).map((s) => (
+                            <div key={`${s.section}-${s.key}`} className="font-mono">
+                              [{s.section}] {s.key} = {s.value}
+                            </div>
+                          ))}
+                          {profile.settings.length > 5 && (
+                            <div>+{profile.settings.length - 5} more</div>
+                          )}
+                        </div>
+                      )}
                     </TooltipContent>
                   </Tooltip>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
-                    onClick={() => removeCustomProfile(profile.id)}
-                    disabled={saving}
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </Button>
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+                        disabled={saving}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>{t('common.confirmDelete')}</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          {t('wsl.config.confirmRemoveProfile', { name: profile.labelKey })}
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+                        <AlertDialogAction onClick={() => removeCustomProfile(profile.id)}>
+                          {t('common.delete')}
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 </div>
               ))}
             </div>
@@ -509,7 +581,7 @@ export function WslConfigCard({
                   }}
                   disabled={saving}
                 >
-                  <SelectTrigger className="h-8 w-full text-xs" aria-label={t('wsl.config.sectionLabel')}>
+                  <SelectTrigger className="h-9 w-full text-xs" aria-label={t('wsl.config.sectionLabel')}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -522,7 +594,7 @@ export function WslConfigCard({
                 <Label className="text-xs">{t('wsl.config.keyLabel')}</Label>
                 <Input
                   ref={customKeyInputRef}
-                  className="h-8 text-xs"
+                  className={`h-9 text-xs ${addError ? 'border-destructive' : ''}`}
                   placeholder={t('wsl.config.keyPlaceholder')}
                   value={editKey}
                   disabled={saving}
@@ -536,7 +608,7 @@ export function WslConfigCard({
               <div className="min-w-0 space-y-1">
                 <Label className="text-xs">{t('wsl.config.valueLabel')}</Label>
                 <Input
-                  className="h-8 text-xs"
+                  className={`h-9 text-xs ${addError ? 'border-destructive' : ''}`}
                   placeholder={t('wsl.config.valuePlaceholder')}
                   value={editValue}
                   disabled={saving}
@@ -550,7 +622,7 @@ export function WslConfigCard({
               <Button
                 variant="outline"
                 size="sm"
-                className="h-8 w-full gap-1 sm:w-auto"
+                className="h-9 w-full gap-1 sm:w-auto"
                 disabled={!editKey.trim() || !editValue.trim() || saving}
                 onClick={() => void handleAddCustom()}
               >
@@ -559,7 +631,7 @@ export function WslConfigCard({
               </Button>
             </div>
             {addError ? (
-              <p className="mt-2 text-xs text-destructive">
+              <p className="mt-1 text-xs text-destructive">
                 {addError}
               </p>
             ) : null}

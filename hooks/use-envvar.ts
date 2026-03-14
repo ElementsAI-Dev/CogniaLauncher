@@ -9,8 +9,12 @@ import type {
   PathEntryInfo,
   ShellProfileInfo,
   EnvVarImportResult,
+  EnvVarImportPreview,
+  EnvVarPathRepairPreview,
+  EnvVarShellGuidance,
   PersistentEnvVar,
   EnvVarConflict,
+  EnvVarConflictResolutionResult,
 } from '@/types/tauri';
 
 export type EnvVarDetectionState =
@@ -70,6 +74,11 @@ interface EnvVarState {
   pathEntries: PathEntryInfo[];
   shellProfiles: ShellProfileInfo[];
   conflicts: EnvVarConflict[];
+  importPreview: EnvVarImportPreview | null;
+  importPreviewStale: boolean;
+  pathRepairPreview: EnvVarPathRepairPreview | null;
+  pathRepairPreviewStale: boolean;
+  shellGuidance: EnvVarShellGuidance[];
   loading: boolean;
   detectionLoading: boolean;
   pathLoading: boolean;
@@ -92,6 +101,11 @@ export function useEnvVar() {
     pathEntries: [],
     shellProfiles: [],
     conflicts: [],
+    importPreview: null,
+    importPreviewStale: false,
+    pathRepairPreview: null,
+    pathRepairPreviewStale: false,
+    shellGuidance: [],
     loading: false,
     detectionLoading: false,
     pathLoading: false,
@@ -282,6 +296,35 @@ export function useEnvVar() {
     }
   }, [readFreshDetectionSnapshot]);
 
+  const isStalePreviewError = useCallback((message: string) => {
+    return message.includes('stale_preview');
+  }, []);
+
+  const getDetectionRefreshScope = useCallback((scope: EnvVarScope): EnvVarDetectionScope => {
+    return scope === 'process' ? 'process' : 'all';
+  }, []);
+
+  const refreshAfterScopeMutation = useCallback(async (scope: EnvVarScope) => {
+    const refreshScope = getDetectionRefreshScope(scope);
+    invalidateDetectionCache(refreshScope);
+    await loadDetection(refreshScope, { forceRefresh: true });
+  }, [getDetectionRefreshScope, invalidateDetectionCache, loadDetection]);
+
+  const refreshAfterPathMutation = useCallback(async (scope: EnvVarScope) => {
+    const pathEntries = await tauri.envvarGetPath(scope);
+    setState((s) => ({ ...s, pathEntries }));
+    await refreshAfterScopeMutation(scope);
+    return pathEntries;
+  }, [refreshAfterScopeMutation]);
+
+  const clearImportPreview = useCallback(() => {
+    setState((s) => ({ ...s, importPreview: null, importPreviewStale: false }));
+  }, []);
+
+  const clearPathRepairPreview = useCallback(() => {
+    setState((s) => ({ ...s, pathRepairPreview: null, pathRepairPreviewStale: false }));
+  }, []);
+
   const fetchAllVars = useCallback(async (): Promise<Record<string, string>> => {
     setLoading(true);
     setError(null);
@@ -382,15 +425,13 @@ export function useEnvVar() {
     setError(null);
     try {
       await tauri.envvarAddPathEntry(path, scope, position);
-      const pathEntries = await tauri.envvarGetPath(scope);
-      setState((s) => ({ ...s, pathEntries }));
-      invalidateDetectionCache(scope);
+      await refreshAfterPathMutation(scope);
       return true;
     } catch (err) {
       setError(formatError(err));
       return false;
     }
-  }, [invalidateDetectionCache, setError]);
+  }, [refreshAfterPathMutation, setError]);
 
   const removePathEntry = useCallback(async (
     path: string,
@@ -399,15 +440,13 @@ export function useEnvVar() {
     setError(null);
     try {
       await tauri.envvarRemovePathEntry(path, scope);
-      const pathEntries = await tauri.envvarGetPath(scope);
-      setState((s) => ({ ...s, pathEntries }));
-      invalidateDetectionCache(scope);
+      await refreshAfterPathMutation(scope);
       return true;
     } catch (err) {
       setError(formatError(err));
       return false;
     }
-  }, [invalidateDetectionCache, setError]);
+  }, [refreshAfterPathMutation, setError]);
 
   const reorderPath = useCallback(async (
     entries: string[],
@@ -416,15 +455,13 @@ export function useEnvVar() {
     setError(null);
     try {
       await tauri.envvarReorderPath(entries, scope);
-      const pathEntries = await tauri.envvarGetPath(scope);
-      setState((s) => ({ ...s, pathEntries }));
-      invalidateDetectionCache(scope);
+      await refreshAfterPathMutation(scope);
       return true;
     } catch (err) {
       setError(formatError(err));
       return false;
     }
-  }, [invalidateDetectionCache, setError]);
+  }, [refreshAfterPathMutation, setError]);
 
   const fetchShellProfiles = useCallback(async (): Promise<ShellProfileInfo[]> => {
     setError(null);
@@ -447,6 +484,58 @@ export function useEnvVar() {
       return null;
     }
   }, [setError]);
+
+  const previewImportEnvFile = useCallback(async (
+    content: string,
+    scope: EnvVarScope,
+  ): Promise<EnvVarImportPreview | null> => {
+    setState((s) => ({ ...s, importExportLoading: true, importPreviewStale: false }));
+    setError(null);
+    try {
+      const preview = await tauri.envvarPreviewImportEnvFile(content, scope);
+      setState((s) => ({
+        ...s,
+        importPreview: preview,
+        importPreviewStale: false,
+        shellGuidance: preview.shellGuidance,
+      }));
+      return preview;
+    } catch (err) {
+      setError(formatError(err));
+      return null;
+    } finally {
+      setState((s) => ({ ...s, importExportLoading: false }));
+    }
+  }, [setError]);
+
+  const applyImportPreview = useCallback(async (
+    content: string,
+    scope: EnvVarScope,
+    fingerprint: string,
+  ): Promise<EnvVarImportResult | null> => {
+    setState((s) => ({ ...s, importExportLoading: true }));
+    setError(null);
+    try {
+      const result = await tauri.envvarApplyImportPreview(content, scope, fingerprint);
+      await refreshAfterScopeMutation(scope);
+      setState((s) => ({
+        ...s,
+        importPreviewStale: false,
+        importPreview: null,
+      }));
+      return result;
+    } catch (err) {
+      const message = formatError(err);
+      setError(message);
+      setState((s) => ({
+        ...s,
+        importPreviewStale: isStalePreviewError(message),
+      }));
+      return null;
+    } finally {
+      setState((s) => ({ ...s, importExportLoading: false }));
+    }
+  }, [isStalePreviewError, refreshAfterScopeMutation, setError]);
 
   const importEnvFile = useCallback(async (
     content: string,
@@ -515,15 +604,63 @@ export function useEnvVar() {
     setError(null);
     try {
       const removed = await tauri.envvarDeduplicatePath(scope);
-      const pathEntries = await tauri.envvarGetPath(scope);
-      setState((s) => ({ ...s, pathEntries }));
-      invalidateDetectionCache(scope);
+      await refreshAfterPathMutation(scope);
       return removed;
     } catch (err) {
       setError(formatError(err));
       return 0;
     }
-  }, [invalidateDetectionCache, setError]);
+  }, [refreshAfterPathMutation, setError]);
+
+  const previewPathRepair = useCallback(async (
+    scope: EnvVarScope,
+  ): Promise<EnvVarPathRepairPreview | null> => {
+    setState((s) => ({ ...s, pathLoading: true, pathRepairPreviewStale: false }));
+    setError(null);
+    try {
+      const preview = await tauri.envvarPreviewPathRepair(scope);
+      setState((s) => ({
+        ...s,
+        pathRepairPreview: preview,
+        pathRepairPreviewStale: false,
+        shellGuidance: preview.shellGuidance,
+      }));
+      return preview;
+    } catch (err) {
+      setError(formatError(err));
+      return null;
+    } finally {
+      setState((s) => ({ ...s, pathLoading: false }));
+    }
+  }, [setError]);
+
+  const applyPathRepair = useCallback(async (
+    scope: EnvVarScope,
+    fingerprint: string,
+  ): Promise<number | null> => {
+    setState((s) => ({ ...s, pathLoading: true }));
+    setError(null);
+    try {
+      const removed = await tauri.envvarApplyPathRepair(scope, fingerprint);
+      await refreshAfterPathMutation(scope);
+      setState((s) => ({
+        ...s,
+        pathRepairPreview: null,
+        pathRepairPreviewStale: false,
+      }));
+      return removed;
+    } catch (err) {
+      const message = formatError(err);
+      setError(message);
+      setState((s) => ({
+        ...s,
+        pathRepairPreviewStale: isStalePreviewError(message),
+      }));
+      return null;
+    } finally {
+      setState((s) => ({ ...s, pathLoading: false }));
+    }
+  }, [isStalePreviewError, refreshAfterPathMutation, setError]);
 
   const fetchPersistentVarsTyped = useCallback(async (
     scope: EnvVarScope,
@@ -558,6 +695,23 @@ export function useEnvVar() {
     }
   }, [setError]);
 
+  const resolveConflict = useCallback(async (
+    key: string,
+    sourceScope: EnvVarScope,
+    targetScope: EnvVarScope,
+  ): Promise<EnvVarConflictResolutionResult | null> => {
+    setError(null);
+    try {
+      const result = await tauri.envvarResolveConflict(key, sourceScope, targetScope);
+      setState((s) => ({ ...s, shellGuidance: result.shellGuidance }));
+      await refreshAfterScopeMutation(targetScope);
+      return result;
+    } catch (err) {
+      setError(formatError(err));
+      return null;
+    }
+  }, [refreshAfterScopeMutation, setError]);
+
   return {
     ...state,
     fetchAllVars,
@@ -570,13 +724,20 @@ export function useEnvVar() {
     reorderPath,
     fetchShellProfiles,
     readShellProfile,
+    previewImportEnvFile,
+    applyImportPreview,
+    clearImportPreview,
     importEnvFile,
     exportEnvFile,
     fetchPersistentVars,
     expandPath,
     deduplicatePath,
+    previewPathRepair,
+    applyPathRepair,
+    clearPathRepairPreview,
     fetchPersistentVarsTyped,
     detectConflicts,
+    resolveConflict,
     loadDetection,
     invalidateDetectionCache,
   };

@@ -116,16 +116,16 @@ describe('ToolCard', () => {
 
   it('shows useCount badge when useCount > 0 in grid mode', () => {
     render(<ToolCard {...defaultProps} useCount={5} />);
-    expect(screen.getByText('5×')).toBeInTheDocument();
+    expect(screen.getByText('toolbox.categories.mostUsed: 5x')).toBeInTheDocument();
   });
 
   it('does not show useCount badge when useCount is 0', () => {
     render(<ToolCard {...defaultProps} useCount={0} />);
-    expect(screen.queryByText('0×')).not.toBeInTheDocument();
+    expect(screen.queryByText(/toolbox\.categories\.mostUsed/)).not.toBeInTheDocument();
   });
 
   it('does not show useCount badge by default', () => {
     render(<ToolCard {...defaultProps} />);
-    expect(screen.queryByText(/^\d+×$/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/toolbox\.categories\.mostUsed/)).not.toBeInTheDocument();
   });
 });

@@ -66,6 +66,36 @@ describe("BackgroundImage", () => {
     expect(imageDiv?.style.backgroundRepeat).toBe("no-repeat");
   });
 
+  it("applies configured background position", () => {
+    useAppearanceStore.getState().setBackgroundEnabled(true);
+    useAppearanceStore.getState().setBackgroundPositionX(25);
+    useAppearanceStore.getState().setBackgroundPositionY(75);
+    mockGetBackgroundImage.mockReturnValue("data:image/jpeg;base64,test");
+    const { container } = render(<BackgroundImage />);
+    const imageDiv = container.querySelector("div");
+    expect(imageDiv?.style.backgroundPosition).toBe("25% 75%");
+  });
+
+  it("applies scale transform when fit is not tile", () => {
+    useAppearanceStore.getState().setBackgroundEnabled(true);
+    useAppearanceStore.getState().setBackgroundScale(140);
+    useAppearanceStore.getState().setBackgroundFit("cover");
+    mockGetBackgroundImage.mockReturnValue("data:image/jpeg;base64,test");
+    const { container } = render(<BackgroundImage />);
+    const imageDiv = container.querySelector("div");
+    expect(imageDiv?.style.transform).toBe("scale(1.4)");
+  });
+
+  it("does not apply scale transform in tile mode", () => {
+    useAppearanceStore.getState().setBackgroundEnabled(true);
+    useAppearanceStore.getState().setBackgroundScale(140);
+    useAppearanceStore.getState().setBackgroundFit("tile");
+    mockGetBackgroundImage.mockReturnValue("data:image/jpeg;base64,test");
+    const { container } = render(<BackgroundImage />);
+    const imageDiv = container.querySelector("div");
+    expect(imageDiv?.style.transform).toBe("");
+  });
+
   it("applies 100% 100% background-size for fill fit", () => {
     useAppearanceStore.getState().setBackgroundEnabled(true);
     useAppearanceStore.getState().setBackgroundFit("fill");

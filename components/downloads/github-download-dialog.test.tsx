@@ -20,6 +20,13 @@ const mockUseGitHubDownloads = {
   loading: false,
   error: null as string | null,
   releases: [] as import("@/types/github").GitHubReleaseInfo[],
+  tokenStatus: null,
+  vaultStatus: null,
+  vaultPassword: "",
+  setVaultPassword: jest.fn(),
+  setupVault: jest.fn(),
+  unlockVault: jest.fn(),
+  lockVault: jest.fn(),
   validateAndFetch: jest.fn(),
   downloadAsset: jest.fn(),
   downloadSource: jest.fn(),
@@ -65,6 +72,9 @@ function resetMocks() {
   mockUseGitHubDownloads.tags = [];
   mockUseGitHubDownloads.error = null;
   mockUseGitHubDownloads.token = "";
+  mockUseGitHubDownloads.tokenStatus = null;
+  mockUseGitHubDownloads.vaultStatus = null;
+  mockUseGitHubDownloads.vaultPassword = "";
   mockParseAssets.mockReturnValue([]);
   mockGetRecommendedAsset.mockReturnValue(null);
 }

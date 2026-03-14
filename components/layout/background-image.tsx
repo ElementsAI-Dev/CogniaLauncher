@@ -39,7 +39,15 @@ function getBgServerSnapshot() {
 }
 
 export function BackgroundImage() {
-  const { backgroundEnabled, backgroundOpacity, backgroundBlur, backgroundFit } =
+  const {
+    backgroundEnabled,
+    backgroundOpacity,
+    backgroundBlur,
+    backgroundFit,
+    backgroundScale,
+    backgroundPositionX,
+    backgroundPositionY,
+  } =
     useAppearanceStore();
 
   const snapshot = useSyncExternalStore(subscribeToBgChange, getBgSnapshot, getBgServerSnapshot);
@@ -56,9 +64,14 @@ export function BackgroundImage() {
           inset: backgroundBlur > 0 ? `-${backgroundBlur}px` : 0,
           backgroundImage: `url(${imageUrl})`,
           backgroundSize: fitToCss(backgroundFit),
-          backgroundPosition: "center",
+          backgroundPosition: `${backgroundPositionX}% ${backgroundPositionY}%`,
           backgroundRepeat: backgroundFit === "tile" ? "repeat" : "no-repeat",
           filter: backgroundBlur > 0 ? `blur(${backgroundBlur}px)` : undefined,
+          transform:
+            backgroundFit === "tile"
+              ? undefined
+              : `scale(${backgroundScale / 100})`,
+          transformOrigin: `${backgroundPositionX}% ${backgroundPositionY}%`,
         }}
       />
       <div

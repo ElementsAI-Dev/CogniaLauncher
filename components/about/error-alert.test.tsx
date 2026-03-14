@@ -5,9 +5,14 @@ import { ErrorAlert } from "./error-alert";
 const mockT = (key: string) => {
   const translations: Record<string, string> = {
     "about.errorTitle": "Error",
+    "about.sourceUnavailableError": "Update source unavailable",
     "about.networkError": "Network error",
     "about.timeoutError": "Timeout error",
+    "about.validationError": "Validation error",
+    "about.signatureError": "Signature error",
     "about.updateCheckFailed": "Update check failed",
+    "about.updateInstallFailed": "Update install failed",
+    "about.unknownError": "Unknown error",
     "common.retry": "Retry",
     "common.close": "Close",
   };
@@ -44,6 +49,11 @@ describe("ErrorAlert", () => {
     expect(screen.getByText("Network error")).toBeInTheDocument();
   });
 
+  it("maps source_unavailable_error to translated message", () => {
+    render(<ErrorAlert {...defaultProps} error="source_unavailable_error" />);
+    expect(screen.getByText("Update source unavailable")).toBeInTheDocument();
+  });
+
   it("maps timeout_error to translated message", () => {
     render(<ErrorAlert {...defaultProps} error="timeout_error" />);
     expect(screen.getByText("Timeout error")).toBeInTheDocument();
@@ -52,6 +62,11 @@ describe("ErrorAlert", () => {
   it("maps update_check_failed to translated message", () => {
     render(<ErrorAlert {...defaultProps} error="update_check_failed" />);
     expect(screen.getByText("Update check failed")).toBeInTheDocument();
+  });
+
+  it("maps update_install_failed to translated message", () => {
+    render(<ErrorAlert {...defaultProps} error="update_install_failed" />);
+    expect(screen.getByText("Update install failed")).toBeInTheDocument();
   });
 
   it("shows raw error string for unknown errors", () => {

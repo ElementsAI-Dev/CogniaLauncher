@@ -728,6 +728,37 @@ describe('useTerminal', () => {
     expect(result.current.resourceStale.configMetadata).toBe(true);
   });
 
+  it('infers shell type when omitted and keeps invalidation scoped to config resources', async () => {
+    const { result } = renderHook(() => useTerminal({ t: mockT }));
+    await waitFor(() => expect(mockTerminalDetectShells).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      result.current.markResourcesFresh([
+        'proxyConfig',
+        'proxyEnvVars',
+        'shellEnvVars',
+        'psProfiles',
+        'psModules',
+        'psScripts',
+        'executionPolicy',
+      ]);
+    });
+
+    await act(async () => {
+      await result.current.writeShellConfig('/tmp/Microsoft.PowerShell_profile.ps1', '$Env:TEST = "1"');
+    });
+
+    expect(mockTerminalValidateConfigContent).toHaveBeenCalledWith(
+      '$Env:TEST = "1"',
+      'powershell',
+    );
+    expect(result.current.resourceStale.configEntries).toBe(true);
+    expect(result.current.resourceStale.configMetadata).toBe(true);
+    expect(result.current.resourceStale.proxyConfig).toBe(false);
+    expect(result.current.resourceStale.proxyEnvVars).toBe(false);
+    expect(result.current.resourceStale.shellEnvVars).toBe(false);
+  });
+
   it('marks proxy env resource fresh after explicit fetch', async () => {
     const { result } = renderHook(() => useTerminal({ t: mockT }));
     await waitFor(() => expect(mockTerminalDetectShells).toHaveBeenCalledTimes(1));

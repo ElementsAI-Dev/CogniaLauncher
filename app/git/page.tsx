@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { PageHeader } from "@/components/layout/page-header";
 import { useGit } from "@/hooks/use-git";
 import { useGitAdvanced } from "@/hooks/use-git-advanced";
@@ -72,7 +72,8 @@ import type {
   EditorCapabilityProbeResult,
   EditorOpenActionResult,
   GitCommitDetail as GitCommitDetailType,
-  GitAheadBehind,
+  GitSupportFeature,
+  GitSupportFeatureKey,
 } from "@/types/tauri";
 import type {
   GitConfigApplyPlanItem,
@@ -104,14 +105,15 @@ export default function GitPage() {
   const repoStore = useGitRepoStore();
   const {
     repoPath,
-    repoInfo,
     graphReloadKey,
+    aheadBehind,
+    supportSnapshot,
     refreshAll,
     refreshByScopes: refreshGitByScopes,
+    refreshSupportSnapshot,
     getConfigFilePath,
     probeConfigEditor,
     setRepoPath,
-    getAheadBehind,
     getCommitDetail,
   } = git;
   const {
@@ -143,10 +145,6 @@ export default function GitPage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [diffContent, setDiffContent] = useState<string>("");
   const [diffLoading, setDiffLoading] = useState(false);
-  const [aheadBehind, setAheadBehind] = useState<GitAheadBehind>({
-    ahead: 0,
-    behind: 0,
-  });
   const [compareFrom, setCompareFrom] = useState("");
   const [compareTo, setCompareTo] = useState("");
   const [contextLines, setContextLines] = useState<number | undefined>(
@@ -219,29 +217,6 @@ export default function GitPage() {
     ]);
   }, [repoPath, checkLfsAvailability, refreshTrackedPatterns, refreshLfsFiles]);
 
-  const refreshAheadBehind = useCallback(async () => {
-    if (repoInfo?.currentBranch && repoPath) {
-      try {
-        const next = await getAheadBehind(repoInfo.currentBranch);
-        setAheadBehind((prev) =>
-          prev.ahead === next.ahead && prev.behind === next.behind
-            ? prev
-            : next,
-        );
-      } catch {
-        setAheadBehind((prev) =>
-          prev.ahead === 0 && prev.behind === 0
-            ? prev
-            : { ahead: 0, behind: 0 },
-        );
-      }
-      return;
-    }
-    setAheadBehind((prev) =>
-      prev.ahead === 0 && prev.behind === 0 ? prev : { ahead: 0, behind: 0 },
-    );
-  }, [repoInfo?.currentBranch, repoPath, getAheadBehind]);
-
   const refreshRepoData = useCallback(() => {
     void refreshGitByScopes([
       "repoInfo",
@@ -254,12 +229,13 @@ export default function GitPage() {
       "graph",
       "aheadBehind",
     ]);
-    void refreshAheadBehind();
+    void refreshSupportSnapshot(repoPath);
     void refreshAdvancedByScopes(["advanced"]);
     void refreshLfsData();
   }, [
+    repoPath,
     refreshGitByScopes,
-    refreshAheadBehind,
+    refreshSupportSnapshot,
     refreshAdvancedByScopes,
     refreshLfsData,
   ]);
@@ -275,11 +251,12 @@ export default function GitPage() {
       "aheadBehind",
     ]);
     await refreshAdvancedByScopes(["advanced"]);
-    await refreshAheadBehind();
+    await refreshSupportSnapshot(repoPath);
   }, [
+    repoPath,
     refreshGitByScopes,
     refreshAdvancedByScopes,
-    refreshAheadBehind,
+    refreshSupportSnapshot,
   ]);
 
   // Restore last repo on mount
@@ -307,13 +284,11 @@ export default function GitPage() {
     setRepoPath,
   ]);
 
-  // Fetch ahead/behind when repo info changes
   useEffect(() => {
-    refreshAheadBehind().catch(() => {});
-  }, [refreshAheadBehind]);
-
-  useEffect(() => {
-    if (!repoPath) return;
+    if (!repoPath) {
+      refreshSupportSnapshot(null).catch(() => {});
+      return;
+    }
     refreshGitByScopes([
       "repoInfo",
       "status",
@@ -325,14 +300,68 @@ export default function GitPage() {
       "graph",
       "aheadBehind",
     ]).catch(() => {});
+    refreshSupportSnapshot(repoPath).catch(() => {});
     refreshAdvancedByScopes(["advanced"]).catch(() => {});
     refreshLfsData().catch(() => {});
   }, [
     repoPath,
     refreshGitByScopes,
+    refreshSupportSnapshot,
     refreshAdvancedByScopes,
     refreshLfsData,
   ]);
+
+  const supportByFeature = useMemo<
+    Partial<Record<GitSupportFeatureKey, GitSupportFeature>>
+  >(() => {
+    const map: Partial<Record<GitSupportFeatureKey, GitSupportFeature>> = {};
+    for (const feature of supportSnapshot?.features ?? []) {
+      map[feature.key as GitSupportFeatureKey] = feature;
+    }
+    return map;
+  }, [supportSnapshot]);
+
+  const getSupportReason = useCallback(
+    (featureKey: GitSupportFeatureKey): string | null => {
+      const feature = supportByFeature[featureKey];
+      if (!feature || feature.supported) {
+        return null;
+      }
+
+      const parts: string[] = [];
+      if (feature.reason?.trim()) {
+        parts.push(feature.reason.trim());
+      }
+
+      const guidance = feature.nextSteps
+        .map((step) => step.trim())
+        .filter(Boolean)
+        .join(" ");
+      if (guidance) {
+        parts.push(guidance);
+      }
+
+      if (parts.length === 0) {
+        parts.push(
+          feature.status === "unknown"
+            ? "Support status is unknown. Refresh support snapshot and retry."
+            : "This operation is unavailable in the current Git runtime.",
+        );
+      }
+
+      return parts.join(" ");
+    },
+    [supportByFeature],
+  );
+
+  const ensureFeatureSupported = useCallback(
+    (featureKey: GitSupportFeatureKey) => {
+      const reason = getSupportReason(featureKey);
+      if (!reason) return;
+      throw new Error(reason);
+    },
+    [getSupportReason],
+  );
 
   const handleSelectCommit = useCallback(
     async (hash: string) => {
@@ -1232,19 +1261,39 @@ export default function GitPage() {
             <GitSparseCheckoutCard
               isSparseCheckout={gitAdvanced.isSparseCheckout}
               sparsePatterns={gitAdvanced.sparsePatterns}
+              supportReason={getSupportReason("sparseCheckout")}
               onRefresh={gitAdvanced.refreshSparseCheckout}
-              onInit={gitAdvanced.sparseCheckoutInit}
-              onSet={gitAdvanced.sparseCheckoutSet}
-              onAdd={gitAdvanced.sparseCheckoutAdd}
-              onDisable={gitAdvanced.sparseCheckoutDisable}
+              onInit={async (cone) => {
+                ensureFeatureSupported("sparseCheckout");
+                return await gitAdvanced.sparseCheckoutInit(cone);
+              }}
+              onSet={async (patterns) => {
+                ensureFeatureSupported("sparseCheckout");
+                return await gitAdvanced.sparseCheckoutSet(patterns);
+              }}
+              onAdd={async (patterns) => {
+                ensureFeatureSupported("sparseCheckout");
+                return await gitAdvanced.sparseCheckoutAdd(patterns);
+              }}
+              onDisable={async () => {
+                ensureFeatureSupported("sparseCheckout");
+                return await gitAdvanced.sparseCheckoutDisable();
+              }}
             />
             <GitRemotePruneCard
               remotes={git.remotes}
               onPrune={gitAdvanced.remotePrune}
             />
             <GitSignatureVerifyCard
-              onVerifyCommit={gitAdvanced.verifyCommit}
-              onVerifyTag={gitAdvanced.verifyTag}
+              supportReason={getSupportReason("signatureVerify")}
+              onVerifyCommit={async (hash) => {
+                ensureFeatureSupported("signatureVerify");
+                return await gitAdvanced.verifyCommit(hash);
+              }}
+              onVerifyTag={async (tag) => {
+                ensureFeatureSupported("signatureVerify");
+                return await gitAdvanced.verifyTag(tag);
+              }}
             />
           </div>
         </TabsContent>
@@ -1253,13 +1302,16 @@ export default function GitPage() {
         <TabsContent value="operations" className="space-y-4 mt-4">
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
             <GitRebaseSquashCard
+              supportReason={getSupportReason("rebaseSquash")}
               onRebase={async (onto, confirmRisk) => {
+                ensureFeatureSupported("rebaseSquash");
                 const msg = await gitAdvanced.rebase(onto, confirmRisk);
                 await refreshAfterGraphWrite();
                 await refreshAdvancedData();
                 return msg;
               }}
               onSquash={async (count, message, confirmRisk) => {
+                ensureFeatureSupported("rebaseSquash");
                 const msg = await gitAdvanced.squash(count, message, confirmRisk);
                 await refreshAfterGraphWrite();
                 await refreshAdvancedData();
@@ -1267,24 +1319,74 @@ export default function GitPage() {
               }}
             />
             <GitInteractiveRebaseCard
-              onPreview={gitAdvanced.getRebaseTodoPreview}
-              onStart={gitAdvanced.startInteractiveRebase}
+              supportReason={getSupportReason("interactiveRebase")}
+              onPreview={async (base) => {
+                ensureFeatureSupported("interactiveRebase");
+                return await gitAdvanced.getRebaseTodoPreview(base);
+              }}
+              onStart={async (base, todo) => {
+                ensureFeatureSupported("interactiveRebase");
+                return await gitAdvanced.startInteractiveRebase(base, todo);
+              }}
             />
             <GitBisectCard
               bisectState={gitAdvanced.bisectState}
-              onRefreshState={gitAdvanced.refreshBisectState}
-              onStart={gitAdvanced.bisectStart}
-              onGood={gitAdvanced.bisectGood}
-              onBad={gitAdvanced.bisectBad}
-              onSkip={gitAdvanced.bisectSkip}
-              onReset={gitAdvanced.bisectReset}
-              onLog={gitAdvanced.bisectLog}
+              supportReason={getSupportReason("bisect")}
+              onRefreshState={async () => {
+                ensureFeatureSupported("bisect");
+                await gitAdvanced.refreshBisectState();
+              }}
+              onStart={async (badRef, goodRef) => {
+                ensureFeatureSupported("bisect");
+                return await gitAdvanced.bisectStart(badRef, goodRef);
+              }}
+              onGood={async () => {
+                ensureFeatureSupported("bisect");
+                return await gitAdvanced.bisectGood();
+              }}
+              onBad={async () => {
+                ensureFeatureSupported("bisect");
+                return await gitAdvanced.bisectBad();
+              }}
+              onSkip={async () => {
+                ensureFeatureSupported("bisect");
+                return await gitAdvanced.bisectSkip();
+              }}
+              onReset={async () => {
+                ensureFeatureSupported("bisect");
+                return await gitAdvanced.bisectReset();
+              }}
+              onLog={async () => {
+                ensureFeatureSupported("bisect");
+                return await gitAdvanced.bisectLog();
+              }}
             />
-            <GitArchiveCard onArchive={gitAdvanced.archive} />
+            <GitArchiveCard
+              supportReason={getSupportReason("archive")}
+              onArchive={async (format, outputPath, refName, prefix) => {
+                ensureFeatureSupported("archive");
+                return await gitAdvanced.archive(
+                  format,
+                  outputPath,
+                  refName,
+                  prefix,
+                );
+              }}
+            />
             <GitPatchCard
-              onFormatPatch={gitAdvanced.formatPatch}
-              onApplyPatch={gitAdvanced.applyPatch}
-              onApplyMailbox={gitAdvanced.applyMailbox}
+              supportReason={getSupportReason("patch")}
+              onFormatPatch={async (range, outputDir) => {
+                ensureFeatureSupported("patch");
+                return await gitAdvanced.formatPatch(range, outputDir);
+              }}
+              onApplyPatch={async (patchPath, checkOnly) => {
+                ensureFeatureSupported("patch");
+                return await gitAdvanced.applyPatch(patchPath, checkOnly);
+              }}
+              onApplyMailbox={async (patchPath) => {
+                ensureFeatureSupported("patch");
+                return await gitAdvanced.applyMailbox(patchPath);
+              }}
             />
           </div>
         </TabsContent>

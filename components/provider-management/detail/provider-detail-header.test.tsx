@@ -17,6 +17,9 @@ const mockT = (key: string) => {
   const translations: Record<string, string> = {
     "providers.statusAvailable": "Available",
     "providers.statusUnavailable": "Unavailable",
+    "providers.statusUnsupported": "Unsupported",
+    "providers.priority": "Priority",
+    "providerDetail.savePriority": "Save Priority",
     "providers.filterEnvironment": "Environment",
     "providers.checkStatus": "Check Status",
     "providers.checkStatusDesc": "Check provider status",
@@ -37,11 +40,14 @@ const defaultProps = {
     is_environment_provider: false,
   },
   isAvailable: true as boolean | null,
+  statusInfo: null,
   isToggling: false,
   isCheckingStatus: false,
+  isSavingPriority: false,
   onToggle: jest.fn(),
   onCheckStatus: jest.fn(),
   onRefresh: jest.fn(),
+  onPrioritySave: jest.fn(),
   t: mockT,
 };
 
@@ -149,5 +155,60 @@ describe("ProviderDetailHeader", () => {
     const switchEl = screen.getByRole("switch");
     await user.click(switchEl);
     expect(defaultProps.onToggle).toHaveBeenCalledWith(false);
+  });
+
+  it("shows normalized unsupported status when status info is provided", () => {
+    render(
+      <ProviderDetailHeader
+        {...defaultProps}
+        isAvailable={false}
+        statusInfo={{
+          id: 'npm',
+          display_name: 'npm',
+          installed: false,
+          platforms: ['windows', 'linux'],
+          scope_state: 'unsupported',
+        }}
+      />,
+    );
+
+    expect(screen.getByText('Unsupported')).toBeInTheDocument();
+  });
+
+  it("submits provider priority changes", async () => {
+    const user = userEvent.setup();
+    const onPrioritySave = jest.fn();
+    render(
+      <ProviderDetailHeader
+        {...defaultProps}
+        onPrioritySave={onPrioritySave}
+      />,
+    );
+
+    const input = screen.getByLabelText('Priority');
+    await user.clear(input);
+    await user.type(input, '120');
+    await user.click(screen.getByRole('button', { name: 'Save Priority' }));
+
+    expect(onPrioritySave).toHaveBeenCalledWith(120);
+  });
+
+  it("resets priority draft when provider priority changes", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<ProviderDetailHeader {...defaultProps} />);
+
+    const input = screen.getByLabelText("Priority");
+    await user.clear(input);
+    await user.type(input, "120");
+    expect(screen.getByLabelText("Priority")).toHaveValue("120");
+
+    rerender(
+      <ProviderDetailHeader
+        {...defaultProps}
+        provider={{ ...defaultProps.provider, priority: 80 }}
+      />,
+    );
+
+    expect(screen.getByLabelText("Priority")).toHaveValue("80");
   });
 });

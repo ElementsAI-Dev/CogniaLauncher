@@ -1,16 +1,26 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useCopyToClipboard } from '@/hooks/use-clipboard';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { ToolSection, ToolValidationMessage } from '@/components/toolbox/tool-layout';
 import { useLocale } from '@/components/providers/locale-provider';
-import { ToolValidationMessage } from '@/components/toolbox/tool-layout';
 import { useToolPreferences } from '@/hooks/use-tool-preferences';
-import { Copy, Check } from 'lucide-react';
+import { Copy, Check, Palette, Pipette } from 'lucide-react';
 import type { ToolComponentProps } from '@/types/toolbox';
+
+/* -------------------------------------------------------------------------- */
+/*  Color conversion helpers                                                   */
+/* -------------------------------------------------------------------------- */
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
   const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
@@ -36,6 +46,28 @@ function rgbToHsl(r: number, g: number, b: number): { h: number; s: number; l: n
   return { h: Math.round(h * 360), s: Math.round(s * 100), l: Math.round(l * 100) };
 }
 
+function srgbToLinear(c: number): number {
+  return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+}
+
+function rgbToOklch(r: number, g: number, b: number): { L: number; C: number; H: number } {
+  const lr = srgbToLinear(r / 255), lg = srgbToLinear(g / 255), lb = srgbToLinear(b / 255);
+  const l_ = 0.4122214708 * lr + 0.5363325363 * lg + 0.0514459929 * lb;
+  const m_ = 0.2119034982 * lr + 0.6806995451 * lg + 0.1073969566 * lb;
+  const s_ = 0.0883024619 * lr + 0.2817188376 * lg + 0.6299787005 * lb;
+  const l = Math.cbrt(l_), m = Math.cbrt(m_), s = Math.cbrt(s_);
+  const L = 0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s;
+  const a = 1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s;
+  const b2 = 0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s;
+  const C = Math.sqrt(a * a + b2 * b2);
+  const H = (Math.atan2(b2, a) * 180 / Math.PI + 360) % 360;
+  return {
+    L: Math.round(L * 100 * 100) / 100,
+    C: Math.round(C * 100) / 100,
+    H: Math.round(H * 10) / 10,
+  };
+}
+
 function getContrastRatio(hex: string): { white: number; black: number } | null {
   const rgb = hexToRgb(hex);
   if (!rgb) return null;
@@ -44,14 +76,72 @@ function getContrastRatio(hex: string): { white: number; black: number } | null 
     return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
   });
   const l = 0.2126 * lum[0] + 0.7152 * lum[1] + 0.0722 * lum[2];
-  const white = (1.05) / (l + 0.05);
+  const white = 1.05 / (l + 0.05);
   const black = (l + 0.05) / 0.05;
   return { white, black };
 }
 
+/* -------------------------------------------------------------------------- */
+/*  Constants                                                                  */
+/* -------------------------------------------------------------------------- */
+
+const PALETTE = [
+  '#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899',
+  '#000000', '#374151', '#6b7280', '#9ca3af', '#d1d5db', '#f3f4f6', '#ffffff',
+];
+
 const DEFAULT_PREFERENCES = {
   hex: '#3b82f6',
 } as const;
+
+/* -------------------------------------------------------------------------- */
+/*  Sub-components                                                             */
+/* -------------------------------------------------------------------------- */
+
+function FormatRow({
+  label,
+  value,
+  copiedKey,
+  onCopy,
+  formatKey,
+}: {
+  label: string;
+  value: string;
+  copiedKey: string | null;
+  onCopy: (text: string, key: string) => void;
+  formatKey: string;
+}) {
+  return (
+    <div className="flex items-center gap-3 py-1.5">
+      <span className="text-xs font-medium text-muted-foreground w-16 shrink-0">{label}</span>
+      <code className="flex-1 text-sm font-mono truncate">{value}</code>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-7 w-7 shrink-0"
+        onClick={() => onCopy(value, formatKey)}
+      >
+        {copiedKey === formatKey ? (
+          <Check className="h-3.5 w-3.5 text-green-500" />
+        ) : (
+          <Copy className="h-3.5 w-3.5" />
+        )}
+      </Button>
+    </div>
+  );
+}
+
+function WcagBadge({ pass, label }: { pass: boolean; label: string }) {
+  return (
+    <Badge variant={pass ? 'default' : 'destructive'} className="text-[10px] px-1.5 py-0">
+      {label} {pass ? 'Pass' : 'Fail'}
+    </Badge>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Main component                                                             */
+/* -------------------------------------------------------------------------- */
 
 export default function ColorPicker({ className }: ToolComponentProps) {
   const { t } = useLocale();
@@ -62,14 +152,10 @@ export default function ColorPicker({ className }: ToolComponentProps) {
 
   const rgb = hexToRgb(hex);
   const hsl = rgb ? rgbToHsl(rgb.r, rgb.g, rgb.b) : null;
+  const oklch = rgb ? rgbToOklch(rgb.r, rgb.g, rgb.b) : null;
   const contrast = getContrastRatio(hex);
-  const hasError = hex.length > 0 && !rgb && !/^#[a-fA-F\d]{6}$/.test(hex);
-  const contrastText = contrast
-    ? t('toolbox.tools.colorPicker.contrastValue', {
-      white: contrast.white.toFixed(2),
-      black: contrast.black.toFixed(2),
-    })
-    : '-';
+  const validHex = hex.length === 7 && !!rgb;
+  const hasError = hex.length > 0 && !rgb && !/^#[a-fA-F\d]{0,5}$/.test(hex);
 
   const handleColorInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setHex(e.target.value);
@@ -80,15 +166,22 @@ export default function ColorPicker({ className }: ToolComponentProps) {
     let val = e.target.value;
     if (!val.startsWith('#')) val = '#' + val;
     setHex(val);
-    setPreferences({ hex: val });
+    if (/^#[a-fA-F\d]{6}$/.test(val)) setPreferences({ hex: val });
   }, [setPreferences]);
 
   const handleRgbChange = useCallback((channel: 'r' | 'g' | 'b', value: string) => {
     if (!rgb) return;
     const n = Math.max(0, Math.min(255, Number(value) || 0));
     const newRgb = { ...rgb, [channel]: n };
-    setHex(rgbToHex(newRgb.r, newRgb.g, newRgb.b));
-  }, [rgb]);
+    const newHex = rgbToHex(newRgb.r, newRgb.g, newRgb.b);
+    setHex(newHex);
+    setPreferences({ hex: newHex });
+  }, [rgb, setPreferences]);
+
+  const handlePaletteClick = useCallback((color: string) => {
+    setHex(color);
+    setPreferences({ hex: color });
+  }, [setPreferences]);
 
   const handleCopy = useCallback(async (text: string, key: string) => {
     await copy(text);
@@ -96,69 +189,179 @@ export default function ColorPicker({ className }: ToolComponentProps) {
     setTimeout(() => setCopiedKey(null), 1500);
   }, [copy]);
 
-  const formats = [
-    { key: 'hex', label: t('toolbox.tools.colorPicker.formatHex'), value: hex.toUpperCase() },
+  const formats = useMemo(() => [
+    { key: 'hex', label: t('toolbox.tools.colorPicker.formatHex'), value: validHex ? hex.toUpperCase() : '-' },
     { key: 'rgb', label: t('toolbox.tools.colorPicker.formatRgb'), value: rgb ? `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})` : '-' },
     { key: 'hsl', label: t('toolbox.tools.colorPicker.formatHsl'), value: hsl ? `hsl(${hsl.h}, ${hsl.s}%, ${hsl.l}%)` : '-' },
-    { key: 'contrast', label: t('toolbox.tools.colorPicker.contrast'), value: contrastText },
-  ];
+    { key: 'oklch', label: 'OKLCH', value: oklch ? `oklch(${oklch.L}% ${oklch.C} ${oklch.H})` : '-' },
+    { key: 'css-var', label: 'CSS Var', value: validHex ? 'var(--color-primary)' : '-' },
+  ], [hex, rgb, hsl, oklch, t, validHex]);
+
+  const bgColor = validHex ? hex : '#000000';
 
   return (
     <div className={className}>
       <div className="space-y-4">
-        <div className="flex items-start gap-4">
-          <div className="space-y-2">
-            <Label>{t('toolbox.tools.colorPicker.pickColor')}</Label>
-            <input
-              type="color"
-              value={hex.length === 7 ? hex : '#000000'}
-              onChange={handleColorInput}
-              className="h-20 w-20 cursor-pointer rounded-lg border"
-            />
-          </div>
-          <div className="flex-1 space-y-2">
-            <Label>{t('toolbox.tools.colorPicker.formatHex')}</Label>
-            <Input value={hex} onChange={handleHexInput} className="font-mono" placeholder="#3b82f6" />
-            {rgb && (
-              <div className="grid grid-cols-3 gap-2">
-                {(['r', 'g', 'b'] as const).map((ch) => (
-                  <div key={ch} className="space-y-1">
-                    <Label className="text-xs">{ch.toUpperCase()}</Label>
-                    <Input
-                      type="number"
-                      min={0}
-                      max={255}
-                      value={rgb[ch]}
-                      onChange={(e) => handleRgbChange(ch, e.target.value)}
-                      className="font-mono text-sm"
-                    />
+        {/* ── Color Input ─────────────────────────────────── */}
+        <ToolSection title={t('toolbox.tools.colorPicker.pickColor')}>
+          <div className="space-y-4">
+            <div className="flex items-start gap-4">
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
+                  <Pipette className="h-3 w-3" />
+                  {t('toolbox.tools.colorPicker.pickColor')}
+                </Label>
+                <input
+                  type="color"
+                  value={validHex ? hex : '#000000'}
+                  onChange={handleColorInput}
+                  className="h-20 w-20 cursor-pointer rounded-lg border"
+                />
+              </div>
+              <div className="flex-1 space-y-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">{t('toolbox.tools.colorPicker.formatHex')}</Label>
+                  <Input value={hex} onChange={handleHexInput} className="font-mono" placeholder="#3b82f6" />
+                </div>
+                {rgb && (
+                  <div className="grid grid-cols-3 gap-2">
+                    {(['r', 'g', 'b'] as const).map((ch) => (
+                      <div key={ch} className="space-y-1">
+                        <Label className="text-[10px] font-semibold text-muted-foreground uppercase">{ch}</Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          max={255}
+                          value={rgb[ch]}
+                          onChange={(e) => handleRgbChange(ch, e.target.value)}
+                          className="font-mono text-sm h-8"
+                        />
+                      </div>
+                    ))}
                   </div>
+                )}
+              </div>
+            </div>
+
+            {hasError && <ToolValidationMessage message={t('toolbox.tools.colorPicker.invalidHex')} />}
+
+            {/* Palette presets */}
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
+                <Palette className="h-3 w-3" />
+                Presets
+              </Label>
+              <div className="flex flex-wrap gap-1.5">
+                {PALETTE.map((color) => (
+                  <Tooltip key={color}>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="h-6 w-6 rounded-full border border-border/50 transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        style={{ backgroundColor: color }}
+                        onClick={() => handlePaletteClick(color)}
+                        aria-label={color}
+                      />
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" className="text-xs font-mono">
+                      {color.toUpperCase()}
+                    </TooltipContent>
+                  </Tooltip>
                 ))}
               </div>
-            )}
+            </div>
           </div>
-        </div>
+        </ToolSection>
 
-        <div
-          className="h-16 rounded-lg border"
-          style={{ backgroundColor: hex.length === 7 ? hex : '#000' }}
-        />
+        {/* ── Color Preview ───────────────────────────────── */}
+        <ToolSection title="Color Preview">
+          <div
+            className="relative h-24 rounded-lg border overflow-hidden"
+            style={{ backgroundColor: bgColor }}
+          >
+            <div className="absolute inset-0 flex items-center justify-center gap-6">
+              <span className="text-2xl font-bold text-white drop-shadow-md select-none">Aa</span>
+              <span className="text-2xl font-bold text-black drop-shadow-md select-none">Aa</span>
+            </div>
+            <span className="absolute bottom-2 left-1/2 -translate-x-1/2 text-xs font-mono px-2 py-0.5 rounded bg-black/30 text-white select-none backdrop-blur-sm">
+              {validHex ? hex.toUpperCase() : '---'}
+            </span>
+          </div>
+        </ToolSection>
 
-        {hasError && <ToolValidationMessage message={t('toolbox.tools.colorPicker.invalidHex')} />}
-
-        <Card>
-          <CardContent className="p-4 space-y-2">
+        {/* ── Color Formats ───────────────────────────────── */}
+        <ToolSection
+          title="Color Formats"
+          headerRight={
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs gap-1.5"
+              onClick={() => handleCopy(`color: ${hex};`, 'css-color')}
+            >
+              {copiedKey === 'css-color' ? (
+                <Check className="h-3 w-3 text-green-500" />
+              ) : (
+                <Copy className="h-3 w-3" />
+              )}
+              Copy CSS
+            </Button>
+          }
+        >
+          <div className="divide-y divide-border">
             {formats.map(({ key, label, value }) => (
-              <div key={key} className="flex items-center justify-between gap-4">
-                <span className="text-sm font-medium w-20">{label}</span>
-                <code className="flex-1 text-xs font-mono">{value}</code>
-                <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => handleCopy(value, key)}>
-                  {copiedKey === key ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
-                </Button>
-              </div>
+              <FormatRow
+                key={key}
+                label={label}
+                value={value}
+                copiedKey={copiedKey}
+                onCopy={handleCopy}
+                formatKey={key}
+              />
             ))}
-          </CardContent>
-        </Card>
+          </div>
+        </ToolSection>
+
+        {/* ── Accessibility (WCAG) ────────────────────────── */}
+        <ToolSection title="Accessibility">
+          {contrast ? (
+            <div className="space-y-3">
+              <p className="text-xs text-muted-foreground">
+                {t('toolbox.tools.colorPicker.contrastValue', {
+                  white: contrast.white.toFixed(2),
+                  black: contrast.black.toFixed(2),
+                })}
+              </p>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">vs White</span>
+                  <span className="text-sm font-mono tabular-nums">{contrast.white.toFixed(2)}:1</span>
+                </div>
+                <div className="flex gap-1.5">
+                  <WcagBadge pass={contrast.white >= 4.5} label="AA" />
+                  <WcagBadge pass={contrast.white >= 7} label="AAA" />
+                  <WcagBadge pass={contrast.white >= 3} label="AA Large" />
+                </div>
+              </div>
+
+              <Separator />
+
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">vs Black</span>
+                  <span className="text-sm font-mono tabular-nums">{contrast.black.toFixed(2)}:1</span>
+                </div>
+                <div className="flex gap-1.5">
+                  <WcagBadge pass={contrast.black >= 4.5} label="AA" />
+                  <WcagBadge pass={contrast.black >= 7} label="AAA" />
+                  <WcagBadge pass={contrast.black >= 3} label="AA Large" />
+                </div>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">Enter a valid color to see contrast analysis.</p>
+          )}
+        </ToolSection>
       </div>
     </div>
   );

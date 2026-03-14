@@ -45,3 +45,40 @@ export const TERMINAL_EDITOR_LANGUAGE_BY_SHELL: Record<ShellType, TerminalEditor
 export function getTerminalEditorLanguage(shellType: ShellType): TerminalEditorLanguage {
   return TERMINAL_EDITOR_LANGUAGE_BY_SHELL[shellType] ?? 'plaintext';
 }
+
+const TERMINAL_BOOTSTRAP_TEMPLATE_BY_SHELL: Record<ShellType, string> = {
+  bash: [
+    '# CogniaLauncher bootstrap for shell config.',
+    '# Add aliases, exports, and source lines below.',
+    '',
+  ].join('\n'),
+  zsh: [
+    '# CogniaLauncher bootstrap for shell config.',
+    '# Add aliases, exports, and source lines below.',
+    '',
+  ].join('\n'),
+  fish: [
+    '# CogniaLauncher bootstrap for fish config.',
+    '# Add aliases, exports, and source lines below.',
+    '',
+  ].join('\n'),
+  powershell: [
+    '# CogniaLauncher bootstrap for PowerShell profile.',
+    '# Add aliases and environment variables below.',
+    '',
+  ].join('\n'),
+  cmd: [
+    ':: CogniaLauncher bootstrap for cmd config.',
+    ':: Add doskey aliases and set variables below.',
+    '',
+  ].join('\n'),
+  nushell: [
+    '# CogniaLauncher bootstrap for Nushell config.',
+    '# Add aliases and environment variables below.',
+    '',
+  ].join('\n'),
+};
+
+export function getTerminalBootstrapTemplate(shellType: ShellType): string {
+  return TERMINAL_BOOTSTRAP_TEMPLATE_BY_SHELL[shellType] ?? TERMINAL_BOOTSTRAP_TEMPLATE_BY_SHELL.bash;
+}

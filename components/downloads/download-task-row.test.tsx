@@ -151,6 +151,12 @@ describe("DownloadTaskRow", () => {
     expect(screen.getByTitle("downloads.actions.resume")).toBeInTheDocument();
   });
 
+  it("hides resume button for unrecoverable failed state", () => {
+    renderRow(makeTask({ state: "failed", recoverable: false }));
+
+    expect(screen.queryByTitle("downloads.actions.resume")).not.toBeInTheDocument();
+  });
+
   it("does not show resume button for downloading state", () => {
     renderRow(makeTask({ state: "downloading" }));
 

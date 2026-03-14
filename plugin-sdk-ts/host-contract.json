@@ -2,10 +2,68 @@
   "version": 1,
   "runtimeSource": "../src-tauri/src/plugin/host_functions.rs",
   "declarationSource": "./cognia.d.ts",
+  "rustDeclarationSource": "../plugin-sdk/src/host.rs",
   "wrapperSourceGlob": "./src/**/*.ts",
+  "rustWrapperSourceGlob": "../plugin-sdk/src/**/*.rs",
   "functions": [
     {
+      "name": "cognia_batch_check_updates",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_batch_get_history",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_batch_get_pinned",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_batch_install",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_batch_uninstall",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_batch_update",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_cache_clean",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_cache_clean_preview",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_cache_detail_info",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_cache_discover_external",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_cache_get_access_stats",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_cache_get_cleanup_history",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_cache_get_external_paths",
+      "stability": "stable"
+    },
+    {
       "name": "cognia_cache_info",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_cache_list_entries",
       "stability": "stable"
     },
     {
@@ -22,6 +80,50 @@
     },
     {
       "name": "cognia_config_set",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_download_add",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_download_cancel",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_download_get",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_download_history_list",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_download_history_search",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_download_history_stats",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_download_list",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_download_pause",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_download_resume",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_download_stats",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_download_verify",
       "stability": "stable"
     },
     {
@@ -85,6 +187,102 @@
       "stability": "stable"
     },
     {
+      "name": "cognia_git_commit",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_git_get_ahead_behind",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_git_get_blame",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_git_get_branches",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_git_get_commit_detail",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_git_get_contributors",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_git_get_current_branch",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_git_get_diff",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_git_get_diff_between",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_git_get_file_history",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_git_get_log",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_git_get_remotes",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_git_get_repo_info",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_git_get_stashes",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_git_get_status",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_git_get_tags",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_git_get_version",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_git_is_available",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_git_search_commits",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_git_stage_files",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_health_check_all",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_health_check_environment",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_health_check_package_manager",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_health_check_package_managers",
+      "stability": "stable"
+    },
+    {
       "name": "cognia_http_get",
       "stability": "compat",
       "preferred": "cognia_http_request",
@@ -109,8 +307,26 @@
       "stability": "stable"
     },
     {
-      "name": "cognia_log",
+      "name": "cognia_launch_activate",
       "stability": "stable"
+    },
+    {
+      "name": "cognia_launch_get_env_info",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_launch_which_program",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_launch_with_env",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_log",
+      "stability": "stable",
+      "pluginPoint": "log-listener",
+      "note": "Supports structured log metadata and log-listener envelope generation."
     },
     {
       "name": "cognia_notification_send",
@@ -157,7 +373,123 @@
       "stability": "stable"
     },
     {
+      "name": "cognia_process_exec_shell",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_process_is_available",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_process_which",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_profile_apply",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_profile_create",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_profile_create_from_current",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_profile_export",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_profile_get",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_profile_import",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_profile_list",
+      "stability": "stable"
+    },
+    {
       "name": "cognia_provider_list",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_shell_check_health",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_shell_detect_framework",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_shell_detect_shells",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_shell_get_default_profile",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_shell_get_env_vars",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_shell_get_info",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_shell_get_profile",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_shell_list_profiles",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_ui_get_context",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_ui_request",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_wsl_disk_usage",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_wsl_exec",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_wsl_get_ip",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_wsl_get_version_info",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_wsl_is_available",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_wsl_list_distros",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_wsl_list_online",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_wsl_list_running",
+      "stability": "stable"
+    },
+    {
+      "name": "cognia_wsl_status",
       "stability": "stable"
     }
   ]

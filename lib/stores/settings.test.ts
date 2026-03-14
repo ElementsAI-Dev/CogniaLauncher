@@ -19,6 +19,9 @@ describe('useSettingsStore', () => {
     checkUpdatesOnStart: true,
     autoInstallUpdates: false,
     notifyOnUpdates: true,
+    updateSourceMode: 'official',
+    updateCustomEndpoints: [],
+    updateFallbackToOfficial: true,
     minimizeToTray: true,
     startMinimized: false,
     autostart: false,
@@ -61,6 +64,9 @@ describe('useSettingsStore', () => {
       expect(appSettings.checkUpdatesOnStart).toBe(true);
       expect(appSettings.autoInstallUpdates).toBe(false);
       expect(appSettings.notifyOnUpdates).toBe(true);
+      expect(appSettings.updateSourceMode).toBe('official');
+      expect(appSettings.updateCustomEndpoints).toEqual([]);
+      expect(appSettings.updateFallbackToOfficial).toBe(true);
       expect(appSettings.minimizeToTray).toBe(true);
       expect(appSettings.startMinimized).toBe(false);
       expect(appSettings.autostart).toBe(false);
@@ -249,6 +255,25 @@ describe('useSettingsStore', () => {
         expect(useSettingsStore.getState().appSettings.notifyOnUpdates).toBe(false);
       });
 
+      it('should update updateSourceMode', () => {
+        useSettingsStore.getState().setAppSettings({ updateSourceMode: 'mirror' });
+        expect(useSettingsStore.getState().appSettings.updateSourceMode).toBe('mirror');
+      });
+
+      it('should update updateCustomEndpoints', () => {
+        useSettingsStore.getState().setAppSettings({
+          updateCustomEndpoints: ['https://updates.example.com/{{target}}/{{current_version}}'],
+        });
+        expect(useSettingsStore.getState().appSettings.updateCustomEndpoints).toEqual([
+          'https://updates.example.com/{{target}}/{{current_version}}',
+        ]);
+      });
+
+      it('should update updateFallbackToOfficial', () => {
+        useSettingsStore.getState().setAppSettings({ updateFallbackToOfficial: false });
+        expect(useSettingsStore.getState().appSettings.updateFallbackToOfficial).toBe(false);
+      });
+
       it('should update minimizeToTray', () => {
         useSettingsStore.getState().setAppSettings({ minimizeToTray: false });
         expect(useSettingsStore.getState().appSettings.minimizeToTray).toBe(false);
@@ -360,6 +385,9 @@ describe('useSettingsStore', () => {
       ) as { appSettings: AppSettings };
 
       expect(migrated.appSettings.checkUpdatesOnStart).toBe(false);
+      expect(migrated.appSettings.updateSourceMode).toBe('official');
+      expect(migrated.appSettings.updateCustomEndpoints).toEqual([]);
+      expect(migrated.appSettings.updateFallbackToOfficial).toBe(true);
       expect(migrated.appSettings.sidebarItemOrder).toEqual(DEFAULT_SIDEBAR_ITEM_ORDER);
     });
 
@@ -374,12 +402,18 @@ describe('useSettingsStore', () => {
         {
           appSettings: {
             sidebarItemOrder: ['downloads', 'unknown', 'downloads'],
+            updateSourceMode: 'custom',
+            updateCustomEndpoints: 'https://updates.example.com/latest.json',
           },
         },
         3,
       ) as { appSettings: AppSettings };
 
       expect(migrated.appSettings.sidebarItemOrder[0]).toBe('downloads');
+      expect(migrated.appSettings.updateSourceMode).toBe('custom');
+      expect(migrated.appSettings.updateCustomEndpoints).toEqual([
+        'https://updates.example.com/latest.json',
+      ]);
       expect(migrated.appSettings.sidebarItemOrder).toEqual([
         'downloads',
         ...DEFAULT_SIDEBAR_ITEM_ORDER.filter((id) => id !== 'downloads'),

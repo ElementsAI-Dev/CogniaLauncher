@@ -13,6 +13,7 @@ import type { GitBisectCardProps } from '@/types/git';
 export function GitBisectCard({
   bisectState,
   loading,
+  supportReason,
   onRefreshState,
   onStart,
   onGood,
@@ -27,7 +28,8 @@ export function GitBisectCard({
   const [log, setLog] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const disabled = loading || busy;
+  const blocked = Boolean(supportReason);
+  const disabled = blocked || loading || busy;
 
   const run = async (fn: () => Promise<string>, successMessage?: string) => {
     setBusy(true);
@@ -65,6 +67,9 @@ export function GitBisectCard({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
+        {supportReason && (
+          <p className="text-xs text-muted-foreground">{supportReason}</p>
+        )}
         {!bisectState.active ? (
           <div className="space-y-2">
             <Input

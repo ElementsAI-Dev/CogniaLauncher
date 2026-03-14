@@ -33,6 +33,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { Toggle } from "@/components/ui/toggle";
+import { ToolbarCluster, ToolbarRow, denseToolbarControl } from "@/components/ui/toolbar";
 import { useLogStore } from "@/lib/stores/log";
 import { useLogs } from "@/hooks/use-logs";
 import { ALL_LEVELS, LEVEL_COLORS, LEVEL_STYLES, KNOWN_TARGETS } from "@/lib/constants/log";
@@ -348,8 +349,7 @@ export function LogToolbar({
         data-testid="log-toolbar-shell"
       >
       {/* Primary row - Search and main actions */}
-      <div
-        className="flex flex-wrap items-center gap-2"
+      <ToolbarRow
         role="group"
         aria-label="Primary log controls"
         data-testid="log-toolbar-primary-row"
@@ -362,14 +362,14 @@ export function LogToolbar({
             placeholder={t("logs.searchPlaceholder")}
             value={searchValue}
             onChange={(e) => handleSearchChange(e.target.value)}
-            className="pl-9 pr-8 h-9"
+            className={`pl-9 pr-8 ${denseToolbarControl.input}`}
             aria-label={t("logs.searchPlaceholder")}
           />
           {searchValue && (
             <Button
               variant="ghost"
               size="icon"
-              className="absolute right-1.5 top-1/2 -translate-y-1/2 h-6 w-6"
+              className={`absolute right-1.5 top-1/2 -translate-y-1/2 ${denseToolbarControl.iconButtonInset}`}
               onClick={() => {
                 if (searchDebounceRef.current) {
                   clearTimeout(searchDebounceRef.current);
@@ -379,78 +379,77 @@ export function LogToolbar({
               }}
               aria-label={t("logs.clearSearch")}
             >
-              <X className="h-3.5 w-3.5 text-muted-foreground" />
+              <X className="h-4 w-4 text-muted-foreground" />
             </Button>
           )}
         </div>
 
-        {/* Level filter dropdown */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
+        <ToolbarCluster compact>
+          {/* Level filter dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className={`${denseToolbarControl.button} gap-1.5 shrink-0`}
+              >
+                <Filter className="h-4 w-4" />
+                <span className="hidden sm:inline">{t("logs.filter")}</span>
+                {filter.levels.length < ALL_LEVELS.length && (
+                  <Badge className="ml-0.5 h-5 w-5 p-0 text-[10px]">
+                    {filter.levels.length}
+                  </Badge>
+                )}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuLabel className="text-xs font-medium">
+                {t("logs.logLevels")}
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {ALL_LEVELS.map((level) => (
+                <DropdownMenuCheckboxItem
+                  key={level}
+                  checked={filter.levels.includes(level)}
+                  onCheckedChange={() => toggleLevel(level)}
+                  className="gap-2"
+                >
+                  <span
+                    className={cn("font-mono text-xs font-semibold", LEVEL_COLORS[level])}
+                  >
+                    {level.toUpperCase()}
+                  </span>
+                  <span className="ml-auto tabular-nums text-xs text-muted-foreground">
+                    {stats.byLevel[level]}
+                  </span>
+                </DropdownMenuCheckboxItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Advanced filters toggle */}
+          <CollapsibleTrigger asChild>
             <Button
-              variant="outline"
+              variant={
+                showAdvanced || activeFiltersCount > 0 ? "secondary" : "outline"
+              }
               size="sm"
-              className="h-9 gap-1.5 shrink-0"
+              className={`${denseToolbarControl.button} gap-1.5 shrink-0`}
             >
-              <Filter className="h-4 w-4" />
-              <span className="hidden sm:inline">{t("logs.filter")}</span>
-              {filter.levels.length < ALL_LEVELS.length && (
-                <Badge className="ml-0.5 h-5 w-5 p-0 text-[10px]">
-                  {filter.levels.length}
+              <span className="hidden sm:inline">{t("logs.advanced")}</span>
+              {activeFiltersCount > 0 && (
+                <Badge className="h-5 w-5 p-0 text-[10px]">
+                  {activeFiltersCount}
                 </Badge>
               )}
             </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-52">
-            <DropdownMenuLabel className="text-xs font-medium">
-              {t("logs.logLevels")}
-            </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            {ALL_LEVELS.map((level) => (
-              <DropdownMenuCheckboxItem
-                key={level}
-                checked={filter.levels.includes(level)}
-                onCheckedChange={() => toggleLevel(level)}
-                className="gap-2"
-              >
-                <span
-                  className={cn("font-mono text-xs font-semibold", LEVEL_COLORS[level])}
-                >
-                  {level.toUpperCase()}
-                </span>
-                <span className="ml-auto tabular-nums text-xs text-muted-foreground">
-                  {stats.byLevel[level]}
-                </span>
-              </DropdownMenuCheckboxItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-
-        {/* Advanced filters toggle */}
-        <CollapsibleTrigger asChild>
-          <Button
-            variant={
-              showAdvanced || activeFiltersCount > 0 ? "secondary" : "outline"
-            }
-            size="sm"
-            className="h-9 gap-1.5 shrink-0"
-          >
-            <span className="hidden sm:inline">{t("logs.advanced")}</span>
-            {activeFiltersCount > 0 && (
-              <Badge className="h-5 w-5 p-0 text-[10px]">
-                {activeFiltersCount}
-              </Badge>
-            )}
-          </Button>
-        </CollapsibleTrigger>
-
-        {/* Separator */}
-        <Separator orientation="vertical" className="hidden sm:block h-6" />
+          </CollapsibleTrigger>
+        </ToolbarCluster>
 
         {/* Realtime controls */}
         {showRealtimeControls && (
-          <div
-            className="flex items-center gap-0.5"
+          <ToolbarCluster
+            compact
             role="group"
             aria-label="Realtime log controls"
           >
@@ -460,7 +459,7 @@ export function LogToolbar({
                   pressed={paused}
                   onPressedChange={togglePaused}
                   size="sm"
-                  className="h-9 w-9 p-0"
+                  className={denseToolbarControl.iconButton}
                   aria-label={paused ? t("logs.resume") : t("logs.pause")}
                 >
                   {paused ? (
@@ -481,7 +480,7 @@ export function LogToolbar({
                   pressed={autoScroll}
                   onPressedChange={toggleAutoScroll}
                   size="sm"
-                  className="h-9 w-9 p-0"
+                  className={denseToolbarControl.iconButton}
                   aria-label={
                     autoScroll
                       ? t("logs.autoScrollOn")
@@ -499,17 +498,17 @@ export function LogToolbar({
                   : t("logs.autoScrollOff")}
               </TooltipContent>
             </Tooltip>
-          </div>
+          </ToolbarCluster>
         )}
 
-        <div className="flex items-center gap-1" role="group" aria-label="Export and clear controls">
+        <ToolbarCluster compact role="group" aria-label="Export and clear controls">
           {/* Export menu */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-9 w-9 shrink-0"
+                className={`${denseToolbarControl.iconButton} shrink-0`}
                 aria-label={t("logs.export")}
               >
                 <Download className="h-4 w-4" />
@@ -539,7 +538,7 @@ export function LogToolbar({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-9 w-9 shrink-0"
+                  className={`${denseToolbarControl.iconButton} shrink-0`}
                   onClick={clearLogs}
                   aria-label={t("logs.clear")}
                 >
@@ -547,9 +546,9 @@ export function LogToolbar({
                 </Button>
               </TooltipTrigger>
               <TooltipContent>{t("logs.clear")}</TooltipContent>
-            </Tooltip>
-          )}
-        </div>
+              </Tooltip>
+            )}
+        </ToolbarCluster>
 
         {/* Stats badge + level bar */}
         {showRealtimeControls && (
@@ -600,7 +599,7 @@ export function LogToolbar({
             </Badge>
           </div>
         )}
-      </div>
+      </ToolbarRow>
 
       {/* Advanced filters row - collapsible */}
       <CollapsibleContent>

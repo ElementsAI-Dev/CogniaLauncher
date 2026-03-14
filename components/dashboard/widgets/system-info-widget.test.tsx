@@ -26,9 +26,9 @@ const minimalPlatformInfo = {
 
 describe("SystemInfoWidget", () => {
   it("renders loading state when platformInfo is null", () => {
-    render(<SystemInfoWidget platformInfo={null} cogniaDir={null} />);
+    render(<SystemInfoWidget platformInfo={null} cogniaDir={null} isLoading={true} />);
     expect(screen.getByText("dashboard.widgets.systemInfo")).toBeInTheDocument();
-    expect(screen.getByText("common.loading")).toBeInTheDocument();
+    expect(screen.getByText("dashboard.widgets.sectionLoading")).toBeInTheDocument();
   });
 
   it("renders system info title when platformInfo is provided", () => {
@@ -103,5 +103,19 @@ describe("SystemInfoWidget", () => {
       <SystemInfoWidget platformInfo={null} cogniaDir={null} className="custom" />,
     );
     expect(container.firstChild).toHaveClass("custom");
+  });
+
+  it("shows retry affordance when there is an error", () => {
+    const onRecover = jest.fn();
+    render(
+      <SystemInfoWidget
+        platformInfo={null}
+        cogniaDir={null}
+        error="System info failed"
+        onRecover={onRecover}
+      />,
+    );
+
+    expect(screen.getByText("dashboard.widgets.sectionNeedsAttention")).toBeInTheDocument();
   });
 });

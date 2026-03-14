@@ -20,6 +20,9 @@ import type {
 } from '@/types/tauri';
 import type {
   WslAssistanceActionDescriptor,
+  WslBatchWorkflowItemResult,
+  WslBatchWorkflowPreset,
+  WslBatchWorkflowSummary,
   WslAssistancePreflightCheck,
   WslAssistancePreflightResult,
   WslAssistanceSuggestion,
@@ -34,6 +37,12 @@ import {
   deriveWslCompleteness,
   resolveWslOperationGate,
 } from '@/lib/wsl/completeness';
+import {
+  buildWslBatchWorkflowPreflight,
+  getRetryableWorkflowTargetNames,
+  type WslRefreshTarget,
+  summarizeWslBatchWorkflowRun,
+} from '@/lib/wsl/workflow';
 
 export interface UseWslReturn {
   // State
@@ -99,6 +108,17 @@ export interface UseWslReturn {
   cloneDistro: (name: string, newName: string, location: string) => Promise<string>;
   batchLaunch: (names: string[]) => Promise<[string, boolean, string][]>;
   batchTerminate: (names: string[]) => Promise<[string, boolean, string][]>;
+  runBatchWorkflow: (
+    workflow: WslBatchWorkflowPreset,
+    options?: {
+      selectedDistros?: Iterable<string>;
+      distroTags?: Record<string, string[]>;
+    }
+  ) => Promise<WslBatchWorkflowSummary>;
+  retryBatchWorkflowFailures: (
+    summary: WslBatchWorkflowSummary,
+    options?: { distroTags?: Record<string, string[]> }
+  ) => Promise<WslBatchWorkflowSummary>;
   healthCheck: (distro: string) => Promise<{ status: string; issues: { severity: string; category: string; message: string }[]; checkedAt: string }>;
   listPortForwards: () => Promise<{
     listenAddress: string;
@@ -853,6 +873,43 @@ export function useWsl(): UseWslReturn {
     }
   }, [refreshInventoryState]);
 
+  const refreshBatchWorkflowTargets = useCallback(async (targets: WslRefreshTarget[]) => {
+    const uniqueTargets = new Set(targets);
+
+    if (uniqueTargets.has('config') && (uniqueTargets.has('inventory') || uniqueTargets.has('runtime'))) {
+      await refreshRuntimeState();
+      return;
+    }
+
+    if (uniqueTargets.has('inventory') && uniqueTargets.has('runtime')) {
+      await refreshRuntimeState();
+      return;
+    }
+
+    if (uniqueTargets.has('inventory')) {
+      await refreshInventoryState();
+    }
+
+    if (uniqueTargets.has('runtime')) {
+      await Promise.all([
+        refreshRuntimeSnapshot(),
+        refreshStatus(),
+        refreshCapabilities(),
+      ]);
+    }
+
+    if (uniqueTargets.has('config')) {
+      await refreshConfig();
+    }
+  }, [
+    refreshCapabilities,
+    refreshConfig,
+    refreshInventoryState,
+    refreshRuntimeSnapshot,
+    refreshRuntimeState,
+    refreshStatus,
+  ]);
+
   const healthCheck = useCallback(async (distro: string) => {
     if (!tauri.isTauri()) throw new Error('Not in Tauri environment');
     try {
@@ -1493,6 +1550,134 @@ export function useWsl(): UseWslReturn {
     updateWsl,
   ]);
 
+  const runBatchWorkflow = useCallback(async (
+    workflow: WslBatchWorkflowPreset,
+    options?: {
+      selectedDistros?: Iterable<string>;
+      distroTags?: Record<string, string[]>;
+    }
+  ): Promise<WslBatchWorkflowSummary> => {
+    const startedAt = new Date().toISOString();
+    const preflight = buildWslBatchWorkflowPreflight({
+      workflow,
+      distros,
+      selectedDistros: options?.selectedDistros ?? [],
+      distroTags: options?.distroTags ?? {},
+      capabilities,
+      resolveAssistanceAction: (distroName, actionId) =>
+        getAssistanceActions('distro', distroName).find((action) => action.id === actionId),
+    });
+    const executionResults: WslBatchWorkflowItemResult[] = [];
+
+    if (tauri.isTauri()) {
+      const runnableTargets = preflight.targets
+        .filter((target) => target.status === 'runnable')
+        .map((target) => target.distroName);
+
+      if (workflow.action.kind === 'lifecycle' && runnableTargets.length > 0) {
+        const rawResults = workflow.action.operation === 'launch'
+          ? await batchLaunch(runnableTargets)
+          : await batchTerminate(runnableTargets);
+        executionResults.push(
+          ...rawResults.map<WslBatchWorkflowItemResult>(([distroName, ok, detail]) => ({
+            distroName,
+            status: ok ? 'success' : 'failed',
+            detail,
+            retryable: !ok,
+          }))
+        );
+      } else {
+        for (const distroName of runnableTargets) {
+          try {
+            if (workflow.action.kind === 'command') {
+              const result = await execCommand(distroName, workflow.action.command, workflow.action.user);
+              executionResults.push({
+                distroName,
+                status: result.exitCode === 0 ? 'success' : 'failed',
+                detail: result.stderr || result.stdout,
+                retryable: result.exitCode !== 0,
+              });
+              continue;
+            }
+
+            if (workflow.action.kind === 'health-check') {
+              const result = await healthCheck(distroName);
+              executionResults.push({
+                distroName,
+                status: result.status === 'error' ? 'failed' : 'success',
+                detail: result.issues[0]?.message,
+                retryable: true,
+              });
+              continue;
+            }
+
+            if (workflow.action.kind === 'assistance') {
+              const result = await executeAssistanceAction(workflow.action.actionId, 'distro', distroName);
+              executionResults.push({
+                distroName,
+                status: result.status === 'success' ? 'success' : result.status === 'blocked' ? 'skipped' : 'failed',
+                detail: result.details ?? result.findings[0],
+                retryable: result.retryable,
+              });
+            }
+          } catch (err) {
+            executionResults.push({
+              distroName,
+              status: 'failed',
+              detail: String(err),
+              retryable: true,
+            });
+          }
+        }
+      }
+
+      if (preflight.refreshTargets.length > 0) {
+        await refreshBatchWorkflowTargets(preflight.refreshTargets);
+      }
+    }
+
+    return summarizeWslBatchWorkflowRun({
+      workflow,
+      preflight,
+      startedAt,
+      completedAt: new Date().toISOString(),
+      executionResults,
+    });
+  }, [
+    batchLaunch,
+    batchTerminate,
+    capabilities,
+    distros,
+    execCommand,
+    executeAssistanceAction,
+    getAssistanceActions,
+    healthCheck,
+    refreshBatchWorkflowTargets,
+  ]);
+
+  const retryBatchWorkflowFailures = useCallback(async (
+    summary: WslBatchWorkflowSummary,
+    options?: { distroTags?: Record<string, string[]> }
+  ): Promise<WslBatchWorkflowSummary> => {
+    const retryTargets = getRetryableWorkflowTargetNames(summary);
+
+    if (retryTargets.length === 0) {
+      return summary;
+    }
+
+    return runBatchWorkflow(
+      {
+        ...summary.workflow,
+        target: { mode: 'explicit', distroNames: retryTargets },
+        updatedAt: new Date().toISOString(),
+      },
+      {
+        selectedDistros: retryTargets,
+        distroTags: options?.distroTags ?? {},
+      }
+    );
+  }, [runBatchWorkflow]);
+
   const mapErrorToAssistance = useCallback((
     errorMessage: string,
     scope: WslAssistanceScope,
@@ -1609,6 +1794,8 @@ export function useWsl(): UseWslReturn {
     cloneDistro,
     batchLaunch,
     batchTerminate,
+    runBatchWorkflow,
+    retryBatchWorkflowFailures,
     healthCheck,
     listPortForwards,
     addPortForward,

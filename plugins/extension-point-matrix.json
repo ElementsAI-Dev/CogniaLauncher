@@ -1,0 +1,117 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-03-12T00:00:00.000Z",
+  "pluginPoints": [
+    {
+      "id": "tool-text",
+      "kind": "tool",
+      "description": "Tool contribution rendered through the standard text execution path.",
+      "uiMode": "text",
+      "manifestPrerequisites": ["tools[].id", "tools[].entry"],
+      "sdkSupport": {
+        "rust": true,
+        "typescript": true
+      },
+      "scaffoldSupport": {
+        "builtin": true,
+        "external": true
+      },
+      "referenceExamples": [
+        "plugin-sdk/examples/hello-world",
+        "plugin-sdk-ts/examples/hello-world"
+      ]
+    },
+    {
+      "id": "tool-declarative-ui",
+      "kind": "tool",
+      "description": "Tool contribution that returns declarative UI blocks and action envelopes.",
+      "uiMode": "declarative",
+      "manifestPrerequisites": ["tools[].id", "tools[].entry", "tools[].ui_mode=declarative"],
+      "sdkSupport": {
+        "rust": true,
+        "typescript": true
+      },
+      "scaffoldSupport": {
+        "builtin": true,
+        "external": true
+      },
+      "referenceExamples": [
+        "plugin-sdk/examples/hello-world",
+        "plugin-sdk-ts/examples/hello-world"
+      ]
+    },
+    {
+      "id": "tool-iframe-ui",
+      "kind": "tool",
+      "description": "Tool contribution rendered through plugin-provided iframe HTML assets.",
+      "uiMode": "iframe",
+      "manifestPrerequisites": ["tools[].id", "tools[].entry", "tools[].ui_mode=iframe", "ui.entry"],
+      "sdkSupport": {
+        "rust": true,
+        "typescript": true
+      },
+      "scaffoldSupport": {
+        "builtin": true,
+        "external": true
+      },
+      "referenceExamples": [
+        "plugin-sdk/examples/hello-world",
+        "plugin-sdk-ts/examples/hello-world"
+      ]
+    },
+    {
+      "id": "event-listener",
+      "kind": "event-listener",
+      "description": "Plugin-level listener invoked through the cognia_on_event callback envelope.",
+      "manifestPrerequisites": ["plugin.listen_events"],
+      "sdkSupport": {
+        "rust": true,
+        "typescript": true
+      },
+      "scaffoldSupport": {
+        "builtin": true,
+        "external": true
+      },
+      "referenceExamples": [
+        "plugin-sdk/examples/hello-world",
+        "plugin-sdk-ts/examples/hello-world"
+      ]
+    },
+    {
+      "id": "log-listener",
+      "kind": "log-listener",
+      "description": "Plugin-level listener invoked through the cognia_on_log callback envelope for supported log sources.",
+      "manifestPrerequisites": ["plugin.listen_logs"],
+      "sdkSupport": {
+        "rust": true,
+        "typescript": true
+      },
+      "scaffoldSupport": {
+        "builtin": true,
+        "external": true
+      },
+      "referenceExamples": [
+        "plugin-sdk/examples/hello-world",
+        "plugin-sdk-ts/examples/hello-world"
+      ]
+    },
+    {
+      "id": "settings-schema",
+      "kind": "settings",
+      "description": "Plugin-defined settings schema surfaced through plugin management and runtime settings storage.",
+      "manifestPrerequisites": ["settings[].id", "settings[].type"],
+      "sdkSupport": {
+        "rust": true,
+        "typescript": true
+      },
+      "scaffoldSupport": {
+        "builtin": true,
+        "external": true
+      },
+      "referenceExamples": [
+        "plugins/rust/file-config-assistant",
+        "plugin-sdk-ts/examples/hello-world"
+      ]
+    }
+  ]
+}

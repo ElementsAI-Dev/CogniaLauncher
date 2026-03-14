@@ -75,7 +75,7 @@ impl BunProvider {
         }
     }
 
-    fn get_global_dir() -> Option<PathBuf> {
+    fn get_global_dir_fallback() -> Option<PathBuf> {
         if cfg!(windows) {
             std::env::var("USERPROFILE")
                 .ok()
@@ -85,6 +85,22 @@ impl BunProvider {
                 .ok()
                 .map(|h| PathBuf::from(h).join(".bun").join("install").join("global"))
         }
+    }
+
+    /// Detect global directory dynamically via `bun pm bin -g`, falling back to default path.
+    async fn get_global_dir(&self) -> Option<PathBuf> {
+        let opts = ProcessOptions::new().with_timeout(Duration::from_secs(10));
+        if let Ok(output) = process::execute("bun", &["pm", "bin", "-g"], Some(opts)).await {
+            if output.success {
+                let bin_dir = output.stdout.trim();
+                if !bin_dir.is_empty() {
+                    if let Some(parent) = PathBuf::from(bin_dir).parent() {
+                        return Some(parent.to_path_buf());
+                    }
+                }
+            }
+        }
+        Self::get_global_dir_fallback()
     }
 
     /// Get the installed version of a package using bun pm ls
@@ -301,7 +317,7 @@ impl Provider for BunProvider {
             .unwrap_or_else(|_| req.version.clone().unwrap_or_else(|| "unknown".into()));
 
         let install_path = if req.global {
-            Self::get_global_dir().unwrap_or_default().join(&req.name)
+            self.get_global_dir().await.unwrap_or_default().join(&req.name)
         } else {
             PathBuf::from("node_modules").join(&req.name)
         };
@@ -355,7 +371,7 @@ impl Provider for BunProvider {
 
             // Determine install path based on global or local
             let install_path = if filter.global_only {
-                Self::get_global_dir()
+                self.get_global_dir().await
                     .map(|p| p.join("node_modules").join(&pkg_name))
                     .unwrap_or_default()
             } else {

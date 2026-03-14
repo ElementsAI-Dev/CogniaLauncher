@@ -22,6 +22,9 @@ jest.mock('@/lib/stores/settings', () => ({
       checkUpdatesOnStart: false,
       autoInstallUpdates: false,
       notifyOnUpdates: true,
+      updateSourceMode: 'official',
+      updateCustomEndpoints: [],
+      updateFallbackToOfficial: true,
     },
   })),
 }));
@@ -99,6 +102,27 @@ describe('useAutoUpdate', () => {
     expect(result.current.updateAvailable).toBe(false);
     expect(result.current.latestVersion).toBe('1.0.0');
     expect(result.current.status).toBe('up_to_date');
+  });
+
+  it('marks source diagnostic failures as error instead of up_to_date', async () => {
+    mockSelfCheckUpdate.mockResolvedValue({
+      current_version: '1.0.0',
+      latest_version: null,
+      update_available: false,
+      release_notes: null,
+      selected_source: null,
+      attempted_sources: ['mirror', 'official'],
+      error_category: 'source_unavailable',
+      error_message: 'mirror unavailable',
+    });
+    const { result } = renderHook(() => useAutoUpdate());
+
+    await act(async () => {
+      await result.current.checkForUpdates();
+    });
+
+    expect(result.current.status).toBe('error');
+    expect(result.current.errorCategory).toBe('source_unavailable_error');
   });
 
   it('performs update and enters installing state', async () => {

@@ -5,9 +5,6 @@ use extism_pdk::plugin_fn;
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 
-#[cfg(test)]
-type FnResult<T> = Result<T, String>;
-
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SemverInspectInput {
@@ -30,6 +27,7 @@ struct SemverInspectSuccess {
     message: String,
 }
 
+#[cfg(not(test))]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SemverInspectFailure {
@@ -43,6 +41,7 @@ struct SemverInspectFailure {
 struct PluginError {
     code: &'static str,
     message: String,
+    #[cfg_attr(test, allow(dead_code))]
     recommendations: Vec<String>,
 }
 
@@ -56,6 +55,7 @@ impl PluginError {
     }
 }
 
+#[cfg(not(test))]
 fn execute_semver_inspect(input: String) -> FnResult<String> {
     match parse_and_evaluate(&input) {
         Ok(success) => Ok(serde_json::to_string(&success).unwrap_or_else(|_| {

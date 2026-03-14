@@ -25,6 +25,10 @@ const BACKGROUND_OPACITY_MIN = 0;
 const BACKGROUND_OPACITY_MAX = 100;
 const BACKGROUND_BLUR_MIN = 0;
 const BACKGROUND_BLUR_MAX = 20;
+const BACKGROUND_SCALE_MIN = 50;
+const BACKGROUND_SCALE_MAX = 200;
+const BACKGROUND_POSITION_MIN = 0;
+const BACKGROUND_POSITION_MAX = 100;
 export const DEFAULT_APPEARANCE_PRESET_ID = 'default';
 const DEFAULT_APPEARANCE_PRESET_NAME = 'Default';
 
@@ -39,6 +43,9 @@ export interface AppearancePresetConfig {
   backgroundOpacity: number;
   backgroundBlur: number;
   backgroundFit: BackgroundFit;
+  backgroundScale: number;
+  backgroundPositionX: number;
+  backgroundPositionY: number;
   windowEffect: WindowEffect;
 }
 
@@ -59,6 +66,9 @@ interface AppearanceState {
   backgroundOpacity: number;
   backgroundBlur: number;
   backgroundFit: BackgroundFit;
+  backgroundScale: number;
+  backgroundPositionX: number;
+  backgroundPositionY: number;
   windowEffect: WindowEffect;
   presets: AppearancePreset[];
   activePresetId: string;
@@ -73,6 +83,9 @@ interface AppearanceState {
   setBackgroundOpacity: (opacity: number) => void;
   setBackgroundBlur: (blur: number) => void;
   setBackgroundFit: (fit: BackgroundFit) => void;
+  setBackgroundScale: (scale: number) => void;
+  setBackgroundPositionX: (positionX: number) => void;
+  setBackgroundPositionY: (positionY: number) => void;
   setWindowEffect: (effect: WindowEffect) => void;
   createPreset: (name: string, config: AppearancePresetConfig) => string;
   renamePreset: (id: string, name: string) => void;
@@ -81,6 +94,7 @@ interface AppearanceState {
   setActivePresetId: (id: string) => void;
   applyPreset: (id: string) => AppearancePresetConfig | null;
   replacePresetCollection: (presets: AppearancePreset[], activePresetId?: string) => void;
+  resetBackgroundTuning: () => void;
   clearBackground: () => void;
   reset: () => void;
 }
@@ -96,6 +110,9 @@ type AppearanceValueState = Pick<
   | 'backgroundOpacity'
   | 'backgroundBlur'
   | 'backgroundFit'
+  | 'backgroundScale'
+  | 'backgroundPositionX'
+  | 'backgroundPositionY'
   | 'windowEffect'
 >;
 
@@ -110,6 +127,9 @@ type PersistedAppearanceState = Pick<
   | 'backgroundOpacity'
   | 'backgroundBlur'
   | 'backgroundFit'
+  | 'backgroundScale'
+  | 'backgroundPositionX'
+  | 'backgroundPositionY'
   | 'windowEffect'
   | 'presets'
   | 'activePresetId'
@@ -125,6 +145,9 @@ const defaultState = {
   backgroundOpacity: 20,
   backgroundBlur: 0,
   backgroundFit: 'cover' as BackgroundFit,
+  backgroundScale: 100,
+  backgroundPositionX: 50,
+  backgroundPositionY: 50,
   windowEffect: 'auto' as WindowEffect,
 };
 const defaultPresetConfig: AppearancePresetConfig = {
@@ -172,6 +195,24 @@ function normalizeAppearanceValues(state: Record<string, unknown>): AppearanceVa
       defaultState.backgroundBlur,
     ),
     backgroundFit: normalizeBackgroundFit(state.backgroundFit),
+    backgroundScale: clampNumber(
+      state.backgroundScale,
+      BACKGROUND_SCALE_MIN,
+      BACKGROUND_SCALE_MAX,
+      defaultState.backgroundScale,
+    ),
+    backgroundPositionX: clampNumber(
+      state.backgroundPositionX,
+      BACKGROUND_POSITION_MIN,
+      BACKGROUND_POSITION_MAX,
+      defaultState.backgroundPositionX,
+    ),
+    backgroundPositionY: clampNumber(
+      state.backgroundPositionY,
+      BACKGROUND_POSITION_MIN,
+      BACKGROUND_POSITION_MAX,
+      defaultState.backgroundPositionY,
+    ),
     windowEffect: normalizeWindowEffect(state.windowEffect as string | undefined),
   };
 }
@@ -211,6 +252,24 @@ function normalizePresetConfig(
       fallback.backgroundBlur,
     ),
     backgroundFit: normalizeBackgroundFit(raw.backgroundFit, fallback.backgroundFit),
+    backgroundScale: clampNumber(
+      raw.backgroundScale,
+      BACKGROUND_SCALE_MIN,
+      BACKGROUND_SCALE_MAX,
+      fallback.backgroundScale,
+    ),
+    backgroundPositionX: clampNumber(
+      raw.backgroundPositionX,
+      BACKGROUND_POSITION_MIN,
+      BACKGROUND_POSITION_MAX,
+      fallback.backgroundPositionX,
+    ),
+    backgroundPositionY: clampNumber(
+      raw.backgroundPositionY,
+      BACKGROUND_POSITION_MIN,
+      BACKGROUND_POSITION_MAX,
+      fallback.backgroundPositionY,
+    ),
     windowEffect: normalizeWindowEffect(raw.windowEffect as string | undefined, fallback.windowEffect),
   };
 }
@@ -308,6 +367,9 @@ function pickAppearanceValues(state: AppearanceValueState): AppearanceValueState
     backgroundOpacity: state.backgroundOpacity,
     backgroundBlur: state.backgroundBlur,
     backgroundFit: state.backgroundFit,
+    backgroundScale: state.backgroundScale,
+    backgroundPositionX: state.backgroundPositionX,
+    backgroundPositionY: state.backgroundPositionY,
     windowEffect: state.windowEffect,
   };
 }
@@ -342,6 +404,30 @@ export const useAppearanceStore = create<AppearanceState>()(
         ),
       }),
       setBackgroundFit: (backgroundFit) => set({ backgroundFit: normalizeBackgroundFit(backgroundFit) }),
+      setBackgroundScale: (backgroundScale) => set({
+        backgroundScale: clampNumber(
+          backgroundScale,
+          BACKGROUND_SCALE_MIN,
+          BACKGROUND_SCALE_MAX,
+          defaultState.backgroundScale,
+        ),
+      }),
+      setBackgroundPositionX: (backgroundPositionX) => set({
+        backgroundPositionX: clampNumber(
+          backgroundPositionX,
+          BACKGROUND_POSITION_MIN,
+          BACKGROUND_POSITION_MAX,
+          defaultState.backgroundPositionX,
+        ),
+      }),
+      setBackgroundPositionY: (backgroundPositionY) => set({
+        backgroundPositionY: clampNumber(
+          backgroundPositionY,
+          BACKGROUND_POSITION_MIN,
+          BACKGROUND_POSITION_MAX,
+          defaultState.backgroundPositionY,
+        ),
+      }),
       setWindowEffect: (windowEffect) => set({ windowEffect: normalizeWindowEffect(windowEffect) }),
       createPreset: (name, config) => {
         const id = createPresetId();
@@ -421,6 +507,16 @@ export const useAppearanceStore = create<AppearanceState>()(
         );
         return normalized;
       }),
+      resetBackgroundTuning: () => {
+        set({
+          backgroundOpacity: defaultState.backgroundOpacity,
+          backgroundBlur: defaultState.backgroundBlur,
+          backgroundFit: defaultState.backgroundFit,
+          backgroundScale: defaultState.backgroundScale,
+          backgroundPositionX: defaultState.backgroundPositionX,
+          backgroundPositionY: defaultState.backgroundPositionY,
+        });
+      },
       clearBackground: () => {
         removeBackgroundImage();
         set({
@@ -428,6 +524,9 @@ export const useAppearanceStore = create<AppearanceState>()(
           backgroundOpacity: defaultState.backgroundOpacity,
           backgroundBlur: defaultState.backgroundBlur,
           backgroundFit: defaultState.backgroundFit,
+          backgroundScale: defaultState.backgroundScale,
+          backgroundPositionX: defaultState.backgroundPositionX,
+          backgroundPositionY: defaultState.backgroundPositionY,
         });
       },
       reset: () => {
@@ -442,7 +541,7 @@ export const useAppearanceStore = create<AppearanceState>()(
     {
       name: 'cognia-appearance',
       storage: createJSONStorage(() => localStorage),
-      version: 8,
+      version: 9,
       migrate: (persistedState, version) => {
         const state = persistedState as Record<string, unknown>;
         if (version < 2) {
@@ -500,6 +599,18 @@ export const useAppearanceStore = create<AppearanceState>()(
           state.presets = [buildDefaultPreset(migratedPresetConfig)];
           state.activePresetId = DEFAULT_APPEARANCE_PRESET_ID;
         }
+        if (version < 9) {
+          // v8 → v9: added advanced background transforms
+          if (!('backgroundScale' in state)) {
+            state.backgroundScale = defaultState.backgroundScale;
+          }
+          if (!('backgroundPositionX' in state)) {
+            state.backgroundPositionX = defaultState.backgroundPositionX;
+          }
+          if (!('backgroundPositionY' in state)) {
+            state.backgroundPositionY = defaultState.backgroundPositionY;
+          }
+        }
         return normalizePersistedAppearanceState(state) as unknown as AppearanceState;
       },
       partialize: (state) => ({
@@ -512,6 +623,9 @@ export const useAppearanceStore = create<AppearanceState>()(
         backgroundOpacity: state.backgroundOpacity,
         backgroundBlur: state.backgroundBlur,
         backgroundFit: state.backgroundFit,
+        backgroundScale: state.backgroundScale,
+        backgroundPositionX: state.backgroundPositionX,
+        backgroundPositionY: state.backgroundPositionY,
         windowEffect: state.windowEffect,
         presets: state.presets,
         activePresetId: state.activePresetId,

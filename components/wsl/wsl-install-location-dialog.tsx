@@ -26,11 +26,15 @@ export function WslInstallLocationDialog({
   const [installing, setInstalling] = useState(false);
 
   useEffect(() => {
+    if (open && distroName) {
+      setLocation(`C:\\WSL\\${distroName}`);
+      setInstalling(false);
+    }
     if (!open) {
       setLocation('');
       setInstalling(false);
     }
-  }, [open]);
+  }, [open, distroName]);
 
   const handleBrowseLocation = async () => {
     try {
@@ -60,7 +64,7 @@ export function WslInstallLocationDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[480px]">
+      <DialogContent className="sm:max-w-120">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Download className="h-5 w-5" />
@@ -78,19 +82,22 @@ export function WslInstallLocationDialog({
                 placeholder="D:\\WSL\\Distros"
                 value={location}
                 onChange={(e) => setLocation(e.target.value)}
-                className="flex-1"
+                className="h-9 flex-1"
                 autoFocus
               />
-              <Button variant="outline" size="sm" onClick={handleBrowseLocation}>
+              <Button variant="outline" size="sm" onClick={handleBrowseLocation} disabled={installing}>
                 <FolderOpen className="h-4 w-4 mr-1" />
                 {t('common.browse')}
               </Button>
             </div>
+            <p className="text-xs text-muted-foreground">
+              {t('wsl.dialog.defaultLocationHint')}
+            </p>
           </div>
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={installing}>
             {t('common.cancel')}
           </Button>
           <Button onClick={handleInstall} disabled={!location.trim() || installing} className="gap-2">

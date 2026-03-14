@@ -25,7 +25,7 @@ CogniaLauncher 包含 29 个自定义 React Hooks，封装业务逻辑和 Tauri 
 
 | Hook | 文件 | 用途 |
 |------|------|------|
-| `useEnvVar` | `use-envvar.ts` | 环境变量读取/变更、PATH 编辑、冲突检测与导入导出流程 |
+| `useEnvVar` | `use-envvar.ts` | 环境变量读取/变更、预览式导入流程、PATH 修复预览、冲突修复、Shell 同步指引与导入导出流程 |
 
 ## 包管理
 

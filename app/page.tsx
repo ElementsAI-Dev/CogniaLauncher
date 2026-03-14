@@ -5,20 +5,21 @@ import { PageHeader } from '@/components/layout/page-header';
 import { WidgetGrid } from '@/components/dashboard/widget-grid';
 import { CustomizeDialog } from '@/components/dashboard/customize-dialog';
 import { Button } from '@/components/ui/button';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { useEnvironments } from '@/hooks/use-environments';
 import { usePackages } from '@/hooks/use-packages';
 import { useSettings } from '@/hooks/use-settings';
 import { useLocale } from '@/components/providers/locale-provider';
 import { useDashboardStore } from '@/lib/stores/dashboard';
+import { DashboardStatusBadge } from '@/components/dashboard/dashboard-primitives';
 import { isTauri } from '@/lib/tauri';
 import {
   ensureCacheInvalidationBridge,
   subscribeInvalidation,
   withThrottle,
 } from '@/lib/cache/invalidation';
-import { Settings2, Pencil, Check, AlertCircle, X, RefreshCw } from 'lucide-react';
+import { Settings2, Pencil, Check, CheckCircle2, AlertCircle, X, RefreshCw } from 'lucide-react';
 
 export default function DashboardPage() {
   const { environments, fetchEnvironments, loading: envsLoading, error: envsError } = useEnvironments();
@@ -170,59 +171,126 @@ export default function DashboardPage() {
     : null;
 
   const isLoading = envsLoading || pkgsLoading || settingsLoading;
+  const sectionStates = [
+    {
+      id: 'environments',
+      label: t('dashboard.overview.sections.environments'),
+      isLoading: envsLoading && environments.length === 0,
+      error: envsError,
+    },
+    {
+      id: 'packages',
+      label: t('dashboard.overview.sections.packages'),
+      isLoading: pkgsLoading && installedPackages.length === 0,
+      error: pkgsError,
+    },
+    {
+      id: 'system',
+      label: t('dashboard.overview.sections.system'),
+      isLoading: settingsLoading && !platformInfo,
+      error: settingsError,
+    },
+  ];
+  const pendingSections = sectionStates.filter((section) => section.isLoading);
+  const degradedSections = sectionStates.filter((section) => section.error);
+  const readySectionCount = sectionStates.length - pendingSections.length - degradedSections.length;
+  const overviewTitle = degradedSections.length > 0
+    ? t('dashboard.overview.attentionTitle', { count: degradedSections.length })
+    : pendingSections.length > 0 || isRefreshing
+      ? t('dashboard.overview.loadingTitle', { count: Math.max(pendingSections.length, 1) })
+      : t('dashboard.overview.readyTitle');
+  const overviewDescription = degradedSections.length > 0
+    ? t('dashboard.overview.attentionDesc')
+    : pendingSections.length > 0 || isRefreshing
+      ? t('dashboard.overview.loadingDesc')
+      : t('dashboard.overview.readyDesc', { ready: readySectionCount, total: sectionStates.length });
+  const overviewIcon = degradedSections.length > 0
+    ? <AlertCircle className="h-4 w-4" />
+    : pendingSections.length > 0 || isRefreshing
+      ? <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+      : <CheckCircle2 className="h-4 w-4" />;
 
   return (
     <TooltipProvider delayDuration={200}>
       <div className="space-y-5 p-4 md:space-y-6 md:p-6">
         {/* Header with Customize Controls */}
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-          <PageHeader
-            title={t('dashboard.title')}
-            description={t('dashboard.description')}
-          />
-          <div className="flex flex-wrap items-center gap-2 sm:justify-start xl:justify-end">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleRefreshAll}
-              disabled={isRefreshing}
-              className="gap-2"
-              data-testid="dashboard-header-refresh"
-            >
-              <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline">{t('dashboard.quickActions.refreshAll')}</span>
-            </Button>
-            <Button
-              variant={isEditMode ? 'default' : 'outline'}
-              size="sm"
-              onClick={handleToggleEditMode}
-              className="gap-2"
-              data-testid="dashboard-header-edit-mode"
-            >
-              {isEditMode ? (
-                <>
-                  <Check className="h-4 w-4" />
-                  <span className="hidden sm:inline">{t('dashboard.widgets.doneEditing')}</span>
-                </>
-              ) : (
-                <>
-                  <Pencil className="h-4 w-4" />
-                  <span className="hidden sm:inline">{t('dashboard.widgets.editLayout')}</span>
-                </>
-              )}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleOpenCustomize}
-              className="gap-2"
-              data-hint="dashboard-customize"
-              data-testid="dashboard-header-customize"
-            >
-              <Settings2 className="h-4 w-4" />
-              <span className="hidden sm:inline">{t('dashboard.widgets.customize')}</span>
-            </Button>
+        <div className="space-y-4 rounded-3xl border bg-card/60 p-4 shadow-sm backdrop-blur-sm md:p-5">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <PageHeader
+              title={t('dashboard.title')}
+              description={t('dashboard.description')}
+            />
+            <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:items-center sm:justify-start xl:justify-end">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRefreshAll}
+                disabled={isRefreshing}
+                className="w-full gap-2 sm:w-auto"
+                data-testid="dashboard-header-refresh"
+              >
+                <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                <span>{t('dashboard.quickActions.refreshAll')}</span>
+              </Button>
+              <Button
+                variant={isEditMode ? 'default' : 'outline'}
+                size="sm"
+                onClick={handleToggleEditMode}
+                className="w-full gap-2 sm:w-auto"
+                data-testid="dashboard-header-edit-mode"
+              >
+                {isEditMode ? (
+                  <>
+                    <Check className="h-4 w-4" />
+                    <span>{t('dashboard.widgets.doneEditing')}</span>
+                  </>
+                ) : (
+                  <>
+                    <Pencil className="h-4 w-4" />
+                    <span>{t('dashboard.widgets.editLayout')}</span>
+                  </>
+                )}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleOpenCustomize}
+                className="w-full gap-2 sm:w-auto"
+                data-hint="dashboard-customize"
+                data-testid="dashboard-header-customize"
+              >
+                <Settings2 className="h-4 w-4" />
+                <span>{t('dashboard.widgets.customize')}</span>
+              </Button>
+            </div>
           </div>
+
+          <Alert
+            data-testid="dashboard-workspace-status"
+            variant={degradedSections.length > 0 ? 'destructive' : 'default'}
+            className={degradedSections.length > 0 ? '' : 'border-primary/15 bg-primary/5'}
+          >
+            {overviewIcon}
+            <AlertTitle>{overviewTitle}</AlertTitle>
+            <AlertDescription className="space-y-3">
+              <p>{overviewDescription}</p>
+              <div className="flex flex-wrap gap-2">
+                {sectionStates.map((section) => (
+                  <DashboardStatusBadge
+                    key={section.id}
+                    tone={section.error ? 'danger' : section.isLoading ? 'warning' : 'success'}
+                  >
+                    {section.label}
+                  </DashboardStatusBadge>
+                ))}
+              </div>
+              {lastRefreshedText && (
+                <p className="text-xs text-muted-foreground">
+                  {lastRefreshedText}
+                </p>
+              )}
+            </AlertDescription>
+          </Alert>
         </div>
 
         {/* Error Banner */}
@@ -267,14 +335,12 @@ export default function DashboardPage() {
           isLoading={isLoading}
           onRefreshAll={handleRefreshAll}
           isRefreshing={isRefreshing}
+          feedback={{
+            environments: { isLoading: envsLoading, error: envsError },
+            packages: { isLoading: pkgsLoading, error: pkgsError },
+            settings: { isLoading: settingsLoading, error: settingsError },
+          }}
         />
-
-        {/* Last Refreshed */}
-        {lastRefreshedText && (
-          <div className="text-center text-xs text-muted-foreground">
-            {lastRefreshedText}
-          </div>
-        )}
 
         {/* Customize Dialog */}
         <CustomizeDialog

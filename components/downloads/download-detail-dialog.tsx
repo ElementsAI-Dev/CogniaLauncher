@@ -89,6 +89,28 @@ function getStateIcon(state: DownloadTask["state"]) {
   }
 }
 
+function getFailureHintTranslationKey(reasonCode?: string | null): string | null {
+  switch ((reasonCode ?? "").toLowerCase()) {
+    case "checksum_mismatch":
+      return "downloads.errors.checksumMismatch";
+    case "insufficient_space":
+      return "downloads.errors.insufficientSpace";
+    case "filesystem_error":
+      return "downloads.errors.fileSystem";
+    case "timeout":
+      return "downloads.errors.timeout";
+    case "interrupted":
+      return "downloads.errors.interrupted";
+    case "invalid_url":
+    case "not_found":
+    case "forbidden":
+    case "unauthorized":
+      return "downloads.validation.invalidUrl";
+    default:
+      return "downloads.errors.network";
+  }
+}
+
 export function DownloadDetailDialog({
   task,
   open,
@@ -141,8 +163,12 @@ export function DownloadDetailDialog({
         state: resolvedTask.state,
         error: resolvedTask.error,
         recoverable: resolvedTask.recoverable,
+        reasonCode: resolvedTask.failureReasonCode,
       })
     : null;
+  const failureHintKey =
+    getFailureHintTranslationKey(resolvedTask?.failureReasonCode) ??
+    "downloads.errors.network";
 
   const canRetry =
     !!resolvedTask &&
@@ -317,6 +343,7 @@ export function DownloadDetailDialog({
                   ? t("downloads.failureGuidance.retryable")
                   : t("downloads.failureGuidance.notRetryable")}
               </div>
+              <div className="text-xs mt-1">{t(failureHintKey)}</div>
               <div className="text-xs mt-2">{resolvedTask.error}</div>
             </div>
           )}

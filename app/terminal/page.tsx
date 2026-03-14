@@ -30,6 +30,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Monitor, User, FileText, Blocks, Shield, Globe, Variable, RefreshCw, Plus } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 
 type PendingNavigationIntent =
   | { kind: 'tab'; nextTab: string }
@@ -53,6 +54,19 @@ export default function TerminalPage() {
   const [saveAsTemplateName, setSaveAsTemplateName] = useState('');
   const [saveAsTemplateDesc, setSaveAsTemplateDesc] = useState('');
   const [activeTab, setActiveTab] = useState('shells');
+
+  const getTabDescription = (tab: string): string => {
+    switch (tab) {
+      case 'shells': return t('terminal.tabDescShells');
+      case 'profiles': return t('terminal.tabDescProfiles');
+      case 'config': return t('terminal.tabDescConfig');
+      case 'frameworks': return t('terminal.tabDescFrameworks');
+      case 'powershell': return t('terminal.tabDescPowerShell');
+      case 'proxy': return t('terminal.tabDescProxy');
+      case 'envvars': return t('terminal.tabDescEnvVars');
+      default: return '';
+    }
+  };
   const [pendingNavigationIntent, setPendingNavigationIntent] = useState<PendingNavigationIntent | null>(null);
   const [configDirty, setConfigDirty] = useState(false);
   const [discardSignal, setDiscardSignal] = useState(0);
@@ -204,15 +218,19 @@ export default function TerminalPage() {
         }
       />
 
+      <p className="text-sm text-muted-foreground">{getTabDescription(activeTab)}</p>
+
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
         <TabsList className="h-auto w-full justify-start overflow-x-auto p-1">
           <TabsTrigger value="shells" className="flex-none gap-1.5">
             <Monitor className="h-3.5 w-3.5" />
             {t('terminal.tabShells')}
+            {terminal.shells.length > 0 && <Badge variant="secondary" className="ml-1 h-5 min-w-5 px-1 text-xs">{terminal.shells.length}</Badge>}
           </TabsTrigger>
           <TabsTrigger value="profiles" className="flex-none gap-1.5">
             <User className="h-3.5 w-3.5" />
             {t('terminal.tabProfiles')}
+            {terminal.profiles.length > 0 && <Badge variant="secondary" className="ml-1 h-5 min-w-5 px-1 text-xs">{terminal.profiles.length}</Badge>}
           </TabsTrigger>
           <TabsTrigger value="config" className="flex-none gap-1.5">
             <FileText className="h-3.5 w-3.5" />
@@ -221,6 +239,7 @@ export default function TerminalPage() {
           <TabsTrigger value="frameworks" className="flex-none gap-1.5">
             <Blocks className="h-3.5 w-3.5" />
             {t('terminal.tabFrameworks')}
+            {terminal.frameworks.length > 0 && <Badge variant="secondary" className="ml-1 h-5 min-w-5 px-1 text-xs">{terminal.frameworks.length}</Badge>}
           </TabsTrigger>
           <TabsTrigger value="powershell" className="flex-none gap-1.5">
             <Shield className="h-3.5 w-3.5" />

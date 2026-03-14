@@ -589,6 +589,23 @@ describe('useEnvironments', () => {
     expect(returnedVersions).toEqual(versions);
   });
 
+  it('should fetch available versions with provider-specific cache key', async () => {
+    const versions = [
+      { version: '17.0.12-tem', release_date: '2024-08-01', deprecated: false, yanked: false },
+    ];
+    mockEnvAvailableVersions.mockResolvedValue(versions);
+    const { result } = renderHook(() => useEnvironments());
+
+    let returnedVersions;
+    await act(async () => {
+      returnedVersions = await result.current.fetchAvailableVersions('java', undefined, 'sdkman');
+    });
+
+    expect(mockEnvAvailableVersions).toHaveBeenCalledWith('java', 'sdkman', undefined);
+    expect(mockStoreActions.setAvailableVersions).toHaveBeenCalledWith('java::sdkman', versions);
+    expect(returnedVersions).toEqual(versions);
+  });
+
   it('should use cached available versions when not forced', async () => {
     const versions = [
       { version: '18.0.0', release_date: null, deprecated: false, yanked: false },

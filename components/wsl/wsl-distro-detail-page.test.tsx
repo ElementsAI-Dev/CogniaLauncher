@@ -153,6 +153,9 @@ jest.mock("next/navigation", () => ({
   useRouter: () => ({
     push: mockRouterPush,
   }),
+  useSearchParams: () => ({
+    get: () => null,
+  }),
 }));
 
 jest.mock("next/link", () => {
@@ -299,42 +302,86 @@ describe("WslDistroDetailPage", () => {
       expect(screen.getByText("Something went wrong")).toBeInTheDocument();
     });
 
-    it("shows Export and Unregister action buttons", () => {
+    it("shows Export and Unregister action buttons", async () => {
+      const user = userEvent.setup();
       mockUseWslData.available = true;
       mockUseWslData.distros = [
         { name: "Ubuntu", state: "Running", wslVersion: "2", isDefault: false },
       ];
       render(<WslDistroDetailPage distroName="Ubuntu" />);
+      const menuButton = screen
+        .getAllByRole("button")
+        .find(
+          (button) =>
+            button.getAttribute("data-size") === "icon" &&
+            button.getAttribute("data-variant") === "outline" &&
+            (button.textContent ?? "").trim() === "",
+        );
+      expect(menuButton).toBeTruthy();
+      await user.click(menuButton!);
       expect(screen.getByText("Export")).toBeInTheDocument();
       expect(screen.getByText("Unregister")).toBeInTheDocument();
       expect(screen.getByText("Open in Explorer")).toBeInTheDocument();
       expect(screen.getByText("Open in Terminal")).toBeInTheDocument();
     });
 
-    it("shows Set Default button for non-default distro", () => {
+    it("shows Set Default button for non-default distro", async () => {
+      const user = userEvent.setup();
       mockUseWslData.available = true;
       mockUseWslData.distros = [
         { name: "Ubuntu", state: "Stopped", wslVersion: "2", isDefault: false },
       ];
       render(<WslDistroDetailPage distroName="Ubuntu" />);
+      const menuButton = screen
+        .getAllByRole("button")
+        .find(
+          (button) =>
+            button.getAttribute("data-size") === "icon" &&
+            button.getAttribute("data-variant") === "outline" &&
+            (button.textContent ?? "").trim() === "",
+        );
+      expect(menuButton).toBeTruthy();
+      await user.click(menuButton!);
       expect(screen.getByText("Set Default")).toBeInTheDocument();
     });
 
-    it("hides Set Default button for default distro", () => {
+    it("hides Set Default button for default distro", async () => {
+      const user = userEvent.setup();
       mockUseWslData.available = true;
       mockUseWslData.distros = [
         { name: "Ubuntu", state: "Stopped", wslVersion: "2", isDefault: true },
       ];
       render(<WslDistroDetailPage distroName="Ubuntu" />);
+      const menuButton = screen
+        .getAllByRole("button")
+        .find(
+          (button) =>
+            button.getAttribute("data-size") === "icon" &&
+            button.getAttribute("data-variant") === "outline" &&
+            (button.textContent ?? "").trim() === "",
+        );
+      expect(menuButton).toBeTruthy();
+      await user.click(menuButton!);
       expect(screen.queryByText("Set Default")).not.toBeInTheDocument();
     });
 
-    it("shows Change User button", () => {
+    it("shows Change User button", async () => {
+      const user = userEvent.setup();
       mockUseWslData.available = true;
       mockUseWslData.distros = [
         { name: "Ubuntu", state: "Running", wslVersion: "2", isDefault: false },
       ];
       render(<WslDistroDetailPage distroName="Ubuntu" />);
+      const menuButton = screen
+        .getAllByRole("button")
+        .find(
+          (button) =>
+            button.getAttribute("data-size") === "icon" &&
+            button.getAttribute("data-variant") === "outline" &&
+            (button.textContent ?? "").trim() === "",
+        );
+      expect(menuButton).toBeTruthy();
+      await user.click(menuButton!);
       expect(screen.getByText("Change User")).toBeInTheDocument();
     });
 

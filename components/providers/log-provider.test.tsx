@@ -17,6 +17,7 @@ import {
 } from "@/lib/tauri";
 import { captureFrontendCrash } from "@/lib/crash-reporter";
 import { toast } from "sonner";
+import { attachConsole } from "@tauri-apps/plugin-log";
 
 jest.mock("@/lib/tauri", () => {
   const ml = () => jest.fn().mockImplementation(() => Promise.resolve(jest.fn()));
@@ -112,12 +113,14 @@ const mockIsTauri = isTauri as jest.MockedFunction<typeof isTauri>;
 const mockCaptureFrontendCrash =
   captureFrontendCrash as jest.MockedFunction<typeof captureFrontendCrash>;
 const mockToastWarning = toast.warning as jest.MockedFunction<typeof toast.warning>;
+const mockAttachConsole = attachConsole as jest.MockedFunction<typeof attachConsole>;
 
 describe("LogProvider", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.useFakeTimers();
     mockIsTauri.mockReturnValue(false);
+    mockAttachConsole.mockResolvedValue(jest.fn());
     mockCaptureFrontendCrash.mockResolvedValue({
       captured: false,
       reason: "not-tauri",
@@ -511,6 +514,35 @@ describe("LogProvider", () => {
   describe("tauri event listeners", () => {
     beforeEach(() => {
       mockIsTauri.mockReturnValue(true);
+    });
+
+    it("warns when the backend log bridge is unavailable", async () => {
+      jest.useRealTimers();
+      mockAttachConsole.mockRejectedValueOnce(new Error("plugin unavailable"));
+
+      render(
+        <LogProvider>
+          <div>Test</div>
+        </LogProvider>,
+      );
+
+      await waitFor(() => {
+        expect(mockAddLog).toHaveBeenCalledWith(
+          expect.objectContaining({
+            level: "warn",
+            message: "logs.backendBridgeUnavailableDescription",
+            target: "runtime",
+          }),
+        );
+      });
+
+      expect(mockToastWarning).toHaveBeenCalledWith(
+        "logs.backendBridgeUnavailableTitle",
+        {
+          description: "logs.backendBridgeUnavailableDescription",
+        },
+      );
+      expect(listenCommandOutput).toHaveBeenCalled();
     });
 
     it("registers all event listeners in tauri mode", async () => {

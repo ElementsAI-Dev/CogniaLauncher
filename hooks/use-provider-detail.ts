@@ -22,6 +22,7 @@ import type {
   PackageInfo,
   UpdateInfo,
   PackageManagerHealthResult,
+  ProviderStatusInfo,
   InstallHistoryEntry,
   EnvironmentInfo,
   EnvironmentProviderInfo,
@@ -33,6 +34,7 @@ import type {
 export interface ProviderDetailState {
   provider: ProviderInfo | null;
   isAvailable: boolean | null;
+  providerStatusInfo: ProviderStatusInfo | null;
   loading: boolean;
   error: string | null;
 
@@ -75,6 +77,7 @@ export interface ProviderDetailState {
 export function useProviderDetail(providerId: string) {
   const [provider, setProvider] = useState<ProviderInfo | null>(null);
   const [isAvailable, setIsAvailable] = useState<boolean | null>(null);
+  const [providerStatusInfo, setProviderStatusInfo] = useState<ProviderStatusInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -138,10 +141,13 @@ export function useProviderDetail(providerId: string) {
   // Check availability
   const checkAvailability = useCallback(async () => {
     try {
-      const available = await tauri.providerCheck(providerId);
+      const status = await tauri.providerStatus(providerId);
+      setProviderStatusInfo(status);
+      const available = status.scope_state === 'available' || status.installed;
       setIsAvailable(available);
       return available;
     } catch {
+      setProviderStatusInfo(null);
       setIsAvailable(false);
       return false;
     }
@@ -156,7 +162,7 @@ export function useProviderDetail(providerId: string) {
         await tauri.providerDisable(providerId);
       }
       // Refresh provider info
-      await fetchProvider();
+      await Promise.all([fetchProvider(), checkAvailability()]);
       emitInvalidations(
         ['provider_data', 'package_data', 'environment_data'],
         'provider-detail:toggle-provider',
@@ -165,7 +171,21 @@ export function useProviderDetail(providerId: string) {
       setError(formatError(err));
       throw err;
     }
-  }, [providerId, fetchProvider]);
+  }, [providerId, fetchProvider, checkAvailability]);
+
+  const setProviderPriority = useCallback(async (priority: number) => {
+    try {
+      await tauri.providerSetPriority(providerId, priority);
+      await Promise.all([fetchProvider(), checkAvailability()]);
+      emitInvalidations(
+        ['provider_data', 'package_data', 'environment_data'],
+        'provider-detail:set-priority',
+      );
+    } catch (err) {
+      setError(formatError(err));
+      throw err;
+    }
+  }, [providerId, fetchProvider, checkAvailability]);
 
   // Fetch installed packages for this provider
   const fetchInstalledPackages = useCallback(async (force?: boolean) => {
@@ -602,6 +622,7 @@ export function useProviderDetail(providerId: string) {
     // State
     provider,
     isAvailable,
+    providerStatusInfo,
     loading,
     error,
     installedPackages,
@@ -632,6 +653,7 @@ export function useProviderDetail(providerId: string) {
     fetchProvider,
     checkAvailability,
     toggleProvider,
+    setProviderPriority,
     fetchInstalledPackages,
     searchPackages,
     installPackage,

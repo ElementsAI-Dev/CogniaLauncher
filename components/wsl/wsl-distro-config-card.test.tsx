@@ -80,7 +80,7 @@ describe("WslDistroConfigCard", () => {
   it("renders title and restart note after loading", async () => {
     render(<WslDistroConfigCard {...defaultProps} />);
     await waitFor(() => {
-      expect(screen.getByText(/Distribution Config/)).toBeInTheDocument();
+      expect(screen.getAllByText(/Distribution Config/).length).toBeGreaterThan(0);
     });
     expect(screen.getByText("Changes require restart.")).toBeInTheDocument();
   });
@@ -165,7 +165,7 @@ describe("WslDistroConfigCard", () => {
   it("add button is disabled when key is empty", async () => {
     render(<WslDistroConfigCard {...defaultProps} />);
     await waitFor(() => {
-      expect(screen.getByText(/Distribution Config/)).toBeInTheDocument();
+      expect(screen.getAllByText(/Distribution Config/).length).toBeGreaterThan(0);
     });
     // The add button (Plus icon) should be disabled when key is empty
     const allBtns = screen.getAllByRole("button");
@@ -176,7 +176,7 @@ describe("WslDistroConfigCard", () => {
   it("uses responsive custom form layout classes", async () => {
     render(<WslDistroConfigCard {...defaultProps} />);
     await waitFor(() => {
-      expect(screen.getByText(/Distribution Config/)).toBeInTheDocument();
+      expect(screen.getAllByText(/Distribution Config/).length).toBeGreaterThan(0);
     });
 
     const form = screen.getByTestId("wsl-distro-config-custom-form");
@@ -194,7 +194,7 @@ describe("WslDistroConfigCard", () => {
     };
     render(<WslDistroConfigCard {...props} />);
     await waitFor(() => {
-      expect(screen.getByText(/Distribution Config/)).toBeInTheDocument();
+      expect(screen.getAllByText(/Distribution Config/).length).toBeGreaterThan(0);
     });
     // Fill in custom setting fields
     const inputs = screen.getAllByRole("textbox");
@@ -222,7 +222,7 @@ describe("WslDistroConfigCard", () => {
     };
     render(<WslDistroConfigCard {...props} />);
     await waitFor(() => {
-      expect(screen.getByText(/Distribution Config/)).toBeInTheDocument();
+      expect(screen.getAllByText(/Distribution Config/).length).toBeGreaterThan(0);
     });
 
     const keyInput = screen.getByPlaceholderText("Key");
@@ -249,7 +249,7 @@ describe("WslDistroConfigCard", () => {
     };
     render(<WslDistroConfigCard {...props} />);
     await waitFor(() => {
-      expect(screen.getByText(/Distribution Config/)).toBeInTheDocument();
+      expect(screen.getAllByText(/Distribution Config/).length).toBeGreaterThan(0);
     });
 
     const keyInput = screen.getByPlaceholderText("Key");
@@ -275,7 +275,7 @@ describe("WslDistroConfigCard", () => {
     };
     render(<WslDistroConfigCard {...props} />);
     await waitFor(() => {
-      expect(screen.getByText(/Distribution Config/)).toBeInTheDocument();
+      expect(screen.getAllByText(/Distribution Config/).length).toBeGreaterThan(0);
     });
 
     const keyInput = screen.getByPlaceholderText("Key");
@@ -298,7 +298,7 @@ describe("WslDistroConfigCard", () => {
     };
     render(<WslDistroConfigCard {...props} />);
     await waitFor(() => {
-      expect(screen.getByText(/Distribution Config/)).toBeInTheDocument();
+      expect(screen.getAllByText(/Distribution Config/).length).toBeGreaterThan(0);
     });
 
     const keyInput = screen.getByPlaceholderText("Key");

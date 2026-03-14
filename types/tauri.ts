@@ -866,11 +866,30 @@ export interface SelfUpdateInfo {
   latest_version: string | null;
   update_available: boolean;
   release_notes: string | null;
+  selected_source?: SelfUpdateSourceKind | null;
+  attempted_sources?: SelfUpdateSourceKind[];
+  error_category?: SelfUpdateErrorCategory | null;
+  error_message?: string | null;
 }
+
+export type SelfUpdateSourceKind = 'official' | 'mirror' | 'custom';
+
+export type SelfUpdateErrorCategory =
+  | 'source_unavailable'
+  | 'network'
+  | 'timeout'
+  | 'validation'
+  | 'signature'
+  | 'no_update'
+  | 'unknown';
 
 export interface SelfUpdateProgressEvent {
   progress: number | null;
   status: 'downloading' | 'installing' | 'done' | 'error';
+  selectedSource?: SelfUpdateSourceKind;
+  attemptedSources?: SelfUpdateSourceKind[];
+  errorCategory?: SelfUpdateErrorCategory;
+  errorMessage?: string;
 }
 
 // ============================================================================
@@ -1142,6 +1161,18 @@ export interface LogQueryResult {
   entries: LogEntry[];
   totalCount: number;
   hasMore: boolean;
+  meta: LogQueryMeta;
+}
+
+export interface LogQueryMeta {
+  scannedLines: number;
+  sourceLineCount: number;
+  matchedCount: number;
+  effectiveMaxScanLines?: number | null;
+  scanTruncated: boolean;
+  windowStartLine?: number | null;
+  windowEndLine?: number | null;
+  queryFingerprint: string;
 }
 
 export interface LogExportOptions {
@@ -1258,6 +1289,7 @@ export interface DownloadTask {
   deleteAfterExtract?: boolean;
   autoRename?: boolean;
   recoverable?: boolean | null;
+  failureReasonCode?: string | null;
 }
 
 export interface DownloadQueueStats {
@@ -1341,12 +1373,24 @@ export interface VerifyResult {
   error: string | null;
 }
 
+export interface DownloadShutdownOutcome {
+  paused: number;
+  fallbackCancelled: number;
+  queuedPreserved: number;
+}
+
 export type DownloadEvent =
   | { type: 'task_added'; task_id: string }
   | { type: 'task_started'; task_id: string }
   | { type: 'task_progress'; task_id: string; progress: DownloadProgress }
   | { type: 'task_completed'; task_id: string }
-  | { type: 'task_failed'; task_id: string; error: string }
+  | {
+      type: 'task_failed';
+      task_id: string;
+      error: string;
+      reason_code: string;
+      recoverable: boolean;
+    }
   | { type: 'task_paused'; task_id: string }
   | { type: 'task_resumed'; task_id: string }
   | { type: 'task_cancelled'; task_id: string }
@@ -1502,6 +1546,18 @@ export type Severity = 'info' | 'warning' | 'error' | 'critical';
 /** Availability/scope state for a health target */
 export type HealthScopeState = 'available' | 'unavailable' | 'timeout' | 'unsupported';
 
+/** Source of health diagnostic signal */
+export type HealthSignalSource =
+  | 'runtime_probe'
+  | 'path_heuristic'
+  | 'shell_heuristic'
+  | 'network_probe'
+  | 'api_probe'
+  | 'system_probe';
+
+/** Confidence of health diagnostic signal */
+export type HealthEvidenceConfidence = 'verified' | 'inferred';
+
 /** Category of health issue */
 export type IssueCategory =
   | 'path_conflict'
@@ -1523,6 +1579,9 @@ export interface HealthIssue {
   fix_command: string | null;
   fix_description: string | null;
   remediation_id?: string | null;
+  signal_source?: HealthSignalSource | null;
+  confidence?: HealthEvidenceConfidence | null;
+  check_id?: string | null;
 }
 
 /** Result of a health check for a single environment */
@@ -1973,6 +2032,38 @@ export interface GitAheadBehind {
   behind: number;
 }
 
+export type GitSupportStatus = 'supported' | 'unsupported' | 'unknown';
+
+export type GitSupportFeatureKey =
+  | 'rebaseSquash'
+  | 'interactiveRebase'
+  | 'bisect'
+  | 'sparseCheckout'
+  | 'signatureVerify'
+  | 'archive'
+  | 'patch'
+  | 'lfs';
+
+/** Git feature-level runtime support state used for UI gating. */
+export interface GitSupportFeature {
+  key: GitSupportFeatureKey | string;
+  status: GitSupportStatus;
+  supported: boolean;
+  reason: string | null;
+  nextSteps: string[];
+  requiresRepo: boolean;
+  minVersion: string | null;
+}
+
+/** Snapshot of Git runtime support used to gate advanced operations. */
+export interface GitSupportSnapshot {
+  gitAvailable: boolean;
+  gitVersion: string | null;
+  executablePath: string | null;
+  repoReady: boolean;
+  features: GitSupportFeature[];
+}
+
 /** Git daily activity for heatmap */
 export interface GitDayActivity {
   date: string;
@@ -2174,6 +2265,7 @@ export type GitCommandErrorCategory =
   | 'conflict'
   | 'execution'
   | 'cancelled'
+  | 'timeout'
   | 'unknown';
 
 export interface GitCommandError {
@@ -2287,6 +2379,56 @@ export interface EnvVarImportResult {
   imported: number;
   skipped: number;
   errors: string[];
+}
+
+export type EnvVarImportPreviewAction = 'add' | 'update' | 'noop' | 'invalid' | 'skipped';
+
+export interface EnvVarImportPreviewItem {
+  key: string;
+  value: string;
+  action: EnvVarImportPreviewAction;
+  reason?: string | null;
+}
+
+export interface EnvVarShellGuidance {
+  shell: string;
+  configPath: string;
+  command: string;
+  autoApplied: boolean;
+}
+
+export interface EnvVarImportPreview {
+  scope: EnvVarScope;
+  fingerprint: string;
+  additions: number;
+  updates: number;
+  noops: number;
+  invalid: number;
+  skipped: number;
+  items: EnvVarImportPreviewItem[];
+  primaryShellTarget?: string | null;
+  shellGuidance: EnvVarShellGuidance[];
+}
+
+export interface EnvVarPathRepairPreview {
+  scope: EnvVarScope;
+  fingerprint: string;
+  currentEntries: string[];
+  repairedEntries: string[];
+  duplicateCount: number;
+  missingCount: number;
+  removedCount: number;
+  primaryShellTarget?: string | null;
+  shellGuidance: EnvVarShellGuidance[];
+}
+
+export interface EnvVarConflictResolutionResult {
+  key: string;
+  sourceScope: EnvVarScope;
+  targetScope: EnvVarScope;
+  appliedValue: string;
+  primaryShellTarget?: string | null;
+  shellGuidance: EnvVarShellGuidance[];
 }
 
 export interface PersistentEnvVar {

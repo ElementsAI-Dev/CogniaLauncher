@@ -10,6 +10,7 @@ A minimal example plugin demonstrating the Cognia Plugin SDK.
   - Extended input fields (`radio-group`, `number`, `switch`, `multi-select`, `date-time`, `password`)
   - Structured output blocks (`result`, `stat-cards`, `description-list`, `json-view`)
   - Action payload metadata handling (`version`, `sourceType`, `sourceId`, `formDataTypes`)
+- **cognia_on_log** — Observes plugin-origin log envelopes via `listen_logs = ["plugin"]`
 
 ## Unified Contract Notes
 
@@ -45,6 +46,9 @@ Copy this directory into CogniaLauncher's plugins folder, or use the "Install Pl
 - `cognia::i18n::translate(key, params)` — Localized strings with interpolation
 - `cognia::env::detect(env_type)` — Check if Node/Python/Rust is installed
 - `cognia::log::info(msg)` — Write to launcher log
+- `cognia::log::write(&record)` — Write a structured log record
+- `cognia::log::parse_envelope(input)` — Parse `cognia_on_log` listener payloads
 - `cognia::event::emit_str(name, data)` — Emit plugin events
 - `cognia::event::get_plugin_id()` — Get own plugin ID
+- `cognia::event::parse_envelope(input)` — Parse `cognia_on_event` listener payloads
 - `cognia_plugin_sdk::ui::*` — Declarative UI builders, including extended form/output blocks and action parsing

@@ -47,7 +47,7 @@ export function QuickActions({
       </CardHeader>
       <CardContent>
         <div
-          className="flex flex-wrap items-center gap-2 md:gap-2.5"
+          className="grid gap-2 sm:grid-cols-2 xl:flex xl:flex-wrap xl:items-center xl:gap-2.5"
           role="group"
           aria-label={t("dashboard.quickActions.title")}
         >
@@ -55,35 +55,29 @@ export function QuickActions({
             variant="default"
             size="sm"
             onClick={() => router.push("/environments")}
-            className="gap-2"
+            className="w-full justify-start gap-2 xl:w-auto xl:justify-center"
           >
             <Plus className="h-4 w-4" />
-            <span className="hidden sm:inline">
-              {t("dashboard.quickActions.addEnvironment")}
-            </span>
+            <span>{t("dashboard.quickActions.addEnvironment")}</span>
           </Button>
           <Button
             variant="secondary"
             size="sm"
             onClick={() => router.push("/packages")}
-            className="gap-2"
+            className="w-full justify-start gap-2 xl:w-auto xl:justify-center"
           >
             <Package className="h-4 w-4" />
-            <span className="hidden sm:inline">
-              {t("dashboard.quickActions.installPackage")}
-            </span>
+            <span>{t("dashboard.quickActions.installPackage")}</span>
           </Button>
           <Button
             variant="outline"
             size="sm"
             onClick={onRefreshAll}
             disabled={isRefreshing}
-            className="gap-2"
+            className="w-full justify-start gap-2 xl:w-auto xl:justify-center"
           >
             <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
-            <span className="hidden sm:inline">
-              {t("dashboard.quickActions.refreshAll")}
-            </span>
+            <span>{t("dashboard.quickActions.refreshAll")}</span>
           </Button>
 
           {/* Secondary Actions Dropdown */}
@@ -92,13 +86,11 @@ export function QuickActions({
               <Button
                 variant="ghost"
                 size="sm"
-                className="gap-2"
+                className="w-full justify-start gap-2 xl:w-auto xl:justify-center"
                 aria-label={t("dashboard.quickActions.moreActions")}
               >
                 <MoreHorizontal className="h-4 w-4" />
-                <span className="sr-only">
-                  {t("dashboard.quickActions.moreActions")}
-                </span>
+                <span>{t("dashboard.quickActions.moreActions")}</span>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">

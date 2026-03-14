@@ -1,5 +1,6 @@
 use crate::error::{CogniaError, CogniaResult};
 use crate::plugin::contract::TOOL_CONTRACT_VERSION;
+use crate::plugin::extension_points::load_plugin_point_matrix;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -30,6 +31,8 @@ pub struct ScaffoldConfig {
     pub include_vscode: bool,
     #[serde(default)]
     pub additional_keywords: Vec<String>,
+    #[serde(default)]
+    pub extension_points: Vec<String>,
     #[serde(default)]
     pub template_options: ScaffoldTemplateOptions,
 }
@@ -124,6 +127,14 @@ impl Default for ScaffoldTemplateOptions {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ScaffoldPermissions {
+    #[serde(default)]
+    pub ui_feedback: bool,
+    #[serde(default)]
+    pub ui_dialog: bool,
+    #[serde(default)]
+    pub ui_file_picker: bool,
+    #[serde(default)]
+    pub ui_navigation: bool,
     #[serde(default)]
     pub config_read: bool,
     #[serde(default)]
@@ -409,6 +420,21 @@ pub async fn validate_plugin(path: &Path) -> CogniaResult<ValidationResult> {
     // Parse manifest
     match crate::plugin::manifest::PluginManifest::from_file(&manifest_path) {
         Ok(manifest) => {
+            if let Ok(inventory) = crate::plugin::extension_points::derive_plugin_point_inventory(&manifest) {
+                for point in inventory {
+                    if !point.discoverable {
+                        errors.push(format!(
+                            "Plugin point '{}' is blocked: {}",
+                            point.point_id,
+                            point
+                                .blocking_reason
+                                .as_deref()
+                                .unwrap_or("unknown plugin-point issue"),
+                        ));
+                    }
+                }
+            }
+
             // Check WASM file
             let wasm_path = path.join("plugin.wasm");
             if !wasm_path.exists() {
@@ -451,8 +477,8 @@ pub async fn validate_plugin(path: &Path) -> CogniaResult<ValidationResult> {
                     let ui_entry = path.join(&ui_config.entry);
                     if !ui_entry.exists() {
                         warnings.push(format!(
-                            "UI entry file '{}' not found — iframe tools won't work until created",
-                            ui_config.entry
+                            "Plugin point 'tool-iframe-ui' is missing UI entry file '{}' — iframe tools won't work until created",
+                            ui_config.entry,
                         ));
                     }
                 }
@@ -561,6 +587,51 @@ fn validate_scaffold_config(config: &ScaffoldConfig) -> CogniaResult<()> {
         }
     }
 
+    let extension_points = resolved_extension_points(config);
+    let tool_extension_point_count = extension_points
+        .iter()
+        .filter(|point| is_tool_extension_point(point.as_str()))
+        .count();
+    if tool_extension_point_count != 1 {
+        return Err(CogniaError::Plugin(
+            "Scaffold extensionPoints must resolve to exactly one tool contribution point"
+                .to_string(),
+        ));
+    }
+
+    if matches!(config.language, PluginLanguage::JavaScript)
+        && extension_points.iter().any(|point| point != "tool-text")
+    {
+        return Err(CogniaError::Plugin(
+            "JavaScript scaffold currently supports only the basic tool-text extension point"
+                .to_string(),
+        ));
+    }
+
+    let matrix = load_plugin_point_matrix()?;
+    for point_id in &extension_points {
+        let point = matrix
+            .plugin_points
+            .iter()
+            .find(|candidate| candidate.id == *point_id)
+            .ok_or_else(|| {
+                CogniaError::Plugin(format!(
+                    "Unknown scaffold extension point '{}'",
+                    point_id
+                ))
+            })?;
+        let supported = match config.lifecycle_profile {
+            ScaffoldLifecycleProfile::BuiltIn => point.scaffold_support.builtin,
+            ScaffoldLifecycleProfile::External => point.scaffold_support.external,
+        };
+        if !supported {
+            return Err(CogniaError::Plugin(format!(
+                "Scaffold extension point '{}' is not supported for lifecycle profile '{:?}'",
+                point_id, config.lifecycle_profile
+            )));
+        }
+    }
+
     Ok(())
 }
 
@@ -597,16 +668,45 @@ fn build_scaffold_handoff(config: &ScaffoldConfig, plugin_dir: &Path) -> Scaffol
         .join("cognia.scaffold.json")
         .display()
         .to_string();
+    let mut extension_point_steps = Vec::new();
+    if has_extension_point(config, "tool-iframe-ui") {
+        extension_point_steps.push(
+            "Review ui/index.html and keep [ui].entry assets aligned with iframe tool behavior."
+                .to_string(),
+        );
+    }
+    if has_extension_point(config, "event-listener") {
+        extension_point_steps.push(
+            "Review the generated cognia_on_event callback stub and align listen_events with real host events."
+                .to_string(),
+        );
+    }
+    if has_extension_point(config, "log-listener") {
+        extension_point_steps.push(
+            "Review the generated cognia_on_log callback stub and align listen_logs with the log sources you want to observe."
+                .to_string(),
+        );
+    }
+    if has_extension_point(config, "settings-schema") {
+        extension_point_steps.push(
+            "Review the generated [[settings]] sample and update field ids/options before shipping."
+                .to_string(),
+        );
+    }
     match config.lifecycle_profile {
         ScaffoldLifecycleProfile::External => ScaffoldHandoff {
             profile: ScaffoldLifecycleProfile::External,
             artifact_path,
             build_commands: build_commands_for_language(&config.language),
-            next_steps: vec![
+            next_steps: {
+                let mut steps = vec![
                 "Build plugin.wasm using the generated build entrypoint.".to_string(),
                 "Validate the plugin directory in Toolbox > Plugins > Install > Local.".to_string(),
                 "Import the same plugin directory after the build succeeds.".to_string(),
-            ],
+                ];
+                steps.extend(extension_point_steps.clone());
+                steps
+            },
             import_path: Some(plugin_dir.display().to_string()),
             import_requires_build: true,
             lifecycle_manifest_path,
@@ -618,12 +718,16 @@ fn build_scaffold_handoff(config: &ScaffoldConfig, plugin_dir: &Path) -> Scaffol
             profile: ScaffoldLifecycleProfile::BuiltIn,
             artifact_path,
             build_commands: build_commands_for_language(&config.language),
-            next_steps: vec![
+            next_steps: {
+                let mut steps = vec![
                 "Add the generated sample entry to plugins/manifest.json.".to_string(),
                 "Run pnpm plugins:checksums to capture the built artifact checksum.".to_string(),
                 "Run pnpm plugins:validate before treating the plugin as built-in ready."
                     .to_string(),
-            ],
+                ];
+                steps.extend(extension_point_steps);
+                steps
+            },
             import_path: None,
             import_requires_build: true,
             lifecycle_manifest_path,
@@ -743,6 +847,18 @@ fn validate_optional_url(field: &str, value: Option<&str>) -> CogniaResult<()> {
 
 fn generate_manifest(config: &ScaffoldConfig) -> String {
     let mut perms = Vec::new();
+    if config.permissions.ui_feedback {
+        perms.push("ui_feedback = true".to_string());
+    }
+    if config.permissions.ui_dialog {
+        perms.push("ui_dialog = true".to_string());
+    }
+    if config.permissions.ui_file_picker {
+        perms.push("ui_file_picker = true".to_string());
+    }
+    if config.permissions.ui_navigation {
+        perms.push("ui_navigation = true".to_string());
+    }
     if config.permissions.config_read {
         perms.push("config_read = true".to_string());
     }
@@ -787,8 +903,12 @@ fn generate_manifest(config: &ScaffoldConfig) -> String {
     let keywords = build_keywords(&tool_id, &config.additional_keywords);
     let metadata = build_optional_plugin_metadata(config);
     let unified_contract_metadata = build_unified_contract_metadata(config);
+    let listen_events_line = build_plugin_listen_events_line(config);
+    let listen_logs_line = build_plugin_listen_logs_line(config);
     let ui_mode_line = build_ui_mode_line(config);
     let capabilities_line = build_tool_capabilities_line(config);
+    let settings_block = build_settings_block(config);
+    let ui_block = build_ui_block(config);
 
     format!(
         r#"[plugin]
@@ -797,7 +917,7 @@ name = "{name}"
 version = "0.1.0"
 description = "{desc}"
 authors = ["{author}"]
-{metadata}{unified_contract_metadata}
+{metadata}{unified_contract_metadata}{listen_events_line}{listen_logs_line}
 
 [[tools]]
 id = "{tool_id}"
@@ -810,6 +930,7 @@ keywords = [{keywords}]
 icon = "Wrench"
 entry = "{entry}"
 {ui_mode_line}{capabilities_line}
+{settings_block}{ui_block}
 
 [permissions]
 {perms}
@@ -820,11 +941,15 @@ entry = "{entry}"
         author = escape_toml_string(&config.author),
         metadata = metadata,
         unified_contract_metadata = unified_contract_metadata,
+        listen_events_line = listen_events_line,
+        listen_logs_line = listen_logs_line,
         tool_id = escape_toml_string(&tool_id),
         keywords = keywords,
         entry = entry_fn,
         ui_mode_line = ui_mode_line,
         capabilities_line = capabilities_line,
+        settings_block = settings_block,
+        ui_block = ui_block,
         perms = perms.join("\n"),
     )
 }
@@ -879,8 +1004,116 @@ fn build_unified_contract_metadata(config: &ScaffoldConfig) -> String {
     format!("{}\n", lines.join("\n"))
 }
 
+const TOOL_EXTENSION_POINT_IDS: [&str; 3] = ["tool-text", "tool-declarative-ui", "tool-iframe-ui"];
+
+fn is_tool_extension_point(point_id: &str) -> bool {
+    TOOL_EXTENSION_POINT_IDS.contains(&point_id)
+}
+
+fn default_tool_extension_point(config: &ScaffoldConfig) -> &'static str {
+    if config.template_options.include_unified_contract_samples
+        && matches!(
+            config.template_options.contract_template,
+            ScaffoldContractTemplate::Advanced
+        )
+    {
+        "tool-declarative-ui"
+    } else {
+        "tool-text"
+    }
+}
+
+fn resolved_extension_points(config: &ScaffoldConfig) -> Vec<String> {
+    let mut resolved = Vec::new();
+    for point in &config.extension_points {
+        let trimmed = point.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if !resolved.iter().any(|existing| existing == trimmed) {
+            resolved.push(trimmed.to_string());
+        }
+    }
+
+    if !resolved.iter().any(|point| is_tool_extension_point(point)) {
+        resolved.insert(0, default_tool_extension_point(config).to_string());
+    }
+
+    resolved
+}
+
+fn has_extension_point(config: &ScaffoldConfig, point_id: &str) -> bool {
+    resolved_extension_points(config)
+        .iter()
+        .any(|selected| selected == point_id)
+}
+
+fn build_plugin_listen_events_line(config: &ScaffoldConfig) -> String {
+    if has_extension_point(config, "event-listener") {
+        "listen_events = [\"system.sample\"]\n".to_string()
+    } else {
+        String::new()
+    }
+}
+
+fn build_plugin_listen_logs_line(config: &ScaffoldConfig) -> String {
+    if has_extension_point(config, "log-listener") {
+        "listen_logs = [\"plugin\"]\n".to_string()
+    } else {
+        String::new()
+    }
+}
+
+fn build_settings_block(config: &ScaffoldConfig) -> String {
+    if !has_extension_point(config, "settings-schema") {
+        return String::new();
+    }
+
+    r#"
+
+[[settings]]
+id = "profile"
+type = "select"
+labelEn = "Profile"
+labelZh = "配置"
+descriptionEn = "Sample plugin profile exposed through plugin settings."
+descriptionZh = "通过插件设置暴露的示例配置。"
+required = true
+options = [{ value = "default", labelEn = "Default", labelZh = "默认" }]
+"#
+    .to_string()
+}
+
+fn build_ui_block(config: &ScaffoldConfig) -> String {
+    if !has_extension_point(config, "tool-iframe-ui") {
+        return String::new();
+    }
+
+    r#"
+
+[ui]
+entry = "ui/index.html"
+width = 960
+height = 720
+resizable = true
+"#
+    .to_string()
+}
+
 fn infer_capability_declarations(config: &ScaffoldConfig) -> Vec<String> {
     let mut caps = Vec::new();
+    if config.permissions.ui_feedback {
+        caps.push("ui.feedback".to_string());
+    }
+    if config.permissions.ui_dialog {
+        caps.push("ui.dialog".to_string());
+    }
+    if config.permissions.ui_file_picker {
+        caps.push("ui.file-picker".to_string());
+    }
+    if config.permissions.ui_navigation {
+        caps.push("ui.navigation".to_string());
+    }
     if config.permissions.config_read {
         caps.push("settings.read".to_string());
     }
@@ -912,15 +1145,23 @@ fn infer_capability_declarations(config: &ScaffoldConfig) -> Vec<String> {
 }
 
 fn build_ui_mode_line(config: &ScaffoldConfig) -> String {
+    if has_extension_point(config, "tool-iframe-ui") {
+        return "ui_mode = \"iframe\"\n".to_string();
+    }
+
+    if has_extension_point(config, "tool-declarative-ui") {
+        return "ui_mode = \"declarative\"\n".to_string();
+    }
+
     if !config.template_options.include_unified_contract_samples {
         return String::new();
     }
 
-    let mode = match config.template_options.contract_template {
-        ScaffoldContractTemplate::Minimal => "text",
-        ScaffoldContractTemplate::Advanced => "declarative",
-    };
-    format!("ui_mode = \"{}\"\n", mode)
+    if has_extension_point(config, "tool-text") {
+        return "ui_mode = \"text\"\n".to_string();
+    }
+
+    String::new()
 }
 
 fn build_tool_capabilities_line(config: &ScaffoldConfig) -> String {
@@ -1535,6 +1776,73 @@ target = "wasm32-unknown-unknown"
         .map_err(|e| CogniaError::Plugin(format!("Failed to create src dir: {}", e)))?;
 
     let entry_fn = config.id.replace(['.', '-'], "_");
+    let settings_comment = if has_extension_point(config, "settings-schema") {
+        "    // Plugin settings are declared in plugin.toml under [[settings]].\n"
+    } else {
+        ""
+    };
+    let main_body = if has_extension_point(config, "tool-declarative-ui") {
+        format!(
+            r#"    // Render declarative UI blocks for the scaffolded tool
+    let blocks = vec![
+        cognia::ui::heading("{name} Dashboard", 2),
+        cognia::ui::text(&format!("{{}} on {{}}", greeting, platform.os), None),
+    ];
+    Ok(cognia::ui::render(&blocks))"#,
+            name = config.name,
+        )
+    } else {
+        r#"    // Return JSON result
+    Ok(serde_json::json!({
+        "greeting": greeting,
+        "platform": platform.os,
+        "input": input,
+    }).to_string())"#
+            .to_string()
+    };
+    let event_listener_stub = if has_extension_point(config, "event-listener") {
+        r#"
+
+#[plugin_fn]
+pub fn cognia_on_event(input: String) -> FnResult<String> {
+    let event: serde_json::Value = serde_json::from_str(&input)?;
+    let event_name = event
+        .get("event")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("unknown");
+    cognia::log::info(&format!("Received event {}", event_name))?;
+    Ok(serde_json::json!({
+        "handled": true,
+        "event": event_name,
+    })
+    .to_string())
+}
+"#
+    } else {
+        ""
+    };
+    let log_listener_stub = if has_extension_point(config, "log-listener") {
+        r#"
+
+#[plugin_fn]
+pub fn cognia_on_log(input: String) -> FnResult<String> {
+    let envelope: PluginLogEnvelope = cognia::log::parse_envelope(&input)?;
+    cognia::log::info(&format!(
+        "Observed {} log from {}",
+        envelope.level,
+        envelope.source_plugin_id.as_deref().unwrap_or("system")
+    ))?;
+    Ok(serde_json::json!({
+        "observed": true,
+        "level": envelope.level,
+        "sourceType": envelope.source_type,
+    })
+    .to_string())
+}
+"#
+    } else {
+        ""
+    };
     let lib_rs = format!(
         r#"use cognia_plugin_sdk::prelude::*;
 
@@ -1546,21 +1854,36 @@ pub fn {entry}(input: String) -> FnResult<String> {{
 
     // Get current locale and translate a greeting
     let greeting = cognia::i18n::translate("greeting", &[("name", &platform.hostname)])?;
-
-    // Return JSON result
-    Ok(serde_json::json!({{
-        "greeting": greeting,
-        "platform": platform.os,
-        "input": input,
-    }}).to_string())
+{settings_comment}{main_body}
 }}
-"#,
+{event_listener_stub}{log_listener_stub}"#,
         entry = entry_fn,
+        settings_comment = settings_comment,
+        main_body = main_body,
+        event_listener_stub = event_listener_stub,
+        log_listener_stub = log_listener_stub,
     );
     tokio::fs::write(src_dir.join("lib.rs"), &lib_rs)
         .await
         .map_err(|e| CogniaError::Plugin(format!("Failed to write src/lib.rs: {}", e)))?;
     files.push("src/lib.rs".to_string());
+
+    if has_extension_point(config, "tool-iframe-ui") {
+        let ui_dir = plugin_dir.join("ui");
+        tokio::fs::create_dir_all(&ui_dir)
+            .await
+            .map_err(|e| CogniaError::Plugin(format!("Failed to create ui dir: {}", e)))?;
+        tokio::fs::write(
+            ui_dir.join("index.html"),
+            format!(
+                "<!doctype html><html><head><meta charset=\"utf-8\"><title>{}</title></head><body><main><h1>{}</h1><p>Replace this scaffolded iframe UI with your plugin experience.</p></main></body></html>",
+                config.name, config.name
+            ),
+        )
+        .await
+        .map_err(|e| CogniaError::Plugin(format!("Failed to write ui/index.html: {}", e)))?;
+        files.push("ui/index.html".to_string());
+    }
 
     Ok(files)
 }
@@ -1625,39 +1948,98 @@ async fn generate_js_project(
         .map_err(|e| CogniaError::Plugin(format!("Failed to create src dir: {}", e)))?;
 
     let entry_fn = config.id.replace(['.', '-'], "_");
+    let js_settings_comment = if has_extension_point(config, "settings-schema") {
+        "  // Plugin settings are declared in plugin.toml under [[settings]].\n"
+    } else {
+        ""
+    };
+    let js_main_output = if has_extension_point(config, "tool-declarative-ui") {
+        format!(
+            r#"  const payload = {{
+    ui: [
+      {{ type: 'heading', content: '{name} Dashboard', level: 2 }},
+      {{ type: 'text', content: 'Declarative scaffold running on ' + platform.os }},
+    ],
+  }};
+  Host.outputString(JSON.stringify(payload));"#,
+            name = config.name,
+        )
+    } else {
+        format!(
+            r#"  Host.outputString(JSON.stringify({{
+    greeting: 'Hello from {name}!',
+    platform: platform.os,
+    input,
+  }}));"#,
+            name = config.name,
+        )
+    };
+    let js_event_listener = if has_extension_point(config, "event-listener") {
+        r#"
+
+function cognia_on_event() {
+  const event = JSON.parse(Host.inputString());
+  Host.getFunctions().cognia_log(JSON.stringify({
+    level: 'info',
+    message: 'Received event ' + (event.event || 'unknown'),
+  }));
+  Host.outputString(JSON.stringify({ handled: true, event: event.event || null }));
+}
+"#
+    } else {
+        ""
+    };
+    let js_exports = if has_extension_point(config, "event-listener") {
+        format!("module.exports = {{ {}, cognia_on_event }};", entry_fn)
+    } else {
+        format!("module.exports = {{ {} }};", entry_fn)
+    };
     let index_js = format!(
         r#"// {name} - CogniaLauncher Plugin (JavaScript)
 
 function {entry}() {{
-    const input = Host.inputString();
+  const input = Host.inputString();
 
-    // Call host function: get platform info
-    const platformJson = Host.getFunctions().cognia_platform_info("");
-    const platform = JSON.parse(platformJson);
+  const platformJson = Host.getFunctions().cognia_platform_info('');
+  const platform = JSON.parse(platformJson);
 
-    // Call host function: log
-    Host.getFunctions().cognia_log(JSON.stringify({{
-        level: "info",
-        message: "Plugin running on " + platform.os
-    }}));
-
-    // Return result
-    Host.outputString(JSON.stringify({{
-        greeting: "Hello from {name}!",
-        platform: platform.os,
-        input: input,
-    }}));
+  Host.getFunctions().cognia_log(JSON.stringify({{
+    level: 'info',
+    message: 'Plugin running on ' + platform.os,
+  }}));
+{settings_comment}{main_output}
 }}
-
-module.exports = {{ {entry} }};
+{event_listener}
+{js_exports}
 "#,
         name = config.name,
         entry = entry_fn,
+        settings_comment = js_settings_comment,
+        main_output = js_main_output,
+        event_listener = js_event_listener,
+        js_exports = js_exports,
     );
     tokio::fs::write(src_dir.join("index.js"), &index_js)
         .await
         .map_err(|e| CogniaError::Plugin(format!("Failed to write src/index.js: {}", e)))?;
     files.push("src/index.js".to_string());
+
+    if has_extension_point(config, "tool-iframe-ui") {
+        let ui_dir = plugin_dir.join("ui");
+        tokio::fs::create_dir_all(&ui_dir)
+            .await
+            .map_err(|e| CogniaError::Plugin(format!("Failed to create ui dir: {}", e)))?;
+        tokio::fs::write(
+            ui_dir.join("index.html"),
+            format!(
+                "<!doctype html><html><head><meta charset=\"utf-8\"><title>{}</title></head><body><main><h1>{}</h1><p>Replace this scaffolded iframe UI with your plugin experience.</p></main></body></html>",
+                config.name, config.name
+            ),
+        )
+        .await
+        .map_err(|e| CogniaError::Plugin(format!("Failed to write ui/index.html: {}", e)))?;
+        files.push("ui/index.html".to_string());
+    }
 
     Ok(files)
 }
@@ -1803,6 +2185,8 @@ declare module "extism:host" {{
     cognia_clipboard_write(ptr: I64): I64;
     cognia_notification_send(ptr: I64): I64;
     cognia_process_exec(ptr: I64): I64;
+    cognia_ui_get_context(ptr: I64): I64;
+    cognia_ui_request(ptr: I64): I64;
     cognia_get_locale(ptr: I64): I64;
     cognia_i18n_translate(ptr: I64): I64;
     cognia_i18n_get_all(ptr: I64): I64;
@@ -1827,38 +2211,114 @@ declare module "extism:host" {{
         .await
         .map_err(|e| CogniaError::Plugin(format!("Failed to create src dir: {}", e)))?;
 
+    let ts_settings_comment = if has_extension_point(config, "settings-schema") {
+        "  // Plugin settings are declared in plugin.toml under [[settings]].\n"
+    } else {
+        ""
+    };
+    let ts_main_output = if has_extension_point(config, "tool-declarative-ui") {
+        format!(
+            r#"  const blocks = [
+    cognia.ui.heading('{name} Dashboard', 2),
+    cognia.ui.text(`Declarative scaffold running on ${{platform.os}}`),
+  ];
+  Host.outputString(cognia.ui.render(blocks));"#,
+            name = config.name,
+        )
+    } else {
+        r#"  Host.outputString(JSON.stringify({
+    greeting,
+    platform: platform.os,
+    input,
+  }));"#
+            .to_string()
+    };
+    let ts_event_listener = if has_extension_point(config, "event-listener") {
+        r#"
+
+function cognia_on_event(): number {
+  const event = JSON.parse(Host.inputString()) as { event?: string };
+  cognia.log.info(`Received event ${event.event ?? 'unknown'}`);
+  Host.outputString(JSON.stringify({ handled: true, event: event.event ?? null }));
+  return 0;
+}
+"#
+    } else {
+        ""
+    };
+    let ts_log_listener = if has_extension_point(config, "log-listener") {
+        r#"
+
+function cognia_on_log(): number {
+  const envelope = cognia.log.parseEnvelope(Host.inputString());
+  cognia.log.info({
+    message: `Observed ${envelope?.level ?? 'unknown'} log`,
+    target: 'plugin.log-listener',
+    fields: {
+      sourceType: envelope?.sourceType ?? 'unknown',
+    },
+  });
+  Host.outputString(JSON.stringify({ observed: true, level: envelope?.level ?? null }));
+  return 0;
+}
+"#
+    } else {
+        ""
+    };
+    let mut ts_export_names = vec![entry_fn.clone()];
+    if has_extension_point(config, "event-listener") {
+        ts_export_names.push("cognia_on_event".to_string());
+    }
+    if has_extension_point(config, "log-listener") {
+        ts_export_names.push("cognia_on_log".to_string());
+    }
+    let ts_exports = format!("module.exports = {{ {} }};", ts_export_names.join(", "));
     let index_ts = format!(
         r#"// {name} - CogniaLauncher Plugin (TypeScript)
 import {{ cognia }} from '@cognia/plugin-sdk';
 
 function {entry}(): number {{
-    const input = Host.inputString();
+  const input = Host.inputString();
 
-    // Get platform information
-    const platform = cognia.platform.info();
-    cognia.log.info(`Plugin running on ${{platform.os}} ${{platform.arch}}`);
+  const platform = cognia.platform.info();
+  cognia.log.info(`Plugin running on ${{platform.os}} ${{platform.arch}}`);
 
-    // Get current locale and translate a greeting
-    const greeting = cognia.i18n.translate('greeting', {{ name: platform.hostname }});
-
-    // Return JSON result
-    Host.outputString(JSON.stringify({{
-        greeting,
-        platform: platform.os,
-        input,
-    }}));
-    return 0;
+  const greeting = cognia.i18n.translate('greeting', {{ name: platform.hostname }});
+{settings_comment}{main_output}
+  return 0;
 }}
-
-module.exports = {{ {entry} }};
+{event_listener}{log_listener}
+{ts_exports}
 "#,
         name = config.name,
         entry = entry_fn,
+        settings_comment = ts_settings_comment,
+        main_output = ts_main_output,
+        event_listener = ts_event_listener,
+        log_listener = ts_log_listener,
+        ts_exports = ts_exports,
     );
     tokio::fs::write(src_dir.join("index.ts"), &index_ts)
         .await
         .map_err(|e| CogniaError::Plugin(format!("Failed to write src/index.ts: {}", e)))?;
     files.push("src/index.ts".to_string());
+
+    if has_extension_point(config, "tool-iframe-ui") {
+        let ui_dir = plugin_dir.join("ui");
+        tokio::fs::create_dir_all(&ui_dir)
+            .await
+            .map_err(|e| CogniaError::Plugin(format!("Failed to create ui dir: {}", e)))?;
+        tokio::fs::write(
+            ui_dir.join("index.html"),
+            format!(
+                "<!doctype html><html><head><meta charset=\"utf-8\"><title>{}</title></head><body><main><h1>{}</h1><p>Replace this scaffolded iframe UI with your plugin experience.</p></main></body></html>",
+                config.name, config.name
+            ),
+        )
+        .await
+        .map_err(|e| CogniaError::Plugin(format!("Failed to write ui/index.html: {}", e)))?;
+        files.push("ui/index.html".to_string());
+    }
 
     Ok(files)
 }
@@ -2159,6 +2619,7 @@ mod tests {
             include_ci: false,
             include_vscode: true,
             additional_keywords: Vec::new(),
+            extension_points: Vec::new(),
             template_options: ScaffoldTemplateOptions::default(),
         }
     }
@@ -2184,6 +2645,7 @@ mod tests {
             include_ci: true,
             include_vscode: true,
             additional_keywords: vec!["utility".to_string(), "rust".to_string()],
+            extension_points: Vec::new(),
             template_options: ScaffoldTemplateOptions::default(),
         };
         let manifest = generate_manifest(&config);
@@ -2214,6 +2676,51 @@ mod tests {
         assert!(manifest.contains("ui_mode = \"declarative\""));
         assert!(manifest.contains("capabilities = [\"settings.read\", \"environment.read\"]"));
         assert!(manifest.contains("tool_contract_version = \"1.0.0\""));
+    }
+
+    #[test]
+    fn test_generate_manifest_with_extension_point_fragments() {
+        let mut config = base_scaffold_config("/tmp");
+        config.extension_points = vec![
+            "tool-iframe-ui".to_string(),
+            "event-listener".to_string(),
+            "log-listener".to_string(),
+            "settings-schema".to_string(),
+        ];
+
+        let manifest = generate_manifest(&config);
+        assert!(manifest.contains("listen_events = [\"system.sample\"]"));
+        assert!(manifest.contains("listen_logs = [\"plugin\"]"));
+        assert!(manifest.contains("ui_mode = \"iframe\""));
+        assert!(manifest.contains("[ui]"));
+        assert!(manifest.contains("[[settings]]"));
+    }
+
+    #[tokio::test]
+    async fn test_scaffold_plugin_generates_log_listener_stubs_for_typescript() {
+        let output_root = unique_temp_path("cognia_scaffold_log_listener_ts");
+        fs::create_dir_all(&output_root).expect("create output root");
+
+        let mut config = base_scaffold_config(output_root.to_string_lossy().as_ref());
+        config.id = "com.example.log.listener".to_string();
+        config.language = PluginLanguage::TypeScript;
+        config.extension_points = vec!["log-listener".to_string()];
+
+        let result = scaffold_plugin(&config).await.expect("scaffold plugin");
+        let plugin_dir = PathBuf::from(&result.plugin_dir);
+        let manifest = fs::read_to_string(plugin_dir.join("plugin.toml")).expect("read manifest");
+        let source = fs::read_to_string(plugin_dir.join("src").join("index.ts")).expect("read source");
+
+        assert!(manifest.contains("listen_logs = [\"plugin\"]"));
+        assert!(source.contains("function cognia_on_log(): number"));
+        assert!(source.contains("module.exports = { com_example_log_listener, cognia_on_log };"));
+        assert!(result
+            .handoff
+            .next_steps
+            .iter()
+            .any(|step| step.contains("cognia_on_log")));
+
+        let _ = fs::remove_dir_all(&output_root);
     }
 
     #[test]
@@ -2258,6 +2765,7 @@ mod tests {
             include_ci: false,
             include_vscode: true,
             additional_keywords: Vec::new(),
+            extension_points: Vec::new(),
             template_options: ScaffoldTemplateOptions::default(),
         };
         let plugin_dir = PathBuf::from("/tmp/com.example.my");
@@ -2291,6 +2799,7 @@ mod tests {
             include_ci: false,
             include_vscode: true,
             additional_keywords: Vec::new(),
+            extension_points: Vec::new(),
             template_options: ScaffoldTemplateOptions::default(),
         };
         let plugin_dir = PathBuf::from("/tmp/com.example.ts");
@@ -2317,6 +2826,7 @@ mod tests {
             include_ci: false,
             include_vscode: true,
             additional_keywords: Vec::new(),
+            extension_points: Vec::new(),
             template_options: ScaffoldTemplateOptions::default(),
         };
         let plugin_dir = PathBuf::from("/repo/plugins/typescript/sample");
@@ -2344,6 +2854,7 @@ mod tests {
             include_ci: false,
             include_vscode: true,
             additional_keywords: Vec::new(),
+            extension_points: Vec::new(),
             template_options: ScaffoldTemplateOptions::default(),
         };
         let plugin_dir = PathBuf::from("/tmp/com.example.js");
@@ -2457,6 +2968,7 @@ mod tests {
             include_ci: false,
             include_vscode: true,
             additional_keywords: Vec::new(),
+            extension_points: Vec::new(),
             template_options: ScaffoldTemplateOptions::default(),
         };
         let result = validate_scaffold_config(&config);
@@ -2480,6 +2992,7 @@ mod tests {
             include_ci: false,
             include_vscode: true,
             additional_keywords: Vec::new(),
+            extension_points: Vec::new(),
             template_options: ScaffoldTemplateOptions::default(),
         };
         let result = validate_scaffold_config(&config);
@@ -2503,6 +3016,7 @@ mod tests {
             include_ci: false,
             include_vscode: true,
             additional_keywords: Vec::new(),
+            extension_points: Vec::new(),
             template_options: ScaffoldTemplateOptions::default(),
         };
         let result = validate_scaffold_config(&config);
@@ -2527,6 +3041,7 @@ mod tests {
             include_ci: false,
             include_vscode: true,
             additional_keywords: Vec::new(),
+            extension_points: Vec::new(),
             template_options: ScaffoldTemplateOptions::default(),
         };
         let result = validate_scaffold_config(&config);
@@ -2535,6 +3050,33 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("Invalid plugin id"));
+    }
+
+    #[test]
+    fn test_validate_scaffold_config_rejects_multiple_tool_extension_points() {
+        let mut config = base_scaffold_config("/tmp");
+        config.extension_points = vec!["tool-text".to_string(), "tool-iframe-ui".to_string()];
+
+        let result = validate_scaffold_config(&config);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("exactly one tool contribution point"));
+    }
+
+    #[test]
+    fn test_validate_scaffold_config_rejects_unsupported_javascript_extension_point() {
+        let mut config = base_scaffold_config("/tmp");
+        config.language = PluginLanguage::JavaScript;
+        config.extension_points = vec!["tool-declarative-ui".to_string()];
+
+        let result = validate_scaffold_config(&config);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("JavaScript scaffold currently supports only the basic tool-text extension point"));
     }
 
     #[test]
@@ -2554,6 +3096,7 @@ mod tests {
             include_ci: false,
             include_vscode: true,
             additional_keywords: Vec::new(),
+            extension_points: Vec::new(),
             template_options: ScaffoldTemplateOptions::default(),
         };
 
@@ -2591,6 +3134,7 @@ mod tests {
             include_ci: false,
             include_vscode: true,
             additional_keywords: Vec::new(),
+            extension_points: Vec::new(),
             template_options: ScaffoldTemplateOptions::default(),
         };
 

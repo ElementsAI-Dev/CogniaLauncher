@@ -89,9 +89,12 @@ describe('useExternalCache', () => {
     mockGetExternalCachePaths.mockResolvedValue([]);
   });
 
-  it('coalesces overlapping fetch calls into one in-flight request', async () => {
+  it('queues one follow-up wave when a refresh is requested during in-flight wave', async () => {
     const discovery = deferred<ReturnType<typeof makeCandidate>[]>();
-    mockDiscoverExternalCacheCandidates.mockReturnValueOnce(discovery.promise);
+    mockDiscoverExternalCacheCandidates
+      .mockReturnValueOnce(discovery.promise)
+      .mockResolvedValueOnce([makeCandidate('pnpm')]);
+    mockProbeExternalCacheProvider.mockImplementation(async (provider: string) => makeProbed(provider, false));
 
     const { result } = renderHook(() =>
       useExternalCache({
@@ -117,14 +120,12 @@ describe('useExternalCache', () => {
     });
 
     await waitFor(() => {
-      expect(mockProbeExternalCacheProvider).toHaveBeenCalledTimes(1);
-      expect(mockCalculateExternalCacheSize).toHaveBeenCalledTimes(1);
-      expect(result.current.caches[0]?.provider).toBe('npm');
-      expect(result.current.caches[0]?.sizePending).toBe(false);
+      expect(mockDiscoverExternalCacheCandidates).toHaveBeenCalledTimes(2);
+      expect(result.current.caches[0]?.provider).toBe('pnpm');
     });
   });
 
-  it('runs a new wave only after the current in-flight refresh completes', async () => {
+  it('coalesces burst refresh triggers into at most one queued follow-up wave', async () => {
     const firstDiscovery = deferred<ReturnType<typeof makeCandidate>[]>();
     mockDiscoverExternalCacheCandidates
       .mockReturnValueOnce(firstDiscovery.promise)
@@ -138,10 +139,12 @@ describe('useExternalCache', () => {
 
     let p1: Promise<void> | undefined;
     let p2: Promise<void> | undefined;
+    let p3: Promise<void> | undefined;
 
     await act(async () => {
       p1 = result.current.fetchExternalCaches();
       p2 = result.current.fetchExternalCaches();
+      p3 = result.current.fetchExternalCaches();
       await flushAsyncEffects();
     });
 
@@ -149,12 +152,7 @@ describe('useExternalCache', () => {
 
     await act(async () => {
       firstDiscovery.resolve([makeCandidate('npm')]);
-      await Promise.all([p1, p2]);
-      await flushAsyncEffects();
-    });
-
-    await act(async () => {
-      await result.current.fetchExternalCaches();
+      await Promise.all([p1, p2, p3]);
       await flushAsyncEffects();
     });
 

@@ -9,29 +9,39 @@ pub mod platform;
 pub mod plugin;
 pub mod provider;
 pub mod resolver;
+pub mod secrets;
 pub mod tray;
 
 use cache::{CleanupHistory, CleanupRecordBuilder, DownloadCache, DownloadResumer, MetadataCache};
 use commands::custom_detection::SharedCustomDetectionManager;
+#[cfg(not(test))]
 use commands::download::{setup_download_manager, SharedDownloadManager};
+#[cfg(not(test))]
 use commands::plugin::SharedPluginManager;
 use commands::terminal::SharedTerminalProfileManager;
 use config::Settings;
+#[cfg(not(test))]
 use core::custom_detection::CustomDetectionManager;
+#[cfg(not(test))]
 use core::terminal::TerminalProfileManager;
 use log::{debug, info};
 use provider::ProviderRegistry;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tauri::{Emitter, Manager};
+use tauri::Emitter;
+#[cfg(not(test))]
+use tauri::Manager;
+#[cfg(not(debug_assertions))]
 use tauri_plugin_log::{RotationStrategy, Target, TargetKind};
 use tokio::sync::RwLock;
 use tokio::time::Duration;
+#[cfg(not(test))]
 use tray::{SharedTrayState, TrayLanguage, TrayState};
 
 pub type SharedRegistry = Arc<RwLock<ProviderRegistry>>;
 pub type SharedSettings = Arc<RwLock<Settings>>;
+pub type SharedSecretVault = Arc<RwLock<secrets::SecretVault>>;
 pub type CancellationTokens = Arc<RwLock<HashMap<String, Arc<AtomicBool>>>>;
 
 /// Flag to indicate if initialization is complete
@@ -42,10 +52,14 @@ pub fn is_initialized() -> bool {
     INITIALIZED.load(Ordering::SeqCst)
 }
 
+#[cfg(not(test))]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Install panic hook BEFORE anything else so crashes generate reports
     commands::diagnostic::install_panic_hook();
+
+    #[cfg(debug_assertions)]
+    let devtools_plugin = tauri_plugin_devtools::init();
 
     let mut builder = tauri::Builder::default();
 
@@ -66,68 +80,73 @@ pub fn run() {
         }
     }
 
+    #[cfg(debug_assertions)]
+    {
+        builder = builder.plugin(devtools_plugin);
+    }
+
+    let stronghold_salt_path = crate::platform::fs::get_config_dir()
+        .unwrap_or_default()
+        .join("secrets.salt");
+
     builder = builder.plugin(tauri_plugin_positioner::init());
     builder = builder.plugin(tauri_plugin_os::init());
+    builder = builder.plugin(tauri_plugin_stronghold::Builder::with_argon2(&stronghold_salt_path).build());
 
     builder
         .setup(|app| {
-            // Setup logging with enhanced configuration
-            // - Stdout: Console output for development
-            // - Webview: Forward logs to frontend for log panel display
-            // - LogDir: Persistent log files with rotation
-            // Read configured log level from settings, fallback to debug/info defaults
-            let log_level = {
-                let settings_state = app.state::<SharedSettings>().inner().clone();
-                let guard = tauri::async_runtime::block_on(settings_state.read());
-                let configured = guard.log.log_level.clone();
-                drop(guard);
-                match configured.as_str() {
-                    "trace" => log::LevelFilter::Trace,
-                    "debug" => log::LevelFilter::Debug,
-                    "warn" => log::LevelFilter::Warn,
-                    "error" => log::LevelFilter::Error,
-                    "info" => log::LevelFilter::Info,
-                    _ => if cfg!(debug_assertions) {
-                        log::LevelFilter::Debug
-                    } else {
-                        log::LevelFilter::Info
-                    },
-                }
-            };
+            #[cfg(not(debug_assertions))]
+            {
+                // Keep structured file/webview logging in release builds.
+                // Debug builds use CrabNebula DevTools instead of tauri-plugin-log
+                // because the two logger integrations conflict.
+                let log_level = {
+                    let settings_state = app.state::<SharedSettings>().inner().clone();
+                    let guard = tauri::async_runtime::block_on(settings_state.read());
+                    let configured = guard.log.log_level.clone();
+                    drop(guard);
+                    match configured.as_str() {
+                        "trace" => log::LevelFilter::Trace,
+                        "debug" => log::LevelFilter::Debug,
+                        "warn" => log::LevelFilter::Warn,
+                        "error" => log::LevelFilter::Error,
+                        "info" => log::LevelFilter::Info,
+                        _ => log::LevelFilter::Info,
+                    }
+                };
 
-            // Session-based log file: each app launch creates a new log file
-            // named by start time, e.g. "2026-02-28_14-27-30.log"
-            let session_file_name = chrono::Local::now()
-                .format("%Y-%m-%d_%H-%M-%S")
-                .to_string();
+                let session_file_name = chrono::Local::now()
+                    .format("%Y-%m-%d_%H-%M-%S")
+                    .to_string();
 
-            app.handle().plugin(
-                tauri_plugin_log::Builder::default()
-                    .targets([
-                        Target::new(TargetKind::Stdout),
-                        Target::new(TargetKind::Webview),
-                        Target::new(TargetKind::LogDir {
-                            file_name: Some(session_file_name),
-                        }),
-                    ])
-                    .format(|out, message, record| {
-                        out.finish(format_args!(
-                            "[{}][{}][{}] {}",
-                            chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f"),
-                            record.level(),
-                            record.target(),
-                            message
-                        ))
-                    })
-                    .rotation_strategy(RotationStrategy::KeepAll)
-                    .max_file_size(50_000_000) // 50MB safety cap per session
-                    .level(log_level)
-                    .level_for("hyper", log::LevelFilter::Info)
-                    .level_for("reqwest", log::LevelFilter::Info)
-                    .level_for("tao", log::LevelFilter::Info)
-                    .level_for("wry", log::LevelFilter::Info)
-                    .build(),
-            )?;
+                app.handle().plugin(
+                    tauri_plugin_log::Builder::default()
+                        .targets([
+                            Target::new(TargetKind::Stdout),
+                            Target::new(TargetKind::Webview),
+                            Target::new(TargetKind::LogDir {
+                                file_name: Some(session_file_name),
+                            }),
+                        ])
+                        .format(|out, message, record| {
+                            out.finish(format_args!(
+                                "[{}][{}][{}] {}",
+                                chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f"),
+                                record.level(),
+                                record.target(),
+                                message
+                            ))
+                        })
+                        .rotation_strategy(RotationStrategy::KeepAll)
+                        .max_file_size(50_000_000)
+                        .level(log_level)
+                        .level_for("hyper", log::LevelFilter::Info)
+                        .level_for("reqwest", log::LevelFilter::Info)
+                        .level_for("tao", log::LevelFilter::Info)
+                        .level_for("wry", log::LevelFilter::Info)
+                        .build(),
+                )?;
+            }
 
             // Register CLI plugin for argument parsing
             #[cfg(desktop)]
@@ -254,6 +273,7 @@ pub fn run() {
                 registry: registry.clone(),
                 settings: settings.clone(),
                 download_manager: Some(download_mgr.clone()),
+                app_handle: Some(app.handle().clone()),
             };
             let plugin_mgr: SharedPluginManager = Arc::new(RwLock::new(
                 plugin::PluginManager::new(&cognia_dir_for_plugins, plugin_deps),
@@ -461,6 +481,7 @@ pub fn run() {
         .manage(Arc::new(core::eol::EolCache::new()) as commands::environment::SharedEolCache)
         .manage(Arc::new(RwLock::new(ProviderRegistry::new())) as SharedRegistry)
         .manage(Arc::new(RwLock::new(Settings::default())) as SharedSettings)
+        .manage(Arc::new(RwLock::new(secrets::SecretVault::default())) as SharedSecretVault)
         .manage(Arc::new(RwLock::new(HashMap::new())) as CancellationTokens)
         .manage(Arc::new(RwLock::new(TrayState::default())) as SharedTrayState)
         .manage(Arc::new(RwLock::new(CustomDetectionManager::new(
@@ -537,12 +558,14 @@ pub fn run() {
             commands::package::package_list,
             commands::package::provider_list,
             commands::package::provider_check,
+            commands::package::provider_status,
             commands::package::provider_system_list,
             commands::package::provider_status_all,
             commands::package::package_check_installed,
             commands::package::package_versions,
             commands::package::provider_enable,
             commands::package::provider_disable,
+            commands::package::provider_set_priority,
             // Config commands
             commands::config::config_get,
             commands::config::config_set,
@@ -551,6 +574,11 @@ pub fn run() {
             commands::config::config_reset,
             commands::config::config_export,
             commands::config::config_import,
+            commands::secrets::secret_vault_status,
+            commands::secrets::secret_vault_setup,
+            commands::secrets::secret_vault_unlock,
+            commands::secrets::secret_vault_lock,
+            commands::secrets::secret_vault_reset,
             commands::config::detect_system_proxy,
             commands::config::test_proxy_connection,
             commands::config::get_cognia_dir,
@@ -685,12 +713,18 @@ pub fn run() {
             commands::envvar::envvar_list_shell_profiles,
             commands::envvar::envvar_read_shell_profile,
             commands::envvar::envvar_import_env_file,
+            commands::envvar::envvar_preview_import_env_file,
+            commands::envvar::envvar_apply_import_preview,
             commands::envvar::envvar_export_env_file,
             commands::envvar::envvar_list_persistent,
             commands::envvar::envvar_expand,
             commands::envvar::envvar_deduplicate_path,
+            commands::envvar::envvar_preview_path_repair,
+            commands::envvar::envvar_apply_path_repair,
             commands::envvar::envvar_list_persistent_typed,
             commands::envvar::envvar_detect_conflicts,
+            commands::envvar::envvar_resolve_conflict,
+            commands::envvar::envvar_generate_shell_guidance,
             // Updater commands
             commands::updater::self_check_update,
             commands::updater::self_update,
@@ -998,6 +1032,7 @@ pub fn run() {
             commands::git::git_is_available,
             commands::git::git_get_version,
             commands::git::git_get_executable_path,
+            commands::git::git_get_support_snapshot,
             commands::git::git_install,
             commands::git::git_update,
             commands::git::git_get_config,
@@ -1304,6 +1339,10 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
+#[cfg(test)]
+pub fn run() {}
+
+#[cfg_attr(test, allow(dead_code))]
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct InitProgressEvent {
@@ -1312,6 +1351,7 @@ struct InitProgressEvent {
     message: &'static str,
 }
 
+#[cfg_attr(test, allow(dead_code))]
 fn emit_init_progress(
     app: &tauri::AppHandle,
     phase: &'static str,
@@ -1328,6 +1368,7 @@ fn emit_init_progress(
     );
 }
 
+#[cfg_attr(test, allow(dead_code))]
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct CacheAutoCleanedEvent {
@@ -1342,6 +1383,7 @@ struct CacheAutoCleanedEvent {
 }
 
 /// Background task for automatic cache cleanup
+#[cfg_attr(test, allow(dead_code))]
 async fn cache_cleanup_task(settings: SharedSettings, app: tauri::AppHandle) {
     // Default fallback interval: 1 hour
     const DEFAULT_INTERVAL_SECS: u64 = 3600;
@@ -1599,6 +1641,7 @@ async fn cache_cleanup_task(settings: SharedSettings, app: tauri::AppHandle) {
 }
 
 /// Background task for automatic backups based on backup settings.
+#[cfg_attr(test, allow(dead_code))]
 async fn auto_backup_task(
     settings: SharedSettings,
     terminal_manager: SharedTerminalProfileManager,

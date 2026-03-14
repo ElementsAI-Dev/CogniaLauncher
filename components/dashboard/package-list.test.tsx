@@ -22,7 +22,11 @@ jest.mock("@/components/providers/locale-provider", () => ({
         "dashboard.packageList.showMore": "Show {count} more",
         "dashboard.recentPackagesDesc": "Recently installed packages",
         "dashboard.noPackages": "No packages installed",
-        "dashboard.environmentList.showLess": "Show less",
+        "dashboard.packageList.showLess": "Show less",
+        "dashboard.quickActions.installPackage": "Install Package",
+        "dashboard.widgets.sectionLoading": "Loading data for this widget",
+        "dashboard.widgets.sectionNeedsAttention": "This widget needs attention",
+        "dashboard.widgets.retry": "Retry",
         "common.clear": "Clear",
       };
       return translations[key] || key;
@@ -202,5 +206,19 @@ describe("PackageList", () => {
 
     expect(screen.getByText("5.0.0")).toBeInTheDocument();
     expect(screen.getByText("18.2.0")).toBeInTheDocument();
+  });
+
+  it("shows local loading state when data is pending", () => {
+    render(<PackageList packages={[]} isLoading={true} />);
+
+    expect(screen.getByText("Loading data for this widget")).toBeInTheDocument();
+  });
+
+  it("shows recovery action when the widget has an error", () => {
+    const onRecover = jest.fn();
+    render(<PackageList packages={[]} error="Package load failed" onRecover={onRecover} />);
+
+    fireEvent.click(screen.getByText("Retry"));
+    expect(onRecover).toHaveBeenCalledTimes(1);
   });
 });

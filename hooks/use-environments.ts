@@ -808,22 +808,23 @@ export function useEnvironments() {
     }
   }, [setDetectedVersions, setError]);
 
-  const fetchAvailableVersions = useCallback(async (envType: string, force?: boolean) => {
-    const cached = useEnvironmentStore.getState().availableVersions[envType];
+  const fetchAvailableVersions = useCallback(async (envType: string, force?: boolean, providerId?: string) => {
+    const cacheKey = providerId ? `${envType}::${providerId}` : envType;
+    const cached = useEnvironmentStore.getState().availableVersions[cacheKey];
     if (!force && cached && cached.length > 0) {
       return cached;
     }
 
-    const requestKey = `${envType}:${force ? 'force' : 'normal'}`;
+    const requestKey = `${cacheKey}:${force ? 'force' : 'normal'}`;
     const inFlight = availableVersionsInFlightRef.current.get(requestKey);
     if (inFlight) {
       return inFlight;
     }
 
     try {
-      const request = tauri.envAvailableVersions(envType, undefined, force)
+      const request = tauri.envAvailableVersions(envType, providerId, force)
         .then((versions) => {
-          useEnvironmentStore.getState().setAvailableVersions(envType, versions);
+          useEnvironmentStore.getState().setAvailableVersions(cacheKey, versions);
           return versions;
         })
         .finally(() => {

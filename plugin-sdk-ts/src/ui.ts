@@ -19,7 +19,17 @@
  *   return 0;
  * }
  * ```
- */
+*/
+
+import { callHostJson } from './host';
+import type {
+  PluginUiConfirmData,
+  PluginUiContext,
+  PluginUiPathData,
+  PluginUiPathsData,
+  PluginUiRequest,
+  PluginUiRequestResult,
+} from './types';
 
 // ============================================================================
 // Block Types
@@ -601,4 +611,85 @@ export function parseAction(input: string): UiAction | null {
   } catch {
     return null;
   }
+}
+
+// ============================================================================
+// UI Host Effects
+// ============================================================================
+
+export function getContext(): PluginUiContext {
+  return callHostJson<PluginUiContext>('cognia_ui_get_context', '');
+}
+
+export function request<TData = unknown>(input: PluginUiRequest): PluginUiRequestResult<TData> {
+  return callHostJson<PluginUiRequestResult<TData>>(
+    'cognia_ui_request',
+    JSON.stringify(input),
+  );
+}
+
+export function toast(
+  message: string,
+  options?: {
+    title?: string;
+    level?: 'info' | 'success' | 'warning' | 'error';
+    correlationId?: string | null;
+  },
+): PluginUiRequestResult {
+  return request({ effect: 'toast', message, ...(options ?? {}) });
+}
+
+export function navigate(
+  path: string,
+  options?: { correlationId?: string | null },
+): PluginUiRequestResult {
+  return request({ effect: 'navigate', path, ...(options ?? {}) });
+}
+
+export function confirm(
+  message: string,
+  options?: { title?: string; correlationId?: string | null },
+): PluginUiRequestResult<PluginUiConfirmData> {
+  return request<PluginUiConfirmData>({ effect: 'confirm', message, ...(options ?? {}) });
+}
+
+export function pickFile(options?: {
+  title?: string;
+  defaultPath?: string;
+  multiple?: boolean;
+  filters?: { name: string; extensions: string[] }[];
+  correlationId?: string | null;
+}): PluginUiRequestResult<PluginUiPathsData> {
+  return request<PluginUiPathsData>({ effect: 'pick-file', ...(options ?? {}) });
+}
+
+export function pickDirectory(options?: {
+  title?: string;
+  defaultPath?: string;
+  correlationId?: string | null;
+}): PluginUiRequestResult<PluginUiPathData> {
+  return request<PluginUiPathData>({ effect: 'pick-directory', ...(options ?? {}) });
+}
+
+export function saveFile(options?: {
+  title?: string;
+  defaultPath?: string;
+  filters?: { name: string; extensions: string[] }[];
+  correlationId?: string | null;
+}): PluginUiRequestResult<PluginUiPathData> {
+  return request<PluginUiPathData>({ effect: 'save-file', ...(options ?? {}) });
+}
+
+export function openExternal(
+  url: string,
+  options?: { correlationId?: string | null },
+): PluginUiRequestResult {
+  return request({ effect: 'open-external', url, ...(options ?? {}) });
+}
+
+export function revealPath(
+  path: string,
+  options?: { correlationId?: string | null },
+): PluginUiRequestResult<PluginUiPathData> {
+  return request<PluginUiPathData>({ effect: 'reveal-path', path, ...(options ?? {}) });
 }

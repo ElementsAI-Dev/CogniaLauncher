@@ -2,7 +2,8 @@ use crate::config::Settings;
 use crate::download::{DownloadManager, DownloadState, DownloadTask};
 use crate::error::{CogniaError, CogniaResult};
 use crate::plugin::contract::evaluate_manifest_compatibility;
-use crate::plugin::host_functions::HostContext;
+use crate::plugin::extension_points::get_tool_plugin_point;
+use crate::plugin::host_functions::{EmittedPluginLog, EmittedPluginUiEffect, HostContext};
 use crate::plugin::loader::PluginLoader;
 use crate::plugin::manifest::PluginManifest;
 use crate::plugin::permissions::{PermissionEnforcementMode, PermissionManager};
@@ -222,6 +223,14 @@ pub struct PluginDeps {
     pub registry: Arc<RwLock<ProviderRegistry>>,
     pub settings: Arc<RwLock<Settings>>,
     pub download_manager: Option<Arc<RwLock<DownloadManager>>>,
+    pub app_handle: Option<tauri::AppHandle>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginToolCallResult {
+    pub output: String,
+    pub ui_effects: Vec<EmittedPluginUiEffect>,
 }
 
 /// Per-plugin health tracking for circuit breaker
@@ -271,6 +280,10 @@ pub struct CapabilityAuditRecord {
 
 fn permission_to_capability(permission: &str) -> Option<&'static str> {
     match permission {
+        "ui_feedback" => Some("ui.feedback"),
+        "ui_dialog" => Some("ui.dialog"),
+        "ui_file_picker" => Some("ui.file-picker"),
+        "ui_navigation" => Some("ui.navigation"),
         "config_read" => Some("settings.read"),
         "config_write" => Some("settings.write"),
         "env_read" => Some("environment.read"),
@@ -319,12 +332,14 @@ impl PluginManager {
         let registry = Arc::new(RwLock::new(PluginRegistry::new(plugins_dir.clone())));
 
         // Create host context with access to launcher APIs + plugin registry for i18n
-        let host_context = HostContext::new(
+        let mut host_context = HostContext::new(
             deps.registry,
             deps.settings,
             permissions.clone(),
             registry.clone(),
+            deps.app_handle,
         );
+        host_context.download_manager = deps.download_manager.clone();
 
         let loader = PluginLoader::new(host_context);
 
@@ -1619,7 +1634,7 @@ impl PluginManager {
         plugin_id: &str,
         tool_entry: &str,
         input: &str,
-    ) -> CogniaResult<String> {
+    ) -> CogniaResult<PluginToolCallResult> {
         // Check circuit breaker — reject if auto-disabled
         if let Some(h) = self.health.get(plugin_id) {
             if h.auto_disabled {
@@ -1667,6 +1682,20 @@ impl PluginManager {
                     ))
                 })?;
 
+            if let Some(point) = get_tool_plugin_point(&plugin.manifest, tool_entry)? {
+                if !point.discoverable {
+                    return Err(CogniaError::Plugin(format!(
+                        "Tool entry '{}' in plugin '{}' is blocked by plugin-point validation: {}",
+                        tool_entry,
+                        plugin_id,
+                        point
+                            .blocking_reason
+                            .as_deref()
+                            .unwrap_or("unknown plugin-point issue"),
+                    )));
+                }
+            }
+
             (plugin.wasm_path.clone(), tool.capabilities.clone())
         };
 
@@ -1683,6 +1712,8 @@ impl PluginManager {
         }
 
         self.loader.clear_emitted_events().await;
+        self.loader.clear_emitted_logs().await;
+        self.loader.clear_emitted_ui_effects().await;
 
         // Call the WASM function with health tracking
         let start = std::time::Instant::now();
@@ -1724,10 +1755,18 @@ impl PluginManager {
             }
         }
 
+        let mut ui_effects = Vec::new();
+
         loop {
             let emitted_events = self.loader.drain_emitted_events().await;
-            if emitted_events.is_empty() {
+            let emitted_logs = self.loader.drain_emitted_logs().await;
+            let emitted_ui_effects = self.loader.drain_emitted_ui_effects().await;
+            if emitted_events.is_empty() && emitted_logs.is_empty() && emitted_ui_effects.is_empty() {
                 break;
+            }
+
+            if !emitted_ui_effects.is_empty() {
+                ui_effects.extend(emitted_ui_effects);
             }
 
             for emitted in emitted_events {
@@ -1739,9 +1778,13 @@ impl PluginManager {
                 )
                 .await;
             }
+
+            for emitted in emitted_logs {
+                self.dispatch_log_with_meta(emitted).await;
+            }
         }
 
-        result
+        result.map(|output| PluginToolCallResult { output, ui_effects })
     }
 
     fn push_capability_audit(&mut self, record: CapabilityAuditRecord) {
@@ -1841,6 +1884,71 @@ impl PluginManager {
     pub async fn dispatch_event(&mut self, event_name: &str, payload: &serde_json::Value) {
         self.dispatch_event_with_meta(event_name, payload, None, None)
             .await;
+    }
+
+    fn matches_log_listener_filter(filter: &str, source_type: &str) -> bool {
+        filter == "*" || filter == source_type
+    }
+
+    async fn dispatch_log_with_meta(&mut self, record: EmittedPluginLog) {
+        let listeners: Vec<(String, PathBuf)> = {
+            let reg = self.registry.read().await;
+            reg.iter()
+                .filter(|(_, plugin)| {
+                    plugin.enabled
+                        && plugin
+                            .manifest
+                            .plugin
+                            .listen_logs
+                            .iter()
+                            .any(|filter| Self::matches_log_listener_filter(filter, &record.source_type))
+                })
+                .map(|(id, plugin)| (id.clone(), plugin.wasm_path.clone()))
+                .collect()
+        };
+
+        if listeners.is_empty() {
+            return;
+        }
+
+        self.loader.set_log_dispatch_active(true).await;
+        for (plugin_id, wasm_path) in &listeners {
+            if !self.loader.is_loaded(plugin_id) {
+                if let Err(error) = self.loader.load(plugin_id, wasm_path) {
+                    log::warn!(
+                        "[plugin-runtime][plugin:{}][operation:dispatch_log][stage:listener-load] failed to lazy-load log listener plugin: {}",
+                        plugin_id,
+                        error
+                    );
+                    continue;
+                }
+            }
+
+            let input = serde_json::to_string(&record).unwrap_or_else(|_| "{}".to_string());
+            let callback_output = self
+                .loader
+                .call_if_exists(plugin_id, "cognia_on_log", &input)
+                .await;
+            if callback_output.is_none() {
+                log::warn!(
+                    "[plugin-runtime][plugin:{}][operation:dispatch_log][stage:listener-callback] log listener callback failed or missing export for level '{}' (source={})",
+                    plugin_id,
+                    record.level,
+                    record.source_type
+                );
+            }
+        }
+        self.loader.set_log_dispatch_active(false).await;
+
+        if !listeners.is_empty() {
+            log::debug!(
+                "Dispatched log '{}' from {} to {} plugin(s)",
+                record.level,
+                record.source_type,
+                listeners.len()
+            );
+        }
+
     }
 
     async fn dispatch_event_with_meta(
@@ -1944,6 +2052,21 @@ impl PluginManager {
 
             let emitted = self.loader.drain_emitted_events().await;
             for event in emitted {
+                queue.push_back((
+                    event.event_name,
+                    event.payload,
+                    Some(event.source_plugin_id),
+                    Some(event.timestamp),
+                ));
+            }
+
+            let emitted_logs = self.loader.drain_emitted_logs().await;
+            for log_record in emitted_logs {
+                self.dispatch_log_with_meta(log_record).await;
+            }
+
+            let emitted_after_logs = self.loader.drain_emitted_events().await;
+            for event in emitted_after_logs {
                 queue.push_back((
                     event.event_name,
                     event.payload,
@@ -2586,6 +2709,7 @@ mod tests {
             registry: Arc::new(RwLock::new(ProviderRegistry::new())),
             settings: Arc::new(RwLock::new(Settings::default())),
             download_manager: None,
+            app_handle: None,
         };
         PluginManager::new(temp_root, deps)
     }
@@ -2607,6 +2731,7 @@ mod tests {
                 icon: None,
                 update_url: None,
                 listen_events: events.into_iter().map(|e| e.to_string()).collect(),
+                listen_logs: vec![],
             },
             tools: vec![],
             permissions: PluginPermissions::default(),
@@ -2615,6 +2740,12 @@ mod tests {
             dependencies: PluginDependencies::default(),
             settings: vec![],
         }
+    }
+
+    fn make_log_listener_manifest(plugin_id: &str, filters: Vec<&str>) -> PluginManifest {
+        let mut manifest = make_listener_manifest(plugin_id, vec![]);
+        manifest.plugin.listen_logs = filters.into_iter().map(|filter| filter.to_string()).collect();
+        manifest
     }
 
     async fn write_builtin_fixture(
@@ -2931,6 +3062,72 @@ mod tests {
 
         assert!(!manager.loader.is_loaded(plugin_a));
         assert!(!manager.loader.is_loaded(plugin_b));
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_log_listener_load_failure_isolated() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let mut manager = make_test_manager(temp_dir.path());
+        let plugin_id = "com.example.log-listener";
+
+        {
+            let mut reg = manager.registry.write().await;
+            reg.register(
+                make_log_listener_manifest(plugin_id, vec!["plugin"]),
+                temp_dir.path().join("missing-log-listener").join("plugin.wasm"),
+                temp_dir.path().join("missing-log-listener"),
+                PluginSource::BuiltIn,
+            );
+        }
+
+        manager
+            .dispatch_log_with_meta(EmittedPluginLog {
+                source_type: "plugin".to_string(),
+                source_plugin_id: Some("com.example.source".to_string()),
+                level: "info".to_string(),
+                message: "hello".to_string(),
+                target: None,
+                fields: HashMap::new(),
+                tags: vec![],
+                correlation_id: None,
+                timestamp: "2026-03-12T00:00:00Z".to_string(),
+            })
+            .await;
+
+        assert!(!manager.loader.is_loaded(plugin_id));
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_log_ignores_non_matching_filters() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let mut manager = make_test_manager(temp_dir.path());
+        let plugin_id = "com.example.log-listener";
+
+        {
+            let mut reg = manager.registry.write().await;
+            reg.register(
+                make_log_listener_manifest(plugin_id, vec!["plugin"]),
+                temp_dir.path().join("missing-log-listener").join("plugin.wasm"),
+                temp_dir.path().join("missing-log-listener"),
+                PluginSource::BuiltIn,
+            );
+        }
+
+        manager
+            .dispatch_log_with_meta(EmittedPluginLog {
+                source_type: "system".to_string(),
+                source_plugin_id: None,
+                level: "info".to_string(),
+                message: "hello".to_string(),
+                target: None,
+                fields: HashMap::new(),
+                tags: vec![],
+                correlation_id: None,
+                timestamp: "2026-03-12T00:00:00Z".to_string(),
+            })
+            .await;
+
+        assert!(!manager.loader.is_loaded(plugin_id));
     }
 
     #[tokio::test]

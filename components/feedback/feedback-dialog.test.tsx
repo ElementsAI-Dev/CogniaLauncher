@@ -96,6 +96,7 @@ const feedbackTranslations: Record<string, string> = {
   "common.cancel": "Cancel",
   "common.delete": "Delete",
   "common.actions": "Actions",
+  "common.retry": "Retry",
 };
 
 const mockFeedbackT = (key: string) => feedbackTranslations[key] || key;
@@ -456,7 +457,11 @@ describe("FeedbackDialog", () => {
 
   it("shows success confirmation after submit", async () => {
     mockDialogOpen = true;
-    mockSubmitFeedback.mockResolvedValueOnce({ id: "test-id", path: "/test" });
+    mockSubmitFeedback.mockResolvedValueOnce({
+      success: true,
+      mode: "tauri",
+      result: { id: "test-id", path: "/test" },
+    });
     const user = userEvent.setup();
     render(<FeedbackDialog />);
 
@@ -472,7 +477,11 @@ describe("FeedbackDialog", () => {
 
   it("calls clearDraft on successful submit", async () => {
     mockDialogOpen = true;
-    mockSubmitFeedback.mockResolvedValueOnce({ id: "test-id", path: "/test" });
+    mockSubmitFeedback.mockResolvedValueOnce({
+      success: true,
+      mode: "tauri",
+      result: { id: "test-id", path: "/test" },
+    });
     const user = userEvent.setup();
     render(<FeedbackDialog />);
 
@@ -481,6 +490,22 @@ describe("FeedbackDialog", () => {
     await user.click(screen.getByText("Submit"));
 
     expect(mockClearDraft).toHaveBeenCalled();
+  });
+
+  it("keeps the form open when submit fails", async () => {
+    mockDialogOpen = true;
+    mockSubmitFeedback.mockResolvedValueOnce({ success: false });
+    const user = userEvent.setup();
+    render(<FeedbackDialog />);
+
+    const titleInput = screen.getByPlaceholderText("Brief summary");
+    await user.type(titleInput, "Test bug report");
+    await user.click(screen.getByText("Submit"));
+
+    expect(screen.queryByText("Thank you!")).not.toBeInTheDocument();
+    expect(screen.getByDisplayValue("Test bug report")).toBeInTheDocument();
+    expect(mockClearDraft).not.toHaveBeenCalled();
+    expect(mockCloseDialog).not.toHaveBeenCalled();
   });
 
   // -----------------------------------------------------------------------
@@ -804,9 +829,46 @@ describe("FeedbackHistoryDialog", () => {
     expect(
       await screen.findByText("No feedback yet", {}, { timeout: 5000 }),
     ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
     expect(mockToastError).toHaveBeenCalledWith(
       "Failed to load feedback history",
     );
+  });
+
+  it("retries history loading without closing the dialog", async () => {
+    mockIsTauri.mockReturnValue(true);
+    mockListFeedbacks
+      .mockRejectedValueOnce(new Error("load failed"))
+      .mockResolvedValueOnce([
+        {
+          id: "fb-retry",
+          category: "bug",
+          severity: "high",
+          title: "Recovered history item",
+          description: "desc",
+          includeDiagnostics: false,
+          appVersion: "0.1.0",
+          os: "Windows",
+          arch: "x86_64",
+          currentPage: "/",
+          status: "saved",
+          createdAt: "2026-01-15T10:00:00Z",
+          updatedAt: "2026-01-15T10:00:00Z",
+        },
+      ]);
+
+    const user = userEvent.setup();
+    render(<FeedbackDialog />);
+    await user.click(screen.getByRole("button", { name: "History" }));
+    await screen.findByText("Feedback History");
+    await screen.findByRole("button", { name: "Retry" });
+
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+
+    expect(
+      await screen.findByText("Recovered history item", {}, { timeout: 5000 }),
+    ).toBeInTheDocument();
+    expect(mockListFeedbacks).toHaveBeenCalledTimes(2);
   });
 
   it("shows feedback items in history table", async () => {

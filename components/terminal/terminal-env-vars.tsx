@@ -9,8 +9,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
-import { Search, Copy, RefreshCw, ExternalLink } from 'lucide-react';
+import { Search, Copy, RefreshCw, ExternalLink, ChevronRight } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { toast } from 'sonner';
 import { categorizeVar, ENV_VAR_CATEGORY_KEYS, type EnvVarCategory } from '@/lib/constants/terminal';
@@ -38,6 +39,11 @@ export function TerminalEnvVars({
         key.toLowerCase().includes(q) || value.toLowerCase().includes(q),
     );
   }, [shellEnvVars, search]);
+
+  const pathVarCount = useMemo(
+    () => shellEnvVars.filter(([k]) => k.toLowerCase().includes('path')).length,
+    [shellEnvVars],
+  );
 
   const grouped = useMemo(() => {
     const groups: Record<EnvVarCategory, [string, string][]> = {
@@ -102,6 +108,14 @@ export function TerminalEnvVars({
         </CardAction>
       </CardHeader>
       <CardContent className="space-y-4">
+        {shellEnvVars.length > 0 && (
+          <div className="flex items-center gap-4 text-sm text-muted-foreground">
+            <span>{t('terminal.totalVars')}: <strong className="text-foreground">{shellEnvVars.length}</strong></span>
+            {pathVarCount > 0 && (
+              <span>{t('terminal.pathLikeVars')}: <strong className="text-foreground">{pathVarCount}</strong></span>
+            )}
+          </div>
+        )}
         <div className="relative">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
@@ -167,18 +181,40 @@ export function TerminalEnvVars({
                               <TooltipContent side="top">{t('terminal.copyValue')}</TooltipContent>
                             </Tooltip>
                           </div>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <p className="text-xs font-mono text-muted-foreground mt-0.5 truncate min-w-0 w-full cursor-default">
-                                {value || <span className="italic opacity-50">(empty)</span>}
-                              </p>
-                            </TooltipTrigger>
-                            {value.length > 60 && (
-                              <TooltipContent side="bottom" className="max-w-md font-mono text-xs break-all">
+                          {key.toLowerCase() === 'path' ? (
+                            <Collapsible>
+                              <CollapsibleTrigger asChild>
+                                <Button variant="ghost" size="sm" className="h-6 text-xs gap-1 mt-0.5 px-1">
+                                  <ChevronRight className="h-3.5 w-3.5 transition-transform [[data-state=open]>svg&]:rotate-90" />
+                                  {value.split(';').filter(Boolean).length} {t('terminal.pathEntries')}
+                                </Button>
+                              </CollapsibleTrigger>
+                              <CollapsibleContent>
+                                <div className="mt-1 space-y-0.5 pl-2 border-l-2 border-muted">
+                                  {value.split(';').filter(Boolean).map((entry, i) => (
+                                    <div key={i} className="font-mono text-xs text-muted-foreground truncate" title={entry}>
+                                      {entry}
+                                    </div>
+                                  ))}
+                                </div>
+                              </CollapsibleContent>
+                            </Collapsible>
+                          ) : value.length > 80 ? (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <p className="font-mono text-xs text-muted-foreground mt-0.5 truncate max-w-sm inline-block align-bottom cursor-help">
+                                  {value.slice(0, 80)}…
+                                </p>
+                              </TooltipTrigger>
+                              <TooltipContent side="bottom" className="max-w-lg font-mono text-xs break-all whitespace-pre-wrap">
                                 {value}
                               </TooltipContent>
-                            )}
-                          </Tooltip>
+                            </Tooltip>
+                          ) : (
+                            <p className="text-xs font-mono text-muted-foreground mt-0.5 truncate min-w-0 w-full cursor-default">
+                              {value || <span className="italic opacity-50">(empty)</span>}
+                            </p>
+                          )}
                         </div>
                       ))}
                     </div>

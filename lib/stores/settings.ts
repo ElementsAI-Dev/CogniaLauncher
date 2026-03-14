@@ -14,10 +14,15 @@ import {
   type SidebarItemId,
 } from '@/lib/sidebar/order';
 
+export type UpdateSourceMode = 'official' | 'mirror' | 'custom';
+
 export interface AppSettings {
   checkUpdatesOnStart: boolean;
   autoInstallUpdates: boolean;
   notifyOnUpdates: boolean;
+  updateSourceMode: UpdateSourceMode;
+  updateCustomEndpoints: string[];
+  updateFallbackToOfficial: boolean;
   minimizeToTray: boolean;
   startMinimized: boolean;
   autostart: boolean;
@@ -54,6 +59,9 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   checkUpdatesOnStart: true,
   autoInstallUpdates: false,
   notifyOnUpdates: true,
+  updateSourceMode: 'official',
+  updateCustomEndpoints: [],
+  updateFallbackToOfficial: true,
   minimizeToTray: true,
   startMinimized: false,
   autostart: false,
@@ -94,7 +102,7 @@ export const useSettingsStore = create<SettingsState>()(
     {
       name: 'cognia-settings',
       storage: createJSONStorage(() => localStorage),
-      version: 3,
+      version: 4,
       migrate: (persistedState, version) => {
         const state = (persistedState ?? {}) as Partial<SettingsState> & {
           appSettings?: Partial<AppSettings>;
@@ -103,6 +111,40 @@ export const useSettingsStore = create<SettingsState>()(
         const appSettings: Partial<AppSettings> = state.appSettings ?? {};
         const rawSidebarItemOrder = (appSettings as Record<string, unknown>)
           .sidebarItemOrder;
+        const rawUpdateCustomEndpoints = (appSettings as Record<string, unknown>)
+          .updateCustomEndpoints;
+
+        const parseUpdateSourceMode = (
+          value: unknown,
+          fallback: UpdateSourceMode,
+        ): UpdateSourceMode => {
+          if (value === 'official' || value === 'mirror' || value === 'custom') {
+            return value;
+          }
+          return fallback;
+        };
+
+        const parseUpdateCustomEndpoints = (value: unknown): string[] => {
+          if (Array.isArray(value)) {
+            return value
+              .filter((item): item is string => typeof item === 'string')
+              .map((item) => item.trim())
+              .filter((item) => item.length > 0);
+          }
+
+          if (typeof value === 'string') {
+            const trimmed = value.trim();
+            if (!trimmed) return [];
+            return trimmed
+              .replace(/\r/g, '')
+              .replace(/\n/g, ',')
+              .split(',')
+              .map((item) => item.trim())
+              .filter((item) => item.length > 0);
+          }
+
+          return [];
+        };
 
         // Keep backward compatibility with older persisted payloads.
         // New keys always fall back to defaults.
@@ -113,6 +155,14 @@ export const useSettingsStore = create<SettingsState>()(
             appSettings.autoInstallUpdates ?? DEFAULT_APP_SETTINGS.autoInstallUpdates,
           notifyOnUpdates:
             appSettings.notifyOnUpdates ?? DEFAULT_APP_SETTINGS.notifyOnUpdates,
+          updateSourceMode: parseUpdateSourceMode(
+            appSettings.updateSourceMode,
+            DEFAULT_APP_SETTINGS.updateSourceMode,
+          ),
+          updateCustomEndpoints: parseUpdateCustomEndpoints(rawUpdateCustomEndpoints),
+          updateFallbackToOfficial:
+            appSettings.updateFallbackToOfficial
+            ?? DEFAULT_APP_SETTINGS.updateFallbackToOfficial,
           minimizeToTray:
             appSettings.minimizeToTray ?? DEFAULT_APP_SETTINGS.minimizeToTray,
           startMinimized:
@@ -131,7 +181,7 @@ export const useSettingsStore = create<SettingsState>()(
           ),
         };
 
-        if (version < 3) {
+        if (version < 4) {
           return { ...state, appSettings: migrated } as SettingsState;
         }
 

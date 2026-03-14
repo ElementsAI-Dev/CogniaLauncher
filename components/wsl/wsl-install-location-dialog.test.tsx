@@ -32,17 +32,20 @@ describe('WslInstallLocationDialog', () => {
     expect(screen.getByText('Install distro to a custom location.')).toBeInTheDocument();
   });
 
-  it('keeps submit button disabled when location is empty', () => {
+  it('prefills default location and enables submit button', () => {
     render(<WslInstallLocationDialog {...defaultProps} />);
+    expect(screen.getByLabelText('Location')).toHaveValue('C:\\WSL\\Fedora');
     const submitBtn = screen.getAllByRole('button', { name: 'Install to Location' }).at(-1);
-    expect(submitBtn).toBeDisabled();
+    expect(submitBtn).not.toBeDisabled();
   });
 
   it('calls onConfirm with trimmed location and closes dialog', async () => {
     const user = userEvent.setup();
     render(<WslInstallLocationDialog {...defaultProps} />);
 
-    await user.type(screen.getByLabelText('Location'), '  D:\\WSL\\Fedora  ');
+    const locationInput = screen.getByLabelText('Location');
+    await user.clear(locationInput);
+    await user.type(locationInput, '  D:\\WSL\\Fedora  ');
     const submitBtn = screen.getAllByRole('button', { name: 'Install to Location' }).at(-1);
     await user.click(submitBtn!);
 
@@ -59,6 +62,6 @@ describe('WslInstallLocationDialog', () => {
     rerender(<WslInstallLocationDialog {...defaultProps} open={false} />);
     rerender(<WslInstallLocationDialog {...defaultProps} open />);
 
-    expect(screen.getByLabelText('Location')).toHaveValue('');
+    expect(screen.getByLabelText('Location')).toHaveValue('C:\\WSL\\Fedora');
   });
 });

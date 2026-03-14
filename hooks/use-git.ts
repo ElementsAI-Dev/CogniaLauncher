@@ -16,6 +16,8 @@ import type {
   GitCommitDetail,
   GitGraphEntry,
   GitAheadBehind,
+  GitSupportFeature,
+  GitSupportSnapshot,
   GitDayActivity,
   GitHistoryQuery,
   GitHistoryQueryError,
@@ -37,6 +39,7 @@ import type {
   GitHistoryState,
   GitHistoryView,
   GitRefreshScope,
+  GitSupportFeatureMap,
 } from '@/types/git';
 import {
   evaluateGitGuardrail,
@@ -194,11 +197,14 @@ export interface UseGitReturn {
   stashes: GitStashEntry[];
   contributors: GitContributor[];
   statusFiles: GitStatusFile[];
+  aheadBehind: GitAheadBehind;
   loading: boolean;
   error: string | null;
   lastActionResult: GitActionResult | null;
   historyState: GitHistoryState;
   graphReloadKey: number;
+  supportSnapshot: GitSupportSnapshot | null;
+  supportByFeature: GitSupportFeatureMap;
 
   // Actions - Git tool management
   checkAvailability: () => Promise<boolean>;
@@ -233,6 +239,7 @@ export interface UseGitReturn {
   refreshContributors: () => Promise<void>;
   refreshStatus: () => Promise<void>;
   refreshByScopes: (scopes: GitRefreshScope[]) => Promise<void>;
+  refreshSupportSnapshot: (path?: string | null) => Promise<GitSupportSnapshot | null>;
 
   // Actions - History & Blame
   getLog: (options?: GitHistoryQuery) => Promise<void>;
@@ -331,6 +338,10 @@ export function useGit(): UseGitReturn {
   const [stashes, setStashes] = useState<GitStashEntry[]>([]);
   const [contributors, setContributors] = useState<GitContributor[]>([]);
   const [statusFiles, setStatusFiles] = useState<GitStatusFile[]>([]);
+  const [aheadBehind, setAheadBehind] = useState<GitAheadBehind>({
+    ahead: 0,
+    behind: 0,
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastActionResult, setLastActionResult] =
@@ -339,6 +350,7 @@ export function useGit(): UseGitReturn {
     createHistoryState,
   );
   const [graphReloadKey, setGraphReloadKey] = useState(0);
+  const [supportSnapshot, setSupportSnapshot] = useState<GitSupportSnapshot | null>(null);
 
   const updateHistoryViewState = useCallback(
     (
@@ -702,6 +714,24 @@ export function useGit(): UseGitReturn {
     }
   }, []);
 
+  const refreshSupportSnapshot = useCallback(
+    async (pathOverride?: string | null): Promise<GitSupportSnapshot | null> => {
+      if (!tauri.isTauri()) {
+        setSupportSnapshot(null);
+        return null;
+      }
+      try {
+        const snapshot = await tauri.gitGetSupportSnapshot(pathOverride ?? repoPath ?? null);
+        setSupportSnapshot(snapshot);
+        return snapshot;
+      } catch (e) {
+        setError(String(e));
+        return null;
+      }
+    },
+    [repoPath],
+  );
+
   const setRepoPath = useCallback(async (path: string) => {
     if (!tauri.isTauri()) return;
     setRepoPathState(path);
@@ -730,6 +760,14 @@ export function useGit(): UseGitReturn {
       setContributors(contributorsData);
       setStatusFiles(statusData);
       setCommits(logData);
+      if (info.currentBranch) {
+        const nextAheadBehind = await tauri
+          .gitGetAheadBehind(path, info.currentBranch)
+          .catch(() => ({ ahead: 0, behind: 0 }));
+        setAheadBehind(nextAheadBehind);
+      } else {
+        setAheadBehind({ ahead: 0, behind: 0 });
+      }
     } catch (e) {
       setError(String(e));
       setRepoInfo(null);
@@ -740,10 +778,12 @@ export function useGit(): UseGitReturn {
       setContributors([]);
       setStatusFiles([]);
       setCommits([]);
+      setAheadBehind({ ahead: 0, behind: 0 });
     } finally {
+      void refreshSupportSnapshot(path);
       setLoading(false);
     }
-  }, []);
+  }, [refreshSupportSnapshot]);
 
   const refreshRepoInfo = useCallback(async () => {
     if (!tauri.isTauri() || !repoPath) return;
@@ -982,7 +1022,26 @@ export function useGit(): UseGitReturn {
               actions.push(
                 tauri
                   .gitGetAheadBehind(repoPath, repoInfo.currentBranch)
-                  .catch(() => ({ ahead: 0, behind: 0 })),
+                  .then((next) => {
+                    setAheadBehind((prev) =>
+                      prev.ahead === next.ahead && prev.behind === next.behind
+                        ? prev
+                        : next,
+                    );
+                  })
+                  .catch(() => {
+                    setAheadBehind((prev) =>
+                      prev.ahead === 0 && prev.behind === 0
+                        ? prev
+                        : { ahead: 0, behind: 0 },
+                    );
+                  }),
+              );
+            } else {
+              setAheadBehind((prev) =>
+                prev.ahead === 0 && prev.behind === 0
+                  ? prev
+                  : { ahead: 0, behind: 0 },
               );
             }
             break;
@@ -1037,12 +1096,26 @@ export function useGit(): UseGitReturn {
 
   const getAheadBehind = useCallback(
     async (branch: string, upstream?: string): Promise<GitAheadBehind> => {
-      if (!tauri.isTauri() || !repoPath) return { ahead: 0, behind: 0 };
+      if (!tauri.isTauri() || !repoPath) {
+        const zero = { ahead: 0, behind: 0 };
+        setAheadBehind((prev) =>
+          prev.ahead === 0 && prev.behind === 0 ? prev : zero,
+        );
+        return zero;
+      }
       try {
-        return await tauri.gitGetAheadBehind(repoPath, branch, upstream);
+        const next = await tauri.gitGetAheadBehind(repoPath, branch, upstream);
+        setAheadBehind((prev) =>
+          prev.ahead === next.ahead && prev.behind === next.behind ? prev : next,
+        );
+        return next;
       } catch (e) {
         setError(String(e));
-        return { ahead: 0, behind: 0 };
+        const zero = { ahead: 0, behind: 0 };
+        setAheadBehind((prev) =>
+          prev.ahead === 0 && prev.behind === 0 ? prev : zero,
+        );
+        return zero;
       }
     },
     [repoPath],
@@ -1751,9 +1824,11 @@ export function useGit(): UseGitReturn {
         setVersion(null);
         setExecutablePath(null);
         setConfig([]);
+        await refreshSupportSnapshot(repoPath);
         return;
       }
       await refreshVersion();
+      await refreshSupportSnapshot(repoPath);
       // Config loading can stall on some machines; do not block core readiness.
       void refreshConfig();
     } catch (e) {
@@ -1761,7 +1836,21 @@ export function useGit(): UseGitReturn {
     } finally {
       setLoading(false);
     }
-  }, [checkAvailability, refreshVersion, refreshConfig]);
+  }, [
+    checkAvailability,
+    refreshVersion,
+    refreshConfig,
+    refreshSupportSnapshot,
+    repoPath,
+  ]);
+
+  const supportByFeature: GitSupportFeatureMap = (supportSnapshot?.features ?? []).reduce(
+    (acc, feature) => {
+      acc[feature.key] = feature as GitSupportFeature;
+      return acc;
+    },
+    {} as GitSupportFeatureMap,
+  );
 
   return {
     available,
@@ -1777,11 +1866,14 @@ export function useGit(): UseGitReturn {
     stashes,
     contributors,
     statusFiles,
+    aheadBehind,
     loading,
     error,
     lastActionResult,
     historyState,
     graphReloadKey,
+    supportSnapshot,
+    supportByFeature,
     checkAvailability,
     refreshVersion,
     installGit,
@@ -1807,6 +1899,7 @@ export function useGit(): UseGitReturn {
     refreshContributors,
     refreshStatus,
     refreshByScopes,
+    refreshSupportSnapshot,
     getLog,
     getFileHistory,
     getBlame,

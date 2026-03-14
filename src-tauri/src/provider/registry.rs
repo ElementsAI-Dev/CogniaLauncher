@@ -21,6 +21,7 @@ pub struct ProviderRegistry {
     system_package_providers: HashMap<String, Arc<dyn SystemPackageProvider>>,
     api_provider_config: HashMap<String, ApiProviderConfig>,
     disabled_providers: HashSet<String>,
+    priority_overrides: HashMap<String, i32>,
 }
 
 #[derive(Debug, Clone)]
@@ -37,6 +38,7 @@ impl ProviderRegistry {
             system_package_providers: HashMap::new(),
             api_provider_config: HashMap::new(),
             disabled_providers: HashSet::new(),
+            priority_overrides: HashMap::new(),
         }
     }
 
@@ -54,6 +56,22 @@ impl ProviderRegistry {
             .iter()
             .cloned()
             .collect();
+
+        for (provider_id, provider_settings) in &settings.providers {
+            if let Some(enabled) = provider_settings.enabled {
+                if enabled {
+                    registry.disabled_providers.remove(provider_id);
+                } else {
+                    registry.disabled_providers.insert(provider_id.clone());
+                }
+            }
+
+            if let Some(priority) = provider_settings.priority {
+                registry
+                    .priority_overrides
+                    .insert(provider_id.clone(), priority);
+            }
+        }
 
         // Update the global API client with mirror settings
         update_api_client_from_settings(settings);
@@ -642,7 +660,9 @@ impl ProviderRegistry {
             .cloned()
             .collect();
 
-        providers.sort_by_key(|b| std::cmp::Reverse(b.priority()));
+        providers.sort_by_key(|provider| {
+            std::cmp::Reverse(self.get_effective_priority(provider.id(), provider.priority()))
+        });
         providers
     }
 
@@ -660,7 +680,9 @@ impl ProviderRegistry {
             .cloned()
             .collect();
 
-        candidates.sort_by_key(|b| std::cmp::Reverse(b.priority()));
+        candidates.sort_by_key(|provider| {
+            std::cmp::Reverse(self.get_effective_priority(provider.id(), provider.priority()))
+        });
 
         for provider in candidates {
             if provider.is_available().await {
@@ -681,7 +703,7 @@ impl ProviderRegistry {
             display_name: p.display_name().to_string(),
             capabilities: p.capabilities().into_iter().collect(),
             platforms: p.supported_platforms(),
-            priority: p.priority(),
+            priority: self.get_effective_priority(id, p.priority()),
             is_environment_provider: self.environment_providers.contains_key(id),
             enabled: self.is_provider_enabled(id),
         })
@@ -728,6 +750,21 @@ impl ProviderRegistry {
         } else {
             self.disabled_providers.insert(id.to_string());
         }
+    }
+
+    pub fn set_provider_priority_override(&mut self, id: &str, priority: Option<i32>) {
+        if let Some(priority) = priority {
+            self.priority_overrides.insert(id.to_string(), priority);
+        } else {
+            self.priority_overrides.remove(id);
+        }
+    }
+
+    pub fn get_effective_priority(&self, id: &str, default_priority: i32) -> i32 {
+        self.priority_overrides
+            .get(id)
+            .copied()
+            .unwrap_or(default_priority)
     }
 
     pub fn is_provider_enabled(&self, id: &str) -> bool {
@@ -860,5 +897,40 @@ mod tests {
         let registry = ProviderRegistry::with_settings(&settings).await.unwrap();
         let npm_info = registry.get_provider_info("npm").expect("npm must exist");
         assert!(!npm_info.enabled, "disabled providers must remain visible");
+    }
+
+    #[tokio::test]
+    async fn explicit_provider_enabled_setting_overrides_legacy_disabled_list() {
+        let mut settings = Settings::default();
+        settings
+            .provider_settings
+            .disabled_providers
+            .push("npm".to_string());
+        settings
+            .set_value("providers.npm.enabled", "true")
+            .expect("provider enabled override should be accepted");
+
+        let registry = ProviderRegistry::with_settings(&settings).await.unwrap();
+        let npm_info = registry.get_provider_info("npm").expect("npm must exist");
+        assert!(npm_info.enabled, "explicit provider config should override legacy disabled list");
+    }
+
+    #[tokio::test]
+    async fn provider_priority_override_affects_provider_info_and_sorting() {
+        let mut settings = Settings::default();
+        settings
+            .set_value("providers.npm.priority", "999")
+            .expect("provider priority override should be accepted");
+
+        let registry = ProviderRegistry::with_settings(&settings).await.unwrap();
+        let npm_info = registry.get_provider_info("npm").expect("npm must exist");
+        assert_eq!(npm_info.priority, 999);
+
+        let search_providers = registry.find_by_capability(Capability::Search);
+        assert_eq!(
+            search_providers.first().map(|provider| provider.id()),
+            Some("npm"),
+            "priority override should affect capability ordering",
+        );
     }
 }

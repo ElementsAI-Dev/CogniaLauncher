@@ -81,12 +81,26 @@ describe('PluginToolRunner', () => {
     mockIsTauri.mockReturnValue(true);
   });
 
+  it('shows explicit empty fallback when text mode returns empty output', async () => {
+    mockCallTool.mockResolvedValueOnce('');
+
+    render(<PluginToolRunner tool={baseTool} />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('toolbox.plugin.run'));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('toolbox.runtime.emptyDescription')).toBeInTheDocument();
+    });
+  });
+
   // --- Desktop-only guard ---
 
-  it('shows desktop-only alert when not in Tauri', () => {
+  it('shows desktop-required fallback when not in Tauri', () => {
     mockIsTauri.mockReturnValue(false);
     render(<PluginToolRunner tool={baseTool} />);
-    expect(screen.getByText('toolbox.plugin.desktopOnly')).toBeInTheDocument();
+    expect(screen.getByText('toolbox.runtime.desktopRequiredDescription')).toBeInTheDocument();
     expect(screen.queryByText('toolbox.plugin.run')).not.toBeInTheDocument();
   });
 
@@ -96,6 +110,11 @@ describe('PluginToolRunner', () => {
     render(<PluginToolRunner tool={baseTool} />);
     expect(screen.getByText('toolbox.plugin.providedBy Test Plugin')).toBeInTheDocument();
     expect(screen.getByText('toolbox.plugin.run')).toBeInTheDocument();
+  });
+
+  it('renders plugin point badge when metadata is available', () => {
+    render(<PluginToolRunner tool={{ ...baseTool, pluginPointId: 'tool-text' }} />);
+    expect(screen.getByText('tool-text')).toBeInTheDocument();
   });
 
   it('renders text mode when uiMode is "text"', () => {

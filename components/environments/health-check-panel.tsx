@@ -200,17 +200,17 @@ export function HealthCheckPanel({ className }: HealthCheckPanelProps) {
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
-                          <Badge
-                            variant={
-                              env.status === "healthy"
-                                ? "default"
-                                : env.status === "error"
-                                  ? "destructive"
-                                  : "secondary"
-                            }
-                          >
-                            {env.issues.filter(i => i.severity !== 'info').length} {t("issues")}
-                          </Badge>
+                            <Badge
+                              variant={
+                                env.status === "healthy"
+                                  ? "default"
+                                  : env.status === "error"
+                                    ? "destructive"
+                                    : "secondary"
+                              }
+                            >
+                              {env.issues.filter((i) => i.severity !== "info" && i.confidence !== "inferred").length} {t("issues")}
+                            </Badge>
                           <ChevronDown
                             className={cn(
                               "h-4 w-4 transition-transform",
@@ -322,7 +322,7 @@ export function HealthCheckPanel({ className }: HealthCheckPanelProps) {
                                     : "secondary"
                               }
                             >
-                              {pm.issues.filter(i => i.severity !== 'info').length} {t("issues")}
+                              {pm.issues.filter((i) => i.severity !== "info" && i.confidence !== "inferred").length} {t("issues")}
                             </Badge>
                             <ChevronDown
                               className={cn(

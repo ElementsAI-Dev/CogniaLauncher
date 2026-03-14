@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { LogFileViewer } from "./log-file-viewer";
 import { useLogStore } from "@/lib/stores/log";
@@ -102,6 +102,46 @@ const sampleEntries = [
   { timestamp: "2026-02-02T12:02:00Z", level: "ERROR", target: "", message: "Third log entry", lineNumber: 3 },
 ];
 
+const buildMeta = (
+  overrides: Partial<{
+    scannedLines: number;
+    sourceLineCount: number;
+    matchedCount: number;
+    effectiveMaxScanLines: number | null;
+    scanTruncated: boolean;
+    windowStartLine: number | null;
+    windowEndLine: number | null;
+    queryFingerprint: string;
+  }> = {},
+) => ({
+  scannedLines: 3,
+  sourceLineCount: 3,
+  matchedCount: 3,
+  effectiveMaxScanLines: null,
+  scanTruncated: false,
+  windowStartLine: 1,
+  windowEndLine: 3,
+  queryFingerprint: "test-fingerprint",
+  ...overrides,
+});
+
+const buildQueryData = (
+  entries: typeof sampleEntries,
+  totalCount: number,
+  hasMore: boolean,
+  metaOverrides: Parameters<typeof buildMeta>[0] = {},
+) => ({
+  entries,
+  totalCount,
+  hasMore,
+  meta: buildMeta({
+    matchedCount: totalCount,
+    windowStartLine: entries[0]?.lineNumber ?? null,
+    windowEndLine: entries[entries.length - 1]?.lineNumber ?? null,
+    ...metaOverrides,
+  }),
+});
+
 const getViewerViewport = () => {
   const scrollArea = screen.getByTestId("log-file-viewer-scroll-area");
   const viewport = scrollArea.querySelector("[data-slot='scroll-area-viewport']") as HTMLDivElement | null;
@@ -143,7 +183,7 @@ describe("LogFileViewer", () => {
   it("queries file when opened with structured result", async () => {
     mockQueryLogFile.mockResolvedValue({
       ok: true,
-      data: { entries: sampleEntries, totalCount: 3, hasMore: false },
+      data: buildQueryData(sampleEntries, 3, false),
     });
 
     render(<LogFileViewer open fileName="app.log" onOpenChange={() => undefined} />);
@@ -164,7 +204,7 @@ describe("LogFileViewer", () => {
   it("shows empty state when no entries returned", async () => {
     mockQueryLogFile.mockResolvedValue({
       ok: true,
-      data: { entries: [], totalCount: 0, hasMore: false },
+      data: buildQueryData([], 0, false),
     });
 
     render(<LogFileViewer open fileName="app.log" onOpenChange={() => undefined} />);
@@ -173,13 +213,44 @@ describe("LogFileViewer", () => {
   });
 
   it("shows explicit error feedback for query failure result", async () => {
-    mockQueryLogFile.mockResolvedValue({ ok: false, error: "query failed" });
+    const user = userEvent.setup();
+    mockQueryLogFile
+      .mockResolvedValueOnce({ ok: false, error: "query failed" })
+      .mockResolvedValueOnce({
+        ok: true,
+        data: buildQueryData(sampleEntries, 3, false),
+      });
 
     render(<LogFileViewer open fileName="app.log" onOpenChange={() => undefined} />);
 
     await waitFor(() => {
       expect(toast.error).toHaveBeenCalledWith("query failed");
     });
+    const errorState = screen.getByTestId("log-file-viewer-error-state");
+    expect(errorState).toBeInTheDocument();
+
+    await user.click(within(errorState).getByRole("button", { name: "Refresh" }));
+    await waitFor(() => expect(mockQueryLogFile).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByText("First log entry")).toBeInTheDocument());
+  });
+
+  it("shows truncated historical state when bounded scan returns partial results", async () => {
+    mockQueryLogFile.mockResolvedValue({
+      ok: true,
+      data: buildQueryData([], 0, false, {
+        scanTruncated: true,
+        scannedLines: 20000,
+        sourceLineCount: 40000,
+        effectiveMaxScanLines: 20000,
+        windowStartLine: null,
+        windowEndLine: null,
+      }),
+    });
+
+    render(<LogFileViewer open fileName="history.log" onOpenChange={() => undefined} />);
+
+    await waitFor(() => expect(screen.getByTestId("log-file-viewer-truncated-hint")).toBeInTheDocument());
+    expect(screen.getByText("No entries found in the scanned window")).toBeInTheDocument();
   });
 
   it("loads more entries on demand", async () => {
@@ -187,23 +258,38 @@ describe("LogFileViewer", () => {
     mockQueryLogFile
       .mockResolvedValueOnce({
         ok: true,
-        data: { entries: sampleEntries, totalCount: 50, hasMore: true },
+        data: buildQueryData(sampleEntries, 50, true, {
+          scannedLines: 500,
+          sourceLineCount: 500,
+          effectiveMaxScanLines: 20000,
+          windowStartLine: 1,
+          windowEndLine: 3,
+        }),
       })
       .mockResolvedValueOnce({
         ok: true,
-        data: {
-          entries: [{ timestamp: "2026-02-02T13:00:00Z", level: "INFO", target: "", message: "Extra", lineNumber: 4 }],
-          totalCount: 50,
-          hasMore: false,
-        },
+        data: buildQueryData(
+          [{ timestamp: "2026-02-02T13:00:00Z", level: "INFO", target: "", message: "Extra", lineNumber: 0 }],
+          50,
+          false,
+          {
+            scannedLines: 500,
+            sourceLineCount: 500,
+            effectiveMaxScanLines: 20000,
+            windowStartLine: 0,
+            windowEndLine: 0,
+          },
+        ),
       });
 
     render(<LogFileViewer open fileName="app.log" onOpenChange={() => undefined} />);
 
     await waitFor(() => expect(screen.getByText("Load More")).toBeInTheDocument());
+    expect(screen.getByRole("status")).toHaveTextContent("window=1-3");
     await user.click(screen.getByText("Load More"));
 
     await waitFor(() => expect(mockQueryLogFile).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("window=0-3"));
   });
 
   it("preserves the reader viewport when older entries are prepended", async () => {
@@ -211,7 +297,7 @@ describe("LogFileViewer", () => {
     mockQueryLogFile
       .mockResolvedValueOnce({
         ok: true,
-        data: { entries: sampleEntries, totalCount: 4, hasMore: true },
+        data: buildQueryData(sampleEntries, 4, true),
       })
       .mockResolvedValueOnce({
         ok: true,
@@ -247,7 +333,7 @@ describe("LogFileViewer", () => {
     mockQueryLogFile
       .mockResolvedValueOnce({
         ok: true,
-        data: { entries: sampleEntries, totalCount: 3, hasMore: false },
+        data: buildQueryData(sampleEntries, 3, false),
       })
       .mockResolvedValueOnce({
         ok: true,
@@ -292,11 +378,11 @@ describe("LogFileViewer", () => {
     mockQueryLogFile
       .mockResolvedValueOnce({
         ok: true,
-        data: { entries: sampleEntries, totalCount: 3, hasMore: false },
+        data: buildQueryData(sampleEntries, 3, false),
       })
       .mockResolvedValueOnce({
         ok: true,
-        data: { entries: sampleEntries, totalCount: 3, hasMore: false },
+        data: buildQueryData(sampleEntries, 3, false),
       });
 
     render(<LogFileViewer open fileName="app.log" onOpenChange={() => undefined} />);
@@ -317,11 +403,11 @@ describe("LogFileViewer", () => {
     mockQueryLogFile
       .mockResolvedValueOnce({
         ok: true,
-        data: { entries: sampleEntries, totalCount: 3, hasMore: false },
+        data: buildQueryData(sampleEntries, 3, false),
       })
       .mockResolvedValueOnce({
         ok: true,
-        data: { entries: sampleEntries, totalCount: 3, hasMore: false },
+        data: buildQueryData(sampleEntries, 3, false),
       });
 
     render(<LogFileViewer open fileName="app.log" onOpenChange={() => undefined} />);
@@ -344,7 +430,7 @@ describe("LogFileViewer", () => {
     mockQueryLogFile
       .mockResolvedValueOnce({
         ok: true,
-        data: { entries: sampleEntries, totalCount: 3, hasMore: false },
+        data: buildQueryData(sampleEntries, 3, false),
       })
       .mockResolvedValueOnce({
         ok: true,
@@ -386,7 +472,7 @@ describe("LogFileViewer", () => {
     const user = userEvent.setup();
     mockQueryLogFile.mockResolvedValue({
       ok: true,
-      data: { entries: sampleEntries, totalCount: 3, hasMore: false },
+      data: buildQueryData(sampleEntries, 3, false),
     });
     mockExportLogFile.mockResolvedValue({
       ok: true,
@@ -412,7 +498,7 @@ describe("LogFileViewer", () => {
     const user = userEvent.setup();
     mockQueryLogFile.mockResolvedValue({
       ok: true,
-      data: { entries: sampleEntries, totalCount: 3, hasMore: false },
+      data: buildQueryData(sampleEntries, 3, false),
     });
     mockExportLogFile.mockResolvedValue({ ok: false, error: "export failed" });
 
@@ -440,7 +526,7 @@ describe("LogFileViewer", () => {
 
     mockQueryLogFile.mockResolvedValue({
       ok: true,
-      data: { entries: sampleEntries, totalCount: 3, hasMore: false },
+      data: buildQueryData(sampleEntries, 3, false),
     });
 
     render(<LogFileViewer open fileName="app.log" onOpenChange={() => undefined} />);
@@ -458,13 +544,15 @@ describe("LogFileViewer", () => {
         expect.objectContaining({ search: "history-only" }),
       );
     });
+    expect(screen.getByRole("status")).toHaveTextContent("filters=");
+    expect(screen.getByRole("status")).toHaveTextContent("search=history-only");
     expect(useLogStore.getState().filter.search).toBe("realtime-only");
   });
 
   it("hides bookmarks toggle in historical viewer toolbar", async () => {
     mockQueryLogFile.mockResolvedValue({
       ok: true,
-      data: { entries: sampleEntries, totalCount: 3, hasMore: false },
+      data: buildQueryData(sampleEntries, 3, false),
     });
 
     render(<LogFileViewer open fileName="app.log" onOpenChange={() => undefined} />);
@@ -478,7 +566,7 @@ describe("LogFileViewer", () => {
   it("renders bounded dialog regions with live status before the primary log content region", async () => {
     mockQueryLogFile.mockResolvedValue({
       ok: true,
-      data: { entries: sampleEntries, totalCount: 3, hasMore: false },
+      data: buildQueryData(sampleEntries, 3, false),
     });
 
     render(<LogFileViewer open fileName="app.log" onOpenChange={() => undefined} />);
@@ -509,7 +597,7 @@ describe("LogFileViewer", () => {
     const onOpenChange = jest.fn();
     mockQueryLogFile.mockResolvedValue({
       ok: true,
-      data: { entries: [], totalCount: 0, hasMore: false },
+      data: buildQueryData([], 0, false),
     });
 
     render(<LogFileViewer open fileName="app.log" onOpenChange={onOpenChange} />);

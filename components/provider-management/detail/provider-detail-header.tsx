@@ -1,8 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import {
@@ -26,31 +28,101 @@ import {
   Loader2,
   RefreshCw,
 } from "lucide-react";
-import type { ProviderInfo } from "@/lib/tauri";
+import type { ProviderInfo, ProviderStatusInfo } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
+import {
+  getProviderStatusState,
+  getProviderStatusTextKey,
+} from "@/lib/utils/provider";
 import { ProviderIcon } from "../provider-icon";
 
 interface ProviderDetailHeaderProps {
   provider: ProviderInfo;
   isAvailable: boolean | null;
+  statusInfo?: ProviderStatusInfo | null;
   isToggling: boolean;
   isCheckingStatus: boolean;
+  isSavingPriority: boolean;
   onToggle: (enabled: boolean) => void;
   onCheckStatus: () => void;
   onRefresh: () => void;
+  onPrioritySave: (priority: number) => void;
   t: (key: string, params?: Record<string, string | number>) => string;
+}
+
+interface ProviderPriorityControlsProps {
+  providerId: string;
+  initialPriority: number;
+  isSavingPriority: boolean;
+  onPrioritySave: (priority: number) => void;
+  t: ProviderDetailHeaderProps["t"];
+}
+
+function ProviderPriorityControls({
+  providerId,
+  initialPriority,
+  isSavingPriority,
+  onPrioritySave,
+  t,
+}: ProviderPriorityControlsProps) {
+  const [priorityValue, setPriorityValue] = useState(String(initialPriority));
+
+  return (
+    <>
+      <div className="space-y-1">
+        <Label htmlFor="provider-priority" className="text-sm">
+          {t("providers.priority")}
+        </Label>
+        <Input
+          key={`${providerId}-priority-input`}
+          id="provider-priority"
+          aria-label={t("providers.priority")}
+          className="w-24"
+          inputMode="numeric"
+          value={priorityValue}
+          onChange={(event) => setPriorityValue(event.target.value)}
+        />
+      </div>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => onPrioritySave(Number(priorityValue))}
+        disabled={
+          isSavingPriority ||
+          priorityValue.trim() === "" ||
+          Number.isNaN(Number(priorityValue))
+        }
+      >
+        {isSavingPriority ? (
+          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+        ) : null}
+        {t("providerDetail.savePriority")}
+      </Button>
+    </>
+  );
 }
 
 export function ProviderDetailHeader({
   provider,
   isAvailable,
+  statusInfo,
   isToggling,
   isCheckingStatus,
+  isSavingPriority,
   onToggle,
   onCheckStatus,
   onRefresh,
+  onPrioritySave,
   t,
 }: ProviderDetailHeaderProps) {
+  const statusState = statusInfo
+    ? getProviderStatusState(statusInfo)
+    : isAvailable === null
+      ? 'unknown'
+      : isAvailable
+        ? 'available'
+        : 'unavailable';
+
   return (
     <div className="space-y-4">
       {/* Breadcrumb */}
@@ -77,23 +149,23 @@ export function ProviderDetailHeader({
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-bold">{provider.display_name}</h1>
-              {isAvailable !== null && (
+              {statusState !== 'unknown' && (
                 <Badge
-                  variant={isAvailable ? "default" : "destructive"}
+                  variant={statusState === 'available' ? "default" : "destructive"}
                   className={cn(
                     "gap-1",
-                    isAvailable && "bg-green-600 hover:bg-green-700",
+                    statusState === 'available' && "bg-green-600 hover:bg-green-700",
                   )}
                 >
-                  {isAvailable ? (
+                  {statusState === 'available' ? (
                     <>
                       <CheckCircle2 className="h-3 w-3" />
-                      {t("providers.statusAvailable")}
+                      {t(getProviderStatusTextKey(statusState))}
                     </>
                   ) : (
                     <>
                       <XCircle className="h-3 w-3" />
-                      {t("providers.statusUnavailable")}
+                      {t(getProviderStatusTextKey(statusState))}
                     </>
                   )}
                 </Badge>
@@ -111,6 +183,17 @@ export function ProviderDetailHeader({
         </div>
 
         <div className="flex items-center gap-3">
+          <div className="flex items-end gap-2">
+            <ProviderPriorityControls
+              key={`${provider.id}:${provider.priority}`}
+              providerId={provider.id}
+              initialPriority={provider.priority}
+              isSavingPriority={isSavingPriority}
+              onPrioritySave={onPrioritySave}
+              t={t}
+            />
+          </div>
+
           <Tooltip>
             <TooltipTrigger asChild>
               <Button

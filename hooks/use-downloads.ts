@@ -99,13 +99,17 @@ export function useDownloads(options: UseDownloadsOptions = {}) {
           refreshHistory();
         });
 
-        const unlistenFailed = await tauri.listenDownloadTaskFailed((taskId, error) => {
-          store.updateTask(taskId, {
-            state: 'failed',
-            error,
-          });
-          refreshHistory();
-        });
+        const unlistenFailed = await tauri.listenDownloadTaskFailed(
+          (taskId, error, reasonCode, recoverable) => {
+            store.updateTask(taskId, {
+              state: 'failed',
+              error,
+              recoverable,
+              failureReasonCode: reasonCode,
+            });
+            refreshHistory();
+          }
+        );
 
         const unlistenPaused = await tauri.listenDownloadTaskPaused((taskId) => {
           store.updateTask(taskId, { state: 'paused' });
@@ -183,7 +187,7 @@ export function useDownloads(options: UseDownloadsOptions = {}) {
     };
     syncSettings();
 
-    // Graceful shutdown: cancel active downloads on window close
+    // Graceful shutdown: persist recoverable queue state on window close.
     const handleBeforeUnload = () => {
       if (tauri.isTauri()) {
         tauri.downloadShutdown().catch(() => {});

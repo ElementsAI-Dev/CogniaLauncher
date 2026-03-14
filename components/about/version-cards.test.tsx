@@ -61,6 +61,23 @@ describe("VersionCards", () => {
     expect(screen.getByText("Update available")).toBeInTheDocument();
   });
 
+  it("does not show up-to-date badge when check has source diagnostics", () => {
+    render(
+      <VersionCards
+        {...defaultProps}
+        updateInfo={{
+          update_available: false,
+          current_version: "1.0.0",
+          latest_version: "1.0.0",
+          release_notes: null,
+          error_category: "source_unavailable",
+          error_message: "mirror unavailable",
+        }}
+      />,
+    );
+    expect(screen.queryByText("Up to date")).not.toBeInTheDocument();
+  });
+
   it("shows skeleton when loading", () => {
     const { container } = render(
       <VersionCards {...defaultProps} loading={true} />,

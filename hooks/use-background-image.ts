@@ -30,6 +30,9 @@ export interface UseBackgroundImageReturn {
   fileInputRef: React.RefObject<HTMLInputElement | null>;
   handleSelectImage: () => Promise<void>;
   handleFileInputChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  handleDragOver: (e: React.DragEvent<HTMLElement>) => void;
+  handleDrop: (e: React.DragEvent<HTMLElement>) => void;
+  handlePaste: (e: React.ClipboardEvent<HTMLElement>) => void;
   handleClear: () => void;
 }
 
@@ -50,10 +53,23 @@ export function useBackgroundImage(
   const hasImage = useSyncExternalStore(subscribeBgChange, snapshotHasImage, serverSnapshotHasImage);
   const previewUrl = hasImage ? getBackgroundImage() : null;
 
-  const handleImageSelected = useCallback(
-    async (blob: Blob) => {
+  const processImageBlob = useCallback(
+    async (blob: Blob): Promise<void> => {
+      if (blob.size <= 0) {
+        toast.error(t("settings.backgroundInvalidImage"));
+        return;
+      }
+      if (blob.type && !blob.type.startsWith("image/")) {
+        toast.error(t("settings.backgroundUnsupportedFormat"));
+        return;
+      }
+
       try {
         const dataUrl = await compressImage(blob);
+        if (!dataUrl || !dataUrl.startsWith("data:image/")) {
+          toast.error(t("settings.backgroundInvalidImage"));
+          return;
+        }
         setBackgroundImageData(dataUrl);
         if (!backgroundEnabled) {
           setBackgroundEnabled(true);
@@ -61,9 +77,9 @@ export function useBackgroundImage(
       } catch (e) {
         if (e instanceof DOMException && e.name === "QuotaExceededError") {
           toast.error(t("settings.backgroundTooLarge"));
-        } else {
-          toast.error(String(e));
+          return;
         }
+        toast.error(t("settings.backgroundProcessFailed"));
       }
     },
     [backgroundEnabled, setBackgroundEnabled, t],
@@ -102,26 +118,58 @@ export function useBackgroundImage(
 
         const data = await fsModule.readFile(selected);
         const blob = new Blob([data]);
-        await handleImageSelected(blob);
+        await processImageBlob(blob);
       } catch {
         fileInputRef.current?.click();
       }
     } else {
       fileInputRef.current?.click();
     }
-  }, [handleImageSelected]);
+  }, [processImageBlob]);
 
   const handleFileInputChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (file) {
-        handleImageSelected(file);
+        void processImageBlob(file);
       }
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
     },
-    [handleImageSelected],
+    [processImageBlob],
+  );
+
+  const handleDragOver = useCallback((e: React.DragEvent<HTMLElement>) => {
+    e.preventDefault();
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent<HTMLElement>) => {
+      e.preventDefault();
+      const file = e.dataTransfer.files?.[0];
+      if (file) {
+        void processImageBlob(file);
+      }
+    },
+    [processImageBlob],
+  );
+
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent<HTMLElement>) => {
+      const items = Array.from(e.clipboardData.items);
+      const imageItem = items.find((item) => item.type.startsWith("image/"));
+      if (!imageItem) return;
+
+      const file = imageItem.getAsFile();
+      if (!file) {
+        toast.error(t("settings.backgroundInvalidImage"));
+        return;
+      }
+      e.preventDefault();
+      void processImageBlob(file);
+    },
+    [processImageBlob, t],
   );
 
   const handleClear = useCallback(() => {
@@ -134,6 +182,9 @@ export function useBackgroundImage(
     fileInputRef,
     handleSelectImage,
     handleFileInputChange,
+    handleDragOver,
+    handleDrop,
+    handlePaste,
     handleClear,
   };
 }

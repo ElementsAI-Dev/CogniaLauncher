@@ -108,7 +108,7 @@ function dedupeDeprecationWarnings(
 }
 
 export function getDiscoverabilityDiagnostic(
-  tool: Pick<PluginToolInfo, 'compatibility' | 'capabilityDeclarations'>,
+  tool: Pick<PluginToolInfo, 'compatibility' | 'capabilityDeclarations' | 'discoverable' | 'exclusionReason'>,
   pluginHealth: PluginHealth | null | undefined,
   options?: {
     pluginEnabled?: boolean;
@@ -116,6 +116,13 @@ export function getDiscoverabilityDiagnostic(
     grantedPermissions?: string[];
   },
 ): { discoverable: boolean; reason: string | null } {
+  if (tool.discoverable === false) {
+    return {
+      discoverable: false,
+      reason: tool.exclusionReason ?? 'Plugin point is blocked by validation.',
+    };
+  }
+
   if (options?.pluginEnabled === false) {
     return {
       discoverable: false,

@@ -1,5 +1,7 @@
 use crate::error::{CogniaError, CogniaResult};
-use crate::plugin::host_functions::{self, EmittedPluginEvent, HostContext};
+use crate::plugin::host_functions::{
+    self, EmittedPluginEvent, EmittedPluginLog, EmittedPluginUiEffect, HostContext,
+};
 use extism::{Manifest, Plugin, Wasm};
 use std::collections::HashMap;
 use std::path::Path;
@@ -88,7 +90,7 @@ impl PluginLoader {
         input: &str,
     ) -> CogniaResult<String> {
         // Set current plugin ID for host function permission checks
-        self.host_context.set_current_plugin(plugin_id).await;
+        self.host_context.set_current_call(plugin_id, function_name).await;
 
         let plugin = self
             .instances
@@ -147,6 +149,26 @@ impl PluginLoader {
         self.host_context.drain_emitted_events().await
     }
 
+    pub async fn clear_emitted_logs(&self) {
+        self.host_context.clear_emitted_logs().await;
+    }
+
+    pub async fn drain_emitted_logs(&self) -> Vec<EmittedPluginLog> {
+        self.host_context.drain_emitted_logs().await
+    }
+
+    pub async fn clear_emitted_ui_effects(&self) {
+        self.host_context.clear_emitted_ui_effects().await;
+    }
+
+    pub async fn drain_emitted_ui_effects(&self) -> Vec<EmittedPluginUiEffect> {
+        self.host_context.drain_emitted_ui_effects().await
+    }
+
+    pub async fn set_log_dispatch_active(&self, active: bool) {
+        self.host_context.set_log_dispatch_active(active).await;
+    }
+
     /// Check if a plugin is loaded
     pub fn is_loaded(&self, plugin_id: &str) -> bool {
         self.instances.contains_key(plugin_id)
@@ -166,7 +188,7 @@ impl PluginLoader {
         function_name: &str,
         input: &str,
     ) -> Option<String> {
-        self.host_context.set_current_plugin(plugin_id).await;
+        self.host_context.set_current_call(plugin_id, function_name).await;
         let plugin = self.instances.get_mut(plugin_id)?;
         if !plugin.function_exists(function_name) {
             return None;
@@ -223,7 +245,7 @@ mod tests {
         let plugin_registry = Arc::new(RwLock::new(crate::plugin::registry::PluginRegistry::new(
             std::path::PathBuf::from("/tmp/test-plugins"),
         )));
-        let ctx = HostContext::new(registry, settings, permissions, plugin_registry);
+        let ctx = HostContext::new(registry, settings, permissions, plugin_registry, None);
         PluginLoader::new(ctx)
     }
 

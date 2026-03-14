@@ -30,6 +30,12 @@
 //! }
 //! ```
 
+use crate::host;
+use crate::types::{
+    PluginUiConfirmData, PluginUiContext, PluginUiPathData, PluginUiPathsData, PluginUiRequest,
+    PluginUiRequestResult,
+};
+use extism_pdk::*;
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
@@ -996,6 +1002,120 @@ pub fn render_with_channels(
 
 pub fn parse_action(input: &str) -> Option<UiAction> {
     serde_json::from_str(input).ok()
+}
+
+// ============================================================================
+// UI Host Effects
+// ============================================================================
+
+pub fn get_context() -> Result<PluginUiContext, Error> {
+    let result = unsafe { host::cognia_ui_get_context(String::new())? };
+    Ok(serde_json::from_str(&result)?)
+}
+
+pub fn request<TData>(input: &PluginUiRequest) -> Result<PluginUiRequestResult<TData>, Error>
+where
+    TData: for<'de> Deserialize<'de>,
+{
+    let payload = serde_json::to_string(input)?;
+    let result = unsafe { host::cognia_ui_request(payload)? };
+    Ok(serde_json::from_str(&result)?)
+}
+
+pub fn toast(
+    message: &str,
+    title: Option<&str>,
+    level: Option<&str>,
+    correlation_id: Option<&str>,
+) -> Result<PluginUiRequestResult<serde_json::Value>, Error> {
+    request(&PluginUiRequest::Toast {
+        message: message.to_string(),
+        title: title.map(|value| value.to_string()),
+        level: level.map(|value| value.to_string()),
+        correlation_id: correlation_id.map(|value| value.to_string()),
+    })
+}
+
+pub fn navigate(
+    path: &str,
+    correlation_id: Option<&str>,
+) -> Result<PluginUiRequestResult<serde_json::Value>, Error> {
+    request(&PluginUiRequest::Navigate {
+        path: path.to_string(),
+        correlation_id: correlation_id.map(|value| value.to_string()),
+    })
+}
+
+pub fn confirm(
+    message: &str,
+    title: Option<&str>,
+    correlation_id: Option<&str>,
+) -> Result<PluginUiRequestResult<PluginUiConfirmData>, Error> {
+    request(&PluginUiRequest::Confirm {
+        message: message.to_string(),
+        title: title.map(|value| value.to_string()),
+        correlation_id: correlation_id.map(|value| value.to_string()),
+    })
+}
+
+pub fn pick_file(
+    title: Option<&str>,
+    default_path: Option<&str>,
+    multiple: Option<bool>,
+    correlation_id: Option<&str>,
+) -> Result<PluginUiRequestResult<PluginUiPathsData>, Error> {
+    request(&PluginUiRequest::PickFile {
+        title: title.map(|value| value.to_string()),
+        default_path: default_path.map(|value| value.to_string()),
+        multiple,
+        filters: Vec::new(),
+        correlation_id: correlation_id.map(|value| value.to_string()),
+    })
+}
+
+pub fn pick_directory(
+    title: Option<&str>,
+    default_path: Option<&str>,
+    correlation_id: Option<&str>,
+) -> Result<PluginUiRequestResult<PluginUiPathData>, Error> {
+    request(&PluginUiRequest::PickDirectory {
+        title: title.map(|value| value.to_string()),
+        default_path: default_path.map(|value| value.to_string()),
+        correlation_id: correlation_id.map(|value| value.to_string()),
+    })
+}
+
+pub fn save_file(
+    title: Option<&str>,
+    default_path: Option<&str>,
+    correlation_id: Option<&str>,
+) -> Result<PluginUiRequestResult<PluginUiPathData>, Error> {
+    request(&PluginUiRequest::SaveFile {
+        title: title.map(|value| value.to_string()),
+        default_path: default_path.map(|value| value.to_string()),
+        filters: Vec::new(),
+        correlation_id: correlation_id.map(|value| value.to_string()),
+    })
+}
+
+pub fn open_external(
+    url: &str,
+    correlation_id: Option<&str>,
+) -> Result<PluginUiRequestResult<serde_json::Value>, Error> {
+    request(&PluginUiRequest::OpenExternal {
+        url: url.to_string(),
+        correlation_id: correlation_id.map(|value| value.to_string()),
+    })
+}
+
+pub fn reveal_path(
+    path: &str,
+    correlation_id: Option<&str>,
+) -> Result<PluginUiRequestResult<PluginUiPathData>, Error> {
+    request(&PluginUiRequest::RevealPath {
+        path: path.to_string(),
+        correlation_id: correlation_id.map(|value| value.to_string()),
+    })
 }
 
 #[cfg(test)]

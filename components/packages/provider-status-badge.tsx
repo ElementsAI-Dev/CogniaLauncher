@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { useLocale } from "@/components/providers/locale-provider";
 import * as tauri from "@/lib/tauri";
+import { isPackageSurfaceProvider } from "@/lib/constants/providers";
 import { toast } from "sonner";
 import Link from "next/link";
 import type { ProviderStatusBadgeProps } from "@/types/packages";
@@ -97,7 +98,7 @@ export function ProviderStatusBadge({
   }, []);
 
   const packageProviders = useMemo(
-    () => providers.filter((p) => !p.is_environment_provider),
+    () => providers.filter((p) => isPackageSurfaceProvider(p)),
     [providers],
   );
 

@@ -345,7 +345,20 @@ describe('useHealthCheck', () => {
             status: 'unknown',
             scope_state: 'timeout',
             scope_reason: 'health_check_timeout',
-            issues: [],
+            issues: [
+              {
+                severity: 'warning',
+                category: 'shell_integration',
+                message: 'PATH heuristic mismatch',
+                details: null,
+                fix_command: null,
+                fix_description: null,
+                remediation_id: null,
+                signal_source: 'path_heuristic',
+                confidence: 'inferred',
+                check_id: 'provider_path_missing:fnm',
+              },
+            ],
             suggestions: [],
             current_version: null,
             installed_count: null,
@@ -361,12 +374,38 @@ describe('useHealthCheck', () => {
             scope_reason: 'platform_unsupported',
             version: null,
             executable_path: null,
-            issues: [],
+            issues: [
+              {
+                severity: 'warning',
+                category: 'network_error',
+                message: 'Registry timeout',
+                details: null,
+                fix_command: null,
+                fix_description: null,
+                remediation_id: null,
+                signal_source: 'network_probe',
+                confidence: 'inferred',
+                check_id: 'registry_timeout:npm',
+              },
+            ],
             install_instructions: null,
             checked_at: new Date().toISOString(),
           },
         ],
-        system_issues: [],
+        system_issues: [
+          {
+            severity: 'warning',
+            category: 'other',
+            message: 'Disk critically low',
+            details: null,
+            fix_command: null,
+            fix_description: null,
+            remediation_id: null,
+            signal_source: 'system_probe',
+            confidence: 'verified',
+            check_id: 'disk_space_low',
+          },
+        ],
         skipped_providers: [],
         checked_at: new Date().toISOString(),
       },
@@ -380,5 +419,8 @@ describe('useHealthCheck', () => {
     expect(result.current.summary.unsupportedScopeCount).toBe(1);
     expect(result.current.summary.unavailableCount).toBe(1);
     expect(result.current.summary.unavailablePackageManagerCount).toBe(1);
+    expect(result.current.summary.issueCount).toBe(3);
+    expect(result.current.summary.verifiedIssueCount).toBe(1);
+    expect(result.current.summary.advisoryIssueCount).toBe(2);
   });
 });

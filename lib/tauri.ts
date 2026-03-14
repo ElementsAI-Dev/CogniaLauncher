@@ -93,6 +93,8 @@ export type {
   UpdateCheckCoverage,
   UpdateCheckSummary,
   SelfUpdateInfo,
+  SelfUpdateSourceKind,
+  SelfUpdateErrorCategory,
   SelfUpdateProgressEvent,
   InstallHistoryEntry,
   InstallHistoryQuery,
@@ -131,6 +133,7 @@ export type {
   DiskSpaceInfo,
   DownloadRequest,
   VerifyResult,
+  DownloadShutdownOutcome,
   DownloadEvent,
   TrayIconState,
   TrayLanguage,
@@ -190,6 +193,7 @@ export type {
   GitCommitDetail,
   GitGraphEntry,
   GitAheadBehind,
+  GitSupportSnapshot,
   GitDayActivity,
   GitHistoryQuery,
   GitHistorySearchType,
@@ -218,6 +222,10 @@ export type {
   PathEntryInfo,
   ShellProfileInfo,
   EnvVarImportResult,
+  EnvVarImportPreview,
+  EnvVarPathRepairPreview,
+  EnvVarShellGuidance,
+  EnvVarConflictResolutionResult,
   PersistentEnvVar,
   EnvVarConflict,
   ShellType,
@@ -356,6 +364,7 @@ import type {
   DiskSpaceInfo,
   DownloadRequest,
   VerifyResult,
+  DownloadShutdownOutcome,
   TrayIconState,
   TrayLanguage,
   TrayClickBehavior,
@@ -407,6 +416,7 @@ import type {
   GitCommitDetail,
   GitGraphEntry,
   GitAheadBehind,
+  GitSupportSnapshot,
   GitDayActivity,
   GitHistoryQuery,
   GitHistorySearchType,
@@ -435,6 +445,10 @@ import type {
   PathEntryInfo,
   ShellProfileInfo,
   EnvVarImportResult,
+  EnvVarImportPreview,
+  EnvVarPathRepairPreview,
+  EnvVarShellGuidance,
+  EnvVarConflictResolutionResult,
   PersistentEnvVar,
   EnvVarConflict,
   ShellType,
@@ -846,6 +860,32 @@ export const getComponentsInfo = () =>
 export const getBatteryInfo = () =>
   invoke<BatteryInfo | null>("get_battery_info");
 
+export interface SecretVaultStatus {
+  initialized: boolean;
+  unlocked: boolean;
+  migrationPending: boolean;
+}
+
+export interface ProviderSecretStatus {
+  provider: string;
+  configured: boolean;
+  configuredInVault: boolean;
+  configuredInEnv: boolean;
+  needsUnlock: boolean;
+  legacyPlaintextPresent: boolean;
+}
+
+export const secretVaultStatus = () =>
+  invoke<SecretVaultStatus>("secret_vault_status");
+export const secretVaultSetup = (password: string) =>
+  invoke<SecretVaultStatus>("secret_vault_setup", { password });
+export const secretVaultUnlock = (password: string) =>
+  invoke<SecretVaultStatus>("secret_vault_unlock", { password });
+export const secretVaultLock = () =>
+  invoke<SecretVaultStatus>("secret_vault_lock");
+export const secretVaultReset = () =>
+  invoke<SecretVaultStatus>("secret_vault_reset");
+
 // Cache commands
 export const cacheInfo = () => invoke<CacheInfo>("cache_info");
 export interface CacheCleanResult {
@@ -1206,10 +1246,14 @@ export const providerDisable = (providerId: string) =>
   invoke<void>("provider_disable", { providerId });
 export const providerCheck = (providerId: string) =>
   invoke<boolean>("provider_check", { providerId });
+export const providerStatus = (providerId: string) =>
+  invoke<ProviderStatusInfo>("provider_status", { providerId });
 export const providerSystemList = () =>
   invoke<string[]>("provider_system_list");
 export const providerStatusAll = (force?: boolean) =>
   invoke<ProviderStatusInfo[]>("provider_status_all", { force });
+export const providerSetPriority = (providerId: string, priority: number) =>
+  invoke<void>("provider_set_priority", { providerId, priority });
 
 // Listen for batch progress events
 export async function listenBatchProgress(
@@ -1475,7 +1519,8 @@ export const downloadBatchCancel = (taskIds: string[]) =>
 export const downloadBatchRemove = (taskIds: string[]) =>
   invoke<number>("download_batch_remove", { taskIds });
 
-export const downloadShutdown = () => invoke<void>("download_shutdown");
+export const downloadShutdown = () =>
+  invoke<DownloadShutdownOutcome>("download_shutdown");
 
 export const downloadSetPriority = (taskId: string, priority: number) =>
   invoke<void>("download_set_priority", { taskId, priority });
@@ -1555,12 +1600,27 @@ export async function listenDownloadTaskCompleted(
 }
 
 export async function listenDownloadTaskFailed(
-  callback: (taskId: string, error: string) => void,
+  callback: (
+    taskId: string,
+    error: string,
+    reasonCode: string,
+    recoverable: boolean,
+  ) => void,
 ): Promise<UnlistenFn> {
-  return listen<{ task_id: string; error: string }>(
+  return listen<{
+    task_id: string;
+    error: string;
+    reason_code: string;
+    recoverable: boolean;
+  }>(
     "download-task-failed",
     (event) => {
-      callback(event.payload.task_id, event.payload.error);
+      callback(
+        event.payload.task_id,
+        event.payload.error,
+        event.payload.reason_code,
+        event.payload.recoverable,
+      );
     },
   );
 }
@@ -1706,6 +1766,14 @@ export const trayGetAvailableMenuItems = () =>
 
 export const trayResetMenuConfig = () => invoke<void>("tray_reset_menu_config");
 
+export interface PluginUiEffectEvent {
+  pluginId: string;
+  functionName: string;
+  effect: string;
+  correlationId?: string | null;
+  payload: Record<string, unknown>;
+}
+
 // Listen for navigation events from tray
 export async function listenNavigate(
   callback: (path: string) => void,
@@ -1762,6 +1830,14 @@ export async function listenTrayNotificationEventsChanged(
   callback: (events: TrayNotificationEvent[]) => void,
 ): Promise<UnlistenFn> {
   return listen<TrayNotificationEvent[]>("tray-notification-events-changed", (event) => {
+    callback(event.payload);
+  });
+}
+
+export async function listenPluginUiEffect(
+  callback: (effect: PluginUiEffectEvent) => void,
+): Promise<UnlistenFn> {
+  return listen<PluginUiEffectEvent>("plugin-ui-effect", (event) => {
     callback(event.payload);
   });
 }
@@ -2007,15 +2083,17 @@ export const githubDownloadSource = (
     token: token || null,
   });
 
-/** Save a GitHub token to settings */
+/** Save a GitHub token to secure storage */
 export const githubSetToken = (token: string) =>
-  invoke<void>("github_set_token", { token });
+  invoke<ProviderSecretStatus>("github_set_token", { token });
 
-/** Get the saved GitHub token (from settings or env) */
-export const githubGetToken = () => invoke<string | null>("github_get_token");
+/** Get GitHub token configuration status without returning plaintext */
+export const githubGetToken = () =>
+  invoke<ProviderSecretStatus>("github_get_token");
 
 /** Clear the saved GitHub token */
-export const githubClearToken = () => invoke<void>("github_clear_token");
+export const githubClearToken = () =>
+  invoke<ProviderSecretStatus>("github_clear_token");
 
 /** Validate a GitHub token by making an authenticated API call */
 export const githubValidateToken = (token: string) =>
@@ -2167,15 +2245,17 @@ export const gitlabDownloadSource = (
     instanceUrl: instanceUrl || null,
   });
 
-/** Save a GitLab token to settings */
+/** Save a GitLab token to secure storage */
 export const gitlabSetToken = (token: string) =>
-  invoke<void>("gitlab_set_token", { token });
+  invoke<ProviderSecretStatus>("gitlab_set_token", { token });
 
-/** Get the saved GitLab token (from settings or env) */
-export const gitlabGetToken = () => invoke<string | null>("gitlab_get_token");
+/** Get GitLab token configuration status without returning plaintext */
+export const gitlabGetToken = () =>
+  invoke<ProviderSecretStatus>("gitlab_get_token");
 
 /** Clear the saved GitLab token */
-export const gitlabClearToken = () => invoke<void>("gitlab_clear_token");
+export const gitlabClearToken = () =>
+  invoke<ProviderSecretStatus>("gitlab_clear_token");
 
 /** Validate a GitLab token by making an authenticated API call */
 export const gitlabValidateToken = (token: string, instanceUrl?: string) =>
@@ -2683,6 +2763,12 @@ export const gitGetVersion = () => invoke<string | null>("git_get_version");
 /** Get the git executable path */
 export const gitGetExecutablePath = () =>
   invoke<string | null>("git_get_executable_path");
+
+/** Get structured runtime support snapshot for Git feature gating */
+export const gitGetSupportSnapshot = (path?: string | null) =>
+  invoke<GitSupportSnapshot>("git_get_support_snapshot", {
+    path: path ?? null,
+  });
 
 /** Install git via system package manager */
 export const gitInstall = () => invoke<string>("git_install");
@@ -3543,6 +3629,17 @@ export const envvarReadShellProfile = (path: string) =>
 export const envvarImportEnvFile = (content: string, scope: EnvVarScope) =>
   invoke<EnvVarImportResult>("envvar_import_env_file", { content, scope });
 
+/** Preview variables from .env file content before applying */
+export const envvarPreviewImportEnvFile = (content: string, scope: EnvVarScope) =>
+  invoke<EnvVarImportPreview>("envvar_preview_import_env_file", { content, scope });
+
+/** Apply a previously previewed envvar import */
+export const envvarApplyImportPreview = (
+  content: string,
+  scope: EnvVarScope,
+  fingerprint: string,
+) => invoke<EnvVarImportResult>("envvar_apply_import_preview", { content, scope, fingerprint });
+
 /** Export variables to a specific format */
 export const envvarExportEnvFile = (
   scope: EnvVarScope,
@@ -3561,6 +3658,14 @@ export const envvarExpand = (path: string) =>
 export const envvarDeduplicatePath = (scope: EnvVarScope) =>
   invoke<number>("envvar_deduplicate_path", { scope });
 
+/** Preview PATH repair for a given scope */
+export const envvarPreviewPathRepair = (scope: EnvVarScope) =>
+  invoke<EnvVarPathRepairPreview>("envvar_preview_path_repair", { scope });
+
+/** Apply PATH repair from a preview fingerprint */
+export const envvarApplyPathRepair = (scope: EnvVarScope, fingerprint: string) =>
+  invoke<number>("envvar_apply_path_repair", { scope, fingerprint });
+
 /** List persistent vars with registry type info (Windows: REG_SZ/REG_EXPAND_SZ) */
 export const envvarListPersistentTyped = (scope: EnvVarScope) =>
   invoke<PersistentEnvVar[]>("envvar_list_persistent_typed", { scope });
@@ -3568,6 +3673,26 @@ export const envvarListPersistentTyped = (scope: EnvVarScope) =>
 /** Detect conflicts between User and System environment variables */
 export const envvarDetectConflicts = () =>
   invoke<EnvVarConflict[]>("envvar_detect_conflicts");
+
+/** Resolve an envvar conflict by copying source scope value to target scope */
+export const envvarResolveConflict = (
+  key: string,
+  sourceScope: EnvVarScope,
+  targetScope: EnvVarScope,
+) => invoke<EnvVarConflictResolutionResult>("envvar_resolve_conflict", { key, sourceScope, targetScope });
+
+/** Generate shell-specific follow-up guidance for envvar or PATH changes */
+export const envvarGenerateShellGuidance = (
+  key?: string,
+  value?: string,
+  pathEntries?: string[],
+  autoAppliedShell?: string,
+) => invoke<EnvVarShellGuidance[]>("envvar_generate_shell_guidance", {
+  key,
+  value,
+  pathEntries,
+  autoAppliedShell,
+});
 
 // ============================================================================
 // Terminal Management

@@ -23,7 +23,7 @@ import {
   type WidgetType,
 } from "@/lib/stores/dashboard";
 import { WidgetWrapper } from "@/components/dashboard/widget-wrapper";
-import { StatsCard, StatsCardSkeleton } from "@/components/dashboard/stats-card";
+import { StatsCard } from "@/components/dashboard/stats-card";
 import { QuickSearch } from "@/components/dashboard/quick-search";
 import { EnvironmentList } from "@/components/dashboard/environment-list";
 import { PackageList } from "@/components/dashboard/package-list";
@@ -57,46 +57,74 @@ interface WidgetRenderProps {
   t: (key: string, params?: Record<string, string | number>) => string;
   activeEnvs: number;
   totalVersions: number;
+  feedback: {
+    environments: { isLoading: boolean; error: string | null };
+    packages: { isLoading: boolean; error: string | null };
+    settings: { isLoading: boolean; error: string | null };
+  };
 }
 
 function renderStatsOverview(p: WidgetRenderProps): ReactNode {
-  if (p.isLoading) {
-    return (
-      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-        <StatsCardSkeleton />
-        <StatsCardSkeleton />
-        <StatsCardSkeleton />
-        <StatsCardSkeleton />
-      </div>
-    );
-  }
+  const environmentReady = p.environments.length > 0;
+  const packageReady = p.packages.length > 0;
+  const cacheReady = Boolean(p.cacheInfo);
+  const platformReady = Boolean(p.platformInfo);
+
   return (
     <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
       <StatsCard
+        loading={p.feedback.environments.isLoading && !environmentReady}
         title={p.t("dashboard.environments")}
         value={p.activeEnvs}
-        description={p.t("dashboard.versionsInstalled", { count: p.totalVersions })}
+        description={
+          p.feedback.environments.error && !environmentReady
+            ? p.t("dashboard.overview.sectionUnavailable")
+            : p.feedback.environments.isLoading && !environmentReady
+              ? p.t("dashboard.overview.sectionLoading")
+              : p.t("dashboard.versionsInstalled", { count: p.totalVersions })
+        }
         icon={<Layers className="h-4 w-4" />}
         href="/environments"
       />
       <StatsCard
+        loading={p.feedback.packages.isLoading && !packageReady}
         title={p.t("dashboard.packages")}
         value={p.packages.length}
-        description={p.t("dashboard.fromProviders", { count: p.providers.length })}
+        description={
+          p.feedback.packages.error && !packageReady
+            ? p.t("dashboard.overview.sectionUnavailable")
+            : p.feedback.packages.isLoading && !packageReady
+              ? p.t("dashboard.overview.sectionLoading")
+              : p.t("dashboard.fromProviders", { count: p.providers.length })
+        }
         icon={<Package className="h-4 w-4" />}
         href="/packages"
       />
       <StatsCard
+        loading={p.feedback.settings.isLoading && !cacheReady}
         title={p.t("dashboard.cache")}
         value={p.cacheInfo?.total_size_human || "0 B"}
-        description={p.t("dashboard.cachedItems", { count: p.cacheInfo?.download_cache.entry_count || 0 })}
+        description={
+          p.feedback.settings.error && !cacheReady
+            ? p.t("dashboard.overview.sectionUnavailable")
+            : p.feedback.settings.isLoading && !cacheReady
+              ? p.t("dashboard.overview.sectionLoading")
+              : p.t("dashboard.cachedItems", { count: p.cacheInfo?.download_cache.entry_count || 0 })
+        }
         icon={<HardDrive className="h-4 w-4" />}
         href="/cache"
       />
       <StatsCard
+        loading={p.feedback.settings.isLoading && !platformReady}
         title={p.t("dashboard.platform")}
         value={p.platformInfo?.osLongVersion || (p.platformInfo?.osVersion ? `${p.platformInfo.os} ${p.platformInfo.osVersion}` : p.platformInfo?.os) || p.t("common.unknown")}
-        description={p.platformInfo?.arch || ""}
+        description={
+          p.feedback.settings.error && !platformReady
+            ? p.t("dashboard.overview.sectionUnavailable")
+            : p.feedback.settings.isLoading && !platformReady
+              ? p.t("dashboard.overview.sectionLoading")
+              : p.platformInfo?.arch || ""
+        }
         icon={<Activity className="h-4 w-4" />}
         href="/settings"
       />
@@ -111,10 +139,34 @@ const WIDGET_RENDERERS: Record<WidgetType, (p: WidgetRenderProps) => ReactNode> 
   "package-chart": (p) => <PackageChart packages={p.packages} providers={p.providers} />,
   "cache-usage": (p) => <CacheChart cacheInfo={p.cacheInfo} />,
   "activity-timeline": (p) => <ActivityChart environments={p.environments} packages={p.packages} />,
-  "system-info": (p) => <SystemInfoWidget platformInfo={p.platformInfo} cogniaDir={p.cogniaDir} />,
+  "system-info": (p) => (
+    <SystemInfoWidget
+      platformInfo={p.platformInfo}
+      cogniaDir={p.cogniaDir}
+      isLoading={p.feedback.settings.isLoading}
+      error={p.feedback.settings.error}
+      onRecover={p.onRefreshAll}
+    />
+  ),
   "download-stats": () => <DownloadStatsWidget />,
-  "environment-list": (p) => <EnvironmentList environments={p.environments} initialLimit={4} />,
-  "package-list": (p) => <PackageList packages={p.packages} initialLimit={5} />,
+  "environment-list": (p) => (
+    <EnvironmentList
+      environments={p.environments}
+      initialLimit={4}
+      isLoading={p.feedback.environments.isLoading}
+      error={p.feedback.environments.error}
+      onRecover={p.onRefreshAll}
+    />
+  ),
+  "package-list": (p) => (
+    <PackageList
+      packages={p.packages}
+      initialLimit={5}
+      isLoading={p.feedback.packages.isLoading}
+      error={p.feedback.packages.error}
+      onRecover={p.onRefreshAll}
+    />
+  ),
   "wsl-status": () => <WslStatusWidget />,
   "quick-actions": (p) => <QuickActions onRefreshAll={p.onRefreshAll} isRefreshing={p.isRefreshing} />,
   "health-check": () => <HealthCheckWidget />,
@@ -133,6 +185,11 @@ interface WidgetGridProps {
   isLoading: boolean;
   onRefreshAll: () => void;
   isRefreshing: boolean;
+  feedback: {
+    environments: { isLoading: boolean; error: string | null };
+    packages: { isLoading: boolean; error: string | null };
+    settings: { isLoading: boolean; error: string | null };
+  };
 }
 
 export function WidgetGrid({
@@ -145,6 +202,7 @@ export function WidgetGrid({
   isLoading,
   onRefreshAll,
   isRefreshing,
+  feedback,
 }: WidgetGridProps) {
   const { t } = useLocale();
   const widgets = useDashboardStore((s) => s.widgets);
@@ -210,11 +268,11 @@ export function WidgetGrid({
   const renderProps = useMemo<WidgetRenderProps>(
     () => ({
       environments, packages, providers, cacheInfo, platformInfo, cogniaDir,
-      isLoading, onRefreshAll, isRefreshing, t, activeEnvs, totalVersions,
+      isLoading, onRefreshAll, isRefreshing, t, activeEnvs, totalVersions, feedback,
     }),
     [
       environments, packages, providers, cacheInfo, platformInfo, cogniaDir,
-      isLoading, onRefreshAll, isRefreshing, t, activeEnvs, totalVersions,
+      isLoading, onRefreshAll, isRefreshing, t, activeEnvs, totalVersions, feedback,
     ],
   );
 

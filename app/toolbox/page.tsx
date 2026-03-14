@@ -18,6 +18,7 @@ import { ToolboxAssistance } from '@/components/toolbox/toolbox-assistance';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { ToolbarCluster, ToolbarRow, denseToolbarControl } from '@/components/ui/toolbar';
 import { LayoutGrid, List, Plug, ShieldAlert, Store } from 'lucide-react';
 import Link from 'next/link';
 import { getToolboxDetailPath } from '@/lib/toolbox-route';
@@ -105,37 +106,68 @@ export default function ToolboxPage() {
           title={t('toolbox.title')}
           description={t('toolbox.description')}
           actions={
-            <div className="flex items-center gap-2">
+            <ToolbarRow
+              role="toolbar"
+              aria-label={t('toolbox.title')}
+              className="justify-end"
+              data-testid="toolbox-header-toolbar"
+            >
               {isDesktop && (
-                <Button variant="outline" size="sm" className="gap-1.5" asChild>
-                  <Link href="/toolbox/market">
-                    <Store className="h-3.5 w-3.5" />
-                    {t('toolbox.marketplace.title')}
-                  </Link>
-                </Button>
+                <ToolbarCluster data-testid="toolbox-header-market-group">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className={`${denseToolbarControl.button} gap-1.5`}
+                    asChild
+                  >
+                    <Link href="/toolbox/market">
+                      <Store className="h-3.5 w-3.5" />
+                      {t('toolbox.marketplace.title')}
+                    </Link>
+                  </Button>
+                </ToolbarCluster>
               )}
               {isDesktop && (
-                <Button variant="outline" size="sm" className="gap-1.5" asChild>
-                  <Link href="/toolbox/plugins">
-                    <Plug className="h-3.5 w-3.5" />
-                    {t('toolbox.plugin.title')}
-                  </Link>
-                </Button>
+                <ToolbarCluster data-testid="toolbox-header-plugins-group">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className={`${denseToolbarControl.button} gap-1.5`}
+                    asChild
+                  >
+                    <Link href="/toolbox/plugins">
+                      <Plug className="h-3.5 w-3.5" />
+                      {t('toolbox.plugin.title')}
+                    </Link>
+                  </Button>
+                </ToolbarCluster>
               )}
-              <ToggleGroup
-                type="single"
-                value={viewMode}
-                onValueChange={(v) => { if (v) setViewMode(v as 'grid' | 'list'); }}
-                className="bg-muted rounded-lg p-0.5"
-              >
-                <ToggleGroupItem value="grid" aria-label={t('toolbox.viewMode.grid')} className="h-8 w-8 p-0">
-                  <LayoutGrid className="h-4 w-4" />
-                </ToggleGroupItem>
-                <ToggleGroupItem value="list" aria-label={t('toolbox.viewMode.list')} className="h-8 w-8 p-0">
-                  <List className="h-4 w-4" />
-                </ToggleGroupItem>
-              </ToggleGroup>
-            </div>
+              <ToolbarCluster data-testid="toolbox-header-view-group" compact>
+                <ToggleGroup
+                  type="single"
+                  value={viewMode}
+                  onValueChange={(v) => { if (v) setViewMode(v as 'grid' | 'list'); }}
+                  size="default"
+                  spacing={0}
+                  className="bg-transparent"
+                >
+                  <ToggleGroupItem
+                    value="grid"
+                    aria-label={t('toolbox.viewMode.grid')}
+                    className={denseToolbarControl.toggleIconItem}
+                  >
+                    <LayoutGrid className="h-4 w-4" />
+                  </ToggleGroupItem>
+                  <ToggleGroupItem
+                    value="list"
+                    aria-label={t('toolbox.viewMode.list')}
+                    className={denseToolbarControl.toggleIconItem}
+                  >
+                    <List className="h-4 w-4" />
+                  </ToggleGroupItem>
+                </ToggleGroup>
+              </ToolbarCluster>
+            </ToolbarRow>
           }
         />
 

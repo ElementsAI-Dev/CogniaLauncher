@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { WslConfigCard } from './wsl-config-card';
 import type { WslConfig } from '@/types/tauri';
@@ -338,9 +338,14 @@ describe('WslConfigCard', () => {
     const deleteButtons = screen.getAllByRole('button').filter(
       (btn) => btn.querySelector('.lucide-trash-2')
     );
-    if (deleteButtons.length > 0) {
-      await userEvent.click(deleteButtons[0]);
-      expect(defaultProps.onSetConfig).toHaveBeenCalled();
-    }
+    expect(deleteButtons.length).toBeGreaterThan(0);
+
+    await userEvent.click(deleteButtons[0]);
+    expect(defaultProps.onSetConfig).not.toHaveBeenCalled();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete' }));
+    await waitFor(() => {
+      expect(defaultProps.onSetConfig).toHaveBeenCalledWith('wsl2', 'memory');
+    });
   });
 });

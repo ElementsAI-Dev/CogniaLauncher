@@ -10,6 +10,7 @@ export const REPO_ROOT = path.resolve(SCRIPT_DIR, '..', '..');
 export const PLUGINS_ROOT = path.join(REPO_ROOT, 'plugins');
 export const CATALOG_PATH = path.join(PLUGINS_ROOT, 'manifest.json');
 export const SDK_CAPABILITY_MATRIX_PATH = path.join(PLUGINS_ROOT, 'sdk-capability-matrix.json');
+export const EXTENSION_POINT_MATRIX_PATH = path.join(PLUGINS_ROOT, 'extension-point-matrix.json');
 export const SUPPORTED_FRAMEWORKS = ['rust', 'typescript'];
 export const DEFAULT_SUPPORTED_SDK_CAPABILITIES = [
   'clipboard',
@@ -39,6 +40,12 @@ export function writeCatalog(catalog) {
 export function readSdkCapabilityMatrix(options = {}) {
   const matrixPath = resolveRepoPath('plugins/sdk-capability-matrix.json', options);
   ensureFileExists(matrixPath, 'SDK capability matrix');
+  return JSON.parse(readFileSync(matrixPath, 'utf8'));
+}
+
+export function readExtensionPointMatrix(options = {}) {
+  const matrixPath = resolveRepoPath('plugins/extension-point-matrix.json', options);
+  ensureFileExists(matrixPath, 'Plugin-point matrix');
   return JSON.parse(readFileSync(matrixPath, 'utf8'));
 }
 
@@ -178,6 +185,51 @@ export function validateSdkCapabilityMatrixShape(matrix, catalog) {
   }
 }
 
+export function validateExtensionPointMatrixShape(matrix) {
+  if (!matrix || typeof matrix !== 'object') {
+    throw new Error('Plugin-point matrix must be an object.');
+  }
+  if (matrix.schemaVersion !== 1) {
+    throw new Error(`Unsupported plugin-point matrix schemaVersion: ${matrix.schemaVersion}`);
+  }
+  const pluginPoints = Array.isArray(matrix.pluginPoints) ? matrix.pluginPoints : null;
+  if (!pluginPoints || pluginPoints.length === 0) {
+    throw new Error('Plugin-point matrix must contain non-empty pluginPoints[].');
+  }
+
+  const seen = new Set();
+  for (const point of pluginPoints) {
+    if (!point || typeof point !== 'object') {
+      throw new Error('Plugin-point matrix pluginPoints[] entries must be objects.');
+    }
+    ensureRequiredString(point.id, 'id', '<plugin-point>');
+    ensureRequiredString(point.kind, 'kind', point.id);
+    if (seen.has(point.id)) {
+      throw new Error(`Duplicate plugin-point id in matrix: ${point.id}`);
+    }
+    seen.add(point.id);
+    const prerequisites = ensureStringArray(
+      point.manifestPrerequisites ?? [],
+      `pluginPoints[${point.id}].manifestPrerequisites`,
+    );
+    if (prerequisites.length === 0) {
+      throw new Error(`pluginPoints[${point.id}].manifestPrerequisites must not be empty.`);
+    }
+    if (!point.sdkSupport || typeof point.sdkSupport !== 'object') {
+      throw new Error(`pluginPoints[${point.id}].sdkSupport must be an object.`);
+    }
+    if (!point.scaffoldSupport || typeof point.scaffoldSupport !== 'object') {
+      throw new Error(`pluginPoints[${point.id}].scaffoldSupport must be an object.`);
+    }
+    if (point.sdkSupport.rust !== true && point.sdkSupport.typescript !== true) {
+      throw new Error(`pluginPoints[${point.id}] must support at least one official SDK.`);
+    }
+    if (point.scaffoldSupport.builtin !== true && point.scaffoldSupport.external !== true) {
+      throw new Error(`pluginPoints[${point.id}] must support at least one scaffold profile.`);
+    }
+  }
+}
+
 export function resolvePluginRoot(plugin, options = {}) {
   const pluginsRoot = path.join(options.repoRoot ?? REPO_ROOT, 'plugins');
   return path.join(pluginsRoot, plugin.pluginDir);
@@ -212,12 +264,14 @@ function trimCapturedOutput(output) {
 }
 
 export function runCommand(command, args, options = {}) {
-  const useShell = process.platform === 'win32' && command === 'pnpm';
+  const isWindowsPnpm = process.platform === 'win32' && command === 'pnpm';
+  const resolvedCommand = isWindowsPnpm ? (process.env.comspec ?? 'cmd.exe') : command;
+  const resolvedArgs = isWindowsPnpm ? ['/d', '/s', '/c', command, ...args] : args;
   const quiet = options.quiet ?? false;
-  const result = spawnSync(command, args, {
+  const result = spawnSync(resolvedCommand, resolvedArgs, {
     cwd: options.cwd ?? REPO_ROOT,
     stdio: quiet ? 'pipe' : 'inherit',
-    shell: useShell,
+    shell: false,
     env: process.env,
   });
   const stdout = quiet ? result.stdout?.toString('utf8') ?? '' : '';

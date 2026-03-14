@@ -1,15 +1,24 @@
 use cognia_plugin_sdk::prelude::*;
 use cognia_plugin_sdk::ui;
+use std::collections::HashMap;
 
 /// Tool: "hello" — Greets the user with platform and i18n info
 #[plugin_fn]
 pub fn hello(input: String) -> FnResult<String> {
     // Get platform info
     let platform = cognia::platform::info()?;
-    cognia::log::info(&format!(
-        "Hello tool invoked on {} {}",
-        platform.os, platform.arch
-    ))?;
+    let ui_context = cognia::ui::get_context()?;
+    cognia::log::write(&PluginLogRecord {
+        level: "info".to_string(),
+        message: format!("Hello tool invoked on {} {}", platform.os, platform.arch),
+        target: Some("plugin.hello".to_string()),
+        fields: Some(HashMap::from([
+            ("os".to_string(), serde_json::json!(platform.os.clone())),
+            ("arch".to_string(), serde_json::json!(platform.arch.clone())),
+        ])),
+        tags: vec!["example".to_string(), "hello".to_string()],
+        correlation_id: None,
+    })?;
 
     // Determine user name from input or hostname
     let name = if input.trim().is_empty() {
@@ -30,6 +39,7 @@ pub fn hello(input: String) -> FnResult<String> {
     Ok(serde_json::json!({
         "greeting": greeting,
         "pluginId": plugin_id,
+        "uiContext": ui_context,
         "platform": {
             "os": platform.os,
             "arch": platform.arch,
@@ -309,4 +319,16 @@ pub fn env_dashboard(input: String) -> FnResult<String> {
     ];
 
     Ok(ui::render(&blocks))
+}
+
+#[plugin_fn]
+pub fn cognia_on_log(input: String) -> FnResult<String> {
+    let envelope: PluginLogEnvelope = cognia::log::parse_envelope(&input)?;
+    Ok(serde_json::json!({
+        "observed": true,
+        "sourceType": envelope.source_type,
+        "sourcePluginId": envelope.source_plugin_id,
+        "level": envelope.level,
+    })
+    .to_string())
 }

@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible';
+import { DynamicIcon } from '@/components/ui/dynamic-icon';
 import { useLocale } from '@/components/providers/locale-provider';
 import { useToolbox } from '@/hooks/use-toolbox';
 import { useToolboxMarketplace } from '@/hooks/use-toolbox-marketplace';
@@ -139,11 +140,18 @@ export function ToolboxAssistance() {
                     )}
                   </div>
                 ) : hasHistory ? (
-                  <div className="flex flex-wrap gap-2">
+                  <div className="grid gap-2 sm:grid-cols-2">
                     {recentResolved.map((tool) => (
-                      <Button key={tool.id} size="sm" variant="outline" asChild>
-                        <Link href={getToolboxDetailPath(tool.id)}>{tool.name}</Link>
-                      </Button>
+                      <Link
+                        key={tool.id}
+                        href={getToolboxDetailPath(tool.id)}
+                        className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors hover:bg-accent/30"
+                      >
+                        <span className="inline-flex h-6 w-6 items-center justify-center rounded bg-muted">
+                          <DynamicIcon name={tool.icon} className="h-3.5 w-3.5" />
+                        </span>
+                        <span className="truncate">{tool.name}</span>
+                      </Link>
                     ))}
                   </div>
                 ) : (

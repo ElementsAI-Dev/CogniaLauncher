@@ -21,7 +21,8 @@ pub use crate::provider::git::{
     GitCloneProgress, GitCommitDetail, GitCommitEntry, GitConfigEntry, GitContributor,
     GitDayActivity, GitDiffFile, GitFileStatEntry, GitGraphEntry, GitHookInfo, GitLfsFile,
     GitMergeRebaseState, GitRebaseTodoItem, GitReflogEntry, GitRemoteInfo, GitRepoInfo,
-    GitRepoStats, GitStashEntry, GitStatusFile, GitSubmoduleInfo, GitTagInfo, GitWorktreeInfo,
+    GitRepoStats, GitStashEntry, GitStatusFile, GitSubmoduleInfo, GitSupportFeature,
+    GitSupportSnapshot, GitTagInfo, GitWorktreeInfo,
 };
 
 /// Diff stats for a commit
@@ -147,6 +148,17 @@ pub async fn git_get_version() -> Result<Option<String>, String> {
 #[tauri::command]
 pub async fn git_get_executable_path() -> Result<Option<String>, String> {
     Ok(get_provider().get_git_path().await)
+}
+
+/// Get structured Git feature support snapshot for capability gating.
+#[tauri::command]
+pub async fn git_get_support_snapshot(
+    path: Option<String>,
+) -> Result<GitSupportSnapshot, String> {
+    get_provider()
+        .get_support_snapshot(path.as_deref())
+        .await
+        .map_err(map_git_err)
 }
 
 /// Install git via system package manager

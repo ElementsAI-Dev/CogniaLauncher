@@ -12,6 +12,7 @@ import { Plus, Trash2 } from 'lucide-react';
 import { DestinationPicker } from '@/components/downloads/destination-picker';
 import type { TerminalProfile, ShellInfo } from '@/types/tauri';
 import { useLocale } from '@/components/providers/locale-provider';
+import { cn } from '@/lib/utils';
 
 interface TerminalProfileDialogProps {
   open: boolean;
@@ -50,6 +51,7 @@ export function TerminalProfileDialog({
   const [envVars, setEnvVars] = useState<[string, string][]>(
     Object.entries(source?.envVars ?? {}) as [string, string][]
   );
+  const [touched, setTouched] = useState(false);
 
   const PROFILE_COLORS = [
     { value: '', label: 'None' },
@@ -79,7 +81,8 @@ export function TerminalProfileDialog({
   };
 
   const handleSave = () => {
-    if (!shellId) {
+    setTouched(true);
+    if (!name.trim() || !shellId) {
       return;
     }
 
@@ -124,13 +127,21 @@ export function TerminalProfileDialog({
         <div className="grid gap-4 py-4">
           <div className="grid gap-2">
             <Label htmlFor="name">{t('terminal.profileName')}</Label>
-            <Input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="My Terminal" />
+            <Input
+              id="name"
+              className={cn(touched && !name.trim() && 'border-destructive')}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onBlur={() => setTouched(true)}
+              placeholder="My Terminal"
+            />
+            {touched && !name.trim() && <p className="text-xs text-destructive">{t('terminal.requiredField')}</p>}
           </div>
 
           <div className="grid gap-2">
             <Label htmlFor="shell">{t('terminal.shell')}</Label>
             <Select value={shellId} onValueChange={setShellId} disabled={shells.length === 0}>
-              <SelectTrigger>
+              <SelectTrigger className={cn(touched && !shellId && 'border-destructive')}>
                 <SelectValue placeholder={t('terminal.selectShell')} />
               </SelectTrigger>
               <SelectContent>
@@ -141,6 +152,12 @@ export function TerminalProfileDialog({
                 ))}
               </SelectContent>
             </Select>
+            {touched && !shellId && <p className="text-xs text-destructive">{t('terminal.requiredField')}</p>}
+            {shellId && shells.find(s => s.id === shellId) && (
+              <p className="text-xs text-muted-foreground font-mono truncate">
+                {shells.find(s => s.id === shellId)?.executablePath}
+              </p>
+            )}
           </div>
 
           <div className="grid gap-2">
@@ -161,6 +178,7 @@ export function TerminalProfileDialog({
           <div className="grid gap-2">
             <Label htmlFor="startupCommand">{t('terminal.startupCommand')}</Label>
             <Input id="startupCommand" value={startupCommand} onChange={(e) => setStartupCommand(e.target.value)} placeholder="echo Hello" />
+            <p className="text-xs text-muted-foreground">{t('terminal.startupCommandHint')}</p>
           </div>
 
           <div className="grid gap-2">
@@ -178,6 +196,21 @@ export function TerminalProfileDialog({
                   aria-pressed={color === c.value}
                 />
               ))}
+            </div>
+            <div className="flex items-center gap-2 mt-1">
+              <Input
+                className="h-7 w-[120px] font-mono text-xs"
+                value={color}
+                onChange={(e) => setColor(e.target.value)}
+                placeholder="#808080"
+                maxLength={7}
+              />
+              {color && (
+                <div
+                  className="h-6 w-6 rounded-full border"
+                  style={{ backgroundColor: color }}
+                />
+              )}
             </div>
           </div>
 
@@ -202,6 +235,14 @@ export function TerminalProfileDialog({
                 {t('terminal.addEnvVar')}
               </Button>
             </div>
+            {envVars.length > 0 && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
+                <span className="flex-1">{t('terminal.envVarKey')}</span>
+                <span className="w-3" />
+                <span className="flex-1">{t('terminal.envVarValue')}</span>
+                <span className="w-8" />
+              </div>
+            )}
             {envVars.length > 0 && (
               <div className="space-y-2">
                 {envVars.map(([key, value], i) => (

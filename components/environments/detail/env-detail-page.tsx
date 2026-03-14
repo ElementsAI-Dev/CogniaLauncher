@@ -10,7 +10,11 @@ import {
   EnvDetailSettings,
   EnvDetailShell,
   EnvDetailShims,
+  RustToolchainPanel,
+  CondaEnvironmentPanel,
+  GoToolsPanel,
 } from '@/components/environments/detail';
+import { ENV_TYPE_TO_PROVIDERS } from '@/components/environments/detail/env-detail-packages';
 import { VersionBrowserPanel } from '@/components/environments/version-browser-panel';
 import { InstallationProgressDialog } from '@/components/environments/installation-progress-dialog';
 import { EnvironmentWorkflowBanner } from '@/components/environments/environment-workflow-banner';
@@ -26,7 +30,7 @@ import {
   EmptyTitle,
   EmptyDescription,
 } from '@/components/ui/empty';
-import { LayoutDashboard, Layers, Package, Settings2, Terminal, Link2, Monitor } from 'lucide-react';
+import { LayoutDashboard, Layers, Package, Settings2, Terminal, Link2, Monitor, Wrench } from 'lucide-react';
 import { isTauri } from '@/lib/tauri';
 
 interface EnvDetailPageClientProps {
@@ -111,6 +115,10 @@ export function EnvDetailPageClient({ envType }: EnvDetailPageClientProps) {
     envType,
     env?.provider_id ?? currentProviderId,
   );
+  const hasPackagesTab = (ENV_TYPE_TO_PROVIDERS[envType]?.length ?? 0) > 0;
+  const hasRustToolchainTab = envType === 'rust';
+  const hasCondaPanelTab = envType === 'python' && envProviders().some((provider) => provider.id === 'conda');
+  const hasGoToolsTab = envType === 'go';
 
   useEffect(() => {
     setWorkflowContext({
@@ -250,10 +258,30 @@ export function EnvDetailPageClient({ envType }: EnvDetailPageClientProps) {
             <Layers className="h-3.5 w-3.5" />
             {t('environments.detail.tabVersions')}
           </TabsTrigger>
-          <TabsTrigger value="packages" className="gap-1.5">
-            <Package className="h-3.5 w-3.5" />
-            {t('environments.detail.tabPackages')}
-          </TabsTrigger>
+          {hasPackagesTab && (
+            <TabsTrigger value="packages" className="gap-1.5">
+              <Package className="h-3.5 w-3.5" />
+              {t('environments.detail.tabPackages')}
+            </TabsTrigger>
+          )}
+          {hasRustToolchainTab && (
+            <TabsTrigger value="rustToolchain" className="gap-1.5">
+              <Wrench className="h-3.5 w-3.5" />
+              {t('environments.detail.tabRustToolchain')}
+            </TabsTrigger>
+          )}
+          {hasCondaPanelTab && (
+            <TabsTrigger value="conda" className="gap-1.5">
+              <Wrench className="h-3.5 w-3.5" />
+              {t('environments.detail.tabConda')}
+            </TabsTrigger>
+          )}
+          {hasGoToolsTab && (
+            <TabsTrigger value="goTools" className="gap-1.5">
+              <Wrench className="h-3.5 w-3.5" />
+              {t('environments.detail.tabGoTools')}
+            </TabsTrigger>
+          )}
           <TabsTrigger value="settings" className="gap-1.5">
             <Settings2 className="h-3.5 w-3.5" />
             {t('environments.detail.tabSettings')}
@@ -294,9 +322,29 @@ export function EnvDetailPageClient({ envType }: EnvDetailPageClientProps) {
           />
         </TabsContent>
 
-        <TabsContent value="packages">
-          <EnvDetailPackages envType={envType} t={t} />
-        </TabsContent>
+        {hasPackagesTab && (
+          <TabsContent value="packages">
+            <EnvDetailPackages envType={envType} t={t} />
+          </TabsContent>
+        )}
+
+        {hasRustToolchainTab && (
+          <TabsContent value="rustToolchain">
+            <RustToolchainPanel />
+          </TabsContent>
+        )}
+
+        {hasCondaPanelTab && (
+          <TabsContent value="conda">
+            <CondaEnvironmentPanel />
+          </TabsContent>
+        )}
+
+        {hasGoToolsTab && (
+          <TabsContent value="goTools">
+            <GoToolsPanel />
+          </TabsContent>
+        )}
 
         <TabsContent value="settings">
           <EnvDetailSettings envType={envType} t={t} />

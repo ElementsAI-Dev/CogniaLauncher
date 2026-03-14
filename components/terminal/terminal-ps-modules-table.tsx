@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { toast } from 'sonner';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,6 +27,13 @@ import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empt
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Table,
@@ -37,9 +45,10 @@ import {
 } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Package, Search, RefreshCw, FileCode, Trash2, ArrowUpCircle } from 'lucide-react';
+import { Package, Search, RefreshCw, FileCode, Trash2, ArrowUpCircle, Loader2, Copy } from 'lucide-react';
 import type { PSModuleInfo, PSScriptInfo } from '@/types/tauri';
 import { useLocale } from '@/components/providers/locale-provider';
+import { writeClipboard } from '@/lib/clipboard';
 
 interface TerminalPsModulesTableProps {
   modules: PSModuleInfo[];
@@ -49,6 +58,7 @@ interface TerminalPsModulesTableProps {
   onInstallModule?: (name: string, scope: string) => Promise<void>;
   onUninstallModule?: (name: string) => Promise<void>;
   onUpdateModule?: (name: string) => Promise<void>;
+  onSearchModules?: (query: string) => Promise<PSModuleInfo[]>;
   loading?: boolean;
 }
 
@@ -60,6 +70,7 @@ export function TerminalPsModulesTable({
   onInstallModule,
   onUninstallModule,
   onUpdateModule,
+  onSearchModules,
   loading,
 }: TerminalPsModulesTableProps) {
   const { t } = useLocale();
@@ -67,7 +78,13 @@ export function TerminalPsModulesTable({
   const [selectedModule, setSelectedModule] = useState<PSModuleInfo | null>(null);
   const [installDialogOpen, setInstallDialogOpen] = useState(false);
   const [installModuleName, setInstallModuleName] = useState('');
+  const [installScope, setInstallScope] = useState<string>('CurrentUser');
   const [uninstallTarget, setUninstallTarget] = useState<string | null>(null);
+  const [operatingModule, setOperatingModule] = useState<string | null>(null);
+  const [galleryDialogOpen, setGalleryDialogOpen] = useState(false);
+  const [gallerySearch, setGallerySearch] = useState('');
+  const [galleryResults, setGalleryResults] = useState<PSModuleInfo[]>([]);
+  const [gallerySearching, setGallerySearching] = useState(false);
 
   const filteredModules = modules.filter((m) =>
     m.name.toLowerCase().includes(search.toLowerCase())
@@ -102,6 +119,12 @@ export function TerminalPsModulesTable({
           <CardTitle className="text-base">{t('terminal.psModulesScripts')}</CardTitle>
           <CardDescription>{t('terminal.psModulesScriptsDesc')}</CardDescription>
           <CardAction className="flex items-center gap-2">
+            {onSearchModules && (
+              <Button size="sm" variant="outline" onClick={() => setGalleryDialogOpen(true)}>
+                <Search className="h-3.5 w-3.5 mr-1" />
+                {t('terminal.searchGallery')}
+              </Button>
+            )}
             {onInstallModule && (
               <Button
                 size="sm"
@@ -212,11 +235,16 @@ export function TerminalPsModulesTable({
                                         size="icon"
                                         variant="ghost"
                                         className="h-7 w-7"
+                                        disabled={operatingModule === mod.name}
                                         title={t('terminal.updateModule')}
                                         aria-label={`${t('terminal.updateModule')} ${mod.name}`}
-                                        onClick={(e) => { e.stopPropagation(); onUpdateModule(mod.name); }}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setOperatingModule(mod.name);
+                                          onUpdateModule(mod.name).finally(() => setOperatingModule(null));
+                                        }}
                                       >
-                                        <ArrowUpCircle className="h-3.5 w-3.5" />
+                                        {operatingModule === mod.name ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowUpCircle className="h-3.5 w-3.5" />}
                                       </Button>
                                     </TooltipTrigger>
                                     <TooltipContent side="top">{t('terminal.updateModule')}</TooltipContent>
@@ -229,6 +257,7 @@ export function TerminalPsModulesTable({
                                         size="icon"
                                         variant="ghost"
                                         className="h-7 w-7 text-destructive"
+                                        disabled={operatingModule === mod.name}
                                         title={t('terminal.uninstallModule')}
                                         aria-label={`${t('terminal.uninstallModule')} ${mod.name}`}
                                         onClick={(e) => { e.stopPropagation(); setUninstallTarget(mod.name); }}
@@ -270,7 +299,8 @@ export function TerminalPsModulesTable({
                         <TableRow>
                           <TableHead>{t('terminal.name')}</TableHead>
                           <TableHead className="w-[100px]">{t('terminal.version')}</TableHead>
-                          <TableHead className="w-[120px] text-right">{t('terminal.author')}</TableHead>
+                          <TableHead className="w-[120px]">{t('terminal.author')}</TableHead>
+                          <TableHead className="w-[50px] text-right" />
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -292,8 +322,31 @@ export function TerminalPsModulesTable({
                             <TableCell>
                               <Badge variant="outline">{script.version}</Badge>
                             </TableCell>
-                            <TableCell className="text-right text-xs text-muted-foreground">
+                            <TableCell className="text-xs text-muted-foreground">
                               {script.author}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {script.installPath && (
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      size="icon"
+                                      variant="ghost"
+                                      className="h-7 w-7"
+                                      title={t('terminal.copyPath')}
+                                      aria-label={`${t('terminal.copyPath')} ${script.name}`}
+                                      onClick={() => {
+                                        writeClipboard(script.installPath).then(() => {
+                                          toast.success(t('terminal.pathCopied'));
+                                        });
+                                      }}
+                                    >
+                                      <Copy className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top">{t('terminal.copyPath')}</TooltipContent>
+                                </Tooltip>
+                              )}
                             </TableCell>
                           </TableRow>
                         ))}
@@ -360,22 +413,36 @@ export function TerminalPsModulesTable({
             <DialogTitle>{t('terminal.installModule')}</DialogTitle>
             <DialogDescription>{t('terminal.installModuleName')}</DialogDescription>
           </DialogHeader>
-          <div className="grid gap-2 py-2">
-            <Label htmlFor="module-name">{t('terminal.name')}</Label>
-            <Input
-              id="module-name"
-              value={installModuleName}
-              onChange={(e) => setInstallModuleName(e.target.value)}
-              placeholder="PSReadLine"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && installModuleName.trim() && onInstallModule) {
-                  onInstallModule(installModuleName.trim(), 'CurrentUser');
-                  setInstallModuleName('');
-                  setInstallDialogOpen(false);
-                }
-              }}
-              autoFocus
-            />
+          <div className="grid gap-4 py-2">
+            <div className="grid gap-2">
+              <Label htmlFor="module-name">{t('terminal.name')}</Label>
+              <Input
+                id="module-name"
+                value={installModuleName}
+                onChange={(e) => setInstallModuleName(e.target.value)}
+                placeholder="PSReadLine"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && installModuleName.trim() && onInstallModule) {
+                    onInstallModule(installModuleName.trim(), installScope);
+                    setInstallModuleName('');
+                    setInstallDialogOpen(false);
+                  }
+                }}
+                autoFocus
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>{t('terminal.installModuleScope')}</Label>
+              <Select value={installScope} onValueChange={setInstallScope}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="CurrentUser">{t('terminal.scopeCurrentUser')}</SelectItem>
+                  <SelectItem value="AllUsers">{t('terminal.scopeAllUsers')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setInstallDialogOpen(false)}>
@@ -385,7 +452,7 @@ export function TerminalPsModulesTable({
               disabled={!installModuleName.trim()}
               onClick={() => {
                 if (onInstallModule && installModuleName.trim()) {
-                  onInstallModule(installModuleName.trim(), 'CurrentUser');
+                  onInstallModule(installModuleName.trim(), installScope);
                   setInstallModuleName('');
                   setInstallDialogOpen(false);
                 }
@@ -394,6 +461,69 @@ export function TerminalPsModulesTable({
               {t('terminal.installModule')}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Gallery Search Dialog */}
+      <Dialog open={galleryDialogOpen} onOpenChange={setGalleryDialogOpen}>
+        <DialogContent className="sm:max-w-[600px] max-h-[80vh]">
+          <DialogHeader>
+            <DialogTitle>{t('terminal.galleryResults')}</DialogTitle>
+            <DialogDescription>{t('terminal.searchGalleryPlaceholder')}</DialogDescription>
+          </DialogHeader>
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                className="pl-9"
+                value={gallerySearch}
+                onChange={(e) => setGallerySearch(e.target.value)}
+                placeholder={t('terminal.searchGalleryPlaceholder')}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && gallerySearch.trim() && onSearchModules) {
+                    setGallerySearching(true);
+                    onSearchModules(gallerySearch.trim()).then(setGalleryResults).finally(() => setGallerySearching(false));
+                  }
+                }}
+              />
+            </div>
+            <Button size="sm" disabled={!gallerySearch.trim() || gallerySearching || !onSearchModules} onClick={() => {
+              if (!onSearchModules) return;
+              setGallerySearching(true);
+              onSearchModules(gallerySearch.trim()).then(setGalleryResults).finally(() => setGallerySearching(false));
+            }}>
+              {gallerySearching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+            </Button>
+          </div>
+          <ScrollArea className="max-h-[50vh]">
+            {galleryResults.length > 0 ? (
+              <div className="rounded-md border divide-y">
+                {galleryResults.map((mod) => (
+                  <div key={mod.name} className="flex items-center justify-between p-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium">{mod.name}</p>
+                      {mod.description && <p className="text-xs text-muted-foreground truncate">{mod.description}</p>}
+                    </div>
+                    <div className="flex items-center gap-2 ml-2">
+                      <Badge variant="outline">{mod.version}</Badge>
+                      {onInstallModule && (
+                        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => {
+                          onInstallModule(mod.name, 'CurrentUser');
+                          setGalleryDialogOpen(false);
+                        }}>
+                          {t('terminal.installModule')}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : gallerySearching ? (
+              <div className="py-8 text-center">
+                <Loader2 className="h-6 w-6 mx-auto animate-spin text-muted-foreground" />
+              </div>
+            ) : null}
+          </ScrollArea>
         </DialogContent>
       </Dialog>
 

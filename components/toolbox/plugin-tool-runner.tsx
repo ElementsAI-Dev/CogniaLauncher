@@ -12,6 +12,7 @@ import { MarkdownRenderer } from '@/components/docs/markdown-renderer';
 import { useLocale } from '@/components/providers/locale-provider';
 import { usePlugins } from '@/hooks/use-plugins';
 import { useToolboxStore } from '@/lib/stores/toolbox';
+import { ToolRuntimeState } from '@/components/toolbox/tool-runtime-state';
 import { Play, AlertCircle, Loader2 } from 'lucide-react';
 import { isTauri } from '@/lib/tauri';
 import type { PluginToolInfo } from '@/types/plugin';
@@ -31,10 +32,11 @@ export function PluginToolRunner({ tool, className }: PluginToolRunnerProps) {
 
   if (!isTauri()) {
     return (
-      <Alert className={className}>
-        <AlertCircle className="h-4 w-4" />
-        <AlertDescription>{t('toolbox.plugin.desktopOnly')}</AlertDescription>
-      </Alert>
+      <ToolRuntimeState
+        className={className}
+        title={t('toolbox.runtime.desktopRequiredTitle')}
+        description={t('toolbox.runtime.desktopRequiredDescription')}
+      />
     );
   }
 
@@ -66,6 +68,7 @@ function TextToolRunner({ tool, className }: PluginToolRunnerProps) {
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [elapsedMs, setElapsedMs] = useState(0);
+  const [hasRun, setHasRun] = useState(false);
   const cancelledRef = useRef(false);
   const runIdRef = useRef(0);
 
@@ -86,6 +89,7 @@ function TextToolRunner({ tool, className }: PluginToolRunnerProps) {
     setToolLifecycle(unifiedToolId, 'prepare');
     setToolLifecycle(unifiedToolId, 'validate');
     setRunning(true);
+    setHasRun(false);
     setError(null);
     setOutput('');
     setElapsedMs(0);
@@ -95,6 +99,7 @@ function TextToolRunner({ tool, className }: PluginToolRunnerProps) {
       if (!cancelledRef.current && runIdRef.current === currentRunId) {
         setToolLifecycle(unifiedToolId, 'postProcess');
         setOutput(result ?? '');
+        setHasRun(true);
         setToolLifecycle(unifiedToolId, 'success');
       }
     } catch (e) {
@@ -126,6 +131,11 @@ function TextToolRunner({ tool, className }: PluginToolRunnerProps) {
           <Badge variant="outline" className="text-[10px]">
             {t('toolbox.plugin.providedBy')} {tool.pluginName}
           </Badge>
+          {tool.pluginPointId && (
+            <Badge variant="secondary" className="font-mono text-[10px]">
+              {tool.pluginPointId}
+            </Badge>
+          )}
         </div>
 
         <ToolTextArea
@@ -171,7 +181,14 @@ function TextToolRunner({ tool, className }: PluginToolRunnerProps) {
           )}
         </div>
 
-        {output && <SmartOutput output={output} label={t('toolbox.plugin.output')} />}
+        {hasRun && !running && !error && output.length === 0 ? (
+          <ToolRuntimeState
+            title={t('toolbox.runtime.emptyTitle')}
+            description={t('toolbox.runtime.emptyDescription')}
+          />
+        ) : output ? (
+          <SmartOutput output={output} label={t('toolbox.plugin.output')} />
+        ) : null}
       </div>
     </div>
   );
@@ -381,6 +398,11 @@ function DeclarativeToolRunner({ tool, className }: PluginToolRunnerProps) {
           <Badge variant="outline" className="text-[10px]">
             {t('toolbox.plugin.providedBy')} {tool.pluginName}
           </Badge>
+          {tool.pluginPointId && (
+            <Badge variant="secondary" className="font-mono text-[10px]">
+              {tool.pluginPointId}
+            </Badge>
+          )}
           <Badge variant="secondary" className="text-[10px]">
             {t('toolbox.plugin.uiModeDeclarative')}
           </Badge>
@@ -409,9 +431,10 @@ function DeclarativeToolRunner({ tool, className }: PluginToolRunnerProps) {
             state={uiState}
           />
         ) : (
-          <p className="text-sm text-muted-foreground">
-            {t('toolbox.plugin.noUiBlocks')}
-          </p>
+          <ToolRuntimeState
+            title={t('toolbox.runtime.emptyTitle')}
+            description={t('toolbox.runtime.emptyDescription')}
+          />
         )}
       </div>
     </div>
@@ -430,9 +453,26 @@ function IframeToolRunner({ tool, className }: PluginToolRunnerProps) {
 
   useEffect(() => {
     setToolLifecycle(unifiedToolId, 'prepare');
-    setToolLifecycle(unifiedToolId, 'success');
     return () => clearToolLifecycle(unifiedToolId);
   }, [unifiedToolId, setToolLifecycle, clearToolLifecycle]);
+
+  const handleIframeStateChange = useCallback(
+    (state: 'loading' | 'success' | 'error', message?: string) => {
+      if (state === 'loading') {
+        setToolLifecycle(unifiedToolId, 'execute');
+        return;
+      }
+
+      if (state === 'error') {
+        setToolLifecycle(unifiedToolId, 'failure', message);
+        return;
+      }
+
+      setToolLifecycle(unifiedToolId, 'postProcess');
+      setToolLifecycle(unifiedToolId, 'success');
+    },
+    [setToolLifecycle, unifiedToolId],
+  );
 
   return (
     <div className={className}>
@@ -441,6 +481,11 @@ function IframeToolRunner({ tool, className }: PluginToolRunnerProps) {
           <Badge variant="outline" className="text-[10px]">
             {t('toolbox.plugin.providedBy')} {tool.pluginName}
           </Badge>
+          {tool.pluginPointId && (
+            <Badge variant="secondary" className="font-mono text-[10px]">
+              {tool.pluginPointId}
+            </Badge>
+          )}
           <Badge variant="secondary" className="text-[10px]">
             {t('toolbox.plugin.uiModeIframe')}
           </Badge>
@@ -449,6 +494,7 @@ function IframeToolRunner({ tool, className }: PluginToolRunnerProps) {
         <PluginIframeView
           pluginId={tool.pluginId}
           toolEntry={tool.entry}
+          onStateChange={handleIframeStateChange}
         />
       </div>
     </div>

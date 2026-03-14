@@ -1,9 +1,14 @@
 //! GitLab repository commands for download integration
 
+use crate::commands::secrets::{
+    provider_secret_clear_internal, provider_secret_save_internal, provider_secret_status_internal,
+    resolve_provider_secret, ProviderSecretStatus,
+};
 use crate::error::CogniaError;
 use crate::provider::gitlab::{
     GitLabBranch, GitLabProvider, GitLabRelease, GitLabReleaseLink, GitLabTag,
 };
+use crate::SharedSecretVault;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -181,22 +186,18 @@ pub async fn gitlab_parse_url(url: String) -> Result<Option<GitLabParsedProject>
 async fn make_gitlab_provider(
     token: Option<String>,
     instance_url: Option<String>,
+    vault: &State<'_, SharedSecretVault>,
 ) -> GitLabProvider {
-    let settings = crate::config::Settings::load().await.ok();
+    let settings = crate::config::Settings::load().await.unwrap_or_default();
 
-    let effective_token = if token.as_ref().map_or(true, |t| t.is_empty()) {
-        settings
-            .as_ref()
-            .and_then(|s| s.get_value("providers.gitlab.token"))
-            .filter(|t| !t.is_empty())
-    } else {
-        token
+    let effective_token = {
+        let vault_guard = vault.read().await;
+        resolve_provider_secret("gitlab", token, &settings, &vault_guard)
     };
 
     let effective_url = if instance_url.as_ref().map_or(true, |u| u.is_empty()) {
         settings
-            .as_ref()
-            .and_then(|s| s.get_value("providers.gitlab.url"))
+            .get_value("providers.gitlab.url")
             .filter(|u| !u.is_empty())
     } else {
         instance_url
@@ -246,8 +247,9 @@ pub async fn gitlab_validate_project(
     project: String,
     token: Option<String>,
     instance_url: Option<String>,
+    vault: State<'_, SharedSecretVault>,
 ) -> Result<bool, String> {
-    let provider = make_gitlab_provider(token, instance_url).await;
+    let provider = make_gitlab_provider(token, instance_url, &vault).await;
     Ok(provider.validate_project(&project).await)
 }
 
@@ -256,8 +258,9 @@ pub async fn gitlab_get_project_info(
     project: String,
     token: Option<String>,
     instance_url: Option<String>,
+    vault: State<'_, SharedSecretVault>,
 ) -> Result<GitLabProjectInfo, String> {
-    let provider = make_gitlab_provider(token, instance_url).await;
+    let provider = make_gitlab_provider(token, instance_url, &vault).await;
     let info = provider
         .get_project_info(&project)
         .await
@@ -281,8 +284,9 @@ pub async fn gitlab_list_branches(
     project: String,
     token: Option<String>,
     instance_url: Option<String>,
+    vault: State<'_, SharedSecretVault>,
 ) -> Result<Vec<GitLabBranchInfo>, String> {
-    let provider = make_gitlab_provider(token, instance_url).await;
+    let provider = make_gitlab_provider(token, instance_url, &vault).await;
     provider
         .list_branches(&project)
         .await
@@ -295,8 +299,9 @@ pub async fn gitlab_list_tags(
     project: String,
     token: Option<String>,
     instance_url: Option<String>,
+    vault: State<'_, SharedSecretVault>,
 ) -> Result<Vec<GitLabTagInfo>, String> {
-    let provider = make_gitlab_provider(token, instance_url).await;
+    let provider = make_gitlab_provider(token, instance_url, &vault).await;
     provider
         .list_tags(&project)
         .await
@@ -309,8 +314,9 @@ pub async fn gitlab_list_releases(
     project: String,
     token: Option<String>,
     instance_url: Option<String>,
+    vault: State<'_, SharedSecretVault>,
 ) -> Result<Vec<GitLabReleaseInfo>, String> {
-    let provider = make_gitlab_provider(token, instance_url).await;
+    let provider = make_gitlab_provider(token, instance_url, &vault).await;
     provider
         .list_releases(&project)
         .await
@@ -324,8 +330,9 @@ pub async fn gitlab_get_release_assets(
     tag: String,
     token: Option<String>,
     instance_url: Option<String>,
+    vault: State<'_, SharedSecretVault>,
 ) -> Result<Vec<GitLabAssetInfo>, String> {
-    let provider = make_gitlab_provider(token, instance_url).await;
+    let provider = make_gitlab_provider(token, instance_url, &vault).await;
     provider
         .get_release_by_tag(&project, &tag)
         .await
@@ -348,10 +355,11 @@ pub async fn gitlab_download_asset(
     destination: String,
     token: Option<String>,
     instance_url: Option<String>,
+    vault: State<'_, SharedSecretVault>,
     manager: State<'_, SharedDownloadManager>,
     settings: State<'_, SharedSettings>,
 ) -> Result<String, String> {
-    let provider = make_gitlab_provider(token, instance_url).await;
+    let provider = make_gitlab_provider(token, instance_url, &vault).await;
 
     let headers = provider.get_download_headers();
     let request = build_gitlab_download_request(
@@ -372,10 +380,11 @@ pub async fn gitlab_download_source(
     destination: String,
     token: Option<String>,
     instance_url: Option<String>,
+    vault: State<'_, SharedSecretVault>,
     manager: State<'_, SharedDownloadManager>,
     settings: State<'_, SharedSettings>,
 ) -> Result<String, String> {
-    let provider = make_gitlab_provider(token, instance_url).await;
+    let provider = make_gitlab_provider(token, instance_url, &vault).await;
     let url = provider.get_source_archive_url(&project, &ref_name, &format);
 
     let ext = match format.as_str() {
@@ -403,35 +412,28 @@ pub async fn gitlab_download_source(
 }
 
 #[tauri::command]
-pub async fn gitlab_set_token(token: String) -> Result<(), String> {
-    let mut settings = crate::config::Settings::load()
-        .await
-        .map_err(|e| e.to_string())?;
-    settings
-        .set_value("providers.gitlab.token", &token)
-        .map_err(|e| e.to_string())?;
-    settings.save().await.map_err(|e| e.to_string())
+pub async fn gitlab_set_token(
+    token: String,
+    settings: State<'_, crate::SharedSettings>,
+    vault: State<'_, SharedSecretVault>,
+) -> Result<ProviderSecretStatus, String> {
+    provider_secret_save_internal("gitlab", token, &settings, &vault).await
 }
 
 #[tauri::command]
-pub async fn gitlab_get_token() -> Result<Option<String>, String> {
-    let settings = crate::config::Settings::load()
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(settings
-        .get_value("providers.gitlab.token")
-        .or_else(|| std::env::var("GITLAB_TOKEN").ok()))
+pub async fn gitlab_get_token(
+    settings: State<'_, crate::SharedSettings>,
+    vault: State<'_, SharedSecretVault>,
+) -> Result<ProviderSecretStatus, String> {
+    provider_secret_status_internal("gitlab", &settings, &vault).await
 }
 
 #[tauri::command]
-pub async fn gitlab_clear_token() -> Result<(), String> {
-    let mut settings = crate::config::Settings::load()
-        .await
-        .map_err(|e| e.to_string())?;
-    settings
-        .set_value("providers.gitlab.token", "")
-        .map_err(|e| e.to_string())?;
-    settings.save().await.map_err(|e| e.to_string())
+pub async fn gitlab_clear_token(
+    settings: State<'_, crate::SharedSettings>,
+    vault: State<'_, SharedSecretVault>,
+) -> Result<ProviderSecretStatus, String> {
+    provider_secret_clear_internal("gitlab", &settings, &vault).await
 }
 
 #[tauri::command]
@@ -461,8 +463,9 @@ pub async fn gitlab_search_projects(
     limit: Option<u32>,
     token: Option<String>,
     instance_url: Option<String>,
+    vault: State<'_, SharedSecretVault>,
 ) -> Result<Vec<GitLabSearchResult>, String> {
-    let provider = make_gitlab_provider(token, instance_url).await;
+    let provider = make_gitlab_provider(token, instance_url, &vault).await;
     let limit = limit.unwrap_or(10).min(50);
     let encoded_query = urlencoding::encode(&query);
 
@@ -559,8 +562,9 @@ pub async fn gitlab_list_pipelines(
     status: Option<String>,
     token: Option<String>,
     instance_url: Option<String>,
+    vault: State<'_, SharedSecretVault>,
 ) -> Result<Vec<GitLabPipelineInfo>, String> {
-    let provider = make_gitlab_provider(token, instance_url).await;
+    let provider = make_gitlab_provider(token, instance_url, &vault).await;
     provider
         .list_pipelines(&project, ref_name.as_deref(), status.as_deref())
         .await
@@ -574,8 +578,9 @@ pub async fn gitlab_list_pipeline_jobs(
     pipeline_id: u64,
     token: Option<String>,
     instance_url: Option<String>,
+    vault: State<'_, SharedSecretVault>,
 ) -> Result<Vec<GitLabJobInfo>, String> {
-    let provider = make_gitlab_provider(token, instance_url).await;
+    let provider = make_gitlab_provider(token, instance_url, &vault).await;
     provider
         .list_pipeline_jobs(&project, pipeline_id)
         .await
@@ -591,10 +596,11 @@ pub async fn gitlab_download_job_artifacts(
     destination: String,
     token: Option<String>,
     instance_url: Option<String>,
+    vault: State<'_, SharedSecretVault>,
     manager: State<'_, SharedDownloadManager>,
     settings: State<'_, SharedSettings>,
 ) -> Result<String, String> {
-    let provider = make_gitlab_provider(token, instance_url).await;
+    let provider = make_gitlab_provider(token, instance_url, &vault).await;
     let url = provider.get_job_artifacts_url(&project, job_id);
     let file_name = format!("{}-artifacts-{}.zip", job_name, job_id);
 
@@ -663,8 +669,9 @@ pub async fn gitlab_list_packages(
     package_type: Option<String>,
     token: Option<String>,
     instance_url: Option<String>,
+    vault: State<'_, SharedSecretVault>,
 ) -> Result<Vec<GitLabPackageInfo>, String> {
-    let provider = make_gitlab_provider(token, instance_url).await;
+    let provider = make_gitlab_provider(token, instance_url, &vault).await;
     provider
         .list_packages(&project, package_type.as_deref())
         .await
@@ -678,8 +685,9 @@ pub async fn gitlab_list_package_files(
     package_id: u64,
     token: Option<String>,
     instance_url: Option<String>,
+    vault: State<'_, SharedSecretVault>,
 ) -> Result<Vec<GitLabPackageFileInfo>, String> {
-    let provider = make_gitlab_provider(token, instance_url).await;
+    let provider = make_gitlab_provider(token, instance_url, &vault).await;
     provider
         .list_package_files(&project, package_id)
         .await
@@ -695,10 +703,11 @@ pub async fn gitlab_download_package_file(
     destination: String,
     token: Option<String>,
     instance_url: Option<String>,
+    vault: State<'_, SharedSecretVault>,
     manager: State<'_, SharedDownloadManager>,
     settings: State<'_, SharedSettings>,
 ) -> Result<String, String> {
-    let provider = make_gitlab_provider(token, instance_url).await;
+    let provider = make_gitlab_provider(token, instance_url, &vault).await;
     let url = provider.get_package_file_url(&project, package_id, &file_name);
 
     let headers = provider.get_download_headers();

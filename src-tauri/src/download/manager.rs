@@ -7,10 +7,10 @@ use super::task::{DownloadConfig, DownloadProgress, DownloadTask, SpeedTracker};
 use super::throttle::SpeedLimiter;
 use crate::platform::fs;
 use futures::StreamExt;
-use reqwest::Client;
+use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -34,7 +34,12 @@ pub enum DownloadEvent {
     /// Task completed successfully
     TaskCompleted { task_id: String },
     /// Task failed
-    TaskFailed { task_id: String, error: String },
+    TaskFailed {
+        task_id: String,
+        error: String,
+        reason_code: String,
+        recoverable: bool,
+    },
     /// Task was paused
     TaskPaused { task_id: String },
     /// Task was resumed
@@ -47,6 +52,15 @@ pub enum DownloadEvent {
     TaskExtracted { task_id: String, files: Vec<String> },
     /// Queue stats updated
     QueueUpdated { stats: QueueStats },
+}
+
+/// Summary returned by graceful shutdown.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShutdownOutcome {
+    pub paused: usize,
+    pub fallback_cancelled: usize,
+    pub queued_preserved: usize,
 }
 
 /// Per-task control state
@@ -162,6 +176,98 @@ fn percent_decode(input: &str) -> String {
         }
     }
     String::from_utf8(bytes).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned())
+}
+
+fn parse_content_range_start(header: &str) -> Option<u64> {
+    // Expected format: bytes <start>-<end>/<total|*>
+    let value = header.trim();
+    let value = value.strip_prefix("bytes ")?;
+    let range = value.split('/').next()?;
+    let start = range.split('-').next()?;
+    start.parse::<u64>().ok()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ResumeMode {
+    Append(u64),
+    RestartUseCurrentResponse,
+    RestartRefetch,
+}
+
+fn evaluate_resume_mode(
+    resume_from: Option<u64>,
+    status: StatusCode,
+    content_range_start: Option<u64>,
+) -> ResumeMode {
+    let Some(expected_start) = resume_from else {
+        return ResumeMode::RestartUseCurrentResponse;
+    };
+
+    if status == StatusCode::PARTIAL_CONTENT && content_range_start == Some(expected_start) {
+        return ResumeMode::Append(expected_start);
+    }
+
+    if status == StatusCode::OK {
+        return ResumeMode::RestartUseCurrentResponse;
+    }
+
+    ResumeMode::RestartRefetch
+}
+
+fn sanitize_server_filename(filename: &str) -> Option<String> {
+    let trimmed = filename.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    Path::new(trimmed)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| name.trim().to_string())
+        .filter(|name| !name.is_empty())
+}
+
+fn resolve_effective_destination_base(
+    requested_destination: &Path,
+    server_filename: Option<&str>,
+    auto_rename: bool,
+) -> PathBuf {
+    if !auto_rename {
+        return requested_destination.to_path_buf();
+    }
+
+    if let (Some(parent), Some(filename)) = (requested_destination.parent(), server_filename) {
+        return parent.join(filename);
+    }
+
+    requested_destination.to_path_buf()
+}
+
+fn resolve_conflict_destination(path: &Path) -> PathBuf {
+    if !path.exists() {
+        return path.to_path_buf();
+    }
+
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let stem = path
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .unwrap_or("download");
+    let ext = path.extension().and_then(|name| name.to_str()).unwrap_or("");
+
+    let mut idx: u64 = 1;
+    loop {
+        let candidate_name = if ext.is_empty() {
+            format!("{} ({})", stem, idx)
+        } else {
+            format!("{} ({}).{}", stem, idx, ext)
+        };
+        let candidate = parent.join(candidate_name);
+        if !candidate.exists() {
+            return candidate;
+        }
+        idx = idx.saturating_add(1);
+    }
 }
 
 /// The main download manager
@@ -671,21 +777,39 @@ impl DownloadManager {
         cleaned
     }
 
-    /// Graceful shutdown: stop the processor loop and cancel all active downloads
-    pub async fn shutdown(&self) {
+    /// Graceful shutdown: stop the processor loop and preserve recoverable queue state.
+    pub async fn shutdown(&self) -> ShutdownOutcome {
         self.running.store(false, Ordering::SeqCst);
         self.wake.notify_one(); // Wake processor so it can exit
 
-        // Cancel all active downloads
+        let queued_preserved = {
+            let queue = self.queue.read().await;
+            queue
+                .list_all()
+                .iter()
+                .filter(|task| task.state == crate::download::DownloadState::Queued)
+                .count()
+        };
+
+        // Pause active downloads first, cancel only as explicit fallback.
         let active_ids: Vec<String> = {
             let queue = self.queue.read().await;
             queue.list_active().iter().map(|t| t.id.clone()).collect()
         };
 
-        for task_id in &active_ids {
-            let controls = self.task_controls.read().await;
-            if let Some(control) = controls.get(task_id) {
-                control.cancel();
+        let mut outcome = ShutdownOutcome {
+            queued_preserved,
+            ..ShutdownOutcome::default()
+        };
+
+        for task_id in active_ids {
+            if self.pause(&task_id).await.is_ok() {
+                outcome.paused = outcome.paused.saturating_add(1);
+                continue;
+            }
+
+            if self.cancel(&task_id).await.is_ok() {
+                outcome.fallback_cancelled = outcome.fallback_cancelled.saturating_add(1);
             }
         }
 
@@ -695,10 +819,9 @@ impl DownloadManager {
         // Force-persist remaining queue state for crash recovery
         self.persist_queue_force().await;
 
-        log::info!(
-            "Download manager shutdown: cancelled {} active downloads",
-            active_ids.len()
-        );
+        log::info!("Download manager shutdown outcome: {:?}", outcome);
+
+        outcome
     }
 
     /// Start the download manager background processing
@@ -826,7 +949,7 @@ impl DownloadManager {
         let mut urls_to_try = vec![task.url.clone()];
         urls_to_try.extend(task.mirror_urls.clone());
 
-        let mut result: Result<(), DownloadError> = Err(DownloadError::Network {
+        let mut result: Result<PathBuf, DownloadError> = Err(DownloadError::Network {
             message: "No URLs to try".to_string(),
         });
 
@@ -881,7 +1004,7 @@ impl DownloadManager {
 
         // Update task state based on result
         match result {
-            Ok(()) => {
+            Ok(effective_destination) => {
                 // Auto-extract if configured
                 if task.config.auto_extract {
                     if let Some(ref tx) = event_tx {
@@ -890,15 +1013,22 @@ impl DownloadManager {
                         });
                     }
 
-                    let extract_dest = task.config.extract_dest.clone().unwrap_or_else(|| {
-                        task.destination
-                            .parent()
-                            .unwrap_or(&task.destination)
-                            .to_path_buf()
-                    });
+                    let extract_dest = task
+                        .config
+                        .extract_dest
+                        .clone()
+                        .unwrap_or_else(|| {
+                            effective_destination
+                                .parent()
+                                .unwrap_or(&effective_destination)
+                                .to_path_buf()
+                        });
 
-                    match crate::core::installer::extract_archive(&task.destination, &extract_dest)
-                        .await
+                    match crate::core::installer::extract_archive(
+                        &effective_destination,
+                        &extract_dest,
+                    )
+                    .await
                     {
                         Ok(files) => {
                             let file_strs: Vec<String> =
@@ -911,7 +1041,7 @@ impl DownloadManager {
                             }
                             // Delete the archive after successful extraction if configured
                             if task.config.delete_after_extract {
-                                if let Err(e) = tokio::fs::remove_file(&task.destination).await {
+                                if let Err(e) = tokio::fs::remove_file(&effective_destination).await {
                                     log::warn!(
                                         "Failed to delete archive after extraction for {}: {}",
                                         task_id,
@@ -920,7 +1050,7 @@ impl DownloadManager {
                                 } else {
                                     log::info!(
                                         "Deleted archive after extraction: {:?}",
-                                        task.destination
+                                        effective_destination
                                     );
                                 }
                             }
@@ -935,7 +1065,7 @@ impl DownloadManager {
                 match &task.config.post_action {
                     crate::download::task::PostAction::OpenFile => {
                         if let Err(e) = tauri_plugin_opener::open_path(
-                            task.destination.to_string_lossy().as_ref(),
+                            effective_destination.to_string_lossy().as_ref(),
                             Option::<&str>::None,
                         ) {
                             log::warn!("Post-action open_file failed for {}: {}", task_id, e);
@@ -943,7 +1073,7 @@ impl DownloadManager {
                     }
                     crate::download::task::PostAction::RevealInFolder => {
                         if let Err(e) = tauri_plugin_opener::reveal_item_in_dir(
-                            task.destination.to_string_lossy().as_ref(),
+                            effective_destination.to_string_lossy().as_ref(),
                         ) {
                             log::warn!("Post-action reveal failed for {}: {}", task_id, e);
                         }
@@ -997,6 +1127,8 @@ impl DownloadManager {
                         let _ = tx.send(DownloadEvent::TaskFailed {
                             task_id: task_id.clone(),
                             error: err.to_string(),
+                            reason_code: err.reason_code().to_string(),
+                            recoverable: err.is_recoverable(),
                         });
                     }
 
@@ -1017,10 +1149,10 @@ impl DownloadManager {
         speed_limiter: &SpeedLimiter,
         event_tx: &Option<mpsc::UnboundedSender<DownloadEvent>>,
         config: &Arc<RwLock<DownloadManagerConfig>>,
-    ) -> Result<(), DownloadError> {
+    ) -> Result<PathBuf, DownloadError> {
         let task_id = &task.id;
         let url = &task.url;
-        let dest = &task.destination;
+        let requested_destination = task.destination.clone();
 
         // Per-task speed limiter (stacks with the global limiter)
         let task_limiter = if task.config.speed_limit > 0 {
@@ -1029,8 +1161,7 @@ impl DownloadManager {
             None
         };
 
-        // Create parent directory if needed
-        if let Some(parent) = dest.parent() {
+        if let Some(parent) = requested_destination.parent() {
             tokio::fs::create_dir_all(parent)
                 .await
                 .map_err(|e| DownloadError::FileSystem {
@@ -1038,9 +1169,8 @@ impl DownloadManager {
                 })?;
         }
 
-        // Check if we can resume
-        let resume_from = if task.config.allow_resume && dest.exists() {
-            let size = tokio::fs::metadata(dest)
+        let mut resume_from = if task.config.allow_resume && requested_destination.exists() {
+            let size = tokio::fs::metadata(&requested_destination)
                 .await
                 .map(|m| m.len())
                 .unwrap_or(0);
@@ -1052,104 +1182,184 @@ impl DownloadManager {
         } else {
             None
         };
+        let resume_requested = resume_from.is_some();
 
-        // Build request
-        let mut request = client.get(url);
-        if let Some(pos) = resume_from {
-            request = request.header("Range", format!("bytes={}-", pos));
-        }
+        let send_request = |range_from: Option<u64>| {
+            let mut request = client.get(url);
+            if let Some(pos) = range_from {
+                request = request.header("Range", format!("bytes={}-", pos));
+            }
+            for (key, value) in &task.headers {
+                request = request.header(key.as_str(), value.as_str());
+            }
+            async move {
+                request.send().await.map_err(|e| DownloadError::Network {
+                    message: e.to_string(),
+                })
+            }
+        };
 
-        // Apply custom headers (e.g. auth tokens for private repos)
-        for (key, value) in &task.headers {
-            request = request.header(key.as_str(), value.as_str());
-        }
+        let mut response = send_request(resume_from).await?;
 
-        // Send request
-        let response = request.send().await.map_err(|e| DownloadError::Network {
-            message: e.to_string(),
-        })?;
-
-        // Detect GitHub 403 rate limit → recoverable error with auto-retry
-        if response.status() == reqwest::StatusCode::FORBIDDEN {
-            let remaining = response
+        let check_rate_limit = |resp: &reqwest::Response| -> Option<DownloadError> {
+            if resp.status() != StatusCode::FORBIDDEN {
+                return None;
+            }
+            let remaining = resp
                 .headers()
                 .get("x-ratelimit-remaining")
                 .and_then(|v| v.to_str().ok())
                 .and_then(|v| v.parse::<u64>().ok());
-            if remaining == Some(0) {
-                let retry_after = response
-                    .headers()
-                    .get("x-ratelimit-reset")
-                    .and_then(|v| v.to_str().ok())
-                    .and_then(|v| v.parse::<u64>().ok())
-                    .map(|epoch| {
-                        epoch.saturating_sub(
-                            std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap_or_default()
-                                .as_secs(),
-                        )
-                    })
-                    .unwrap_or(60);
-                return Err(DownloadError::RateLimited { retry_after });
+            if remaining != Some(0) {
+                return None;
             }
+            let retry_after = resp
+                .headers()
+                .get("x-ratelimit-reset")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.parse::<u64>().ok())
+                .map(|epoch| {
+                    epoch.saturating_sub(
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs(),
+                    )
+                })
+                .unwrap_or(60);
+            Some(DownloadError::RateLimited { retry_after })
+        };
+
+        if let Some(err) = check_rate_limit(&response) {
+            return Err(err);
         }
 
-        // Check status
-        if !response.status().is_success() && response.status().as_u16() != 206 {
+        let response_status = response.status();
+        if !response_status.is_success()
+            && response_status != StatusCode::PARTIAL_CONTENT
+            && !(resume_from.is_some() && response_status == StatusCode::RANGE_NOT_SATISFIABLE)
+        {
             return Err(DownloadError::HttpError {
-                status: response.status().as_u16(),
-                message: response.status().to_string(),
+                status: response_status.as_u16(),
+                message: response_status.to_string(),
             });
         }
 
-        // Detect resume support from server
-        let server_supports_resume = response
-            .headers()
-            .get("accept-ranges")
-            .and_then(|v| v.to_str().ok())
-            .map(|v| v == "bytes")
-            .unwrap_or(false);
-        if server_supports_resume {
-            let mut q = queue.write().await;
-            if let Some(t) = q.get_mut(task_id) {
-                t.supports_resume = true;
-            }
-        }
-
-        // Parse Content-Disposition for server-provided filename
         let server_filename = response
             .headers()
             .get("content-disposition")
             .and_then(|v| v.to_str().ok())
-            .and_then(parse_content_disposition);
-        if let Some(ref sf) = server_filename {
-            let mut q = queue.write().await;
-            if let Some(t) = q.get_mut(task_id) {
-                t.server_filename = Some(sf.clone());
-                // Auto-rename: update destination to use server-provided filename
-                if t.config.auto_rename {
-                    let current_name = t
-                        .destination
-                        .file_name()
-                        .map(|n| n.to_string_lossy().to_string());
-                    if current_name.as_deref() != Some(sf.as_str()) {
-                        if let Some(parent) = t.destination.parent() {
-                            t.destination = parent.join(sf);
-                        }
-                    }
-                }
+            .and_then(parse_content_disposition)
+            .and_then(|name| sanitize_server_filename(&name));
+
+        let mut effective_destination = resolve_effective_destination_base(
+            &requested_destination,
+            server_filename.as_deref(),
+            task.config.auto_rename,
+        );
+
+        if let Some(parent) = effective_destination.parent() {
+            tokio::fs::create_dir_all(parent)
+                .await
+                .map_err(|e| DownloadError::FileSystem {
+                    message: e.to_string(),
+                })?;
+        }
+
+        if effective_destination != requested_destination && resume_from.is_some() {
+            // Range was computed against the old path. Refetch cleanly for the new destination.
+            resume_from = None;
+            drop(response);
+            response = send_request(None).await?;
+
+            if let Some(err) = check_rate_limit(&response) {
+                return Err(err);
+            }
+
+            let status = response.status();
+            if !status.is_success() && status != StatusCode::PARTIAL_CONTENT {
+                return Err(DownloadError::HttpError {
+                    status: status.as_u16(),
+                    message: status.to_string(),
+                });
             }
         }
 
-        // Get total size
+        let content_range_start = response
+            .headers()
+            .get("content-range")
+            .and_then(|v| v.to_str().ok())
+            .and_then(parse_content_range_start);
+        let mut resume_mode =
+            evaluate_resume_mode(resume_from, response.status(), content_range_start);
+
+        if resume_mode == ResumeMode::RestartRefetch {
+            drop(response);
+            response = send_request(None).await?;
+            if let Some(err) = check_rate_limit(&response) {
+                return Err(err);
+            }
+
+            let status = response.status();
+            if !status.is_success() && status != StatusCode::PARTIAL_CONTENT {
+                return Err(DownloadError::HttpError {
+                    status: status.as_u16(),
+                    message: status.to_string(),
+                });
+            }
+
+            resume_mode = ResumeMode::RestartUseCurrentResponse;
+        }
+
+        let resume_baseline = match resume_mode {
+            ResumeMode::Append(from) => from,
+            ResumeMode::RestartUseCurrentResponse | ResumeMode::RestartRefetch => 0,
+        };
+
+        let should_keep_existing_file_for_fallback = resume_requested
+            && resume_baseline == 0
+            && effective_destination == requested_destination;
+        let should_apply_conflict_policy =
+            resume_baseline == 0 && !should_keep_existing_file_for_fallback;
+        if should_apply_conflict_policy {
+            effective_destination = resolve_conflict_destination(&effective_destination);
+        }
+
+        let accept_ranges = response
+            .headers()
+            .get("accept-ranges")
+            .and_then(|v| v.to_str().ok())
+            .map(|v| v.eq_ignore_ascii_case("bytes"))
+            .unwrap_or(false);
+        let supports_resume = match resume_mode {
+            ResumeMode::Append(_) => true,
+            ResumeMode::RestartUseCurrentResponse | ResumeMode::RestartRefetch => {
+                if resume_requested {
+                    false
+                } else {
+                    accept_ranges || response.status() == StatusCode::PARTIAL_CONTENT
+                }
+            }
+        };
+
+        {
+            let mut q = queue.write().await;
+            if let Some(t) = q.get_mut(task_id) {
+                t.supports_resume = supports_resume;
+                t.server_filename = server_filename.clone();
+                t.destination = effective_destination.clone();
+            }
+        }
+
         let total_size = response
             .content_length()
-            .map(|len| len + resume_from.unwrap_or(0));
+            .map(|len| len.saturating_add(resume_baseline));
 
         // Check disk space before downloading
         if let Some(total) = total_size {
-            let check_path = dest.parent().unwrap_or(dest);
+            let check_path = effective_destination
+                .parent()
+                .unwrap_or(&effective_destination);
             if let Ok(space) = crate::platform::disk::get_disk_space(check_path).await {
                 if space.available < total {
                     return Err(DownloadError::InsufficientSpace {
@@ -1166,11 +1376,25 @@ impl DownloadManager {
             Duration::from_millis(cfg.progress_interval_ms)
         };
 
+        let baseline_progress = DownloadProgress::new(resume_baseline, total_size, 0.0);
+        {
+            let mut q = queue.write().await;
+            if let Some(t) = q.get_mut(task_id) {
+                t.progress = baseline_progress.clone();
+            }
+        }
+        if let Some(ref tx) = event_tx {
+            let _ = tx.send(DownloadEvent::TaskProgress {
+                task_id: task_id.clone(),
+                progress: baseline_progress,
+            });
+        }
+
         // Minimum file size to use segmented download (10 MB)
         const SEGMENT_THRESHOLD: u64 = 10 * 1024 * 1024;
         let use_segments = task.config.segments > 1
-            && server_supports_resume
-            && resume_from.is_none()
+            && supports_resume
+            && resume_baseline == 0
             && total_size.map(|s| s >= SEGMENT_THRESHOLD).unwrap_or(false);
 
         if use_segments {
@@ -1186,7 +1410,7 @@ impl DownloadManager {
 
             // Pre-allocate file
             {
-                let file = File::create(dest)
+                let file = File::create(&effective_destination)
                     .await
                     .map_err(|e| DownloadError::FileSystem {
                         message: e.to_string(),
@@ -1210,7 +1434,7 @@ impl DownloadManager {
 
                 let client = client.clone();
                 let url = url.clone();
-                let dest = dest.clone();
+                let dest = effective_destination.clone();
                 let headers = task.headers.clone();
                 let speed_limiter = speed_limiter.clone();
                 let seg_task_limiter = task_limiter.clone();
@@ -1375,29 +1599,29 @@ impl DownloadManager {
             progress_handle.abort();
 
             if let Some(err) = first_error {
-                let _ = tokio::fs::remove_file(dest).await;
+                let _ = tokio::fs::remove_file(&effective_destination).await;
                 return Err(err);
             }
         } else {
             // Single-connection download (original logic)
-            let mut file = if resume_from.is_some() {
+            let mut file = if resume_baseline > 0 {
                 tokio::fs::OpenOptions::new()
                     .write(true)
                     .append(true)
-                    .open(dest)
+                    .open(&effective_destination)
                     .await
                     .map_err(|e| DownloadError::FileSystem {
                         message: e.to_string(),
                     })?
             } else {
-                File::create(dest)
+                File::create(&effective_destination)
                     .await
                     .map_err(|e| DownloadError::FileSystem {
                         message: e.to_string(),
                     })?
             };
 
-            let mut downloaded = resume_from.unwrap_or(0);
+            let mut downloaded = resume_baseline;
             let mut last_progress_update = Instant::now();
             let mut speed_tracker = SpeedTracker::new();
             let mut stream = response.bytes_stream();
@@ -1477,15 +1701,15 @@ impl DownloadManager {
             if let Some(ref expected) = task.expected_checksum {
                 // Auto-detect algorithm from checksum length, or use SHA256 as default
                 let algo = fs::infer_checksum_algorithm(expected);
-                let actual = fs::calculate_checksum(dest, algo).await.map_err(|e| {
-                    DownloadError::FileSystem {
+                let actual = fs::calculate_checksum(&effective_destination, algo)
+                    .await
+                    .map_err(|e| DownloadError::FileSystem {
                         message: e.to_string(),
-                    }
-                })?;
+                    })?;
 
                 if &actual != expected {
                     // Remove corrupted file
-                    let _ = tokio::fs::remove_file(dest).await;
+                    let _ = tokio::fs::remove_file(&effective_destination).await;
                     return Err(DownloadError::ChecksumMismatch {
                         expected: expected.clone(),
                         actual,
@@ -1494,7 +1718,7 @@ impl DownloadManager {
             }
         }
 
-        Ok(())
+        Ok(effective_destination)
     }
 }
 
@@ -1788,8 +2012,69 @@ mod tests {
         manager.start().await;
         assert!(manager.is_running());
 
-        manager.shutdown().await;
+        let outcome = manager.shutdown().await;
         assert!(!manager.is_running());
+        assert_eq!(outcome.paused, 0);
+        assert_eq!(outcome.fallback_cancelled, 0);
+    }
+
+    #[tokio::test]
+    async fn test_download_manager_shutdown_pauses_active_downloads() {
+        let manager = DownloadManager::new(DownloadManagerConfig::default(), Client::new());
+        let task_id = manager
+            .download(
+                "https://example.com/file.zip".to_string(),
+                PathBuf::from("/tmp/file.zip"),
+                "Test File".to_string(),
+            )
+            .await;
+
+        {
+            let mut q = manager.queue.write().await;
+            let started = q.next_pending();
+            assert_eq!(started.as_deref(), Some(task_id.as_str()));
+        }
+
+        let outcome = manager.shutdown().await;
+        assert_eq!(outcome.paused, 1);
+        assert_eq!(outcome.fallback_cancelled, 0);
+
+        let task = manager.get_task(&task_id).await.unwrap();
+        assert_eq!(task.state, DownloadState::Paused);
+    }
+
+    #[tokio::test]
+    async fn test_download_manager_shutdown_persists_and_restores_recoverable_queue() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut manager = DownloadManager::new(DownloadManagerConfig::default(), Client::new());
+        manager.enable_persistence(tmp.path());
+
+        let task_id = manager
+            .download(
+                "https://example.com/file.zip".to_string(),
+                PathBuf::from("/tmp/file.zip"),
+                "Test File".to_string(),
+            )
+            .await;
+
+        {
+            let mut q = manager.queue.write().await;
+            let started = q.next_pending();
+            assert_eq!(started.as_deref(), Some(task_id.as_str()));
+        }
+
+        let outcome = manager.shutdown().await;
+        assert_eq!(outcome.paused, 1);
+
+        let mut restored_manager =
+            DownloadManager::new(DownloadManagerConfig::default(), Client::new());
+        restored_manager.enable_persistence(tmp.path());
+        let restored = restored_manager.load_persisted_tasks().await;
+
+        assert_eq!(restored, 1);
+        let restored_tasks = restored_manager.list_tasks().await;
+        assert_eq!(restored_tasks.len(), 1);
+        assert_eq!(restored_tasks[0].state, DownloadState::Queued);
     }
 
     #[tokio::test]
@@ -2023,6 +2308,80 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_content_range_start_valid() {
+        assert_eq!(
+            parse_content_range_start("bytes 1024-2047/4096"),
+            Some(1024)
+        );
+    }
+
+    #[test]
+    fn test_parse_content_range_start_invalid() {
+        assert_eq!(parse_content_range_start("invalid"), None);
+        assert_eq!(parse_content_range_start("bytes */4096"), None);
+    }
+
+    #[test]
+    fn test_evaluate_resume_mode_honored_resume() {
+        let mode = evaluate_resume_mode(Some(1024), StatusCode::PARTIAL_CONTENT, Some(1024));
+        assert_eq!(mode, ResumeMode::Append(1024));
+    }
+
+    #[test]
+    fn test_evaluate_resume_mode_downgraded_to_full_response() {
+        let mode = evaluate_resume_mode(Some(1024), StatusCode::OK, None);
+        assert_eq!(mode, ResumeMode::RestartUseCurrentResponse);
+    }
+
+    #[test]
+    fn test_evaluate_resume_mode_requires_refetch_for_edge_status() {
+        let mode = evaluate_resume_mode(Some(1024), StatusCode::RANGE_NOT_SATISFIABLE, None);
+        assert_eq!(mode, ResumeMode::RestartRefetch);
+    }
+
+    #[test]
+    fn test_sanitize_server_filename_drops_path_components() {
+        let sanitized = sanitize_server_filename("../unsafe/path/file.zip");
+        assert_eq!(sanitized, Some("file.zip".to_string()));
+    }
+
+    #[test]
+    fn test_resolve_effective_destination_base_auto_rename() {
+        let requested = PathBuf::from("/tmp/requested.zip");
+        let resolved = resolve_effective_destination_base(
+            &requested,
+            Some("server-name.zip"),
+            true,
+        );
+        assert_eq!(resolved, PathBuf::from("/tmp/server-name.zip"));
+    }
+
+    #[test]
+    fn test_resolve_effective_destination_base_no_auto_rename() {
+        let requested = PathBuf::from("/tmp/requested.zip");
+        let resolved = resolve_effective_destination_base(
+            &requested,
+            Some("server-name.zip"),
+            false,
+        );
+        assert_eq!(resolved, requested);
+    }
+
+    #[test]
+    fn test_resolve_conflict_destination_uses_incrementing_suffix() {
+        let dir = tempfile::tempdir().unwrap();
+        let existing = dir.path().join("archive.zip");
+        std::fs::write(&existing, b"existing").unwrap();
+
+        let first = resolve_conflict_destination(&existing);
+        assert_eq!(first, dir.path().join("archive (1).zip"));
+
+        std::fs::write(&first, b"existing-1").unwrap();
+        let second = resolve_conflict_destination(&existing);
+        assert_eq!(second, dir.path().join("archive (2).zip"));
+    }
+
+    #[test]
     fn test_download_event_extracting_serialize() {
         let event = DownloadEvent::TaskExtracting {
             task_id: "abc-123".to_string(),
@@ -2194,6 +2553,8 @@ mod tests {
             DownloadEvent::TaskFailed {
                 task_id: "t1".into(),
                 error: "err".into(),
+                reason_code: "network_error".into(),
+                recoverable: true,
             },
             DownloadEvent::TaskPaused {
                 task_id: "t1".into(),

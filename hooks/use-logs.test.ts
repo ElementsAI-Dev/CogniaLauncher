@@ -118,7 +118,63 @@ describe('useLogs', () => {
     });
 
     expect(mockLogQuery).toHaveBeenCalledWith({ fileName: 'app.log' });
-    expect(response).toEqual({ ok: true, data: queryResult });
+    expect(response).toEqual({
+      ok: true,
+      data: {
+        entries: [],
+        totalCount: 0,
+        hasMore: false,
+        meta: {
+          scannedLines: 0,
+          sourceLineCount: 0,
+          matchedCount: 0,
+          effectiveMaxScanLines: null,
+          scanTruncated: false,
+          windowStartLine: null,
+          windowEndLine: null,
+          queryFingerprint: '',
+        },
+      },
+    });
+  });
+
+  it('normalizes query metadata with backward-compatible defaults', async () => {
+    mockLogQuery.mockResolvedValue({
+      entries: [],
+      totalCount: 2,
+      hasMore: false,
+      meta: {
+        scannedLines: 5,
+        sourceLineCount: 10,
+        matchedCount: 1,
+        scanTruncated: true,
+      },
+    });
+    const { result } = renderHook(() => useLogs());
+
+    let response;
+    await act(async () => {
+      response = await result.current.queryLogFile({ fileName: 'app.log' });
+    });
+
+    expect(response).toEqual({
+      ok: true,
+      data: {
+        entries: [],
+        totalCount: 2,
+        hasMore: false,
+        meta: {
+          scannedLines: 5,
+          sourceLineCount: 10,
+          matchedCount: 2,
+          effectiveMaxScanLines: null,
+          scanTruncated: true,
+          windowStartLine: null,
+          windowEndLine: null,
+          queryFingerprint: '',
+        },
+      },
+    });
   });
 
   it('normalizes query options before calling backend logQuery', async () => {

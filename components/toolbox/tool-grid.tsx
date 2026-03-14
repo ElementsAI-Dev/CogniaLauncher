@@ -22,7 +22,7 @@ export function ToolGrid({ tools, favorites, viewMode, onToggleFavorite, onOpen,
       data-testid="tool-grid-root"
       className={cn(
         viewMode === 'grid'
-          ? 'grid grid-cols-1 content-start gap-4 pb-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+          ? 'grid grid-cols-1 content-start gap-4 pb-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5'
           : 'flex flex-col gap-2 pb-4',
       )}
     >

@@ -6,17 +6,24 @@ CogniaLauncher's logging architecture consists of three layers: backend structur
 
 ## Log Sources
 
-### Backend Logs (Tauri + `tauri-plugin-log`)
+### Backend Logs (profile-aware)
 
-- Output targets: stdout, WebView, log files
-- Log rotation: max 5 files, 10MB per file
-- Log levels: `ERROR` / `WARN` / `INFO` / `DEBUG` / `TRACE`
+- **Release builds** use `tauri-plugin-log` for stdout, WebView forwarding, and persisted session log files.
+- **Desktop debug builds** use CrabNebula DevTools instrumentation instead of `tauri-plugin-log` because the two logger integrations conflict.
+- If you need backend log streaming, event inspection, or command tracing during `pnpm tauri dev`, connect the app from CrabNebula DevTools.
 
 ### Frontend Logs (LogProvider)
 
 - Console interception: `console.*` writes to frontend log store
 - Event logs: downloads, batch operations, self-update, update checks all feed into the log panel
 - Runtime exceptions: listens to `window.error` and `window.unhandledrejection`
+- When the backend `plugin-log` bridge is unavailable in a desktop debug build, the provider keeps frontend/event logging active and shows a developer hint that points to CrabNebula DevTools.
+
+## Debug vs Release Workflow
+
+- Use `pnpm tauri dev` + CrabNebula DevTools when you need live backend diagnostics in development.
+- Use the in-app `/logs` page to inspect persisted session files and historical exports in release-style builds where `tauri-plugin-log` is enabled.
+- It is expected that a desktop debug build may not stream Rust backend logs into the in-app log panel.
 
 ### Crash Diagnostic Bundles
 

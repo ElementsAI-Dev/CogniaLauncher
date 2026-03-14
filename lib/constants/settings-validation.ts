@@ -54,7 +54,13 @@ export function validateField(
   t: (key: string, params?: Record<string, string | number>) => string,
 ): string | null {
   const rules = VALIDATION_RULES[key];
-  if (!rules) return null;
+  if (!rules) {
+    if (/^providers\.[^.]+\.priority$/.test(key)) {
+      if (!value.trim()) return null;
+      return Number.isNaN(Number(value)) ? t("validation.mustBeNumber") : null;
+    }
+    return null;
+  }
 
   if (rules.min !== undefined || rules.max !== undefined) {
     const num = Number(value);

@@ -233,6 +233,7 @@ describe('useDownloads', () => {
     mockDownloadHistoryStats.mockResolvedValue(null);
     mockDownloadGetSpeedLimit.mockResolvedValue(0);
     mockDownloadGetMaxConcurrent.mockResolvedValue(4);
+    mockDownloadShutdown.mockResolvedValue(undefined);
     
     // Mock listener cleanup functions
     mockListenDownloadTaskAdded.mockResolvedValue(() => {});
@@ -303,6 +304,21 @@ describe('useDownloads', () => {
       destination: '/downloads',
       name: 'runtime-off.zip',
     });
+  });
+
+  it('invokes downloadShutdown on beforeunload for recoverable session restore', async () => {
+    renderHook(() => useDownloads());
+
+    await waitFor(() => {
+      expect(mockListenDownloadTaskAdded).toHaveBeenCalled();
+    });
+
+    act(() => {
+      window.dispatchEvent(new Event('beforeunload'));
+    });
+
+    expect(mockDownloadShutdown).toHaveBeenCalled();
+    expect(mockDownloadCancelAll).not.toHaveBeenCalled();
   });
 
   it('should add a download', async () => {
@@ -406,15 +422,26 @@ describe('useDownloads', () => {
     });
 
     const failedCallback = mockListenDownloadTaskFailed.mock.calls[0]?.[0] as
-      | ((taskId: string, error: string) => void)
+      | ((
+          taskId: string,
+          error: string,
+          reasonCode: string,
+          recoverable: boolean
+        ) => void)
       | undefined;
     expect(failedCallback).toBeDefined();
 
     act(() => {
-      failedCallback?.('task-1', 'boom');
+      failedCallback?.('task-1', 'boom', 'network_error', true);
     });
 
     await waitFor(() => {
+      expect(mockUpdateTask).toHaveBeenCalledWith('task-1', {
+        state: 'failed',
+        error: 'boom',
+        recoverable: true,
+        failureReasonCode: 'network_error',
+      });
       expect(mockDownloadHistoryList).toHaveBeenCalled();
       expect(mockDownloadHistoryStats).toHaveBeenCalled();
       expect(mockSetHistory).toHaveBeenCalledWith(history);

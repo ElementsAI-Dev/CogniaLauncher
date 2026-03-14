@@ -73,25 +73,18 @@ describe("CachePathCard", () => {
   it("shows symlink badge when path is symlink", async () => {
     mockIsTauri = true;
     mockGetCachePathInfo.mockResolvedValue({ ...pathInfo, isSymlink: true, symlinkTarget: "D:\\Cache" });
-    const user = userEvent.setup();
     await act(async () => {
       render(<CachePathCard />);
     });
-    // Expand the collapsible to trigger fetch
-    const trigger = screen.getByTestId("cache-path-trigger");
-    if (trigger) await user.click(trigger);
     expect(screen.getByText("cache.symlink")).toBeInTheDocument();
   });
 
   it("shows custom path badge when path is custom", async () => {
     mockIsTauri = true;
     mockGetCachePathInfo.mockResolvedValue({ ...pathInfo, isCustom: true });
-    const user = userEvent.setup();
     await act(async () => {
       render(<CachePathCard />);
     });
-    const trigger = screen.getByTestId("cache-path-trigger");
-    if (trigger) await user.click(trigger);
     expect(screen.getByText("cache.customPath")).toBeInTheDocument();
   });
 
@@ -101,38 +94,21 @@ describe("CachePathCard", () => {
     expect(screen.queryByText("cache.customPath")).not.toBeInTheDocument();
   });
 
-  it("renders chevron icon for collapsible", () => {
-    render(<CachePathCard />);
-    // The ChevronDown icon should be present
-    const container = screen.getByTestId("cache-path-trigger");
-    expect(container).toBeInTheDocument();
-  });
-
-  it("shows path info when expanded with data", async () => {
+  it("shows path info with data", async () => {
     mockIsTauri = true;
     mockGetCachePathInfo.mockResolvedValue(pathInfo);
-    const user = userEvent.setup();
     await act(async () => {
       render(<CachePathCard />);
     });
-    // Click to expand
-    const trigger = screen.getByTestId("cache-path-trigger");
-    if (trigger) await user.click(trigger);
-    // Wait for data
-    await act(async () => {});
     expect(screen.getByText("cache.currentPath")).toBeInTheDocument();
   });
 
   it("shows exists and writable badges when path info loaded", async () => {
     mockIsTauri = true;
     mockGetCachePathInfo.mockResolvedValue(pathInfo);
-    const user = userEvent.setup();
     await act(async () => {
       render(<CachePathCard />);
     });
-    const trigger = screen.getByTestId("cache-path-trigger");
-    if (trigger) await user.click(trigger);
-    await act(async () => {});
     expect(screen.getByText("cache.exists")).toBeInTheDocument();
     expect(screen.getByText("cache.writable")).toBeInTheDocument();
   });
@@ -140,13 +116,9 @@ describe("CachePathCard", () => {
   it("shows change path and migration buttons when path info loaded", async () => {
     mockIsTauri = true;
     mockGetCachePathInfo.mockResolvedValue(pathInfo);
-    const user = userEvent.setup();
     await act(async () => {
       render(<CachePathCard />);
     });
-    const trigger = screen.getByTestId("cache-path-trigger");
-    if (trigger) await user.click(trigger);
-    await act(async () => {});
     expect(screen.getByText("cache.changePath")).toBeInTheDocument();
     expect(screen.getByText("cache.migration")).toBeInTheDocument();
   });
@@ -158,9 +130,6 @@ describe("CachePathCard", () => {
     await act(async () => {
       render(<CachePathCard />);
     });
-    const trigger = screen.getByTestId("cache-path-trigger");
-    if (trigger) await user.click(trigger);
-    await act(async () => {});
     await user.click(screen.getByText("cache.changePath"));
     expect(screen.getByPlaceholderText("cache.enterNewPath")).toBeInTheDocument();
     expect(screen.getByText("common.cancel")).toBeInTheDocument();
@@ -169,13 +138,9 @@ describe("CachePathCard", () => {
   it("shows reset button only when path is custom", async () => {
     mockIsTauri = true;
     mockGetCachePathInfo.mockResolvedValue({ ...pathInfo, isCustom: true, defaultPath: "C:\\Default" });
-    const user = userEvent.setup();
     await act(async () => {
       render(<CachePathCard />);
     });
-    const trigger = screen.getByTestId("cache-path-trigger");
-    if (trigger) await user.click(trigger);
-    await act(async () => {});
     expect(screen.getByText("cache.resetPath")).toBeInTheDocument();
   });
 
@@ -186,13 +151,9 @@ describe("CachePathCard", () => {
       isSymlink: true,
       symlinkTarget: "D:\\CacheTarget",
     });
-    const user = userEvent.setup();
     await act(async () => {
       render(<CachePathCard />);
     });
-    const trigger = screen.getByTestId("cache-path-trigger");
-    if (trigger) await user.click(trigger);
-    await act(async () => {});
     expect(screen.getByText("cache.symlinkTarget")).toBeInTheDocument();
     expect(screen.getByText("D:\\CacheTarget")).toBeInTheDocument();
   });
@@ -204,13 +165,9 @@ describe("CachePathCard", () => {
       isCustom: true,
       defaultPath: "C:\\Users\\Default\\.cognia",
     });
-    const user = userEvent.setup();
     await act(async () => {
       render(<CachePathCard />);
     });
-    const trigger = screen.getByTestId("cache-path-trigger");
-    if (trigger) await user.click(trigger);
-    await act(async () => {});
     expect(screen.getByText("cache.defaultPath")).toBeInTheDocument();
     expect(screen.getByText("C:\\Users\\Default\\.cognia")).toBeInTheDocument();
   });
@@ -218,26 +175,18 @@ describe("CachePathCard", () => {
   it("shows missing badge when path does not exist", async () => {
     mockIsTauri = true;
     mockGetCachePathInfo.mockResolvedValue({ ...pathInfo, exists: false });
-    const user = userEvent.setup();
     await act(async () => {
       render(<CachePathCard />);
     });
-    const trigger = screen.getByTestId("cache-path-trigger");
-    if (trigger) await user.click(trigger);
-    await act(async () => {});
     expect(screen.getByText("cache.missing")).toBeInTheDocument();
   });
 
   it("shows readOnly badge when not writable", async () => {
     mockIsTauri = true;
     mockGetCachePathInfo.mockResolvedValue({ ...pathInfo, writable: false });
-    const user = userEvent.setup();
     await act(async () => {
       render(<CachePathCard />);
     });
-    const trigger = screen.getByTestId("cache-path-trigger");
-    if (trigger) await user.click(trigger);
-    await act(async () => {});
     expect(screen.getByText("cache.readOnly")).toBeInTheDocument();
   });
 
@@ -250,9 +199,6 @@ describe("CachePathCard", () => {
     await act(async () => {
       render(<CachePathCard />);
     });
-    const trigger = screen.getByTestId("cache-path-trigger");
-    if (trigger) await user.click(trigger);
-    await act(async () => {});
     // Enter edit mode
     await user.click(screen.getByText("cache.changePath"));
     const input = screen.getByPlaceholderText("cache.enterNewPath");
@@ -278,13 +224,9 @@ describe("CachePathCard", () => {
     mockGetCachePathInfo.mockResolvedValue({ ...pathInfo, isCustom: true });
     mockResetCachePath.mockResolvedValue(undefined);
     const { toast } = jest.requireMock("sonner");
-    const user = userEvent.setup();
     await act(async () => {
       render(<CachePathCard />);
     });
-    const trigger = screen.getByTestId("cache-path-trigger");
-    if (trigger) await user.click(trigger);
-    await act(async () => {});
     await act(async () => {
       screen.getByText("cache.resetPath").closest("button")!.click();
     });
@@ -304,9 +246,6 @@ describe("CachePathCard", () => {
     await act(async () => {
       render(<CachePathCard />);
     });
-    const trigger = screen.getByTestId("cache-path-trigger");
-    if (trigger) await user.click(trigger);
-    await act(async () => {});
     await user.click(screen.getByText("cache.migration"));
     expect(screen.getByTestId("migration-dialog")).toBeInTheDocument();
   });

@@ -1,7 +1,7 @@
 'use client';
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardAction, CardFooter } from '@/components/ui/card';
-import { Alert, AlertTitle } from '@/components/ui/alert';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { useLocale } from '@/components/providers/locale-provider';
@@ -53,6 +53,7 @@ export function UpdatesWidget({ className }: UpdatesWidgetProps) {
             className="h-8 w-8"
             onClick={handleCheckUpdates}
             disabled={isCheckingUpdates}
+            aria-label={t('dashboard.widgets.updatesCheckNow')}
           >
             {isCheckingUpdates ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -63,6 +64,18 @@ export function UpdatesWidget({ className }: UpdatesWidgetProps) {
         </CardAction>
       </CardHeader>
       <CardContent>
+        {error && (
+          <Alert variant="destructive" className="mb-3">
+            <AlertTitle>{t('dashboard.widgets.sectionNeedsAttention')}</AlertTitle>
+            <AlertDescription className="space-y-2">
+              <p>{error}</p>
+              <Button variant="outline" size="sm" onClick={handleCheckUpdates}>
+                {t('dashboard.widgets.retry')}
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
+
         {/* Checking progress */}
         {isCheckingUpdates && updateCheckProgress && (
           <div className="mb-3 space-y-1.5">
@@ -72,6 +85,20 @@ export function UpdatesWidget({ className }: UpdatesWidgetProps) {
             </div>
             <Progress value={progressPercent} className="h-1.5" />
           </div>
+        )}
+
+        {!isCheckingUpdates && availableUpdates.length === 0 && !lastUpdateCheck && !error && (
+          <DashboardEmptyState
+            className="py-4"
+            icon={<ArrowUpCircle className="h-8 w-8 text-muted-foreground/70" />}
+            message={t('dashboard.widgets.updatesCheckPrompt')}
+            action={(
+              <Button size="sm" className="mt-1 gap-2" onClick={handleCheckUpdates}>
+                <RefreshCw className="h-4 w-4" />
+                {t('dashboard.widgets.updatesCheckNow')}
+              </Button>
+            )}
+          />
         )}
 
         {/* Results */}
@@ -124,9 +151,6 @@ export function UpdatesWidget({ className }: UpdatesWidgetProps) {
         )}
 
         {/* Error */}
-        {error && (
-          <p className="text-xs text-destructive mb-3">{error}</p>
-        )}
       </CardContent>
       <CardFooter className="border-t pt-4">
         <div className="flex items-center justify-between w-full">

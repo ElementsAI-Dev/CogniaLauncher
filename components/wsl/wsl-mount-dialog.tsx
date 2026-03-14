@@ -13,7 +13,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { HardDrive, Loader2 } from 'lucide-react';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
+import { HardDrive, Loader2, ChevronDown, Settings2 } from 'lucide-react';
 import type { WslMountDialogProps } from '@/types/wsl';
 import type { WslMountOptions } from '@/types/tauri';
 
@@ -32,6 +37,7 @@ export function WslMountDialog({
   const [mountOptions, setMountOptions] = useState('');
   const [bare, setBare] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   const handleBrowse = async () => {
     try {
@@ -58,6 +64,7 @@ export function WslMountDialog({
     setMountName('');
     setMountOptions('');
     setBare(false);
+    setAdvancedOpen(false);
   };
 
   const handleSubmit = async () => {
@@ -88,7 +95,7 @@ export function WslMountDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[480px]">
+      <DialogContent className="sm:max-w-120">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <HardDrive className="h-5 w-5" />
@@ -106,72 +113,87 @@ export function WslMountDialog({
                 placeholder="\\\\.\\PhysicalDrive0 or C:\\path\\to\\disk.vhdx"
                 value={diskPath}
                 onChange={(e) => setDiskPath(e.target.value)}
-                className="flex-1"
+                className="h-9 flex-1"
               />
-              <Button variant="outline" size="sm" onClick={handleBrowse}>
+              <Button variant="outline" size="sm" onClick={handleBrowse} disabled={submitting}>
                 {t('common.browse')}
               </Button>
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="wsl-mount-vhd">{t('wsl.dialog.mountIsVhd')}</Label>
+            <div className="flex items-center justify-between rounded-md border px-3 py-2">
+              <Label htmlFor="wsl-mount-vhd" className="text-sm">{t('wsl.dialog.mountIsVhd')}</Label>
               <Switch id="wsl-mount-vhd" checked={isVhd} onCheckedChange={setIsVhd} />
             </div>
-            <div className="flex items-center justify-between">
-              <Label htmlFor="wsl-mount-bare">{t('wsl.dialog.mountBare')}</Label>
+            <div className="flex items-center justify-between rounded-md border px-3 py-2">
+              <Label htmlFor="wsl-mount-bare" className="text-sm">{t('wsl.dialog.mountBare')}</Label>
               <Switch id="wsl-mount-bare" checked={bare} onCheckedChange={setBare} />
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="wsl-mount-fs">{t('wsl.dialog.mountFsType')}</Label>
-              <Input
-                id="wsl-mount-fs"
-                placeholder="ext4"
-                value={fsType}
-                onChange={(e) => setFsType(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="wsl-mount-partition">{t('wsl.dialog.mountPartition')}</Label>
-              <Input
-                id="wsl-mount-partition"
-                type="number"
-                placeholder="0"
-                value={partition}
-                onChange={(e) => setPartition(e.target.value)}
-              />
-            </div>
-          </div>
+          <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
+            <CollapsibleTrigger asChild>
+              <Button variant="ghost" size="sm" className="gap-1.5 text-xs text-muted-foreground w-full justify-start px-0 hover:bg-transparent">
+                <Settings2 className="h-3.5 w-3.5" />
+                {t('wsl.dialog.mountAdvanced')}
+                <ChevronDown className={`h-3.5 w-3.5 transition-transform ${advancedOpen ? 'rotate-180' : ''}`} />
+              </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="space-y-3 pt-2">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="wsl-mount-fs">{t('wsl.dialog.mountFsType')}</Label>
+                  <Input
+                    id="wsl-mount-fs"
+                    placeholder="ext4"
+                    value={fsType}
+                    onChange={(e) => setFsType(e.target.value)}
+                    className="h-9"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="wsl-mount-partition">{t('wsl.dialog.mountPartition')}</Label>
+                  <Input
+                    id="wsl-mount-partition"
+                    type="number"
+                    placeholder="0"
+                    value={partition}
+                    onChange={(e) => setPartition(e.target.value)}
+                    className="h-9"
+                  />
+                </div>
+              </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="wsl-mount-name">{t('wsl.dialog.mountName')}</Label>
-            <Input
-              id="wsl-mount-name"
-              placeholder={t('wsl.mountNameOptional')}
-              value={mountName}
-              onChange={(e) => setMountName(e.target.value)}
-            />
-          </div>
+              <div className="space-y-2">
+                <Label htmlFor="wsl-mount-name">{t('wsl.dialog.mountName')}</Label>
+                <Input
+                  id="wsl-mount-name"
+                  placeholder={t('wsl.mountNameOptional')}
+                  value={mountName}
+                  onChange={(e) => setMountName(e.target.value)}
+                  className="h-9"
+                />
+              </div>
 
-          {capabilities?.mountOptions !== false && (
-            <div className="space-y-2">
-              <Label htmlFor="wsl-mount-options">{t('wsl.dialog.mountOptions')}</Label>
-              <Input
-                id="wsl-mount-options"
-                placeholder="ro,noatime"
-                value={mountOptions}
-                onChange={(e) => setMountOptions(e.target.value)}
-              />
-            </div>
-          )}
+              {capabilities?.mountOptions !== false && (
+                <div className="space-y-2">
+                  <Label htmlFor="wsl-mount-options">{t('wsl.dialog.mountOptions')}</Label>
+                  <Input
+                    id="wsl-mount-options"
+                    placeholder="ro,noatime"
+                    value={mountOptions}
+                    onChange={(e) => setMountOptions(e.target.value)}
+                    className="h-9"
+                  />
+                </div>
+              )}
+            </CollapsibleContent>
+          </Collapsible>
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
             {t('common.cancel')}
           </Button>
           <Button

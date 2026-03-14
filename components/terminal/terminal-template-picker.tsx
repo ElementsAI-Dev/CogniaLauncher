@@ -23,6 +23,11 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { Separator } from '@/components/ui/separator';
 import { Card, CardContent } from '@/components/ui/card';
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
@@ -131,7 +136,7 @@ export function TerminalTemplatePicker({
         <DialogContent className="sm:max-w-[640px] max-h-[85vh]">
           <DialogHeader>
             <DialogTitle>{t('terminal.templatePicker')}</DialogTitle>
-            <DialogDescription>{t('terminal.templatePickerDesc')}</DialogDescription>
+            <DialogDescription>{t('terminal.templatePickerDesc')} ({templates.length})</DialogDescription>
           </DialogHeader>
 
           <div className="relative">
@@ -152,7 +157,9 @@ export function TerminalTemplatePicker({
                     <Terminal />
                   </EmptyMedia>
                   <EmptyTitle className="text-sm font-normal text-muted-foreground">
-                    {t('terminal.noTemplates')}
+                    {search.trim() && templates.length > 0
+                      ? t('terminal.noSearchResults')
+                      : t('terminal.noTemplates')}
                   </EmptyTitle>
                 </EmptyHeader>
               </Empty>
@@ -165,47 +172,64 @@ export function TerminalTemplatePicker({
                     </h4>
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                       {items.map((tpl) => (
-                        <Card
-                          key={tpl.id}
-                          role="button"
-                          tabIndex={0}
-                          className="group cursor-pointer border transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          onClick={() => handleSelect(tpl)}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter' || event.key === ' ') {
-                              event.preventDefault();
-                              handleSelect(tpl);
-                            }
-                          }}
-                        >
-                          <CardContent className="flex items-start gap-3 p-3">
-                            <div className="mt-0.5 shrink-0 text-muted-foreground group-hover:text-accent-foreground">
-                              {ICON_MAP[tpl.icon] ?? <Terminal className="h-5 w-5" />}
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm font-medium truncate">{tpl.name}</span>
-                                <Badge variant={getCategoryVariant(tpl.category)} className="shrink-0 text-[10px] px-1.5 py-0">
-                                  {getCategoryLabel(tpl.category, t)}
-                                </Badge>
-                              </div>
-                              <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">
-                                {tpl.description}
-                              </p>
-                            </div>
-                            {!tpl.isBuiltin && onDelete && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-7 w-7 shrink-0 opacity-0 group-hover:opacity-100 text-destructive"
-                                aria-label={t('terminal.deleteTemplate')}
-                                onClick={(e) => { e.stopPropagation(); setDeleteId(tpl.id); }}
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
-                            )}
-                          </CardContent>
-                        </Card>
+                        <Tooltip key={tpl.id}>
+                          <TooltipTrigger asChild>
+                            <Card
+                              role="button"
+                              tabIndex={0}
+                              className="group cursor-pointer border transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                              onClick={() => handleSelect(tpl)}
+                              onKeyDown={(event) => {
+                                if (event.key === 'Enter' || event.key === ' ') {
+                                  event.preventDefault();
+                                  handleSelect(tpl);
+                                }
+                              }}
+                            >
+                              <CardContent className="flex items-start gap-3 p-3">
+                                <div className="mt-0.5 shrink-0 text-muted-foreground group-hover:text-accent-foreground">
+                                  {ICON_MAP[tpl.icon] ?? <Terminal className="h-5 w-5" />}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-sm font-medium truncate">{tpl.name}</span>
+                                    <Badge variant={getCategoryVariant(tpl.category)} className="shrink-0 text-[10px] px-1.5 py-0">
+                                      {getCategoryLabel(tpl.category, t)}
+                                    </Badge>
+                                  </div>
+                                  <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">
+                                    {tpl.description}
+                                  </p>
+                                  <div className="mt-1.5 flex flex-wrap gap-1">
+                                    {tpl.shellType && (
+                                      <Badge variant="outline" className="text-[10px] px-1.5 py-0">{tpl.shellType}</Badge>
+                                    )}
+                                    {tpl.envType && (
+                                      <Badge variant="outline" className="text-[10px] px-1.5 py-0">{tpl.envType}</Badge>
+                                    )}
+                                  </div>
+                                </div>
+                                {!tpl.isBuiltin && onDelete && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 shrink-0 opacity-0 group-hover:opacity-100 text-destructive"
+                                    aria-label={t('terminal.deleteTemplate')}
+                                    onClick={(e) => { e.stopPropagation(); setDeleteId(tpl.id); }}
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </Button>
+                                )}
+                              </CardContent>
+                            </Card>
+                          </TooltipTrigger>
+                          <TooltipContent side="right" className="max-w-[280px] space-y-1 text-xs">
+                            {tpl.shellType && <p><span className="font-medium">{t('terminal.tooltipShell')}</span> {tpl.shellType}</p>}
+                            {tpl.args && tpl.args.length > 0 && <p><span className="font-medium">{t('terminal.tooltipArgs')}</span> {tpl.args.join(' ')}</p>}
+                            {tpl.envType && <p><span className="font-medium">{t('terminal.tooltipEnv')}</span> {tpl.envType}{tpl.envVersion ? ` ${tpl.envVersion}` : ''}</p>}
+                            {tpl.startupCommand && <p><span className="font-medium">{t('terminal.tooltipStartup')}</span> {tpl.startupCommand}</p>}
+                          </TooltipContent>
+                        </Tooltip>
                       ))}
                     </div>
                     <Separator className="mt-4" />

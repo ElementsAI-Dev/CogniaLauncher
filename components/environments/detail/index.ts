@@ -6,3 +6,6 @@ export { EnvDetailSettings } from './env-detail-settings';
 export { EnvDetailShell } from './env-detail-shell';
 export { EnvDetailShims } from './env-detail-shims';
 export { EnvDetailPageClient } from './env-detail-page';
+export { RustToolchainPanel } from './rust-toolchain-panel';
+export { CondaEnvironmentPanel } from './conda-environment-panel';
+export { GoToolsPanel } from './go-tools-panel';

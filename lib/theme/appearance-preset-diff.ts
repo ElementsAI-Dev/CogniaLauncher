@@ -15,7 +15,9 @@ export function areAppearancePresetConfigsEqual(
     && a.backgroundOpacity === b.backgroundOpacity
     && a.backgroundBlur === b.backgroundBlur
     && a.backgroundFit === b.backgroundFit
+    && a.backgroundScale === b.backgroundScale
+    && a.backgroundPositionX === b.backgroundPositionX
+    && a.backgroundPositionY === b.backgroundPositionY
     && a.windowEffect === b.windowEffect
   );
 }
-

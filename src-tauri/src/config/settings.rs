@@ -39,6 +39,12 @@ pub struct UpdateSettings {
     pub auto_install: bool,
     /// Show notifications when updates are available
     pub notify: bool,
+    /// Source strategy for self-update endpoint selection
+    pub source_mode: UpdateSourceMode,
+    /// Optional custom updater endpoints (JSON array in config layer)
+    pub custom_endpoints: Vec<String>,
+    /// Whether to retry official source when selected source fails
+    pub fallback_to_official: bool,
 }
 
 impl Default for UpdateSettings {
@@ -47,7 +53,24 @@ impl Default for UpdateSettings {
             check_on_start: true,
             auto_install: false,
             notify: true,
+            source_mode: UpdateSourceMode::Official,
+            custom_endpoints: Vec::new(),
+            fallback_to_official: true,
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum UpdateSourceMode {
+    Official,
+    Mirror,
+    Custom,
+}
+
+impl Default for UpdateSourceMode {
+    fn default() -> Self {
+        Self::Official
     }
 }
 
@@ -419,8 +442,10 @@ impl MirrorConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ProviderSettings {
-    pub enabled: bool,
-    pub priority: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub priority: Option<i32>,
     #[serde(flatten)]
     pub extra: HashMap<String, toml::Value>,
 }
@@ -428,8 +453,8 @@ pub struct ProviderSettings {
 impl Default for ProviderSettings {
     fn default() -> Self {
         Self {
-            enabled: true,
-            priority: 0,
+            enabled: None,
+            priority: None,
             extra: HashMap::new(),
         }
     }
@@ -491,6 +516,136 @@ impl Settings {
         fs::write_file_atomic(&path, content.as_bytes()).await?;
 
         Ok(())
+    }
+
+    fn prune_provider_entry_if_empty(&mut self, provider: &str) {
+        let should_remove = self
+            .providers
+            .get(provider)
+            .map(|settings| {
+                settings.enabled.is_none()
+                    && settings.priority.is_none()
+                    && settings.extra.is_empty()
+            })
+            .unwrap_or(false);
+
+        if should_remove {
+            self.providers.remove(provider);
+        }
+    }
+
+    pub fn get_provider_enabled_override(&self, provider: &str) -> Option<bool> {
+        self.providers.get(provider).and_then(|settings| settings.enabled)
+    }
+
+    pub fn get_provider_legacy_token(&self, provider: &str) -> Option<String> {
+        self.providers
+            .get(provider)
+            .and_then(|settings| settings.extra.get("token"))
+            .and_then(|value| value.as_str())
+            .map(|value| value.to_string())
+    }
+
+    pub fn set_provider_legacy_token(&mut self, provider: &str, value: &str) -> CogniaResult<()> {
+        let settings = self.providers.entry(provider.to_string()).or_default();
+        if value.is_empty() {
+            settings.extra.remove("token");
+            self.prune_provider_entry_if_empty(provider);
+        } else {
+            settings
+                .extra
+                .insert("token".to_string(), toml::Value::String(value.to_string()));
+        }
+
+        Ok(())
+    }
+
+    pub fn clear_provider_legacy_token(&mut self, provider: &str) {
+        if let Some(settings) = self.providers.get_mut(provider) {
+            settings.extra.remove("token");
+        }
+        self.prune_provider_entry_if_empty(provider);
+    }
+
+    pub fn get_provider_secret_saved(&self, provider: &str) -> bool {
+        self.providers
+            .get(provider)
+            .and_then(|settings| settings.extra.get("secret_saved"))
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false)
+    }
+
+    pub fn set_provider_secret_saved(&mut self, provider: &str, saved: bool) {
+        if saved {
+            self.providers
+                .entry(provider.to_string())
+                .or_default()
+                .extra
+                .insert("secret_saved".to_string(), toml::Value::Boolean(true));
+        } else {
+            if let Some(settings) = self.providers.get_mut(provider) {
+                settings.extra.remove("secret_saved");
+            }
+            self.prune_provider_entry_if_empty(provider);
+        }
+    }
+
+    pub fn get_provider_enabled_effective(&self, provider: &str) -> Option<bool> {
+        self.get_provider_enabled_override(provider).or_else(|| {
+            if self
+                .provider_settings
+                .disabled_providers
+                .iter()
+                .any(|disabled| disabled == provider)
+            {
+                Some(false)
+            } else {
+                None
+            }
+        })
+    }
+
+    pub fn set_provider_enabled_override(&mut self, provider: &str, enabled: Option<bool>) {
+        match enabled {
+            Some(value) => {
+                let settings = self.providers.entry(provider.to_string()).or_default();
+                settings.enabled = Some(value);
+
+                self.provider_settings
+                    .disabled_providers
+                    .retain(|disabled| disabled != provider);
+                if !value {
+                    self.provider_settings
+                        .disabled_providers
+                        .push(provider.to_string());
+                }
+            }
+            None => {
+                if let Some(settings) = self.providers.get_mut(provider) {
+                    settings.enabled = None;
+                }
+                self.prune_provider_entry_if_empty(provider);
+            }
+        }
+    }
+
+    pub fn get_provider_priority_override(&self, provider: &str) -> Option<i32> {
+        self.providers.get(provider).and_then(|settings| settings.priority)
+    }
+
+    pub fn set_provider_priority_override(&mut self, provider: &str, priority: Option<i32>) {
+        match priority {
+            Some(value) => {
+                let settings = self.providers.entry(provider.to_string()).or_default();
+                settings.priority = Some(value);
+            }
+            None => {
+                if let Some(settings) = self.providers.get_mut(provider) {
+                    settings.priority = None;
+                }
+                self.prune_provider_entry_if_empty(provider);
+            }
+        }
     }
 
     pub fn get_root_dir(&self) -> PathBuf {
@@ -708,6 +863,75 @@ impl Settings {
         }
     }
 
+    fn parse_update_source_mode(value: &str) -> CogniaResult<UpdateSourceMode> {
+        match value.trim().to_lowercase().as_str() {
+            "official" => Ok(UpdateSourceMode::Official),
+            "mirror" => Ok(UpdateSourceMode::Mirror),
+            "custom" => Ok(UpdateSourceMode::Custom),
+            _ => Err(CogniaError::Config(
+                "Invalid updates source_mode value. Valid: official, mirror, custom".into(),
+            )),
+        }
+    }
+
+    fn validate_update_endpoint_template(endpoint: &str) -> CogniaResult<String> {
+        let trimmed = endpoint.trim();
+        if trimmed.is_empty() {
+            return Err(CogniaError::Config(
+                "Update endpoint must not be empty".into(),
+            ));
+        }
+
+        // Allow updater templates while still validating URL structure.
+        let normalized = trimmed
+            .replace("{{current_version}}", "0.0.0")
+            .replace("{{target}}", "windows-x86_64")
+            .replace("{{arch}}", "x86_64")
+            .replace("{{bundle_type}}", "nsis");
+        let parsed = Url::parse(&normalized).map_err(|e| {
+            CogniaError::Config(format!("Invalid update endpoint '{}': {}", trimmed, e))
+        })?;
+
+        if parsed.scheme() != "https" {
+            return Err(CogniaError::Config(
+                "Update endpoint must use https://".into(),
+            ));
+        }
+
+        Ok(trimmed.to_string())
+    }
+
+    fn parse_update_custom_endpoints(value: &str) -> CogniaResult<Vec<String>> {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let raw_endpoints: Vec<String> = if trimmed.starts_with('[') {
+            serde_json::from_str(trimmed).map_err(|_| {
+                CogniaError::Config("Invalid JSON array for updates.custom_endpoints".into())
+            })?
+        } else {
+            trimmed
+                .replace('\r', "")
+                .replace('\n', ",")
+                .split(',')
+                .map(|item| item.trim().to_string())
+                .filter(|item| !item.is_empty())
+                .collect()
+        };
+
+        let mut validated = Vec::with_capacity(raw_endpoints.len());
+        for endpoint in raw_endpoints {
+            let normalized = Self::validate_update_endpoint_template(&endpoint)?;
+            if !validated.contains(&normalized) {
+                validated.push(normalized);
+            }
+        }
+
+        Ok(validated)
+    }
+
     pub fn get_value(&self, key: &str) -> Option<String> {
         let parts: Vec<&str> = key.split('.').collect();
 
@@ -798,6 +1022,21 @@ impl Settings {
             ["updates", "check_on_start"] => Some(self.updates.check_on_start.to_string()),
             ["updates", "auto_install"] => Some(self.updates.auto_install.to_string()),
             ["updates", "notify"] => Some(self.updates.notify.to_string()),
+            ["updates", "source_mode"] => Some(
+                match self.updates.source_mode {
+                    UpdateSourceMode::Official => "official",
+                    UpdateSourceMode::Mirror => "mirror",
+                    UpdateSourceMode::Custom => "custom",
+                }
+                .to_string(),
+            ),
+            ["updates", "custom_endpoints"] => Some(
+                serde_json::to_string(&self.updates.custom_endpoints)
+                    .unwrap_or_else(|_| "[]".into()),
+            ),
+            ["updates", "fallback_to_official"] => {
+                Some(self.updates.fallback_to_official.to_string())
+            }
             ["tray", "minimize_to_tray"] => Some(self.tray.minimize_to_tray.to_string()),
             ["tray", "start_minimized"] => Some(self.tray.start_minimized.to_string()),
             ["tray", "show_notifications"] => Some(self.tray.show_notifications.to_string()),
@@ -890,18 +1129,19 @@ impl Settings {
             ["shortcuts", "toggle_window"] => Some(self.shortcuts.toggle_window.clone()),
             ["shortcuts", "command_palette"] => Some(self.shortcuts.command_palette.clone()),
             ["shortcuts", "quick_search"] => Some(self.shortcuts.quick_search.clone()),
-            ["providers", provider, "token"] => self
-                .providers
-                .get(*provider)
-                .and_then(|ps| ps.extra.get("token"))
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string()),
+            ["providers", _provider, "token"] => None,
             ["providers", provider, "url"] => self
                 .providers
                 .get(*provider)
                 .and_then(|ps| ps.extra.get("url"))
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string()),
+            ["providers", provider, "enabled"] => self
+                .get_provider_enabled_effective(provider)
+                .map(|enabled| enabled.to_string()),
+            ["providers", provider, "priority"] => self
+                .get_provider_priority_override(provider)
+                .map(|priority| priority.to_string()),
             ["mirrors", provider] => self.mirrors.get(*provider).map(|m| m.url.clone()),
             ["mirrors", provider, "enabled"] => {
                 self.mirrors.get(*provider).map(|m| m.enabled.to_string())
@@ -1189,6 +1429,17 @@ impl Settings {
                     .parse()
                     .map_err(|_| CogniaError::Config("Invalid boolean value".into()))?;
             }
+            ["updates", "source_mode"] => {
+                self.updates.source_mode = Self::parse_update_source_mode(value)?;
+            }
+            ["updates", "custom_endpoints"] => {
+                self.updates.custom_endpoints = Self::parse_update_custom_endpoints(value)?;
+            }
+            ["updates", "fallback_to_official"] => {
+                self.updates.fallback_to_official = value
+                    .parse()
+                    .map_err(|_| CogniaError::Config("Invalid boolean value".into()))?;
+            }
             ["tray", "minimize_to_tray"] => {
                 self.tray.minimize_to_tray = value
                     .parse()
@@ -1376,22 +1627,39 @@ impl Settings {
             ["shortcuts", "quick_search"] => {
                 self.shortcuts.quick_search = value.to_string();
             }
-            ["providers", provider, "token"] => {
-                let ps = self.providers.entry(provider.to_string()).or_default();
-                if value.is_empty() {
-                    ps.extra.remove("token");
-                } else {
-                    ps.extra
-                        .insert("token".to_string(), toml::Value::String(value.to_string()));
-                }
+            ["providers", _provider, "token"] => {
+                return Err(CogniaError::Config(
+                    "Provider tokens must be managed via secure secret storage".into(),
+                ));
             }
             ["providers", provider, "url"] => {
                 let ps = self.providers.entry(provider.to_string()).or_default();
                 if value.is_empty() {
                     ps.extra.remove("url");
+                    self.prune_provider_entry_if_empty(provider);
                 } else {
                     ps.extra
                         .insert("url".to_string(), toml::Value::String(value.to_string()));
+                }
+            }
+            ["providers", provider, "enabled"] => {
+                if value.trim().is_empty() {
+                    self.set_provider_enabled_override(provider, None);
+                } else {
+                    let enabled = value
+                        .parse()
+                        .map_err(|_| CogniaError::Config("Invalid boolean value".into()))?;
+                    self.set_provider_enabled_override(provider, Some(enabled));
+                }
+            }
+            ["providers", provider, "priority"] => {
+                if value.trim().is_empty() {
+                    self.set_provider_priority_override(provider, None);
+                } else {
+                    let priority = value
+                        .parse()
+                        .map_err(|_| CogniaError::Config("Invalid priority value".into()))?;
+                    self.set_provider_priority_override(provider, Some(priority));
                 }
             }
             ["mirrors", provider] => {
@@ -1542,8 +1810,8 @@ mod tests {
     #[test]
     fn test_default_provider_settings() {
         let ps = ProviderSettings::default();
-        assert!(ps.enabled);
-        assert_eq!(ps.priority, 0);
+        assert_eq!(ps.enabled, None);
+        assert_eq!(ps.priority, None);
         assert!(ps.extra.is_empty());
     }
 
@@ -2035,17 +2303,39 @@ mod tests {
     // ===== get_value / set_value: providers section =====
 
     #[test]
-    fn test_get_set_provider_token() {
+    fn test_provider_token_is_not_exposed_via_generic_get_set() {
         let mut s = Settings::default();
         assert_eq!(s.get_value("providers.github.token"), None);
-        s.set_value("providers.github.token", "ghp_abc123").unwrap();
-        assert_eq!(
-            s.get_value("providers.github.token"),
-            Some("ghp_abc123".into())
-        );
-        // Clear
-        s.set_value("providers.github.token", "").unwrap();
+        let err = s
+            .set_value("providers.github.token", "ghp_abc123")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("secure secret storage"));
         assert_eq!(s.get_value("providers.github.token"), None);
+    }
+
+    #[test]
+    fn test_provider_legacy_token_helpers_round_trip_without_generic_access() {
+        let mut s = Settings::default();
+
+        s.set_provider_legacy_token("github", "ghp_abc123").unwrap();
+        assert_eq!(s.get_provider_legacy_token("github"), Some("ghp_abc123".into()));
+        assert_eq!(s.get_value("providers.github.token"), None);
+
+        s.clear_provider_legacy_token("github");
+        assert_eq!(s.get_provider_legacy_token("github"), None);
+    }
+
+    #[test]
+    fn test_provider_secret_saved_helpers_round_trip() {
+        let mut s = Settings::default();
+        assert!(!s.get_provider_secret_saved("github"));
+
+        s.set_provider_secret_saved("github", true);
+        assert!(s.get_provider_secret_saved("github"));
+
+        s.set_provider_secret_saved("github", false);
+        assert!(!s.get_provider_secret_saved("github"));
     }
 
     #[test]
@@ -2060,6 +2350,52 @@ mod tests {
         );
         s.set_value("providers.gitlab.url", "").unwrap();
         assert_eq!(s.get_value("providers.gitlab.url"), None);
+    }
+
+    #[test]
+    fn test_get_set_provider_enabled_and_sync_legacy_disabled_list() {
+        let mut s = Settings::default();
+
+        assert_eq!(s.get_value("providers.npm.enabled"), None);
+
+        s.set_value("providers.npm.enabled", "false").unwrap();
+        assert_eq!(s.get_value("providers.npm.enabled"), Some("false".into()));
+        assert!(s
+            .provider_settings
+            .disabled_providers
+            .contains(&"npm".to_string()));
+
+        s.set_value("providers.npm.enabled", "true").unwrap();
+        assert_eq!(s.get_value("providers.npm.enabled"), Some("true".into()));
+        assert!(!s
+            .provider_settings
+            .disabled_providers
+            .contains(&"npm".to_string()));
+    }
+
+    #[test]
+    fn test_get_value_provider_enabled_uses_legacy_disabled_list_fallback() {
+        let mut s = Settings::default();
+        s.set_value("provider_settings.disabled_providers", "npm")
+            .unwrap();
+
+        assert_eq!(s.get_value("providers.npm.enabled"), Some("false".into()));
+
+        s.set_value("providers.npm.enabled", "true").unwrap();
+        assert_eq!(s.get_value("providers.npm.enabled"), Some("true".into()));
+    }
+
+    #[test]
+    fn test_get_set_provider_priority_and_clear_override() {
+        let mut s = Settings::default();
+
+        assert_eq!(s.get_value("providers.npm.priority"), None);
+
+        s.set_value("providers.npm.priority", "120").unwrap();
+        assert_eq!(s.get_value("providers.npm.priority"), Some("120".into()));
+
+        s.set_value("providers.npm.priority", "").unwrap();
+        assert_eq!(s.get_value("providers.npm.priority"), None);
     }
 
     // ===== get_value / set_value: disabled_providers =====
@@ -2484,7 +2820,7 @@ mod tests {
         s.set_value("network.proxy", "http://proxy:8080").unwrap();
         s.set_value("mirrors.npm", "https://npm.example.com")
             .unwrap();
-        s.set_value("providers.github.token", "ghp_test").unwrap();
+        s.set_provider_legacy_token("github", "ghp_test").unwrap();
 
         let toml_str = toml::to_string(&s).unwrap();
         let parsed: Settings = toml::from_str(&toml_str).unwrap();
@@ -2496,6 +2832,7 @@ mod tests {
         );
         assert_eq!(parsed.appearance.theme, "dark");
         assert_eq!(parsed.network.proxy, Some("http://proxy:8080".into()));
+        assert_eq!(parsed.get_provider_legacy_token("github"), Some("ghp_test".into()));
         assert_eq!(
             parsed.mirrors.get("npm").unwrap().url,
             "https://npm.example.com"
@@ -2707,6 +3044,9 @@ mod tests {
         assert!(u.check_on_start);
         assert!(!u.auto_install);
         assert!(u.notify);
+        assert_eq!(u.source_mode, UpdateSourceMode::Official);
+        assert!(u.custom_endpoints.is_empty());
+        assert!(u.fallback_to_official);
     }
 
     #[test]
@@ -2715,14 +3055,81 @@ mod tests {
         assert_eq!(s.get_value("updates.check_on_start"), Some("true".into()));
         assert_eq!(s.get_value("updates.auto_install"), Some("false".into()));
         assert_eq!(s.get_value("updates.notify"), Some("true".into()));
+        assert_eq!(s.get_value("updates.source_mode"), Some("official".into()));
+        assert_eq!(s.get_value("updates.custom_endpoints"), Some("[]".into()));
+        assert_eq!(
+            s.get_value("updates.fallback_to_official"),
+            Some("true".into())
+        );
 
         s.set_value("updates.check_on_start", "false").unwrap();
         s.set_value("updates.auto_install", "true").unwrap();
         s.set_value("updates.notify", "false").unwrap();
+        s.set_value("updates.source_mode", "custom").unwrap();
+        s.set_value(
+            "updates.custom_endpoints",
+            r#"["https://updates.example.com/{{target}}/{{current_version}}"]"#,
+        )
+        .unwrap();
+        s.set_value("updates.fallback_to_official", "false").unwrap();
 
         assert!(!s.updates.check_on_start);
         assert!(s.updates.auto_install);
         assert!(!s.updates.notify);
+        assert_eq!(s.updates.source_mode, UpdateSourceMode::Custom);
+        assert_eq!(
+            s.updates.custom_endpoints,
+            vec!["https://updates.example.com/{{target}}/{{current_version}}"]
+        );
+        assert!(!s.updates.fallback_to_official);
+    }
+
+    #[test]
+    fn test_parse_updates_custom_endpoints_rejects_invalid_values_non_destructive() {
+        let mut s = Settings::default();
+        let original = s.updates.custom_endpoints.clone();
+        assert!(
+            s.set_value(
+                "updates.custom_endpoints",
+                r#"["ftp://updates.example.com/latest.json"]"#
+            )
+            .is_err()
+        );
+        assert_eq!(s.updates.custom_endpoints, original);
+    }
+
+    #[test]
+    fn test_parse_updates_custom_endpoints_accepts_csv_or_newline() {
+        let mut s = Settings::default();
+        s.set_value(
+            "updates.custom_endpoints",
+            "https://a.example.com/latest.json,\nhttps://b.example.com/latest.json",
+        )
+        .unwrap();
+        assert_eq!(
+            s.updates.custom_endpoints,
+            vec![
+                "https://a.example.com/latest.json",
+                "https://b.example.com/latest.json"
+            ]
+        );
+    }
+
+    #[test]
+    fn test_old_update_settings_toml_uses_new_defaults() {
+        let old_toml = r#"
+[updates]
+check_on_start = false
+auto_install = true
+notify = false
+"#;
+        let parsed: Settings = toml::from_str(old_toml).unwrap();
+        assert!(!parsed.updates.check_on_start);
+        assert!(parsed.updates.auto_install);
+        assert!(!parsed.updates.notify);
+        assert_eq!(parsed.updates.source_mode, UpdateSourceMode::Official);
+        assert!(parsed.updates.custom_endpoints.is_empty());
+        assert!(parsed.updates.fallback_to_official);
     }
 
     // ===== TraySettings defaults and get/set =====
@@ -2863,6 +3270,14 @@ mod tests {
     fn test_set_invalid_updates_or_tray_values() {
         let mut s = Settings::default();
         assert!(s.set_value("updates.check_on_start", "yes").is_err());
+        assert!(s.set_value("updates.source_mode", "edge").is_err());
+        assert!(
+            s.set_value("updates.custom_endpoints", r#"["http://insecure.example.com"]"#)
+                .is_err()
+        );
+        assert!(s
+            .set_value("updates.fallback_to_official", "sometimes")
+            .is_err());
         assert!(s.set_value("tray.click_behavior", "invalid").is_err());
         assert!(s.set_value("tray.notification_level", "sometimes").is_err());
         assert!(s.set_value("tray.quick_action", "invalid").is_err());

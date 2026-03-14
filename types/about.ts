@@ -97,8 +97,11 @@ export type UpdateStatus =
   | 'error';
 
 export type UpdateErrorCategory =
+  | 'source_unavailable_error'
   | 'network_error'
   | 'timeout_error'
+  | 'validation_error'
+  | 'signature_error'
   | 'permission_error'
   | 'unsupported_error'
   | 'update_check_failed'

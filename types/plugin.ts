@@ -16,6 +16,28 @@ export interface PluginManifest {
   locales: Record<string, Record<string, string>>;
 }
 
+export interface PluginPointSdkSupport {
+  rust: boolean;
+  typescript: boolean;
+}
+
+export interface PluginPointScaffoldSupport {
+  builtin: boolean;
+  external: boolean;
+}
+
+export interface PluginPointInventoryEntry {
+  pointId: string;
+  kind: string;
+  sourceType: string;
+  sourceId: string | null;
+  entry: string | null;
+  manifestPrerequisites: string[];
+  capabilityDeclarations: string[];
+  discoverable: boolean;
+  blockingReason: string | null;
+}
+
 export interface PluginMeta {
   id: string;
   name: string;
@@ -50,6 +72,10 @@ export interface PluginToolDeclaration {
 // ============================================================================
 
 export interface PluginPermissions {
+  uiFeedback: boolean;
+  uiDialog: boolean;
+  uiFilePicker: boolean;
+  uiNavigation: boolean;
   fsRead: string[];
   fsWrite: string[];
   http: string[];
@@ -102,6 +128,7 @@ export interface PluginInfo {
   builtinCandidate: boolean;
   builtinSyncStatus: string | null;
   builtinSyncMessage: string | null;
+  pluginPoints?: PluginPointInventoryEntry[];
   deprecationWarnings?: PluginDeprecationNotice[];
 }
 
@@ -220,6 +247,7 @@ export interface PluginToolInfo {
   contractVersion?: string;
   capabilityDeclarations?: string[];
   compatibility?: ToolCompatibility;
+  pluginPointId?: string | null;
   discoverable?: boolean;
   exclusionReason?: string | null;
   deprecationWarnings?: PluginDeprecationNotice[];
@@ -271,6 +299,10 @@ export interface ScaffoldTemplateOptions {
 }
 
 export interface ScaffoldPermissions {
+  uiFeedback: boolean;
+  uiDialog: boolean;
+  uiFilePicker: boolean;
+  uiNavigation: boolean;
   configRead: boolean;
   envRead: boolean;
   pkgSearch: boolean;
@@ -297,6 +329,7 @@ export interface ScaffoldConfig {
   includeCi?: boolean;
   includeVscode?: boolean;
   additionalKeywords?: string[];
+  extensionPoints?: string[];
   templateOptions?: ScaffoldTemplateOptions;
 }
 

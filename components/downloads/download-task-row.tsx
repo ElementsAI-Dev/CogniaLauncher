@@ -54,6 +54,7 @@ export const DownloadTaskRow = memo(function DownloadTaskRow({
   // Use progressMap for real-time progress (avoids full tasks array re-render)
   const liveProgress = useDownloadStore((s) => s.progressMap[task.id]);
   const progress = liveProgress ?? task.progress;
+  const canResumeFailedTask = task.state === "failed" && task.recoverable !== false;
 
 
   return (
@@ -126,7 +127,7 @@ export const DownloadTaskRow = memo(function DownloadTaskRow({
               <TooltipContent>{t("downloads.actions.pause")}</TooltipContent>
             </Tooltip>
           ) : null}
-          {task.state === "paused" || task.state === "failed" ? (
+          {task.state === "paused" || canResumeFailedTask ? (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
