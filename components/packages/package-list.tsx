@@ -49,7 +49,7 @@ import {
 } from "@/components/ui/empty";
 import { usePackageStore } from "@/lib/stores/packages";
 import { useLocale } from "@/components/providers/locale-provider";
-import { getPackageKey, isPackagePinned } from "@/lib/packages";
+import { getPackageKey, isPackageBookmarked, isPackagePinned } from "@/lib/packages";
 import { writeClipboard } from "@/lib/clipboard";
 import { toast } from "sonner";
 import type { InstalledPackage, PackageSummary } from "@/lib/tauri";
@@ -312,16 +312,16 @@ export function PackageList({
                           className="h-8 w-8"
                           onClick={(e) => {
                             e.stopPropagation();
-                            onBookmark(pkg.name);
+                            onBookmark(pkg.name, pkg.provider);
                           }}
                         >
                           <Star
-                            className={`h-4 w-4 ${bookmarkedPackages.includes(pkg.name) ? "text-yellow-500 fill-yellow-500" : "text-muted-foreground"}`}
+                            className={`h-4 w-4 ${isPackageBookmarked(bookmarkedPackages, pkg.name, pkg.provider) ? "text-yellow-500 fill-yellow-500" : "text-muted-foreground"}`}
                           />
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent>
-                        {bookmarkedPackages.includes(pkg.name)
+                        {isPackageBookmarked(bookmarkedPackages, pkg.name, pkg.provider)
                           ? t("packages.removeBookmark")
                           : t("packages.addBookmark")}
                       </TooltipContent>
@@ -472,10 +472,10 @@ export function PackageList({
                   )}
                   {onBookmark && (
                     <ContextMenuItem
-                      onClick={() => onBookmark(pkg.name)}
+                      onClick={() => onBookmark(pkg.name, pkg.provider)}
                     >
                       <Star className="h-4 w-4" />
-                      {bookmarkedPackages.includes(pkg.name)
+                      {isPackageBookmarked(bookmarkedPackages, pkg.name, pkg.provider)
                         ? t("packages.removeBookmark")
                         : t("packages.addBookmark")}
                     </ContextMenuItem>

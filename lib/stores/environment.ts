@@ -9,6 +9,29 @@ import type {
   EnvInstallProgressEvent,
 } from '../tauri';
 import { DEFAULT_DETECTION_FILES } from '../constants/environments';
+import {
+  PROVIDER_ENV_TYPE_MAP,
+  getLogicalEnvType,
+  normalizeEnvType,
+  normalizeProviderId,
+  pruneWorkflowSelectedProviders,
+  resolveLogicalEnvSettingsType,
+  resolveWorkflowProviderSelection,
+  type EnvironmentWorkflowAction,
+  type EnvironmentWorkflowActionKind,
+  type EnvironmentWorkflowContext,
+  type EnvironmentWorkflowOrigin,
+  type ProviderAlias,
+} from '../environment-workflow';
+
+export {
+  PROVIDER_ENV_TYPE_MAP,
+  getLogicalEnvType,
+  type EnvironmentWorkflowAction,
+  type EnvironmentWorkflowActionKind,
+  type EnvironmentWorkflowContext,
+  type EnvironmentWorkflowOrigin,
+};
 
 export interface InstallationProgress {
   envType: string;
@@ -50,48 +73,6 @@ export interface EnvironmentSettings {
   envVariables: EnvVariable[];
   detectionFiles: DetectionFileConfig[];
   autoSwitch: boolean;
-}
-
-export type EnvironmentWorkflowOrigin =
-  | 'dashboard'
-  | 'overview'
-  | 'detail'
-  | 'onboarding'
-  | 'direct';
-
-export type EnvironmentWorkflowActionKind =
-  | 'install'
-  | 'uninstall'
-  | 'setGlobal'
-  | 'setLocal'
-  | 'refresh'
-  | 'saveSettings';
-
-export type EnvironmentWorkflowActionStatus =
-  | 'running'
-  | 'success'
-  | 'error'
-  | 'blocked';
-
-export interface EnvironmentWorkflowContext {
-  envType: string;
-  origin: EnvironmentWorkflowOrigin;
-  returnHref?: string | null;
-  projectPath?: string | null;
-  providerId?: string | null;
-  updatedAt: number;
-}
-
-export interface EnvironmentWorkflowAction {
-  envType: string;
-  action: EnvironmentWorkflowActionKind;
-  status: EnvironmentWorkflowActionStatus;
-  version?: string | null;
-  providerId?: string | null;
-  projectPath?: string | null;
-  error?: string | null;
-  retryable?: boolean;
-  updatedAt: number;
 }
 
 // Filter types for environment list
@@ -207,73 +188,6 @@ interface EnvironmentState {
   clearFilters: () => void;
 }
 
-// Map provider IDs to their corresponding environment types
-export const PROVIDER_ENV_TYPE_MAP: Record<string, string> = {
-  fnm: 'node',
-  nvm: 'node',
-  volta: 'node',
-  deno: 'deno',
-  pyenv: 'python',
-  conda: 'python',
-  pipx: 'python',
-  goenv: 'go',
-  rustup: 'rust',
-  rbenv: 'ruby',
-  sdkman: 'java',
-  phpbrew: 'php',
-  dotnet: 'dotnet',
-  mise: 'polyglot',
-  asdf: 'polyglot',
-  nix: 'polyglot',
-  'system-node': 'node',
-  'system-python': 'python',
-  'system-go': 'go',
-  'system-rust': 'rust',
-  'system-ruby': 'ruby',
-  'system-java': 'java',
-  'system-php': 'php',
-  'system-dotnet': 'dotnet',
-  'system-deno': 'deno',
-  'system-bun': 'bun',
-  'system-c': 'c',
-  'system-cpp': 'cpp',
-  msvc: 'cpp',
-  msys2: 'cpp',
-  vcpkg: 'cpp',
-  conan: 'cpp',
-  xmake: 'cpp',
-  'sdkman-kotlin': 'kotlin',
-  'sdkman-scala': 'scala',
-  'sdkman-gradle': 'java',
-  'sdkman-maven': 'java',
-  'system-kotlin': 'kotlin',
-};
-
-/**
- * Resolve a provider-based env_type (e.g., "fnm", "pyenv") to its logical language type (e.g., "node", "python").
- * Falls back to the availableProviders list, then the static map, then the raw value.
- */
-export function getLogicalEnvType(
-  providerEnvType: string,
-  availableProviders?: { id: string; env_type: string }[],
-): string {
-  // Check availableProviders first (most accurate, from backend)
-  if (availableProviders) {
-    const providerInfo = availableProviders.find((p) => p.id === providerEnvType);
-    if (providerInfo) return providerInfo.env_type;
-  }
-  // Fallback to static map
-  return PROVIDER_ENV_TYPE_MAP[providerEnvType] || providerEnvType;
-}
-
-function normalizeEnvType(envType: string): string {
-  return envType.trim().toLowerCase();
-}
-
-function normalizeProviderId(providerId?: string | null): string {
-  return (providerId ?? '').trim().toLowerCase();
-}
-
 function matchesEnvironmentIdentity(
   current: Pick<EnvironmentInfo, 'env_type' | 'provider_id'>,
   next: Pick<EnvironmentInfo, 'env_type' | 'provider_id'>,
@@ -291,72 +205,6 @@ function matchesEnvironmentIdentity(
 
   return true;
 }
-
-type ProviderAlias = Pick<EnvironmentProviderInfo, 'id' | 'env_type'>;
-
-function normalizeProviderAliases(providers: ProviderAlias[]): ProviderAlias[] {
-  return providers.map((provider) => ({
-    id: normalizeEnvType(provider.id),
-    env_type: normalizeEnvType(provider.env_type),
-  }));
-}
-
-function isProviderCompatible(
-  providerId: string,
-  logicalEnvType: string,
-  availableProviders: ProviderAlias[],
-): boolean {
-  const normalizedProviderId = normalizeEnvType(providerId);
-  return normalizeProviderAliases(availableProviders).some((provider) => (
-    provider.id === normalizedProviderId && provider.env_type === logicalEnvType
-  ));
-}
-
-function resolveSelectedProvider(
-  envType: string,
-  selectedProviders: Record<string, string>,
-  availableProviders: ProviderAlias[],
-  fallbackProviderId?: string | null,
-): string {
-  const logicalEnvType = resolveLogicalEnvSettingsType(envType, availableProviders);
-  const selectedProviderId = selectedProviders[logicalEnvType];
-
-  if (selectedProviderId && isProviderCompatible(selectedProviderId, logicalEnvType, availableProviders)) {
-    return normalizeEnvType(selectedProviderId);
-  }
-
-  if (fallbackProviderId && isProviderCompatible(fallbackProviderId, logicalEnvType, availableProviders)) {
-    return normalizeEnvType(fallbackProviderId);
-  }
-
-  const firstMatchingProvider = normalizeProviderAliases(availableProviders)
-    .find((provider) => provider.env_type === logicalEnvType);
-
-  return firstMatchingProvider?.id
-    ?? normalizeEnvType(fallbackProviderId || logicalEnvType);
-}
-
-function pruneSelectedProviders(
-  selectedProviders: Record<string, string>,
-  availableProviders: ProviderAlias[],
-): Record<string, string> {
-  return Object.fromEntries(
-    Object.entries(selectedProviders).filter(([logicalEnvType, providerId]) => (
-      isProviderCompatible(providerId, logicalEnvType, availableProviders)
-    )),
-  );
-}
-
-function resolveLogicalEnvSettingsType(
-  envType: string,
-  availableProviders: ProviderAlias[],
-): string {
-  const normalizedEnvType = normalizeEnvType(envType);
-  return normalizeEnvType(
-    getLogicalEnvType(normalizedEnvType, normalizeProviderAliases(availableProviders)),
-  );
-}
-
 // Helper to get default settings for an environment type
 function getDefaultEnvSettings(envType: string): EnvironmentSettings {
   const normalizedEnvType = PROVIDER_ENV_TYPE_MAP[normalizeEnvType(envType)] || normalizeEnvType(envType);
@@ -500,7 +348,7 @@ export const useEnvironmentStore = create<EnvironmentState>()(
       })),
       setAvailableProviders: (providers) => set((state) => ({
         availableProviders: providers,
-        selectedProviders: pruneSelectedProviders(state.selectedProviders, providers),
+        selectedProviders: pruneWorkflowSelectedProviders(state.selectedProviders, providers),
       })),
       setLoading: (loading) => set({ loading }),
       setError: (error) => set({ error }),
@@ -653,12 +501,12 @@ export const useEnvironmentStore = create<EnvironmentState>()(
 
       getSelectedProvider: (envType, fallbackProviderId) => {
         const state = get();
-        return resolveSelectedProvider(
+        return resolveWorkflowProviderSelection({
           envType,
-          state.selectedProviders,
-          state.availableProviders,
+          selectedProviders: state.selectedProviders,
+          availableProviders: state.availableProviders,
           fallbackProviderId,
-        );
+        });
       },
 
       setWorkflowContext: (workflowContext) => set({ workflowContext }),

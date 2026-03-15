@@ -44,6 +44,7 @@ import {
   getPluginSourceLabelKey,
 } from "@/lib/plugin-source";
 import rawMarketplaceCatalog from "@/plugins/marketplace.json";
+import rawExtensionPointMatrix from "@/plugins/extension-point-matrix.json";
 import { useLocale } from "@/components/providers/locale-provider";
 import { isTauri } from "@/lib/tauri";
 import {
@@ -102,6 +103,98 @@ import type {
 import type { ToolboxMarketplaceListing } from "@/types/toolbox-marketplace";
 
 const MARKETPLACE_CATALOG = normalizeMarketplaceCatalog(rawMarketplaceCatalog);
+const EXTENSION_POINT_MATRIX = rawExtensionPointMatrix;
+type ExtensionPointDefinition = (typeof EXTENSION_POINT_MATRIX.pluginPoints)[number];
+type ToolExtensionPointId =
+  | "tool-text"
+  | "tool-declarative-ui"
+  | "tool-iframe-ui";
+type OptionalExtensionPointId =
+  | "event-listener"
+  | "log-listener"
+  | "settings-schema";
+
+const TOOL_EXTENSION_POINT_IDS: ToolExtensionPointId[] = [
+  "tool-text",
+  "tool-declarative-ui",
+  "tool-iframe-ui",
+];
+const OPTIONAL_EXTENSION_POINT_IDS: OptionalExtensionPointId[] = [
+  "event-listener",
+  "log-listener",
+  "settings-schema",
+];
+const DEFAULT_TOOL_EXTENSION_POINT_BY_TEMPLATE: Record<
+  ScaffoldContractTemplate,
+  ToolExtensionPointId
+> = {
+  minimal: "tool-text",
+  advanced: "tool-declarative-ui",
+};
+const TOOL_EXTENSION_POINT_LABEL_KEYS: Record<ToolExtensionPointId, string> = {
+  "tool-text": "toolbox.plugin.scaffoldToolExtensionPointText",
+  "tool-declarative-ui":
+    "toolbox.plugin.scaffoldToolExtensionPointDeclarative",
+  "tool-iframe-ui": "toolbox.plugin.scaffoldToolExtensionPointIframe",
+};
+const OPTIONAL_EXTENSION_POINT_LABEL_KEYS: Record<
+  OptionalExtensionPointId,
+  string
+> = {
+  "event-listener": "toolbox.plugin.scaffoldExtensionEventListener",
+  "log-listener": "toolbox.plugin.scaffoldExtensionLogListener",
+  "settings-schema": "toolbox.plugin.scaffoldExtensionSettingsSchema",
+};
+
+function supportsScaffoldExtensionPoint(
+  point: ExtensionPointDefinition,
+  lifecycleProfile: ScaffoldLifecycleProfile,
+  language: PluginLanguage,
+): boolean {
+  if (language === "javascript") {
+    return point.id === "tool-text";
+  }
+
+  const supportsLifecycle = lifecycleProfile === "builtin"
+    ? point.scaffoldSupport.builtin
+    : point.scaffoldSupport.external;
+  const supportsLanguage = language === "rust"
+    ? point.sdkSupport.rust
+    : point.sdkSupport.typescript;
+
+  return supportsLifecycle && supportsLanguage;
+}
+
+function parseScaffoldListInput(value: string): string[] {
+  const parsed: string[] = [];
+  for (const part of value.split(/[\n,]/)) {
+    const trimmed = part.trim();
+    if (!trimmed || parsed.includes(trimmed)) {
+      continue;
+    }
+    parsed.push(trimmed);
+  }
+  return parsed;
+}
+
+function buildSelectedExtensionPoints(form: {
+  toolExtensionPoint: ToolExtensionPointId;
+  includeEventListener: boolean;
+  includeLogListener: boolean;
+  includeSettingsSchema: boolean;
+}): string[] {
+  const extensionPoints: string[] = [form.toolExtensionPoint];
+  if (form.includeEventListener) {
+    extensionPoints.push("event-listener");
+  }
+  if (form.includeLogListener) {
+    extensionPoints.push("log-listener");
+  }
+  if (form.includeSettingsSchema) {
+    extensionPoints.push("settings-schema");
+  }
+  return extensionPoints;
+}
 
 export default function PluginsPage() {
   const { t, locale } = useLocale();
@@ -220,6 +313,15 @@ export default function PluginsPage() {
     includeValidationGuidance: true,
     includeStarterTests: false,
     language: "typescript" as PluginLanguage,
+    toolExtensionPoint: "tool-text" as ToolExtensionPointId,
+    includeEventListener: false,
+    includeLogListener: false,
+    includeSettingsSchema: false,
+    httpDomains: "",
+    permUiFeedback: false,
+    permUiDialog: false,
+    permUiFilePicker: false,
+    permUiNavigation: false,
     permConfigRead: true,
     permEnvRead: true,
     permPkgSearch: false,
@@ -229,6 +331,48 @@ export default function PluginsPage() {
     permFsRead: false,
     permFsWrite: false,
   });
+  const availableToolExtensionPoints = useMemo(
+    () =>
+      EXTENSION_POINT_MATRIX.pluginPoints.filter(
+        (point) =>
+          TOOL_EXTENSION_POINT_IDS.includes(point.id as ToolExtensionPointId) &&
+          supportsScaffoldExtensionPoint(
+            point,
+            scaffoldForm.lifecycleProfile,
+            scaffoldForm.language,
+          ),
+      ) as Array<ExtensionPointDefinition & { id: ToolExtensionPointId }>,
+    [
+      scaffoldForm.language,
+      scaffoldForm.lifecycleProfile,
+    ],
+  );
+  const availableOptionalExtensionPoints = useMemo(
+    () =>
+      EXTENSION_POINT_MATRIX.pluginPoints.filter(
+        (point) =>
+          OPTIONAL_EXTENSION_POINT_IDS.includes(
+            point.id as OptionalExtensionPointId,
+          ) &&
+          supportsScaffoldExtensionPoint(
+            point,
+            scaffoldForm.lifecycleProfile,
+            scaffoldForm.language,
+          ),
+      ) as Array<ExtensionPointDefinition & { id: OptionalExtensionPointId }>,
+    [
+      scaffoldForm.language,
+      scaffoldForm.lifecycleProfile,
+    ],
+  );
+  const availableOptionalExtensionPointIds = useMemo(
+    () => new Set(availableOptionalExtensionPoints.map((point) => point.id)),
+    [availableOptionalExtensionPoints],
+  );
+  const selectedExtensionPoints = useMemo(
+    () => buildSelectedExtensionPoints(scaffoldForm),
+    [scaffoldForm],
+  );
 
   useEffect(() => {
     if (!isDesktop || hasFetchedPluginsRef.current) return;
@@ -391,6 +535,12 @@ export default function PluginsPage() {
     if (!/^[A-Za-z0-9._-]+$/.test(scaffoldForm.id.trim())) {
       return t("toolbox.plugin.scaffoldValidationIdInvalid");
     }
+    if (
+      scaffoldForm.language === "javascript" &&
+      selectedExtensionPoints.some((point) => point !== "tool-text")
+    ) {
+      return t("toolbox.plugin.scaffoldValidationJsExtensionPoint");
+    }
     const repository = scaffoldForm.repository.trim();
     if (repository && !/^https?:\/\//.test(repository)) {
       return t("toolbox.plugin.scaffoldValidationRepoUrl");
@@ -400,7 +550,7 @@ export default function PluginsPage() {
       return t("toolbox.plugin.scaffoldValidationHomepageUrl");
     }
     return null;
-  }, [scaffoldForm, t]);
+  }, [scaffoldForm, selectedExtensionPoints, t]);
 
   const handleScaffold = useCallback(async () => {
     const validationError = getScaffoldValidationError();
@@ -412,10 +562,10 @@ export default function PluginsPage() {
     setLastScaffoldResult(null);
     setScaffolding(true);
     try {
-      const additionalKeywords = scaffoldForm.additionalKeywords
-        .split(",")
-        .map((kw) => kw.trim())
-        .filter(Boolean);
+      const additionalKeywords = parseScaffoldListInput(
+        scaffoldForm.additionalKeywords,
+      );
+      const httpDomains = parseScaffoldListInput(scaffoldForm.httpDomains);
       const config: ScaffoldConfig = {
         name: scaffoldForm.name.trim(),
         id: scaffoldForm.id.trim(),
@@ -430,6 +580,7 @@ export default function PluginsPage() {
         includeVscode: scaffoldForm.includeVscode,
         additionalKeywords:
           additionalKeywords.length > 0 ? additionalKeywords : undefined,
+        extensionPoints: selectedExtensionPoints,
         templateOptions: {
           includeUnifiedContractSamples:
             scaffoldForm.includeUnifiedContractSamples,
@@ -440,10 +591,10 @@ export default function PluginsPage() {
         },
         language: scaffoldForm.language,
         permissions: {
-          uiFeedback: false,
-          uiDialog: false,
-          uiFilePicker: false,
-          uiNavigation: false,
+          uiFeedback: scaffoldForm.permUiFeedback,
+          uiDialog: scaffoldForm.permUiDialog,
+          uiFilePicker: scaffoldForm.permUiFilePicker,
+          uiNavigation: scaffoldForm.permUiNavigation,
           configRead: scaffoldForm.permConfigRead,
           envRead: scaffoldForm.permEnvRead,
           pkgSearch: scaffoldForm.permPkgSearch,
@@ -452,7 +603,7 @@ export default function PluginsPage() {
           processExec: scaffoldForm.permProcessExec,
           fsRead: scaffoldForm.permFsRead,
           fsWrite: scaffoldForm.permFsWrite,
-          http: [],
+          http: httpDomains,
         },
       };
       const result = await scaffoldPlugin(config);
@@ -462,7 +613,12 @@ export default function PluginsPage() {
     } finally {
       setScaffolding(false);
     }
-  }, [getScaffoldValidationError, scaffoldForm, scaffoldPlugin]);
+  }, [
+    getScaffoldValidationError,
+    scaffoldForm,
+    scaffoldPlugin,
+    selectedExtensionPoints,
+  ]);
 
   const handleContinueScaffoldToImport = useCallback(() => {
     const importPathFromScaffold =
@@ -1152,15 +1308,28 @@ export default function PluginsPage() {
                 <Label className="text-xs">
                   {t("toolbox.plugin.scaffoldLanguage")}
                 </Label>
-                <Select
-                  value={scaffoldForm.language}
-                  onValueChange={(v) =>
-                    setScaffoldForm((p) => ({
-                      ...p,
-                      language: v as PluginLanguage,
-                    }))
-                  }
-                >
+                      <Select
+                        value={scaffoldForm.language}
+                        onValueChange={(v) =>
+                          setScaffoldForm((p) => {
+                            const nextLanguage = v as PluginLanguage;
+                            if (nextLanguage === "javascript") {
+                              return {
+                                ...p,
+                                language: nextLanguage,
+                                toolExtensionPoint: "tool-text",
+                                includeEventListener: false,
+                                includeLogListener: false,
+                                includeSettingsSchema: false,
+                              };
+                            }
+                            return {
+                              ...p,
+                              language: nextLanguage,
+                            };
+                          })
+                        }
+                      >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -1275,6 +1444,89 @@ export default function PluginsPage() {
                         )}
                       />
                     </div>
+                    <Separator />
+                    <p className="text-xs font-medium">
+                      {t("toolbox.plugin.scaffoldExtensionPoints")}
+                    </p>
+                    <div className="grid gap-1.5">
+                      <Label className="grid gap-1.5 text-xs">
+                        <span>
+                          {t("toolbox.plugin.scaffoldToolExtensionPoint")}
+                        </span>
+                      <Select
+                        value={scaffoldForm.toolExtensionPoint}
+                        onValueChange={(value) =>
+                          setScaffoldForm((p) => ({
+                            ...p,
+                            toolExtensionPoint: value as ToolExtensionPointId,
+                          }))
+                        }
+                      >
+                        <SelectTrigger id="scaffold-tool-extension-point">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {availableToolExtensionPoints.map((point) => (
+                            <SelectItem key={point.id} value={point.id}>
+                              {t(TOOL_EXTENSION_POINT_LABEL_KEYS[point.id])}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      </Label>
+                    </div>
+                    <div className="grid gap-2">
+                      {OPTIONAL_EXTENSION_POINT_IDS.map((pointId) => {
+                        const isSupported =
+                          availableOptionalExtensionPointIds.has(pointId);
+                        const checked =
+                          pointId === "event-listener"
+                            ? scaffoldForm.includeEventListener
+                            : pointId === "log-listener"
+                              ? scaffoldForm.includeLogListener
+                              : scaffoldForm.includeSettingsSchema;
+
+                        return (
+                          <div key={pointId} className="flex items-center gap-2">
+                            <Checkbox
+                              id={`scaffold-extension-${pointId}`}
+                              checked={checked}
+                              disabled={!isSupported}
+                              onCheckedChange={(nextChecked) => {
+                                setScaffoldForm((p) => ({
+                                  ...p,
+                                  includeEventListener:
+                                    pointId === "event-listener"
+                                      ? !!nextChecked
+                                      : p.includeEventListener,
+                                  includeLogListener:
+                                    pointId === "log-listener"
+                                      ? !!nextChecked
+                                      : p.includeLogListener,
+                                  includeSettingsSchema:
+                                    pointId === "settings-schema"
+                                      ? !!nextChecked
+                                      : p.includeSettingsSchema,
+                                }));
+                              }}
+                            />
+                            <Label
+                              htmlFor={`scaffold-extension-${pointId}`}
+                              className="text-xs font-normal cursor-pointer"
+                            >
+                              {t(OPTIONAL_EXTENSION_POINT_LABEL_KEYS[pointId])}
+                            </Label>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {scaffoldForm.language === "javascript" && (
+                      <p className="text-xs text-muted-foreground">
+                        {t(
+                          "toolbox.plugin.scaffoldExtensionPointsJavascriptHint",
+                        )}
+                      </p>
+                    )}
                     <div className="flex items-center justify-between rounded-md border p-2">
                       <Label className="text-xs cursor-pointer">
                         {t("toolbox.plugin.scaffoldIncludeVscode")}
@@ -1327,10 +1579,23 @@ export default function PluginsPage() {
                       <Select
                         value={scaffoldForm.contractTemplate}
                         onValueChange={(v) =>
-                          setScaffoldForm((p) => ({
-                            ...p,
-                            contractTemplate: v as ScaffoldContractTemplate,
-                          }))
+                          setScaffoldForm((p) => {
+                            const nextTemplate = v as ScaffoldContractTemplate;
+                            const currentDefault =
+                              DEFAULT_TOOL_EXTENSION_POINT_BY_TEMPLATE[
+                                p.contractTemplate
+                              ];
+                            return {
+                              ...p,
+                              contractTemplate: nextTemplate,
+                              toolExtensionPoint:
+                                p.toolExtensionPoint === currentDefault
+                                  ? DEFAULT_TOOL_EXTENSION_POINT_BY_TEMPLATE[
+                                      nextTemplate
+                                    ]
+                                  : p.toolExtensionPoint,
+                            };
+                          })
                         }
                       >
                         <SelectTrigger>
@@ -1422,6 +1687,22 @@ export default function PluginsPage() {
                 <div className="grid grid-cols-2 gap-2">
                   {[
                     {
+                      key: "permUiFeedback",
+                      label: t("toolbox.plugin.permUiFeedback"),
+                    },
+                    {
+                      key: "permUiDialog",
+                      label: t("toolbox.plugin.permUiDialog"),
+                    },
+                    {
+                      key: "permUiFilePicker",
+                      label: t("toolbox.plugin.permUiFilePicker"),
+                    },
+                    {
+                      key: "permUiNavigation",
+                      label: t("toolbox.plugin.permUiNavigation"),
+                    },
+                    {
                       key: "permConfigRead",
                       label: t("toolbox.plugin.permConfigRead"),
                     },
@@ -1474,6 +1755,27 @@ export default function PluginsPage() {
                       </Label>
                     </div>
                   ))}
+                </div>
+                <div className="grid gap-1.5">
+                  <Label
+                    htmlFor="scaffold-http-domains"
+                    className="text-xs font-normal"
+                  >
+                    {t("toolbox.plugin.scaffoldHttpDomains")}
+                  </Label>
+                  <Input
+                    id="scaffold-http-domains"
+                    value={scaffoldForm.httpDomains}
+                    onChange={(e) =>
+                      setScaffoldForm((p) => ({
+                        ...p,
+                        httpDomains: e.target.value,
+                      }))
+                    }
+                    placeholder={t(
+                      "toolbox.plugin.scaffoldHttpDomainsPlaceholder",
+                    )}
+                  />
                 </div>
               </div>
               {scaffoldFormError && (

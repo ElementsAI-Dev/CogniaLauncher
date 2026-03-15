@@ -30,6 +30,7 @@ describe("CacheHealthCard", () => {
     render(<CacheHealthCard {...createProps()} />);
 
     expect(screen.getByText("cache.noIssues")).toBeInTheDocument();
+    expect(screen.getByText("cache.healthIdleDesc")).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "cache.repair" }),
     ).not.toBeInTheDocument();

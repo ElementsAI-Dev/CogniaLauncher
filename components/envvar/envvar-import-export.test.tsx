@@ -2,7 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { EnvVarImportExport } from './envvar-import-export';
 import { toast } from 'sonner';
-import type { EnvVarImportResult, EnvVarImportPreview } from '@/types/tauri';
+import type { EnvVarExportResult, EnvVarImportResult, EnvVarImportPreview } from '@/types/tauri';
 
 jest.mock('sonner', () => ({
   toast: {
@@ -37,6 +37,10 @@ const mockT = (key: string) => {
     'envvar.importExport.previewActionNoop': 'Unchanged',
     'envvar.importExport.previewActionInvalid': 'Invalid',
     'envvar.importExport.previewActionSkipped': 'Skipped',
+    'envvar.importExport.includeSensitive': 'Include sensitive values',
+    'envvar.importExport.includeSensitiveDesc': 'Show original secret values in export output',
+    'envvar.importExport.redactedWarning': 'Sensitive values were redacted from this export.',
+    'envvar.importExport.sensitiveIncludedWarning': 'Sensitive values are included in this export. Handle with care.',
     'envvar.importExport.formatDotenv': '.env',
     'envvar.importExport.formatShell': 'Shell',
     'envvar.importExport.formatFish': 'Fish',
@@ -165,7 +169,7 @@ describe('EnvVarImportExport', () => {
     }
 
     await waitFor(() => {
-      expect(onExport).toHaveBeenCalledWith('process', 'dotenv');
+      expect(onExport).toHaveBeenCalledWith('process', 'dotenv', false);
     });
   });
 
@@ -371,5 +375,65 @@ describe('EnvVarImportExport', () => {
     expect(screen.getByText('NODE_HOME')).toBeInTheDocument();
     expect(screen.getByText('<empty>')).toBeInTheDocument();
     expect(screen.getByText('Configuration error: invalid key')).toBeInTheDocument();
+  });
+
+  it('surfaces when exported values were redacted by default', async () => {
+    const onExport = jest.fn().mockResolvedValue({
+      scope: 'process',
+      format: 'dotenv',
+      content: 'API_TOKEN=[hidden: 16 chars]',
+      redacted: true,
+      sensitiveCount: 1,
+      variableCount: 1,
+      revealed: false,
+    } satisfies EnvVarExportResult);
+
+    render(<EnvVarImportExport {...defaultProps} onExport={onExport} />);
+
+    const exportTab = screen.getAllByRole('tab').find((tab) => tab.textContent?.includes('Export'));
+    if (exportTab) {
+      await userEvent.click(exportTab);
+    }
+
+    const exportButtons = screen.getAllByRole('button').filter(
+      (btn) => btn.textContent?.includes('Export') && !btn.closest('[role="tablist"]'),
+    );
+    await userEvent.click(exportButtons[0]);
+
+    await waitFor(() => {
+      expect(onExport).toHaveBeenCalledWith('process', 'dotenv', false);
+    });
+    expect(screen.getByText('Sensitive values were redacted from this export.')).toBeInTheDocument();
+  });
+
+  it('allows opting in to sensitive values during export', async () => {
+    const onExport = jest.fn().mockResolvedValue({
+      scope: 'process',
+      format: 'dotenv',
+      content: 'API_TOKEN=super-secret-token',
+      redacted: false,
+      sensitiveCount: 1,
+      variableCount: 1,
+      revealed: true,
+    } satisfies EnvVarExportResult);
+
+    render(<EnvVarImportExport {...defaultProps} onExport={onExport} />);
+
+    const exportTab = screen.getAllByRole('tab').find((tab) => tab.textContent?.includes('Export'));
+    if (exportTab) {
+      await userEvent.click(exportTab);
+    }
+
+    await userEvent.click(screen.getByLabelText('Include sensitive values'));
+
+    const exportButtons = screen.getAllByRole('button').filter(
+      (btn) => btn.textContent?.includes('Export') && !btn.closest('[role="tablist"]'),
+    );
+    await userEvent.click(exportButtons[0]);
+
+    await waitFor(() => {
+      expect(onExport).toHaveBeenCalledWith('process', 'dotenv', true);
+    });
+    expect(screen.getByText('Sensitive values are included in this export. Handle with care.')).toBeInTheDocument();
   });
 });

@@ -219,6 +219,8 @@ export type {
   PathStatusInfo,
   EnvVarScope,
   EnvFileFormat,
+  EnvVarSummary,
+  EnvVarRevealResult,
   PathEntryInfo,
   ShellProfileInfo,
   EnvVarImportResult,
@@ -226,6 +228,8 @@ export type {
   EnvVarPathRepairPreview,
   EnvVarShellGuidance,
   EnvVarConflictResolutionResult,
+  EnvVarShellProfileReadResult,
+  EnvVarExportResult,
   PersistentEnvVar,
   EnvVarConflict,
   ShellType,
@@ -234,6 +238,8 @@ export type {
   ShellStartupMeasurement,
   ShellHealthResult,
   TerminalProfile,
+  TerminalEnvVarSummary,
+  TerminalEnvVarRevealResult,
   TerminalProfileTemplate,
   TerminalConfigDiagnostic,
   TerminalConfigEditorMetadata,
@@ -442,6 +448,8 @@ import type {
   PathStatusInfo,
   EnvVarScope,
   EnvFileFormat,
+  EnvVarSummary,
+  EnvVarRevealResult,
   PathEntryInfo,
   ShellProfileInfo,
   EnvVarImportResult,
@@ -449,6 +457,8 @@ import type {
   EnvVarPathRepairPreview,
   EnvVarShellGuidance,
   EnvVarConflictResolutionResult,
+  EnvVarShellProfileReadResult,
+  EnvVarExportResult,
   PersistentEnvVar,
   EnvVarConflict,
   ShellType,
@@ -456,6 +466,8 @@ import type {
   ShellStartupMeasurement,
   ShellHealthResult,
   TerminalProfile,
+  TerminalEnvVarSummary,
+  TerminalEnvVarRevealResult,
   TerminalProfileTemplate,
   TerminalConfigDiagnostic,
   TerminalConfigEditorMetadata,
@@ -3571,9 +3583,17 @@ export const gitApplyMailbox = (path: string, patchPath: string) =>
 export const envvarListAll = () =>
   invoke<Record<string, string>>("envvar_list_all");
 
+/** List process env vars with masked-by-default value summaries */
+export const envvarListProcessSummaries = () =>
+  invoke<EnvVarSummary[]>("envvar_list_process_summaries");
+
 /** Get a specific environment variable */
 export const envvarGet = (key: string) =>
   invoke<string | null>("envvar_get", { key });
+
+/** Reveal a specific environment variable value on demand */
+export const envvarRevealValue = (key: string, scope: EnvVarScope) =>
+  invoke<EnvVarRevealResult>("envvar_reveal_value", { key, scope });
 
 /** Set a process-level environment variable */
 export const envvarSetProcess = (key: string, value: string) =>
@@ -3622,8 +3642,14 @@ export const envvarListShellProfiles = () =>
   invoke<ShellProfileInfo[]>("envvar_list_shell_profiles");
 
 /** Read a shell profile config file */
-export const envvarReadShellProfile = (path: string) =>
-  invoke<string>("envvar_read_shell_profile", { path });
+export const envvarReadShellProfile = (
+  path: string,
+  includeSensitive: boolean = false,
+) =>
+  invoke<EnvVarShellProfileReadResult>("envvar_read_shell_profile", {
+    path,
+    includeSensitive,
+  });
 
 /** Import variables from .env file content */
 export const envvarImportEnvFile = (content: string, scope: EnvVarScope) =>
@@ -3644,7 +3670,13 @@ export const envvarApplyImportPreview = (
 export const envvarExportEnvFile = (
   scope: EnvVarScope,
   format: EnvFileFormat,
-) => invoke<string>("envvar_export_env_file", { scope, format });
+  includeSensitive: boolean = false,
+) =>
+  invoke<EnvVarExportResult>("envvar_export_env_file", {
+    scope,
+    format,
+    includeSensitive,
+  });
 
 /** List all persistent environment variables for a given scope */
 export const envvarListPersistent = (scope: EnvVarScope) =>
@@ -3670,6 +3702,10 @@ export const envvarApplyPathRepair = (scope: EnvVarScope, fingerprint: string) =
 export const envvarListPersistentTyped = (scope: EnvVarScope) =>
   invoke<PersistentEnvVar[]>("envvar_list_persistent_typed", { scope });
 
+/** List persistent vars with masked-by-default summaries */
+export const envvarListPersistentTypedSummaries = (scope: EnvVarScope) =>
+  invoke<EnvVarSummary[]>("envvar_list_persistent_typed_summaries", { scope });
+
 /** Detect conflicts between User and System environment variables */
 export const envvarDetectConflicts = () =>
   invoke<EnvVarConflict[]>("envvar_detect_conflicts");
@@ -3687,11 +3723,13 @@ export const envvarGenerateShellGuidance = (
   value?: string,
   pathEntries?: string[],
   autoAppliedShell?: string,
+  includeSensitive: boolean = false,
 ) => invoke<EnvVarShellGuidance[]>("envvar_generate_shell_guidance", {
   key,
   value,
   pathEntries,
   autoAppliedShell,
+  includeSensitive,
 });
 
 // ============================================================================
@@ -3870,7 +3908,10 @@ export const terminalListPlugins = (
 
 /** Get shell-relevant environment variables */
 export const terminalGetShellEnvVars = () =>
-  invoke<[string, string][]>("terminal_get_shell_env_vars");
+  invoke<TerminalEnvVarSummary[]>("terminal_get_shell_env_vars");
+
+export const terminalRevealShellEnvVar = (key: string) =>
+  invoke<TerminalEnvVarRevealResult>("terminal_reveal_shell_env_var", { key });
 
 /** Get resolved proxy environment variables for terminal */
 export const terminalGetProxyEnvVars = () =>

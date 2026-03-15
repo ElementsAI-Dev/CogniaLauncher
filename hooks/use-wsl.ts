@@ -40,6 +40,9 @@ import {
 import {
   buildWslBatchWorkflowPreflight,
   getRetryableWorkflowTargetNames,
+  getWslBatchWorkflowStepMeta,
+  getWslBatchWorkflowSteps,
+  normalizeWslBatchWorkflowPreset,
   type WslRefreshTarget,
   summarizeWslBatchWorkflowRun,
 } from '@/lib/wsl/workflow';
@@ -1555,11 +1558,15 @@ export function useWsl(): UseWslReturn {
     options?: {
       selectedDistros?: Iterable<string>;
       distroTags?: Record<string, string[]>;
+      startFromStepIndex?: number;
+      startFromStepIndexByTarget?: Record<string, number>;
     }
   ): Promise<WslBatchWorkflowSummary> => {
+    const normalizedWorkflow = normalizeWslBatchWorkflowPreset(workflow);
+    const workflowSteps = getWslBatchWorkflowSteps(normalizedWorkflow);
     const startedAt = new Date().toISOString();
     const preflight = buildWslBatchWorkflowPreflight({
-      workflow,
+      workflow: normalizedWorkflow,
       distros,
       selectedDistros: options?.selectedDistros ?? [],
       distroTags: options?.distroTags ?? {},
@@ -1568,82 +1575,235 @@ export function useWsl(): UseWslReturn {
         getAssistanceActions('distro', distroName).find((action) => action.id === actionId),
     });
     const executionResults: WslBatchWorkflowItemResult[] = [];
+    const startFromStepIndex = options?.startFromStepIndex ?? 0;
+    const startFromStepIndexByTarget = options?.startFromStepIndexByTarget ?? {};
+    const finalRefreshTargets = new Set<WslRefreshTarget>();
 
     if (tauri.isTauri()) {
+      const preflightTargetsByName = new Map(
+        preflight.targets.map((target) => [target.distroName, target] as const)
+      );
       const runnableTargets = preflight.targets
         .filter((target) => target.status === 'runnable')
         .map((target) => target.distroName);
+      const activeTargets = new Set(runnableTargets);
 
-      if (workflow.action.kind === 'lifecycle' && runnableTargets.length > 0) {
-        const rawResults = workflow.action.operation === 'launch'
-          ? await batchLaunch(runnableTargets)
-          : await batchTerminate(runnableTargets);
-        executionResults.push(
-          ...rawResults.map<WslBatchWorkflowItemResult>(([distroName, ok, detail]) => ({
-            distroName,
-            status: ok ? 'success' : 'failed',
-            detail,
-            retryable: !ok,
-          }))
-        );
-      } else {
-        for (const distroName of runnableTargets) {
-          try {
-            if (workflow.action.kind === 'command') {
-              const result = await execCommand(distroName, workflow.action.command, workflow.action.user);
-              executionResults.push({
-                distroName,
-                status: result.exitCode === 0 ? 'success' : 'failed',
-                detail: result.stderr || result.stdout,
-                retryable: result.exitCode !== 0,
-              });
-              continue;
-            }
+      for (let stepIndex = startFromStepIndex; stepIndex < workflowSteps.length; stepIndex += 1) {
+        const step = workflowSteps[stepIndex];
+        const stepLabel = preflight.steps[stepIndex]?.label ?? step.label ?? step.id;
+        const stepMeta = getWslBatchWorkflowStepMeta(step);
+        stepMeta.refreshTargets.forEach((target) => finalRefreshTargets.add(target));
 
-            if (workflow.action.kind === 'health-check') {
-              const result = await healthCheck(distroName);
+        const targetNames = Array.from(activeTargets);
+        if (targetNames.length === 0) {
+          break;
+        }
+
+        const failedTargets: string[] = [];
+        const stepRunnableTargets: string[] = [];
+
+        for (const distroName of targetNames) {
+          const targetStartIndex = startFromStepIndexByTarget[distroName] ?? startFromStepIndex;
+          if (stepIndex < targetStartIndex) {
+            continue;
+          }
+
+          const stepStatus = preflightTargetsByName.get(distroName)?.stepStatuses[stepIndex];
+          if (stepStatus?.status === 'skipped') {
+            executionResults.push({
+              stepId: step.id,
+              stepLabel,
+              distroName,
+              status: 'skipped',
+              detail: stepStatus.reason,
+              retryable: false,
+            });
+            continue;
+          }
+          stepRunnableTargets.push(distroName);
+        }
+
+        if (
+          step.kind === 'lifecycle'
+          && (step.operation === 'launch' || step.operation === 'terminate')
+          && stepRunnableTargets.length > 0
+        ) {
+          const rawResults = step.operation === 'launch'
+            ? await batchLaunch(stepRunnableTargets)
+            : await batchTerminate(stepRunnableTargets);
+          executionResults.push(
+            ...rawResults.map<WslBatchWorkflowItemResult>(([distroName, ok, detail]) => ({
+              stepId: step.id,
+              stepLabel,
+              distroName,
+              status: ok ? 'success' : 'failed',
+              detail,
+              retryable: !ok,
+            }))
+          );
+          failedTargets.push(
+            ...rawResults
+              .filter(([, ok]) => !ok)
+              .map(([distroName]) => distroName)
+          );
+        } else {
+          for (const distroName of stepRunnableTargets) {
+            try {
+              if (step.kind === 'command') {
+                const result = await execCommand(distroName, step.command, step.user);
+                const failed = result.exitCode !== 0;
+                executionResults.push({
+                  stepId: step.id,
+                  stepLabel,
+                  distroName,
+                  status: failed ? 'failed' : 'success',
+                  detail: result.stderr || result.stdout,
+                  retryable: failed,
+                });
+                if (failed) {
+                  failedTargets.push(distroName);
+                }
+                continue;
+              }
+
+              if (step.kind === 'health-check') {
+                const result = await healthCheck(distroName);
+                const failed = result.status === 'error';
+                executionResults.push({
+                  stepId: step.id,
+                  stepLabel,
+                  distroName,
+                  status: failed ? 'failed' : 'success',
+                  detail: result.issues[0]?.message,
+                  retryable: true,
+                });
+                if (failed) {
+                  failedTargets.push(distroName);
+                }
+                continue;
+              }
+
+              if (step.kind === 'assistance') {
+                const result = await executeAssistanceAction(step.actionId, 'distro', distroName);
+                const status = result.status === 'success'
+                  ? 'success'
+                  : result.status === 'blocked'
+                    ? 'skipped'
+                    : 'failed';
+                executionResults.push({
+                  stepId: step.id,
+                  stepLabel,
+                  distroName,
+                  status,
+                  detail: result.details ?? result.findings[0],
+                  retryable: result.retryable,
+                });
+                if (status === 'failed') {
+                  failedTargets.push(distroName);
+                }
+                continue;
+              }
+
+              if (step.kind === 'backup') {
+                const result = await backupDistro(
+                  distroName,
+                  step.destinationPath ?? '%USERPROFILE%\\WSL-Backups'
+                );
+                executionResults.push({
+                  stepId: step.id,
+                  stepLabel,
+                  distroName,
+                  status: 'success',
+                  detail: result.fileName,
+                  retryable: false,
+                });
+                continue;
+              }
+
+              if (step.kind === 'package-upkeep') {
+                const result = await updateDistroPackages(distroName, step.mode);
+                const failed = result.exitCode !== 0;
+                executionResults.push({
+                  stepId: step.id,
+                  stepLabel,
+                  distroName,
+                  status: failed ? 'failed' : 'success',
+                  detail: result.stderr || result.stdout,
+                  retryable: true,
+                });
+                if (failed) {
+                  failedTargets.push(distroName);
+                }
+                continue;
+              }
+
+              if (step.kind === 'lifecycle' && step.operation === 'relaunch') {
+                const result = await executeAssistanceAction('distro.relaunch', 'distro', distroName);
+                const failed = result.status !== 'success';
+                executionResults.push({
+                  stepId: step.id,
+                  stepLabel,
+                  distroName,
+                  status: failed ? 'failed' : 'success',
+                  detail: result.details ?? result.findings[0],
+                  retryable: result.retryable,
+                });
+                if (failed) {
+                  failedTargets.push(distroName);
+                }
+              }
+            } catch (err) {
               executionResults.push({
+                stepId: step.id,
+                stepLabel,
                 distroName,
-                status: result.status === 'error' ? 'failed' : 'success',
-                detail: result.issues[0]?.message,
+                status: 'failed',
+                detail: String(err),
                 retryable: true,
               });
-              continue;
+              failedTargets.push(distroName);
             }
+          }
+        }
 
-            if (workflow.action.kind === 'assistance') {
-              const result = await executeAssistanceAction(workflow.action.actionId, 'distro', distroName);
+        if (stepIndex < workflowSteps.length - 1) {
+          const skippedTargets = Array.from(new Set(failedTargets));
+          for (const failedTarget of skippedTargets) {
+            for (let laterStepIndex = stepIndex + 1; laterStepIndex < workflowSteps.length; laterStepIndex += 1) {
+              const laterStep = workflowSteps[laterStepIndex];
+              const laterStepLabel = preflight.steps[laterStepIndex]?.label ?? laterStep.label ?? laterStep.id;
               executionResults.push({
-                distroName,
-                status: result.status === 'success' ? 'success' : result.status === 'blocked' ? 'skipped' : 'failed',
-                detail: result.details ?? result.findings[0],
-                retryable: result.retryable,
+                stepId: laterStep.id,
+                stepLabel: laterStepLabel,
+                distroName: failedTarget,
+                status: 'skipped',
+                detail: `Blocked by failed step: ${stepLabel}`,
+                retryable: false,
               });
             }
-          } catch (err) {
-            executionResults.push({
-              distroName,
-              status: 'failed',
-              detail: String(err),
-              retryable: true,
-            });
+            activeTargets.delete(failedTarget);
           }
+        }
+
+        if (stepIndex < workflowSteps.length - 1 && stepMeta.refreshTargets.length > 0) {
+          await refreshBatchWorkflowTargets(stepMeta.refreshTargets);
         }
       }
 
-      if (preflight.refreshTargets.length > 0) {
-        await refreshBatchWorkflowTargets(preflight.refreshTargets);
+      if (finalRefreshTargets.size > 0) {
+        await refreshBatchWorkflowTargets(Array.from(finalRefreshTargets));
       }
     }
 
     return summarizeWslBatchWorkflowRun({
-      workflow,
+      workflow: normalizedWorkflow,
       preflight,
       startedAt,
       completedAt: new Date().toISOString(),
       executionResults,
     });
   }, [
+    backupDistro,
     batchLaunch,
     batchTerminate,
     capabilities,
@@ -1653,6 +1813,7 @@ export function useWsl(): UseWslReturn {
     getAssistanceActions,
     healthCheck,
     refreshBatchWorkflowTargets,
+    updateDistroPackages,
   ]);
 
   const retryBatchWorkflowFailures = useCallback(async (
@@ -1674,6 +1835,13 @@ export function useWsl(): UseWslReturn {
       {
         selectedDistros: retryTargets,
         distroTags: options?.distroTags ?? {},
+        startFromStepIndex: summary.resumeFromStepIndex ?? 0,
+        startFromStepIndexByTarget: Object.fromEntries(
+          retryTargets.map((distroName) => [
+            distroName,
+            summary.resumeFromStepIndexByDistro?.[distroName] ?? summary.resumeFromStepIndex ?? 0,
+          ]),
+        ),
       }
     );
   }, [runBatchWorkflow]);

@@ -3,11 +3,52 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 
 export type WidgetSize = 'sm' | 'md' | 'lg' | 'full';
 
+export type DashboardDataSource =
+  | 'activity'
+  | 'downloads'
+  | 'environments'
+  | 'health'
+  | 'packages'
+  | 'settings'
+  | 'toolbox';
+
+export type WidgetRange = '7d' | '30d';
+export type WorkspaceTrendMetric = 'installations' | 'downloads' | 'updates';
+export type ProviderHealthGroupBy = 'provider' | 'environment';
+
+export interface AttentionCenterSettings {
+  maxItems: 3 | 5;
+}
+
+export interface WorkspaceTrendsSettings {
+  range: WidgetRange;
+  metric: WorkspaceTrendMetric;
+}
+
+export interface ProviderHealthMatrixSettings {
+  groupBy: ProviderHealthGroupBy;
+  showHealthy: boolean;
+}
+
+export interface RecentActivityFeedSettings {
+  limit: 5 | 10;
+}
+
+export interface WidgetSettingsMap {
+  'attention-center': AttentionCenterSettings;
+  'workspace-trends': WorkspaceTrendsSettings;
+  'provider-health-matrix': ProviderHealthMatrixSettings;
+  'recent-activity-feed': RecentActivityFeedSettings;
+}
+
+export type WidgetSettings = WidgetSettingsMap[keyof WidgetSettingsMap];
+
 export interface WidgetConfig {
   id: string;
   type: WidgetType;
   size: WidgetSize;
   visible: boolean;
+  settings?: WidgetSettings;
 }
 
 export type WidgetType =
@@ -26,7 +67,11 @@ export type WidgetType =
   | 'health-check'
   | 'updates-available'
   | 'welcome'
-  | 'toolbox-favorites';
+  | 'toolbox-favorites'
+  | 'attention-center'
+  | 'workspace-trends'
+  | 'provider-health-matrix'
+  | 'recent-activity-feed';
 
 interface WidgetPolicy {
   allowMultiple: boolean;
@@ -43,6 +88,8 @@ export interface WidgetDefinition extends WidgetPolicy {
   defaultSize: WidgetSize;
   minSize: WidgetSize;
   category: 'overview' | 'charts' | 'lists' | 'tools';
+  dataSources: DashboardDataSource[];
+  defaultSettings?: WidgetSettings;
 }
 
 const SINGLE_INSTANCE_POLICY: WidgetPolicy = {
@@ -67,6 +114,7 @@ export const WIDGET_DEFINITIONS: Record<WidgetType, WidgetDefinition> = {
     defaultSize: 'full',
     minSize: 'full',
     category: 'overview',
+    dataSources: ['environments', 'packages', 'settings'],
     ...SINGLE_INSTANCE_POLICY,
   },
   'environment-chart': {
@@ -77,6 +125,7 @@ export const WIDGET_DEFINITIONS: Record<WidgetType, WidgetDefinition> = {
     defaultSize: 'md',
     minSize: 'sm',
     category: 'charts',
+    dataSources: ['environments'],
     ...MULTI_INSTANCE_POLICY,
   },
   'package-chart': {
@@ -87,6 +136,7 @@ export const WIDGET_DEFINITIONS: Record<WidgetType, WidgetDefinition> = {
     defaultSize: 'md',
     minSize: 'sm',
     category: 'charts',
+    dataSources: ['packages'],
     ...MULTI_INSTANCE_POLICY,
   },
   'cache-usage': {
@@ -97,6 +147,7 @@ export const WIDGET_DEFINITIONS: Record<WidgetType, WidgetDefinition> = {
     defaultSize: 'md',
     minSize: 'sm',
     category: 'charts',
+    dataSources: ['settings'],
     ...MULTI_INSTANCE_POLICY,
   },
   'activity-timeline': {
@@ -107,6 +158,7 @@ export const WIDGET_DEFINITIONS: Record<WidgetType, WidgetDefinition> = {
     defaultSize: 'md',
     minSize: 'sm',
     category: 'charts',
+    dataSources: ['activity', 'environments', 'packages'],
     ...MULTI_INSTANCE_POLICY,
   },
   'system-info': {
@@ -117,6 +169,7 @@ export const WIDGET_DEFINITIONS: Record<WidgetType, WidgetDefinition> = {
     defaultSize: 'md',
     minSize: 'sm',
     category: 'overview',
+    dataSources: ['settings'],
     ...SINGLE_INSTANCE_POLICY,
   },
   'download-stats': {
@@ -127,6 +180,7 @@ export const WIDGET_DEFINITIONS: Record<WidgetType, WidgetDefinition> = {
     defaultSize: 'md',
     minSize: 'sm',
     category: 'charts',
+    dataSources: ['downloads'],
     ...MULTI_INSTANCE_POLICY,
   },
   'quick-search': {
@@ -137,6 +191,7 @@ export const WIDGET_DEFINITIONS: Record<WidgetType, WidgetDefinition> = {
     defaultSize: 'full',
     minSize: 'lg',
     category: 'tools',
+    dataSources: ['environments', 'packages', 'toolbox'],
     ...SINGLE_INSTANCE_POLICY,
   },
   'environment-list': {
@@ -147,6 +202,7 @@ export const WIDGET_DEFINITIONS: Record<WidgetType, WidgetDefinition> = {
     defaultSize: 'md',
     minSize: 'sm',
     category: 'lists',
+    dataSources: ['environments'],
     ...MULTI_INSTANCE_POLICY,
   },
   'package-list': {
@@ -157,6 +213,7 @@ export const WIDGET_DEFINITIONS: Record<WidgetType, WidgetDefinition> = {
     defaultSize: 'md',
     minSize: 'sm',
     category: 'lists',
+    dataSources: ['packages'],
     ...MULTI_INSTANCE_POLICY,
   },
   'quick-actions': {
@@ -167,6 +224,7 @@ export const WIDGET_DEFINITIONS: Record<WidgetType, WidgetDefinition> = {
     defaultSize: 'full',
     minSize: 'lg',
     category: 'tools',
+    dataSources: [],
     ...MULTI_INSTANCE_POLICY,
   },
   'wsl-status': {
@@ -177,6 +235,7 @@ export const WIDGET_DEFINITIONS: Record<WidgetType, WidgetDefinition> = {
     defaultSize: 'md',
     minSize: 'sm',
     category: 'overview',
+    dataSources: ['settings'],
     ...SINGLE_INSTANCE_POLICY,
   },
   'health-check': {
@@ -187,6 +246,7 @@ export const WIDGET_DEFINITIONS: Record<WidgetType, WidgetDefinition> = {
     defaultSize: 'md',
     minSize: 'sm',
     category: 'overview',
+    dataSources: ['health'],
     ...SINGLE_INSTANCE_POLICY,
   },
   'updates-available': {
@@ -197,6 +257,7 @@ export const WIDGET_DEFINITIONS: Record<WidgetType, WidgetDefinition> = {
     defaultSize: 'md',
     minSize: 'sm',
     category: 'overview',
+    dataSources: ['environments', 'packages'],
     ...SINGLE_INSTANCE_POLICY,
   },
   'welcome': {
@@ -207,6 +268,7 @@ export const WIDGET_DEFINITIONS: Record<WidgetType, WidgetDefinition> = {
     defaultSize: 'full',
     minSize: 'lg',
     category: 'overview',
+    dataSources: ['environments', 'packages', 'settings'],
     ...SINGLE_INSTANCE_POLICY,
   },
   'toolbox-favorites': {
@@ -217,6 +279,65 @@ export const WIDGET_DEFINITIONS: Record<WidgetType, WidgetDefinition> = {
     defaultSize: 'md',
     minSize: 'sm',
     category: 'tools',
+    dataSources: ['toolbox'],
+    ...MULTI_INSTANCE_POLICY,
+  },
+  'attention-center': {
+    type: 'attention-center',
+    titleKey: 'dashboard.widgets.attentionCenter',
+    descriptionKey: 'dashboard.widgets.attentionCenterDesc',
+    icon: 'BellRing',
+    defaultSize: 'md',
+    minSize: 'sm',
+    category: 'overview',
+    dataSources: ['downloads', 'health', 'packages', 'settings'],
+    defaultSettings: {
+      maxItems: 3,
+    },
+    ...SINGLE_INSTANCE_POLICY,
+  },
+  'workspace-trends': {
+    type: 'workspace-trends',
+    titleKey: 'dashboard.widgets.workspaceTrends',
+    descriptionKey: 'dashboard.widgets.workspaceTrendsDesc',
+    icon: 'ChartNoAxesCombined',
+    defaultSize: 'lg',
+    minSize: 'md',
+    category: 'charts',
+    dataSources: ['activity', 'downloads', 'packages'],
+    defaultSettings: {
+      range: '7d',
+      metric: 'installations',
+    },
+    ...MULTI_INSTANCE_POLICY,
+  },
+  'provider-health-matrix': {
+    type: 'provider-health-matrix',
+    titleKey: 'dashboard.widgets.providerHealthMatrix',
+    descriptionKey: 'dashboard.widgets.providerHealthMatrixDesc',
+    icon: 'ShieldEllipsis',
+    defaultSize: 'md',
+    minSize: 'sm',
+    category: 'overview',
+    dataSources: ['health'],
+    defaultSettings: {
+      groupBy: 'provider',
+      showHealthy: true,
+    },
+    ...MULTI_INSTANCE_POLICY,
+  },
+  'recent-activity-feed': {
+    type: 'recent-activity-feed',
+    titleKey: 'dashboard.widgets.recentActivityFeed',
+    descriptionKey: 'dashboard.widgets.recentActivityFeedDesc',
+    icon: 'History',
+    defaultSize: 'md',
+    minSize: 'sm',
+    category: 'lists',
+    dataSources: ['activity', 'downloads', 'packages', 'toolbox'],
+    defaultSettings: {
+      limit: 5,
+    },
     ...MULTI_INSTANCE_POLICY,
   },
 };
@@ -224,10 +345,38 @@ export const WIDGET_DEFINITIONS: Record<WidgetType, WidgetDefinition> = {
 export const DEFAULT_WIDGETS: WidgetConfig[] = [
   { id: 'w-welcome', type: 'welcome', size: 'full', visible: true },
   { id: 'w-stats', type: 'stats-overview', size: 'full', visible: true },
+  {
+    id: 'w-attention',
+    type: 'attention-center',
+    size: 'md',
+    visible: true,
+    settings: { maxItems: 3 },
+  },
+  {
+    id: 'w-health-matrix',
+    type: 'provider-health-matrix',
+    size: 'md',
+    visible: true,
+    settings: { groupBy: 'provider', showHealthy: true },
+  },
+  {
+    id: 'w-trends',
+    type: 'workspace-trends',
+    size: 'lg',
+    visible: true,
+    settings: { range: '7d', metric: 'installations' },
+  },
   { id: 'w-actions', type: 'quick-actions', size: 'full', visible: true },
   { id: 'w-search', type: 'quick-search', size: 'full', visible: true },
   { id: 'w-health', type: 'health-check', size: 'md', visible: true },
   { id: 'w-updates', type: 'updates-available', size: 'md', visible: true },
+  {
+    id: 'w-recent-activity',
+    type: 'recent-activity-feed',
+    size: 'md',
+    visible: true,
+    settings: { limit: 5 },
+  },
   { id: 'w-system', type: 'system-info', size: 'md', visible: true },
   { id: 'w-envs', type: 'environment-list', size: 'md', visible: true },
   { id: 'w-pkgs', type: 'package-list', size: 'md', visible: true },
@@ -264,8 +413,15 @@ const WIDGET_SIZE_SET = new Set<WidgetSize>(['sm', 'md', 'lg', 'full']);
 
 let widgetCounter = 0;
 
+function cloneWidgetSettings(settings: WidgetSettings | undefined): WidgetSettings | undefined {
+  return settings ? { ...settings } : undefined;
+}
+
 function cloneWidget(widget: WidgetConfig): WidgetConfig {
-  return { ...widget };
+  return {
+    ...widget,
+    settings: cloneWidgetSettings(widget.settings),
+  };
 }
 
 export function getDefaultWidgets(): WidgetConfig[] {
@@ -276,12 +432,52 @@ function getWidgetDefinition(type: WidgetType): WidgetDefinition {
   return WIDGET_DEFINITIONS[type];
 }
 
+export function getDefaultWidgetSettings(type: WidgetType): WidgetSettings | undefined {
+  return cloneWidgetSettings(getWidgetDefinition(type).defaultSettings);
+}
+
 function isWidgetSize(value: unknown): value is WidgetSize {
   return typeof value === 'string' && WIDGET_SIZE_SET.has(value as WidgetSize);
 }
 
 function isWidgetType(value: unknown): value is WidgetType {
   return typeof value === 'string' && value in WIDGET_DEFINITIONS;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function normalizeWidgetSettings(type: WidgetType, value: unknown): WidgetSettings | undefined {
+  const defaultSettings = getDefaultWidgetSettings(type);
+  if (!defaultSettings) {
+    return undefined;
+  }
+
+  const raw = isRecord(value) ? value : {};
+
+  switch (type) {
+    case 'attention-center':
+      return {
+        maxItems: raw.maxItems === 5 ? 5 : 3,
+      };
+    case 'workspace-trends':
+      return {
+        range: raw.range === '30d' ? '30d' : '7d',
+        metric: raw.metric === 'downloads' || raw.metric === 'updates' ? raw.metric : 'installations',
+      };
+    case 'provider-health-matrix':
+      return {
+        groupBy: raw.groupBy === 'environment' ? 'environment' : 'provider',
+        showHealthy: typeof raw.showHealthy === 'boolean' ? raw.showHealthy : true,
+      };
+    case 'recent-activity-feed':
+      return {
+        limit: raw.limit === 10 ? 10 : 5,
+      };
+    default:
+      return defaultSettings;
+  }
 }
 
 function ensureUniqueId(id: string, usedIds: Set<string>): string {
@@ -397,6 +593,7 @@ export function normalizeDashboardWidgets(rawWidgets: unknown): WidgetConfig[] {
       type: raw.type,
       size: isWidgetSize(raw.size) ? raw.size : def.defaultSize,
       visible: typeof raw.visible === 'boolean' ? raw.visible : def.defaultVisible,
+      settings: normalizeWidgetSettings(raw.type, raw.settings),
     });
   });
 
@@ -478,6 +675,7 @@ export const useDashboardStore = create<DashboardState>()(
             type,
             size: def.defaultSize,
             visible: def.defaultVisible,
+            settings: getDefaultWidgetSettings(type),
           };
 
           return { widgets: [...state.widgets, newWidget] };
@@ -513,6 +711,8 @@ export const useDashboardStore = create<DashboardState>()(
             if (typeof next.visible !== 'boolean') {
               next.visible = widget.visible;
             }
+
+            next.settings = normalizeWidgetSettings(widget.type, next.settings);
 
             return next;
           }),
@@ -552,7 +752,7 @@ export const useDashboardStore = create<DashboardState>()(
     {
       name: 'cognia-dashboard',
       storage: createJSONStorage(() => localStorage),
-      version: 3,
+      version: 4,
       migrate: (persistedState, version) => {
         const state = (persistedState ?? {}) as PersistedDashboardState;
         const widgetsSource = version < 2

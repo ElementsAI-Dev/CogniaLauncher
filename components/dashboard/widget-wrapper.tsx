@@ -23,6 +23,7 @@ interface WidgetWrapperProps {
   onRemove: (id: string) => void;
   onToggleVisibility: (id: string) => void;
   onResize: (id: string, size: WidgetSize) => void;
+  toolbarExtras?: React.ReactNode;
   children: React.ReactNode;
 }
 
@@ -34,6 +35,7 @@ export function WidgetWrapper({
   onRemove,
   onToggleVisibility,
   onResize,
+  toolbarExtras,
   children,
 }: WidgetWrapperProps) {
   const { t } = useLocale();
@@ -128,6 +130,8 @@ export function WidgetWrapper({
               {t("dashboard.widgets.expand")}
             </TooltipContent>
           </Tooltip>
+
+          {toolbarExtras}
 
           <Tooltip>
             <TooltipTrigger asChild>

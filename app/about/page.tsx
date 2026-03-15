@@ -6,11 +6,14 @@ import { PageHeader } from '@/components/layout/page-header';
 import { useAboutData } from '@/hooks/use-about-data';
 import { useChangelog } from '@/hooks/use-changelog';
 import { useChangelogStore } from '@/lib/stores/changelog';
+import { useFeedbackStore } from '@/lib/stores/feedback';
 import { compareVersions } from '@/lib/constants/changelog-utils';
 import { APP_VERSION } from '@/lib/app-version';
+import { buildAboutSupportState } from '@/lib/about-support';
 import {
   VersionCards,
   UpdateBanner,
+  AboutSupportOverviewCard,
   SystemInfoCard,
   AboutInsightsCard,
   BuildDepsCard,
@@ -24,6 +27,7 @@ import {
 export default function AboutPage() {
   const { t, locale } = useLocale();
   const [changelogOpen, setChangelogOpen] = useState(false);
+  const { openDialog } = useFeedbackStore();
   
   const {
     updateInfo,
@@ -31,16 +35,20 @@ export default function AboutPage() {
     updating,
     updateProgress,
     updateStatus,
+    updateErrorCategory,
     error,
     systemError,
     systemInfo,
     systemLoading,
     aboutInsights,
     insightsLoading,
+    supportFreshness,
+    supportRefreshing,
     isDesktop,
     checkForUpdate,
     reloadSystemInfo,
     reloadAboutInsights,
+    refreshAllSupportData,
     handleUpdate,
     clearError,
     exportDiagnostics,
@@ -65,6 +73,20 @@ export default function AboutPage() {
   const whatsNewEntries = changelog.entries.filter((entry) => {
     if (!lastSeenVersion) return false;
     return compareVersions(entry.version, lastSeenVersion) > 0;
+  });
+
+  const supportState = buildAboutSupportState({
+    isDesktop,
+    loading,
+    systemLoading,
+    insightsLoading,
+    updateInfo,
+    updateStatus,
+    updateErrorCategory,
+    systemError,
+    systemInfo,
+    aboutInsights,
+    supportFreshness,
   });
 
   return (
@@ -103,6 +125,26 @@ export default function AboutPage() {
 
       {/* Diagnostics Section */}
       <section
+        aria-labelledby="about-support-heading"
+        className="space-y-4"
+        data-testid="about-support-section"
+      >
+        <h2 id="about-support-heading" className="sr-only">
+          {t("about.supportOverviewTitle")}
+        </h2>
+        <AboutSupportOverviewCard
+          supportState={supportState}
+          supportRefreshing={supportRefreshing}
+          locale={locale}
+          onRefreshAll={refreshAllSupportData}
+          onOpenChangelog={() => setChangelogOpen(true)}
+          onExportDiagnostics={() => exportDiagnostics(t)}
+          onReportBug={() => openDialog({ category: "bug" })}
+          t={t}
+        />
+      </section>
+
+      <section
         aria-labelledby="about-diagnostics-heading"
         className="space-y-4"
         data-testid="about-diagnostics-section"
@@ -121,6 +163,8 @@ export default function AboutPage() {
               aboutInsights={aboutInsights}
               updateInfo={updateInfo}
               systemError={systemError}
+              locale={locale}
+              lastRefreshedAt={supportFreshness.systemInfoRefreshedAt}
               onRetry={reloadSystemInfo}
               t={t}
             />
@@ -129,6 +173,8 @@ export default function AboutPage() {
             <AboutInsightsCard
               insights={aboutInsights}
               insightsLoading={insightsLoading}
+              locale={locale}
+              lastGeneratedAt={supportFreshness.insightsGeneratedAt}
               onRetry={reloadAboutInsights}
               t={t}
             />
@@ -158,7 +204,7 @@ export default function AboutPage() {
         </div>
         <section aria-label={t('about.actions')}>
           <ActionsCard
-            loading={loading}
+            loading={loading || supportRefreshing}
             isDesktop={isDesktop}
             onCheckUpdate={checkForUpdate}
             onOpenChangelog={() => setChangelogOpen(true)}

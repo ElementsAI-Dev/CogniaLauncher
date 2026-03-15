@@ -103,6 +103,15 @@ export default function HtmlEntityConverter({ className }: ToolComponentProps) {
         setError(null);
         return;
       }
+      if (value.length > TOOLBOX_LIMITS.converterChars) {
+        setError(
+          t('toolbox.tools.shared.inputTooLarge', {
+            limit: TOOLBOX_LIMITS.converterChars.toLocaleString(),
+          }),
+        );
+        setOutput('');
+        return;
+      }
       try {
         const encoded = preferences.numericMode
           ? encodeNumericEntities(value, preferences.hexNumeric)

@@ -70,7 +70,7 @@ export default function JwtDecoder({ className }: ToolComponentProps) {
   const [decoded, setDecoded] = useState<DecodedJwt | null>(null);
   const [errorDetail, setErrorDetail] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const { copy } = useCopyToClipboard();
+  const { copy, error: clipboardError } = useCopyToClipboard();
 
   const handleDecode = useCallback(() => {
     if (!input.trim()) {
@@ -146,7 +146,7 @@ export default function JwtDecoder({ className }: ToolComponentProps) {
             label={t('toolbox.tools.jwtDecoder.input')}
             value={input}
             onChange={setInput}
-            placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+            placeholder={t('toolbox.tools.jwtDecoder.placeholder')}
             showPaste
             showClear
             rows={4}
@@ -169,9 +169,15 @@ export default function JwtDecoder({ className }: ToolComponentProps) {
 
           {tokenParts && (
             <div className="mt-3 flex flex-wrap gap-2">
-              <Badge variant="secondary" className="bg-blue-500/10 text-blue-600 dark:text-blue-300">Header</Badge>
-              <Badge variant="secondary" className="bg-green-500/10 text-green-600 dark:text-green-300">Payload</Badge>
-              <Badge variant="secondary" className="bg-red-500/10 text-red-600 dark:text-red-300">Signature</Badge>
+              <Badge variant="secondary" className="bg-blue-500/10 text-blue-600 dark:text-blue-300">
+                {t('toolbox.tools.jwtDecoder.header')}
+              </Badge>
+              <Badge variant="secondary" className="bg-green-500/10 text-green-600 dark:text-green-300">
+                {t('toolbox.tools.jwtDecoder.payload')}
+              </Badge>
+              <Badge variant="secondary" className="bg-red-500/10 text-red-600 dark:text-red-300">
+                {t('toolbox.tools.jwtDecoder.signature')}
+              </Badge>
             </div>
           )}
         </ToolSection>
@@ -261,6 +267,7 @@ export default function JwtDecoder({ className }: ToolComponentProps) {
             )}
           </div>
         )}
+        {clipboardError && <ToolValidationMessage message={t('toolbox.actions.copyFailed')} />}
       </div>
     </div>
   );

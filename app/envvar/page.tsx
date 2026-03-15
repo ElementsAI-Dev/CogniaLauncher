@@ -54,9 +54,10 @@ type EnvVarAction =
 
 export default function EnvVarPage() {
   const {
-    envVars,
-    userPersistentVarsTyped,
-    systemPersistentVarsTyped,
+    processVarSummaries,
+    userPersistentVarSummaries,
+    systemPersistentVarSummaries,
+    revealedValues,
     pathEntries,
     shellProfiles,
     conflicts,
@@ -91,6 +92,7 @@ export default function EnvVarPage() {
     applyPathRepair,
     clearPathRepairPreview,
     resolveConflict,
+    revealVar,
     loadDetection,
   } = useEnvVar();
 
@@ -187,12 +189,20 @@ export default function EnvVarPage() {
   }, [detectionFromCache, detectionState, t]);
 
   const envRows = useMemo(() => buildEnvVarRows({
-    processVars: envVars,
-    userPersistentVars: userPersistentVarsTyped,
-    systemPersistentVars: systemPersistentVarsTyped,
+    processVars: processVarSummaries,
+    userPersistentVars: userPersistentVarSummaries,
+    systemPersistentVars: systemPersistentVarSummaries,
     scopeFilter,
     conflicts,
-  }), [envVars, scopeFilter, systemPersistentVarsTyped, userPersistentVarsTyped, conflicts]);
+    revealedValues,
+  }), [
+    conflicts,
+    processVarSummaries,
+    revealedValues,
+    scopeFilter,
+    systemPersistentVarSummaries,
+    userPersistentVarSummaries,
+  ]);
 
   const filteredRowCount = useMemo(() => {
     if (!searchQuery) return envRows.length;
@@ -695,6 +705,7 @@ export default function EnvVarPage() {
                   searchQuery={searchQuery}
                   onEdit={handleEdit}
                   onDelete={handleDelete}
+                  onReveal={(key, scope) => revealVar(key, scope)}
                   busy={variableBusy}
                   t={t}
                 />
@@ -774,11 +785,11 @@ export default function EnvVarPage() {
             setActiveAction(null);
           }
         }}
-        onExport={async (scope, format) => {
+        onExport={async (scope, format, includeSensitive = false) => {
           setActionError(null);
           setActiveAction('export');
           try {
-            const result = await exportEnvFile(scope, format);
+            const result = await exportEnvFile(scope, format, includeSensitive);
             if (!result) {
               setActionError(formatActionError('export', t('common.error')));
             }

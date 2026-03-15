@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import ColorPicker from './color-picker';
 
 jest.mock('@/components/providers/locale-provider', () => ({
@@ -23,5 +23,15 @@ describe('ColorPicker', () => {
     expect(screen.getByText('toolbox.tools.colorPicker.formatRgb')).toBeInTheDocument();
     expect(screen.getByText('toolbox.tools.colorPicker.formatHsl')).toBeInTheDocument();
     expect(screen.getByText('toolbox.tools.colorPicker.contrastValue')).toBeInTheDocument();
+  });
+
+  it('shows validation feedback for invalid hex input', () => {
+    render(<ColorPicker />);
+
+    fireEvent.change(screen.getByPlaceholderText('#3b82f6'), {
+      target: { value: '#12z' },
+    });
+
+    expect(screen.getByText('toolbox.tools.colorPicker.invalidHex')).toBeInTheDocument();
   });
 });

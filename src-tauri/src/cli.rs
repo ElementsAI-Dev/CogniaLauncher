@@ -3775,6 +3775,7 @@ async fn cmd_envvar(
                 value,
                 path_entries,
                 auto_applied_shell,
+                None,
             ) {
                 Ok(guidance) => {
                     if json_mode {

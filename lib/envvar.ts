@@ -1,8 +1,9 @@
 import type {
   EnvFileFormat,
   EnvVarConflict,
+  EnvVarSensitivityReason,
   EnvVarScope,
-  PersistentEnvVar,
+  EnvVarSummary,
 } from '@/types/tauri';
 
 /**
@@ -18,14 +19,20 @@ export interface EnvVarRow {
   scope: EnvVarScope;
   regType?: string;
   conflict?: boolean;
+  isSensitive?: boolean;
+  sensitivityReason?: EnvVarSensitivityReason | null;
+  hasValue?: boolean;
+  revealedValue?: string | null;
+  masked?: boolean;
 }
 
 interface BuildEnvVarRowsInput {
-  processVars: Record<string, string>;
-  userPersistentVars: PersistentEnvVar[];
-  systemPersistentVars: PersistentEnvVar[];
+  processVars: EnvVarSummary[];
+  userPersistentVars: EnvVarSummary[];
+  systemPersistentVars: EnvVarSummary[];
   scopeFilter: EnvVarScope | 'all';
   conflicts?: EnvVarConflict[];
+  revealedValues?: Record<string, string>;
 }
 
 const ENV_SCOPE_ORDER: Record<EnvVarScope, number> = {
@@ -43,14 +50,16 @@ function normalizeConflictKeys(conflicts: EnvVarConflict[]): Set<string> {
  * In "all" scope, entries are expanded by source scope without key-level deduplication.
  */
 export function buildEnvVarRows({
-  processVars,
-  userPersistentVars,
-  systemPersistentVars,
+  processVars = [],
+  userPersistentVars = [],
+  systemPersistentVars = [],
   scopeFilter,
   conflicts = [],
+  revealedValues = {},
 }: BuildEnvVarRowsInput): EnvVarRow[] {
   const rows: EnvVarRow[] = [];
   const conflictKeys = normalizeConflictKeys(conflicts);
+  const getRevealKey = (scope: EnvVarScope, key: string) => `${scope}:${key}`;
 
   const maybeSetConflict = (row: EnvVarRow): EnvVarRow => {
     if (row.scope === 'user' || row.scope === 'system') {
@@ -64,10 +73,15 @@ export function buildEnvVarRows({
 
   if (scopeFilter === 'all' || scopeFilter === 'process') {
     rows.push(
-      ...Object.entries(processVars).map(([key, value]) => ({
-        key,
-        value,
+      ...processVars.map((item) => ({
+        key: item.key,
+        value: revealedValues[getRevealKey('process', item.key)] ?? item.value.displayValue,
+        revealedValue: revealedValues[getRevealKey('process', item.key)] ?? null,
         scope: 'process' as const,
+        isSensitive: item.value.isSensitive,
+        sensitivityReason: item.value.sensitivityReason,
+        hasValue: item.value.hasValue,
+        masked: item.value.masked && !revealedValues[getRevealKey('process', item.key)],
       })),
     );
   }
@@ -77,9 +91,14 @@ export function buildEnvVarRows({
       ...userPersistentVars.map((item) =>
         maybeSetConflict({
           key: item.key,
-          value: item.value,
+          value: revealedValues[getRevealKey('user', item.key)] ?? item.value.displayValue,
+          revealedValue: revealedValues[getRevealKey('user', item.key)] ?? null,
           scope: 'user',
-          regType: item.regType,
+          regType: item.regType ?? undefined,
+          isSensitive: item.value.isSensitive,
+          sensitivityReason: item.value.sensitivityReason,
+          hasValue: item.value.hasValue,
+          masked: item.value.masked && !revealedValues[getRevealKey('user', item.key)],
         }),
       ),
     );
@@ -90,9 +109,14 @@ export function buildEnvVarRows({
       ...systemPersistentVars.map((item) =>
         maybeSetConflict({
           key: item.key,
-          value: item.value,
+          value: revealedValues[getRevealKey('system', item.key)] ?? item.value.displayValue,
+          revealedValue: revealedValues[getRevealKey('system', item.key)] ?? null,
           scope: 'system',
-          regType: item.regType,
+          regType: item.regType ?? undefined,
+          isSensitive: item.value.isSensitive,
+          sensitivityReason: item.value.sensitivityReason,
+          hasValue: item.value.hasValue,
+          masked: item.value.masked && !revealedValues[getRevealKey('system', item.key)],
         }),
       ),
     );

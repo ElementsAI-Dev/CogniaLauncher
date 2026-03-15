@@ -5,13 +5,12 @@ import {
   getLogicalEnvType,
   useEnvironmentStore,
   type EnvironmentSettings,
-  type EnvironmentWorkflowActionKind,
-  type EnvironmentWorkflowActionStatus,
 } from '@/lib/stores/environment';
 import * as tauri from '@/lib/tauri';
 import { formatSize, formatSpeed } from '@/lib/utils';
 import { formatError } from '@/lib/errors';
 import type { UnlistenFn } from '@tauri-apps/api/event';
+import { useEnvironmentWorkflow } from '@/hooks/use-environment-workflow';
 import {
   type CacheInvalidationEvent,
   emitInvalidations,
@@ -57,16 +56,17 @@ export function useEnvironments() {
   // Select stable action references (these don't change between renders)
   const setLoading = useEnvironmentStore((s) => s.setLoading);
   const setError = useEnvironmentStore((s) => s.setError);
-  const setEnvironments = useEnvironmentStore((s) => s.setEnvironments);
   const setEnvSettings = useEnvironmentStore((s) => s.setEnvSettings);
   const updateEnvironment = useEnvironmentStore((s) => s.updateEnvironment);
   const setDetectedVersions = useEnvironmentStore((s) => s.setDetectedVersions);
-  const setAvailableProviders = useEnvironmentStore((s) => s.setAvailableProviders);
   const setCurrentInstallation = useEnvironmentStore((s) => s.setCurrentInstallation);
-  const setLastEnvScanTimestamp = useEnvironmentStore((s) => s.setLastEnvScanTimestamp);
   const openProgressDialog = useEnvironmentStore((s) => s.openProgressDialog);
   const closeProgressDialog = useEnvironmentStore((s) => s.closeProgressDialog);
   const updateInstallationProgress = useEnvironmentStore((s) => s.updateInstallationProgress);
+  const {
+    setWorkflowActionState,
+    reconcileEnvironmentWorkflow: reconcileEnvironmentWorkflowState,
+  } = useEnvironmentWorkflow();
 
   const unlistenRef = useRef<UnlistenFn | null>(null);
   const closeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -122,128 +122,24 @@ export function useEnvironments() {
     auto_switch: settings.autoSwitch,
   }), [toLogicalEnvType]);
 
-  const syncWorkflowContext = useCallback((
-    envType: string,
-    options?: {
-      providerId?: string | null;
-      projectPath?: string | null;
-    },
-  ) => {
-    const store = useEnvironmentStore.getState();
-    const logicalEnvType = toLogicalEnvType(envType);
-    const currentContext = store.workflowContext;
-    const sameTarget = currentContext?.envType === logicalEnvType;
-    const resolvedProjectPath =
-      options?.projectPath
-      ?? (sameTarget ? currentContext?.projectPath : null)
-      ?? getPersistedProjectPath();
-    const resolvedProviderId =
-      options?.providerId
-      ?? (sameTarget ? currentContext?.providerId : null)
-      ?? store.getSelectedProvider(logicalEnvType, options?.providerId ?? envType);
-
-    store.setWorkflowContext({
-      envType: logicalEnvType,
-      origin: sameTarget ? currentContext.origin : 'direct',
-      returnHref: sameTarget ? currentContext.returnHref ?? '/environments' : '/environments',
-      projectPath: resolvedProjectPath,
-      providerId: resolvedProviderId,
-      updatedAt: Date.now(),
-    });
-
-    return {
-      logicalEnvType,
-      projectPath: resolvedProjectPath,
-      providerId: resolvedProviderId,
-    };
-  }, [toLogicalEnvType]);
-
-  const setWorkflowActionState = useCallback((
-    envType: string,
-    action: EnvironmentWorkflowActionKind,
-    status: EnvironmentWorkflowActionStatus,
-    options?: {
-      version?: string | null;
-      providerId?: string | null;
-      projectPath?: string | null;
-      error?: string | null;
-      retryable?: boolean;
-    },
-  ) => {
-    const synced = syncWorkflowContext(envType, {
-      providerId: options?.providerId,
-      projectPath: options?.projectPath,
-    });
-
-    useEnvironmentStore.getState().setWorkflowAction({
-      envType: synced.logicalEnvType,
-      action,
-      status,
-      version: options?.version ?? null,
-      providerId: synced.providerId,
-      projectPath: synced.projectPath,
-      error: options?.error ?? null,
-      retryable: options?.retryable,
-      updatedAt: Date.now(),
-    });
-
-    return synced;
-  }, [syncWorkflowContext]);
-
   const reconcileEnvironmentWorkflow = useCallback(async (options?: {
     projectPath?: string | null;
     refreshProviders?: boolean;
   }) => {
-    if (!tauri.isTauri()) {
-      return;
-    }
-
-    const resolvedProjectPath =
-      options?.projectPath
-      ?? useEnvironmentStore.getState().workflowContext?.projectPath
-      ?? getPersistedProjectPath();
-
     detectedVersionsCacheRef.current = null;
 
-    const refreshes: Promise<unknown>[] = [
-      tauri.envList(true).then((envs) => {
-        setEnvironments(envs);
-        setLastEnvScanTimestamp(Date.now());
-        return envs;
-      }),
-    ];
-
-    if (options?.refreshProviders) {
-      refreshes.push(
-        tauri.envListProviders(true).then((providers) => {
-          setAvailableProviders(providers);
-          providersCacheTimestampRef.current = Date.now();
-          return providers;
-        }),
-      );
+    const result = await reconcileEnvironmentWorkflowState(options);
+    if (result.providers) {
+      providersCacheTimestampRef.current = Date.now();
     }
-
-    if (resolvedProjectPath) {
-      refreshes.push(
-        tauri.envDetectAll(resolvedProjectPath).then((detected) => {
-          detectedVersionsCacheRef.current = {
-            path: resolvedProjectPath,
-            timestamp: Date.now(),
-            versions: detected,
-          };
-          setDetectedVersions(detected);
-          return detected;
-        }),
-      );
+    if (result.detected && result.projectPath) {
+      detectedVersionsCacheRef.current = {
+        path: result.projectPath,
+        timestamp: Date.now(),
+        versions: result.detected,
+      };
     }
-
-    await Promise.all(refreshes);
-  }, [
-    setAvailableProviders,
-    setDetectedVersions,
-    setEnvironments,
-    setLastEnvScanTimestamp,
-  ]);
+  }, [reconcileEnvironmentWorkflowState]);
 
   const isScanFresh = useEnvironmentStore((s) => s.isScanFresh);
 

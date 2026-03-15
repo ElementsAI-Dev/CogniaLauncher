@@ -120,6 +120,19 @@ describe('useAboutData', () => {
 
       expect(mockToastError).toHaveBeenCalledWith('about.updateDesktopOnly');
     });
+
+    it("should expose support freshness timestamps in web mode", async () => {
+      const { result } = renderHook(() => useAboutData("en"));
+
+      await act(async () => {});
+
+      expect(result.current.supportFreshness.updateCheckedAt).not.toBeNull();
+      expect(result.current.supportFreshness.systemInfoRefreshedAt).not.toBeNull();
+      expect(result.current.supportFreshness.insightsGeneratedAt).toBe(
+        result.current.aboutInsights?.generatedAt,
+      );
+      expect(result.current.supportFreshness.latestSuccessfulAt).not.toBeNull();
+    });
   });
 
   describe('desktop mode (Tauri)', () => {
@@ -551,6 +564,46 @@ describe('useAboutData', () => {
       });
 
       expect(result.current.error).toBeNull();
+    });
+
+    it("should refresh all support data through a coordinated action", async () => {
+      mockSelfCheckUpdate.mockResolvedValue({
+        current_version: "1.0.0",
+        latest_version: "1.0.0",
+        update_available: false,
+        release_notes: null,
+      });
+      mockGetPlatformInfo.mockResolvedValue({
+        os: "windows", arch: "x86_64", osVersion: "", osLongVersion: "",
+        kernelVersion: "", hostname: "", osName: "", distributionId: "",
+        cpuArch: "", cpuModel: "", cpuVendorId: "", cpuFrequency: 0,
+        cpuCores: 0, physicalCoreCount: null, globalCpuUsage: 0,
+        totalMemory: 0, availableMemory: 0, usedMemory: 0,
+        totalSwap: 0, usedSwap: 0, uptime: 0, bootTime: 0,
+        loadAverage: [0, 0, 0], gpus: [], appVersion: "1.0.0",
+      });
+      mockGetCogniaDir.mockResolvedValue("/tmp");
+
+      const { result } = renderHook(() => useAboutData("en"));
+
+      await act(async () => {});
+
+      expect(result.current.supportFreshness.updateCheckedAt).not.toBeNull();
+      expect(result.current.supportFreshness.systemInfoRefreshedAt).not.toBeNull();
+      expect(result.current.supportFreshness.insightsGeneratedAt).not.toBeNull();
+
+      const updateCallsBefore = mockSelfCheckUpdate.mock.calls.length;
+      const platformCallsBefore = mockGetPlatformInfo.mock.calls.length;
+      const providersCallsBefore = mockProviderStatusAll.mock.calls.length;
+
+      await act(async () => {
+        await result.current.refreshAllSupportData();
+      });
+
+      expect(mockSelfCheckUpdate.mock.calls.length).toBe(updateCallsBefore + 1);
+      expect(mockGetPlatformInfo.mock.calls.length).toBe(platformCallsBefore + 1);
+      expect(mockProviderStatusAll.mock.calls.length).toBe(providersCallsBefore + 1);
+      expect(result.current.supportFreshness.latestSuccessfulAt).not.toBeNull();
     });
   });
 });

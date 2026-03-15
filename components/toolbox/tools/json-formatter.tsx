@@ -92,7 +92,15 @@ function formatDelta(inputSize: number, outputSize: number): string {
  * Error Snippet
  * --------------------------------------------------------------------------- */
 
-function ErrorSnippet({ input, errorInfo }: { input: string; errorInfo: JsonErrorInfo }) {
+function ErrorSnippet({
+  input,
+  errorInfo,
+  locationLabel,
+}: {
+  input: string;
+  errorInfo: JsonErrorInfo;
+  locationLabel: string;
+}) {
   const snippet = useMemo(() => {
     if (errorInfo.line == null) return null;
     const lines = input.split('\n');
@@ -113,7 +121,7 @@ function ErrorSnippet({ input, errorInfo }: { input: string; errorInfo: JsonErro
           {errorInfo.message}
           {errorInfo.line != null && (
             <span className="ml-2 text-muted-foreground">
-              Line {errorInfo.line}, Column {errorInfo.column}
+              {locationLabel}
             </span>
           )}
         </p>
@@ -143,7 +151,7 @@ function ErrorSnippet({ input, errorInfo }: { input: string; errorInfo: JsonErro
 
 export default function JsonFormatter({ className }: ToolComponentProps) {
   const { t } = useLocale();
-  const { copy, copied } = useCopyToClipboard();
+  const { copy, copied, error: clipboardError } = useCopyToClipboard();
   const { preferences, setPreferences } = useToolPreferences('json-formatter', DEFAULT_PREFERENCES);
   const [input, setInput] = useState('');
   const [output, setOutput] = useState('');
@@ -260,8 +268,15 @@ export default function JsonFormatter({ className }: ToolComponentProps) {
 
         {/* Error Display */}
         {errorInfo && (
-          errorInfo.line != null ? (
-            <ErrorSnippet input={input} errorInfo={errorInfo} />
+          errorInfo.line != null && errorInfo.column != null ? (
+            <ErrorSnippet
+              input={input}
+              errorInfo={errorInfo}
+              locationLabel={t('toolbox.tools.jsonFormatter.errorLocation', {
+                line: errorInfo.line,
+                column: errorInfo.column,
+              })}
+            />
           ) : (
             <ToolValidationMessage message={errorInfo.message} />
           )
@@ -275,7 +290,9 @@ export default function JsonFormatter({ className }: ToolComponentProps) {
               checked={preferences.autoFormat}
               onCheckedChange={(checked) => setPreferences({ autoFormat: checked })}
             />
-            <Label htmlFor="json-auto-format" className="text-xs">Auto</Label>
+            <Label htmlFor="json-auto-format" className="text-xs">
+              {t('toolbox.tools.jsonFormatter.autoFormat')}
+            </Label>
           </div>
           <div className="flex items-center gap-1.5">
             <Switch
@@ -335,11 +352,11 @@ export default function JsonFormatter({ className }: ToolComponentProps) {
             <ToolActionRow className="mt-3">
               <Button variant="outline" size="sm" className="gap-1.5" onClick={handleCopyFormatted}>
                 {copied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
-                {copied ? 'Copied' : 'Copy formatted'}
+                {copied ? t('toolbox.actions.copied') : t('toolbox.tools.jsonFormatter.copyFormatted')}
               </Button>
               <Button variant="outline" size="sm" className="gap-1.5" onClick={handleCopyMinified}>
                 {copiedMinified ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Minimize2 className="h-3.5 w-3.5" />}
-                {copiedMinified ? 'Copied' : 'Copy minified'}
+                {copiedMinified ? t('toolbox.actions.copied') : t('toolbox.tools.jsonFormatter.copyMinified')}
               </Button>
             </ToolActionRow>
           )}
@@ -352,6 +369,7 @@ export default function JsonFormatter({ className }: ToolComponentProps) {
             </div>
           )}
         </ToolSection>
+        {clipboardError && <ToolValidationMessage message={t('toolbox.actions.copyFailed')} />}
       </div>
     </div>
   );

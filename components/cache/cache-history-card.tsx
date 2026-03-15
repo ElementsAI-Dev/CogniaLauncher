@@ -8,7 +8,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -287,6 +287,7 @@ export function CacheHistoryCard({
             <EmptyTitle className="text-sm font-normal text-muted-foreground">
               {t('cache.noHistory')}
             </EmptyTitle>
+            <EmptyDescription>{t('cache.noHistoryExplain')}</EmptyDescription>
           </EmptyHeader>
         </Empty>
       )}

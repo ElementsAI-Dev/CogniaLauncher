@@ -37,7 +37,7 @@ import {
   EmptyTitle,
   EmptyDescription,
 } from '@/components/ui/empty';
-import { Copy, Pencil, Trash2, Check, X, Variable, FolderOpen, ExternalLink, Search } from 'lucide-react';
+import { Copy, Pencil, Trash2, Check, X, Variable, FolderOpen, ExternalLink, Search, Eye, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { isTauri } from '@/lib/tauri';
@@ -62,6 +62,7 @@ interface EnvVarTableProps {
   searchQuery: string;
   onEdit: (key: string, value: string, scope: EnvVarScope) => void;
   onDelete: (key: string, scope: EnvVarScope) => void;
+  onReveal?: (key: string, scope: EnvVarScope) => Promise<string | null>;
   busy?: boolean;
   t: (key: string, params?: Record<string, string | number>) => string;
 }
@@ -72,12 +73,15 @@ export function EnvVarTable({
   searchQuery,
   onEdit,
   onDelete,
+  onReveal,
   busy = false,
   t,
 }: EnvVarTableProps) {
   const [editingRow, setEditingRow] = useState<{ key: string; scope: EnvVarScope } | null>(null);
   const [editValue, setEditValue] = useState('');
   const [compactMode, setCompactMode] = useState(false);
+  const [localRevealedValues, setLocalRevealedValues] = useState<Record<string, string>>({});
+  const [revealingRows, setRevealingRows] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     const syncViewport = () => setCompactMode(window.innerWidth < 768);
@@ -87,6 +91,11 @@ export function EnvVarTable({
   }, []);
 
   const showScopeColumn = scopeFilter === 'all';
+  const getRowRevealKey = useCallback((row: EnvVarRow) => `${row.scope}:${row.key}`, []);
+  const getDisplayedRowValue = useCallback((row: EnvVarRow) => {
+    const revealKey = getRowRevealKey(row);
+    return row.revealedValue ?? localRevealedValues[revealKey] ?? row.value;
+  }, [getRowRevealKey, localRevealedValues]);
 
   const looksLikePath = useCallback((value: string): boolean => {
     if (!value || value.length < 2) return false;
@@ -123,9 +132,9 @@ export function EnvVarTable({
     const query = searchQuery.toLowerCase();
     return rows.filter(
       (row) =>
-        row.key.toLowerCase().includes(query) || row.value.toLowerCase().includes(query),
+        row.key.toLowerCase().includes(query) || getDisplayedRowValue(row).toLowerCase().includes(query),
     );
-  }, [rows, searchQuery]);
+  }, [getDisplayedRowValue, rows, searchQuery]);
 
   const getScopeBadgeLabel = useCallback(
     (scope: EnvVarScope) => {
@@ -149,13 +158,45 @@ export function EnvVarTable({
     [t],
   );
 
+  const resolveRowValue = useCallback(async (row: EnvVarRow) => {
+    if (!row.masked || row.revealedValue != null || !onReveal) {
+      return row.value;
+    }
+
+    const revealKey = getRowRevealKey(row);
+    setRevealingRows((current) => ({ ...current, [revealKey]: true }));
+    try {
+      const revealed = await onReveal(row.key, row.scope);
+      if (revealed != null) {
+        setLocalRevealedValues((current) => ({ ...current, [revealKey]: revealed }));
+      }
+      return revealed ?? row.value;
+    } finally {
+      setRevealingRows((current) => {
+        const next = { ...current };
+        delete next[revealKey];
+        return next;
+      });
+    }
+  }, [getRowRevealKey, onReveal]);
+
+  const handleReveal = useCallback(async (row: EnvVarRow) => {
+    await resolveRowValue(row);
+  }, [resolveRowValue]);
+
+  const handleCopyRow = useCallback(async (row: EnvVarRow) => {
+    const value = await resolveRowValue(row);
+    await handleCopy(value);
+  }, [handleCopy, resolveRowValue]);
+
   const handleStartEdit = useCallback(
-    (row: EnvVarRow) => {
+    async (row: EnvVarRow) => {
       if (busy) return;
+      const nextValue = await resolveRowValue(row);
       setEditingRow({ key: row.key, scope: row.scope });
-      setEditValue(row.value);
+      setEditValue(nextValue);
     },
-    [busy],
+    [busy, resolveRowValue],
   );
 
   const handleSaveEdit = useCallback(() => {
@@ -195,7 +236,10 @@ export function EnvVarTable({
   }
 
   const renderActionButtons = (row: EnvVarRow, isCompact: boolean) => {
-    const value = row.value;
+    const revealKey = getRowRevealKey(row);
+    const revealedValue = row.revealedValue ?? localRevealedValues[revealKey] ?? null;
+    const value = revealedValue ?? row.value;
+    const isRevealing = Boolean(revealingRows[revealKey]);
     const btnSize = isCompact ? 'h-7 w-7' : 'h-7 w-7';
     const iconSize = 'h-3 w-3';
     return (
@@ -241,14 +285,37 @@ export function EnvVarTable({
             </Tooltip>
           </>
         )}
+        {row.masked && !revealedValue && onReveal && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className={btnSize}
+                onClick={() => void handleReveal(row)}
+                disabled={busy || isRevealing}
+                aria-label={t(isRevealing ? 'envvar.table.revealing' : 'envvar.table.reveal')}
+              >
+                {isRevealing ? (
+                  <Loader2 className={cn(iconSize, 'animate-spin')} />
+                ) : (
+                  <Eye className={iconSize} />
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="top">
+              {t(isRevealing ? 'envvar.table.revealing' : 'envvar.table.reveal')}
+            </TooltipContent>
+          </Tooltip>
+        )}
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
               variant="ghost"
               size="icon"
               className={btnSize}
-              onClick={() => handleCopy(value)}
-              disabled={busy}
+              onClick={() => void handleCopyRow(row)}
+              disabled={busy || isRevealing}
               aria-label={t('envvar.table.copy')}
             >
               <Copy className={iconSize} />
@@ -262,8 +329,8 @@ export function EnvVarTable({
               variant="ghost"
               size="icon"
               className={btnSize}
-              onClick={() => handleStartEdit(row)}
-              disabled={busy}
+              onClick={() => void handleStartEdit(row)}
+              disabled={busy || isRevealing}
               aria-label={t('envvar.actions.edit')}
             >
               <Pencil className={iconSize} />
@@ -394,9 +461,9 @@ export function EnvVarTable({
                       'font-mono text-xs text-muted-foreground break-all line-clamp-3',
                       !busy && 'cursor-pointer',
                     )}
-                    onDoubleClick={() => handleStartEdit(row)}
+                    onDoubleClick={() => void handleStartEdit(row)}
                   >
-                    {row.value || <span className="italic opacity-50">(empty)</span>}
+                    {getDisplayedRowValue(row) || <span className="italic opacity-50">(empty)</span>}
                   </p>
                 )}
               </div>
@@ -466,19 +533,19 @@ export function EnvVarTable({
                                 'font-mono text-xs text-muted-foreground break-all line-clamp-2',
                                 !busy && 'cursor-pointer hover:text-foreground',
                               )}
-                              onDoubleClick={() => handleStartEdit(row)}
+                              onDoubleClick={() => void handleStartEdit(row)}
                             >
-                              {row.value || (
+                              {getDisplayedRowValue(row) || (
                                 <span className="italic opacity-50">(empty)</span>
                               )}
                             </span>
                           </TooltipTrigger>
-                          {row.value && row.value.length > 60 && (
+                          {getDisplayedRowValue(row) && getDisplayedRowValue(row).length > 60 && (
                             <TooltipContent
                               side="bottom"
                               className="max-w-md break-all font-mono text-xs"
                             >
-                              {row.value}
+                              {getDisplayedRowValue(row)}
                             </TooltipContent>
                           )}
                         </Tooltip>

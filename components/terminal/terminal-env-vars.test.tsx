@@ -1,6 +1,12 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { TerminalEnvVars } from './terminal-env-vars';
 
+jest.mock('@/lib/clipboard', () => ({
+  writeClipboard: jest.fn().mockResolvedValue(undefined),
+}));
+
+const clipboardMock = jest.requireMock('@/lib/clipboard');
+
 jest.mock('@/components/providers/locale-provider', () => ({
   useLocale: () => ({ t: (key: string) => key }),
 }));
@@ -10,11 +16,57 @@ jest.mock('sonner', () => ({
 }));
 
 describe('TerminalEnvVars', () => {
-  const mockVars: [string, string][] = [
-    ['PATH', '/usr/bin:/usr/local/bin'],
-    ['EDITOR', 'vim'],
-    ['NODE_VERSION', '20.10.0'],
-    ['HOME', '/home/user'],
+  const mockVars = [
+    {
+      key: 'PATH',
+      value: {
+        displayValue: '/usr/bin:/usr/local/bin',
+        masked: false,
+        hasValue: true,
+        length: 23,
+        isSensitive: false,
+      },
+    },
+    {
+      key: 'EDITOR',
+      value: {
+        displayValue: 'vim',
+        masked: false,
+        hasValue: true,
+        length: 3,
+        isSensitive: false,
+      },
+    },
+    {
+      key: 'NODE_VERSION',
+      value: {
+        displayValue: '20.10.0',
+        masked: false,
+        hasValue: true,
+        length: 7,
+        isSensitive: false,
+      },
+    },
+    {
+      key: 'HOME',
+      value: {
+        displayValue: '/home/user',
+        masked: false,
+        hasValue: true,
+        length: 10,
+        isSensitive: false,
+      },
+    },
+    {
+      key: 'API_TOKEN',
+      value: {
+        displayValue: '[hidden: 12 chars]',
+        masked: true,
+        hasValue: true,
+        length: 12,
+        isSensitive: true,
+      },
+    },
   ];
 
   it('renders categorized environment variables', () => {
@@ -82,9 +134,6 @@ describe('TerminalEnvVars', () => {
   });
 
   it('copies value to clipboard on copy button click', async () => {
-    const writeText = jest.fn().mockResolvedValue(undefined);
-    Object.assign(navigator, { clipboard: { writeText } });
-
     render(
       <TerminalEnvVars
         shellEnvVars={mockVars}
@@ -98,15 +147,13 @@ describe('TerminalEnvVars', () => {
     fireEvent.click(copyButtons[0]);
 
     await waitFor(() => {
-      expect(writeText).toHaveBeenCalled();
+      expect(clipboardMock.writeClipboard).toHaveBeenCalledWith('/usr/bin:/usr/local/bin');
     });
   });
 
   it('shows error toast when clipboard copy fails', async () => {
     const { toast } = await import('sonner');
-    Object.assign(navigator, {
-      clipboard: { writeText: jest.fn().mockRejectedValue(new Error('denied')) },
-    });
+    clipboardMock.writeClipboard.mockRejectedValueOnce(new Error('denied'));
 
     render(
       <TerminalEnvVars
@@ -149,5 +196,45 @@ describe('TerminalEnvVars', () => {
     );
 
     expect(screen.getByRole('link', { name: /nav\.envvar/i })).toHaveAttribute('href', '/envvar');
+  });
+
+  it('reveals sensitive values before copying them', async () => {
+    const onRevealShellEnvVar = jest.fn().mockResolvedValue('super-secret-token');
+
+    render(
+      <TerminalEnvVars
+        shellEnvVars={mockVars}
+        onFetchShellEnvVars={jest.fn()}
+        onRevealShellEnvVar={onRevealShellEnvVar}
+      />,
+    );
+
+    const copyButtons = screen.getAllByRole('button').filter((btn) =>
+      !!btn.querySelector('.lucide-copy'),
+    );
+    fireEvent.click(copyButtons[copyButtons.length - 1]);
+
+    await waitFor(() => {
+      expect(onRevealShellEnvVar).toHaveBeenCalledWith('API_TOKEN');
+    });
+    expect(clipboardMock.writeClipboard).toHaveBeenCalledWith('super-secret-token');
+  });
+
+  it('renders revealed sensitive values after explicit reveal', async () => {
+    const onRevealShellEnvVar = jest.fn().mockResolvedValue('super-secret-token');
+
+    render(
+      <TerminalEnvVars
+        shellEnvVars={mockVars}
+        onFetchShellEnvVars={jest.fn()}
+        onRevealShellEnvVar={onRevealShellEnvVar}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /terminal\.revealSensitiveValue/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('super-secret-token')).toBeInTheDocument();
+    });
   });
 });

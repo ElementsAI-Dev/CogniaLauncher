@@ -14,6 +14,7 @@ const mockFetchPinnedPackages = jest.fn();
 const mockGetPackageHistory = jest.fn();
 const mockRefresh = jest.fn();
 const mockToggleBookmark = jest.fn();
+let mockBookmarkedPackages: string[] = [];
 
 jest.mock("@/components/providers/locale-provider", () => ({
   useLocale: () => ({
@@ -58,7 +59,7 @@ jest.mock("@/hooks/use-packages", () => ({
 
 jest.mock("@/lib/stores/packages", () => ({
   usePackageStore: () => ({
-    bookmarkedPackages: [],
+    bookmarkedPackages: mockBookmarkedPackages,
     toggleBookmark: mockToggleBookmark,
   }),
 }));
@@ -88,6 +89,7 @@ const mockPackageInfo: PackageInfo = {
 describe("PackageDetailPage", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockBookmarkedPackages = [];
     mockFetchPackageInfo.mockResolvedValue(mockPackageInfo);
     mockGetPackageHistory.mockResolvedValue([]);
     mockResolveDependencies.mockResolvedValue(null);
@@ -147,5 +149,20 @@ describe("PackageDetailPage", () => {
     await waitFor(() => {
       expect(mockFetchPackageInfo).toHaveBeenCalled();
     });
+  });
+
+  it("uses provider-aware bookmark state and actions", async () => {
+    mockBookmarkedPackages = ["npm:express"];
+    const user = userEvent.setup();
+
+    render(<PackageDetailPage providerId="npm" packageName="express" />);
+
+    const removeBookmarkButton = await screen.findByRole("button", {
+      name: /packages\.removeBookmark/i,
+    });
+    expect(removeBookmarkButton).toBeInTheDocument();
+
+    await user.click(removeBookmarkButton);
+    expect(mockToggleBookmark).toHaveBeenCalledWith("express", "npm");
   });
 });

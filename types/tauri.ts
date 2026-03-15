@@ -1677,12 +1677,14 @@ export interface ProfileEnvironmentError {
   env_type: string;
   version: string;
   error: string;
+  provider_id?: string | null;
 }
 
 export interface ProfileEnvironmentSkipped {
   env_type: string;
   version: string;
   reason: string;
+  provider_id?: string | null;
 }
 
 // ============================================================================
@@ -2360,6 +2362,39 @@ export interface PathValidationResult {
 
 export type EnvVarScope = 'process' | 'user' | 'system';
 export type EnvFileFormat = 'dotenv' | 'shell' | 'fish' | 'powershell' | 'nushell';
+export type EnvVarSensitivityReason =
+  | 'token_key'
+  | 'password_key'
+  | 'secret_key'
+  | 'api_key'
+  | 'credential_key'
+  | 'private_key_value'
+  | 'certificate_value'
+  | 'jwt_value';
+
+export interface EnvVarValueSummary {
+  displayValue: string;
+  masked: boolean;
+  hasValue: boolean;
+  length: number;
+  isSensitive: boolean;
+  sensitivityReason?: EnvVarSensitivityReason | null;
+}
+
+export interface EnvVarSummary {
+  key: string;
+  scope: EnvVarScope;
+  value: EnvVarValueSummary;
+  regType?: string | null;
+}
+
+export interface EnvVarRevealResult {
+  key: string;
+  scope: EnvVarScope;
+  value: string | null;
+  isSensitive: boolean;
+  sensitivityReason?: EnvVarSensitivityReason | null;
+}
 
 export interface PathEntryInfo {
   path: string;
@@ -2388,6 +2423,9 @@ export interface EnvVarImportPreviewItem {
   value: string;
   action: EnvVarImportPreviewAction;
   reason?: string | null;
+  isSensitive: boolean;
+  sensitivityReason?: EnvVarSensitivityReason | null;
+  redacted: boolean;
 }
 
 export interface EnvVarShellGuidance {
@@ -2395,6 +2433,8 @@ export interface EnvVarShellGuidance {
   configPath: string;
   command: string;
   autoApplied: boolean;
+  containsSensitiveValue: boolean;
+  redacted: boolean;
 }
 
 export interface EnvVarImportPreview {
@@ -2429,6 +2469,24 @@ export interface EnvVarConflictResolutionResult {
   appliedValue: string;
   primaryShellTarget?: string | null;
   shellGuidance: EnvVarShellGuidance[];
+}
+
+export interface EnvVarShellProfileReadResult {
+  path: string;
+  content: string;
+  redactedCount: number;
+  containsSensitive: boolean;
+  revealed: boolean;
+}
+
+export interface EnvVarExportResult {
+  scope: EnvVarScope;
+  format: EnvFileFormat;
+  content: string;
+  redacted: boolean;
+  sensitiveCount: number;
+  variableCount: number;
+  revealed: boolean;
 }
 
 export interface PersistentEnvVar {
@@ -2493,6 +2551,18 @@ export interface TerminalProfile {
   isDefault: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface TerminalEnvVarSummary {
+  key: string;
+  value: EnvVarValueSummary;
+}
+
+export interface TerminalEnvVarRevealResult {
+  key: string;
+  value: string | null;
+  isSensitive: boolean;
+  sensitivityReason?: EnvVarSensitivityReason | null;
 }
 
 export type TemplateCategory = 'general' | 'development' | 'devOps' | 'admin' | 'custom';

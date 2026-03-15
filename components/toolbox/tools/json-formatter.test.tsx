@@ -4,7 +4,12 @@ import { TOOLBOX_LIMITS } from '@/lib/constants/toolbox-limits';
 
 jest.mock('@/components/providers/locale-provider', () => ({
   useLocale: () => ({
-    t: (key: string) => key,
+    t: (key: string, params?: Record<string, string | number>) => {
+      if (key === 'toolbox.tools.jsonFormatter.errorLocation') {
+        return `Line ${params?.line}, Column ${params?.column}`;
+      }
+      return key;
+    },
   }),
 }));
 

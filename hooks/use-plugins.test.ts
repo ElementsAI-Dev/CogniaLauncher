@@ -506,6 +506,64 @@ describe('usePlugins', () => {
     expect(tauri.pluginScaffold).not.toHaveBeenCalled();
   });
 
+  it('should forward advanced scaffold inputs to tauri when scaffolding on desktop', async () => {
+    tauri.isTauri.mockReturnValue(true);
+    const scaffoldResponse = {
+      pluginDir: 'C:/tmp/advanced-plugin',
+      filesCreated: ['plugin.toml', 'cognia.scaffold.json'],
+      lifecycleProfile: 'external' as const,
+      handoff: {
+        profile: 'external' as const,
+        artifactPath: 'C:/tmp/advanced-plugin/plugin.wasm',
+        buildCommands: ['pnpm build'],
+        nextSteps: ['Build plugin.wasm'],
+        importPath: 'C:/tmp/advanced-plugin',
+        importRequiresBuild: true,
+        lifecycleManifestPath: 'C:/tmp/advanced-plugin/cognia.scaffold.json',
+      },
+    };
+    tauri.pluginScaffold.mockResolvedValue(scaffoldResponse);
+
+    const config = {
+      name: 'Advanced',
+      id: 'com.example.advanced',
+      description: 'desc',
+      author: 'author',
+      outputDir: 'C:/tmp',
+      language: 'typescript' as const,
+      lifecycleProfile: 'external' as const,
+      extensionPoints: ['tool-iframe-ui', 'event-listener'],
+      templateOptions: {
+        includeUnifiedContractSamples: true,
+        contractTemplate: 'advanced' as const,
+        schemaPreset: 'multi-step-flow' as const,
+        includeValidationGuidance: true,
+        includeStarterTests: false,
+      },
+      permissions: {
+        uiFeedback: true,
+        uiDialog: true,
+        uiFilePicker: false,
+        uiNavigation: false,
+        configRead: true,
+        envRead: true,
+        pkgSearch: false,
+        clipboard: false,
+        notification: false,
+        processExec: false,
+        fsRead: false,
+        fsWrite: false,
+        http: ['localhost', 'api.example.com'],
+      },
+    };
+
+    const { result } = renderHook(() => usePlugins());
+    const scaffoldResult = await act(async () => result.current.scaffoldPlugin(config));
+
+    expect(tauri.pluginScaffold).toHaveBeenCalledWith(config);
+    expect(scaffoldResult).toEqual(scaffoldResponse);
+  });
+
   it('should skip validate when not Tauri', async () => {
     tauri.isTauri.mockReturnValue(false);
     const { result } = renderHook(() => usePlugins());

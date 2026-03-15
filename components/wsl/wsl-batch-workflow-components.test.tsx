@@ -23,7 +23,10 @@ describe('WSL batch workflow components', () => {
           createdAt: '2026-03-12T00:00:00.000Z',
           updatedAt: '2026-03-12T00:00:00.000Z',
           target: { mode: 'selected' },
-          action: { kind: 'command', command: 'echo ok', savedCommandId: 'preset-1', label: 'Echo ok' },
+          steps: [
+            { id: 'backup', kind: 'backup', label: 'Backup distro', destinationPath: 'C:\\WSL-Backups' },
+            { id: 'upgrade', kind: 'package-upkeep', mode: 'upgrade', label: 'Upgrade packages' },
+          ],
         }}
         editingPresetId={null}
         presets={[
@@ -33,7 +36,7 @@ describe('WSL batch workflow components', () => {
             createdAt: '2026-03-12T00:00:00.000Z',
             updatedAt: '2026-03-12T00:00:00.000Z',
             target: { mode: 'selected' },
-            action: { kind: 'command', command: 'echo ok', label: 'Echo ok' },
+            steps: [{ id: 'health', kind: 'health-check', label: 'Health Check' }],
           },
         ]}
         distros={[{ name: 'Ubuntu', state: 'Running', wslVersion: '2', isDefault: true }]}
@@ -51,6 +54,8 @@ describe('WSL batch workflow components', () => {
       />
     );
 
+    expect(screen.getByDisplayValue('Backup distro')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Upgrade packages')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'wsl.batchWorkflow.savePreset' }));
     await user.click(screen.getByRole('button', { name: 'wsl.batchWorkflow.runPreview' }));
     const presetRow = screen.getByText('Saved workflow').parentElement?.parentElement;
@@ -81,14 +86,47 @@ describe('WSL batch workflow components', () => {
           risk: 'safe',
           longRunning: false,
           requiresConfirmation: false,
+          backupCoverage: 'unprotected',
+          warnings: ['Mutating maintenance steps do not have backup coverage.'],
           refreshTargets: [],
+          steps: [
+            {
+              stepId: 'backup',
+              label: 'Backup distro',
+              kind: 'backup',
+              risk: 'safe',
+              longRunning: true,
+              mutating: false,
+              backupCoverage: 'not-applicable',
+            },
+            {
+              stepId: 'upgrade',
+              label: 'Upgrade packages',
+              kind: 'package-upkeep',
+              risk: 'safe',
+              longRunning: true,
+              mutating: true,
+              backupCoverage: 'unprotected',
+            },
+          ],
           runnableCount: 1,
           blockedCount: 0,
           skippedCount: 1,
           missingCount: 0,
           targets: [
-            { distroName: 'Ubuntu', status: 'runnable' },
-            { distroName: 'Debian', status: 'skipped', reason: 'Already stopped' },
+            {
+              distroName: 'Ubuntu',
+              status: 'runnable',
+              backupCoverage: 'unprotected',
+              stepStatuses: [],
+            },
+            {
+              distroName: 'Debian',
+              status: 'skipped',
+              reason: 'Already stopped',
+              backupCoverage: 'unprotected',
+              stepStatuses: [],
+            },
           ],
         }}
         onOpenChange={jest.fn()}
@@ -101,14 +139,18 @@ describe('WSL batch workflow components', () => {
 
     expect(onConfirm).toHaveBeenCalled();
     expect(screen.getByText('Ubuntu')).toBeInTheDocument();
+    expect(screen.getByText('Backup distro')).toBeInTheDocument();
+    expect(screen.getByText('Upgrade packages')).toBeInTheDocument();
+    expect(screen.getByText('Mutating maintenance steps do not have backup coverage.')).toBeInTheDocument();
   });
 
-  it('renders summary card and retries retryable failures', async () => {
+  it('renders summary card history, step breakdown, and retries retryable failures', async () => {
     const user = userEvent.setup();
     const onRetry = jest.fn();
+    const SummaryCard = WslBatchWorkflowSummaryCard as unknown as (props: Record<string, unknown>) => JSX.Element;
 
     render(
-      <WslBatchWorkflowSummaryCard
+      <SummaryCard
         summary={{
           id: 'summary-1',
           workflowName: 'Latest workflow',
@@ -126,13 +168,75 @@ describe('WSL batch workflow components', () => {
             createdAt: '2026-03-12T00:00:00.000Z',
             updatedAt: '2026-03-12T00:00:00.000Z',
             target: { mode: 'selected' },
-            action: { kind: 'command', command: 'echo ok', label: 'Echo ok' },
+            steps: [
+              { id: 'backup', kind: 'backup', label: 'Backup distro', destinationPath: 'C:\\WSL-Backups' },
+              { id: 'upgrade', kind: 'package-upkeep', mode: 'upgrade', label: 'Upgrade packages' },
+            ],
           },
           results: [
             { distroName: 'Ubuntu', status: 'success', retryable: false },
             { distroName: 'Debian', status: 'failed', retryable: true, detail: 'boom' },
           ],
+          stepResults: [
+            {
+              stepId: 'backup',
+              stepLabel: 'Backup distro',
+              succeeded: 2,
+              failed: 0,
+              skipped: 0,
+              results: [
+                { stepId: 'backup', stepLabel: 'Backup distro', distroName: 'Ubuntu', status: 'success', retryable: false },
+                { stepId: 'backup', stepLabel: 'Backup distro', distroName: 'Debian', status: 'success', retryable: false },
+              ],
+            },
+            {
+              stepId: 'upgrade',
+              stepLabel: 'Upgrade packages',
+              succeeded: 1,
+              failed: 1,
+              skipped: 0,
+              results: [
+                { stepId: 'upgrade', stepLabel: 'Upgrade packages', distroName: 'Ubuntu', status: 'success', retryable: false },
+                { stepId: 'upgrade', stepLabel: 'Upgrade packages', distroName: 'Debian', status: 'failed', retryable: true, detail: 'boom' },
+              ],
+            },
+          ],
+          resumeFromStepIndex: 1,
         }}
+        summaries={[
+          {
+            id: 'summary-0',
+            workflowName: 'Previous workflow',
+            actionLabel: 'Health Check',
+            startedAt: '2026-03-11T00:00:00.000Z',
+            completedAt: '2026-03-11T00:01:00.000Z',
+            total: 1,
+            succeeded: 1,
+            failed: 0,
+            skipped: 0,
+            refreshTargets: [],
+            workflow: {
+              id: 'preset-0',
+              name: 'Previous workflow',
+              createdAt: '2026-03-11T00:00:00.000Z',
+              updatedAt: '2026-03-11T00:00:00.000Z',
+              target: { mode: 'selected' },
+              steps: [{ id: 'health', kind: 'health-check', label: 'Health Check' }],
+            },
+            results: [{ distroName: 'Ubuntu', status: 'success', retryable: false }],
+            stepResults: [
+              {
+                stepId: 'health',
+                stepLabel: 'Health Check',
+                succeeded: 1,
+                failed: 0,
+                skipped: 0,
+                results: [{ stepId: 'health', stepLabel: 'Health Check', distroName: 'Ubuntu', status: 'success', retryable: false }],
+              },
+            ],
+            resumeFromStepIndex: null,
+          },
+        ]}
         onRetry={onRetry}
         t={t}
       />
@@ -141,6 +245,9 @@ describe('WSL batch workflow components', () => {
     await user.click(screen.getByRole('button', { name: 'wsl.batchWorkflow.retryFailed' }));
 
     expect(onRetry).toHaveBeenCalled();
-    expect(screen.getByText('Latest workflow')).toBeInTheDocument();
+    expect(screen.getAllByText('Latest workflow').length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: 'Previous workflow' })).toBeInTheDocument();
+    expect(screen.getByText('Backup distro')).toBeInTheDocument();
+    expect(screen.getByText('Upgrade packages')).toBeInTheDocument();
   });
 });

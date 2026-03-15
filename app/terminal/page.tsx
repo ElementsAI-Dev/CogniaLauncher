@@ -404,6 +404,7 @@ export default function TerminalPage() {
           <TerminalEnvVars
             shellEnvVars={terminal.shellEnvVars}
             onFetchShellEnvVars={terminal.fetchShellEnvVars}
+            onRevealShellEnvVar={terminal.revealShellEnvVar}
             loading={terminal.loading}
           />
         </TabsContent>

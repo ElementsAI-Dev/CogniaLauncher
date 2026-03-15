@@ -236,11 +236,13 @@ interface PackageState {
   selectedProvider: string | null
   availableUpdates: UpdateInfo[]
   pinnedPackages: string[]
-  bookmarkedPackages: string[]
+  bookmarkedPackages: string[]  // canonical package keys, usually provider:name
   updateCheckProgress: UpdateCheckProgress | null
   isCheckingUpdates: boolean
 }
 ```
+
+`bookmarkedPackages` stores canonical package identities. When provider context is known, bookmarks persist as `provider:name`; legacy bare-name bookmarks remain readable for migration compatibility and are normalized when package context is available.
 
 **settings.ts** — App-level settings and platform info
 

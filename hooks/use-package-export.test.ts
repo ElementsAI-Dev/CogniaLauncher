@@ -25,14 +25,17 @@ Object.assign(URL, {
   revokeObjectURL: mockRevokeObjectURL,
 });
 
+let mockInstalledPackages = [
+  { name: 'react', version: '18.0.0', provider: 'npm' },
+  { name: 'typescript', version: '5.0.0', provider: 'npm' },
+];
+let mockBookmarkedPackages = ['lodash', 'axios'];
+
 // Mock package store
 jest.mock('@/lib/stores/packages', () => ({
   usePackageStore: jest.fn(() => ({
-    installedPackages: [
-      { name: 'react', version: '18.0.0', provider: 'npm' },
-      { name: 'typescript', version: '5.0.0', provider: 'npm' },
-    ],
-    bookmarkedPackages: ['lodash', 'axios'],
+    installedPackages: mockInstalledPackages,
+    bookmarkedPackages: mockBookmarkedPackages,
   })),
 }));
 
@@ -43,6 +46,11 @@ describe('usePackageExport', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockInstalledPackages = [
+      { name: 'react', version: '18.0.0', provider: 'npm' },
+      { name: 'typescript', version: '5.0.0', provider: 'npm' },
+    ];
+    mockBookmarkedPackages = ['lodash', 'axios'];
     mockLink = { href: '', download: '', click: jest.fn() };
     jest.spyOn(document, 'createElement').mockImplementation((tagName: string, options?: ElementCreationOptions) => {
       if (tagName === 'a') return mockLink as unknown as HTMLElement;
@@ -70,6 +78,7 @@ describe('usePackageExport', () => {
     expect(result.current).toHaveProperty('importFromClipboard');
     expect(result.current).toHaveProperty('exportToClipboard');
     expect(result.current).toHaveProperty('getImportPreview');
+    expect(result.current).toHaveProperty('getNormalizedBookmarks');
   });
 
   it('should export packages as JSON', async () => {
@@ -103,6 +112,24 @@ describe('usePackageExport', () => {
       version: '18.0.0',
     });
     expect(parsed.bookmarks).toEqual(['lodash', 'axios']);
+  });
+
+  it('should export canonical provider-aware bookmark keys when bookmark context is available', async () => {
+    mockInstalledPackages = [
+      { name: 'react', version: '18.0.0', provider: 'npm' },
+      { name: 'react', version: '1.0.0', provider: 'pip' },
+    ];
+    mockBookmarkedPackages = ['react'];
+
+    const { result } = renderHook(() => usePackageExport());
+
+    await act(async () => {
+      await result.current.exportToClipboard();
+    });
+
+    const clipboardPayload = clipboardMock.writeClipboard.mock.calls[0][0] as string;
+    const parsed = JSON.parse(clipboardPayload) as { bookmarks: string[] };
+    expect(parsed.bookmarks).toEqual(['npm:react', 'pip:react']);
   });
 
   it('should handle copy error', async () => {
@@ -210,6 +237,21 @@ describe('usePackageExport', () => {
       expect(preview.installable[0].name).toBe('requests');
       expect(preview.skipped).toHaveLength(2);
       expect(preview.invalid).toHaveLength(1);
+    });
+  });
+
+  describe('getNormalizedBookmarks', () => {
+    it('normalizes imported legacy bookmarks using package provider context', () => {
+      const { result } = renderHook(() => usePackageExport());
+
+      expect(
+        result.current.getNormalizedBookmarks({
+          version: '1.0',
+          exportedAt: '2025-01-01',
+          packages: [{ name: 'requests', provider: 'pip', version: '2.31.0' }],
+          bookmarks: ['requests', 'pip:requests'],
+        }),
+      ).toEqual(['pip:requests']);
     });
   });
 });

@@ -663,6 +663,7 @@ fn builtin_framework_dir(language: &PluginLanguage) -> &'static str {
 }
 
 fn build_scaffold_handoff(config: &ScaffoldConfig, plugin_dir: &Path) -> ScaffoldHandoff {
+    let build_commands = build_commands_for_language(&config.language);
     let artifact_path = plugin_dir.join("plugin.wasm").display().to_string();
     let lifecycle_manifest_path = plugin_dir
         .join("cognia.scaffold.json")
@@ -697,7 +698,7 @@ fn build_scaffold_handoff(config: &ScaffoldConfig, plugin_dir: &Path) -> Scaffol
         ScaffoldLifecycleProfile::External => ScaffoldHandoff {
             profile: ScaffoldLifecycleProfile::External,
             artifact_path,
-            build_commands: build_commands_for_language(&config.language),
+            build_commands,
             next_steps: {
                 let mut steps = vec![
                 "Build plugin.wasm using the generated build entrypoint.".to_string(),
@@ -717,7 +718,7 @@ fn build_scaffold_handoff(config: &ScaffoldConfig, plugin_dir: &Path) -> Scaffol
         ScaffoldLifecycleProfile::BuiltIn => ScaffoldHandoff {
             profile: ScaffoldLifecycleProfile::BuiltIn,
             artifact_path,
-            build_commands: build_commands_for_language(&config.language),
+            build_commands,
             next_steps: {
                 let mut steps = vec![
                 "Add the generated sample entry to plugins/manifest.json.".to_string(),
@@ -725,6 +726,14 @@ fn build_scaffold_handoff(config: &ScaffoldConfig, plugin_dir: &Path) -> Scaffol
                 "Run pnpm plugins:validate before treating the plugin as built-in ready."
                     .to_string(),
                 ];
+                if matches!(config.language, PluginLanguage::TypeScript) {
+                    steps.push(
+                        format!(
+                            "Keep catalog-entry.sample.json aligned with {} and src/index.test.ts.",
+                            generated_typescript_package_name(config)
+                        ),
+                    );
+                }
                 steps.extend(extension_point_steps);
                 steps
             },
@@ -738,12 +747,21 @@ fn build_scaffold_handoff(config: &ScaffoldConfig, plugin_dir: &Path) -> Scaffol
     }
 }
 
+fn rust_copy_artifact_command() -> String {
+    if cfg!(windows) {
+        "Copy-Item -Path target/wasm32-unknown-unknown/release/*.wasm -Destination plugin.wasm"
+            .to_string()
+    } else {
+        "cp target/wasm32-unknown-unknown/release/*.wasm plugin.wasm".to_string()
+    }
+}
+
 fn build_commands_for_language(language: &PluginLanguage) -> Vec<String> {
     match language {
         PluginLanguage::Rust => vec![
             "rustup target add wasm32-unknown-unknown".to_string(),
             "cargo build --release".to_string(),
-            "copy target/wasm32-unknown-unknown/release/*.wasm plugin.wasm".to_string(),
+            rust_copy_artifact_command(),
         ],
         PluginLanguage::JavaScript | PluginLanguage::TypeScript => vec![
             "pnpm install".to_string(),
@@ -771,12 +789,16 @@ fn generate_lifecycle_manifest(config: &ScaffoldConfig, handoff: &ScaffoldHandof
     .unwrap()
 }
 
-fn builtin_catalog_package_name(config: &ScaffoldConfig) -> String {
+fn generated_typescript_package_name(config: &ScaffoldConfig) -> String {
     config.id.clone()
 }
 
 fn builtin_catalog_rust_crate(config: &ScaffoldConfig) -> String {
     config.id.replace(['.', '-'], "_")
+}
+
+fn builtin_typescript_test_file(plugin_dir_relative: &str) -> String {
+    format!("plugins/{}/src/index.test.ts", plugin_dir_relative)
 }
 
 fn generate_builtin_catalog_entry_sample(
@@ -821,7 +843,10 @@ fn generate_builtin_catalog_entry_sample(
             entry["rustCrate"] = serde_json::Value::String(builtin_catalog_rust_crate(config));
         }
         PluginLanguage::TypeScript => {
-            entry["packageName"] = serde_json::Value::String(builtin_catalog_package_name(config));
+            entry["packageName"] =
+                serde_json::Value::String(generated_typescript_package_name(config));
+            entry["testFile"] =
+                serde_json::Value::String(builtin_typescript_test_file(&plugin_dir_relative));
         }
         PluginLanguage::JavaScript => {}
     }
@@ -2073,10 +2098,11 @@ async fn generate_ts_project(
     }
 
     let package_json = serde_json::json!({
-        "name": config.id,
+        "name": generated_typescript_package_name(config),
         "version": "0.1.0",
         "description": config.description,
         "author": config.author,
+        "private": matches!(config.lifecycle_profile, ScaffoldLifecycleProfile::BuiltIn),
         "scripts": serde_json::Value::Object(scripts),
         "dependencies": {
             "@cognia/plugin-sdk": "workspace:*"
@@ -2303,6 +2329,16 @@ function {entry}(): number {{
         .map_err(|e| CogniaError::Plugin(format!("Failed to write src/index.ts: {}", e)))?;
     files.push("src/index.ts".to_string());
 
+    if matches!(config.lifecycle_profile, ScaffoldLifecycleProfile::BuiltIn) {
+        let smoke_test = generate_builtin_ts_smoke_test(config);
+        tokio::fs::write(src_dir.join("index.test.ts"), &smoke_test)
+            .await
+            .map_err(|e| {
+                CogniaError::Plugin(format!("Failed to write src/index.test.ts: {}", e))
+            })?;
+        files.push("src/index.test.ts".to_string());
+    }
+
     if has_extension_point(config, "tool-iframe-ui") {
         let ui_dir = plugin_dir.join("ui");
         tokio::fs::create_dir_all(&ui_dir)
@@ -2323,6 +2359,55 @@ function {entry}(): number {{
     Ok(files)
 }
 
+fn generate_builtin_ts_smoke_test(config: &ScaffoldConfig) -> String {
+    let entry_fn = config.id.replace(['.', '-'], "_");
+    let mut export_checks = vec![format!(
+        "    expect(typeof plugin.{}).toBe('function');",
+        entry_fn
+    )];
+    if has_extension_point(config, "event-listener") {
+        export_checks.push("    expect(typeof plugin.cognia_on_event).toBe('function');".to_string());
+    }
+    if has_extension_point(config, "log-listener") {
+        export_checks.push("    expect(typeof plugin.cognia_on_log).toBe('function');".to_string());
+    }
+
+    format!(
+        r#"jest.mock('@cognia/plugin-sdk', () => ({{
+  cognia: {{
+    platform: {{
+      info: jest.fn(() => ({{
+        os: 'windows',
+        arch: 'x64',
+        hostname: 'scaffold-host',
+        osVersion: '11',
+      }})),
+    }},
+    log: {{
+      info: jest.fn(),
+      warn: jest.fn(),
+      error: jest.fn(),
+      debug: jest.fn(),
+      parseEnvelope: jest.fn(() => null),
+    }},
+    i18n: {{
+      translate: jest.fn(() => 'Hello from scaffold'),
+    }},
+  }},
+}}));
+
+const plugin = require('./index');
+
+describe('generated scaffold exports', () => {{
+  it('exports scaffolded entrypoints', () => {{
+{export_checks}
+  }});
+}});
+"#,
+        export_checks = export_checks.join("\n"),
+    )
+}
+
 fn generate_wasm_build_script(with_bundle: bool, with_interface: bool) -> String {
     let template = include_str!("templates/wasm_build_script.mjs");
     template
@@ -2337,52 +2422,25 @@ fn generate_wasm_build_script(with_bundle: bool, with_interface: bool) -> String
 }
 
 fn generate_readme(config: &ScaffoldConfig, handoff: &ScaffoldHandoff) -> String {
-    let build_instructions = match config.language {
-        PluginLanguage::Rust => r#"## Build
-
-```bash
-# Install WASM target (first time only)
-rustup target add wasm32-unknown-unknown
-
-# Build the plugin
-cargo build --release
-
-# The plugin.wasm will be at target/wasm32-unknown-unknown/release/<name>.wasm
-# Copy it to plugin.wasm in the project root
-cp target/wasm32-unknown-unknown/release/*.wasm plugin.wasm
-```"#
-            .to_string(),
-        PluginLanguage::JavaScript => r#"## Build
-
-```bash
-# Install dependencies
-pnpm install
-
-# Optional: pre-download extism-js + binaryen into .tools/
-pnpm setup:toolchain
-
-# Build the plugin
-pnpm build
-```
-
+    let build_commands_block = handoff.build_commands.join("\n");
+    let build_shell = match config.language {
+        PluginLanguage::Rust if cfg!(windows) => "powershell",
+        _ => "bash",
+    };
+    let build_notes = match config.language {
+        PluginLanguage::Rust => {
+            "\nThe compiled WASM artifact is written under `target/wasm32-unknown-unknown/release/` before the final `plugin.wasm` copy step.\n"
+                .to_string()
+        }
+        PluginLanguage::JavaScript => r#"
 If your environment cannot access GitHub directly:
 
 ```bash
 EXTISM_JS_PATH=/path/to/extism-js BINARYEN_BIN=/path/to/binaryen/bin pnpm build
 ```"#
             .to_string(),
-        PluginLanguage::TypeScript => r#"## Build
-
-```bash
-# Install dependencies
-pnpm install
-
-# Optional: pre-download extism-js + binaryen into .tools/
-pnpm setup:toolchain
-
-# Bundle TypeScript and compile to WASM
-pnpm build
-```
+        PluginLanguage::TypeScript => r#"
+Bundle TypeScript and compile to WASM with the generated build entrypoint.
 
 If your environment cannot access GitHub directly:
 
@@ -2391,6 +2449,12 @@ EXTISM_JS_PATH=/path/to/extism-js BINARYEN_BIN=/path/to/binaryen/bin pnpm build
 ```"#
             .to_string(),
     };
+    let build_instructions = format!(
+        "## Build\n\n```{build_shell}\n{build_commands_block}\n```{build_notes}",
+        build_shell = build_shell,
+        build_commands_block = build_commands_block,
+        build_notes = build_notes,
+    );
 
     let mut project_links = String::new();
     if let Some(repository) = config
@@ -3157,6 +3221,40 @@ mod tests {
     }
 
     #[test]
+    fn test_generate_readme_reuses_rust_handoff_build_commands() {
+        let config = ScaffoldConfig {
+            name: "Rust Scaffold".to_string(),
+            id: "com.example.rust".to_string(),
+            description: "desc".to_string(),
+            author: "auth".to_string(),
+            output_dir: "/tmp".to_string(),
+            license: None,
+            repository: None,
+            homepage: None,
+            lifecycle_profile: ScaffoldLifecycleProfile::External,
+            language: PluginLanguage::Rust,
+            permissions: ScaffoldPermissions::default(),
+            include_ci: false,
+            include_vscode: true,
+            additional_keywords: Vec::new(),
+            extension_points: Vec::new(),
+            template_options: ScaffoldTemplateOptions::default(),
+        };
+
+        let plugin_dir = PathBuf::from("/tmp/com.example.rust");
+        let handoff = build_scaffold_handoff(&config, &plugin_dir);
+        let readme = generate_readme(&config, &handoff);
+
+        for command in &handoff.build_commands {
+            assert!(
+                readme.contains(command),
+                "README should contain handoff build command: {}",
+                command
+            );
+        }
+    }
+
+    #[test]
     fn test_generate_wasm_build_script_replaces_flags() {
         let ts_script = generate_wasm_build_script(true, true);
         assert!(ts_script.contains("const WITH_BUNDLE = true;"));
@@ -3242,6 +3340,7 @@ mod tests {
 
         assert!(plugin_dir.join("catalog-entry.sample.json").exists());
         assert!(plugin_dir.join("cognia.scaffold.json").exists());
+        assert!(plugin_dir.join("src").join("index.test.ts").exists());
         assert_eq!(
             result.handoff.builtin_catalog_path.as_deref(),
             Some("plugins/manifest.json")
@@ -3260,6 +3359,28 @@ mod tests {
             .next_steps
             .iter()
             .any(|step| step.contains("plugins/manifest.json")));
+
+        let package_json: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(plugin_dir.join("package.json")).expect("read package.json"),
+        )
+        .expect("package json parses");
+        let catalog_sample: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(plugin_dir.join("catalog-entry.sample.json"))
+                .expect("read catalog sample"),
+        )
+        .expect("catalog sample parses");
+        assert_eq!(
+            catalog_sample
+                .get("packageName")
+                .and_then(serde_json::Value::as_str),
+            package_json.get("name").and_then(serde_json::Value::as_str)
+        );
+        assert_eq!(
+            catalog_sample
+                .get("testFile")
+                .and_then(serde_json::Value::as_str),
+            Some("plugins/typescript/matrix/src/index.test.ts")
+        );
 
         let _ = fs::remove_dir_all(&output_root);
     }

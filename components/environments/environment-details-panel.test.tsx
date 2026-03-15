@@ -11,6 +11,19 @@ jest.mock("@/hooks/use-environments", () => ({
   useEnvironments: jest.fn(),
 }));
 
+const mockSyncWorkflowContext = jest.fn();
+const mockSetWorkflowActionState = jest.fn();
+
+jest.mock("@/hooks/use-environment-workflow", () => ({
+  useEnvironmentWorkflow: () => ({
+    syncWorkflowContext: mockSyncWorkflowContext,
+    setWorkflowActionState: mockSetWorkflowActionState,
+    requireProjectPath: jest.fn(),
+    requirePathConfigured: jest.fn(),
+    reconcileEnvironmentWorkflow: jest.fn(),
+  }),
+}));
+
 jest.mock("@/hooks/use-auto-version", () => ({
   useProjectPath: () => ({
     projectPath: "/test/project",
@@ -346,6 +359,15 @@ describe("EnvironmentDetailsPanel", () => {
       />,
     );
     expect(mockLoadEnvSettings).toHaveBeenCalledWith("Node");
+    expect(mockSyncWorkflowContext).toHaveBeenCalledWith(
+      "Node",
+      expect.objectContaining({
+        origin: "overview",
+        returnHref: "/environments",
+        projectPath: "/test/project",
+        providerId: "fnm",
+      }),
+    );
   });
 
   it("renders existing environment variables", () => {

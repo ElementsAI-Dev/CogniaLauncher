@@ -55,12 +55,24 @@ export function ExportImportDialog({
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { exportPackages, importPackages, importFromClipboard, exportToClipboard, getImportPreview } =
-    usePackageExport();
+  const {
+    exportPackages,
+    importPackages,
+    importFromClipboard,
+    exportToClipboard,
+    getImportPreview,
+    getNormalizedBookmarks,
+  } = usePackageExport();
   const importPreview = useMemo(
     () => (importedData ? getImportPreview(importedData) : null),
     [getImportPreview, importedData],
   );
+  const normalizedBookmarks = useMemo(
+    () => (importedData ? getNormalizedBookmarks(importedData) : []),
+    [getNormalizedBookmarks, importedData],
+  );
+  const canConfirmImport = selectedForImport.length > 0
+    || (restoreBookmarks && normalizedBookmarks.length > 0);
 
   const handleExportJson = useCallback(() => {
     exportPackages();
@@ -82,9 +94,9 @@ export function ExportImportDialog({
 
     const preview = getImportPreview(data);
     setSelectedForImport(preview.installable.map((entry) => entry.id));
-    setRestoreBookmarks(data.bookmarks.length > 0);
+    setRestoreBookmarks(getNormalizedBookmarks(data).length > 0);
     setImportSummary(null);
-  }, [getImportPreview]);
+  }, [getImportPreview, getNormalizedBookmarks]);
 
   const handleFileSelect = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -113,7 +125,7 @@ export function ExportImportDialog({
           version: entry.version,
           provider: entry.provider,
         })),
-      bookmarks: restoreBookmarks ? importedData.bookmarks : [],
+      bookmarks: restoreBookmarks ? normalizedBookmarks : [],
     };
 
     setIsImporting(true);
@@ -133,7 +145,7 @@ export function ExportImportDialog({
     } finally {
       setIsImporting(false);
     }
-  }, [importPreview, importedData, onImport, restoreBookmarks, selectedForImport, t]);
+  }, [importPreview, importedData, normalizedBookmarks, onImport, restoreBookmarks, selectedForImport, t]);
 
   const togglePackageSelection = useCallback((entryId: string) => {
     setSelectedForImport((prev) =>
@@ -360,7 +372,7 @@ export function ExportImportDialog({
                   </div>
                 </ScrollArea>
 
-                {importedData.bookmarks.length > 0 && (
+                {normalizedBookmarks.length > 0 && (
                   <label className="flex items-center gap-3 rounded-md border p-3">
                     <Checkbox
                       checked={restoreBookmarks}
@@ -394,16 +406,18 @@ export function ExportImportDialog({
                   <Button
                     className="flex-1"
                     onClick={handleImportConfirm}
-                    disabled={selectedForImport.length === 0 || isImporting}
+                    disabled={!canConfirmImport || isImporting}
                   >
                     {isImporting ? (
                       <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                     ) : (
                       <Download className="h-4 w-4 mr-2" />
                     )}
-                    {t("packages.installSelected", {
-                      count: selectedForImport.length,
-                    })}
+                    {selectedForImport.length > 0
+                      ? t("packages.installSelected", {
+                          count: selectedForImport.length,
+                        })
+                      : t("packages.restoreBookmarks")}
                   </Button>
                 </div>
               </div>

@@ -4319,7 +4319,10 @@ host_fn!(pub cognia_shell_get_env_vars(user_data: HostContext; _input: String) -
         let pairs = crate::commands::terminal::terminal_get_shell_env_vars()
             .await
             .map_err(ExtismError::msg)?;
-        let vars: HashMap<String, String> = pairs.into_iter().collect();
+        let vars: HashMap<String, String> = pairs
+            .into_iter()
+            .map(|entry| (entry.key, entry.value.display_value))
+            .collect();
         serialize_json(&vars)
     })
 });

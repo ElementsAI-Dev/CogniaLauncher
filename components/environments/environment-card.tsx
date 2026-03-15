@@ -33,6 +33,7 @@ import {
 import type { EnvironmentInfo, DetectedEnvironment } from "@/lib/tauri";
 import { isTauri } from "@/lib/tauri";
 import { useEnvironmentStore, getLogicalEnvType } from "@/lib/stores/environment";
+import { useEnvironmentWorkflow } from "@/hooks/use-environment-workflow";
 import {
   Download,
   Trash2,
@@ -81,7 +82,8 @@ export function EnvironmentCard({
   projectPath,
 }: EnvironmentCardProps) {
   const { t } = useLocale();
-  const { openVersionBrowser, setWorkflowContext } = useEnvironmentStore();
+  const { openVersionBrowser } = useEnvironmentStore();
+  const { syncWorkflowContext } = useEnvironmentWorkflow();
   const [customVersion, setCustomVersion] = useState("");
   const [localProjectPath, setLocalProjectPath] = useState("");
   const [isInstalling, setIsInstalling] = useState(false);
@@ -98,13 +100,11 @@ export function EnvironmentCard({
   const langInfo = LANGUAGES.find((l) => l.id === logicalType);
 
   const handleViewDetails = () => {
-    setWorkflowContext({
-      envType: logicalType,
+    syncWorkflowContext(logicalType, {
       origin: "overview",
       returnHref: "/environments",
       projectPath: projectPath || null,
       providerId: currentProviderId,
-      updatedAt: Date.now(),
     });
   };
 

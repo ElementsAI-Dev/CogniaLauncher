@@ -32,9 +32,17 @@ jest.mock('rehype-highlight', () => ({
 }));
 
 describe('MarkdownPreview', () => {
+  it('renders the editor input in split mode by default', () => {
+    render(<MarkdownPreview />);
+
+    expect(
+      screen.getByPlaceholderText('toolbox.tools.markdownPreview.editorPlaceholder'),
+    ).toBeInTheDocument();
+  });
+
   it('shows truncation message for oversized markdown input', () => {
     render(<MarkdownPreview />);
-    fireEvent.change(screen.getByPlaceholderText('# Write markdown here...'), {
+    fireEvent.change(screen.getByPlaceholderText('toolbox.tools.markdownPreview.editorPlaceholder'), {
       target: { value: '# Title\n' + 'a'.repeat(TOOLBOX_LIMITS.markdownPreviewChars + 100) },
     });
 

@@ -250,7 +250,7 @@ export default function RegexTester({ className }: ToolComponentProps) {
                     <span className="text-muted-foreground shrink-0">@{m.index}</span>
                     {m.groups.length > 0 && (
                       <span className="text-muted-foreground">
-                        groups: [{m.groups.map((g, j) => <code key={j} className="mx-0.5">&quot;{g}&quot;</code>)}]
+                        {t('toolbox.tools.regexTester.groups')}: [{m.groups.map((g, j) => <code key={j} className="mx-0.5">&quot;{g}&quot;</code>)}]
                       </span>
                     )}
                   </div>

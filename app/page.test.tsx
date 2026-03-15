@@ -29,6 +29,12 @@ const mockFetchInstalledPackages = jest.fn().mockResolvedValue(undefined);
 const mockFetchProviders = jest.fn().mockResolvedValue(undefined);
 const mockFetchCacheInfo = jest.fn().mockResolvedValue(undefined);
 const mockFetchPlatformInfo = jest.fn().mockResolvedValue(undefined);
+const mockUseDashboardInsights = jest.fn(() => ({
+  attentionCenter: {},
+  recentActivityFeed: {},
+  workspaceTrends: {},
+  providerHealthMatrix: {},
+}));
 const mockSetIsCustomizing = jest.fn();
 const mockSetIsEditMode = jest.fn();
 let mockEnvsError: string | null = null;
@@ -89,6 +95,10 @@ jest.mock("@/hooks/use-settings", () => ({
     loading: false,
     error: mockSettingsError,
   }),
+}));
+
+jest.mock("@/hooks/use-dashboard-insights", () => ({
+  useDashboardInsights: (...args: unknown[]) => mockUseDashboardInsights(...args),
 }));
 
 jest.mock("@/lib/stores/dashboard", () => {

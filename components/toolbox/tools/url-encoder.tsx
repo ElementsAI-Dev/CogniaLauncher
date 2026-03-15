@@ -129,7 +129,9 @@ export default function UrlEncoder({ className }: ToolComponentProps) {
           }
           headerRight={
             <Badge variant="secondary" className="text-xs font-normal">
-              {isEncoding ? 'Text → URL' : 'URL → Text'}
+              {isEncoding
+                ? t('toolbox.tools.urlEncoder.directionEncode')
+                : t('toolbox.tools.urlEncoder.directionDecode')}
             </Badge>
           }
         >
@@ -141,7 +143,11 @@ export default function UrlEncoder({ className }: ToolComponentProps) {
             }
             value={input}
             onChange={setInput}
-            placeholder={isEncoding ? 'Hello World & more' : 'Hello%20World%20%26%20more'}
+            placeholder={
+              isEncoding
+                ? t('toolbox.tools.urlEncoder.placeholderText')
+                : t('toolbox.tools.urlEncoder.placeholderEncoded')
+            }
             showPaste
             showClear
             rows={6}
@@ -183,7 +189,11 @@ export default function UrlEncoder({ className }: ToolComponentProps) {
               size="icon"
               className="h-8 w-8 rounded-full"
               onClick={toggleDirection}
-              aria-label={isEncoding ? 'Encoding' : 'Decoding'}
+              aria-label={
+                isEncoding
+                  ? t('toolbox.tools.urlEncoder.directionEncode')
+                  : t('toolbox.tools.urlEncoder.directionDecode')
+              }
             >
               {isEncoding ? (
                 <ArrowDown className="h-4 w-4" />
@@ -233,15 +243,17 @@ export default function UrlEncoder({ className }: ToolComponentProps) {
         {urlParts && (
           <Card className="border-dashed">
             <CardContent className="space-y-3">
-              <p className="text-xs font-medium text-muted-foreground">URL Breakdown</p>
+              <p className="text-xs font-medium text-muted-foreground">
+                {t('toolbox.tools.urlEncoder.urlBreakdown')}
+              </p>
               <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
                 {[
-                  ['Protocol', urlParts.protocol],
-                  ['Host', urlParts.host],
-                  ['Port', urlParts.port],
-                  ['Path', urlParts.path],
-                  ['Query', urlParts.query],
-                  ['Fragment', urlParts.fragment],
+                  [t('toolbox.tools.urlEncoder.protocol'), urlParts.protocol],
+                  [t('toolbox.tools.urlEncoder.host'), urlParts.host],
+                  [t('toolbox.tools.urlEncoder.port'), urlParts.port],
+                  [t('toolbox.tools.urlEncoder.path'), urlParts.path],
+                  [t('toolbox.tools.urlEncoder.query'), urlParts.query],
+                  [t('toolbox.tools.urlEncoder.fragment'), urlParts.fragment],
                 ].map(
                   ([label, value]) =>
                     value && (
@@ -256,11 +268,17 @@ export default function UrlEncoder({ className }: ToolComponentProps) {
               {/* Query parameter table */}
               {urlParts.params.length > 0 && (
                 <div className="space-y-1.5">
-                  <p className="text-xs font-medium text-muted-foreground">Query Parameters</p>
+                  <p className="text-xs font-medium text-muted-foreground">
+                    {t('toolbox.tools.urlEncoder.queryParameters')}
+                  </p>
                   <div className="rounded-md border text-xs">
                     <div className="grid grid-cols-2 gap-px bg-muted">
-                      <div className="bg-muted px-2 py-1 font-medium">Key</div>
-                      <div className="bg-muted px-2 py-1 font-medium">Value</div>
+                      <div className="bg-muted px-2 py-1 font-medium">
+                        {t('toolbox.tools.urlEncoder.paramKey')}
+                      </div>
+                      <div className="bg-muted px-2 py-1 font-medium">
+                        {t('toolbox.tools.urlEncoder.paramValue')}
+                      </div>
                     </div>
                     {urlParts.params.map(([key, value], i) => (
                       <div key={`${key}-${i}`} className="grid grid-cols-2 gap-px border-t">

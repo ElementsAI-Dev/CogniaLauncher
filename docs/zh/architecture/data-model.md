@@ -236,11 +236,13 @@ interface PackageState {
   selectedProvider: string | null
   availableUpdates: UpdateInfo[]
   pinnedPackages: string[]
-  bookmarkedPackages: string[]
+  bookmarkedPackages: string[]  // 规范化包标识，通常为 provider:name
   updateCheckProgress: UpdateCheckProgress | null
   isCheckingUpdates: boolean
 }
 ```
+
+`bookmarkedPackages` 使用规范化的包身份进行持久化。存在 Provider 上下文时，书签会保存为 `provider:name`；历史遗留的裸包名书签仍可兼容读取，并会在有足够包上下文时被规范化。
 
 **settings.ts** — 应用级设置和平台信息
 

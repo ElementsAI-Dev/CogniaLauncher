@@ -237,6 +237,24 @@ describe("ProfileManager", () => {
     });
   });
 
+  it("shows provider attribution in apply results when available", async () => {
+    mockProfilesState.profiles = [sampleProfile];
+    mockApplyProfile.mockResolvedValue({
+      profile_id: "p1",
+      profile_name: "Dev Setup",
+      successful: [{ env_type: "node", version: "18.0.0", provider_id: "fnm" }],
+      failed: [],
+      skipped: [],
+    });
+    const user = userEvent.setup();
+    render(<ProfileManager {...defaultProps} />);
+    await user.click(screen.getByTitle("Apply"));
+
+    await waitFor(() => {
+      expect(screen.getByText("node@18.0.0 (fnm)")).toBeInTheDocument();
+    });
+  });
+
   it("shows warning toast for partial apply", async () => {
     mockApplyProfile.mockResolvedValue({
       profile_id: "p1",

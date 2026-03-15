@@ -16,6 +16,7 @@ import {
 import { useLocale } from '@/components/providers/locale-provider';
 import { useToolPreferences } from '@/hooks/use-tool-preferences';
 import { TOOLBOX_LIMITS } from '@/lib/constants/toolbox-limits';
+import { digestWithSubtle, supportsSubtleDigest } from '@/lib/toolbox/browser-api';
 import { Hash, Copy, Check, ShieldCheck, ShieldX } from 'lucide-react';
 import type { ToolComponentProps } from '@/types/toolbox';
 
@@ -39,7 +40,10 @@ const DEFAULT_PREFERENCES = {
 async function computeHash(algo: string, text: string): Promise<string> {
   const encoder = new TextEncoder();
   const data = encoder.encode(text);
-  const hashBuffer = await crypto.subtle.digest(algo, data);
+  const hashBuffer = await digestWithSubtle(algo, data);
+  if (!hashBuffer) {
+    throw new Error('web-crypto-unavailable');
+  }
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
 }
@@ -52,7 +56,7 @@ export default function HashGenerator({ className }: ToolComponentProps) {
   const [computing, setComputing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [compareHash, setCompareHash] = useState('');
-  const { copy } = useCopyToClipboard();
+  const { copy, error: clipboardError } = useCopyToClipboard();
   const [copiedAlgo, setCopiedAlgo] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -63,6 +67,12 @@ export default function HashGenerator({ className }: ToolComponentProps) {
     if (!input.trim() || enabledAlgorithms.length === 0) {
       setResults({});
       setError(null);
+      setComputing(false);
+      return;
+    }
+    if (!supportsSubtleDigest()) {
+      setResults({});
+      setError(t('toolbox.tools.hashGenerator.cryptoUnavailable'));
       setComputing(false);
       return;
     }
@@ -84,6 +94,12 @@ export default function HashGenerator({ className }: ToolComponentProps) {
         );
         setResults(Object.fromEntries(entries));
         setError(null);
+      } catch (err) {
+        const message = err instanceof Error && err.message === 'web-crypto-unavailable'
+          ? t('toolbox.tools.hashGenerator.cryptoUnavailable')
+          : (err as Error).message;
+        setResults({});
+        setError(message);
       } finally {
         setComputing(false);
       }
@@ -263,6 +279,7 @@ export default function HashGenerator({ className }: ToolComponentProps) {
             )}
           </div>
         </ToolSection>
+        {clipboardError && <ToolValidationMessage message={t('toolbox.actions.copyFailed')} />}
       </div>
     </div>
   );

@@ -4,7 +4,7 @@ import { useCallback } from 'react';
 import { writeClipboard, readClipboard } from '@/lib/clipboard';
 import { usePackageStore } from '@/lib/stores/packages';
 import { toast } from 'sonner';
-import { getPackageKeyFromParts } from '@/lib/packages';
+import { getPackageKeyFromParts, normalizeBookmarkedPackages } from '@/lib/packages';
 
 export interface ExportedPackageList {
   version: string;
@@ -35,6 +35,14 @@ export interface ImportPreviewSummary {
 export function usePackageExport() {
   const { installedPackages, bookmarkedPackages } = usePackageStore();
 
+  const getNormalizedBookmarks = useCallback((data: ExportedPackageList): string[] => (
+    normalizeBookmarkedPackages(
+      data.bookmarks,
+      [...installedPackages, ...data.packages],
+      { expandLegacyMatches: true },
+    )
+  ), [installedPackages]);
+
   const buildExportData = useCallback((): ExportedPackageList => ({
     version: '1.0',
     exportedAt: new Date().toISOString(),
@@ -43,7 +51,11 @@ export function usePackageExport() {
       version: pkg.version,
       provider: pkg.provider,
     })),
-    bookmarks: bookmarkedPackages,
+    bookmarks: normalizeBookmarkedPackages(
+      bookmarkedPackages,
+      installedPackages,
+      { expandLegacyMatches: true },
+    ),
   }), [installedPackages, bookmarkedPackages]);
 
   const exportPackages = useCallback(() => {
@@ -186,5 +198,6 @@ export function usePackageExport() {
     importFromClipboard,
     exportToClipboard,
     getImportPreview,
+    getNormalizedBookmarks,
   };
 }

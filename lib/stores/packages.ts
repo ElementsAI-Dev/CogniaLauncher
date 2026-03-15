@@ -1,5 +1,9 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import {
+  normalizeBookmarkedPackages,
+  togglePackageBookmark,
+} from '../packages';
 import type {
   PackageSummary,
   PackageInfo,
@@ -61,7 +65,11 @@ interface PackageState {
   clearPackageSelection: () => void;
   selectAllPackages: (names: string[]) => void;
   setSearchMeta: (meta: SearchMeta | null) => void;
-  toggleBookmark: (name: string) => void;
+  toggleBookmark: (name: string, provider?: string | null) => void;
+  restoreBookmarks: (
+    bookmarks: string[],
+    packageContexts?: Array<{ name: string; provider?: string | null }>,
+  ) => void;
   setUpdateCheckProgress: (progress: UpdateCheckProgress | null) => void;
   setUpdateCheckErrors: (errors: UpdateCheckError[]) => void;
   setUpdateCheckProviderOutcomes: (outcomes: UpdateCheckProviderOutcome[]) => void;
@@ -98,7 +106,13 @@ export const usePackageStore = create<PackageState>()(
       lastScanTimestamp: null,
 
       setSearchResults: (searchResults) => set({ searchResults }),
-      setInstalledPackages: (installedPackages) => set({ installedPackages }),
+      setInstalledPackages: (installedPackages) => set((state) => ({
+        installedPackages,
+        bookmarkedPackages: normalizeBookmarkedPackages(
+          state.bookmarkedPackages,
+          installedPackages,
+        ),
+      })),
       setSelectedPackage: (selectedPackage) => set({ selectedPackage }),
       setProviders: (providers) => set({ providers }),
       setSearchQuery: (searchQuery) => set({ searchQuery }),
@@ -125,10 +139,19 @@ export const usePackageStore = create<PackageState>()(
       clearPackageSelection: () => set({ selectedPackages: [] }),
       selectAllPackages: (names) => set({ selectedPackages: names }),
       setSearchMeta: (searchMeta) => set({ searchMeta }),
-      toggleBookmark: (name) => set((state) => ({
-        bookmarkedPackages: state.bookmarkedPackages.includes(name)
-          ? state.bookmarkedPackages.filter((n) => n !== name)
-          : [...state.bookmarkedPackages, name]
+      toggleBookmark: (name, provider) => set((state) => ({
+        bookmarkedPackages: togglePackageBookmark(
+          state.bookmarkedPackages,
+          name,
+          provider,
+        ),
+      })),
+      restoreBookmarks: (bookmarks, packageContexts = []) => set((state) => ({
+        bookmarkedPackages: normalizeBookmarkedPackages(
+          [...state.bookmarkedPackages, ...bookmarks],
+          [...state.installedPackages, ...packageContexts],
+          { expandLegacyMatches: true },
+        ),
       })),
       setUpdateCheckProgress: (updateCheckProgress) => set({ updateCheckProgress }),
       setUpdateCheckErrors: (updateCheckErrors) => set({ updateCheckErrors }),
@@ -145,11 +168,27 @@ export const usePackageStore = create<PackageState>()(
     }),
     {
       name: 'cognia-packages',
-      version: 2,
-      migrate: (persisted) => ({
-        ...(persisted as PackageState),
-        pinnedPackages: [],
-      }),
+      version: 3,
+      migrate: (persisted) => {
+        const state = persisted as Partial<PackageState>;
+        const installedPackages = Array.isArray(state.installedPackages)
+          ? state.installedPackages
+          : [];
+        const bookmarkedPackages = Array.isArray(state.bookmarkedPackages)
+          ? state.bookmarkedPackages
+          : [];
+
+        return {
+          selectedProvider: typeof state.selectedProvider === 'string' ? state.selectedProvider : null,
+          searchQuery: typeof state.searchQuery === 'string' ? state.searchQuery : '',
+          bookmarkedPackages: normalizeBookmarkedPackages(
+            bookmarkedPackages,
+            installedPackages,
+          ),
+          installedPackages,
+          lastScanTimestamp: typeof state.lastScanTimestamp === 'number' ? state.lastScanTimestamp : null,
+        };
+      },
       partialize: (state) => ({
         selectedProvider: state.selectedProvider,
         searchQuery: state.searchQuery,

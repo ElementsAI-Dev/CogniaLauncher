@@ -23,6 +23,7 @@ const mockT = (
     "about.systemInfo": "System Information",
     "about.systemInfoDesc": "Device, hardware, and runtime details",
     "about.systemInfoRetry": "Retry",
+    "about.lastRefreshedAt": "Last refreshed",
     "about.errorTitle": "Error",
     "about.copySystemInfo": "Copy",
     "about.systemInfoFailed": "Failed to load system info",
@@ -116,6 +117,8 @@ const defaultProps = {
   systemLoading: false,
   updateInfo: null,
   systemError: null,
+  locale: "en-US",
+  lastRefreshedAt: "2026-03-14T09:00:00.000Z",
   onRetry: jest.fn(),
   t: mockT,
 };
@@ -128,6 +131,11 @@ describe("SystemInfoCard", () => {
   it("renders system info heading", () => {
     render(<SystemInfoCard {...defaultProps} />);
     expect(screen.getByText("System Information")).toBeInTheDocument();
+  });
+
+  it("shows the latest refreshed timestamp when available", () => {
+    render(<SystemInfoCard {...defaultProps} />);
+    expect(screen.getByText(/last refreshed/i)).toBeInTheDocument();
   });
 
   it("renders OS information", () => {

@@ -15,7 +15,11 @@ import { PackageHistoryList } from '@/components/packages/detail/package-history
 import { usePackages } from '@/hooks/use-packages';
 import { usePackageStore } from '@/lib/stores/packages';
 import { useLocale } from '@/components/providers/locale-provider';
-import { getPackageKeyFromParts, isPackagePinned } from '@/lib/packages';
+import {
+  getPackageKeyFromParts,
+  isPackageBookmarked,
+  isPackagePinned,
+} from '@/lib/packages';
 import {
   ArrowLeft,
   LayoutDashboard,
@@ -80,7 +84,7 @@ export function PackageDetailPage({ packageName, providerId }: PackageDetailPage
 
   const isInstalled = !!installedPkg;
   const isPinned = isPackagePinned(pinnedPackages, packageName, providerId);
-  const isBookmarked = bookmarkedPackages.includes(packageName);
+  const isBookmarked = isPackageBookmarked(bookmarkedPackages, packageName, providerId);
   const isInstalling = installing.includes(
     providerId ? `${providerId}:${packageName}` : packageName
   );
@@ -211,13 +215,13 @@ export function PackageDetailPage({ packageName, providerId }: PackageDetailPage
   }, [packageName, providerId, resolveDependencies, t]);
 
   const handleBookmark = useCallback(() => {
-    toggleBookmark(packageName);
+    toggleBookmark(packageName, providerId);
     toast.success(
       isBookmarked
         ? t('packages.bookmarkRemoved', { name: packageName })
         : t('packages.bookmarkAdded', { name: packageName })
     );
-  }, [packageName, isBookmarked, toggleBookmark, t]);
+  }, [packageName, providerId, isBookmarked, toggleBookmark, t]);
 
   const handleRefresh = useCallback(async () => {
     markHistoryDirty();

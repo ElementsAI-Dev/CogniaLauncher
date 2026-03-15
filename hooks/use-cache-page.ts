@@ -12,6 +12,7 @@ import type {
   CacheAccessStats,
   CacheEntryItem,
   CacheOptimizeResult,
+  CacheSizeMonitor,
   DatabaseInfo,
 } from '@/lib/tauri';
 import * as tauri from '@/lib/tauri';
@@ -29,6 +30,7 @@ import {
   isRequestWaveCurrent,
   startRequestWave,
 } from '@/lib/cache/request-wave';
+import { deriveCacheOverviewInsights } from '@/lib/cache/insights';
 
 interface UseCachePageOptions {
   t: (key: string, params?: Record<string, string | number>) => string;
@@ -108,6 +110,9 @@ export function useCachePage({ t }: UseCachePageOptions) {
 
   const [hotFiles, setHotFiles] = useState<CacheEntryItem[]>([]);
   const [hotFilesReadState, setHotFilesReadState] = useState<CacheReadState>(INITIAL_READ_STATE);
+  const [monitorSnapshot, setMonitorSnapshot] = useState<CacheSizeMonitor | null>(null);
+  const [monitorSnapshotLoading, setMonitorSnapshotLoading] = useState(false);
+  const [monitorSnapshotReadState, setMonitorSnapshotReadState] = useState<CacheReadState>(INITIAL_READ_STATE);
 
   const [forceCleanLoading, setForceCleanLoading] = useState(false);
   const [monitorRefreshTrigger, setMonitorRefreshTrigger] = useState(0);
@@ -121,6 +126,7 @@ export function useCachePage({ t }: UseCachePageOptions) {
   const hotFilesWaveRef = useRef(0);
   const historyWaveRef = useRef(0);
   const browserWaveRef = useRef(0);
+  const monitorWaveRef = useRef(0);
 
   useEffect(() => {
     browserSearchRef.current = browserSearch;
@@ -186,6 +192,38 @@ export function useCachePage({ t }: UseCachePageOptions) {
     }
   }, [t]);
 
+  const fetchMonitorSnapshot = useCallback(async () => {
+    if (!isTauri()) return;
+    const wave = startRequestWave(monitorWaveRef);
+    setMonitorSnapshotLoading(true);
+    setMonitorSnapshotReadState((prev) => ({
+      ...prev,
+      status: 'loading',
+      error: null,
+    }));
+    try {
+      const snapshot = await tauri.cacheSizeMonitor();
+      if (!isRequestWaveCurrent(monitorWaveRef, wave)) return;
+      setMonitorSnapshot(snapshot);
+      setMonitorSnapshotReadState({
+        status: 'ready',
+        error: null,
+        lastUpdatedAt: Date.now(),
+      });
+    } catch (err) {
+      if (!isRequestWaveCurrent(monitorWaveRef, wave)) return;
+      console.error('Failed to fetch cache monitor snapshot:', err);
+      setMonitorSnapshotReadState((prev) => ({
+        status: 'error',
+        error: t('cache.monitorLoadFailed', { error: String(err) }),
+        lastUpdatedAt: prev.lastUpdatedAt,
+      }));
+    } finally {
+      if (!isRequestWaveCurrent(monitorWaveRef, wave)) return;
+      setMonitorSnapshotLoading(false);
+    }
+  }, [t]);
+
   const refreshOverviewState = useCallback(async ({
     includeCacheInfo = true,
     includeCacheSettings = false,
@@ -206,11 +244,14 @@ export function useCachePage({ t }: UseCachePageOptions) {
     if (includeHotFiles) {
       tasks.push(fetchHotFiles());
     }
+    if (includeMonitor) {
+      tasks.push(fetchMonitorSnapshot());
+    }
     await Promise.all(tasks);
     if (includeMonitor) {
       setMonitorRefreshTrigger((prev) => prev + 1);
     }
-  }, [fetchAccessStats, fetchCacheInfo, fetchCacheSettings, fetchHotFiles]);
+  }, [fetchAccessStats, fetchCacheInfo, fetchCacheSettings, fetchHotFiles, fetchMonitorSnapshot]);
 
   const fetchBrowserEntries = useCallback(async (
     resetPage = false,
@@ -270,7 +311,7 @@ export function useCachePage({ t }: UseCachePageOptions) {
 
   useEffect(() => {
     fetchPlatformInfo();
-    void refreshOverviewState({ includeCacheSettings: true, includeMonitor: false });
+    void refreshOverviewState({ includeCacheSettings: true });
   }, [fetchPlatformInfo, refreshOverviewState]);
 
   // Listen to unified cache invalidation bus for auto-refresh
@@ -286,7 +327,7 @@ export function useCachePage({ t }: UseCachePageOptions) {
             includeCacheInfo: true,
             includeAccessStats: false,
             includeHotFiles: false,
-            includeMonitor: false,
+            includeMonitor: true,
           });
           return;
         }
@@ -325,7 +366,7 @@ export function useCachePage({ t }: UseCachePageOptions) {
           includeCacheInfo: true,
           includeAccessStats: false,
           includeHotFiles: true,
-          includeMonitor: false,
+          includeMonitor: true,
         });
         scheduleBrowserRefresh();
       }, 350),
@@ -671,6 +712,19 @@ export function useCachePage({ t }: UseCachePageOptions) {
     ? cacheVerification.missing_files + cacheVerification.corrupted_files + cacheVerification.size_mismatches
     : 0;
 
+  const overviewInsights = deriveCacheOverviewInsights({
+    cacheInfo,
+    monitor: monitorSnapshot,
+    accessStats,
+    accessStatsReadState,
+    hotFiles,
+    hotFilesReadState,
+    historySummary,
+    historyReadState,
+    cacheVerification,
+    totalIssues,
+  });
+
   return {
     // From useSettings
     cacheInfo,
@@ -730,6 +784,9 @@ export function useCachePage({ t }: UseCachePageOptions) {
     // Hot files
     hotFiles,
     hotFilesReadState,
+    monitorSnapshot,
+    monitorSnapshotLoading,
+    monitorSnapshotReadState,
 
     // Force clean & monitor
     forceCleanLoading,
@@ -761,6 +818,7 @@ export function useCachePage({ t }: UseCachePageOptions) {
     handleResetAccessStats,
     retryAccessStats,
     retryHotFiles,
+    fetchMonitorSnapshot,
     fetchBrowserEntries,
     retryBrowser,
     handleDeleteSelectedEntries,
@@ -774,5 +832,6 @@ export function useCachePage({ t }: UseCachePageOptions) {
     handleOptimize,
     fetchDbInfo,
     fetchCacheInfo,
+    overviewInsights,
   };
 }

@@ -155,7 +155,7 @@ export default function NumberBaseConverter({ className }: ToolComponentProps) {
                     id={`number-base-input-${base}`}
                     value={preferences.showPrefix && values[base] ? `${prefix}${values[base]}` : values[base]}
                     onChange={(e) => handleChange(base, e.target.value)}
-                    placeholder="0"
+                    placeholder={t('toolbox.tools.numberBaseConverter.quick.zero')}
                     className="font-mono"
                     maxLength={TOOLBOX_LIMITS.numberBaseChars}
                   />
@@ -168,19 +168,27 @@ export default function NumberBaseConverter({ className }: ToolComponentProps) {
         <ToolSection title={t('toolbox.tools.numberBaseConverter.visualization')}>
           <div className="space-y-2 text-xs">
             <div className="rounded border p-2 font-mono">
-              <p className="text-muted-foreground mb-1">Binary (grouped by nibble)</p>
+              <p className="text-muted-foreground mb-1">
+                {t('toolbox.tools.numberBaseConverter.visualizationBinary')}
+              </p>
               <p className="break-all">{formattedBinary || '-'}</p>
             </div>
             <div className="rounded border p-2 font-mono">
-              <p className="text-muted-foreground mb-1">Decimal (grouped)</p>
+              <p className="text-muted-foreground mb-1">
+                {t('toolbox.tools.numberBaseConverter.visualizationDecimal')}
+              </p>
               <p className="break-all">{formattedDecimal || '-'}</p>
             </div>
             <div className="rounded border p-2 font-mono">
-              <p className="text-muted-foreground mb-1">Hex (grouped by byte)</p>
+              <p className="text-muted-foreground mb-1">
+                {t('toolbox.tools.numberBaseConverter.visualizationHex')}
+              </p>
               <p className="break-all">{formattedHex || '-'}</p>
             </div>
             {asciiPreview && (
-              <Badge variant="secondary" className="mt-1">ASCII: {asciiPreview}</Badge>
+              <Badge variant="secondary" className="mt-1">
+                {t('toolbox.tools.numberBaseConverter.asciiPreview', { value: asciiPreview })}
+              </Badge>
             )}
           </div>
         </ToolSection>

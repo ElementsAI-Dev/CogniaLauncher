@@ -10,6 +10,8 @@ const mockProfileDelete = jest.fn();
 const mockProfileApply = jest.fn();
 const mockProfileExport = jest.fn();
 const mockProfileImport = jest.fn();
+const mockSetWorkflowActionState = jest.fn();
+const mockReconcileEnvironmentWorkflow = jest.fn();
 
 jest.mock('@/lib/tauri', () => ({
   isTauri: jest.fn(() => true),
@@ -21,6 +23,16 @@ jest.mock('@/lib/tauri', () => ({
   profileApply: (...args: unknown[]) => mockProfileApply(...args),
   profileExport: (...args: unknown[]) => mockProfileExport(...args),
   profileImport: (...args: unknown[]) => mockProfileImport(...args),
+}));
+
+jest.mock('@/hooks/use-environment-workflow', () => ({
+  useEnvironmentWorkflow: () => ({
+    syncWorkflowContext: jest.fn(),
+    setWorkflowActionState: mockSetWorkflowActionState,
+    requireProjectPath: jest.fn(),
+    requirePathConfigured: jest.fn(),
+    reconcileEnvironmentWorkflow: mockReconcileEnvironmentWorkflow,
+  }),
 }));
 
 describe('useProfiles', () => {
@@ -96,14 +108,68 @@ describe('useProfiles', () => {
   });
 
   it('should apply profile', async () => {
-    mockProfileApply.mockResolvedValue({ success: true });
+    mockProfileList.mockResolvedValue([
+      {
+        id: '1',
+        name: 'Dev',
+        environments: [{ env_type: 'node', version: '20.0.0', provider_id: 'fnm' }],
+      },
+    ]);
+    mockProfileApply.mockResolvedValue({
+      profile_id: '1',
+      profile_name: 'Dev',
+      successful: [{ env_type: 'node', version: '20.0.0', provider_id: 'fnm' }],
+      failed: [],
+      skipped: [],
+    });
     const { result } = renderHook(() => useProfiles());
+
+    await act(async () => {
+      await result.current.refresh();
+    });
 
     await act(async () => {
       await result.current.applyProfile('1');
     });
 
     expect(mockProfileApply).toHaveBeenCalledWith('1');
+    expect(mockSetWorkflowActionState).toHaveBeenCalledWith(
+      'node',
+      'applyProfile',
+      'running',
+      expect.any(Object),
+    );
+    expect(mockSetWorkflowActionState).toHaveBeenCalledWith(
+      'node',
+      'applyProfile',
+      'success',
+      expect.any(Object),
+    );
+    expect(mockReconcileEnvironmentWorkflow).toHaveBeenCalled();
+  });
+
+  it('marks profile apply as error when any environment fails', async () => {
+    mockProfileApply.mockResolvedValue({
+      profile_id: '1',
+      profile_name: 'Dev',
+      successful: [{ env_type: 'node', version: '20.0.0', provider_id: 'fnm' }],
+      failed: [{ env_type: 'python', version: '3.11.0', error: 'Not installed' }],
+      skipped: [],
+    });
+    const { result } = renderHook(() => useProfiles());
+
+    await act(async () => {
+      await result.current.applyProfile('1');
+    });
+
+    expect(mockSetWorkflowActionState).toHaveBeenCalledWith(
+      'node',
+      'applyProfile',
+      'error',
+      expect.objectContaining({
+        error: '1 environment(s) failed while applying this profile.',
+      }),
+    );
   });
 
   it('should handle refresh error', async () => {

@@ -10,6 +10,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { useEnvironments } from '@/hooks/use-environments';
 import { usePackages } from '@/hooks/use-packages';
 import { useSettings } from '@/hooks/use-settings';
+import { useDashboardInsights } from '@/hooks/use-dashboard-insights';
 import { useLocale } from '@/components/providers/locale-provider';
 import { useDashboardStore } from '@/lib/stores/dashboard';
 import { DashboardStatusBadge } from '@/components/dashboard/dashboard-primitives';
@@ -47,6 +48,11 @@ export default function DashboardPage() {
   const [dismissedErrorSignature, setDismissedErrorSignature] = useState<string | null>(null);
   const initialFetchDone = useRef(false);
   const cacheRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const insights = useDashboardInsights({
+    environments,
+    refreshKey: lastRefreshed?.getTime() ?? 0,
+    t,
+  });
   const isCustomizing = useDashboardStore((s) => s.isCustomizing);
   const isEditMode = useDashboardStore((s) => s.isEditMode);
   const setIsCustomizing = useDashboardStore((s) => s.setIsCustomizing);
@@ -340,6 +346,7 @@ export default function DashboardPage() {
             packages: { isLoading: pkgsLoading, error: pkgsError },
             settings: { isLoading: settingsLoading, error: settingsError },
           }}
+          insights={insights}
         />
 
         {/* Customize Dialog */}

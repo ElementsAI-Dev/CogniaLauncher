@@ -23,6 +23,7 @@ const mockResetCacheAccessStats = jest.fn();
 const mockGetCleanupHistory = jest.fn();
 const mockGetCleanupSummary = jest.fn();
 const mockClearCleanupHistory = jest.fn();
+const mockCacheSizeMonitor = jest.fn();
 
 const mockToastSuccess = jest.fn();
 const mockToastError = jest.fn();
@@ -94,6 +95,7 @@ jest.mock('@/lib/tauri', () => ({
   getCleanupHistory: (...args: unknown[]) => mockGetCleanupHistory(...args),
   getCleanupSummary: (...args: unknown[]) => mockGetCleanupSummary(...args),
   clearCleanupHistory: (...args: unknown[]) => mockClearCleanupHistory(...args),
+  cacheSizeMonitor: (...args: unknown[]) => mockCacheSizeMonitor(...args),
 }));
 
 describe('useCachePage', () => {
@@ -127,14 +129,96 @@ describe('useCachePage', () => {
     mockGetCleanupHistory.mockResolvedValue([]);
     mockGetCleanupSummary.mockResolvedValue(null);
     mockClearCleanupHistory.mockResolvedValue(3);
+    mockCacheSizeMonitor.mockResolvedValue({
+      internalSize: 1024,
+      internalSizeHuman: '1 KB',
+      defaultDownloadsSize: 0,
+      defaultDownloadsSizeHuman: '0 B',
+      defaultDownloadsCount: 0,
+      defaultDownloadsPath: null,
+      defaultDownloadsAvailable: false,
+      defaultDownloadsReason: 'missing',
+      externalSize: 0,
+      externalSizeHuman: '0 B',
+      totalSize: 1024,
+      totalSizeHuman: '1 KB',
+      maxSize: 4096,
+      maxSizeHuman: '4 KB',
+      usagePercent: 25,
+      threshold: 80,
+      exceedsThreshold: false,
+      diskTotal: 0,
+      diskAvailable: 0,
+      diskAvailableHuman: '0 B',
+      externalCaches: [],
+    });
+    mockSettingsState.cacheVerification = { missing_files: 0, corrupted_files: 0, size_mismatches: 0 };
   });
 
   it('loads overview state on mount and exposes computed fields', async () => {
     const { result } = renderHook(() => useCachePage({ t }));
     await waitFor(() => expect(mockFetchPlatformInfo).toHaveBeenCalled());
     await waitFor(() => expect(mockGetCacheAccessStats).toHaveBeenCalled());
+    await waitFor(() => expect(mockCacheSizeMonitor).toHaveBeenCalled());
     expect(result.current.usagePercent).toBe(25);
     expect(result.current.maxSize).toBe(4096);
+  });
+
+  it('derives overview insights from monitor and verification state', async () => {
+    mockSettingsState.cacheVerification = {
+      missing_files: 1,
+      corrupted_files: 0,
+      size_mismatches: 1,
+      is_healthy: false,
+      valid_entries: 3,
+      details: [],
+    };
+    mockCacheSizeMonitor.mockResolvedValue({
+      internalSize: 1024,
+      internalSizeHuman: '1 KB',
+      defaultDownloadsSize: 512,
+      defaultDownloadsSizeHuman: '512 B',
+      defaultDownloadsCount: 1,
+      defaultDownloadsPath: '/downloads',
+      defaultDownloadsAvailable: true,
+      defaultDownloadsReason: null,
+      externalSize: 4096,
+      externalSizeHuman: '4 KB',
+      totalSize: 5632,
+      totalSizeHuman: '5.5 KB',
+      maxSize: 8192,
+      maxSizeHuman: '8 KB',
+      usagePercent: 68,
+      threshold: 80,
+      exceedsThreshold: false,
+      diskTotal: 0,
+      diskAvailable: 0,
+      diskAvailableHuman: '0 B',
+      externalCaches: [
+        {
+          provider: 'npm',
+          displayName: 'npm',
+          size: 4096,
+          sizeHuman: '4 KB',
+          cachePath: '/ext/npm',
+        },
+      ],
+    });
+
+    const { result } = renderHook(() => useCachePage({ t }));
+
+    await waitFor(() => {
+      expect(result.current.overviewInsights.primaryAction.id).toBe('repair');
+    });
+    await waitFor(() => {
+      expect(result.current.monitorSnapshot?.externalSizeHuman).toBe('4 KB');
+    });
+
+    expect(
+      result.current.overviewInsights.scopeSummaries.find(
+        (scope) => scope.id === 'external',
+      )?.tone,
+    ).toBe('warning');
   });
 
   it('cleans cache and emits invalidation', async () => {

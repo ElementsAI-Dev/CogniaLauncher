@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import PackagesPage from './page';
 
@@ -21,6 +21,7 @@ const mockFetchPinnedPackages = jest.fn().mockResolvedValue([]);
 const mockUseKeyboardShortcuts = jest.fn();
 const mockPush = jest.fn();
 let mockPackageDetailsDialogProps: Record<string, unknown> | null = null;
+let mockExportImportDialogProps: Record<string, unknown> | null = null;
 const mockResolveDependencies = jest.fn().mockResolvedValue({
   success: true,
   packages: [],
@@ -45,6 +46,7 @@ let mockSearchResults: Array<{
   clearPackageSelection: jest.fn(),
   bookmarkedPackages: [] as string[],
   toggleBookmark: jest.fn(),
+  restoreBookmarks: jest.fn(),
   availableUpdates: [] as Array<{
     name: string;
     provider: string;
@@ -234,7 +236,7 @@ jest.mock('@/components/packages/package-list', () => ({
     onResolveDependencies?: (p: { name: string; provider?: string; version?: string; latest_version?: string }, source: 'installed' | 'search') => void;
     onPin?: (n: string, version?: string, provider?: string) => void;
     onUnpin?: (n: string) => void;
-    onBookmark?: (n: string) => void;
+    onBookmark?: (n: string, provider?: string) => void;
   }) => (
     <div data-testid={`package-list-${type}`}>
       {packages.length} packages
@@ -251,7 +253,7 @@ jest.mock('@/components/packages/package-list', () => ({
       )}
       {onPin && <button data-testid={`pin-${type}`} onClick={() => onPin('typescript', '5.0.0', 'npm')}>Pin</button>}
       {onUnpin && <button data-testid={`unpin-${type}`} onClick={() => onUnpin('typescript')}>Unpin</button>}
-      {onBookmark && <button data-testid={`bookmark-${type}`} onClick={() => onBookmark('typescript')}>Bookmark</button>}
+      {onBookmark && <button data-testid={`bookmark-${type}`} onClick={() => onBookmark('typescript', 'npm')}>Bookmark</button>}
     </div>
   ),
 }));
@@ -285,7 +287,10 @@ jest.mock('@/components/packages/installed-filter-bar', () => ({
 }));
 
 jest.mock('@/components/packages/export-import-dialog', () => ({
-  ExportImportDialog: () => <div data-testid="export-import">Export/Import</div>,
+  ExportImportDialog: (props: Record<string, unknown>) => {
+    mockExportImportDialogProps = props;
+    return <div data-testid="export-import">Export/Import</div>;
+  },
 }));
 
 jest.mock('@/components/packages/provider-status-badge', () => ({
@@ -308,6 +313,7 @@ describe('PackagesPage', () => {
     jest.clearAllMocks();
     mockIsTauri.mockReturnValue(true);
     mockPackageDetailsDialogProps = null;
+    mockExportImportDialogProps = null;
     mockGetInstallHistory.mockResolvedValue([]);
     mockClearInstallHistory.mockResolvedValue(undefined);
     mockResolveDependencies.mockResolvedValue({
@@ -322,6 +328,7 @@ describe('PackagesPage', () => {
     mockSearchResults = [];
     mockPackageStoreState.selectedPackages = [];
     mockPackageStoreState.bookmarkedPackages = [];
+    mockPackageStoreState.restoreBookmarks = jest.fn();
     mockPackageStoreState.availableUpdates = [];
     mockPackageStoreState.updateCheckProgress = null;
     mockPackageStoreState.isCheckingUpdates = false;
@@ -506,7 +513,38 @@ describe('PackagesPage', () => {
     const user = userEvent.setup();
     render(<PackagesPage />);
     await user.click(screen.getByTestId('bookmark-installed'));
-    // bookmark toggled
+    expect(mockPackageStoreState.toggleBookmark).toHaveBeenCalledWith('typescript', 'npm');
+  });
+
+  it('restores imported bookmarks with provider-aware package context', async () => {
+    render(<PackagesPage />);
+
+    expect(mockExportImportDialogProps).toBeTruthy();
+    const onImport = mockExportImportDialogProps?.onImport as
+      | ((data: {
+          version: string;
+          exportedAt: string;
+          packages: Array<{ name: string; provider?: string; version?: string }>;
+          bookmarks: string[];
+        }) => Promise<void>)
+      | undefined;
+    expect(onImport).toBeDefined();
+
+    await act(async () => {
+      await onImport?.({
+        version: '1.0',
+        exportedAt: '2026-03-14T00:00:00.000Z',
+        packages: [{ name: 'requests', provider: 'pip', version: '2.31.0' }],
+        bookmarks: ['requests'],
+      });
+    });
+
+    expect(mockPackageStoreState.restoreBookmarks).toHaveBeenCalledWith(
+      ['requests'],
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'requests', provider: 'pip' }),
+      ]),
+    );
   });
 
   it('checks for updates on updates tab', async () => {

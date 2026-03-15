@@ -16,6 +16,7 @@ import {
   type ProfileApplyResult,
 } from '@/lib/tauri';
 import { isTauri } from '@/lib/tauri';
+import { useEnvironmentWorkflow } from '@/hooks/use-environment-workflow';
 
 interface UseProfilesReturn {
   profiles: EnvironmentProfile[];
@@ -43,6 +44,29 @@ export function useProfiles(): UseProfilesReturn {
   const [profiles, setProfiles] = useState<EnvironmentProfile[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { setWorkflowActionState, reconcileEnvironmentWorkflow } = useEnvironmentWorkflow();
+
+  const resolveApplyWorkflowTarget = useCallback((
+    profileId: string,
+    result?: ProfileApplyResult | null,
+  ) => {
+    const profile = profiles.find((candidate) => candidate.id === profileId) ?? null;
+    const resultTarget =
+      result?.successful[0]
+      ?? result?.failed[0]
+      ?? result?.skipped[0]
+      ?? null;
+    const profileTarget = profile?.environments[0] ?? null;
+
+    if (!resultTarget && !profileTarget) {
+      return null;
+    }
+
+    return {
+      envType: resultTarget?.env_type ?? profileTarget?.env_type ?? null,
+      providerId: resultTarget?.provider_id ?? profileTarget?.provider_id ?? null,
+    };
+  }, [profiles]);
 
   const refresh = useCallback(async () => {
     if (!isTauri()) {
@@ -156,15 +180,56 @@ export function useProfiles(): UseProfilesReturn {
     setLoading(true);
     setError(null);
 
+    const initialTarget = resolveApplyWorkflowTarget(id);
+    if (initialTarget?.envType) {
+      setWorkflowActionState(initialTarget.envType, 'applyProfile', 'running', {
+        providerId: initialTarget.providerId,
+      });
+    }
+
     try {
-      return await profileApply(id);
+      const result = await profileApply(id);
+      const completedTarget = resolveApplyWorkflowTarget(id, result) ?? initialTarget;
+      await reconcileEnvironmentWorkflow();
+
+      if (completedTarget?.envType) {
+        const failedCount = result.failed.length;
+        const skippedCount = result.skipped.length;
+        const failureMessage = failedCount > 0
+          ? `${failedCount} environment(s) failed while applying this profile.`
+          : skippedCount > 0
+            ? `${skippedCount} environment(s) were skipped while applying this profile.`
+            : null;
+
+        setWorkflowActionState(
+          completedTarget.envType,
+          'applyProfile',
+          failedCount > 0 ? 'error' : 'success',
+          {
+            providerId: completedTarget.providerId,
+            error: failureMessage,
+            retryable: failedCount > 0,
+          },
+        );
+      }
+
+      return result;
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      const failedTarget = resolveApplyWorkflowTarget(id) ?? initialTarget;
+      if (failedTarget?.envType) {
+        setWorkflowActionState(failedTarget.envType, 'applyProfile', 'error', {
+          providerId: failedTarget.providerId,
+          error: errorMessage,
+          retryable: true,
+        });
+      }
+      setError(errorMessage);
       return null;
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [reconcileEnvironmentWorkflow, resolveApplyWorkflowTarget, setWorkflowActionState]);
 
   const exportProfileFn = useCallback(async (id: string): Promise<string | null> => {
     if (!isTauri()) {

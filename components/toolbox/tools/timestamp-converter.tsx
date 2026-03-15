@@ -23,31 +23,44 @@ import type { ToolComponentProps } from '@/types/toolbox';
  * Helpers
  * --------------------------------------------------------------------------- */
 
-function getRelativeTime(date: Date): string {
+function getRelativeTime(
+  date: Date,
+  t: (key: string, values?: Record<string, string | number>) => string,
+): string {
   const now = Date.now();
   const diff = date.getTime() - now;
   const abs = Math.abs(diff);
   const future = diff > 0;
 
-  if (abs < 60_000) return 'just now';
+  if (abs < 60_000) return t('toolbox.tools.timestampConverter.relativeJustNow');
   if (abs < 3_600_000) {
     const m = Math.floor(abs / 60_000);
-    return future ? `in ${m} minute${m > 1 ? 's' : ''}` : `${m} minute${m > 1 ? 's' : ''} ago`;
+    return future
+      ? t('toolbox.tools.timestampConverter.relativeInMinutes', { count: m })
+      : t('toolbox.tools.timestampConverter.relativeMinutesAgo', { count: m });
   }
   if (abs < 86_400_000) {
     const h = Math.floor(abs / 3_600_000);
-    return future ? `in ${h} hour${h > 1 ? 's' : ''}` : `${h} hour${h > 1 ? 's' : ''} ago`;
+    return future
+      ? t('toolbox.tools.timestampConverter.relativeInHours', { count: h })
+      : t('toolbox.tools.timestampConverter.relativeHoursAgo', { count: h });
   }
   if (abs < 2_592_000_000) {
     const d = Math.floor(abs / 86_400_000);
-    return future ? `in ${d} day${d > 1 ? 's' : ''}` : `${d} day${d > 1 ? 's' : ''} ago`;
+    return future
+      ? t('toolbox.tools.timestampConverter.relativeInDays', { count: d })
+      : t('toolbox.tools.timestampConverter.relativeDaysAgo', { count: d });
   }
   if (abs < 31_536_000_000) {
     const mo = Math.floor(abs / 2_592_000_000);
-    return future ? `in ${mo} month${mo > 1 ? 's' : ''}` : `${mo} month${mo > 1 ? 's' : ''} ago`;
+    return future
+      ? t('toolbox.tools.timestampConverter.relativeInMonths', { count: mo })
+      : t('toolbox.tools.timestampConverter.relativeMonthsAgo', { count: mo });
   }
   const y = Math.floor(abs / 31_536_000_000);
-  return future ? `in ${y} year${y > 1 ? 's' : ''}` : `${y} year${y > 1 ? 's' : ''} ago`;
+  return future
+    ? t('toolbox.tools.timestampConverter.relativeInYears', { count: y })
+    : t('toolbox.tools.timestampConverter.relativeYearsAgo', { count: y });
 }
 
 interface FormatResult {
@@ -56,16 +69,19 @@ interface FormatResult {
   value: string;
 }
 
-function computeFormats(date: Date): FormatResult[] {
+function computeFormats(
+  date: Date,
+  t: (key: string, values?: Record<string, string | number>) => string,
+): FormatResult[] {
   return [
-    { key: 'iso', label: 'ISO 8601', value: date.toISOString() },
-    { key: 'utc', label: 'UTC', value: date.toUTCString() },
-    { key: 'local', label: 'Local', value: date.toLocaleString() },
-    { key: 'date', label: 'Date Only', value: date.toLocaleDateString() },
-    { key: 'time', label: 'Time Only', value: date.toLocaleTimeString() },
-    { key: 'unixSeconds', label: 'UNIX (s)', value: Math.floor(date.getTime() / 1000).toString() },
-    { key: 'unixMs', label: 'UNIX (ms)', value: date.getTime().toString() },
-    { key: 'relative', label: 'Relative', value: getRelativeTime(date) },
+    { key: 'iso', label: t('toolbox.tools.timestampConverter.formatIso'), value: date.toISOString() },
+    { key: 'utc', label: t('toolbox.tools.timestampConverter.formatUtc'), value: date.toUTCString() },
+    { key: 'local', label: t('toolbox.tools.timestampConverter.formatLocal'), value: date.toLocaleString() },
+    { key: 'date', label: t('toolbox.tools.timestampConverter.formatDateOnly'), value: date.toLocaleDateString() },
+    { key: 'time', label: t('toolbox.tools.timestampConverter.formatTimeOnly'), value: date.toLocaleTimeString() },
+    { key: 'unixSeconds', label: t('toolbox.tools.timestampConverter.formatUnixSeconds'), value: Math.floor(date.getTime() / 1000).toString() },
+    { key: 'unixMs', label: t('toolbox.tools.timestampConverter.formatUnixMilliseconds'), value: date.getTime().toString() },
+    { key: 'relative', label: t('toolbox.tools.timestampConverter.formatRelative'), value: getRelativeTime(date, t) },
   ];
 }
 
@@ -86,7 +102,7 @@ export default function TimestampConverter({ className }: ToolComponentProps) {
   const { t } = useLocale();
   const { preferences, setPreferences } = useToolPreferences('timestamp-converter', DEFAULT_PREFERENCES);
   const [input, setInput] = useState('');
-  const { copy } = useCopyToClipboard();
+  const { copy, error: clipboardError } = useCopyToClipboard();
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [liveMode, setLiveMode] = useState(false);
 
@@ -125,11 +141,11 @@ export default function TimestampConverter({ className }: ToolComponentProps) {
         const ms = assumeMs ? num : (num > 1e12 ? num : num * 1000);
         const date = new Date(ms);
         if (isNaN(date.getTime())) throw new Error(t('toolbox.tools.timestampConverter.invalidTimestamp'));
-        return { results: computeFormats(date), error: null };
+        return { results: computeFormats(date, t), error: null };
       } else {
         const date = new Date(input.trim());
         if (isNaN(date.getTime())) throw new Error(t('toolbox.tools.timestampConverter.invalidDate'));
-        return { results: computeFormats(date), error: null };
+        return { results: computeFormats(date, t), error: null };
       }
     } catch (e) {
       return { results: null, error: (e as Error).message };
@@ -169,7 +185,7 @@ export default function TimestampConverter({ className }: ToolComponentProps) {
     <div className={className}>
       <div className="space-y-4">
         {/* ---- Input Section ---- */}
-        <ToolSection title={t('toolbox.tools.timestampConverter.inputSection') ?? 'Input'}>
+        <ToolSection title={t('toolbox.tools.timestampConverter.inputSection')}>
           <div className="space-y-4">
             {/* Mode toggle */}
             <div className="flex items-center gap-2">
@@ -184,7 +200,7 @@ export default function TimestampConverter({ className }: ToolComponentProps) {
                   if (mode !== 'toDate') handleSwap();
                 }}
               >
-                {t('toolbox.tools.timestampConverter.timestampToDate') ?? 'Timestamp → Date'}
+                {t('toolbox.tools.timestampConverter.timestampToDate')}
               </button>
               <button
                 type="button"
@@ -197,7 +213,7 @@ export default function TimestampConverter({ className }: ToolComponentProps) {
                   if (mode !== 'toTimestamp') handleSwap();
                 }}
               >
-                {t('toolbox.tools.timestampConverter.dateToTimestamp') ?? 'Date → Timestamp'}
+                {t('toolbox.tools.timestampConverter.dateToTimestamp')}
               </button>
 
               <div className="ml-auto flex items-center gap-2">
@@ -214,8 +230,8 @@ export default function TimestampConverter({ className }: ToolComponentProps) {
                   )}
                   {t('toolbox.tools.timestampConverter.now')}
                   {liveMode && (
-                    <Badge variant="secondary" className="ml-1 animate-pulse text-[10px] px-1.5 py-0">
-                      Live
+                      <Badge variant="secondary" className="ml-1 animate-pulse text-[10px] px-1.5 py-0">
+                      {t('toolbox.tools.timestampConverter.live')}
                     </Badge>
                   )}
                 </Button>
@@ -251,7 +267,7 @@ export default function TimestampConverter({ className }: ToolComponentProps) {
               <div className="space-y-2">
                 <Label className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <Calendar className="h-3.5 w-3.5" />
-                  {t('toolbox.tools.timestampConverter.datePickerHelper') ?? 'Or pick a date'}
+                  {t('toolbox.tools.timestampConverter.datePickerHelper')}
                 </Label>
                 <input
                   type="datetime-local"
@@ -284,7 +300,7 @@ export default function TimestampConverter({ className }: ToolComponentProps) {
 
         {/* ---- Output Formats Section ---- */}
         {results && (
-          <ToolSection title={t('toolbox.tools.timestampConverter.outputSection') ?? 'Output Formats'}>
+          <ToolSection title={t('toolbox.tools.timestampConverter.outputSection')}>
             <div className="grid grid-cols-[auto_1fr_auto] gap-x-3 gap-y-2 items-center">
               {results.map(({ key, label, value }) => (
                 <div key={key} className="contents">
@@ -309,6 +325,7 @@ export default function TimestampConverter({ className }: ToolComponentProps) {
             </div>
           </ToolSection>
         )}
+        {clipboardError && <ToolValidationMessage message={t('toolbox.actions.copyFailed')} />}
       </div>
     </div>
   );

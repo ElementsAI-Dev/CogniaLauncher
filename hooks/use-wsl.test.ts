@@ -1341,4 +1341,279 @@ describe('useWsl', () => {
     expect(mockWslExec).toHaveBeenCalledTimes(2);
     expect(retried).toMatchObject({ succeeded: 1, failed: 0, skipped: 0 });
   });
+
+  it('runs maintenance playbooks step-by-step and skips downstream steps after failures', async () => {
+    mockWslListDistros.mockResolvedValue([
+      { name: 'Ubuntu', state: 'Running', wslVersion: '2', isDefault: true },
+      { name: 'Debian', state: 'Running', wslVersion: '2', isDefault: false },
+    ]);
+    mockWslBackupDistro.mockImplementation(async (name: string) => {
+      if (name === 'Debian') {
+        throw new Error('disk full');
+      }
+
+      return {
+        fileName: `${name}.tar`,
+        filePath: `C:\\WSL-Backups\\${name}.tar`,
+        sizeBytes: 1024,
+        createdAt: '2026-03-12T00:00:00.000Z',
+        distroName: name,
+      };
+    });
+    mockWslUpdateDistroPackages.mockResolvedValue({
+      packageManager: 'apt',
+      command: 'apt upgrade -y',
+      stdout: 'ok',
+      stderr: '',
+      exitCode: 0,
+    });
+
+    const { result } = renderHook(() => useWsl());
+
+    await act(async () => {
+      await result.current.refreshDistros();
+    });
+
+    let summary;
+    await act(async () => {
+      summary = await result.current.runBatchWorkflow(
+        {
+          id: 'workflow-maintenance-1',
+          name: 'Maintenance playbook',
+          createdAt: '2026-03-12T00:00:00.000Z',
+          updatedAt: '2026-03-12T00:00:00.000Z',
+          target: { mode: 'explicit', distroNames: ['Ubuntu', 'Debian'] },
+          steps: [
+            { id: 'backup', kind: 'backup', label: 'Backup distro', destinationPath: 'C:\\WSL-Backups' },
+            { id: 'upgrade', kind: 'package-upkeep', mode: 'upgrade', label: 'Upgrade packages' },
+          ],
+        } as never,
+        {
+          selectedDistros: new Set(),
+          distroTags: {},
+        }
+      );
+    });
+
+    expect(mockWslBackupDistro).toHaveBeenCalledTimes(2);
+    expect(mockWslUpdateDistroPackages).toHaveBeenCalledTimes(1);
+    expect(mockWslUpdateDistroPackages).toHaveBeenCalledWith('Ubuntu', 'upgrade');
+    expect(summary).toMatchObject({
+      failed: 1,
+      succeeded: 1,
+    });
+    expect((summary as never as { stepResults: Array<{ stepId: string; results: Array<{ distroName: string; status: string }> }> }).stepResults[1])
+      .toMatchObject({
+        stepId: 'upgrade',
+      });
+    expect(
+      (summary as never as { stepResults: Array<{ stepId: string; results: Array<{ distroName: string; status: string }> }> }).stepResults[1]
+        .results.find((entry) => entry.distroName === 'Debian')
+    ).toMatchObject({ status: 'skipped' });
+  });
+
+  it('retries maintenance playbooks from the first unresolved step', async () => {
+    mockWslListDistros.mockResolvedValue([
+      { name: 'Ubuntu', state: 'Running', wslVersion: '2', isDefault: true },
+    ]);
+    mockWslBackupDistro.mockResolvedValue({
+      fileName: 'Ubuntu.tar',
+      filePath: 'C:\\WSL-Backups\\Ubuntu.tar',
+      sizeBytes: 1024,
+      createdAt: '2026-03-12T00:00:00.000Z',
+      distroName: 'Ubuntu',
+    });
+    mockWslUpdateDistroPackages
+      .mockResolvedValueOnce({
+        packageManager: 'apt',
+        command: 'apt upgrade -y',
+        stdout: '',
+        stderr: 'boom',
+        exitCode: 1,
+      })
+      .mockResolvedValueOnce({
+        packageManager: 'apt',
+        command: 'apt upgrade -y',
+        stdout: 'recovered',
+        stderr: '',
+        exitCode: 0,
+      });
+
+    const { result } = renderHook(() => useWsl());
+
+    await act(async () => {
+      await result.current.refreshDistros();
+    });
+
+    let summary;
+    await act(async () => {
+      summary = await result.current.runBatchWorkflow(
+        {
+          id: 'workflow-maintenance-2',
+          name: 'Retry maintenance',
+          createdAt: '2026-03-12T00:00:00.000Z',
+          updatedAt: '2026-03-12T00:00:00.000Z',
+          target: { mode: 'explicit', distroNames: ['Ubuntu'] },
+          steps: [
+            { id: 'backup', kind: 'backup', label: 'Backup distro', destinationPath: 'C:\\WSL-Backups' },
+            { id: 'upgrade', kind: 'package-upkeep', mode: 'upgrade', label: 'Upgrade packages' },
+          ],
+        } as never,
+        {
+          selectedDistros: new Set(),
+          distroTags: {},
+        }
+      );
+    });
+
+    let retried;
+    await act(async () => {
+      retried = await result.current.retryBatchWorkflowFailures(summary!, { distroTags: {} });
+    });
+
+    expect((summary as never as { resumeFromStepIndex: number }).resumeFromStepIndex).toBe(1);
+    expect(mockWslBackupDistro).toHaveBeenCalledTimes(1);
+    expect(mockWslUpdateDistroPackages).toHaveBeenCalledTimes(2);
+    expect(retried).toMatchObject({
+      failed: 0,
+      succeeded: 1,
+    });
+  });
+
+  it('runs launch-before-command playbooks against initially stopped distros', async () => {
+    mockWslListDistros.mockResolvedValue([
+      { name: 'Debian', state: 'Stopped', wslVersion: '2', isDefault: false },
+    ]);
+    mockWslBatchLaunch.mockResolvedValue([['Debian', true, 'launched']]);
+    mockWslExec.mockResolvedValue({ stdout: 'ok', stderr: '', exitCode: 0 });
+    mockWslListRunning.mockResolvedValue(['Debian']);
+    mockWslGetStatus.mockResolvedValue({ version: '2.4.0', statusInfo: '', runningDistros: ['Debian'] });
+
+    const { result } = renderHook(() => useWsl());
+
+    await act(async () => {
+      await result.current.refreshDistros();
+    });
+
+    let summary;
+    await act(async () => {
+      summary = await result.current.runBatchWorkflow(
+        {
+          id: 'workflow-launch-command',
+          name: 'Launch then command',
+          createdAt: '2026-03-12T00:00:00.000Z',
+          updatedAt: '2026-03-12T00:00:00.000Z',
+          target: { mode: 'explicit', distroNames: ['Debian'] },
+          steps: [
+            { id: 'launch', kind: 'lifecycle', operation: 'launch', label: 'Launch distro' },
+            { id: 'command', kind: 'command', command: 'echo ok', label: 'Run command' },
+          ],
+        } as never,
+        {
+          selectedDistros: new Set(),
+          distroTags: {},
+        }
+      );
+    });
+
+    expect(mockWslBatchLaunch).toHaveBeenCalledWith(['Debian']);
+    expect(mockWslExec).toHaveBeenCalledWith('Debian', 'echo ok', undefined);
+    expect(summary).toMatchObject({
+      failed: 0,
+      succeeded: 1,
+      skipped: 0,
+    });
+  });
+
+  it('retries each failed distro from its own first unresolved step', async () => {
+    mockWslListDistros.mockResolvedValue([
+      { name: 'Ubuntu', state: 'Running', wslVersion: '2', isDefault: true },
+      { name: 'Debian', state: 'Running', wslVersion: '2', isDefault: false },
+    ]);
+
+    let ubuntuBackupAttempts = 0;
+    let debianCommandAttempts = 0;
+
+    mockWslBackupDistro.mockImplementation(async (name: string) => {
+      if (name === 'Ubuntu' && ubuntuBackupAttempts === 0) {
+        ubuntuBackupAttempts += 1;
+        throw new Error('disk full');
+      }
+
+      ubuntuBackupAttempts += name === 'Ubuntu' ? 1 : 0;
+      return {
+        fileName: `${name}.tar`,
+        filePath: `C:\\WSL-Backups\\${name}.tar`,
+        sizeBytes: 1024,
+        createdAt: '2026-03-12T00:00:00.000Z',
+        distroName: name,
+      };
+    });
+    mockWslUpdateDistroPackages.mockResolvedValue({
+      packageManager: 'apt',
+      command: 'apt upgrade -y',
+      stdout: 'ok',
+      stderr: '',
+      exitCode: 0,
+    });
+    mockWslExec.mockImplementation(async (name: string) => {
+      if (name === 'Debian' && debianCommandAttempts === 0) {
+        debianCommandAttempts += 1;
+        return {
+          stdout: '',
+          stderr: 'boom',
+          exitCode: 1,
+        };
+      }
+
+      debianCommandAttempts += name === 'Debian' ? 1 : 0;
+      return {
+        stdout: 'recovered',
+        stderr: '',
+        exitCode: 0,
+      };
+    });
+
+    const { result } = renderHook(() => useWsl());
+
+    await act(async () => {
+      await result.current.refreshDistros();
+    });
+
+    let summary;
+    await act(async () => {
+      summary = await result.current.runBatchWorkflow(
+        {
+          id: 'workflow-multi-retry',
+          name: 'Multi retry',
+          createdAt: '2026-03-12T00:00:00.000Z',
+          updatedAt: '2026-03-12T00:00:00.000Z',
+          target: { mode: 'explicit', distroNames: ['Ubuntu', 'Debian'] },
+          steps: [
+            { id: 'backup', kind: 'backup', label: 'Backup distro', destinationPath: 'C:\\WSL-Backups' },
+            { id: 'upgrade', kind: 'package-upkeep', mode: 'upgrade', label: 'Upgrade packages' },
+            { id: 'command', kind: 'command', command: 'echo ok', label: 'Run command' },
+          ],
+        } as never,
+        {
+          selectedDistros: new Set(),
+          distroTags: {},
+        }
+      );
+    });
+
+    let retried;
+    await act(async () => {
+      retried = await result.current.retryBatchWorkflowFailures(summary!, { distroTags: {} });
+    });
+
+    expect((summary as never as { resumeFromStepIndexByDistro: Record<string, number> }).resumeFromStepIndexByDistro)
+      .toEqual({ Ubuntu: 0, Debian: 2 });
+    expect(mockWslBackupDistro).toHaveBeenCalledTimes(3);
+    expect(mockWslExec).toHaveBeenCalledTimes(3);
+    expect(retried).toMatchObject({
+      failed: 0,
+      succeeded: 2,
+    });
+  });
 });

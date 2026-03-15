@@ -66,6 +66,18 @@ function getActionMessage(
       return t(`environments.workflow.action.setLocal.${action.status}`, params);
     case "refresh":
       return t(`environments.workflow.action.refresh.${action.status}`, params);
+    case "applyProfile":
+      return t(`environments.workflow.action.applyProfile.${action.status}`, params);
+    case "createShim":
+      return t(`environments.workflow.action.createShim.${action.status}`, params);
+    case "removeShim":
+      return t(`environments.workflow.action.removeShim.${action.status}`, params);
+    case "regenerateShims":
+      return t(`environments.workflow.action.regenerateShims.${action.status}`, params);
+    case "setupPath":
+      return t(`environments.workflow.action.setupPath.${action.status}`, params);
+    case "removePath":
+      return t(`environments.workflow.action.removePath.${action.status}`, params);
     case "saveSettings":
     default:
       return t(`environments.workflow.action.saveSettings.${action.status}`, params);

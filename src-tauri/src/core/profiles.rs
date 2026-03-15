@@ -78,6 +78,7 @@ pub struct ProfileEnvironmentResult {
 pub struct ProfileEnvironmentError {
     pub env_type: String,
     pub version: String,
+    pub provider_id: Option<String>,
     pub error: String,
 }
 
@@ -85,6 +86,7 @@ pub struct ProfileEnvironmentError {
 pub struct ProfileEnvironmentSkipped {
     pub env_type: String,
     pub version: String,
+    pub provider_id: Option<String>,
     pub reason: String,
 }
 
@@ -230,6 +232,7 @@ impl ProfileManager {
                                 result.skipped.push(ProfileEnvironmentSkipped {
                                     env_type: env.env_type.clone(),
                                     version: env.version.clone(),
+                                    provider_id: Some(provider_id.clone()),
                                     reason: format!("Version {} is not installed", env.version),
                                 });
                                 continue;
@@ -248,6 +251,7 @@ impl ProfileManager {
                                     result.failed.push(ProfileEnvironmentError {
                                         env_type: env.env_type.clone(),
                                         version: env.version.clone(),
+                                        provider_id: Some(provider_id.clone()),
                                         error: e.to_string(),
                                     });
                                 }
@@ -257,6 +261,7 @@ impl ProfileManager {
                             result.failed.push(ProfileEnvironmentError {
                                 env_type: env.env_type.clone(),
                                 version: env.version.clone(),
+                                provider_id: Some(provider_id.clone()),
                                 error: format!("Failed to list versions: {}", e),
                             });
                         }
@@ -266,6 +271,7 @@ impl ProfileManager {
                     result.skipped.push(ProfileEnvironmentSkipped {
                         env_type: env.env_type.clone(),
                         version: env.version.clone(),
+                        provider_id: Some(provider_id.clone()),
                         reason: format!("Provider {} not available", provider_id),
                     });
                 }
@@ -502,11 +508,13 @@ mod tests {
             failed: vec![ProfileEnvironmentError {
                 env_type: "python".into(),
                 version: "3.12.0".into(),
+                provider_id: Some("pyenv".into()),
                 error: "not installed".into(),
             }],
             skipped: vec![ProfileEnvironmentSkipped {
                 env_type: "go".into(),
                 version: "1.22.0".into(),
+                provider_id: Some("goenv".into()),
                 reason: "Provider not available".into(),
             }],
         };
@@ -516,6 +524,8 @@ mod tests {
         assert_eq!(deser.successful.len(), 1);
         assert_eq!(deser.failed.len(), 1);
         assert_eq!(deser.skipped.len(), 1);
+        assert_eq!(deser.failed[0].provider_id.as_deref(), Some("pyenv"));
+        assert_eq!(deser.skipped[0].provider_id.as_deref(), Some("goenv"));
     }
 
     fn make_test_manager() -> ProfileManager {

@@ -31,6 +31,10 @@ import {
   ArrowUpCircle,
   Sparkles,
   Wrench,
+  BellRing,
+  ChartNoAxesCombined,
+  ShieldEllipsis,
+  History,
 } from "lucide-react";
 import { useLocale } from "@/components/providers/locale-provider";
 import { cn } from "@/lib/utils";
@@ -59,6 +63,10 @@ const ICON_MAP: Record<string, React.ReactNode> = {
   ArrowUpCircle: <ArrowUpCircle className="h-5 w-5" />,
   Sparkles: <Sparkles className="h-5 w-5" />,
   Wrench: <Wrench className="h-5 w-5" />,
+  BellRing: <BellRing className="h-5 w-5" />,
+  ChartNoAxesCombined: <ChartNoAxesCombined className="h-5 w-5" />,
+  ShieldEllipsis: <ShieldEllipsis className="h-5 w-5" />,
+  History: <History className="h-5 w-5" />,
 };
 
 interface CustomizeDialogProps {
@@ -167,6 +175,14 @@ export function CustomizeDialog({ open, onOpenChange }: CustomizeDialogProps) {
                       <DashboardStatusBadge tone="muted">
                         {t(`dashboard.widgets.category_${def.category}`)}
                       </DashboardStatusBadge>
+                      {def.defaultSettings && (
+                        <DashboardStatusBadge
+                          tone="warning"
+                          data-testid={`dashboard-customize-configurable-${def.type}`}
+                        >
+                          {t("dashboard.widgets.configurable")}
+                        </DashboardStatusBadge>
+                      )}
                       {instanceCount > 0 && (
                         <DashboardStatusBadge data-testid={`dashboard-customize-count-${def.type}`}>
                           x{instanceCount}

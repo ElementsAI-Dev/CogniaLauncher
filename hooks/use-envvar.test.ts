@@ -26,6 +26,8 @@ const mockEnvvarReorderPath = jest.fn();
 const mockEnvvarReadShellProfile = jest.fn();
 const mockEnvvarSetPersistent = jest.fn();
 const mockEnvvarRemovePersistent = jest.fn();
+const mockEnvvarListProcessSummaries = jest.fn();
+const mockEnvvarListPersistentTypedSummaries = jest.fn();
 
 jest.mock('@/lib/tauri', () => ({
   envvarListAll: (...args: unknown[]) => mockEnvvarListAll(...args),
@@ -34,6 +36,8 @@ jest.mock('@/lib/tauri', () => ({
   envvarRemoveProcess: (...args: unknown[]) => mockEnvvarRemoveProcess(...args),
   envvarSetPersistent: (...args: unknown[]) => mockEnvvarSetPersistent(...args),
   envvarRemovePersistent: (...args: unknown[]) => mockEnvvarRemovePersistent(...args),
+  envvarListProcessSummaries: (...args: unknown[]) => mockEnvvarListProcessSummaries(...args),
+  envvarListPersistentTypedSummaries: (...args: unknown[]) => mockEnvvarListPersistentTypedSummaries(...args),
   envvarGetPath: (...args: unknown[]) => mockEnvvarGetPath(...args),
   envvarAddPathEntry: (...args: unknown[]) => mockEnvvarAddPathEntry(...args),
   envvarRemovePathEntry: (...args: unknown[]) => mockEnvvarRemovePathEntry(...args),
@@ -59,9 +63,28 @@ jest.mock('@/lib/errors', () => ({
 }));
 
 describe('useEnvVar', () => {
+  const makeSummary = (
+    key: string,
+    displayValue: string,
+    scope: 'process' | 'user' | 'system',
+  ) => ({
+    key,
+    scope,
+    value: {
+      displayValue,
+      masked: false,
+      hasValue: true,
+      length: displayValue.length,
+      isSensitive: false,
+    },
+  });
+
   beforeEach(() => {
     jest.clearAllMocks();
     mockEnvvarGetPath.mockResolvedValue([]);
+    mockEnvvarListProcessSummaries.mockResolvedValue([]);
+    mockEnvvarListPersistentTypedSummaries.mockResolvedValue([]);
+    mockEnvvarDetectConflicts.mockResolvedValue([]);
   });
 
   it('should initialize with empty state', () => {
@@ -207,8 +230,16 @@ describe('useEnvVar', () => {
   });
 
   it('should export env file', async () => {
-    const mockContent = 'FOO=bar\nBAZ=qux';
-    mockEnvvarExportEnvFile.mockResolvedValue(mockContent);
+    const mockExportResult = {
+      scope: 'process',
+      format: 'dotenv',
+      content: 'FOO=bar\nBAZ=qux',
+      redacted: false,
+      sensitiveCount: 0,
+      variableCount: 2,
+      revealed: false,
+    };
+    mockEnvvarExportEnvFile.mockResolvedValue(mockExportResult);
 
     const { result } = renderHook(() => useEnvVar());
 
@@ -217,8 +248,8 @@ describe('useEnvVar', () => {
       content = await result.current.exportEnvFile('process', 'dotenv');
     });
 
-    expect(content).toBe(mockContent);
-    expect(mockEnvvarExportEnvFile).toHaveBeenCalledWith('process', 'dotenv');
+    expect(content).toEqual(mockExportResult);
+    expect(mockEnvvarExportEnvFile).toHaveBeenCalledWith('process', 'dotenv', false);
   });
 
   it('should fetch persistent vars', async () => {
@@ -604,11 +635,13 @@ describe('useEnvVar', () => {
   });
 
   it('loads detection from fresh data on cache miss', async () => {
-    mockEnvvarListAll.mockResolvedValue({ PATH: '/usr/bin' });
-    mockEnvvarListPersistentTyped
-      .mockResolvedValueOnce([{ key: 'USER_KEY', value: 'u', regType: 'REG_SZ' }])
-      .mockResolvedValueOnce([{ key: 'SYSTEM_KEY', value: 's', regType: 'REG_SZ' }]);
-    mockEnvvarDetectConflicts.mockResolvedValue([]);
+    const processSummaries = [makeSummary('PATH', '/usr/bin', 'process')];
+    const userSummaries = [makeSummary('USER_KEY', 'u', 'user')];
+    const systemSummaries = [makeSummary('SYSTEM_KEY', 's', 'system')];
+    mockEnvvarListProcessSummaries.mockResolvedValue(processSummaries);
+    mockEnvvarListPersistentTypedSummaries
+      .mockResolvedValueOnce(userSummaries)
+      .mockResolvedValueOnce(systemSummaries);
 
     const { result } = renderHook(() => useEnvVar());
 
@@ -619,17 +652,19 @@ describe('useEnvVar', () => {
     expect(result.current.detectionState).toBe('showing-fresh');
     expect(result.current.detectionFromCache).toBe(false);
     expect(result.current.detectionError).toBeNull();
-    expect(result.current.envVars).toEqual({ PATH: '/usr/bin' });
-    expect(result.current.userPersistentVarsTyped).toEqual([{ key: 'USER_KEY', value: 'u', regType: 'REG_SZ' }]);
-    expect(result.current.systemPersistentVarsTyped).toEqual([{ key: 'SYSTEM_KEY', value: 's', regType: 'REG_SZ' }]);
+    expect(result.current.processVarSummaries).toEqual(processSummaries);
+    expect(result.current.userPersistentVarSummaries).toEqual(userSummaries);
+    expect(result.current.systemPersistentVarSummaries).toEqual(systemSummaries);
   });
 
   it('shows cached detection immediately and refreshes in background', async () => {
-    mockEnvvarListAll.mockResolvedValueOnce({ PATH: '/cache' });
-    mockEnvvarListPersistentTyped
-      .mockResolvedValueOnce([{ key: 'U', value: 'cache', regType: 'REG_SZ' }])
-      .mockResolvedValueOnce([{ key: 'S', value: 'cache', regType: 'REG_SZ' }]);
-    mockEnvvarDetectConflicts.mockResolvedValue([]);
+    const cachedProcess = [makeSummary('PATH', '/cache', 'process')];
+    const cachedUser = [makeSummary('U', 'cache', 'user')];
+    const cachedSystem = [makeSummary('S', 'cache', 'system')];
+    mockEnvvarListProcessSummaries.mockResolvedValueOnce(cachedProcess);
+    mockEnvvarListPersistentTypedSummaries
+      .mockResolvedValueOnce(cachedUser)
+      .mockResolvedValueOnce(cachedSystem);
 
     const { result } = renderHook(() => useEnvVar());
 
@@ -637,16 +672,18 @@ describe('useEnvVar', () => {
       await result.current.loadDetection('all');
     });
 
-    let resolveFresh: ((value: Record<string, string>) => void) | null = null;
-    const freshPromise = new Promise<Record<string, string>>((resolve) => {
+    const freshProcess = [makeSummary('PATH', '/fresh', 'process')];
+    const freshUser = [makeSummary('U', 'fresh', 'user')];
+    const freshSystem = [makeSummary('S', 'fresh', 'system')];
+    let resolveFresh: ((value: typeof freshProcess) => void) | null = null;
+    const freshPromise = new Promise<typeof freshProcess>((resolve) => {
       resolveFresh = resolve;
     });
 
-    mockEnvvarListAll.mockImplementationOnce(() => freshPromise);
-    mockEnvvarListPersistentTyped
-      .mockResolvedValueOnce([{ key: 'U', value: 'fresh', regType: 'REG_SZ' }])
-      .mockResolvedValueOnce([{ key: 'S', value: 'fresh', regType: 'REG_SZ' }]);
-    mockEnvvarDetectConflicts.mockResolvedValueOnce([]);
+    mockEnvvarListProcessSummaries.mockImplementationOnce(() => freshPromise);
+    mockEnvvarListPersistentTypedSummaries
+      .mockResolvedValueOnce(freshUser)
+      .mockResolvedValueOnce(freshSystem);
 
     await act(async () => {
       void result.current.loadDetection('all');
@@ -654,24 +691,26 @@ describe('useEnvVar', () => {
 
     expect(result.current.detectionState).toBe('showing-cache-refreshing');
     expect(result.current.detectionFromCache).toBe(true);
-    expect(result.current.envVars).toEqual({ PATH: '/cache' });
+    expect(result.current.processVarSummaries).toEqual(cachedProcess);
 
     await act(async () => {
-      resolveFresh?.({ PATH: '/fresh' });
+      resolveFresh?.(freshProcess);
       await freshPromise;
     });
 
     expect(result.current.detectionState).toBe('showing-fresh');
     expect(result.current.detectionFromCache).toBe(false);
-    expect(result.current.envVars).toEqual({ PATH: '/fresh' });
+    expect(result.current.processVarSummaries).toEqual(freshProcess);
+    expect(result.current.userPersistentVarSummaries).toEqual(freshUser);
+    expect(result.current.systemPersistentVarSummaries).toEqual(freshSystem);
   });
 
   it('keeps cached data and exposes retry metadata on refresh failure', async () => {
-    mockEnvvarListAll.mockResolvedValueOnce({ PATH: '/cache' });
-    mockEnvvarListPersistentTyped
-      .mockResolvedValueOnce([{ key: 'U', value: 'cache', regType: 'REG_SZ' }])
-      .mockResolvedValueOnce([{ key: 'S', value: 'cache', regType: 'REG_SZ' }]);
-    mockEnvvarDetectConflicts.mockResolvedValueOnce([]);
+    const cachedProcess = [makeSummary('PATH', '/cache', 'process')];
+    mockEnvvarListProcessSummaries.mockResolvedValueOnce(cachedProcess);
+    mockEnvvarListPersistentTypedSummaries
+      .mockResolvedValueOnce([makeSummary('U', 'cache', 'user')])
+      .mockResolvedValueOnce([makeSummary('S', 'cache', 'system')]);
 
     const { result } = renderHook(() => useEnvVar());
 
@@ -679,7 +718,7 @@ describe('useEnvVar', () => {
       await result.current.loadDetection('all');
     });
 
-    mockEnvvarListAll.mockRejectedValueOnce(new Error('refresh failed'));
+    mockEnvvarListProcessSummaries.mockRejectedValueOnce(new Error('refresh failed'));
 
     await act(async () => {
       await result.current.loadDetection('all');
@@ -689,15 +728,17 @@ describe('useEnvVar', () => {
     expect(result.current.detectionFromCache).toBe(true);
     expect(result.current.detectionError).toBe('Error: refresh failed');
     expect(result.current.detectionCanRetry).toBe(true);
-    expect(result.current.envVars).toEqual({ PATH: '/cache' });
+    expect(result.current.processVarSummaries).toEqual(cachedProcess);
   });
 
   it('ignores stale detection responses when newer request finishes first', async () => {
-    let resolveFirst: ((value: Record<string, string>) => void) | null = null;
-    const firstPromise = new Promise<Record<string, string>>((resolve) => {
+    const staleProcess = [makeSummary('PATH', '/stale', 'process')];
+    const newestProcess = [makeSummary('PATH', '/newest', 'process')];
+    let resolveFirst: ((value: typeof staleProcess) => void) | null = null;
+    const firstPromise = new Promise<typeof staleProcess>((resolve) => {
       resolveFirst = resolve;
     });
-    mockEnvvarListAll.mockImplementationOnce(() => firstPromise);
+    mockEnvvarListProcessSummaries.mockImplementationOnce(() => firstPromise);
 
     const { result } = renderHook(() => useEnvVar());
 
@@ -705,20 +746,20 @@ describe('useEnvVar', () => {
       void result.current.loadDetection('process', { forceRefresh: true });
     });
 
-    mockEnvvarListAll.mockResolvedValueOnce({ PATH: '/newest' });
+    mockEnvvarListProcessSummaries.mockResolvedValueOnce(newestProcess);
 
     await act(async () => {
       await result.current.loadDetection('process', { forceRefresh: true });
     });
 
-    expect(result.current.envVars).toEqual({ PATH: '/newest' });
+    expect(result.current.processVarSummaries).toEqual(newestProcess);
 
     await act(async () => {
-      resolveFirst?.({ PATH: '/stale' });
+      resolveFirst?.(staleProcess);
       await firstPromise;
     });
 
-    expect(result.current.envVars).toEqual({ PATH: '/newest' });
+    expect(result.current.processVarSummaries).toEqual(newestProcess);
     expect(result.current.detectionState).toBe('showing-fresh');
   });
 

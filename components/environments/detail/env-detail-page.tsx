@@ -20,6 +20,7 @@ import { InstallationProgressDialog } from '@/components/environments/installati
 import { EnvironmentWorkflowBanner } from '@/components/environments/environment-workflow-banner';
 import { useEnvironments } from '@/hooks/use-environments';
 import { useEnvironmentDetection } from '@/hooks/use-environment-detection';
+import { useEnvironmentWorkflow } from '@/hooks/use-environment-workflow';
 import { useEnvironmentStore, getLogicalEnvType } from '@/lib/stores/environment';
 import { useAutoVersionSwitch, useProjectPath } from '@/hooks/use-auto-version';
 import { useLocale } from '@/components/providers/locale-provider';
@@ -62,9 +63,8 @@ export function EnvDetailPageClient({ envType }: EnvDetailPageClientProps) {
     openVersionBrowser,
     getSelectedProvider,
     setSelectedProvider,
-    setWorkflowContext,
-    setWorkflowAction,
   } = useEnvironmentStore();
+  const { syncWorkflowContext, setWorkflowActionState } = useEnvironmentWorkflow();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const { getProjectDetectedForEnv } = useEnvironmentDetection({
     detectedVersions,
@@ -121,52 +121,33 @@ export function EnvDetailPageClient({ envType }: EnvDetailPageClientProps) {
   const hasGoToolsTab = envType === 'go';
 
   useEffect(() => {
-    setWorkflowContext({
-      envType,
-      origin: useEnvironmentStore.getState().workflowContext?.envType === envType
-        ? useEnvironmentStore.getState().workflowContext?.origin ?? 'direct'
-        : 'direct',
-      returnHref: useEnvironmentStore.getState().workflowContext?.envType === envType
-        ? useEnvironmentStore.getState().workflowContext?.returnHref ?? '/environments'
-        : '/environments',
+    syncWorkflowContext(envType, {
+      returnHref: '/environments',
       projectPath: projectPath || null,
       providerId: currentProviderId,
-      updatedAt: Date.now(),
     });
-  }, [currentProviderId, envType, projectPath, setWorkflowContext]);
+  }, [currentProviderId, envType, projectPath, syncWorkflowContext]);
 
   // Handlers
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
-    setWorkflowAction({
-      envType,
-      action: 'refresh',
-      status: 'running',
+    setWorkflowActionState(envType, 'refresh', 'running', {
       providerId: currentProviderId,
       projectPath: projectPath || null,
-      updatedAt: Date.now(),
     });
     try {
       await fetchEnvironments(true);
       await detectVersions(projectPath || '.', { force: true });
-      setWorkflowAction({
-        envType,
-        action: 'refresh',
-        status: 'success',
+      setWorkflowActionState(envType, 'refresh', 'success', {
         providerId: currentProviderId,
         projectPath: projectPath || null,
-        updatedAt: Date.now(),
       });
     } catch (error) {
-      setWorkflowAction({
-        envType,
-        action: 'refresh',
-        status: 'error',
+      setWorkflowActionState(envType, 'refresh', 'error', {
         providerId: currentProviderId,
         projectPath: projectPath || null,
         error: error instanceof Error ? error.message : String(error),
         retryable: true,
-        updatedAt: Date.now(),
       });
     } finally {
       setIsRefreshing(false);
@@ -177,7 +158,7 @@ export function EnvDetailPageClient({ envType }: EnvDetailPageClientProps) {
     envType,
     fetchEnvironments,
     projectPath,
-    setWorkflowAction,
+    setWorkflowActionState,
   ]);
 
   const handleInstallVersion = useCallback(

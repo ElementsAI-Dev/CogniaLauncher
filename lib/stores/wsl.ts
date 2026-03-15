@@ -4,6 +4,7 @@ import type { WslNetworkPreset } from '@/lib/constants/wsl';
 import type { WslBatchWorkflowPreset, WslBatchWorkflowSummary } from '@/types/wsl';
 import {
   DEFAULT_WSL_OVERVIEW_CONTEXT,
+  normalizeWslBatchWorkflowPreset,
   type WslOverviewContext,
 } from '@/lib/wsl/workflow';
 
@@ -65,6 +66,16 @@ interface WslStoreState {
 
 function createPersistedId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function normalizeWorkflowSummary(summary: WslBatchWorkflowSummary): WslBatchWorkflowSummary {
+  return {
+    ...summary,
+    workflow: normalizeWslBatchWorkflowPreset(summary.workflow),
+    stepResults: summary.stepResults ?? [],
+    resumeFromStepIndex: summary.resumeFromStepIndex ?? null,
+    resumeFromStepIndexByDistro: summary.resumeFromStepIndexByDistro ?? {},
+  };
 }
 
 export const useWslStore = create<WslStoreState>()(
@@ -136,15 +147,16 @@ export const useWslStore = create<WslStoreState>()(
       addWorkflowPreset: (preset) =>
         set((state) => {
           const timestamp = new Date().toISOString();
+          const normalizedPreset = normalizeWslBatchWorkflowPreset({
+            ...preset,
+            id: createPersistedId('workflow'),
+            createdAt: timestamp,
+            updatedAt: timestamp,
+          });
           return {
             workflowPresets: [
               ...state.workflowPresets,
-              {
-                ...preset,
-                id: createPersistedId('workflow'),
-                createdAt: timestamp,
-                updatedAt: timestamp,
-              },
+              normalizedPreset,
             ],
           };
         }),
@@ -152,11 +164,11 @@ export const useWslStore = create<WslStoreState>()(
         set((state) => ({
           workflowPresets: state.workflowPresets.map((preset) =>
             preset.id === id
-              ? {
+              ? normalizeWslBatchWorkflowPreset({
                   ...preset,
                   ...updates,
                   updatedAt: new Date().toISOString(),
-                }
+                })
               : preset
           ),
         })),
@@ -166,7 +178,7 @@ export const useWslStore = create<WslStoreState>()(
         })),
       recordWorkflowSummary: (summary) =>
         set((state) => ({
-          workflowSummaries: [summary, ...state.workflowSummaries].slice(0, 10),
+          workflowSummaries: [normalizeWorkflowSummary(summary), ...state.workflowSummaries].slice(0, 10),
         })),
 
       overviewContext: DEFAULT_WSL_OVERVIEW_CONTEXT,
@@ -181,7 +193,7 @@ export const useWslStore = create<WslStoreState>()(
     }),
     {
       name: 'cognia-wsl-store',
-      version: 2,
+      version: 3,
       migrate: (persisted, version) => {
         if (!persisted || typeof persisted !== 'object') {
           return persisted as WslStoreState;
@@ -189,15 +201,34 @@ export const useWslStore = create<WslStoreState>()(
 
         const typed = persisted as Partial<WslStoreState>;
 
+        const normalizedWorkflowPresets = (typed.workflowPresets ?? []).map((preset) =>
+          normalizeWslBatchWorkflowPreset(preset)
+        );
+        const normalizedWorkflowSummaries = (typed.workflowSummaries ?? []).map((summary) =>
+          normalizeWorkflowSummary(summary)
+        );
+
         if (version < 2) {
           return {
             ...typed,
-            workflowPresets: typed.workflowPresets ?? [],
-            workflowSummaries: typed.workflowSummaries ?? [],
+            workflowPresets: normalizedWorkflowPresets,
+            workflowSummaries: normalizedWorkflowSummaries,
           } as WslStoreState;
         }
 
-        return typed as WslStoreState;
+        if (version < 3) {
+          return {
+            ...typed,
+            workflowPresets: normalizedWorkflowPresets,
+            workflowSummaries: normalizedWorkflowSummaries,
+          } as WslStoreState;
+        }
+
+        return {
+          ...typed,
+          workflowPresets: normalizedWorkflowPresets,
+          workflowSummaries: normalizedWorkflowSummaries,
+        } as WslStoreState;
       },
     }
   )

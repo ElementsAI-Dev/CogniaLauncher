@@ -380,12 +380,13 @@ export function ProfileManager({ open, onOpenChange }: ProfileManagerProps) {
                   <div className="flex flex-wrap gap-1">
                     {applyResult.successful.map((s) => (
                       <Badge
-                        key={`${s.env_type}-${s.version}`}
+                        key={`${s.env_type}-${s.version}-${s.provider_id ?? "unknown"}`}
                         variant="default"
                         className="text-xs gap-1"
                       >
                         <Check className="h-3 w-3" />
                         {s.env_type}@{s.version}
+                        {s.provider_id ? ` (${s.provider_id})` : ""}
                       </Badge>
                     ))}
                   </div>

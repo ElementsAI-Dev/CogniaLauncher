@@ -34,7 +34,11 @@ import { toast } from 'sonner';
 import type { PackageSummary, InstalledPackage, ResolutionResult, BatchResult } from '@/lib/tauri';
 import type { ExportedPackageList } from '@/hooks/use-package-export';
 import type { DependencyLookupContext, DependencyResolveRequest } from '@/types/packages';
-import { getPackageKeyFromParts, isPackagePinned } from '@/lib/packages';
+import {
+  getPackageKeyFromParts,
+  isPackageBookmarked,
+  isPackagePinned,
+} from '@/lib/packages';
 
 export default function PackagesPage() {
   const { t } = useLocale();
@@ -98,6 +102,7 @@ function PackagesDesktopPage() {
     clearPackageSelection,
     bookmarkedPackages,
     toggleBookmark,
+    restoreBookmarks,
     availableUpdates: updates,
     updateCheckProgress,
     isCheckingUpdates,
@@ -588,20 +593,18 @@ function PackagesDesktopPage() {
       return p.name;
     });
 
-    data.bookmarks.forEach((bookmark) => {
-      if (!bookmarkedPackages.includes(bookmark)) {
-        toggleBookmark(bookmark);
-      }
-    });
+    if (data.bookmarks.length > 0) {
+      restoreBookmarks(data.bookmarks, [...installedPackages, ...data.packages]);
+    }
 
     if (packageIds.length > 0) {
       await handleBatchInstall(packageIds);
     }
-  }, [bookmarkedPackages, handleBatchInstall, toggleBookmark]);
+  }, [handleBatchInstall, installedPackages, restoreBookmarks]);
 
-  const handleBookmarkToggle = useCallback((name: string) => {
-    toggleBookmark(name);
-    const isBookmarked = bookmarkedPackages.includes(name);
+  const handleBookmarkToggle = useCallback((name: string, provider?: string) => {
+    toggleBookmark(name, provider);
+    const isBookmarked = isPackageBookmarked(bookmarkedPackages, name, provider);
     toast.success(
       isBookmarked
         ? t('packages.bookmarkRemoved', { name })

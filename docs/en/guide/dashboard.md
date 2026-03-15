@@ -25,14 +25,31 @@ The top of the dashboard displays installed runtime environment status:
 Homepage customization is split into two coordinated entry points:
 
 - **Header Edit Mode** — Enables in-grid controls for drag reorder, resize, hide/show, and remove.
-- **Customize Dialog** — Manages widget catalog, category filtering, add actions, and reset-to-default.
+- **Widget Settings Toolbar** — Insight widgets can now adjust lightweight settings such as range, grouping, and item limits directly from the edit toolbar.
+- **Customize Dialog** — Manages widget catalog, category filtering, add actions, configurable widget badges, and reset-to-default.
 
 Behavior guarantees:
 
 - **Single source widget policy** — All add/remove/visibility operations use the same widget registry policy (`allowMultiple`, `required`, `defaultVisible`).
+- **Registry-defined widget settings** — Configurable insight widgets initialize and reset from canonical defaults defined in the dashboard widget registry.
 - **Policy-aware add actions** — Widgets that reach instance limit are shown as unavailable in the dialog.
 - **Deterministic reset** — Reset always restores the canonical default widget set and order.
-- **Persistence and migration safety** — Stored layouts are normalized on restore/migration (invalid size, duplicate IDs, unknown widgets, malformed payload fallback).
+- **Persistence and migration safety** — Stored layouts are normalized on restore/migration (invalid size, duplicate IDs, unknown widgets, malformed payload fallback, invalid widget settings reset to defaults).
+
+### Dashboard Insights Workbench
+
+The homepage now includes a second insight layer that aggregates signals from health checks, downloads, install history, and recent tool usage:
+
+- **Attention Center** — Surfaces the highest-priority issues on the homepage and links directly to the affected module.
+- **Workspace Trends** — Shows install/download/update trend lines based on per-widget range and metric settings.
+- **Provider Health Matrix** — Compresses provider or environment health states into a scannable matrix with summary totals.
+- **Recent Activity Feed** — Merges recent package, download, and toolbox activity into a single timeline.
+
+Insight data is loaded on demand:
+
+- **Visible-widget fetch policy** — Secondary data sources are only fetched when a visible widget depends on them.
+- **Primary homepage loading stays phased** — Existing environment/package/settings startup behavior remains intact while insights attach incrementally.
+- **Safe fallbacks** — Each insight widget can fall back to empty or degraded states without blocking the rest of the dashboard.
 
 ### Homepage Overview and Feedback
 
@@ -50,7 +67,7 @@ Key widget behavior:
 
 ### Default Layout Upgrades
 
-- **Fresh and reset layouts** — New users and reset-to-default flows get the newest canonical homepage ordering, with overview and actions ahead of diagnostics and detail widgets.
+- **Fresh and reset layouts** — New users and reset-to-default flows get the newest canonical homepage ordering, now including the insight widgets alongside overview, actions, diagnostics, and detail widgets.
 - **Existing custom layouts stay intact** — Updating CogniaLauncher does not silently replace a previously customized homepage. The new canonical layout applies only to fresh layouts or explicit reset.
 
 ### System Status
@@ -66,6 +83,7 @@ Key widget behavior:
 | Component | Path | Description |
 |-----------|------|-------------|
 | DashboardPage | `app/page.tsx` | Dashboard page and header interaction flow |
+| useDashboardInsights | `hooks/use-dashboard-insights.ts` | Insight aggregation and visible-widget demand loading |
 | WidgetGrid | `components/dashboard/widget-grid.tsx` | Widget grid rendering and edit operations |
 | WidgetWrapper | `components/dashboard/widget-wrapper.tsx` | Per-widget edit toolbar |
 | CustomizeDialog | `components/dashboard/customize-dialog.tsx` | Widget catalog and reset controls |
@@ -78,5 +96,6 @@ Key widget behavior:
 Dashboard layout data is stored in `lib/stores/dashboard.ts` (Zustand):
 
 - Widget order, size, and visibility
+- Widget-specific settings for configurable insight widgets
 - Widget instance-policy helpers shared by store and UI
 - Persisted layout migration and normalization

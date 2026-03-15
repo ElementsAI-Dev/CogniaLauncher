@@ -20,6 +20,22 @@ use super::launch::LaunchResult;
 pub type SharedSettings = Arc<RwLock<Settings>>;
 pub type SharedTerminalProfileManager = Arc<RwLock<TerminalProfileManager>>;
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalEnvVarSummary {
+    pub key: String,
+    pub value: crate::platform::env::EnvVarValueSummary,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalEnvVarRevealResult {
+    pub key: String,
+    pub value: Option<String>,
+    pub is_sensitive: bool,
+    pub sensitivity_reason: Option<crate::platform::env::EnvVarSensitivityReason>,
+}
+
 /// Resolve the effective proxy URL based on terminal settings and global network settings.
 /// Returns (proxy_url, no_proxy) tuple.
 fn normalize_non_empty(value: Option<&str>) -> Option<String> {
@@ -792,8 +808,8 @@ pub async fn terminal_ps_find_module(query: String) -> Result<Vec<PSModuleInfo>,
 // ============================================================================
 
 #[tauri::command]
-pub async fn terminal_get_shell_env_vars() -> Result<Vec<(String, String)>, String> {
-    let mut vars: Vec<(String, String)> = std::env::vars()
+pub async fn terminal_get_shell_env_vars() -> Result<Vec<TerminalEnvVarSummary>, String> {
+    let mut vars: Vec<TerminalEnvVarSummary> = std::env::vars()
         .filter(|(key, _)| {
             let k = key.to_uppercase();
             k == "PATH"
@@ -829,9 +845,34 @@ pub async fn terminal_get_shell_env_vars() -> Result<Vec<(String, String)>, Stri
                 || k == "APPDATA"
                 || k == "LOCALAPPDATA"
         })
+        .map(|(key, value)| TerminalEnvVarSummary {
+            value: crate::platform::env::summarize_env_value(&key, &value),
+            key,
+        })
         .collect();
-    vars.sort_by(|a, b| a.0.cmp(&b.0));
+    vars.sort_by(|a, b| a.key.cmp(&b.key));
     Ok(vars)
+}
+
+#[tauri::command]
+pub async fn terminal_reveal_shell_env_var(key: String) -> Result<TerminalEnvVarRevealResult, String> {
+    let normalized = crate::platform::env::normalize_env_var_key(&key)
+        .map_err(|e| e.to_string())?;
+    let value = std::env::var(&normalized).ok();
+    let (is_sensitive, sensitivity_reason) = value
+        .as_deref()
+        .map(|current| {
+            let reason = crate::platform::env::classify_env_var_sensitivity(&normalized, current);
+            (reason.is_some(), reason)
+        })
+        .unwrap_or((false, None));
+
+    Ok(TerminalEnvVarRevealResult {
+        key: normalized,
+        value,
+        is_sensitive,
+        sensitivity_reason,
+    })
 }
 
 // ============================================================================

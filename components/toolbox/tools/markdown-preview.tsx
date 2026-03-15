@@ -12,6 +12,7 @@ import {
   ToolSection,
 } from '@/components/toolbox/tool-layout';
 import { useLocale } from '@/components/providers/locale-provider';
+import { useCopyToClipboard } from '@/hooks/use-clipboard';
 import { useToolPreferences } from '@/hooks/use-tool-preferences';
 import { TOOLBOX_LIMITS } from '@/lib/constants/toolbox-limits';
 import type { ToolComponentProps } from '@/types/toolbox';
@@ -52,6 +53,7 @@ export default function MarkdownPreview({ className }: ToolComponentProps) {
   const { t } = useLocale();
   const { preferences, setPreferences } = useToolPreferences('markdown-preview', DEFAULT_PREFERENCES);
   const [input, setInput] = useState(DEFAULT_MD);
+  const { copied, copy, error: clipboardError } = useCopyToClipboard();
   const truncated = input.length > TOOLBOX_LIMITS.markdownPreviewChars;
   const previewContent = truncated ? input.slice(0, TOOLBOX_LIMITS.markdownPreviewChars) : input;
   const previewMode = preferences.previewMode;
@@ -65,9 +67,7 @@ export default function MarkdownPreview({ className }: ToolComponentProps) {
 
   const exportHtml = () => {
     const html = `<article>\n${previewContent}\n</article>`;
-    navigator.clipboard.writeText(html).catch(() => {
-      // ignore clipboard failures in browser restriction cases
-    });
+    void copy(html);
   };
 
   return (
@@ -105,7 +105,7 @@ export default function MarkdownPreview({ className }: ToolComponentProps) {
               Link
             </Button>
             <Button size="sm" variant="outline" onClick={exportHtml}>
-              {t('toolbox.tools.markdownPreview.exportHtml')}
+              {copied ? t('toolbox.actions.copied') : t('toolbox.tools.markdownPreview.exportHtml')}
             </Button>
           </ToolActionRow>
 
@@ -133,7 +133,7 @@ export default function MarkdownPreview({ className }: ToolComponentProps) {
                 label={t('toolbox.tools.markdownPreview.editor')}
                 value={input}
                 onChange={setInput}
-                placeholder="# Write markdown here..."
+                placeholder={t('toolbox.tools.markdownPreview.editorPlaceholder')}
                 showClear
                 rows={20}
                 className="h-full"
@@ -147,7 +147,7 @@ export default function MarkdownPreview({ className }: ToolComponentProps) {
                 label={t('toolbox.tools.markdownPreview.editor')}
                 value={input}
                 onChange={setInput}
-                placeholder="# Write markdown here..."
+                placeholder={t('toolbox.tools.markdownPreview.editorPlaceholder')}
                 showClear
                 rows={12}
                 maxLength={TOOLBOX_LIMITS.markdownPreviewChars}
@@ -163,6 +163,7 @@ export default function MarkdownPreview({ className }: ToolComponentProps) {
             </div>
           </ToolSection>
         </div>
+        {clipboardError && <ToolValidationMessage message={t('toolbox.actions.copyFailed')} />}
       </div>
     </div>
   );

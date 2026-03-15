@@ -131,10 +131,17 @@ export interface WslAssistanceSuggestion {
 // ============================================================================
 
 export type WslBatchWorkflowTargetMode = 'selected' | 'tag' | 'explicit';
-export type WslBatchWorkflowActionKind = 'lifecycle' | 'command' | 'health-check' | 'assistance';
-export type WslBatchWorkflowLifecycleOperation = 'launch' | 'terminate';
+export type WslBatchWorkflowActionKind =
+  | 'lifecycle'
+  | 'command'
+  | 'health-check'
+  | 'assistance'
+  | 'backup'
+  | 'package-upkeep';
+export type WslBatchWorkflowLifecycleOperation = 'launch' | 'terminate' | 'relaunch';
 export type WslBatchWorkflowTargetStatus = 'runnable' | 'blocked' | 'skipped' | 'missing';
 export type WslBatchWorkflowItemStatus = 'success' | 'failed' | 'skipped';
+export type WslBatchWorkflowBackupCoverage = 'protected' | 'unprotected' | 'partial' | 'not-applicable';
 
 export interface WslBatchWorkflowTarget {
   mode: WslBatchWorkflowTargetMode;
@@ -167,30 +174,80 @@ export interface WslBatchWorkflowAssistanceAction {
   label?: string;
 }
 
+export interface WslBatchWorkflowBackupAction {
+  kind: 'backup';
+  destinationPath?: string;
+  label?: string;
+}
+
+export interface WslBatchWorkflowPackageUpkeepAction {
+  kind: 'package-upkeep';
+  mode: 'update' | 'upgrade';
+  label?: string;
+}
+
 export type WslBatchWorkflowAction =
   | WslBatchWorkflowLifecycleAction
   | WslBatchWorkflowCommandAction
   | WslBatchWorkflowHealthCheckAction
-  | WslBatchWorkflowAssistanceAction;
+  | WslBatchWorkflowAssistanceAction
+  | WslBatchWorkflowBackupAction
+  | WslBatchWorkflowPackageUpkeepAction;
+
+export interface WslBatchWorkflowStepBase {
+  id: string;
+  label?: string;
+}
+
+export type WslBatchWorkflowStep =
+  | (WslBatchWorkflowStepBase & WslBatchWorkflowLifecycleAction)
+  | (WslBatchWorkflowStepBase & WslBatchWorkflowCommandAction)
+  | (WslBatchWorkflowStepBase & WslBatchWorkflowHealthCheckAction)
+  | (WslBatchWorkflowStepBase & WslBatchWorkflowAssistanceAction)
+  | (WslBatchWorkflowStepBase & WslBatchWorkflowBackupAction)
+  | (WslBatchWorkflowStepBase & WslBatchWorkflowPackageUpkeepAction);
 
 export interface WslBatchWorkflowPreset {
   id: string;
   name: string;
   target: WslBatchWorkflowTarget;
-  action: WslBatchWorkflowAction;
+  steps?: WslBatchWorkflowStep[];
+  action?: WslBatchWorkflowAction;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface WslBatchWorkflowResolvedTargetStepStatus {
+  stepId: string;
+  stepLabel: string;
+  status: WslBatchWorkflowTargetStatus;
+  reason?: string;
+  backupCoverage: WslBatchWorkflowBackupCoverage;
 }
 
 export interface WslBatchWorkflowResolvedTarget {
   distroName: string;
   status: WslBatchWorkflowTargetStatus;
   reason?: string;
+  blockingStepId?: string;
+  blockingStepLabel?: string;
+  backupCoverage: WslBatchWorkflowBackupCoverage;
+  stepStatuses: WslBatchWorkflowResolvedTargetStepStatus[];
 }
 
 export interface WslBatchWorkflowTargetResolution {
   resolvedNames: string[];
   missingNames: string[];
+}
+
+export interface WslBatchWorkflowPreflightStep {
+  stepId: string;
+  label: string;
+  kind: WslBatchWorkflowActionKind;
+  risk: 'safe' | 'high';
+  longRunning: boolean;
+  mutating: boolean;
+  backupCoverage: WslBatchWorkflowBackupCoverage;
 }
 
 export interface WslBatchWorkflowPreflight {
@@ -199,7 +256,10 @@ export interface WslBatchWorkflowPreflight {
   risk: 'safe' | 'high';
   longRunning: boolean;
   requiresConfirmation: boolean;
+  backupCoverage: WslBatchWorkflowBackupCoverage;
+  warnings: string[];
   refreshTargets: Array<'inventory' | 'runtime' | 'config' | 'backup' | 'network'>;
+  steps: WslBatchWorkflowPreflightStep[];
   targets: WslBatchWorkflowResolvedTarget[];
   runnableCount: number;
   blockedCount: number;
@@ -208,10 +268,21 @@ export interface WslBatchWorkflowPreflight {
 }
 
 export interface WslBatchWorkflowItemResult {
+  stepId?: string;
+  stepLabel?: string;
   distroName: string;
   status: WslBatchWorkflowItemStatus;
   detail?: string;
   retryable: boolean;
+}
+
+export interface WslBatchWorkflowStepSummary {
+  stepId: string;
+  stepLabel: string;
+  succeeded: number;
+  failed: number;
+  skipped: number;
+  results: WslBatchWorkflowItemResult[];
 }
 
 export interface WslBatchWorkflowSummary {
@@ -227,6 +298,9 @@ export interface WslBatchWorkflowSummary {
   refreshTargets: Array<'inventory' | 'runtime' | 'config' | 'backup' | 'network'>;
   workflow: WslBatchWorkflowPreset;
   results: WslBatchWorkflowItemResult[];
+  stepResults: WslBatchWorkflowStepSummary[];
+  resumeFromStepIndex: number | null;
+  resumeFromStepIndexByDistro?: Record<string, number>;
 }
 
 // ============================================================================
@@ -468,7 +542,8 @@ export interface WslBatchWorkflowPreviewDialogProps {
 
 export interface WslBatchWorkflowSummaryCardProps {
   summary: WslBatchWorkflowSummary | null;
-  onRetry: () => void;
+  summaries?: WslBatchWorkflowSummary[];
+  onRetry: (summary?: WslBatchWorkflowSummary | null) => void;
   t: (key: string, params?: Record<string, string | number>) => string;
 }
 

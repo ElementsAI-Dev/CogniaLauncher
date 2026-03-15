@@ -17,6 +17,7 @@ import {
   ToolValidationMessage,
 } from '@/components/toolbox/tool-layout';
 import { Copy, Check, RefreshCw, Sparkles } from 'lucide-react';
+import { generateRandomUuid } from '@/lib/toolbox/browser-api';
 import type { ToolComponentProps } from '@/types/toolbox';
 
 function formatUuid(raw: string, uppercase: boolean, noDashes: boolean): string {
@@ -29,7 +30,9 @@ function formatUuid(raw: string, uppercase: boolean, noDashes: boolean): string 
 function generateUUIDs(count: number, uppercase: boolean, noDashes: boolean): string[] {
   const uuids: string[] = [];
   for (let i = 0; i < count; i++) {
-    uuids.push(formatUuid(crypto.randomUUID(), uppercase, noDashes));
+    const uuid = generateRandomUuid();
+    if (!uuid) return [];
+    uuids.push(formatUuid(uuid, uppercase, noDashes));
   }
   return uuids;
 }
@@ -45,9 +48,9 @@ export default function UuidGenerator({ className }: ToolComponentProps) {
   const { t } = useLocale();
   const { preferences, setPreferences } = useToolPreferences('uuid-generator', DEFAULT_PREFERENCES);
   const [error, setError] = useState<string | null>(null);
-  const [singleUuid, setSingleUuid] = useState(() => formatUuid(crypto.randomUUID(), false, false));
+  const [singleUuid, setSingleUuid] = useState(() => formatUuid(generateRandomUuid() ?? '', false, false));
   const [batchUuids, setBatchUuids] = useState<string[]>([]);
-  const { copied, copy } = useCopyToClipboard();
+  const { copied, copy, error: clipboardError } = useCopyToClipboard();
   const [singleCopied, setSingleCopied] = useState(false);
 
   const count = Number(preferences.count) || 5;
@@ -62,24 +65,44 @@ export default function UuidGenerator({ className }: ToolComponentProps) {
   }, [copy]);
 
   const handleRegenerate = useCallback(() => {
-    setSingleUuid(formatUuid(crypto.randomUUID(), uppercase, noDashes));
-  }, [uppercase, noDashes]);
+    const uuid = generateRandomUuid();
+    if (!uuid) {
+      setError(t('toolbox.tools.shared.webCryptoUnavailable'));
+      return;
+    }
+    setError(null);
+    setSingleUuid(formatUuid(uuid, uppercase, noDashes));
+  }, [t, uppercase, noDashes]);
 
   const handleGenerateAndCopy = useCallback(async () => {
-    const uuid = formatUuid(crypto.randomUUID(), uppercase, noDashes);
+    const rawUuid = generateRandomUuid();
+    if (!rawUuid) {
+      setError(t('toolbox.tools.shared.webCryptoUnavailable'));
+      return;
+    }
+    const uuid = formatUuid(rawUuid, uppercase, noDashes);
     setSingleUuid(uuid);
     await copy(uuid);
     setSingleCopied(true);
     setTimeout(() => setSingleCopied(false), 1500);
-  }, [copy, uppercase, noDashes]);
+  }, [copy, t, uppercase, noDashes]);
 
   const handleBatchGenerate = useCallback(() => {
     if (count > TOOLBOX_LIMITS.generatorCount) {
       setError(t('toolbox.tools.shared.countTooLarge', { limit: TOOLBOX_LIMITS.generatorCount }));
       return;
     }
+    const nextBatch = generateUUIDs(
+      Math.max(1, Math.min(TOOLBOX_LIMITS.generatorCount, count)),
+      uppercase,
+      noDashes,
+    );
+    if (nextBatch.length === 0) {
+      setError(t('toolbox.tools.shared.webCryptoUnavailable'));
+      return;
+    }
     setError(null);
-    setBatchUuids(generateUUIDs(Math.max(1, Math.min(TOOLBOX_LIMITS.generatorCount, count)), uppercase, noDashes));
+    setBatchUuids(nextBatch);
   }, [count, uppercase, noDashes, t]);
 
   const batchDelimiter = separator === 'comma' ? ', ' : '\n';
@@ -107,7 +130,7 @@ export default function UuidGenerator({ className }: ToolComponentProps) {
             </div>
 
             <p className="text-xs text-muted-foreground text-center">
-              v4 • 122 random bits • crypto.randomUUID()
+              {t('toolbox.tools.uuidGenerator.runtimeInfo')}
               {singleCopied && (
                 <span className="ml-2 text-green-500 inline-flex items-center gap-0.5">
                   <Check className="h-3 w-3" /> {t('toolbox.actions.copied')}
@@ -187,13 +210,14 @@ export default function UuidGenerator({ className }: ToolComponentProps) {
 
             {batchUuids.length > 0 && (
               <ToolTextArea
-                label={`${batchUuids.length} UUIDs`}
+                label={t('toolbox.tools.uuidGenerator.batchOutput', { count: batchUuids.length })}
                 value={batchOutput}
                 readOnly
                 rows={Math.min(count, 10) + 2}
                 showCopy
               />
             )}
+            {clipboardError && <ToolValidationMessage message={t('toolbox.actions.copyFailed')} />}
           </div>
         </ToolSection>
       </div>

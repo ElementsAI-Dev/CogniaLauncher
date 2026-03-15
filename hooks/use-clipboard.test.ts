@@ -33,6 +33,8 @@ describe('useCopyToClipboard', () => {
     expect(typeof result.current.copyImage).toBe('function');
     expect(typeof result.current.pasteImage).toBe('function');
     expect(typeof result.current.clear).toBe('function');
+    expect(typeof result.current.clearError).toBe('function');
+    expect(result.current.error).toBeNull();
   });
 
   it('should set copied to true after copy', async () => {
@@ -163,5 +165,38 @@ describe('useCopyToClipboard', () => {
       await result.current.clear();
     });
     expect(clipboard.clearClipboard).toHaveBeenCalled();
+  });
+
+  it('captures clipboard write failures as recoverable hook error state', async () => {
+    clipboard.writeClipboard.mockRejectedValueOnce(new Error('copy failed'));
+
+    const { result } = renderHook(() => useCopyToClipboard());
+
+    await act(async () => {
+      await result.current.copy('hello');
+    });
+
+    expect(result.current.copied).toBe(false);
+    expect(result.current.error).toBe('copy failed');
+
+    act(() => {
+      result.current.clearError();
+    });
+
+    expect(result.current.error).toBeNull();
+  });
+
+  it('captures clipboard read failures and returns a null fallback', async () => {
+    clipboard.readClipboard.mockRejectedValueOnce(new Error('paste failed'));
+
+    const { result } = renderHook(() => useCopyToClipboard());
+
+    let text: string | null = 'initial';
+    await act(async () => {
+      text = await result.current.paste();
+    });
+
+    expect(text).toBeNull();
+    expect(result.current.error).toBe('paste failed');
   });
 });

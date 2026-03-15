@@ -27,6 +27,8 @@ const mockT = (key: string) => {
     'envvar.confirm.deleteTitle': 'Delete Environment Variable',
     'envvar.confirm.deleteDesc': 'Are you sure?',
     'envvar.conflicts.title': 'Conflict',
+    'envvar.table.reveal': 'Reveal value',
+    'envvar.table.revealing': 'Revealing...',
     'common.cancel': 'Cancel',
   };
   return translations[key] || key;
@@ -260,5 +262,53 @@ describe('EnvVarTable', () => {
     expect(hasCopy).toBe(true);
     expect(hasEdit).toBe(true);
     expect(hasDelete).toBe(true);
+  });
+
+  it('reveals masked values before copying them', async () => {
+    const onReveal = jest.fn().mockResolvedValue('super-secret');
+
+    render(
+      <EnvVarTable
+        {...defaultProps}
+        rows={[{ key: 'API_TOKEN', value: '[hidden: 12 chars]', scope: 'process', masked: true }]}
+        onReveal={onReveal}
+      />,
+    );
+
+    const copyButtons = screen.getAllByRole('button').filter(
+      (btn) => btn.querySelector('.lucide-copy'),
+    );
+    await userEvent.click(copyButtons[0]);
+
+    await waitFor(() => {
+      expect(onReveal).toHaveBeenCalledWith('API_TOKEN', 'process');
+    });
+    expect(clipboardMock.writeClipboard).toHaveBeenCalledWith('super-secret');
+  });
+
+  it('reveals masked values before entering edit mode', async () => {
+    const onReveal = jest.fn().mockResolvedValue('super-secret');
+
+    render(
+      <EnvVarTable
+        {...defaultProps}
+        rows={[{ key: 'API_TOKEN', value: '[hidden: 12 chars]', scope: 'process', masked: true }]}
+        onReveal={onReveal}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Reveal value' }));
+    await waitFor(() => {
+      expect(screen.getByText('super-secret')).toBeInTheDocument();
+    });
+
+    const editButtons = screen.getAllByRole('button').filter(
+      (btn) => btn.querySelector('.lucide-pencil'),
+    );
+    await userEvent.click(editButtons[0]);
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('super-secret')).toBeInTheDocument();
+    });
   });
 });

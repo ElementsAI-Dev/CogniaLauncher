@@ -165,6 +165,8 @@ describe("CacheMonitorCard", () => {
     });
     // When there are snapshots, noSizeHistory is NOT shown
     expect(screen.queryByText("cache.noSizeHistory")).not.toBeInTheDocument();
+    expect(screen.getByText("cache.insightCoverageHistorical")).toBeInTheDocument();
+    expect(screen.getByText("cache.insightTrendWindowDays")).toBeInTheDocument();
   });
 
   it("calls getCacheSizeHistory on mount in Tauri environment", async () => {
@@ -175,5 +177,31 @@ describe("CacheMonitorCard", () => {
       render(<CacheMonitorCard />);
     });
     expect(mockGetCacheSizeHistory).toHaveBeenCalledWith(30);
+  });
+
+  it("renders freshness metadata after monitor data loads", async () => {
+    mockIsTauri = true;
+    mockCacheSizeMonitor.mockResolvedValue(monitorData);
+    mockGetCacheSizeHistory.mockResolvedValue([
+      {
+        timestamp: "2025-01-01T00:00:00Z",
+        internalSize: 1000,
+        internalSizeHuman: "1 KB",
+        downloadCount: 5,
+        metadataCount: 3,
+      },
+      {
+        timestamp: "2025-01-02T00:00:00Z",
+        internalSize: 2000,
+        internalSizeHuman: "2 KB",
+        downloadCount: 10,
+        metadataCount: 6,
+      },
+    ]);
+    await act(async () => {
+      render(<CacheMonitorCard />);
+    });
+
+    expect(screen.getByText(/cache\.insightFreshness/)).toBeInTheDocument();
   });
 });

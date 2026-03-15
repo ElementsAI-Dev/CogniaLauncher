@@ -19,8 +19,29 @@ import type { AboutInsightGroupState, AboutInsights } from "@/types/about";
 interface AboutInsightsCardProps {
   insights: AboutInsights | null;
   insightsLoading: boolean;
+  locale?: string;
+  lastGeneratedAt?: string | null;
   onRetry: () => void;
   t: (key: string, params?: Record<string, string | number>) => string;
+}
+
+function formatTimestamp(
+  timestamp: string | null | undefined,
+  locale: string,
+  t: AboutInsightsCardProps["t"],
+): string {
+  if (!timestamp) {
+    return t("common.unknown");
+  }
+
+  try {
+    return new Date(timestamp).toLocaleString(locale, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+  } catch {
+    return timestamp;
+  }
 }
 
 function statusLabel(
@@ -72,6 +93,8 @@ function ValueRow({
 export function AboutInsightsCard({
   insights,
   insightsLoading,
+  locale = "en-US",
+  lastGeneratedAt = null,
   onRetry,
   t,
 }: AboutInsightsCardProps) {
@@ -116,6 +139,11 @@ export function AboutInsightsCard({
         </CardAction>
       </CardHeader>
       <CardContent className="space-y-3">
+        {lastGeneratedAt ? (
+          <p className="text-xs text-muted-foreground">
+            {t("about.lastGeneratedAt")}: {formatTimestamp(lastGeneratedAt, locale, t)}
+          </p>
+        ) : null}
         {!insightsLoading && !insights ? (
           <Empty>
             <EmptyHeader>

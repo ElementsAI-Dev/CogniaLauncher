@@ -9,6 +9,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Loader2, ListChecks } from 'lucide-react';
@@ -55,6 +56,42 @@ export function WslBatchWorkflowPreviewDialog({
             {t('wsl.batchWorkflow.missing')}: {preview?.missingCount ?? 0}
           </Badge>
         </div>
+
+        {preview?.warnings.length ? (
+          <Alert>
+            <AlertDescription className="space-y-1">
+              {preview.warnings.map((warning) => (
+                <p key={warning} className="text-xs">{warning}</p>
+              ))}
+            </AlertDescription>
+          </Alert>
+        ) : null}
+
+        {preview?.steps.length ? (
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-muted-foreground">{t('wsl.batchWorkflow.steps')}</p>
+            <div className="space-y-1 rounded-md border p-2">
+              {preview.steps.map((step, index) => (
+                <div key={step.stepId} className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted/50">
+                  <div className="min-w-0">
+                    <p className="font-medium truncate">{step.label}</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      {t('wsl.batchWorkflow.stepIndex').replace('{index}', String(index + 1))}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-end gap-1 shrink-0">
+                    {step.longRunning && (
+                      <Badge variant="outline">{t('wsl.batchWorkflow.longRunning')}</Badge>
+                    )}
+                    {step.backupCoverage !== 'not-applicable' && (
+                      <Badge variant="outline">{step.backupCoverage}</Badge>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
 
         <ScrollArea className="max-h-64">
           <div className="space-y-1.5 rounded-md border p-2">

@@ -105,8 +105,8 @@ const DEFAULT_PREFERENCES = {
 export default function LoremGenerator({ className }: ToolComponentProps) {
   const { t } = useLocale();
   const { preferences, setPreferences } = useToolPreferences('lorem-generator', DEFAULT_PREFERENCES);
-  const { copied, copy } = useCopyToClipboard();
-  const { copied: copiedHtml, copy: copyHtml } = useCopyToClipboard();
+  const { copied, copy, error: plainClipboardError } = useCopyToClipboard();
+  const { copied: copiedHtml, copy: copyHtml, error: htmlClipboardError } = useCopyToClipboard();
 
   const mode = preferences.mode as 'paragraphs' | 'sentences' | 'words';
   const count = Math.min(Math.max(1, Number(preferences.count) || 1), TOOLBOX_LIMITS.generatorCount);
@@ -137,7 +137,7 @@ export default function LoremGenerator({ className }: ToolComponentProps) {
     <div className={className}>
       <div className="space-y-4">
         {/* ── Options ──────────────────────────────────────────────── */}
-        <ToolSection title={t('toolbox.tools.loremGenerator.options', { defaultValue: 'Options' })}>
+        <ToolSection title={t('toolbox.tools.loremGenerator.options')}>
           <ToolOptionGroup>
             <div className="space-y-1.5">
               <Label>{t('toolbox.tools.loremGenerator.mode')}</Label>
@@ -172,7 +172,7 @@ export default function LoremGenerator({ className }: ToolComponentProps) {
                 onCheckedChange={(v) => setPreferences({ startWithLorem: v })}
               />
               <Label htmlFor="start-with-lorem" className="cursor-pointer">
-                {t('toolbox.tools.loremGenerator.startWithLorem', { defaultValue: 'Start with "Lorem ipsum…"' })}
+                {t('toolbox.tools.loremGenerator.startWithLorem')}
               </Label>
             </div>
           </ToolOptionGroup>
@@ -182,12 +182,12 @@ export default function LoremGenerator({ className }: ToolComponentProps) {
 
         {/* ── Generated Text ──────────────────────────────────────── */}
         <ToolSection
-          title={t('toolbox.tools.loremGenerator.generatedText', { defaultValue: 'Generated Text' })}
+          title={t('toolbox.tools.loremGenerator.generatedText')}
           headerRight={
             <div className="flex items-center gap-2">
               <Button onClick={regenerate} variant="ghost" size="sm" className="gap-1.5">
                 <RefreshCw className="h-3.5 w-3.5" />
-                {t('toolbox.tools.loremGenerator.regenerate', { defaultValue: 'Regenerate' })}
+                {t('toolbox.tools.loremGenerator.regenerate')}
               </Button>
               <Button onClick={handleCopyPlain} variant="outline" size="sm" className="gap-1.5">
                 {copied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
@@ -198,7 +198,7 @@ export default function LoremGenerator({ className }: ToolComponentProps) {
                   {copiedHtml ? <Check className="h-3.5 w-3.5 text-green-500" /> : <AlignLeft className="h-3.5 w-3.5" />}
                   {copiedHtml
                     ? t('toolbox.actions.copied')
-                    : t('toolbox.tools.loremGenerator.copyHtml', { defaultValue: 'Copy as HTML' })}
+                    : t('toolbox.tools.loremGenerator.copyHtml')}
                 </Button>
               )}
             </div>
@@ -217,9 +217,12 @@ export default function LoremGenerator({ className }: ToolComponentProps) {
             </Badge>
             <Badge variant="secondary" className="gap-1">
               <AlignLeft className="h-3 w-3" />
-              {charCount} {t('toolbox.tools.loremGenerator.chars', { defaultValue: 'chars' })}
+              {charCount} {t('toolbox.tools.loremGenerator.chars')}
             </Badge>
           </div>
+          {(plainClipboardError || htmlClipboardError) && (
+            <ToolValidationMessage message={t('toolbox.actions.copyFailed')} className="mt-3" />
+          )}
         </ToolSection>
       </div>
     </div>

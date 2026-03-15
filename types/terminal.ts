@@ -6,6 +6,7 @@ import type {
   TerminalConfigMutationResult,
   TerminalConfigRestoreResult,
   TerminalProfile,
+  TerminalEnvVarSummary,
   TerminalProfileTemplate,
   PSProfileInfo,
   PSModuleInfo,
@@ -54,7 +55,7 @@ export interface UseTerminalState {
   plugins: ShellPlugin[];
   frameworkCacheStats: FrameworkCacheInfo[];
   frameworkCacheLoading: boolean;
-  shellEnvVars: [string, string][];
+  shellEnvVars: TerminalEnvVarSummary[];
   proxyEnvVars: [string, string][];
   startupMeasurements: Record<string, ShellStartupMeasurement>;
   healthResults: Record<string, ShellHealthResult>;

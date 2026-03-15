@@ -89,8 +89,8 @@ describe('useWslStore', () => {
     useWslStore.getState().addWorkflowPreset({
       name: 'Launch selected',
       target: { mode: 'selected' },
-      action: { kind: 'lifecycle', operation: 'launch' },
-    });
+      steps: [{ id: 'launch', kind: 'lifecycle', operation: 'launch', label: 'Launch' }],
+    } as never);
 
     const added = useWslStore.getState().workflowPresets[0];
     expect(added.id.startsWith('workflow-1700000000000-')).toBe(true);
@@ -104,6 +104,59 @@ describe('useWslStore', () => {
 
     nowSpy.mockRestore();
     randomSpy.mockRestore();
+  });
+
+  it('migrates legacy action-based presets and summaries into one-step playbooks', () => {
+    const getPersistConfig = () =>
+      (useWslStore as unknown as {
+        persist: {
+          getOptions: () => { migrate: (state: unknown, version: number) => unknown };
+        };
+      }).persist.getOptions();
+
+    const migrated = getPersistConfig().migrate({
+      workflowPresets: [
+        {
+          id: 'wf-legacy',
+          name: 'Legacy workflow',
+          createdAt: '2026-03-12T00:00:00.000Z',
+          updatedAt: '2026-03-12T00:00:00.000Z',
+          target: { mode: 'selected' },
+          action: { kind: 'health-check', label: 'Health Check' },
+        },
+      ],
+      workflowSummaries: [
+        {
+          id: 'summary-legacy',
+          workflowName: 'Legacy workflow',
+          actionLabel: 'Health Check',
+          startedAt: '2026-03-12T00:00:00.000Z',
+          completedAt: '2026-03-12T00:01:00.000Z',
+          total: 1,
+          succeeded: 1,
+          failed: 0,
+          skipped: 0,
+          refreshTargets: ['runtime'],
+          workflow: {
+            id: 'wf-legacy',
+            name: 'Legacy workflow',
+            createdAt: '2026-03-12T00:00:00.000Z',
+            updatedAt: '2026-03-12T00:00:00.000Z',
+            target: { mode: 'selected' },
+            action: { kind: 'health-check', label: 'Health Check' },
+          },
+          results: [{ distroName: 'Ubuntu', status: 'success', retryable: false }],
+        },
+      ],
+    }, 2) as {
+      workflowPresets: Array<{ steps?: Array<{ kind: string }> }>;
+      workflowSummaries: Array<{ workflow: { steps?: Array<{ kind: string }> } }>;
+    };
+
+    expect(migrated.workflowPresets[0].steps).toHaveLength(1);
+    expect(migrated.workflowPresets[0].steps?.[0]).toMatchObject({ kind: 'health-check' });
+    expect(migrated.workflowSummaries[0].workflow.steps).toHaveLength(1);
+    expect(migrated.workflowSummaries[0].workflow.steps?.[0]).toMatchObject({ kind: 'health-check' });
   });
 
   it('records workflow summaries with newest first', () => {
@@ -124,10 +177,20 @@ describe('useWslStore', () => {
         createdAt: '2026-03-12T00:00:00.000Z',
         updatedAt: '2026-03-12T00:00:00.000Z',
         target: { mode: 'selected' },
-        action: { kind: 'health-check', label: 'Health Check' },
+        steps: [{ id: 'health', kind: 'health-check', label: 'Health Check' }],
       },
       results: [{ distroName: 'Ubuntu', status: 'success', retryable: false }],
-    });
+      stepResults: [
+        {
+          stepId: 'health',
+          stepLabel: 'Health Check',
+          succeeded: 1,
+          failed: 0,
+          skipped: 0,
+          results: [{ distroName: 'Ubuntu', status: 'success', retryable: false }],
+        },
+      ],
+    } as never);
     useWslStore.getState().recordWorkflowSummary({
       id: 'summary-2',
       workflowName: 'Launch',
@@ -145,10 +208,20 @@ describe('useWslStore', () => {
         createdAt: '2026-03-12T00:02:00.000Z',
         updatedAt: '2026-03-12T00:02:00.000Z',
         target: { mode: 'selected' },
-        action: { kind: 'lifecycle', operation: 'launch' },
+        steps: [{ id: 'launch', kind: 'lifecycle', operation: 'launch', label: 'Launch' }],
       },
       results: [{ distroName: 'Ubuntu', status: 'success', retryable: false }],
-    });
+      stepResults: [
+        {
+          stepId: 'launch',
+          stepLabel: 'Launch',
+          succeeded: 1,
+          failed: 0,
+          skipped: 0,
+          results: [{ distroName: 'Ubuntu', status: 'success', retryable: false }],
+        },
+      ],
+    } as never);
 
     expect(useWslStore.getState().workflowSummaries.map((entry) => entry.id)).toEqual([
       'summary-2',

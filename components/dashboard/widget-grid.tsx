@@ -19,10 +19,14 @@ import {
   useDashboardStore,
   canRemoveWidgetById,
   canToggleWidgetVisibilityById,
+  getDefaultWidgetSettings,
+  type WidgetConfig,
   type WidgetSize,
+  type WidgetSettings,
   type WidgetType,
 } from "@/lib/stores/dashboard";
 import { WidgetWrapper } from "@/components/dashboard/widget-wrapper";
+import { WidgetSettingsToolbar } from "@/components/dashboard/widget-settings-toolbar";
 import { StatsCard } from "@/components/dashboard/stats-card";
 import { QuickSearch } from "@/components/dashboard/quick-search";
 import { EnvironmentList } from "@/components/dashboard/environment-list";
@@ -31,6 +35,10 @@ import { EnvironmentChart } from "@/components/dashboard/widgets/environment-cha
 import { PackageChart } from "@/components/dashboard/widgets/package-chart";
 import { CacheChart } from "@/components/dashboard/widgets/cache-chart";
 import { ActivityChart } from "@/components/dashboard/widgets/activity-chart";
+import { AttentionCenterWidget } from "@/components/dashboard/widgets/attention-center-widget";
+import { RecentActivityFeedWidget } from "@/components/dashboard/widgets/recent-activity-feed-widget";
+import { WorkspaceTrendsWidget } from "@/components/dashboard/widgets/workspace-trends-widget";
+import { ProviderHealthMatrixWidget } from "@/components/dashboard/widgets/provider-health-matrix-widget";
 import { SystemInfoWidget } from "@/components/dashboard/widgets/system-info-widget";
 import { DownloadStatsWidget } from "@/components/dashboard/widgets/download-stats-widget";
 import { WslStatusWidget } from "@/components/dashboard/widgets/wsl-status-widget";
@@ -43,6 +51,13 @@ import { useLocale } from "@/components/providers/locale-provider";
 import { cn } from "@/lib/utils";
 import { Layers, Package, HardDrive, Activity } from "lucide-react";
 import type { EnvironmentInfo, InstalledPackage, CacheInfo, PlatformInfo, ProviderInfo } from "@/lib/tauri";
+import type {
+  DashboardActivityModel,
+  DashboardAttentionModel,
+  DashboardHealthMatrixModel,
+  DashboardInsightsResult,
+  DashboardTrendModel,
+} from "@/hooks/use-dashboard-insights";
 
 interface WidgetRenderProps {
   environments: EnvironmentInfo[];
@@ -62,6 +77,7 @@ interface WidgetRenderProps {
     packages: { isLoading: boolean; error: string | null };
     settings: { isLoading: boolean; error: string | null };
   };
+  insights: DashboardInsightsResult;
 }
 
 function renderStatsOverview(p: WidgetRenderProps): ReactNode {
@@ -132,7 +148,47 @@ function renderStatsOverview(p: WidgetRenderProps): ReactNode {
   );
 }
 
-const WIDGET_RENDERERS: Record<WidgetType, (p: WidgetRenderProps) => ReactNode> = {
+const EMPTY_ATTENTION_MODEL: DashboardAttentionModel = {
+  items: [],
+  totalCount: 0,
+  isLoading: false,
+  error: null,
+  lastUpdatedAt: null,
+};
+
+const EMPTY_ACTIVITY_MODEL: DashboardActivityModel = {
+  items: [],
+  totalCount: 0,
+  isLoading: false,
+  error: null,
+  lastUpdatedAt: null,
+};
+
+const EMPTY_TREND_MODEL: DashboardTrendModel = {
+  range: "7d",
+  metric: "installations",
+  points: [],
+  isLoading: false,
+  error: null,
+  lastUpdatedAt: null,
+};
+
+const EMPTY_HEALTH_MATRIX_MODEL: DashboardHealthMatrixModel = {
+  groupBy: "provider",
+  showHealthy: true,
+  cells: [],
+  totals: {
+    healthy: 0,
+    warning: 0,
+    error: 0,
+    unknown: 0,
+  },
+  isLoading: false,
+  error: null,
+  lastUpdatedAt: null,
+};
+
+const WIDGET_RENDERERS: Record<WidgetType, (p: WidgetRenderProps, widget: WidgetConfig) => ReactNode> = {
   "stats-overview": renderStatsOverview,
   "quick-search": (p) => <QuickSearch environments={p.environments} packages={p.packages} />,
   "environment-chart": (p) => <EnvironmentChart environments={p.environments} />,
@@ -173,6 +229,18 @@ const WIDGET_RENDERERS: Record<WidgetType, (p: WidgetRenderProps) => ReactNode> 
   "updates-available": () => <UpdatesWidget />,
   "welcome": (p) => <WelcomeWidget hasEnvironments={p.environments.length > 0} hasPackages={p.packages.length > 0} />,
   "toolbox-favorites": () => <ToolboxFavoritesWidget />,
+  "attention-center": (p, widget) => (
+    <AttentionCenterWidget model={p.insights.attentionCenter[widget.id] ?? EMPTY_ATTENTION_MODEL} />
+  ),
+  "recent-activity-feed": (p, widget) => (
+    <RecentActivityFeedWidget model={p.insights.recentActivityFeed[widget.id] ?? EMPTY_ACTIVITY_MODEL} />
+  ),
+  "workspace-trends": (p, widget) => (
+    <WorkspaceTrendsWidget model={p.insights.workspaceTrends[widget.id] ?? EMPTY_TREND_MODEL} />
+  ),
+  "provider-health-matrix": (p, widget) => (
+    <ProviderHealthMatrixWidget model={p.insights.providerHealthMatrix[widget.id] ?? EMPTY_HEALTH_MATRIX_MODEL} />
+  ),
 };
 
 interface WidgetGridProps {
@@ -190,6 +258,7 @@ interface WidgetGridProps {
     packages: { isLoading: boolean; error: string | null };
     settings: { isLoading: boolean; error: string | null };
   };
+  insights: DashboardInsightsResult;
 }
 
 export function WidgetGrid({
@@ -203,6 +272,7 @@ export function WidgetGrid({
   onRefreshAll,
   isRefreshing,
   feedback,
+  insights,
 }: WidgetGridProps) {
   const { t } = useLocale();
   const widgets = useDashboardStore((s) => s.widgets);
@@ -242,6 +312,25 @@ export function WidgetGrid({
     [updateWidget],
   );
 
+  const handleUpdateSettings = useCallback(
+    (id: string, settings: WidgetSettings) => {
+      updateWidget(id, { settings });
+    },
+    [updateWidget],
+  );
+
+  const handleResetSettings = useCallback(
+    (id: string) => {
+      const widget = widgets.find((entry) => entry.id === id);
+      if (!widget) {
+        return;
+      }
+
+      updateWidget(id, { settings: getDefaultWidgetSettings(widget.type) });
+    },
+    [widgets, updateWidget],
+  );
+
   const handleRemove = useCallback(
     (id: string) => {
       if (!canRemoveWidgetById(widgets, id)) {
@@ -268,18 +357,19 @@ export function WidgetGrid({
   const renderProps = useMemo<WidgetRenderProps>(
     () => ({
       environments, packages, providers, cacheInfo, platformInfo, cogniaDir,
-      isLoading, onRefreshAll, isRefreshing, t, activeEnvs, totalVersions, feedback,
+      isLoading, onRefreshAll, isRefreshing, t, activeEnvs, totalVersions, feedback, insights,
     }),
     [
       environments, packages, providers, cacheInfo, platformInfo, cogniaDir,
-      isLoading, onRefreshAll, isRefreshing, t, activeEnvs, totalVersions, feedback,
+      isLoading, onRefreshAll, isRefreshing, t, activeEnvs, totalVersions, feedback, insights,
     ],
   );
 
   const renderWidgetContent = useCallback(
-    (widgetType: string) => {
+    (widget: WidgetConfig) => {
+      const widgetType = widget.type;
       const renderer = WIDGET_RENDERERS[widgetType as WidgetType];
-      if (renderer) return renderer(renderProps);
+      if (renderer) return renderer(renderProps, widget);
       return (
         <div className="p-4 text-center text-sm text-muted-foreground">
           {t("dashboard.widgets.unknownWidget")}
@@ -319,8 +409,15 @@ export function WidgetGrid({
               onRemove={handleRemove}
               onToggleVisibility={handleToggleVisibility}
               onResize={handleResize}
+              toolbarExtras={(
+                <WidgetSettingsToolbar
+                  widget={widget}
+                  onUpdateSettings={handleUpdateSettings}
+                  onResetSettings={handleResetSettings}
+                />
+              )}
             >
-              {renderWidgetContent(widget.type)}
+              {renderWidgetContent(widget)}
             </WidgetWrapper>
           ))}
         </div>

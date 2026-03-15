@@ -192,9 +192,9 @@ describe('usePackageStore', () => {
   });
 
   describe('bookmarked packages', () => {
-    it('should toggle bookmark on', () => {
-      usePackageStore.getState().toggleBookmark('lodash');
-      expect(usePackageStore.getState().bookmarkedPackages).toContain('lodash');
+    it('should write canonical provider-aware bookmark keys when provider is known', () => {
+      usePackageStore.getState().toggleBookmark('lodash', 'npm');
+      expect(usePackageStore.getState().bookmarkedPackages).toEqual(['npm:lodash']);
     });
 
     it('should toggle bookmark off', () => {
@@ -204,9 +204,52 @@ describe('usePackageStore', () => {
     });
 
     it('should handle multiple bookmarks', () => {
-      usePackageStore.getState().toggleBookmark('lodash');
-      usePackageStore.getState().toggleBookmark('express');
-      expect(usePackageStore.getState().bookmarkedPackages).toEqual(['lodash', 'express']);
+      usePackageStore.getState().toggleBookmark('lodash', 'npm');
+      usePackageStore.getState().toggleBookmark('express', 'npm');
+      expect(usePackageStore.getState().bookmarkedPackages).toEqual(['npm:lodash', 'npm:express']);
+    });
+
+    it('canonicalizes compatible legacy bookmarks when installed packages are refreshed', () => {
+      usePackageStore.setState({
+        bookmarkedPackages: ['react'],
+      });
+
+      usePackageStore.getState().setInstalledPackages([
+        {
+          name: 'react',
+          version: '18.0.0',
+          provider: 'npm',
+          install_path: '/usr/local/lib/node_modules/react',
+          installed_at: '2024-01-01',
+          is_global: true,
+        },
+      ]);
+
+      expect(usePackageStore.getState().bookmarkedPackages).toEqual(['npm:react']);
+    });
+
+    it('migrates persisted bookmark state using installed package context', async () => {
+      const migrate = usePackageStore.persist.getOptions().migrate;
+      expect(migrate).toBeDefined();
+
+      const migrated = await migrate?.(
+        {
+          bookmarkedPackages: ['react'],
+          installedPackages: [
+            {
+              name: 'react',
+              version: '18.0.0',
+              provider: 'npm',
+              install_path: '/usr/local/lib/node_modules/react',
+              installed_at: '2024-01-01',
+              is_global: true,
+            },
+          ],
+        },
+        2,
+      );
+
+      expect((migrated as { bookmarkedPackages: string[] }).bookmarkedPackages).toEqual(['npm:react']);
     });
   });
 

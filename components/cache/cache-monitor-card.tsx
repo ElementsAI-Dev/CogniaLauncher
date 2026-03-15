@@ -1,25 +1,55 @@
 'use client';
 
-import { useCallback, useEffect, useId, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useState } from 'react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
+import {
+  DashboardMetricGrid,
+  DashboardMetricItem,
+  DashboardSectionLabel,
+  DashboardStatusBadge,
+} from '@/components/dashboard/dashboard-primitives';
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from '@/components/ui/chart';
 import { Activity, RefreshCw, TrendingUp } from 'lucide-react';
-import { AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { isTauri } from '@/lib/tauri';
 import type { CacheSizeMonitor, CacheSizeSnapshot } from '@/lib/tauri';
 import type { CacheMonitorCardProps } from '@/types/cache';
+
+const TREND_WINDOW_DAYS = 30;
+const FRESHNESS_THRESHOLD_MS = 15 * 60 * 1000;
+
+const chartConfig: ChartConfig = {
+  size: {
+    label: 'Cache Size',
+    color: 'var(--chart-1)',
+  },
+};
+
+function freshnessLabelKey(lastUpdatedAt: number | null) {
+  if (!lastUpdatedAt) return 'cache.insightFreshnessMissing';
+  return Date.now() - lastUpdatedAt <= FRESHNESS_THRESHOLD_MS
+    ? 'cache.insightFreshnessFresh'
+    : 'cache.insightFreshnessStale';
+}
 
 export function CacheMonitorCard({ refreshTrigger, autoRefreshInterval = 0 }: CacheMonitorCardProps) {
   const { t } = useLocale();
   const [monitor, setMonitor] = useState<CacheSizeMonitor | null>(null);
   const [loading, setLoading] = useState(false);
   const [sizeHistory, setSizeHistory] = useState<CacheSizeSnapshot[]>([]);
-  const [, setHistoryLoading] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
+  const gradientId = useId();
 
   const fetchMonitor = useCallback(async () => {
     if (!isTauri()) return;
@@ -28,6 +58,7 @@ export function CacheMonitorCard({ refreshTrigger, autoRefreshInterval = 0 }: Ca
       const { cacheSizeMonitor } = await import('@/lib/tauri');
       const data = await cacheSizeMonitor();
       setMonitor(data);
+      setLastUpdatedAt(Date.now());
     } catch (err) {
       console.error('Failed to fetch cache monitor:', err);
     } finally {
@@ -40,7 +71,7 @@ export function CacheMonitorCard({ refreshTrigger, autoRefreshInterval = 0 }: Ca
     setHistoryLoading(true);
     try {
       const { getCacheSizeHistory } = await import('@/lib/tauri');
-      const data = await getCacheSizeHistory(30);
+      const data = await getCacheSizeHistory(TREND_WINDOW_DAYS);
       setSizeHistory(data);
     } catch (err) {
       console.error('Failed to fetch cache size history:', err);
@@ -63,26 +94,27 @@ export function CacheMonitorCard({ refreshTrigger, autoRefreshInterval = 0 }: Ca
     return () => clearInterval(timer);
   }, [autoRefreshInterval, fetchMonitor]);
 
-  const gradientId = useId();
-  const chartData = useMemo(
-    () =>
-      sizeHistory.map((s) => ({
-        date: new Date(s.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
-        size: s.internalSize,
-        sizeHuman: s.internalSizeHuman,
-        downloads: s.downloadCount,
-        metadata: s.metadataCount,
-      })),
-    [sizeHistory],
-  );
+  const chartData = sizeHistory.map((snapshot) => ({
+    date: new Date(snapshot.timestamp).toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+    }),
+    size: snapshot.internalSize,
+    sizeHuman: snapshot.internalSizeHuman,
+    downloads: snapshot.downloadCount,
+    metadata: snapshot.metadataCount,
+  }));
 
   return (
     <Card>
       <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-            <CardTitle className="text-sm">{t('cache.overviewMonitorTitle')}</CardTitle>
+        <div className="flex items-start justify-between gap-3">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <TrendingUp className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-sm">{t('cache.overviewMonitorTitle')}</CardTitle>
+            </div>
+            <CardDescription className="text-xs">{t('cache.overviewMonitorDesc')}</CardDescription>
           </div>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -99,81 +131,119 @@ export function CacheMonitorCard({ refreshTrigger, autoRefreshInterval = 0 }: Ca
             <TooltipContent>{t('common.refresh')}</TooltipContent>
           </Tooltip>
         </div>
-        <CardDescription className="text-xs">{t('cache.overviewMonitorDesc')}</CardDescription>
+        {!loading && (
+          <div className="flex flex-wrap gap-2">
+            <DashboardStatusBadge tone="default">
+              {t('cache.insightCoverageHistorical')}
+            </DashboardStatusBadge>
+            <DashboardStatusBadge tone="muted">
+              {t('cache.insightTrendWindowDays', { days: TREND_WINDOW_DAYS })}
+            </DashboardStatusBadge>
+            <DashboardStatusBadge tone={lastUpdatedAt ? 'success' : 'muted'}>
+              {t(freshnessLabelKey(lastUpdatedAt))}
+            </DashboardStatusBadge>
+          </div>
+        )}
       </CardHeader>
       <CardContent className="space-y-4">
         {monitor ? (
           <>
-            {/* Size Trend Chart */}
             {sizeHistory.length >= 2 ? (
-              <div className="h-44 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={chartData} margin={{ top: 4, right: 4, left: 4, bottom: 0 }}>
+              <div className="space-y-2">
+                <DashboardSectionLabel>{t('cache.sizeHistory')}</DashboardSectionLabel>
+                <ChartContainer config={chartConfig} className="h-44 w-full aspect-auto">
+                  <AreaChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
                     <defs>
                       <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
+                        <stop offset="5%" stopColor="var(--color-size)" stopOpacity={0.4} />
+                        <stop offset="95%" stopColor="var(--color-size)" stopOpacity={0.05} />
                       </linearGradient>
                     </defs>
-                    <XAxis dataKey="date" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
+                    <CartesianGrid vertical={false} />
+                    <XAxis dataKey="date" tickLine={false} axisLine={false} />
                     <YAxis hide />
-                    <RechartsTooltip
-                      content={({ active, payload }) => {
-                        if (!active || !payload?.length) return null;
-                        const d = payload[0].payload;
-                        return (
-                          <div className="rounded-lg border bg-background p-2 shadow-sm text-xs">
-                            <p className="font-medium">{d.date}</p>
-                            <p>{d.sizeHuman}</p>
-                            <p className="text-muted-foreground">
-                              {d.downloads} {t('cache.downloadCache').toLowerCase()}, {d.metadata} {t('cache.metadataCache').toLowerCase()}
-                            </p>
-                          </div>
-                        );
-                      }}
+                    <ChartTooltip
+                      content={(
+                        <ChartTooltipContent
+                          formatter={(value, _name, item) => (
+                            <>
+                              <span className="text-muted-foreground">
+                                {item.payload.date}
+                              </span>
+                              <span className="font-medium">
+                                {item.payload.sizeHuman}
+                              </span>
+                            </>
+                          )}
+                        />
+                      )}
                     />
-                    <Area type="monotone" dataKey="size" stroke="hsl(var(--primary))" fill={`url(#${gradientId})`} strokeWidth={2} />
+                    <Area
+                      type="monotone"
+                      dataKey="size"
+                      stroke="var(--color-size)"
+                      fill={`url(#${gradientId})`}
+                      strokeWidth={2}
+                    />
                   </AreaChart>
-                </ResponsiveContainer>
+                </ChartContainer>
               </div>
+            ) : historyLoading ? (
+              <Skeleton className="h-44 w-full" />
             ) : (
-              <p className="text-xs text-muted-foreground text-center py-6">{t('cache.noSizeHistory')}</p>
+              <div className="rounded-lg border border-dashed p-4">
+                <div className="flex flex-wrap gap-2">
+                  <DashboardStatusBadge tone="muted">
+                    {t('cache.insightCoverageSnapshot')}
+                  </DashboardStatusBadge>
+                  <DashboardStatusBadge tone="muted">
+                    {t('cache.insightFreshnessMissing')}
+                  </DashboardStatusBadge>
+                </div>
+                <p className="mt-3 text-sm text-muted-foreground">{t('cache.noSizeHistory')}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{t('cache.insightSnapshotOnlyDesc')}</p>
+              </div>
             )}
 
-            {/* Size Breakdown Grid */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <div className="text-center p-3 rounded-lg bg-muted/50">
-                <p className="text-sm font-bold">{monitor.internalSizeHuman}</p>
-                <p className="text-xs text-muted-foreground">{t('cache.internalCache')}</p>
-              </div>
+            <DashboardMetricGrid columns={4}>
+              <DashboardMetricItem
+                label={t('cache.internalCache')}
+                value={monitor.internalSizeHuman}
+              />
               {((monitor.defaultDownloadsSize ?? 0) > 0 || monitor.defaultDownloadsAvailable === false) && (
-                <div className="text-center p-3 rounded-lg bg-muted/50">
-                  <p className="text-sm font-bold">{monitor.defaultDownloadsSizeHuman ?? '0 B'}</p>
-                  <p className="text-xs text-muted-foreground">{t('cache.defaultDownloads')}</p>
-                </div>
+                <DashboardMetricItem
+                  label={t('cache.defaultDownloads')}
+                  value={monitor.defaultDownloadsSizeHuman ?? '0 B'}
+                />
               )}
               {monitor.externalSize > 0 && (
-                <div className="text-center p-3 rounded-lg bg-muted/50">
-                  <p className="text-sm font-bold">{monitor.externalSizeHuman}</p>
-                  <p className="text-xs text-muted-foreground">{t('cache.externalTotal')}</p>
-                </div>
+                <DashboardMetricItem
+                  label={t('cache.externalTotal')}
+                  value={monitor.externalSizeHuman}
+                />
               )}
-              <div className="text-center p-3 rounded-lg bg-muted/50">
-                <p className="text-sm font-bold">{monitor.totalSizeHuman}</p>
-                <p className="text-xs text-muted-foreground">{t('cache.combinedTotal')}</p>
-              </div>
-            </div>
+              <DashboardMetricItem
+                label={t('cache.combinedTotal')}
+                value={monitor.totalSizeHuman}
+              />
+            </DashboardMetricGrid>
 
-            {/* External Cache Breakdown */}
             {monitor.externalCaches.length > 0 && (
-              <div className="space-y-1.5">
-                <p className="text-xs font-medium text-muted-foreground">{t('cache.externalCaches')}</p>
-                {monitor.externalCaches.map((cache) => (
-                  <div key={cache.provider} className="flex items-center justify-between text-sm p-1.5 rounded hover:bg-muted/50">
-                    <span className="text-xs">{cache.displayName}</span>
-                    <Badge variant="outline" className="text-xs">{cache.sizeHuman}</Badge>
-                  </div>
-                ))}
+              <div className="space-y-2">
+                <DashboardSectionLabel>{t('cache.externalCaches')}</DashboardSectionLabel>
+                <div className="space-y-2">
+                  {monitor.externalCaches.map((cache) => (
+                    <div
+                      key={cache.provider}
+                      className="flex items-center justify-between rounded-lg border p-3 text-sm"
+                    >
+                      <span>{cache.displayName}</span>
+                      <DashboardStatusBadge tone="default">
+                        {cache.sizeHuman}
+                      </DashboardStatusBadge>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </>

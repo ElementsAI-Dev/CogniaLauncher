@@ -6,6 +6,9 @@ import { formatError } from '@/lib/errors';
 import type {
   EnvVarScope,
   EnvFileFormat,
+  EnvVarSummary,
+  EnvVarShellProfileReadResult,
+  EnvVarExportResult,
   PathEntryInfo,
   ShellProfileInfo,
   EnvVarImportResult,
@@ -29,10 +32,9 @@ export type EnvVarDetectionScope = EnvVarScope | 'all';
 
 interface EnvVarDetectionSnapshot {
   scope: EnvVarDetectionScope;
-  envVars: Record<string, string>;
-  userPersistentVarsTyped: PersistentEnvVar[];
-  systemPersistentVarsTyped: PersistentEnvVar[];
-  persistentVarsTyped: PersistentEnvVar[];
+  processVarSummaries: EnvVarSummary[];
+  userPersistentVarSummaries: EnvVarSummary[];
+  systemPersistentVarSummaries: EnvVarSummary[];
   conflicts: EnvVarConflict[];
   fetchedAt: number;
 }
@@ -49,17 +51,17 @@ function resolveCacheKeysForInvalidation(scope: EnvVarDetectionScope): EnvVarDet
 function isSnapshotEmpty(snapshot: EnvVarDetectionSnapshot, scope: EnvVarDetectionScope): boolean {
   switch (scope) {
     case 'process':
-      return Object.keys(snapshot.envVars).length === 0;
+      return snapshot.processVarSummaries.length === 0;
     case 'user':
-      return snapshot.userPersistentVarsTyped.length === 0;
+      return snapshot.userPersistentVarSummaries.length === 0;
     case 'system':
-      return snapshot.systemPersistentVarsTyped.length === 0;
+      return snapshot.systemPersistentVarSummaries.length === 0;
     case 'all':
     default:
       return (
-        Object.keys(snapshot.envVars).length === 0
-        && snapshot.userPersistentVarsTyped.length === 0
-        && snapshot.systemPersistentVarsTyped.length === 0
+        snapshot.processVarSummaries.length === 0
+        && snapshot.userPersistentVarSummaries.length === 0
+        && snapshot.systemPersistentVarSummaries.length === 0
         && snapshot.conflicts.length === 0
       );
   }
@@ -67,10 +69,14 @@ function isSnapshotEmpty(snapshot: EnvVarDetectionSnapshot, scope: EnvVarDetecti
 
 interface EnvVarState {
   envVars: Record<string, string>;
+  processVarSummaries: EnvVarSummary[];
   persistentVars: [string, string][];
   persistentVarsTyped: PersistentEnvVar[];
   userPersistentVarsTyped: PersistentEnvVar[];
   systemPersistentVarsTyped: PersistentEnvVar[];
+  userPersistentVarSummaries: EnvVarSummary[];
+  systemPersistentVarSummaries: EnvVarSummary[];
+  revealedValues: Record<string, string>;
   pathEntries: PathEntryInfo[];
   shellProfiles: ShellProfileInfo[];
   conflicts: EnvVarConflict[];
@@ -94,10 +100,14 @@ interface EnvVarState {
 export function useEnvVar() {
   const [state, setState] = useState<EnvVarState>({
     envVars: {},
+    processVarSummaries: [],
     persistentVars: [],
     persistentVarsTyped: [],
     userPersistentVarsTyped: [],
     systemPersistentVarsTyped: [],
+    userPersistentVarSummaries: [],
+    systemPersistentVarSummaries: [],
+    revealedValues: {},
     pathEntries: [],
     shellProfiles: [],
     conflicts: [],
@@ -143,51 +153,45 @@ export function useEnvVar() {
     scope: EnvVarDetectionScope,
   ): Promise<EnvVarDetectionSnapshot> => {
     const base = stateRef.current;
-    let envVars = base.envVars;
-    let userPersistentVarsTyped = base.userPersistentVarsTyped;
-    let systemPersistentVarsTyped = base.systemPersistentVarsTyped;
+    let processVarSummaries = base.processVarSummaries;
+    let userPersistentVarSummaries = base.userPersistentVarSummaries;
+    let systemPersistentVarSummaries = base.systemPersistentVarSummaries;
     let conflicts = base.conflicts;
 
     if (scope === 'all') {
       const [allEnvVars, userVars, systemVars, detectedConflicts] = await Promise.all([
-        tauri.envvarListAll(),
-        tauri.envvarListPersistentTyped('user'),
-        tauri.envvarListPersistentTyped('system'),
+        tauri.envvarListProcessSummaries(),
+        tauri.envvarListPersistentTypedSummaries('user'),
+        tauri.envvarListPersistentTypedSummaries('system'),
         tauri.envvarDetectConflicts(),
       ]);
-      envVars = allEnvVars;
-      userPersistentVarsTyped = userVars;
-      systemPersistentVarsTyped = systemVars;
+      processVarSummaries = allEnvVars;
+      userPersistentVarSummaries = userVars;
+      systemPersistentVarSummaries = systemVars;
       conflicts = detectedConflicts;
     } else if (scope === 'process') {
-      envVars = await tauri.envvarListAll();
+      processVarSummaries = await tauri.envvarListProcessSummaries();
     } else if (scope === 'user') {
       const [userVars, detectedConflicts] = await Promise.all([
-        tauri.envvarListPersistentTyped('user'),
+        tauri.envvarListPersistentTypedSummaries('user'),
         tauri.envvarDetectConflicts(),
       ]);
-      userPersistentVarsTyped = userVars;
+      userPersistentVarSummaries = userVars;
       conflicts = detectedConflicts;
     } else {
       const [systemVars, detectedConflicts] = await Promise.all([
-        tauri.envvarListPersistentTyped('system'),
+        tauri.envvarListPersistentTypedSummaries('system'),
         tauri.envvarDetectConflicts(),
       ]);
-      systemPersistentVarsTyped = systemVars;
+      systemPersistentVarSummaries = systemVars;
       conflicts = detectedConflicts;
     }
 
-    const persistentVarsTyped =
-      scope === 'system'
-        ? systemPersistentVarsTyped
-        : userPersistentVarsTyped;
-
     return {
       scope,
-      envVars,
-      userPersistentVarsTyped,
-      systemPersistentVarsTyped,
-      persistentVarsTyped,
+      processVarSummaries,
+      userPersistentVarSummaries,
+      systemPersistentVarSummaries,
       conflicts,
       fetchedAt: Date.now(),
     };
@@ -204,10 +208,9 @@ export function useEnvVar() {
       ...s,
       ...(cached
         ? {
-            envVars: cached.envVars,
-            userPersistentVarsTyped: cached.userPersistentVarsTyped,
-            systemPersistentVarsTyped: cached.systemPersistentVarsTyped,
-            persistentVarsTyped: cached.persistentVarsTyped,
+            processVarSummaries: cached.processVarSummaries,
+            userPersistentVarSummaries: cached.userPersistentVarSummaries,
+            systemPersistentVarSummaries: cached.systemPersistentVarSummaries,
             conflicts: cached.conflicts,
             detectionLastUpdated: cached.fetchedAt,
           }
@@ -240,10 +243,9 @@ export function useEnvVar() {
 
       setState((s) => ({
         ...s,
-        envVars: fresh.envVars,
-        userPersistentVarsTyped: fresh.userPersistentVarsTyped,
-        systemPersistentVarsTyped: fresh.systemPersistentVarsTyped,
-        persistentVarsTyped: fresh.persistentVarsTyped,
+        processVarSummaries: fresh.processVarSummaries,
+        userPersistentVarSummaries: fresh.userPersistentVarSummaries,
+        systemPersistentVarSummaries: fresh.systemPersistentVarSummaries,
         conflicts: fresh.conflicts,
         loading: false,
         detectionLoading: false,
@@ -266,10 +268,9 @@ export function useEnvVar() {
       if (cached) {
         setState((s) => ({
           ...s,
-          envVars: cached.envVars,
-          userPersistentVarsTyped: cached.userPersistentVarsTyped,
-          systemPersistentVarsTyped: cached.systemPersistentVarsTyped,
-          persistentVarsTyped: cached.persistentVarsTyped,
+          processVarSummaries: cached.processVarSummaries,
+          userPersistentVarSummaries: cached.userPersistentVarSummaries,
+          systemPersistentVarSummaries: cached.systemPersistentVarSummaries,
           conflicts: cached.conflicts,
           loading: false,
           detectionLoading: false,
@@ -366,6 +367,10 @@ export function useEnvVar() {
         setState((s) => ({
           ...s,
           envVars: { ...s.envVars, [key]: value },
+          revealedValues: {
+            ...s.revealedValues,
+            [`${scope}:${key}`]: value,
+          },
         }));
       }
 
@@ -392,7 +397,15 @@ export function useEnvVar() {
         setState((s) => {
           // eslint-disable-next-line @typescript-eslint/no-unused-vars
           const { [key]: _removed, ...rest } = s.envVars;
-          return { ...s, envVars: rest };
+          const nextRevealed = { ...s.revealedValues };
+          delete nextRevealed[`${scope}:${key}`];
+          return { ...s, envVars: rest, revealedValues: nextRevealed };
+        });
+      } else {
+        setState((s) => {
+          const nextRevealed = { ...s.revealedValues };
+          delete nextRevealed[`${scope}:${key}`];
+          return { ...s, revealedValues: nextRevealed };
         });
       }
       invalidateDetectionCache(scope);
@@ -478,7 +491,21 @@ export function useEnvVar() {
   const readShellProfile = useCallback(async (path: string): Promise<string | null> => {
     setError(null);
     try {
-      return await tauri.envvarReadShellProfile(path);
+      const result = await tauri.envvarReadShellProfile(path);
+      return result.content;
+    } catch (err) {
+      setError(formatError(err));
+      return null;
+    }
+  }, [setError]);
+
+  const readShellProfileResult = useCallback(async (
+    path: string,
+    includeSensitive = false,
+  ): Promise<EnvVarShellProfileReadResult | null> => {
+    setError(null);
+    try {
+      return await tauri.envvarReadShellProfile(path, includeSensitive);
     } catch (err) {
       setError(formatError(err));
       return null;
@@ -560,11 +587,12 @@ export function useEnvVar() {
   const exportEnvFile = useCallback(async (
     scope: EnvVarScope,
     format: EnvFileFormat,
-  ): Promise<string | null> => {
+    includeSensitive = false,
+  ): Promise<EnvVarExportResult | null> => {
     setState((s) => ({ ...s, importExportLoading: true }));
     setError(null);
     try {
-      return await tauri.envvarExportEnvFile(scope, format);
+      return await tauri.envvarExportEnvFile(scope, format, includeSensitive);
     } catch (err) {
       setError(formatError(err));
       return null;
@@ -695,6 +723,41 @@ export function useEnvVar() {
     }
   }, [setError]);
 
+  const getRevealCacheKey = useCallback((key: string, scope: EnvVarScope) => {
+    return `${scope}:${key}`;
+  }, []);
+
+  const revealVar = useCallback(async (
+    key: string,
+    scope: EnvVarScope,
+  ): Promise<string | null> => {
+    setError(null);
+    try {
+      const result = await tauri.envvarRevealValue(key, scope);
+      if (result.value != null) {
+        setState((s) => ({
+          ...s,
+          revealedValues: {
+            ...s.revealedValues,
+            [getRevealCacheKey(key, scope)]: result.value!,
+          },
+        }));
+      }
+      return result.value;
+    } catch (err) {
+      setError(formatError(err));
+      return null;
+    }
+  }, [getRevealCacheKey, setError]);
+
+  const clearRevealedVar = useCallback((key: string, scope: EnvVarScope) => {
+    setState((s) => {
+      const next = { ...s.revealedValues };
+      delete next[getRevealCacheKey(key, scope)];
+      return { ...s, revealedValues: next };
+    });
+  }, [getRevealCacheKey]);
+
   const resolveConflict = useCallback(async (
     key: string,
     sourceScope: EnvVarScope,
@@ -704,13 +767,15 @@ export function useEnvVar() {
     try {
       const result = await tauri.envvarResolveConflict(key, sourceScope, targetScope);
       setState((s) => ({ ...s, shellGuidance: result.shellGuidance }));
+      clearRevealedVar(key, sourceScope);
+      clearRevealedVar(key, targetScope);
       await refreshAfterScopeMutation(targetScope);
       return result;
     } catch (err) {
       setError(formatError(err));
       return null;
     }
-  }, [refreshAfterScopeMutation, setError]);
+  }, [clearRevealedVar, refreshAfterScopeMutation, setError]);
 
   return {
     ...state,
@@ -738,6 +803,9 @@ export function useEnvVar() {
     fetchPersistentVarsTyped,
     detectConflicts,
     resolveConflict,
+    revealVar,
+    clearRevealedVar,
+    readShellProfileResult,
     loadDetection,
     invalidateDetectionCache,
   };

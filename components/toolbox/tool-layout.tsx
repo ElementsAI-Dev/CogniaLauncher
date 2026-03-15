@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useLocale } from '@/components/providers/locale-provider';
 import { cn } from '@/lib/utils';
 import { Copy, ClipboardPaste, Trash2, Check, AlertCircle, Info } from 'lucide-react';
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { useCopyToClipboard } from '@/hooks/use-clipboard';
 import type { ReactNode } from 'react';
 
@@ -47,20 +47,26 @@ export function ToolTextArea({
   footer,
 }: ToolTextAreaProps) {
   const { t } = useLocale();
-  const { copied, copy, paste } = useCopyToClipboard();
+  const { copied, error: clipboardError, copy, paste, clearError } = useCopyToClipboard();
+  const [lastClipboardAction, setLastClipboardAction] = useState<'copy' | 'paste' | null>(null);
 
   const handleCopy = useCallback(async () => {
+    setLastClipboardAction('copy');
     await copy(value);
   }, [copy, value]);
 
   const handlePaste = useCallback(async () => {
+    setLastClipboardAction('paste');
     const text = await paste();
-    onChange?.(text);
+    if (text !== null) {
+      onChange?.(text);
+    }
   }, [paste, onChange]);
 
   const handleClear = useCallback(() => {
+    clearError();
     onChange?.('');
-  }, [onChange]);
+  }, [clearError, onChange]);
 
   return (
     <div className={cn('space-y-2', className)}>
@@ -105,6 +111,15 @@ export function ToolTextArea({
             </span>
           )}
         </div>
+      )}
+      {clipboardError && lastClipboardAction && (
+        <ToolValidationMessage
+          message={
+            lastClipboardAction === 'paste'
+              ? t('toolbox.actions.pasteFailed')
+              : t('toolbox.actions.copyFailed')
+          }
+        />
       )}
     </div>
   );
@@ -220,7 +235,7 @@ interface ToolOutputBlockProps {
 
 export function ToolOutputBlock({ label, value, className, breakAll = false }: ToolOutputBlockProps) {
   const { t } = useLocale();
-  const { copied, copy } = useCopyToClipboard();
+  const { copied, error: clipboardError, copy } = useCopyToClipboard();
 
   const handleCopy = useCallback(async () => {
     await copy(value);
@@ -254,6 +269,9 @@ export function ToolOutputBlock({ label, value, className, breakAll = false }: T
           </Button>
         )}
       </div>
+      {clipboardError && (
+        <ToolValidationMessage message={t('toolbox.actions.copyFailed')} />
+      )}
     </div>
   );
 }

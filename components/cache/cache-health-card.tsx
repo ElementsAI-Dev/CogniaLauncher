@@ -182,9 +182,10 @@ export function CacheHealthCard({
             )}
           </div>
         ) : (
-          <p className="text-xs text-muted-foreground text-center py-4">
-            {t('cache.noIssues')}
-          </p>
+          <div className="rounded-lg border border-dashed p-4 text-center">
+            <p className="text-sm font-medium">{t('cache.noIssues')}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{t('cache.healthIdleDesc')}</p>
+          </div>
         )}
       </CardContent>
     </Card>

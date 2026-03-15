@@ -7,6 +7,33 @@ import {
 } from './envvar';
 import type { EnvFileFormat } from '@/types/tauri';
 
+function makeSummary(
+  key: string,
+  displayValue: string,
+  scope: 'process' | 'user' | 'system',
+  options?: {
+    regType?: string;
+    masked?: boolean;
+    hasValue?: boolean;
+    isSensitive?: boolean;
+    sensitivityReason?: 'token_key' | 'password_key' | 'secret_key' | 'api_key' | 'credential_key' | 'private_key_value' | 'certificate_value' | 'jwt_value' | null;
+  },
+) {
+  return {
+    key,
+    scope,
+    regType: options?.regType,
+    value: {
+      displayValue,
+      masked: options?.masked ?? false,
+      hasValue: options?.hasValue ?? displayValue.length > 0,
+      length: displayValue.length,
+      isSensitive: options?.isSensitive ?? false,
+      sensitivityReason: options?.sensitivityReason ?? null,
+    },
+  };
+}
+
 describe('validateEnvVarKey', () => {
   it('returns invalid with error "empty" for empty string', () => {
     expect(validateEnvVarKey('')).toEqual({ valid: false, error: 'empty' });
@@ -134,12 +161,15 @@ describe('buildEnvVarRows', () => {
   it('builds all-scope rows without key deduplication', () => {
     const rows = buildEnvVarRows({
       scopeFilter: 'all',
-      processVars: { PATH: 'proc-path', HOME: '/home/user' },
+      processVars: [
+        makeSummary('PATH', 'proc-path', 'process'),
+        makeSummary('HOME', '/home/user', 'process'),
+      ],
       userPersistentVars: [
-        { key: 'PATH', value: 'user-path', regType: 'REG_EXPAND_SZ' },
+        makeSummary('PATH', 'user-path', 'user', { regType: 'REG_EXPAND_SZ' }),
       ],
       systemPersistentVars: [
-        { key: 'PATH', value: 'sys-path', regType: 'REG_SZ' },
+        makeSummary('PATH', 'sys-path', 'system', { regType: 'REG_SZ' }),
       ],
       conflicts: [],
     });
@@ -152,9 +182,12 @@ describe('buildEnvVarRows', () => {
   it('sorts by key (case-insensitive) then scope order', () => {
     const rows = buildEnvVarRows({
       scopeFilter: 'all',
-      processVars: { zebra: 'z', Alpha: 'a' },
-      userPersistentVars: [{ key: 'alpha', value: 'ua' }],
-      systemPersistentVars: [{ key: 'ALPHA', value: 'sa' }],
+      processVars: [
+        makeSummary('zebra', 'z', 'process'),
+        makeSummary('Alpha', 'a', 'process'),
+      ],
+      userPersistentVars: [makeSummary('alpha', 'ua', 'user')],
+      systemPersistentVars: [makeSummary('ALPHA', 'sa', 'system')],
       conflicts: [],
     });
 
@@ -167,9 +200,9 @@ describe('buildEnvVarRows', () => {
   it('marks user/system conflict rows from conflict list', () => {
     const rows = buildEnvVarRows({
       scopeFilter: 'all',
-      processVars: { PATH: 'proc-path' },
-      userPersistentVars: [{ key: 'PATH', value: 'user-path' }],
-      systemPersistentVars: [{ key: 'Path', value: 'sys-path' }],
+      processVars: [makeSummary('PATH', 'proc-path', 'process')],
+      userPersistentVars: [makeSummary('PATH', 'user-path', 'user')],
+      systemPersistentVars: [makeSummary('Path', 'sys-path', 'system')],
       conflicts: [
         {
           key: 'PATH',
@@ -192,20 +225,71 @@ describe('buildEnvVarRows', () => {
   it('returns scope-only rows for user/system filters', () => {
     const userRows = buildEnvVarRows({
       scopeFilter: 'user',
-      processVars: { A: '1' },
-      userPersistentVars: [{ key: 'U', value: '2' }],
-      systemPersistentVars: [{ key: 'S', value: '3' }],
+      processVars: [makeSummary('A', '1', 'process')],
+      userPersistentVars: [makeSummary('U', '2', 'user')],
+      systemPersistentVars: [makeSummary('S', '3', 'system')],
       conflicts: [],
     });
     const systemRows = buildEnvVarRows({
       scopeFilter: 'system',
-      processVars: { A: '1' },
-      userPersistentVars: [{ key: 'U', value: '2' }],
-      systemPersistentVars: [{ key: 'S', value: '3' }],
+      processVars: [makeSummary('A', '1', 'process')],
+      userPersistentVars: [makeSummary('U', '2', 'user')],
+      systemPersistentVars: [makeSummary('S', '3', 'system')],
       conflicts: [],
     });
 
-    expect(userRows).toEqual([{ key: 'U', value: '2', scope: 'user', regType: undefined, conflict: false }]);
-    expect(systemRows).toEqual([{ key: 'S', value: '3', scope: 'system', regType: undefined, conflict: false }]);
+    expect(userRows).toHaveLength(1);
+    expect(systemRows).toHaveLength(1);
+    expect(userRows[0]).toMatchObject({
+      key: 'U',
+      value: '2',
+      scope: 'user',
+      regType: undefined,
+      conflict: false,
+      masked: false,
+      revealedValue: null,
+      isSensitive: false,
+    });
+    expect(systemRows[0]).toMatchObject({
+      key: 'S',
+      value: '3',
+      scope: 'system',
+      regType: undefined,
+      conflict: false,
+      masked: false,
+      revealedValue: null,
+      isSensitive: false,
+    });
+  });
+
+  it('uses revealed values for sensitive entries when available', () => {
+    const rows = buildEnvVarRows({
+      scopeFilter: 'all',
+      processVars: [
+        makeSummary('API_TOKEN', '[hidden: 12 chars]', 'process', {
+          masked: true,
+          isSensitive: true,
+          sensitivityReason: 'token_key',
+        }),
+      ],
+      userPersistentVars: [],
+      systemPersistentVars: [],
+      conflicts: [],
+      revealedValues: {
+        'process:API_TOKEN': 'secret-token',
+      },
+    });
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      key: 'API_TOKEN',
+      value: 'secret-token',
+      revealedValue: 'secret-token',
+      scope: 'process',
+      masked: false,
+      isSensitive: true,
+      sensitivityReason: 'token_key',
+      hasValue: true,
+    });
   });
 });

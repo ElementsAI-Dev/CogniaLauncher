@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   Select,
@@ -31,6 +32,7 @@ import { downloadEnvFile } from '@/lib/envvar';
 import type {
   EnvVarScope,
   EnvFileFormat,
+  EnvVarExportResult,
   EnvVarImportResult,
   EnvVarImportPreview,
 } from '@/types/tauri';
@@ -56,7 +58,11 @@ interface EnvVarImportExportProps {
   onClearImportPreview?: () => void;
   importPreview?: EnvVarImportPreview | null;
   importPreviewStale?: boolean;
-  onExport: (scope: EnvVarScope, format: EnvFileFormat) => Promise<string | null>;
+  onExport: (
+    scope: EnvVarScope,
+    format: EnvFileFormat,
+    includeSensitive?: boolean,
+  ) => Promise<EnvVarExportResult | string | null>;
   defaultTab?: 'import' | 'export';
   busy?: boolean;
   t: (key: string, params?: Record<string, string | number>) => string;
@@ -81,6 +87,8 @@ export function EnvVarImportExport({
   const [exportScope, setExportScope] = useState<EnvVarScope>('process');
   const [exportFormat, setExportFormat] = useState<EnvFileFormat>('dotenv');
   const [exportContent, setExportContent] = useState('');
+  const [exportResult, setExportResult] = useState<EnvVarExportResult | null>(null);
+  const [exportIncludeSensitive, setExportIncludeSensitive] = useState(false);
   const [copied, setCopied] = useState(false);
   const [importing, setImporting] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -168,10 +176,14 @@ export function EnvVarImportExport({
 
   const handleExport = async () => {
     setExporting(true);
-    const content = await onExport(exportScope, exportFormat);
+    const result = await onExport(exportScope, exportFormat, exportIncludeSensitive);
     setExporting(false);
+    setExportResult(typeof result === 'string' ? null : result);
+    const content = typeof result === 'string' ? result : result?.content ?? null;
     if (content) {
       setExportContent(content);
+    } else {
+      setExportContent('');
     }
   };
 
@@ -467,6 +479,23 @@ export function EnvVarImportExport({
               </AlertDescription>
             </Alert>
 
+            <div className="flex items-start gap-3 rounded-md border p-3">
+              <Checkbox
+                id="envvar-export-include-sensitive"
+                checked={exportIncludeSensitive}
+                onCheckedChange={(checked) => setExportIncludeSensitive(checked === true)}
+                disabled={busy || exporting}
+              />
+              <div className="space-y-1">
+                <Label htmlFor="envvar-export-include-sensitive" className="cursor-pointer">
+                  {t('envvar.importExport.includeSensitive')}
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  {t('envvar.importExport.includeSensitiveDesc')}
+                </p>
+              </div>
+            </div>
+
             <Button variant="outline" onClick={handleExport} disabled={exporting || busy} className="w-full gap-1.5">
               {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
               {exporting ? t('common.loading') : t('envvar.importExport.export')}
@@ -474,6 +503,22 @@ export function EnvVarImportExport({
 
             {exportContent && (
               <>
+                {exportResult?.redacted && (
+                  <Alert className="border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-400 [&>svg]:text-amber-500">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertDescription className="text-xs">
+                      {t('envvar.importExport.redactedWarning')}
+                    </AlertDescription>
+                  </Alert>
+                )}
+                {exportResult?.revealed && exportResult.sensitiveCount > 0 && (
+                  <Alert className="border-orange-500/50 bg-orange-500/10 text-orange-700 dark:text-orange-300 [&>svg]:text-orange-500">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertDescription className="text-xs">
+                      {t('envvar.importExport.sensitiveIncludedWarning')}
+                    </AlertDescription>
+                  </Alert>
+                )}
                 <Separator />
                 <Textarea
                   value={exportContent}

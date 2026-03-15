@@ -86,6 +86,22 @@ jest.mock("@/lib/stores/dashboard", () => {
       required: false,
       defaultVisible: true,
     },
+    "workspace-trends": {
+      type: "workspace-trends",
+      titleKey: "dashboard.widgets.workspaceTrends",
+      descriptionKey: "dashboard.widgets.workspaceTrendsDesc",
+      icon: "ChartNoAxesCombined",
+      defaultSize: "lg",
+      minSize: "md",
+      category: "charts",
+      allowMultiple: true,
+      required: false,
+      defaultVisible: true,
+      defaultSettings: {
+        range: "7d",
+        metric: "installations",
+      },
+    },
   };
 
   return {
@@ -153,6 +169,15 @@ describe("CustomizeDialog", () => {
     expect(screen.getByText("dashboard.widgets.quickSearch")).toBeInTheDocument();
     expect(screen.getByText("dashboard.widgets.environmentList")).toBeInTheDocument();
     expect(screen.getByText("dashboard.widgets.toolboxFavorites")).toBeInTheDocument();
+    expect(screen.getByText("dashboard.widgets.workspaceTrends")).toBeInTheDocument();
+  });
+
+  it("shows a configurable badge for widgets with default settings", () => {
+    render(
+      <CustomizeDialog open={true} onOpenChange={jest.fn()} />,
+    );
+
+    expect(screen.getByTestId("dashboard-customize-configurable-workspace-trends")).toBeInTheDocument();
   });
 
   it("shows disabled limit state when widget type reached max instances", () => {

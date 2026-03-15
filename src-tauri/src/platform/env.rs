@@ -445,12 +445,213 @@ pub struct ShellProfileInfo {
     pub is_current: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EnvVarSensitivityReason {
+    TokenKey,
+    PasswordKey,
+    SecretKey,
+    ApiKey,
+    CredentialKey,
+    PrivateKeyValue,
+    CertificateValue,
+    JwtValue,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnvVarValueSummary {
+    pub display_value: String,
+    pub masked: bool,
+    pub has_value: bool,
+    pub length: usize,
+    pub is_sensitive: bool,
+    pub sensitivity_reason: Option<EnvVarSensitivityReason>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RedactedShellContent {
+    pub content: String,
+    pub redacted_count: usize,
+    pub contains_sensitive: bool,
+}
+
+const REDACTED_ENV_VALUE_PLACEHOLDER: &str = "[REDACTED]";
+
 // ============================================================================
 // Process-level helpers
 // ============================================================================
 
 pub fn get_all_vars() -> HashMap<String, String> {
     env::vars().collect()
+}
+
+pub fn classify_env_var_sensitivity(
+    key: &str,
+    value: &str,
+) -> Option<EnvVarSensitivityReason> {
+    let normalized_key = key.trim().to_uppercase();
+    let normalized_value = value.trim();
+    let normalized_value_upper = normalized_value.to_uppercase();
+
+    if normalized_key.contains("PASSWORD") || normalized_key.contains("PASSWD") {
+        return Some(EnvVarSensitivityReason::PasswordKey);
+    }
+
+    if normalized_key.contains("CLIENT_SECRET")
+        || normalized_key.contains("SECRET")
+    {
+        return Some(EnvVarSensitivityReason::SecretKey);
+    }
+
+    if normalized_key.contains("API_KEY")
+        || normalized_key.ends_with("_KEY")
+            && (normalized_key.contains("API") || normalized_key.contains("ACCESS"))
+    {
+        return Some(EnvVarSensitivityReason::ApiKey);
+    }
+
+    if normalized_key.contains("TOKEN")
+        || normalized_key.contains("AUTH")
+        || normalized_value.starts_with("ghp_")
+        || normalized_value.starts_with("gho_")
+        || normalized_value.starts_with("glpat-")
+        || normalized_value.starts_with("sk-")
+    {
+        return Some(EnvVarSensitivityReason::TokenKey);
+    }
+
+    if normalized_key.contains("CREDENTIAL")
+        || normalized_key.contains("CRED")
+    {
+        return Some(EnvVarSensitivityReason::CredentialKey);
+    }
+
+    if normalized_value_upper.contains("-----BEGIN") && normalized_value_upper.contains("PRIVATE KEY")
+    {
+        return Some(EnvVarSensitivityReason::PrivateKeyValue);
+    }
+
+    if normalized_value_upper.contains("-----BEGIN") && normalized_value_upper.contains("CERTIFICATE")
+    {
+        return Some(EnvVarSensitivityReason::CertificateValue);
+    }
+
+    if looks_like_jwt(normalized_value) {
+        return Some(EnvVarSensitivityReason::JwtValue);
+    }
+
+    None
+}
+
+fn looks_like_jwt(value: &str) -> bool {
+    let mut segments = value.split('.');
+    let Some(first) = segments.next() else {
+        return false;
+    };
+    let Some(second) = segments.next() else {
+        return false;
+    };
+    let Some(third) = segments.next() else {
+        return false;
+    };
+
+    segments.next().is_none()
+        && first.starts_with("eyJ")
+        && first.len() >= 8
+        && second.len() >= 8
+        && third.len() >= 4
+}
+
+pub fn mask_sensitive_value(value: &str) -> String {
+    if value.is_empty() {
+        String::new()
+    } else {
+        format!("[hidden: {} chars]", value.chars().count())
+    }
+}
+
+pub fn summarize_env_value(key: &str, value: &str) -> EnvVarValueSummary {
+    let reason = classify_env_var_sensitivity(key, value);
+    let is_sensitive = reason.is_some();
+    let has_value = !value.is_empty();
+
+    EnvVarValueSummary {
+        display_value: if is_sensitive {
+            mask_sensitive_value(value)
+        } else {
+            value.to_string()
+        },
+        masked: is_sensitive && has_value,
+        has_value,
+        length: value.chars().count(),
+        is_sensitive,
+        sensitivity_reason: reason,
+    }
+}
+
+pub fn redact_shell_profile_content(content: &str) -> RedactedShellContent {
+    let mut redacted_count = 0usize;
+    let redacted_lines = content
+        .lines()
+        .map(|line| {
+            if let Some(redacted_line) = redact_shell_assignment_line(line) {
+                redacted_count += 1;
+                redacted_line
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>();
+
+    RedactedShellContent {
+        content: redacted_lines.join("\n"),
+        redacted_count,
+        contains_sensitive: redacted_count > 0,
+    }
+}
+
+fn redact_shell_assignment_line(line: &str) -> Option<String> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() || trimmed.starts_with('#') {
+        return None;
+    }
+
+    if let Some(rest) = trimmed.strip_prefix("export ") {
+        let eq_index = rest.find('=')?;
+        let key = rest[..eq_index].trim();
+        if classify_env_var_sensitivity(key, rest[eq_index + 1..].trim()).is_some() {
+            return Some(format!("export {}=\"{}\"", key, REDACTED_ENV_VALUE_PLACEHOLDER));
+        }
+        return None;
+    }
+
+    if let Some(rest) = trimmed.strip_prefix("$env:") {
+        let eq_index = rest.find('=')?;
+        let key = rest[..eq_index].trim();
+        if classify_env_var_sensitivity(key, rest[eq_index + 1..].trim()).is_some() {
+            return Some(format!("$env:{} = \"{}\"", key, REDACTED_ENV_VALUE_PLACEHOLDER));
+        }
+        return None;
+    }
+
+    if let Some(rest) = trimmed.strip_prefix("set -gx ") {
+        let space_index = rest.find(' ')?;
+        let key = rest[..space_index].trim();
+        if classify_env_var_sensitivity(key, rest[space_index + 1..].trim()).is_some() {
+            return Some(format!("set -gx {} \"{}\"", key, REDACTED_ENV_VALUE_PLACEHOLDER));
+        }
+        return None;
+    }
+
+    let eq_index = trimmed.find('=')?;
+    let key = trimmed[..eq_index].trim();
+    validate_env_var_key(key).ok()?;
+    if classify_env_var_sensitivity(key, trimmed[eq_index + 1..].trim()).is_some() {
+        return Some(format!("{}=\"{}\"", key, REDACTED_ENV_VALUE_PLACEHOLDER));
+    }
+
+    None
 }
 
 // ============================================================================
@@ -2323,6 +2524,54 @@ mod tests {
     async fn test_set_persistent_var_rejects_invalid_key() {
         let result = set_persistent_var("BAD KEY", "value", EnvVarScope::Process).await;
         assert!(matches!(result, Err(CogniaError::Config(_))));
+    }
+
+    #[test]
+    fn test_summarize_env_value_masks_secret_like_keys() {
+        let summary = summarize_env_value("GITHUB_TOKEN", "ghp_super_secret_token_value");
+        assert!(summary.is_sensitive);
+        assert!(summary.masked);
+        assert_eq!(summary.sensitivity_reason, Some(EnvVarSensitivityReason::TokenKey));
+        assert_ne!(summary.display_value, "ghp_super_secret_token_value");
+        assert!(summary.display_value.contains("hidden"));
+    }
+
+    #[test]
+    fn test_summarize_env_value_detects_jwt_like_values() {
+        let jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature";
+        let summary = summarize_env_value("SESSION", jwt);
+        assert!(summary.is_sensitive);
+        assert_eq!(summary.sensitivity_reason, Some(EnvVarSensitivityReason::JwtValue));
+        assert!(summary.masked);
+    }
+
+    #[test]
+    fn test_summarize_env_value_preserves_non_sensitive_values() {
+        let summary = summarize_env_value("NODE_ENV", "development");
+        assert!(!summary.is_sensitive);
+        assert!(!summary.masked);
+        assert_eq!(summary.display_value, "development");
+        assert_eq!(summary.length, "development".len());
+    }
+
+    #[test]
+    fn test_redact_shell_profile_content_masks_sensitive_assignments() {
+        let content = [
+            "export GITHUB_TOKEN=\"ghp_super_secret_token_value\"",
+            "export NODE_ENV=\"development\"",
+            "$env:API_KEY = \"abc123secret456\"",
+        ]
+        .join("\n");
+
+        let redacted = redact_shell_profile_content(&content);
+
+        assert!(redacted.contains_sensitive);
+        assert_eq!(redacted.redacted_count, 2);
+        assert!(redacted.content.contains("GITHUB_TOKEN"));
+        assert!(redacted.content.contains("[REDACTED]"));
+        assert!(redacted.content.contains("NODE_ENV=\"development\""));
+        assert!(!redacted.content.contains("ghp_super_secret_token_value"));
+        assert!(!redacted.content.contains("abc123secret456"));
     }
 
     #[test]

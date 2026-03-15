@@ -6,6 +6,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import CachePage from "./page";
 import { LocaleProvider } from "@/components/providers/locale-provider";
 
@@ -472,6 +473,61 @@ const mockMessages = {
       noHistory: "No cleanup history yet",
       historyCleared: "Cleared {count} history records",
       historyClearFailed: "Failed to clear history",
+      monitorLoadFailed: "Failed to load cache monitor: {error}",
+      insightInternalTitle: "Managed Cache",
+      insightStatusHealthy: "Healthy",
+      insightStatusWatch: "Watch",
+      insightStatusAvailable: "Available",
+      insightStatusUnavailable: "Unavailable",
+      insightStatusSnapshotPending: "Snapshot Pending",
+      insightCoverageHistorical: "Historical Trend",
+      insightCoverageSnapshot: "Snapshot Only",
+      insightCoverageLabel: "Coverage",
+      insightFreshnessFresh: "Fresh",
+      insightFreshnessStale: "Stale",
+      insightFreshnessMissing: "Missing",
+      insightUsageLabel: "Capacity usage",
+      insightTrendWindowDays: "Last 30 days",
+      insightSnapshotOnlyDesc:
+        "This section currently has live snapshot data only, not a full historical trend.",
+      insightSummaryTitle: "Visual Summary",
+      insightSummaryDesc:
+        "Compare internal, default downloads, and external cache scopes at a glance.",
+      insightSignalsTitle: "Operational Signals",
+      insightSignalsDesc:
+        "Track trend, hit rate, and hotspots before starting maintenance actions.",
+      insightActionsTitle: "Recommended Actions",
+      insightActionsDesc:
+        "Prioritized next steps based on current cache pressure and diagnostics.",
+      insightPrimaryActionLabel: "Primary action",
+      insightSecondaryActionsLabel: "More paths",
+      insightDetailsTitle: "Detailed Controls",
+      insightDetailsDesc:
+        "Use the full maintenance controls once you know which cache area needs attention.",
+      insightActionRepairTitle: "Repair cache issues",
+      insightActionRepairDesc:
+        "Integrity verification found managed cache problems that should be repaired first.",
+      insightActionRepairCta: "Review health checks",
+      insightActionCleanTitle: "Reclaim space now",
+      insightActionCleanDesc:
+        "Cache pressure is high enough that a cleanup is the fastest way to stabilize disk usage.",
+      insightActionCleanCta: "Open cleanup controls",
+      insightActionEntriesTitle: "Inspect hot entries",
+      insightActionEntriesDesc:
+        "Recent activity suggests the entry browser is the best place to inspect frequently accessed cache data.",
+      insightActionEntriesCta: "Open entry browser",
+      insightActionHistoryTitle: "Review cleanup history",
+      insightActionHistoryDesc:
+        "A recent history read failed, so reviewing recovery details is the next best step.",
+      insightActionHistoryCta: "Open history",
+      insightActionExternalTitle: "Inspect external caches",
+      insightActionExternalDesc:
+        "External tool caches now outweigh internal cache usage and should be reviewed separately.",
+      insightActionExternalCta: "Open external caches",
+      insightActionMonitorTitle: "Monitor cache health",
+      insightActionMonitorDesc:
+        "Current cache signals look stable. Keep monitoring growth and refresh trends as needed.",
+      insightActionMonitorCta: "View trend details",
     },
   },
   zh: {
@@ -516,6 +572,61 @@ const mockMessages = {
       noHistory: "No cleanup history yet",
       historyCleared: "Cleared {count} history records",
       historyClearFailed: "Failed to clear history",
+      monitorLoadFailed: "Failed to load cache monitor: {error}",
+      insightInternalTitle: "Managed Cache",
+      insightStatusHealthy: "Healthy",
+      insightStatusWatch: "Watch",
+      insightStatusAvailable: "Available",
+      insightStatusUnavailable: "Unavailable",
+      insightStatusSnapshotPending: "Snapshot Pending",
+      insightCoverageHistorical: "Historical Trend",
+      insightCoverageSnapshot: "Snapshot Only",
+      insightCoverageLabel: "Coverage",
+      insightFreshnessFresh: "Fresh",
+      insightFreshnessStale: "Stale",
+      insightFreshnessMissing: "Missing",
+      insightUsageLabel: "Capacity usage",
+      insightTrendWindowDays: "Last 30 days",
+      insightSnapshotOnlyDesc:
+        "This section currently has live snapshot data only, not a full historical trend.",
+      insightSummaryTitle: "Visual Summary",
+      insightSummaryDesc:
+        "Compare internal, default downloads, and external cache scopes at a glance.",
+      insightSignalsTitle: "Operational Signals",
+      insightSignalsDesc:
+        "Track trend, hit rate, and hotspots before starting maintenance actions.",
+      insightActionsTitle: "Recommended Actions",
+      insightActionsDesc:
+        "Prioritized next steps based on current cache pressure and diagnostics.",
+      insightPrimaryActionLabel: "Primary action",
+      insightSecondaryActionsLabel: "More paths",
+      insightDetailsTitle: "Detailed Controls",
+      insightDetailsDesc:
+        "Use the full maintenance controls once you know which cache area needs attention.",
+      insightActionRepairTitle: "Repair cache issues",
+      insightActionRepairDesc:
+        "Integrity verification found managed cache problems that should be repaired first.",
+      insightActionRepairCta: "Review health checks",
+      insightActionCleanTitle: "Reclaim space now",
+      insightActionCleanDesc:
+        "Cache pressure is high enough that a cleanup is the fastest way to stabilize disk usage.",
+      insightActionCleanCta: "Open cleanup controls",
+      insightActionEntriesTitle: "Inspect hot entries",
+      insightActionEntriesDesc:
+        "Recent activity suggests the entry browser is the best place to inspect frequently accessed cache data.",
+      insightActionEntriesCta: "Open entry browser",
+      insightActionHistoryTitle: "Review cleanup history",
+      insightActionHistoryDesc:
+        "A recent history read failed, so reviewing recovery details is the next best step.",
+      insightActionHistoryCta: "Open history",
+      insightActionExternalTitle: "Inspect external caches",
+      insightActionExternalDesc:
+        "External tool caches now outweigh internal cache usage and should be reviewed separately.",
+      insightActionExternalCta: "Open external caches",
+      insightActionMonitorTitle: "Monitor cache health",
+      insightActionMonitorDesc:
+        "Current cache signals look stable. Keep monitoring growth and refresh trends as needed.",
+      insightActionMonitorCta: "View trend details",
       metadataCacheTtl: "Metadata Cache TTL",
       metadataCacheTtlDesc: "Metadata cache ttl in seconds",
       ttlSeconds: "seconds",
@@ -559,7 +670,7 @@ describe("CachePage", () => {
       renderWithProviders(<CachePage />);
 
       await waitFor(() => {
-        expect(screen.getByText("6 MB")).toBeInTheDocument();
+        expect(screen.getAllByText("6 MB").length).toBeGreaterThanOrEqual(1);
       });
     });
 
@@ -567,9 +678,36 @@ describe("CachePage", () => {
       renderWithProviders(<CachePage />);
 
       await waitFor(() => {
-        expect(screen.getByText("Download Cache")).toBeInTheDocument();
-        expect(screen.getByText("Default Downloads")).toBeInTheDocument();
-        expect(screen.getByText("Metadata Cache")).toBeInTheDocument();
+        expect(screen.getAllByText("Download Cache").length).toBeGreaterThanOrEqual(1);
+        expect(screen.getAllByText("Default Downloads").length).toBeGreaterThanOrEqual(1);
+        expect(screen.getAllByText("Metadata Cache").length).toBeGreaterThanOrEqual(1);
+      });
+    });
+
+    it("renders overview insight sections and comparative scope summaries", async () => {
+      renderWithProviders(<CachePage />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Operational Signals")).toBeInTheDocument();
+        expect(screen.getByText("Recommended Actions")).toBeInTheDocument();
+        expect(screen.getByText("Managed Cache")).toBeInTheDocument();
+        expect(
+          screen.getByRole("button", { name: /open entry browser/i }),
+        ).toBeInTheDocument();
+      });
+    });
+
+    it("switches to the entries tab from the recommended action card", async () => {
+      const user = userEvent.setup();
+      renderWithProviders(<CachePage />);
+
+      const actionButton = await screen.findByTestId("overview-action-entries");
+      await user.click(actionButton);
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole("tab", { name: /entries|cache\.tabEntries/i }),
+        ).toHaveAttribute("data-state", "active");
       });
     });
   });

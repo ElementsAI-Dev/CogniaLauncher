@@ -7,6 +7,7 @@ import { APP_VERSION } from "@/lib/app-version";
 import { toast } from "sonner";
 import type {
   AboutInsights,
+  AboutSupportFreshness,
   SystemInfo,
   SystemSubsystem,
   UpdateErrorCategory,
@@ -46,13 +47,27 @@ export interface UseAboutDataReturn {
   systemLoading: boolean;
   aboutInsights: AboutInsights | null;
   insightsLoading: boolean;
+  supportFreshness: AboutSupportFreshness;
+  supportRefreshing: boolean;
   isDesktop: boolean;
   checkForUpdate: () => Promise<void>;
   reloadSystemInfo: () => Promise<void>;
   reloadAboutInsights: () => Promise<void>;
+  refreshAllSupportData: () => Promise<void>;
   handleUpdate: (t: (key: string) => string) => Promise<void>;
   clearError: () => void;
   exportDiagnostics: (t: (key: string) => string) => Promise<void>;
+}
+
+function getLatestTimestamp(
+  ...timestamps: Array<string | null | undefined>
+): string | null {
+  const values = timestamps.filter((value): value is string => typeof value === "string");
+  if (values.length === 0) {
+    return null;
+  }
+
+  return values.sort((left, right) => left.localeCompare(right)).at(-1) ?? null;
 }
 
 function toAboutErrorKey(category: UpdateErrorCategory | null): string {
@@ -98,10 +113,38 @@ export function useAboutData(locale: string): UseAboutDataReturn {
   const [systemLoading, setSystemLoading] = useState(true);
   const [aboutInsights, setAboutInsights] = useState<AboutInsights | null>(null);
   const [insightsLoading, setInsightsLoading] = useState(true);
+  const [supportFreshness, setSupportFreshness] = useState<AboutSupportFreshness>({
+    updateCheckedAt: null,
+    systemInfoRefreshedAt: null,
+    insightsGeneratedAt: null,
+    latestSuccessfulAt: null,
+  });
+  const [supportRefreshing, setSupportRefreshing] = useState(false);
   const isDesktop = isTauri();
+
+  const updateSupportFreshness = useCallback(
+    (partial: Partial<AboutSupportFreshness>) => {
+      setSupportFreshness((previous) => {
+        const next = {
+          ...previous,
+          ...partial,
+        };
+
+        next.latestSuccessfulAt = getLatestTimestamp(
+          next.updateCheckedAt,
+          next.systemInfoRefreshedAt,
+          next.insightsGeneratedAt,
+        );
+
+        return next;
+      });
+    },
+    [],
+  );
 
   const checkForUpdate = useCallback(async () => {
     if (!tauri.isTauri()) {
+      const checkedAt = new Date().toISOString();
       const normalized = normalizeSelfUpdateInfo(
         {
           current_version: APP_VERSION,
@@ -119,6 +162,9 @@ export function useAboutData(locale: string): UseAboutDataReturn {
         ...normalized,
       });
       setUpdateStatus(deriveStatusFromUpdateInfo(normalized));
+      updateSupportFreshness({
+        updateCheckedAt: checkedAt,
+      });
       setLoading(false);
       return;
     }
@@ -129,11 +175,15 @@ export function useAboutData(locale: string): UseAboutDataReturn {
     setUpdateErrorMessage(null);
     setUpdateStatus("checking");
     try {
+      const checkedAt = new Date().toISOString();
       const info = normalizeSelfUpdateInfo(
         await tauri.selfCheckUpdate(),
         APP_VERSION,
       );
       setUpdateInfo(info);
+      updateSupportFreshness({
+        updateCheckedAt: checkedAt,
+      });
       const status = deriveStatusFromUpdateInfo(info);
       setUpdateStatus(status);
       if (status === "error") {
@@ -166,7 +216,7 @@ export function useAboutData(locale: string): UseAboutDataReturn {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [updateSupportFreshness]);
 
   const loadSystemInfo = useCallback(async () => {
     setSystemError(null);
@@ -214,6 +264,9 @@ export function useAboutData(locale: string): UseAboutDataReturn {
           networks: [],
           subsystemErrors: [],
         }),
+      });
+      updateSupportFreshness({
+        systemInfoRefreshedAt: new Date().toISOString(),
       });
       setSystemLoading(false);
       return;
@@ -314,6 +367,9 @@ export function useAboutData(locale: string): UseAboutDataReturn {
           subsystemErrors,
         }),
       });
+      updateSupportFreshness({
+        systemInfoRefreshedAt: new Date().toISOString(),
+      });
     } catch (err) {
       console.error("Failed to load system info:", err);
       setSystemError("system_info_failed");
@@ -364,7 +420,7 @@ export function useAboutData(locale: string): UseAboutDataReturn {
     } finally {
       setSystemLoading(false);
     }
-  }, [locale]);
+  }, [locale, updateSupportFreshness]);
 
   const loadAboutInsights = useCallback(async () => {
     if (!tauri.isTauri()) {
@@ -387,6 +443,9 @@ export function useAboutData(locale: string): UseAboutDataReturn {
           cache: "unavailable",
         },
         generatedAt: new Date().toISOString(),
+      });
+      updateSupportFreshness({
+        insightsGeneratedAt: new Date().toISOString(),
       });
       setInsightsLoading(false);
       return;
@@ -425,6 +484,7 @@ export function useAboutData(locale: string): UseAboutDataReturn {
           ? cacheStatsResult.value.totalSizeHuman
           : "0 B";
 
+      const generatedAt = new Date().toISOString();
       setAboutInsights({
         runtimeMode: "desktop",
         providerSummary,
@@ -439,7 +499,10 @@ export function useAboutData(locale: string): UseAboutDataReturn {
           logs: logSizeResult.status === "fulfilled" ? "ok" : "failed",
           cache: cacheStatsResult.status === "fulfilled" ? "ok" : "failed",
         },
-        generatedAt: new Date().toISOString(),
+        generatedAt,
+      });
+      updateSupportFreshness({
+        insightsGeneratedAt: generatedAt,
       });
     } catch (err) {
       console.error("Failed to load about insights:", err);
@@ -466,7 +529,7 @@ export function useAboutData(locale: string): UseAboutDataReturn {
     } finally {
       setInsightsLoading(false);
     }
-  }, []);
+  }, [updateSupportFreshness]);
 
   // Check for updates only once on mount (not affected by locale changes)
   useEffect(() => {
@@ -573,6 +636,16 @@ export function useAboutData(locale: string): UseAboutDataReturn {
     setUpdateErrorCategory(null);
     setUpdateErrorMessage(null);
   }, []);
+
+  const refreshAllSupportData = useCallback(async () => {
+    setSupportRefreshing(true);
+
+    try {
+      await Promise.all([checkForUpdate(), loadSystemInfo(), loadAboutInsights()]);
+    } finally {
+      setSupportRefreshing(false);
+    }
+  }, [checkForUpdate, loadAboutInsights, loadSystemInfo]);
 
   const exportDiagnostics = useCallback(
     async (t: (key: string) => string) => {
@@ -735,10 +808,13 @@ export function useAboutData(locale: string): UseAboutDataReturn {
     systemLoading,
     aboutInsights,
     insightsLoading,
+    supportFreshness,
+    supportRefreshing,
     isDesktop,
     checkForUpdate,
     reloadSystemInfo: loadSystemInfo,
     reloadAboutInsights: loadAboutInsights,
+    refreshAllSupportData,
     handleUpdate,
     clearError,
     exportDiagnostics,

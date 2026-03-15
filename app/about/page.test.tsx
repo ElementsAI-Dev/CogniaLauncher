@@ -142,6 +142,41 @@ const mockMessages = {
       title: "About",
       pageTitle: "About CogniaLauncher",
       pageDescription: "Cross-platform environment and package manager",
+      supportOverviewTitle: "Support Overview",
+      supportOverviewDesc: "Top-level support readiness and next steps",
+      supportHealthReady: "Ready",
+      supportHealthAttention: "Attention",
+      supportHealthDegraded: "Degraded",
+      supportHealthLoading: "Loading",
+      supportSummaryReady: "Support data is healthy.",
+      supportSummaryAttention: "There are attention items to review.",
+      supportSummaryDegraded: "Some support data is degraded.",
+      supportSummaryLoading: "Support data is still loading.",
+      supportIssueCount: "{count} issues",
+      supportDiagnosticsReady: "Diagnostics ready",
+      supportDiagnosticsDegraded: "Diagnostics partial",
+      supportLatestActivity: "Latest activity",
+      supportUpdateCheckedAt: "Updates checked",
+      supportSystemRefreshedAt: "System refreshed",
+      supportInsightsGeneratedAt: "Insights generated",
+      supportDegradedSections: "Needs follow-up",
+      supportRecommendedActions: "Recommended actions",
+      supportRefreshAll: "Refresh all support data",
+      supportActionOpenChangelog: "Review changelog",
+      supportActionOpenProviders: "Open providers",
+      supportActionOpenLogs: "Open logs",
+      supportActionOpenCache: "Open cache",
+      supportActionExportDiagnostics: "Export diagnostics",
+      supportActionReportBug: "Report bug",
+      supportSectionUpdate: "Update",
+      supportSectionSystem: "System",
+      supportSectionPlatform: "Platform",
+      supportSectionComponents: "Components",
+      supportSectionBattery: "Battery",
+      supportSectionDisks: "Disks",
+      supportSectionNetworks: "Networks",
+      supportSectionCache: "Cache",
+      supportSectionHomeDir: "Home Directory",
       versionInfo: "Version Information",
       currentVersion: "Current Version",
       latestVersion: "Latest Version",
@@ -169,6 +204,7 @@ const mockMessages = {
       insightsStatusOk: "OK",
       insightsStatusFailed: "Failed",
       insightsStatusUnavailable: "Unavailable",
+      lastGeneratedAt: "Last generated",
       insightsRetry: "Refresh insights",
       operatingSystem: "Operating System",
       architecture: "Architecture",
@@ -191,6 +227,7 @@ const mockMessages = {
       copyFailed: "Failed to copy",
       systemInfoFailed: "Failed to load system info",
       systemInfoRetry: "Refresh",
+      lastRefreshedAt: "Last refreshed",
       buildDependencies: "Build Dependencies",
       openInNewTab: "Opens in new tab",
       licenseCertificates: "License & Certificates",
@@ -291,6 +328,7 @@ describe("About Page", () => {
 
         expect(sections).toEqual([
           "about-summary-heading",
+          "about-support-heading",
           "about-diagnostics-heading",
           "about-reference-heading",
         ]);
@@ -305,6 +343,7 @@ describe("About Page", () => {
         expect(screen.getByText("Runtime Insights")).toBeInTheDocument();
         expect(screen.getByText("Build Dependencies")).toBeInTheDocument();
         expect(screen.getByText("Actions")).toBeInTheDocument();
+        expect(screen.getAllByText("Support Overview").length).toBeGreaterThanOrEqual(1);
       });
     });
 
@@ -319,13 +358,21 @@ describe("About Page", () => {
         level: 2,
         name: /system information \/ runtime insights/i,
       });
+      const supportHeading = screen.getByRole("heading", {
+        level: 2,
+        name: /support overview/i,
+      });
       const referenceHeading = screen.getByRole("heading", {
         level: 2,
         name: /build dependencies \/ license & certificates \/ actions/i,
       });
 
       expect(
-        summaryHeading.compareDocumentPosition(diagnosticsHeading) &
+        summaryHeading.compareDocumentPosition(supportHeading) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(
+        supportHeading.compareDocumentPosition(diagnosticsHeading) &
           Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy();
       expect(
@@ -340,6 +387,9 @@ describe("About Page", () => {
       await waitFor(() => {
         expect(
           screen.getByRole("region", { name: /version information/i }),
+        ).toBeInTheDocument();
+        expect(
+          screen.getByRole("region", { name: /support overview/i }),
         ).toBeInTheDocument();
         expect(
           screen.getByRole("region", {
@@ -378,6 +428,16 @@ describe("About Page", () => {
 
       tauriMock.isTauri.mockReturnValue(true);
       platformMock.isTauri.mockReturnValue(true);
+    });
+
+    it("renders support refresh control near the top of the page", async () => {
+      renderWithProviders(<AboutPage />);
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: /refresh all support data/i }),
+        ).toBeInTheDocument();
+      });
     });
   });
 

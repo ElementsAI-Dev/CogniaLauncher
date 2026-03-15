@@ -100,6 +100,8 @@ interface SystemInfoCardProps {
   systemLoading: boolean;
   updateInfo: SelfUpdateInfo | null;
   systemError: string | null;
+  locale?: string;
+  lastRefreshedAt?: string | null;
   onRetry: () => void;
   t: (key: string, params?: Record<string, string | number>) => string;
 }
@@ -108,12 +110,33 @@ const COMPONENTS_PREVIEW_COUNT = 6;
 const DISKS_PREVIEW_COUNT = 4;
 const NETWORKS_PREVIEW_COUNT = 4;
 
+function formatTimestamp(
+  timestamp: string | null | undefined,
+  locale: string,
+  t: SystemInfoCardProps["t"],
+): string {
+  if (!timestamp) {
+    return t("common.unknown");
+  }
+
+  try {
+    return new Date(timestamp).toLocaleString(locale, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+  } catch {
+    return timestamp;
+  }
+}
+
 export function SystemInfoCard({
   systemInfo,
   aboutInsights,
   systemLoading,
   updateInfo,
   systemError,
+  locale = "en-US",
+  lastRefreshedAt = null,
   onRetry,
   t,
 }: SystemInfoCardProps) {
@@ -301,6 +324,11 @@ export function SystemInfoCard({
       </CardHeader>
 
       <CardContent className="space-y-4">
+        {lastRefreshedAt ? (
+          <p className="text-xs text-muted-foreground">
+            {t("about.lastRefreshedAt")}: {formatTimestamp(lastRefreshedAt, locale, t)}
+          </p>
+        ) : null}
 
         {systemError && (
           <Alert variant="destructive" aria-live="assertive">

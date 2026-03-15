@@ -131,7 +131,19 @@ jest.mock('@/components/ui/badge', () => ({
 }));
 
 jest.mock('@/components/ui/switch', () => ({
-  Switch: ({ checked }: { checked?: boolean }) => <input type="checkbox" checked={checked} readOnly />,
+  Switch: ({
+    checked,
+    onCheckedChange,
+  }: {
+    checked?: boolean;
+    onCheckedChange?: (next: boolean) => void;
+  }) => (
+    <input
+      type="checkbox"
+      checked={checked}
+      onChange={(event) => onCheckedChange?.(event.target.checked)}
+    />
+  ),
 }));
 
 jest.mock('@/components/ui/dialog', () => ({
@@ -222,7 +234,22 @@ jest.mock('@/components/ui/select', () => ({
 }));
 
 jest.mock('@/components/ui/checkbox', () => ({
-  Checkbox: () => <input type="checkbox" readOnly />,
+  Checkbox: ({
+    checked,
+    onCheckedChange,
+    id,
+  }: {
+    checked?: boolean;
+    onCheckedChange?: (next: boolean) => void;
+    id?: string;
+  }) => (
+    <input
+      id={id}
+      type="checkbox"
+      checked={checked}
+      onChange={(event) => onCheckedChange?.(event.target.checked)}
+    />
+  ),
 }));
 
 jest.mock('next/link', () => {
@@ -610,6 +637,101 @@ describe('PluginsPage plugin bootstrap', () => {
     expect(screen.getByText('toolbox.plugin.scaffoldBuiltinNextStepsTitle')).toBeInTheDocument();
     expect(screen.getByText('plugins/manifest.json')).toBeInTheDocument();
     expect(screen.queryByText('toolbox.plugin.scaffoldContinueToImport')).not.toBeInTheDocument();
+  });
+
+  it('submits advanced scaffold inputs and renders advanced handoff guidance', async () => {
+    mockScaffoldPlugin.mockResolvedValue({
+      pluginDir: 'C:\\tmp\\plugin-advanced',
+      filesCreated: ['plugin.toml', 'ui/index.html', 'cognia.scaffold.json'],
+      lifecycleProfile: 'external',
+      handoff: {
+        profile: 'external',
+        artifactPath: 'C:\\tmp\\plugin-advanced\\plugin.wasm',
+        buildCommands: ['pnpm build'],
+        nextSteps: [
+          'Review ui/index.html and keep [ui].entry assets aligned with iframe tool behavior.',
+          'Review the generated cognia_on_event callback stub and align listen_events with real host events.',
+        ],
+        importPath: 'C:\\tmp\\plugin-advanced',
+        importRequiresBuild: true,
+        lifecycleManifestPath: 'C:\\tmp\\plugin-advanced\\cognia.scaffold.json',
+      },
+    });
+
+    render(<PluginsPage />);
+
+    fireEvent.click(screen.getByText('toolbox.plugin.createPlugin'));
+    fireEvent.change(screen.getByPlaceholderText('toolbox.plugin.scaffoldNamePlaceholder'), {
+      target: { value: 'Advanced Plugin' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('toolbox.plugin.scaffoldIdPlaceholder'), {
+      target: { value: 'com.example.advanced' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('toolbox.plugin.scaffoldDescPlaceholder'), {
+      target: { value: 'advanced desc' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('toolbox.plugin.scaffoldAuthorPlaceholder'), {
+      target: { value: 'author' },
+    });
+    fireEvent.change(screen.getByLabelText('toolbox.plugin.scaffoldOutputDir'), {
+      target: { value: 'C:\\tmp' },
+    });
+
+    fireEvent.click(screen.getByText('toolbox.plugin.scaffoldAdvanced'));
+    fireEvent.change(screen.getByLabelText('toolbox.plugin.scaffoldToolExtensionPoint'), {
+      target: { value: 'tool-iframe-ui' },
+    });
+    fireEvent.click(screen.getByLabelText('toolbox.plugin.scaffoldExtensionEventListener'));
+    fireEvent.click(screen.getByLabelText('toolbox.plugin.scaffoldExtensionSettingsSchema'));
+    fireEvent.click(screen.getByLabelText('toolbox.plugin.permUiFeedback'));
+    fireEvent.click(screen.getByLabelText('toolbox.plugin.permUiDialog'));
+    fireEvent.change(screen.getByLabelText('toolbox.plugin.scaffoldHttpDomains'), {
+      target: { value: 'localhost, api.example.com' },
+    });
+
+    fireEvent.click(screen.getByText('toolbox.plugin.scaffoldCreate'));
+
+    await waitFor(() => {
+      expect(mockScaffoldPlugin).toHaveBeenCalledWith(
+        expect.objectContaining({
+          extensionPoints: [
+            'tool-iframe-ui',
+            'event-listener',
+            'settings-schema',
+          ],
+          permissions: expect.objectContaining({
+            uiFeedback: true,
+            uiDialog: true,
+            http: ['localhost', 'api.example.com'],
+          }),
+        }),
+      );
+    });
+
+    expect(
+      screen.getByText(
+        'Review ui/index.html and keep [ui].entry assets aligned with iframe tool behavior.',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Review the generated cognia_on_event callback stub and align listen_events with real host events.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('shows compatibility guidance when JavaScript scaffolding limits advanced extension points', () => {
+    render(<PluginsPage />);
+
+    fireEvent.click(screen.getByText('toolbox.plugin.createPlugin'));
+    fireEvent.click(screen.getByText('toolbox.plugin.scaffoldAdvanced'));
+
+    const selects = screen.getAllByRole('combobox');
+    fireEvent.change(selects[1], { target: { value: 'javascript' } });
+
+    expect(
+      screen.getByText('toolbox.plugin.scaffoldExtensionPointsJavascriptHint'),
+    ).toBeInTheDocument();
   });
 
   it('blocks builtin scaffold submit when output path points to framework subdirectory', async () => {

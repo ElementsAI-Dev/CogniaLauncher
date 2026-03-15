@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { flushSync } from 'react-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -46,6 +47,10 @@ import { CacheHealthCard } from '@/components/cache/cache-health-card';
 import { CacheDbCard } from '@/components/cache/cache-db-card';
 import { CacheHistoryCard } from '@/components/cache/cache-history-card';
 import { CachePreviewDialog } from '@/components/cache/cache-preview-dialog';
+import {
+  DashboardClickableRow,
+  DashboardStatusBadge,
+} from '@/components/dashboard/dashboard-primitives';
 
 export default function CachePage() {
   const { t } = useLocale();
@@ -92,6 +97,7 @@ export default function CachePage() {
     browserReadState,
     hotFiles,
     hotFilesReadState,
+    monitorSnapshot,
     forceCleanLoading,
     monitorRefreshTrigger,
     setMonitorRefreshTrigger,
@@ -126,6 +132,7 @@ export default function CachePage() {
     dbInfo,
     dbInfoLoading,
     fetchCacheInfo,
+    overviewInsights,
   } = useCachePage({ t });
 
   // Fetch browser entries when switching to entries tab
@@ -147,6 +154,26 @@ export default function CachePage() {
       + cacheInfo.metadata_cache.entry_count
       + (cacheInfo.default_downloads?.entry_count ?? 0)
     : null;
+
+  const handleOverviewAction = (action: typeof overviewInsights.primaryAction) => {
+    if (action.targetTab !== activeTab) {
+      flushSync(() => {
+        setActiveTab(action.targetTab);
+      });
+    } else {
+      setActiveTab(action.targetTab);
+    }
+
+    const targetId = action.targetId;
+    if (!targetId) return;
+    const scrollToTarget = () => {
+      document.getElementById(targetId)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      });
+    };
+    setTimeout(scrollToTarget, 0);
+  };
 
   return (
     <div className="p-4 md:p-6 space-y-6" data-hint="cache-overview">
@@ -228,34 +255,25 @@ export default function CachePage() {
       )}
 
       {/* Stats Strip */}
-      <CacheStatsStrip
-        totalSizeHuman={cacheInfo?.total_size_human ?? null}
-        usagePercent={usagePercent}
-        hitRate={accessStats?.hit_rate ?? null}
-        totalEntries={totalEntries}
-        diskAvailableHuman={null}
-        loading={loading && !cacheInfo}
-      />
-
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
-          <TabsTrigger value="overview" className="gap-2">
+          <TabsTrigger value="overview" className="gap-2" id="cache-tab-overview">
             <LayoutDashboard className="h-4 w-4" />
             {t('cache.tabOverview')}
           </TabsTrigger>
-          <TabsTrigger value="entries" className="gap-2">
+          <TabsTrigger value="entries" className="gap-2" id="cache-tab-entries">
             <Database className="h-4 w-4" />
             {t('cache.tabEntries')}
             {totalEntries !== null && (
               <span className="text-xs text-muted-foreground">({totalEntries})</span>
             )}
           </TabsTrigger>
-          <TabsTrigger value="external" className="gap-2">
+          <TabsTrigger value="external" className="gap-2" id="cache-tab-external">
             <FolderOpen className="h-4 w-4" />
             {t('cache.tabExternal')}
           </TabsTrigger>
-          <TabsTrigger value="history" className="gap-2">
+          <TabsTrigger value="history" className="gap-2" id="cache-tab-history">
             <History className="h-4 w-4" />
             {t('cache.tabHistory')}
           </TabsTrigger>
@@ -263,136 +281,226 @@ export default function CachePage() {
 
         {/* Overview Tab */}
         <TabsContent value="overview" className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6">
-            {/* Left: main content */}
-            <div className="space-y-6 min-w-0">
-              {/* Cache Type Cards */}
-              <CacheTypesSection
-                cacheInfo={cacheInfo}
-                loading={loading && !cacheInfo}
-                isCleaning={isCleaning}
-                cleaningType={cleaningType}
-                onPreview={handlePreview}
-                previewLoading={previewLoading}
-              />
+          <section className="space-y-3" id="cache-summary">
+            <div>
+              <h2 className="text-sm font-medium">{t('cache.insightSummaryTitle')}</h2>
+              <p className="text-xs text-muted-foreground">{t('cache.insightSummaryDesc')}</p>
+            </div>
+            <CacheStatsStrip
+              totalSizeHuman={cacheInfo?.total_size_human ?? null}
+              usagePercent={usagePercent}
+              totalEntries={totalEntries}
+              diskAvailableHuman={monitorSnapshot?.diskAvailableHuman ?? null}
+              freshness={overviewInsights.freshness}
+              scopeSummaries={overviewInsights.scopeSummaries}
+              loading={loading && !cacheInfo}
+            />
+          </section>
 
-              {/* Hit Rate + Hot Files (2-col sub-grid) */}
-              <div className="grid gap-4 grid-cols-1 md:grid-cols-2">
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="flex items-center justify-between text-base">
-                      <div className="flex items-center gap-2">
-                        <Shield className="h-5 w-5" />
-                        {t('cache.hitRate')}
+          <section className="space-y-3" id="cache-signals">
+            <div>
+              <h2 className="text-sm font-medium">{t('cache.insightSignalsTitle')}</h2>
+              <p className="text-xs text-muted-foreground">{t('cache.insightSignalsDesc')}</p>
+            </div>
+            <div className="grid gap-4 grid-cols-1 md:grid-cols-2">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="flex items-center justify-between text-base">
+                    <div className="flex items-center gap-2">
+                      <Shield className="h-5 w-5" />
+                      {t('cache.hitRate')}
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleResetAccessStats}
+                      disabled={accessStatsLoading || !accessStats}
+                    >
+                      <RefreshCw className="h-3 w-3 mr-1" />
+                      {t('cache.resetStats')}
+                    </Button>
+                  </CardTitle>
+                  <CardDescription>{t('cache.hitRateDesc')}</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {accessStatsReadState.status === 'error' ? (
+                    <Alert variant="destructive">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription className="flex items-center justify-between gap-3">
+                        <span>{accessStatsReadState.error}</span>
+                        <Button variant="outline" size="sm" onClick={retryAccessStats}>
+                          <RefreshCw className="h-3 w-3 mr-1" />
+                          {t('common.retry')}
+                        </Button>
+                      </AlertDescription>
+                    </Alert>
+                  ) : accessStatsLoading || !accessStats ? (
+                    <>
+                      <Skeleton className="h-10 w-24" />
+                      <Skeleton className="h-4 w-48" />
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-3xl font-bold text-green-600 dark:text-green-400">
+                        {(accessStats.hit_rate * 100).toFixed(1)}%
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={handleResetAccessStats}
-                        disabled={accessStatsLoading || !accessStats}
-                      >
-                        <RefreshCw className="h-3 w-3 mr-1" />
-                        {t('cache.resetStats')}
-                      </Button>
-                    </CardTitle>
-                    <CardDescription>{t('cache.hitRateDesc')}</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    {accessStatsReadState.status === 'error' ? (
-                      <Alert variant="destructive">
-                        <AlertCircle className="h-4 w-4" />
-                        <AlertDescription className="flex items-center justify-between gap-3">
-                          <span>{accessStatsReadState.error}</span>
-                          <Button variant="outline" size="sm" onClick={retryAccessStats}>
-                            <RefreshCw className="h-3 w-3 mr-1" />
-                            {t('common.retry')}
-                          </Button>
-                        </AlertDescription>
-                      </Alert>
-                    ) : accessStatsLoading || !accessStats ? (
-                      <>
-                        <Skeleton className="h-10 w-24" />
-                        <Skeleton className="h-4 w-48" />
-                      </>
-                    ) : (
-                      <>
-                        <div className="text-3xl font-bold text-green-600 dark:text-green-400">
-                          {(accessStats.hit_rate * 100).toFixed(1)}%
-                        </div>
-                        <div className="flex gap-4 text-sm text-muted-foreground">
-                          <span className="flex items-center gap-1">
-                            <CheckCircle2 className="h-3 w-3 text-green-500" />
-                            {t('cache.hits')}: {accessStats.hits.toLocaleString()}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <XCircle className="h-3 w-3 text-red-500" />
-                            {t('cache.misses')}: {accessStats.misses.toLocaleString()}
-                          </span>
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          {t('cache.totalRequests')}: {accessStats.total_requests.toLocaleString()}
-                        </p>
-                      </>
-                    )}
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="flex items-center gap-2 text-base">
-                      <FileText className="h-5 w-5" />
-                      {t('cache.hotFiles')}
-                    </CardTitle>
-                    <CardDescription>{t('cache.hotFilesDesc')}</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    {hotFilesReadState.status === 'error' ? (
-                      <Alert variant="destructive">
-                        <AlertCircle className="h-4 w-4" />
-                        <AlertDescription className="flex items-center justify-between gap-3">
-                          <span>{hotFilesReadState.error}</span>
-                          <Button variant="outline" size="sm" onClick={retryHotFiles}>
-                            <RefreshCw className="h-3 w-3 mr-1" />
-                            {t('common.retry')}
-                          </Button>
-                        </AlertDescription>
-                      </Alert>
-                    ) : hotFiles.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">{t('cache.noHotFiles')}</p>
-                    ) : (
-                      <div className="space-y-2">
-                        {hotFiles.slice(0, 3).map((file) => (
-                          <div key={file.key} className="flex items-center justify-between text-sm">
-                            <span className="truncate flex-1 mr-2" title={file.key}>
-                              {file.key.split('/').pop() || file.key}
-                            </span>
-                            <Badge variant="secondary" className="shrink-0">
-                              {file.hit_count} {t('cache.accesses')}
-                            </Badge>
-                          </div>
-                        ))}
+                      <div className="flex gap-4 text-sm text-muted-foreground">
+                        <span className="flex items-center gap-1">
+                          <CheckCircle2 className="h-3 w-3 text-green-500" />
+                          {t('cache.hits')}: {accessStats.hits.toLocaleString()}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <XCircle className="h-3 w-3 text-red-500" />
+                          {t('cache.misses')}: {accessStats.misses.toLocaleString()}
+                        </span>
                       </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
+                      <p className="text-xs text-muted-foreground">
+                        {t('cache.totalRequests')}: {accessStats.total_requests.toLocaleString()}
+                      </p>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
 
-              {/* Cache Monitor */}
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <FileText className="h-5 w-5" />
+                    {t('cache.hotFiles')}
+                  </CardTitle>
+                  <CardDescription>{t('cache.hotFilesDesc')}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {hotFilesReadState.status === 'error' ? (
+                    <Alert variant="destructive">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription className="flex items-center justify-between gap-3">
+                        <span>{hotFilesReadState.error}</span>
+                        <Button variant="outline" size="sm" onClick={retryHotFiles}>
+                          <RefreshCw className="h-3 w-3 mr-1" />
+                          {t('common.retry')}
+                        </Button>
+                      </AlertDescription>
+                    </Alert>
+                  ) : hotFiles.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">{t('cache.noHotFiles')}</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {hotFiles.slice(0, 3).map((file) => (
+                        <div key={file.key} className="flex items-center justify-between text-sm">
+                          <span className="truncate flex-1 mr-2" title={file.key}>
+                            {file.key.split('/').pop() || file.key}
+                          </span>
+                          <Badge variant="secondary" className="shrink-0">
+                            {file.hit_count} {t('cache.accesses')}
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            <div id="cache-monitor">
               <CacheMonitorCard
                 refreshTrigger={monitorRefreshTrigger}
                 autoRefreshInterval={localSettings?.monitor_interval ?? 0}
               />
+            </div>
+          </section>
+
+          <section className="space-y-3" id="cache-actions">
+            <div>
+              <h2 className="text-sm font-medium">{t('cache.insightActionsTitle')}</h2>
+              <p className="text-xs text-muted-foreground">{t('cache.insightActionsDesc')}</p>
+            </div>
+            <Card>
+              <CardContent className="grid gap-4 p-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+                <div className="space-y-3 rounded-lg border p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      {t('cache.insightPrimaryActionLabel')}
+                    </p>
+                    <DashboardStatusBadge tone={overviewInsights.primaryAction.tone}>
+                      {t(overviewInsights.primaryAction.titleKey)}
+                    </DashboardStatusBadge>
+                  </div>
+                  <div className="space-y-1">
+                    <h3 className="text-lg font-semibold">
+                      {t(overviewInsights.primaryAction.titleKey)}
+                    </h3>
+                    <p className="text-sm text-muted-foreground">
+                      {t(overviewInsights.primaryAction.descriptionKey)}
+                    </p>
+                  </div>
+                  <Button
+                    onClick={() => handleOverviewAction(overviewInsights.primaryAction)}
+                    data-testid={`overview-action-${overviewInsights.primaryAction.id}`}
+                  >
+                    {t(overviewInsights.primaryAction.ctaKey)}
+                  </Button>
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground">
+                    {t('cache.insightSecondaryActionsLabel')}
+                  </p>
+                  {overviewInsights.secondaryActions.slice(0, 4).map((action) => (
+                    <DashboardClickableRow
+                      key={action.id}
+                      onClick={() => handleOverviewAction(action)}
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{t(action.titleKey)}</span>
+                          <DashboardStatusBadge tone={action.tone}>
+                            {t(action.ctaKey)}
+                          </DashboardStatusBadge>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {t(action.descriptionKey)}
+                        </p>
+                      </div>
+                    </DashboardClickableRow>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </section>
+
+          <section className="space-y-3" id="cache-detail-band">
+            <div>
+              <h2 className="text-sm font-medium">{t('cache.insightDetailsTitle')}</h2>
+              <p className="text-xs text-muted-foreground">{t('cache.insightDetailsDesc')}</p>
+            </div>
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6">
+            {/* Left: main content */}
+            <div className="space-y-6 min-w-0">
+              {/* Cache Type Cards */}
+              <div id="cache-types">
+                <CacheTypesSection
+                  cacheInfo={cacheInfo}
+                  loading={loading && !cacheInfo}
+                  isCleaning={isCleaning}
+                  cleaningType={cleaningType}
+                  onPreview={handlePreview}
+                  previewLoading={previewLoading}
+                />
+              </div>
 
               {/* Cache Health */}
-              <CacheHealthCard
-                cacheVerification={cacheVerification}
-                isLoading={isLoading}
-                isVerifying={isVerifying}
-                isRepairing={isRepairing}
-                totalIssues={totalIssues}
-                handleVerify={handleVerify}
-                handleRepair={handleRepair}
-              />
+              <div id="cache-health">
+                <CacheHealthCard
+                  cacheVerification={cacheVerification}
+                  isLoading={isLoading}
+                  isVerifying={isVerifying}
+                  isRepairing={isRepairing}
+                  totalIssues={totalIssues}
+                  handleVerify={handleVerify}
+                  handleRepair={handleRepair}
+                />
+              </div>
 
               {/* Database Maintenance */}
               <CacheDbCard
@@ -423,6 +531,7 @@ export default function CachePage() {
               />
             </div>
           </div>
+          </section>
         </TabsContent>
 
         {/* Entries Tab */}

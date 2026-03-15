@@ -72,6 +72,7 @@ describe("CacheHistoryCard", () => {
 
     expect(props.fetchCleanupHistory).toHaveBeenCalledTimes(1);
     expect(screen.getByText("cache.noHistory")).toBeInTheDocument();
+    expect(screen.getByText("cache.noHistoryExplain")).toBeInTheDocument();
   });
 
   it("retries history loading from the error banner", async () => {

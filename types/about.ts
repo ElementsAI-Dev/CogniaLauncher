@@ -86,6 +86,59 @@ export interface AboutInsights {
   generatedAt: string;
 }
 
+export interface AboutSupportFreshness {
+  updateCheckedAt: string | null;
+  systemInfoRefreshedAt: string | null;
+  insightsGeneratedAt: string | null;
+  latestSuccessfulAt: string | null;
+}
+
+export type AboutSupportHealth =
+  | 'loading'
+  | 'ready'
+  | 'attention'
+  | 'degraded';
+
+export type AboutSupportIssueSeverity = 'attention' | 'degraded';
+
+export type AboutSupportIssueSource =
+  | 'update'
+  | 'system'
+  | 'insights'
+  | 'providers'
+  | 'logs'
+  | 'cache';
+
+export interface AboutSupportIssue {
+  id: string;
+  severity: AboutSupportIssueSeverity;
+  source: AboutSupportIssueSource;
+}
+
+export type AboutSupportActionId =
+  | 'open_changelog'
+  | 'open_providers'
+  | 'open_logs'
+  | 'open_cache'
+  | 'export_diagnostics'
+  | 'report_bug';
+
+export interface AboutSupportAction {
+  id: AboutSupportActionId;
+  kind: 'route' | 'dialog' | 'callback';
+  href?: string;
+}
+
+export interface AboutSupportState {
+  health: AboutSupportHealth;
+  issueCount: number;
+  diagnosticsReady: boolean;
+  degradedSectionIds: string[];
+  issues: AboutSupportIssue[];
+  recommendedActions: AboutSupportAction[];
+  freshness: AboutSupportFreshness;
+}
+
 export type UpdateStatus =
   | 'idle'
   | 'checking'

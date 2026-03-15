@@ -183,6 +183,27 @@ describe("PackageList", () => {
     expect(buttons.length).toBeGreaterThan(0);
   });
 
+  it("renders bookmark state by provider-aware package identity", () => {
+    const sameNamePackages: PackageSummary[] = [
+      { name: "react", provider: "npm", description: "React for Node", latest_version: "19.0.0" },
+      { name: "react", provider: "pip", description: "React wrapper", latest_version: "1.0.0" },
+    ];
+
+    const { container } = render(
+      <PackageList
+        {...defaultProps}
+        packages={sameNamePackages}
+        onBookmark={jest.fn()}
+        bookmarkedPackages={["npm:react"]}
+      />,
+    );
+
+    const stars = Array.from(container.querySelectorAll("svg.lucide-star"));
+    expect(stars).toHaveLength(2);
+    expect(stars[0]).toHaveClass("text-yellow-500");
+    expect(stars[1]).not.toHaveClass("text-yellow-500");
+  });
+
   it("calls onSelect when info button is clicked", async () => {
   const user = userEvent.setup();
   const onSelect = jest.fn();

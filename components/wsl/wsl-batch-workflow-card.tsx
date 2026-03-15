@@ -1,5 +1,6 @@
 'use client';
 
+import { useMemo } from 'react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,8 +16,14 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Play, Pencil, Trash2 } from 'lucide-react';
-import type { WslBatchWorkflowCardProps, WslBatchWorkflowPreset } from '@/types/wsl';
+import { ChevronDown, ChevronUp, Pencil, Play, Plus, Trash2 } from 'lucide-react';
+import { getWslBatchWorkflowSteps, normalizeWslBatchWorkflowPreset } from '@/lib/wsl/workflow';
+import type {
+  WslBatchWorkflowActionKind,
+  WslBatchWorkflowCardProps,
+  WslBatchWorkflowPreset,
+  WslBatchWorkflowStep,
+} from '@/types/wsl';
 
 const distroStateColor: Record<string, string> = {
   running: 'bg-green-500/10 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800',
@@ -24,11 +31,105 @@ const distroStateColor: Record<string, string> = {
 };
 
 function cloneWorkflowDraft(draft: WslBatchWorkflowPreset, updates: Partial<WslBatchWorkflowPreset>) {
-  return {
+  return normalizeWslBatchWorkflowPreset({
     ...draft,
     ...updates,
     updatedAt: new Date().toISOString(),
+  });
+}
+
+function buildStepLabel(kind: WslBatchWorkflowActionKind, t: WslBatchWorkflowCardProps['t']) {
+  switch (kind) {
+    case 'backup':
+      return t('wsl.batchWorkflow.backup');
+    case 'package-upkeep':
+      return t('wsl.batchWorkflow.packageUpkeep');
+    case 'health-check':
+      return t('wsl.batchWorkflow.healthCheck');
+    case 'lifecycle':
+      return t('wsl.batchWorkflow.lifecycle');
+    case 'assistance':
+      return t('wsl.batchWorkflow.assistance');
+    case 'command':
+    default:
+      return t('wsl.batchWorkflow.command');
+  }
+}
+
+function createStep(
+  kind: WslBatchWorkflowActionKind,
+  index: number,
+  commandOptions: WslBatchWorkflowCardProps['commandOptions'],
+  assistanceActions: WslBatchWorkflowCardProps['assistanceActions'],
+  t: WslBatchWorkflowCardProps['t'],
+): WslBatchWorkflowStep {
+  const id = `${kind}-${Date.now()}-${index}`;
+
+  if (kind === 'lifecycle') {
+    return {
+      id,
+      kind: 'lifecycle',
+      operation: 'launch',
+      label: t('wsl.launch'),
+    };
+  }
+
+  if (kind === 'assistance') {
+    const firstAction = assistanceActions[0];
+    return {
+      id,
+      kind: 'assistance',
+      actionId: firstAction?.id ?? 'distro.preflight',
+      label: firstAction ? t(firstAction.labelKey) : t('wsl.batchWorkflow.assistance'),
+    };
+  }
+
+  if (kind === 'backup') {
+    return {
+      id,
+      kind: 'backup',
+      destinationPath: '%USERPROFILE%\\WSL-Backups',
+      label: t('wsl.batchWorkflow.backup'),
+    };
+  }
+
+  if (kind === 'package-upkeep') {
+    return {
+      id,
+      kind: 'package-upkeep',
+      mode: 'upgrade',
+      label: t('wsl.batchWorkflow.packageUpkeep'),
+    };
+  }
+
+  if (kind === 'health-check') {
+    return {
+      id,
+      kind: 'health-check',
+      label: t('wsl.batchWorkflow.healthCheck'),
+    };
+  }
+
+  const firstCommand = commandOptions[0];
+  return {
+    id,
+    kind: 'command',
+    command: firstCommand?.command ?? '',
+    user: firstCommand?.user,
+    savedCommandId: firstCommand?.id,
+    label: firstCommand?.name ?? t('wsl.batchWorkflow.command'),
   };
+}
+
+function describePreset(preset: WslBatchWorkflowPreset) {
+  const steps = getWslBatchWorkflowSteps(preset);
+  if (steps.length === 0) {
+    return '';
+  }
+  if (steps.length === 1) {
+    return steps[0].label ?? steps[0].kind;
+  }
+  return `${steps.length} steps`;
 }
 
 export function WslBatchWorkflowCard({
@@ -48,56 +149,66 @@ export function WslBatchWorkflowCard({
   onDeletePreset,
   t,
 }: WslBatchWorkflowCardProps) {
-  const handleActionKindChange = (kind: string) => {
-    if (kind === 'lifecycle') {
-      onDraftChange(cloneWorkflowDraft(draft, {
-        action: { kind: 'lifecycle', operation: 'launch', label: t('wsl.launch') },
-      }));
-      return;
-    }
+  const normalizedDraft = useMemo(() => normalizeWslBatchWorkflowPreset(draft), [draft]);
+  const draftSteps = normalizedDraft.steps ?? [];
 
-    if (kind === 'command') {
-      const firstCommand = commandOptions[0];
-      onDraftChange(cloneWorkflowDraft(draft, {
-        action: {
-          kind: 'command',
-          command: firstCommand?.command ?? '',
-          user: firstCommand?.user,
-          savedCommandId: firstCommand?.id,
-          label: firstCommand?.name ?? t('wsl.batchWorkflow.command'),
-        },
-      }));
-      return;
-    }
+  const updateDraft = (updates: Partial<WslBatchWorkflowPreset>) => {
+    onDraftChange(cloneWorkflowDraft(normalizedDraft, updates));
+  };
 
-    if (kind === 'assistance') {
-      const firstAction = assistanceActions[0];
-      onDraftChange(cloneWorkflowDraft(draft, {
-        action: {
-          kind: 'assistance',
-          actionId: firstAction?.id ?? 'distro.preflight',
-          label: firstAction ? t(firstAction.labelKey) : t('wsl.batchWorkflow.assistance'),
-        },
-      }));
-      return;
-    }
-
-    onDraftChange(cloneWorkflowDraft(draft, {
-      action: { kind: 'health-check', label: t('wsl.batchWorkflow.healthCheck') },
-    }));
+  const updateSteps = (steps: WslBatchWorkflowStep[]) => {
+    updateDraft({ steps });
   };
 
   const handleTargetModeChange = (mode: string) => {
-    onDraftChange(cloneWorkflowDraft(draft, {
+    updateDraft({
       target: {
         mode: mode as 'selected' | 'tag' | 'explicit',
-        tag: mode === 'tag' ? (draft.target.tag ?? availableTags[0] ?? null) || undefined : undefined,
-        distroNames: mode === 'explicit' ? (draft.target.distroNames ?? []) : undefined,
+        tag: mode === 'tag' ? (normalizedDraft.target.tag ?? availableTags[0] ?? null) || undefined : undefined,
+        distroNames: mode === 'explicit' ? (normalizedDraft.target.distroNames ?? []) : undefined,
       },
-    }));
+    });
   };
 
-  const commandAction = draft.action.kind === 'command' ? draft.action : null;
+  const replaceStep = (stepIndex: number, nextStep: WslBatchWorkflowStep) => {
+    updateSteps(draftSteps.map((step, index) => (index === stepIndex ? nextStep : step)));
+  };
+
+  const changeStepKind = (stepIndex: number, nextKind: string) => {
+    const replacement = createStep(
+      nextKind as WslBatchWorkflowActionKind,
+      stepIndex,
+      commandOptions,
+      assistanceActions,
+      t,
+    );
+    replaceStep(stepIndex, replacement);
+  };
+
+  const moveStep = (stepIndex: number, direction: -1 | 1) => {
+    const nextIndex = stepIndex + direction;
+    if (nextIndex < 0 || nextIndex >= draftSteps.length) {
+      return;
+    }
+
+    const nextSteps = [...draftSteps];
+    [nextSteps[stepIndex], nextSteps[nextIndex]] = [nextSteps[nextIndex], nextSteps[stepIndex]];
+    updateSteps(nextSteps);
+  };
+
+  const removeStep = (stepIndex: number) => {
+    const nextSteps = draftSteps.filter((_, index) => index !== stepIndex);
+    updateSteps(nextSteps.length > 0 ? nextSteps : [
+      createStep('command', 0, commandOptions, assistanceActions, t),
+    ]);
+  };
+
+  const addStep = () => {
+    updateSteps([
+      ...draftSteps,
+      createStep('health-check', draftSteps.length, commandOptions, assistanceActions, t),
+    ]);
+  };
 
   return (
     <Card data-testid="wsl-batch-workflow-card">
@@ -105,33 +216,19 @@ export function WslBatchWorkflowCard({
         <h3 className="text-sm font-semibold">{t('wsl.batchWorkflow.title')}</h3>
         <p className="text-xs text-muted-foreground">{t('wsl.batchWorkflow.desc')}</p>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-4">
         <div className="space-y-1.5">
           <Label className="text-xs">{t('wsl.batchWorkflow.workflowName')}</Label>
           <Input
-            value={draft.name}
+            value={normalizedDraft.name}
             placeholder={t('wsl.batchWorkflow.namePlaceholder')}
-            onChange={(event) => onDraftChange(cloneWorkflowDraft(draft, { name: event.target.value }))}
+            onChange={(event) => updateDraft({ name: event.target.value })}
             className="h-9"
           />
         </div>
 
-        <Separator />
-
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <Select value={draft.action.kind} onValueChange={handleActionKindChange}>
-            <SelectTrigger>
-              <SelectValue placeholder={t('wsl.batchWorkflow.actionType')} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="lifecycle">{t('wsl.batchWorkflow.lifecycle')}</SelectItem>
-              <SelectItem value="command">{t('wsl.batchWorkflow.command')}</SelectItem>
-              <SelectItem value="health-check">{t('wsl.batchWorkflow.healthCheck')}</SelectItem>
-              <SelectItem value="assistance">{t('wsl.batchWorkflow.assistance')}</SelectItem>
-            </SelectContent>
-          </Select>
-
-          <Select value={draft.target.mode} onValueChange={handleTargetModeChange}>
+          <Select value={normalizedDraft.target.mode} onValueChange={handleTargetModeChange}>
             <SelectTrigger>
               <SelectValue placeholder={t('wsl.batchWorkflow.targetMode')} />
             </SelectTrigger>
@@ -141,115 +238,24 @@ export function WslBatchWorkflowCard({
               <SelectItem value="explicit">{t('wsl.batchWorkflow.targetExplicit')}</SelectItem>
             </SelectContent>
           </Select>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            onClick={addStep}
+          >
+            <Plus className="h-3.5 w-3.5" />
+            {t('wsl.batchWorkflow.addStep')}
+          </Button>
         </div>
 
-        {draft.action.kind === 'lifecycle' && (
+        {normalizedDraft.target.mode === 'tag' && (
           <Select
-            value={draft.action.operation}
-            onValueChange={(value) => onDraftChange(cloneWorkflowDraft(draft, {
-              action: {
-                kind: 'lifecycle',
-                operation: value as 'launch' | 'terminate',
-                label: value === 'launch' ? t('wsl.launch') : t('wsl.terminate'),
-              },
-            }))}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder={t('wsl.batchWorkflow.lifecycle')} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="launch">{t('wsl.launch')}</SelectItem>
-              <SelectItem value="terminate">{t('wsl.terminate')}</SelectItem>
-            </SelectContent>
-          </Select>
-        )}
-
-        {commandAction && (
-          <div className="space-y-2">
-            <Select
-              value={commandAction.savedCommandId ?? '__custom__'}
-              onValueChange={(value) => {
-                if (value === '__custom__') {
-                  onDraftChange(cloneWorkflowDraft(draft, {
-                    action: {
-                      kind: 'command',
-                      command: commandAction.command,
-                      user: commandAction.user,
-                      savedCommandId: undefined,
-                      label: commandAction.label,
-                    },
-                  }));
-                  return;
-                }
-
-                const commandOption = commandOptions.find((entry) => entry.id === value);
-                if (!commandOption) return;
-
-                onDraftChange(cloneWorkflowDraft(draft, {
-                  action: {
-                    kind: 'command',
-                    command: commandOption.command,
-                    user: commandOption.user,
-                    savedCommandId: commandOption.id,
-                    label: commandOption.name,
-                  },
-                }));
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder={t('wsl.batchWorkflow.commandPreset')} />
-              </SelectTrigger>
-              <SelectContent>
-                {commandOptions.map((option) => (
-                  <SelectItem key={option.id} value={option.id}>{option.name}</SelectItem>
-                ))}
-                <SelectItem value="__custom__">{t('wsl.batchWorkflow.commandCustom')}</SelectItem>
-              </SelectContent>
-            </Select>
-            <Input
-              value={commandAction.command}
-              placeholder={t('wsl.exec.commandPlaceholder')}
-              onChange={(event) => onDraftChange(cloneWorkflowDraft(draft, {
-                action: {
-                  ...commandAction,
-                  command: event.target.value,
-                },
-              }))}
-            />
-          </div>
-        )}
-
-        {draft.action.kind === 'assistance' && (
-          <Select
-            value={draft.action.actionId}
-            onValueChange={(value) => {
-              const actionOption = assistanceActions.find((entry) => entry.id === value);
-              onDraftChange(cloneWorkflowDraft(draft, {
-                action: {
-                  kind: 'assistance',
-                  actionId: value,
-                  label: actionOption ? t(actionOption.labelKey) : value,
-                },
-              }));
-            }}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder={t('wsl.batchWorkflow.assistance')} />
-            </SelectTrigger>
-            <SelectContent>
-              {assistanceActions.map((action) => (
-                <SelectItem key={action.id} value={action.id}>{t(action.labelKey)}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-
-        {draft.target.mode === 'tag' && (
-          <Select
-            value={draft.target.tag ?? ''}
-            onValueChange={(value) => onDraftChange(cloneWorkflowDraft(draft, {
+            value={normalizedDraft.target.tag ?? ''}
+            onValueChange={(value) => updateDraft({
               target: { mode: 'tag', tag: value },
-            }))}
+            })}
           >
             <SelectTrigger>
               <SelectValue placeholder={t('wsl.batchWorkflow.tagPlaceholder')} />
@@ -262,24 +268,26 @@ export function WslBatchWorkflowCard({
           </Select>
         )}
 
-        {draft.target.mode === 'explicit' && (
+        {normalizedDraft.target.mode === 'explicit' && (
           <ScrollArea className="max-h-48">
             <div className="space-y-1 rounded-md border p-2">
               {distros.map((distro) => {
-                const checked = (draft.target.distroNames ?? []).includes(distro.name);
+                const checked = (normalizedDraft.target.distroNames ?? []).includes(distro.name);
                 const stateKey = distro.state.toLowerCase();
                 return (
-                  <label key={distro.name} className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted/50 cursor-pointer">
+                  <label key={distro.name} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted/50">
                     <Checkbox
                       checked={checked}
                       onCheckedChange={() => {
-                        const current = new Set(draft.target.distroNames ?? []);
-                        if (checked) current.delete(distro.name);
-                        else current.add(distro.name);
-
-                        onDraftChange(cloneWorkflowDraft(draft, {
+                        const current = new Set(normalizedDraft.target.distroNames ?? []);
+                        if (checked) {
+                          current.delete(distro.name);
+                        } else {
+                          current.add(distro.name);
+                        }
+                        updateDraft({
                           target: { mode: 'explicit', distroNames: Array.from(current) },
-                        }));
+                        });
                       }}
                     />
                     <span className="flex-1 truncate">{distro.name}</span>
@@ -290,6 +298,160 @@ export function WslBatchWorkflowCard({
             </div>
           </ScrollArea>
         )}
+
+        <Separator />
+
+        <div className="space-y-3">
+          {draftSteps.map((step, stepIndex) => (
+            <div key={step.id} className="space-y-3 rounded-md border p-3">
+              <div className="flex items-center gap-2">
+                <Badge variant="outline">#{stepIndex + 1}</Badge>
+                <Input
+                  value={step.label ?? ''}
+                  placeholder={buildStepLabel(step.kind, t)}
+                  onChange={(event) => replaceStep(stepIndex, { ...step, label: event.target.value })}
+                  className="h-8"
+                />
+                <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={() => moveStep(stepIndex, -1)} disabled={stepIndex === 0}>
+                  <ChevronUp className="h-4 w-4" />
+                </Button>
+                <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={() => moveStep(stepIndex, 1)} disabled={stepIndex === draftSteps.length - 1}>
+                  <ChevronDown className="h-4 w-4" />
+                </Button>
+                <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => removeStep(stepIndex)}>
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+
+              <Select value={step.kind} onValueChange={(value) => changeStepKind(stepIndex, value)}>
+                <SelectTrigger>
+                  <SelectValue placeholder={t('wsl.batchWorkflow.actionType')} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="backup">{t('wsl.batchWorkflow.backup')}</SelectItem>
+                  <SelectItem value="package-upkeep">{t('wsl.batchWorkflow.packageUpkeep')}</SelectItem>
+                  <SelectItem value="health-check">{t('wsl.batchWorkflow.healthCheck')}</SelectItem>
+                  <SelectItem value="command">{t('wsl.batchWorkflow.command')}</SelectItem>
+                  <SelectItem value="assistance">{t('wsl.batchWorkflow.assistance')}</SelectItem>
+                  <SelectItem value="lifecycle">{t('wsl.batchWorkflow.lifecycle')}</SelectItem>
+                </SelectContent>
+              </Select>
+
+              {step.kind === 'lifecycle' && (
+                <Select
+                  value={step.operation}
+                  onValueChange={(value) => replaceStep(stepIndex, {
+                    ...step,
+                    operation: value as 'launch' | 'terminate' | 'relaunch',
+                    label: value === 'launch' ? t('wsl.launch') : value === 'terminate' ? t('wsl.terminate') : t('wsl.batchWorkflow.relaunch'),
+                  })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={t('wsl.batchWorkflow.lifecycle')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="launch">{t('wsl.launch')}</SelectItem>
+                    <SelectItem value="terminate">{t('wsl.terminate')}</SelectItem>
+                    <SelectItem value="relaunch">{t('wsl.batchWorkflow.relaunch')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+
+              {step.kind === 'command' && (
+                <div className="space-y-2">
+                  <Select
+                    value={step.savedCommandId ?? '__custom__'}
+                    onValueChange={(value) => {
+                      if (value === '__custom__') {
+                        replaceStep(stepIndex, {
+                          ...step,
+                          savedCommandId: undefined,
+                        });
+                        return;
+                      }
+
+                      const commandOption = commandOptions.find((entry) => entry.id === value);
+                      if (!commandOption) return;
+
+                      replaceStep(stepIndex, {
+                        ...step,
+                        command: commandOption.command,
+                        user: commandOption.user,
+                        savedCommandId: commandOption.id,
+                        label: step.label || commandOption.name,
+                      });
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder={t('wsl.batchWorkflow.commandPreset')} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {commandOptions.map((option) => (
+                        <SelectItem key={option.id} value={option.id}>{option.name}</SelectItem>
+                      ))}
+                      <SelectItem value="__custom__">{t('wsl.batchWorkflow.commandCustom')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    value={step.command}
+                    placeholder={t('wsl.exec.commandPlaceholder')}
+                    onChange={(event) => replaceStep(stepIndex, { ...step, command: event.target.value })}
+                  />
+                </div>
+              )}
+
+              {step.kind === 'assistance' && (
+                <Select
+                  value={step.actionId}
+                  onValueChange={(value) => {
+                    const actionOption = assistanceActions.find((entry) => entry.id === value);
+                    replaceStep(stepIndex, {
+                      ...step,
+                      actionId: value,
+                      label: step.label || (actionOption ? t(actionOption.labelKey) : value),
+                    });
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={t('wsl.batchWorkflow.assistance')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {assistanceActions.map((action) => (
+                      <SelectItem key={action.id} value={action.id}>{t(action.labelKey)}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+
+              {step.kind === 'backup' && (
+                <Input
+                  value={step.destinationPath ?? ''}
+                  placeholder="%USERPROFILE%\\WSL-Backups"
+                  onChange={(event) => replaceStep(stepIndex, { ...step, destinationPath: event.target.value })}
+                />
+              )}
+
+              {step.kind === 'package-upkeep' && (
+                <Select
+                  value={step.mode}
+                  onValueChange={(value) => replaceStep(stepIndex, {
+                    ...step,
+                    mode: value as 'update' | 'upgrade',
+                    label: step.label || (value === 'upgrade' ? t('wsl.batchWorkflow.packageUpkeepUpgrade') : t('wsl.batchWorkflow.packageUpkeepUpdate')),
+                  })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={t('wsl.batchWorkflow.packageUpkeep')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="update">{t('wsl.batchWorkflow.packageUpkeepUpdate')}</SelectItem>
+                    <SelectItem value="upgrade">{t('wsl.batchWorkflow.packageUpkeepUpgrade')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+          ))}
+        </div>
 
         <Separator />
 
@@ -310,7 +472,7 @@ export function WslBatchWorkflowCard({
               <div key={preset.id} className="flex items-center justify-between gap-2 rounded-md border p-2.5 text-sm">
                 <div className="space-y-0.5 min-w-0">
                   <p className="font-medium truncate">{preset.name}</p>
-                  <p className="text-xs text-muted-foreground">{preset.action.label ?? preset.action.kind}</p>
+                  <p className="text-xs text-muted-foreground">{describePreset(preset)}</p>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                   <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => onEditPreset(preset)}>

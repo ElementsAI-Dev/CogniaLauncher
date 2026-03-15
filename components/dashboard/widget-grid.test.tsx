@@ -115,6 +115,22 @@ jest.mock("@/components/dashboard/widgets/welcome-widget", () => ({
   WelcomeWidget: () => <div data-testid="welcome">Welcome</div>,
 }));
 
+jest.mock("@/components/dashboard/widgets/attention-center-widget", () => ({
+  AttentionCenterWidget: () => <div data-testid="attention-center">AttentionCenter</div>,
+}));
+
+jest.mock("@/components/dashboard/widgets/recent-activity-feed-widget", () => ({
+  RecentActivityFeedWidget: () => <div data-testid="recent-activity-feed">RecentActivityFeed</div>,
+}));
+
+jest.mock("@/components/dashboard/widgets/workspace-trends-widget", () => ({
+  WorkspaceTrendsWidget: () => <div data-testid="workspace-trends">WorkspaceTrends</div>,
+}));
+
+jest.mock("@/components/dashboard/widgets/provider-health-matrix-widget", () => ({
+  ProviderHealthMatrixWidget: () => <div data-testid="provider-health-matrix">ProviderHealthMatrix</div>,
+}));
+
 const defaultProps = {
   environments: [],
   packages: [],
@@ -129,6 +145,12 @@ const defaultProps = {
     environments: { isLoading: false, error: null },
     packages: { isLoading: false, error: null },
     settings: { isLoading: false, error: null },
+  },
+  insights: {
+    attentionCenter: {},
+    recentActivityFeed: {},
+    workspaceTrends: {},
+    providerHealthMatrix: {},
   },
 };
 
@@ -230,6 +252,30 @@ describe("WidgetGrid", () => {
     mockWidgets = [{ id: "w-11", type: "welcome", size: "full", visible: true }];
     render(<WidgetGrid {...defaultProps} />);
     expect(screen.getByTestId("welcome")).toBeInTheDocument();
+  });
+
+  it("renders attention-center widget", () => {
+    mockWidgets = [{ id: "w-12", type: "attention-center", size: "md", visible: true, settings: { maxItems: 3 } }];
+    render(<WidgetGrid {...(defaultProps as never)} />);
+    expect(screen.getByTestId("attention-center")).toBeInTheDocument();
+  });
+
+  it("renders recent-activity-feed widget", () => {
+    mockWidgets = [{ id: "w-13", type: "recent-activity-feed", size: "md", visible: true, settings: { limit: 5 } }];
+    render(<WidgetGrid {...(defaultProps as never)} />);
+    expect(screen.getByTestId("recent-activity-feed")).toBeInTheDocument();
+  });
+
+  it("renders workspace-trends widget", () => {
+    mockWidgets = [{ id: "w-14", type: "workspace-trends", size: "lg", visible: true, settings: { range: "7d", metric: "downloads" } }];
+    render(<WidgetGrid {...(defaultProps as never)} />);
+    expect(screen.getByTestId("workspace-trends")).toBeInTheDocument();
+  });
+
+  it("renders provider-health-matrix widget", () => {
+    mockWidgets = [{ id: "w-15", type: "provider-health-matrix", size: "md", visible: true, settings: { groupBy: "provider", showHealthy: true } }];
+    render(<WidgetGrid {...(defaultProps as never)} />);
+    expect(screen.getByTestId("provider-health-matrix")).toBeInTheDocument();
   });
 
   it("renders unknown widget type with fallback message", () => {

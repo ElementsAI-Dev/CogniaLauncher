@@ -14,6 +14,7 @@ import {
  */
 export function useCopyToClipboard(timeout = 1500) {
   const [copied, setCopied] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const markCopied = useCallback(() => {
@@ -23,20 +24,62 @@ export function useCopyToClipboard(timeout = 1500) {
   }, [timeout]);
 
   const copy = useCallback(async (text: string) => {
-    await writeClipboard(text);
-    markCopied();
+    try {
+      await writeClipboard(text);
+      setError(null);
+      markCopied();
+    } catch (err) {
+      setError(getClipboardErrorMessage(err));
+    }
   }, [markCopied]);
 
-  const paste = useCallback(async () => readClipboard(), []);
+  const paste = useCallback(async () => {
+    try {
+      const text = await readClipboard();
+      setError(null);
+      return text;
+    } catch (err) {
+      setError(getClipboardErrorMessage(err));
+      return null;
+    }
+  }, []);
 
   const copyImage = useCallback(async (image: string | number[] | ArrayBuffer | Uint8Array) => {
-    await writeClipboardImage(image);
-    markCopied();
+    try {
+      await writeClipboardImage(image);
+      setError(null);
+      markCopied();
+    } catch (err) {
+      setError(getClipboardErrorMessage(err));
+    }
   }, [markCopied]);
 
-  const pasteImage = useCallback(async () => readClipboardImage(), []);
+  const pasteImage = useCallback(async () => {
+    try {
+      const image = await readClipboardImage();
+      setError(null);
+      return image;
+    } catch (err) {
+      setError(getClipboardErrorMessage(err));
+      return null;
+    }
+  }, []);
 
-  const clear = useCallback(async () => clearClipboard(), []);
+  const clear = useCallback(async () => {
+    try {
+      await clearClipboard();
+      setError(null);
+    } catch (err) {
+      setError(getClipboardErrorMessage(err));
+    }
+  }, []);
 
-  return { copied, copy, paste, copyImage, pasteImage, clear };
+  const clearError = useCallback(() => setError(null), []);
+
+  return { copied, error, copy, paste, copyImage, pasteImage, clear, clearError };
+}
+
+function getClipboardErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) return error.message;
+  return 'Clipboard operation failed';
 }

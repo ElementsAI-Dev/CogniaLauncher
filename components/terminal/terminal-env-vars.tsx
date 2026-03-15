@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { writeClipboard } from '@/lib/clipboard';
 import Link from 'next/link';
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,14 +11,16 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
-import { Search, Copy, RefreshCw, ExternalLink, ChevronRight } from 'lucide-react';
+import { Search, Copy, RefreshCw, ExternalLink, ChevronRight, Eye, Loader2 } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { toast } from 'sonner';
 import { categorizeVar, ENV_VAR_CATEGORY_KEYS, type EnvVarCategory } from '@/lib/constants/terminal';
+import type { TerminalEnvVarSummary } from '@/types/tauri';
 
 interface TerminalEnvVarsProps {
-  shellEnvVars: [string, string][];
+  shellEnvVars: TerminalEnvVarSummary[];
   onFetchShellEnvVars: () => Promise<void>;
+  onRevealShellEnvVar?: (key: string) => Promise<string | null>;
   loading?: boolean;
 }
 
@@ -26,43 +28,70 @@ interface TerminalEnvVarsProps {
 export function TerminalEnvVars({
   shellEnvVars,
   onFetchShellEnvVars,
+  onRevealShellEnvVar,
   loading,
 }: TerminalEnvVarsProps) {
   const { t } = useLocale();
   const [search, setSearch] = useState('');
+  const [revealedValues, setRevealedValues] = useState<Record<string, string>>({});
+  const [revealingKeys, setRevealingKeys] = useState<Record<string, boolean>>({});
 
   const filtered = useMemo(() => {
     if (!search) return shellEnvVars;
     const q = search.toLowerCase();
     return shellEnvVars.filter(
-      ([key, value]) =>
-        key.toLowerCase().includes(q) || value.toLowerCase().includes(q),
+      ({ key, value }) =>
+        key.toLowerCase().includes(q)
+        || (revealedValues[key] ?? value.displayValue).toLowerCase().includes(q),
     );
-  }, [shellEnvVars, search]);
+  }, [revealedValues, shellEnvVars, search]);
 
   const pathVarCount = useMemo(
-    () => shellEnvVars.filter(([k]) => k.toLowerCase().includes('path')).length,
+    () => shellEnvVars.filter(({ key }) => key.toLowerCase().includes('path')).length,
     [shellEnvVars],
   );
 
   const grouped = useMemo(() => {
-    const groups: Record<EnvVarCategory, [string, string][]> = {
+    const groups: Record<EnvVarCategory, TerminalEnvVarSummary[]> = {
       path: [],
       language: [],
       system: [],
       other: [],
     };
     for (const entry of filtered) {
-      const cat = categorizeVar(entry[0]);
+      const cat = categorizeVar(entry.key);
       groups[cat].push(entry);
     }
     return groups;
   }, [filtered]);
 
-  const handleCopy = async (key: string, value: string) => {
+  const revealValue = useCallback(async (entry: TerminalEnvVarSummary) => {
+    if (!entry.value.masked || revealedValues[entry.key] != null || !onRevealShellEnvVar) {
+      return revealedValues[entry.key] ?? entry.value.displayValue;
+    }
+
+    setRevealingKeys((current) => ({ ...current, [entry.key]: true }));
     try {
+      const revealed = await onRevealShellEnvVar(entry.key);
+      if (revealed != null) {
+        setRevealedValues((current) => ({ ...current, [entry.key]: revealed }));
+        return revealed;
+      }
+      return entry.value.displayValue;
+    } finally {
+      setRevealingKeys((current) => {
+        const next = { ...current };
+        delete next[entry.key];
+        return next;
+      });
+    }
+  }, [onRevealShellEnvVar, revealedValues]);
+
+  const handleCopy = async (entry: TerminalEnvVarSummary) => {
+    try {
+      const value = await revealValue(entry);
       await writeClipboard(value);
-      toast.success(t('terminal.copyValue') || `Copied ${key}`);
+      toast.success(t('terminal.copyValue') || `Copied ${entry.key}`);
     } catch {
       toast.error('Failed to copy');
     }
@@ -140,7 +169,7 @@ export function TerminalEnvVars({
         ) : (
           <div className="overflow-y-auto max-h-[60vh]">
             <div className="space-y-4">
-              {(Object.entries(grouped) as [EnvVarCategory, [string, string][]][])
+              {(Object.entries(grouped) as [EnvVarCategory, TerminalEnvVarSummary[]][])
                 .filter(([, vars]) => vars.length > 0)
                 .map(([category, vars]) => (
                   <div key={category}>
@@ -149,74 +178,102 @@ export function TerminalEnvVars({
                       <Badge variant="secondary">{vars.length}</Badge>
                     </h4>
                     <div className="rounded-md border divide-y overflow-hidden">
-                      {vars.map(([key, value]) => (
-                        <div
-                          key={key}
-                          className="relative px-3 py-2 group overflow-hidden"
-                        >
-                          <div className="flex items-center gap-2 min-w-0 overflow-hidden">
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span className="text-xs font-mono font-semibold text-primary truncate shrink-0 max-w-[200px] cursor-default">
-                                  {key}
-                                </span>
-                              </TooltipTrigger>
-                              {key.length > 30 && (
-                                <TooltipContent side="top" className="font-mono text-xs">
-                                  {key}
-                                </TooltipContent>
+                      {vars.map(({ key, value }) => {
+                        const displayValue = revealedValues[key] ?? value.displayValue;
+                        const canReveal = value.masked && revealedValues[key] == null && Boolean(onRevealShellEnvVar);
+                        const isRevealing = Boolean(revealingKeys[key]);
+                        return (
+                          <div
+                            key={key}
+                            className="relative px-3 py-2 group overflow-hidden"
+                          >
+                            <div className="flex items-center gap-2 min-w-0 overflow-hidden">
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="text-xs font-mono font-semibold text-primary truncate shrink-0 max-w-[200px] cursor-default">
+                                    {key}
+                                  </span>
+                                </TooltipTrigger>
+                                {key.length > 30 && (
+                                  <TooltipContent side="top" className="font-mono text-xs">
+                                    {key}
+                                  </TooltipContent>
+                                )}
+                              </Tooltip>
+                              {canReveal && (
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      size="icon"
+                                      variant="ghost"
+                                      className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                                      onClick={() => void revealValue({ key, value })}
+                                      disabled={isRevealing}
+                                      aria-label={t('terminal.revealSensitiveValue')}
+                                    >
+                                      {isRevealing ? (
+                                        <Loader2 className="h-3 w-3 animate-spin" />
+                                      ) : (
+                                        <Eye className="h-3 w-3" />
+                                      )}
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top">
+                                    {t(isRevealing ? 'terminal.revealingSensitiveValue' : 'terminal.revealSensitiveValue')}
+                                  </TooltipContent>
+                                </Tooltip>
                               )}
-                            </Tooltip>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                                  onClick={() => handleCopy(key, value)}
-                                >
-                                  <Copy className="h-3 w-3" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent side="top">{t('terminal.copyValue')}</TooltipContent>
-                            </Tooltip>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                                    onClick={() => void handleCopy({ key, value })}
+                                  >
+                                    <Copy className="h-3 w-3" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent side="top">{t('terminal.copyValue')}</TooltipContent>
+                              </Tooltip>
+                            </div>
+                            {key.toLowerCase() === 'path' ? (
+                              <Collapsible>
+                                <CollapsibleTrigger asChild>
+                                  <Button variant="ghost" size="sm" className="h-6 text-xs gap-1 mt-0.5 px-1">
+                                    <ChevronRight className="h-3.5 w-3.5 transition-transform [[data-state=open]>svg&]:rotate-90" />
+                                    {displayValue.split(';').filter(Boolean).length} {t('terminal.pathEntries')}
+                                  </Button>
+                                </CollapsibleTrigger>
+                                <CollapsibleContent>
+                                  <div className="mt-1 space-y-0.5 pl-2 border-l-2 border-muted">
+                                    {displayValue.split(';').filter(Boolean).map((entry, i) => (
+                                      <div key={i} className="font-mono text-xs text-muted-foreground truncate" title={entry}>
+                                        {entry}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </CollapsibleContent>
+                              </Collapsible>
+                            ) : displayValue.length > 80 ? (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <p className="font-mono text-xs text-muted-foreground mt-0.5 truncate max-w-sm inline-block align-bottom cursor-help">
+                                    {displayValue.slice(0, 80)}…
+                                  </p>
+                                </TooltipTrigger>
+                                <TooltipContent side="bottom" className="max-w-lg font-mono text-xs break-all whitespace-pre-wrap">
+                                  {displayValue}
+                                </TooltipContent>
+                              </Tooltip>
+                            ) : (
+                              <p className="text-xs font-mono text-muted-foreground mt-0.5 truncate min-w-0 w-full cursor-default">
+                                {displayValue || <span className="italic opacity-50">(empty)</span>}
+                              </p>
+                            )}
                           </div>
-                          {key.toLowerCase() === 'path' ? (
-                            <Collapsible>
-                              <CollapsibleTrigger asChild>
-                                <Button variant="ghost" size="sm" className="h-6 text-xs gap-1 mt-0.5 px-1">
-                                  <ChevronRight className="h-3.5 w-3.5 transition-transform [[data-state=open]>svg&]:rotate-90" />
-                                  {value.split(';').filter(Boolean).length} {t('terminal.pathEntries')}
-                                </Button>
-                              </CollapsibleTrigger>
-                              <CollapsibleContent>
-                                <div className="mt-1 space-y-0.5 pl-2 border-l-2 border-muted">
-                                  {value.split(';').filter(Boolean).map((entry, i) => (
-                                    <div key={i} className="font-mono text-xs text-muted-foreground truncate" title={entry}>
-                                      {entry}
-                                    </div>
-                                  ))}
-                                </div>
-                              </CollapsibleContent>
-                            </Collapsible>
-                          ) : value.length > 80 ? (
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <p className="font-mono text-xs text-muted-foreground mt-0.5 truncate max-w-sm inline-block align-bottom cursor-help">
-                                  {value.slice(0, 80)}…
-                                </p>
-                              </TooltipTrigger>
-                              <TooltipContent side="bottom" className="max-w-lg font-mono text-xs break-all whitespace-pre-wrap">
-                                {value}
-                              </TooltipContent>
-                            </Tooltip>
-                          ) : (
-                            <p className="text-xs font-mono text-muted-foreground mt-0.5 truncate min-w-0 w-full cursor-default">
-                              {value || <span className="italic opacity-50">(empty)</span>}
-                            </p>
-                          )}
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 ))}

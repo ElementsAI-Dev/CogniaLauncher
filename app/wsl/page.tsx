@@ -78,6 +78,7 @@ import {
   buildWslBatchWorkflowPreflight,
   buildWslDistroHref,
   buildWslOverviewHref,
+  normalizeWslBatchWorkflowPreset,
   normalizeSelectedDistros,
   readWslOverviewContext,
   summarizeBatchResults,
@@ -98,13 +99,14 @@ function createWorkflowDraft(t: (key: string, params?: Record<string, string | n
     createdAt: timestamp,
     updatedAt: timestamp,
     target: { mode: 'selected' },
-    action: {
+    steps: [{
+      id: 'command-1',
       kind: 'command',
       command: defaultCommand?.command ?? '',
       user: defaultCommand?.user,
       savedCommandId: defaultCommand?.id,
       label: defaultCommand?.name ?? t('wsl.batchWorkflow.command'),
-    },
+    }],
   };
 }
 
@@ -824,8 +826,9 @@ export default function WslPage() {
   }, [filteredDistros]);
 
   const handleWorkflowDraftChange = useCallback((nextDraft: WslBatchWorkflowPreset) => {
-    workflowDraftRef.current = nextDraft;
-    setWorkflowDraft(nextDraft);
+    const normalizedDraft = normalizeWslBatchWorkflowPreset(nextDraft);
+    workflowDraftRef.current = normalizedDraft;
+    setWorkflowDraft(normalizedDraft);
   }, []);
 
   const openWorkflowPreview = useCallback((workflow: WslBatchWorkflowPreset) => {
@@ -844,7 +847,7 @@ export default function WslPage() {
   }, [capabilities, distros, distroTags, getAssistanceActions, selectedDistros]);
 
   const handleSaveWorkflowPreset = useCallback(() => {
-    const activeDraft = workflowDraftRef.current ?? workflowDraft;
+    const activeDraft = normalizeWslBatchWorkflowPreset(workflowDraftRef.current ?? workflowDraft);
     const trimmedName = activeDraft.name.trim();
     if (!trimmedName) {
       toast.error(t('wsl.batchWorkflow.nameRequired'));
@@ -855,13 +858,13 @@ export default function WslPage() {
       updateWorkflowPreset(editingWorkflowId, {
         name: trimmedName,
         target: activeDraft.target,
-        action: activeDraft.action,
+        steps: activeDraft.steps,
       });
     } else {
       addWorkflowPreset({
         name: trimmedName,
         target: activeDraft.target,
-        action: activeDraft.action,
+        steps: activeDraft.steps,
       });
     }
 
@@ -877,8 +880,9 @@ export default function WslPage() {
 
   const handleEditWorkflowPreset = useCallback((preset: WslBatchWorkflowPreset) => {
     setEditingWorkflowId(preset.id);
-    workflowDraftRef.current = preset;
-    setWorkflowDraft(preset);
+    const normalizedPreset = normalizeWslBatchWorkflowPreset(preset);
+    workflowDraftRef.current = normalizedPreset;
+    setWorkflowDraft(normalizedPreset);
   }, []);
 
   const handleRunWorkflowPreset = useCallback((preset: WslBatchWorkflowPreset) => {
@@ -1566,7 +1570,8 @@ export default function WslPage() {
                 />
                 <WslBatchWorkflowSummaryCard
                   summary={workflowSummaries[0] ?? null}
-                  onRetry={() => handleRetryWorkflowSummary(workflowSummaries[0] ?? null)}
+                  summaries={workflowSummaries}
+                  onRetry={handleRetryWorkflowSummary}
                   t={t}
                 />
               </section>

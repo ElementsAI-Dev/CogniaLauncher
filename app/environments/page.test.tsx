@@ -25,6 +25,7 @@ const mockGetSelectedProvider = jest.fn((envType: string, fallbackProviderId?: s
 const mockSetSelectedProvider = jest.fn();
 const mockSetWorkflowContext = jest.fn();
 const mockSetWorkflowAction = jest.fn();
+const mockSyncWorkflowContext = jest.fn();
 const mockEnvironmentStoreState = {
   workflowContext: null as
     | {
@@ -88,6 +89,16 @@ jest.mock('@/lib/tauri', () => ({
 jest.mock('@/hooks/use-environment-detection', () => ({
   useEnvironmentDetection: () => ({
     getProjectDetectedForEnv: mockGetProjectDetectedForEnv,
+  }),
+}));
+
+jest.mock('@/hooks/use-environment-workflow', () => ({
+  useEnvironmentWorkflow: () => ({
+    syncWorkflowContext: mockSyncWorkflowContext,
+    setWorkflowActionState: jest.fn(),
+    requireProjectPath: jest.fn(),
+    requirePathConfigured: jest.fn(),
+    reconcileEnvironmentWorkflow: jest.fn(),
   }),
 }));
 
@@ -263,6 +274,15 @@ describe('EnvironmentsPage', () => {
 
     await user.click(screen.getByTestId('trigger-add-environment'));
 
+    expect(mockSyncWorkflowContext).toHaveBeenCalledWith(
+      'node',
+      expect.objectContaining({
+        origin: 'overview',
+        returnHref: '/environments',
+        projectPath: '/test/project',
+        providerId: 'nvm',
+      }),
+    );
     expect(mockInstallVersion).toHaveBeenCalledWith('nvm', 'lts', 'nvm');
     expect(mockSaveEnvSettings).toHaveBeenCalledWith(
       'node',

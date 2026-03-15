@@ -7,6 +7,7 @@ const mockT = (key: string) => {
     "about.insightsTitle": "Runtime Insights",
     "about.insightsDesc": "Support-facing runtime summary",
     "about.insightsRetry": "Refresh insights",
+    "about.lastGeneratedAt": "Last generated",
     "about.insightsRuntimeMode": "Runtime Mode",
     "about.insightsRuntimeDesktop": "Desktop",
     "about.insightsRuntimeWeb": "Web",
@@ -52,6 +53,8 @@ describe("AboutInsightsCard", () => {
       <AboutInsightsCard
         insights={baseInsights}
         insightsLoading={false}
+        locale="en-US"
+        lastGeneratedAt={baseInsights.generatedAt}
         onRetry={jest.fn()}
         t={mockT}
       />,
@@ -68,6 +71,8 @@ describe("AboutInsightsCard", () => {
       <AboutInsightsCard
         insights={baseInsights}
         insightsLoading={false}
+        locale="en-US"
+        lastGeneratedAt={baseInsights.generatedAt}
         onRetry={jest.fn()}
         t={mockT}
       />,
@@ -91,6 +96,8 @@ describe("AboutInsightsCard", () => {
           },
         }}
         insightsLoading={false}
+        locale="en-US"
+        lastGeneratedAt={baseInsights.generatedAt}
         onRetry={jest.fn()}
         t={mockT}
       />,
@@ -105,6 +112,8 @@ describe("AboutInsightsCard", () => {
       <AboutInsightsCard
         insights={null}
         insightsLoading={true}
+        locale="en-US"
+        lastGeneratedAt={null}
         onRetry={jest.fn()}
         t={mockT}
       />,
@@ -118,6 +127,8 @@ describe("AboutInsightsCard", () => {
       <AboutInsightsCard
         insights={null}
         insightsLoading={false}
+        locale="en-US"
+        lastGeneratedAt={null}
         onRetry={jest.fn()}
         t={mockT}
       />,
@@ -135,6 +146,8 @@ describe("AboutInsightsCard", () => {
       <AboutInsightsCard
         insights={baseInsights}
         insightsLoading={false}
+        locale="en-US"
+        lastGeneratedAt={baseInsights.generatedAt}
         onRetry={onRetry}
         t={mockT}
       />,
@@ -142,5 +155,20 @@ describe("AboutInsightsCard", () => {
 
     await userEvent.click(screen.getByLabelText("Refresh insights"));
     expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the latest generated timestamp when available", () => {
+    render(
+      <AboutInsightsCard
+        insights={baseInsights}
+        insightsLoading={false}
+        locale="en-US"
+        lastGeneratedAt={baseInsights.generatedAt}
+        onRetry={jest.fn()}
+        t={mockT}
+      />,
+    );
+
+    expect(screen.getByText(/last generated/i)).toBeInTheDocument();
   });
 });

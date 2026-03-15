@@ -7,6 +7,7 @@ const mockImportPackages = jest.fn();
 const mockImportFromClipboard = jest.fn();
 const mockExportToClipboard = jest.fn();
 const mockGetImportPreview = jest.fn();
+const mockGetNormalizedBookmarks = jest.fn();
 
 jest.mock("@/hooks/use-package-export", () => ({
   usePackageExport: () => ({
@@ -15,6 +16,7 @@ jest.mock("@/hooks/use-package-export", () => ({
     importFromClipboard: mockImportFromClipboard,
     exportToClipboard: mockExportToClipboard,
     getImportPreview: mockGetImportPreview,
+    getNormalizedBookmarks: mockGetNormalizedBookmarks,
   }),
 }));
 
@@ -73,6 +75,7 @@ describe("ExportImportDialog", () => {
       skipped: [{ id: "npm:react@18.0.0:1", name: "react", provider: "npm", version: "18.0.0", status: "skipped", reason: "already-installed" }],
       invalid: [{ id: "invalid:2", name: "   ", status: "invalid", reason: "missing-name" }],
     });
+    mockGetNormalizedBookmarks.mockImplementation((data: { bookmarks: string[] }) => data.bookmarks);
   });
 
   it("renders trigger button", () => {
@@ -221,6 +224,73 @@ describe("ExportImportDialog", () => {
       expect.objectContaining({
         bookmarks: [],
         packages: [{ name: "requests", provider: "pip", version: "2.31.0" }],
+      }),
+    );
+  });
+
+  it("passes normalized bookmark identities into onImport", async () => {
+    mockImportFromClipboard.mockResolvedValueOnce({
+      version: "1.0",
+      exportedAt: "2025-01-01",
+      packages: [{ name: "requests", provider: "pip", version: "2.31.0" }],
+      bookmarks: ["requests", "pip:requests"],
+    });
+    mockGetNormalizedBookmarks.mockReturnValue(["pip:requests"]);
+    const onImport = jest.fn().mockResolvedValue(undefined);
+
+    const user = userEvent.setup();
+    render(<ExportImportDialog onImport={onImport} />);
+    await user.click(screen.getByText("Export/Import"));
+    await user.click(screen.getByRole("tab", { name: /Import/i }));
+    await user.click(screen.getByText("Paste from Clipboard"));
+    await user.click(screen.getByRole("button", { name: /Install 1 selected/i }));
+
+    expect(onImport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bookmarks: ["pip:requests"],
+      }),
+    );
+  });
+
+  it("allows confirming import when only bookmarks will be restored", async () => {
+    mockImportFromClipboard.mockResolvedValueOnce({
+      version: "1.0",
+      exportedAt: "2025-01-01",
+      packages: [{ name: "react", provider: "npm", version: "18.0.0" }],
+      bookmarks: ["npm:react"],
+    });
+    mockGetImportPreview.mockReturnValueOnce({
+      installable: [],
+      skipped: [
+        {
+          id: "npm:react@18.0.0:0",
+          name: "react",
+          provider: "npm",
+          version: "18.0.0",
+          status: "skipped",
+          reason: "already-installed",
+        },
+      ],
+      invalid: [],
+    });
+    mockGetNormalizedBookmarks.mockReturnValueOnce(["npm:react"]);
+    const onImport = jest.fn().mockResolvedValue(undefined);
+
+    const user = userEvent.setup();
+    render(<ExportImportDialog onImport={onImport} />);
+    await user.click(screen.getByText("Export/Import"));
+    await user.click(screen.getByRole("tab", { name: /Import/i }));
+    await user.click(screen.getByText("Paste from Clipboard"));
+
+    const confirmButton = screen.getByRole("button", { name: /Restore bookmarks/i });
+    expect(confirmButton).toBeEnabled();
+
+    await user.click(confirmButton);
+
+    expect(onImport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        packages: [],
+        bookmarks: ["npm:react"],
       }),
     );
   });

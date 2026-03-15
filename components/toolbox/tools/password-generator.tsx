@@ -12,6 +12,7 @@ import { Separator } from '@/components/ui/separator';
 import { useLocale } from '@/components/providers/locale-provider';
 import { useToolPreferences } from '@/hooks/use-tool-preferences';
 import { TOOLBOX_LIMITS } from '@/lib/constants/toolbox-limits';
+import { fillRandomValues } from '@/lib/toolbox/browser-api';
 import {
   ToolTextArea,
   ToolActionRow,
@@ -64,15 +65,15 @@ function buildCharset(upper: boolean, lower: boolean, digits: boolean, special: 
   return chars;
 }
 
-function generatePassword(length: number, charset: string): string {
+function generatePassword(length: number, charset: string): string | null {
   const arr = new Uint32Array(length);
-  crypto.getRandomValues(arr);
+  if (!fillRandomValues(arr)) return null;
   return Array.from(arr, (v) => charset[v % charset.length]).join('');
 }
 
-function generatePassphrase(wordCount: number, separator: string, capitalize: boolean): string {
+function generatePassphrase(wordCount: number, separator: string, capitalize: boolean): string | null {
   const arr = new Uint32Array(wordCount);
-  crypto.getRandomValues(arr);
+  if (!fillRandomValues(arr)) return null;
   return Array.from(arr, (v) => {
     const word = WORD_LIST[v % WORD_LIST.length];
     return capitalize ? word.charAt(0).toUpperCase() + word.slice(1) : word;
@@ -108,14 +109,6 @@ const STRENGTH_COLORS: Record<StrengthLevel, string> = {
   veryStrong: 'bg-green-600',
 };
 
-const STRENGTH_LABELS: Record<StrengthLevel, string> = {
-  weak: 'Weak',
-  fair: 'Fair',
-  good: 'Good',
-  strong: 'Strong',
-  veryStrong: 'Very Strong',
-};
-
 // ── Preferences ─────────────────────────────────────────────────────────────
 
 const DEFAULT_PREFERENCES = {
@@ -141,7 +134,7 @@ export default function PasswordGenerator({ className }: ToolComponentProps) {
   const [password, setPassword] = useState('');
   const [batchOutput, setBatchOutput] = useState('');
   const [showPassword, setShowPassword] = useState(true);
-  const { copied, copy } = useCopyToClipboard();
+  const { copied, copy, error: clipboardError } = useCopyToClipboard();
 
   const length = Number(preferences.length) || 16;
   const count = Number(preferences.count) || 1;
@@ -155,7 +148,7 @@ export default function PasswordGenerator({ className }: ToolComponentProps) {
     [preferences.upper, preferences.lower, preferences.digits, preferences.special, preferences.excludeSimilar],
   );
 
-  const generateOne = useCallback((): string => {
+  const generateOne = useCallback((): string | null => {
     if (mode === 'passphrase') {
       return generatePassphrase(wordCount, separator, capitalizeWords);
     }
@@ -163,23 +156,37 @@ export default function PasswordGenerator({ className }: ToolComponentProps) {
   }, [mode, length, charset, wordCount, separator, capitalizeWords]);
 
   const handleGenerate = useCallback(() => {
+    const nextPassword = generateOne();
+    if (!nextPassword) {
+      setError(t('toolbox.tools.passwordGenerator.cryptoUnavailable'));
+      return;
+    }
     setError(null);
-    setPassword(generateOne());
-  }, [generateOne]);
+    setPassword(nextPassword);
+  }, [generateOne, t]);
 
   const handleBatchGenerate = useCallback(() => {
     if (count > TOOLBOX_LIMITS.generatorCount) {
       setError(t('toolbox.tools.shared.countTooLarge', { limit: TOOLBOX_LIMITS.generatorCount }));
       return;
     }
-    setError(null);
     const results = Array.from({ length: count }, () => generateOne());
-    setBatchOutput(results.join('\n'));
+    if (results.some((value) => value === null)) {
+      setError(t('toolbox.tools.passwordGenerator.cryptoUnavailable'));
+      return;
+    }
+    setError(null);
+    setBatchOutput((results as string[]).join('\n'));
   }, [count, generateOne, t]);
 
   // Auto-generate on mount
   useEffect(() => {
-    setPassword(generateOne());
+    const nextPassword = generateOne();
+    if (!nextPassword) {
+      setError(t('toolbox.tools.passwordGenerator.cryptoUnavailable'));
+      return;
+    }
+    setPassword(nextPassword);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -205,11 +212,19 @@ export default function PasswordGenerator({ className }: ToolComponentProps) {
             onClick={() => {
               setPreferences({ mode: 'password' });
               setPassword('');
-              setTimeout(() => setPassword(generatePassword(length, charset)), 0);
+              setTimeout(() => {
+                const nextPassword = generatePassword(length, charset);
+                if (!nextPassword) {
+                  setError(t('toolbox.tools.passwordGenerator.cryptoUnavailable'));
+                  return;
+                }
+                setError(null);
+                setPassword(nextPassword);
+              }, 0);
             }}
           >
             <Shield className="mr-1.5 h-3.5 w-3.5" />
-            Password
+            {t('toolbox.tools.passwordGenerator.modePassword')}
           </Button>
           <Button
             variant={mode === 'passphrase' ? 'default' : 'outline'}
@@ -217,16 +232,24 @@ export default function PasswordGenerator({ className }: ToolComponentProps) {
             onClick={() => {
               setPreferences({ mode: 'passphrase' });
               setPassword('');
-              setTimeout(() => setPassword(generatePassphrase(wordCount, separator, capitalizeWords)), 0);
+              setTimeout(() => {
+                const nextPassword = generatePassphrase(wordCount, separator, capitalizeWords);
+                if (!nextPassword) {
+                  setError(t('toolbox.tools.passwordGenerator.cryptoUnavailable'));
+                  return;
+                }
+                setError(null);
+                setPassword(nextPassword);
+              }, 0);
             }}
           >
             <ShieldCheck className="mr-1.5 h-3.5 w-3.5" />
-            Passphrase
+            {t('toolbox.tools.passwordGenerator.modePassphrase')}
           </Button>
         </div>
 
         {/* ── Hero: Generated Password ─────────────────────────────────── */}
-        <ToolSection title={t('toolbox.tools.passwordGenerator.generated', { defaultValue: 'Generated Password' })}>
+        <ToolSection title={t('toolbox.tools.passwordGenerator.generated')}>
           <div className="space-y-3">
             <div
               className="relative cursor-pointer rounded-lg bg-muted p-4 transition-colors hover:bg-muted/80"
@@ -270,7 +293,7 @@ export default function PasswordGenerator({ className }: ToolComponentProps) {
             <ToolActionRow>
               <Button onClick={handleGenerate} size="sm" className="gap-1.5">
                 <RefreshCw className="h-3.5 w-3.5" />
-                {t('toolbox.tools.passwordGenerator.generate', { defaultValue: 'Regenerate' })}
+                {t('toolbox.tools.passwordGenerator.generate')}
               </Button>
               <Button
                 onClick={() => copy(password)}
@@ -289,7 +312,7 @@ export default function PasswordGenerator({ className }: ToolComponentProps) {
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between text-xs">
                   <span className="flex items-center gap-2">
-                    {STRENGTH_LABELS[strength.level]}
+                    {t(`toolbox.tools.passwordGenerator.strength${strength.level.charAt(0).toUpperCase()}${strength.level.slice(1)}`)}
                     <Badge variant="secondary" className="text-[10px] px-1.5 py-0 font-mono">
                       ~{entropy} bits
                     </Badge>
@@ -308,14 +331,14 @@ export default function PasswordGenerator({ className }: ToolComponentProps) {
         </ToolSection>
 
         {/* ── Options ──────────────────────────────────────────────────── */}
-        <ToolSection title={t('toolbox.tools.passwordGenerator.options', { defaultValue: 'Options' })}>
+        <ToolSection title={t('toolbox.tools.passwordGenerator.options')}>
           <div className="space-y-4">
             {mode === 'password' ? (
               <>
                 {/* Length slider */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label>{t('toolbox.tools.passwordGenerator.length', { defaultValue: 'Length' })}</Label>
+                    <Label>{t('toolbox.tools.passwordGenerator.length')}</Label>
                     <Badge variant="outline" className="font-mono tabular-nums">{length}</Badge>
                   </div>
                   <Slider value={[length]} onValueChange={([v]) => setPreferences({ length: v })} min={4} max={128} step={1} />
@@ -338,7 +361,7 @@ export default function PasswordGenerator({ className }: ToolComponentProps) {
                         onCheckedChange={(checked) => setPreferences({ [key]: checked })}
                       />
                       <Label htmlFor={`pw-${key}`} className="text-sm">
-                        {t(`toolbox.tools.passwordGenerator.${key}`, { defaultValue: key })}
+                        {t(`toolbox.tools.passwordGenerator.${key}`)}
                         {' '}<span className="text-muted-foreground">({hint})</span>
                       </Label>
                     </div>
@@ -350,7 +373,7 @@ export default function PasswordGenerator({ className }: ToolComponentProps) {
                       onCheckedChange={(checked) => setPreferences({ excludeSimilar: checked })}
                     />
                     <Label htmlFor="pw-excludeSimilar" className="text-sm">
-                      {t('toolbox.tools.passwordGenerator.excludeSimilar', { defaultValue: 'Exclude Similar' })}
+                      {t('toolbox.tools.passwordGenerator.excludeSimilar')}
                     </Label>
                   </div>
                 </ToolOptionGroup>
@@ -360,7 +383,7 @@ export default function PasswordGenerator({ className }: ToolComponentProps) {
                 {/* Passphrase options */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label>{t('toolbox.tools.passwordGenerator.wordCount', { defaultValue: 'Word Count' })}</Label>
+                    <Label>{t('toolbox.tools.passwordGenerator.wordCount')}</Label>
                     <Badge variant="outline" className="font-mono tabular-nums">{wordCount}</Badge>
                   </div>
                   <Slider value={[wordCount]} onValueChange={([v]) => setPreferences({ wordCount: v })} min={3} max={8} step={1} />
@@ -370,7 +393,7 @@ export default function PasswordGenerator({ className }: ToolComponentProps) {
 
                 <div className="flex flex-wrap items-center gap-4">
                   <div className="flex items-center gap-2">
-                    <Label className="text-sm">{t('toolbox.tools.passwordGenerator.separator', { defaultValue: 'Separator' })}</Label>
+                    <Label className="text-sm">{t('toolbox.tools.passwordGenerator.separator')}</Label>
                     <div className="flex gap-1">
                       {SEPARATORS.map((sep) => (
                         <Button
@@ -393,7 +416,7 @@ export default function PasswordGenerator({ className }: ToolComponentProps) {
                       onCheckedChange={(checked) => setPreferences({ capitalizeWords: checked })}
                     />
                     <Label htmlFor="pw-capitalize" className="text-sm">
-                      {t('toolbox.tools.passwordGenerator.capitalize', { defaultValue: 'Capitalize' })}
+                      {t('toolbox.tools.passwordGenerator.capitalize')}
                     </Label>
                   </div>
                 </div>
@@ -403,11 +426,11 @@ export default function PasswordGenerator({ className }: ToolComponentProps) {
         </ToolSection>
 
         {/* ── Batch Generate ───────────────────────────────────────────── */}
-        <ToolSection title={t('toolbox.tools.passwordGenerator.batch', { defaultValue: 'Batch Generate' })}>
+        <ToolSection title={t('toolbox.tools.passwordGenerator.batch')}>
           <div className="space-y-3">
             <div className="flex items-center gap-3">
               <Label htmlFor="pw-count" className="text-sm shrink-0">
-                {t('toolbox.tools.passwordGenerator.count', { defaultValue: 'Count' })}
+                {t('toolbox.tools.passwordGenerator.count')}
               </Label>
               <Input
                 id="pw-count"
@@ -420,7 +443,7 @@ export default function PasswordGenerator({ className }: ToolComponentProps) {
               />
               <Button onClick={handleBatchGenerate} size="sm" className="gap-1.5">
                 <RefreshCw className="h-3.5 w-3.5" />
-                {t('toolbox.tools.passwordGenerator.generateAll', { defaultValue: 'Generate All' })}
+                {t('toolbox.tools.passwordGenerator.generateAll')}
               </Button>
             </div>
 
@@ -428,13 +451,14 @@ export default function PasswordGenerator({ className }: ToolComponentProps) {
 
             {batchOutput && (
               <ToolTextArea
-                label={t('toolbox.tools.passwordGenerator.batchOutput', { defaultValue: 'Output' })}
+                label={t('toolbox.tools.passwordGenerator.batchOutput')}
                 value={batchOutput}
                 readOnly
                 rows={Math.min(10, Math.max(3, count))}
                 showCopy
               />
             )}
+            {clipboardError && <ToolValidationMessage message={t('toolbox.actions.copyFailed')} />}
           </div>
         </ToolSection>
       </div>

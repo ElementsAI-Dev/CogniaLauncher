@@ -25,6 +25,7 @@ import { useEnvironmentStore } from '@/lib/stores/environment';
 import { useEnvironments } from '@/hooks/use-environments';
 import { useAutoVersionSwitch, useProjectPath } from '@/hooks/use-auto-version';
 import { useEnvironmentDetection } from '@/hooks/use-environment-detection';
+import { useEnvironmentWorkflow } from '@/hooks/use-environment-workflow';
 import { useLocale } from '@/components/providers/locale-provider';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -75,9 +76,9 @@ export default function EnvironmentsPage() {
     updateCheckResults,
     getSelectedProvider: getSelectedProviderFromStore,
     setSelectedProvider,
-    setWorkflowContext,
     setWorkflowAction,
   } = useEnvironmentStore();
+  const { syncWorkflowContext } = useEnvironmentWorkflow();
   const { t } = useLocale();
   const [profileManagerOpen, setProfileManagerOpen] = useState(false);
   const { getProjectDetectedForEnv } = useEnvironmentDetection({
@@ -156,15 +157,13 @@ export default function EnvironmentsPage() {
     envType: string,
     providerId?: string | null,
   ) => {
-    setWorkflowContext({
-      envType: getEnvKey(envType),
+    syncWorkflowContext(getEnvKey(envType), {
       origin: 'overview',
       returnHref: '/environments',
       projectPath: projectPath || null,
       providerId: providerId ?? getSelectedProviderFromStore(envType, envType),
-      updatedAt: Date.now(),
     });
-  }, [getEnvKey, getSelectedProviderFromStore, projectPath, setWorkflowContext]);
+  }, [getEnvKey, getSelectedProviderFromStore, projectPath, syncWorkflowContext]);
 
   const handleProviderChange = useCallback((envType: string, providerId: string) => {
     setSelectedProvider(envType, providerId);

@@ -22,31 +22,45 @@ describe('useDashboardStore', () => {
 
   describe('WIDGET_DEFINITIONS', () => {
     it('has definitions for all widget types', () => {
-      const expectedTypes: WidgetType[] = [
+      const expectedTypes = [
         'stats-overview', 'environment-chart', 'package-chart', 'cache-usage',
         'activity-timeline', 'system-info', 'download-stats', 'quick-search',
         'environment-list', 'package-list', 'quick-actions', 'wsl-status',
         'health-check', 'updates-available', 'welcome', 'toolbox-favorites',
-      ];
+        'attention-center', 'workspace-trends', 'provider-health-matrix', 'recent-activity-feed',
+      ] as const;
 
       for (const type of expectedTypes) {
-        expect(WIDGET_DEFINITIONS[type]).toBeDefined();
-        expect(WIDGET_DEFINITIONS[type].type).toBe(type);
-        expect(WIDGET_DEFINITIONS[type].titleKey).toBeTruthy();
-        expect(WIDGET_DEFINITIONS[type].descriptionKey).toBeTruthy();
-        expect(WIDGET_DEFINITIONS[type].icon).toBeTruthy();
-        expect(WIDGET_DEFINITIONS[type].defaultSize).toBeTruthy();
-        expect(WIDGET_DEFINITIONS[type].minSize).toBeTruthy();
-        expect(WIDGET_DEFINITIONS[type].category).toBeTruthy();
-        expect(typeof WIDGET_DEFINITIONS[type].allowMultiple).toBe('boolean');
-        expect(typeof WIDGET_DEFINITIONS[type].required).toBe('boolean');
-        expect(typeof WIDGET_DEFINITIONS[type].defaultVisible).toBe('boolean');
+        const definition = WIDGET_DEFINITIONS[type as WidgetType];
+        expect(definition).toBeDefined();
+        expect(definition.type).toBe(type);
+        expect(definition.titleKey).toBeTruthy();
+        expect(definition.descriptionKey).toBeTruthy();
+        expect(definition.icon).toBeTruthy();
+        expect(definition.defaultSize).toBeTruthy();
+        expect(definition.minSize).toBeTruthy();
+        expect(definition.category).toBeTruthy();
+        expect(Array.isArray(definition.dataSources)).toBe(true);
+        expect(typeof definition.allowMultiple).toBe('boolean');
+        expect(typeof definition.required).toBe('boolean');
+        expect(typeof definition.defaultVisible).toBe('boolean');
       }
     });
 
     it('sets single-instance policy for stats-overview', () => {
       expect(WIDGET_DEFINITIONS['stats-overview'].allowMultiple).toBe(false);
       expect(WIDGET_DEFINITIONS['stats-overview'].maxInstances).toBe(1);
+    });
+
+    it('defines default settings for configurable insight widgets', () => {
+      expect(WIDGET_DEFINITIONS['workspace-trends'].defaultSettings).toEqual({
+        range: '7d',
+        metric: 'installations',
+      });
+      expect(WIDGET_DEFINITIONS['provider-health-matrix'].defaultSettings).toEqual({
+        groupBy: 'provider',
+        showHealthy: true,
+      });
     });
   });
 
@@ -104,9 +118,70 @@ describe('useDashboardStore', () => {
       expect(normalized).toHaveLength(1);
       expect(normalized[0].id).toBe('s1');
     });
+
+    it('normalizes widget-specific settings for insight widgets', () => {
+      const normalized = normalizeDashboardWidgets([
+        {
+          id: 'trend',
+          type: 'workspace-trends',
+          size: 'lg',
+          visible: true,
+          settings: { range: '90d', metric: 'bad-metric' },
+        },
+        {
+          id: 'matrix',
+          type: 'provider-health-matrix',
+          size: 'md',
+          visible: true,
+          settings: { groupBy: 'invalid', showHealthy: 'nope' },
+        },
+      ]);
+
+      expect(normalized[0].settings).toEqual({
+        range: '7d',
+        metric: 'installations',
+      });
+      expect(normalized[1].settings).toEqual({
+        groupBy: 'provider',
+        showHealthy: true,
+      });
+    });
   });
 
   describe('actions', () => {
+    it('exposes the canonical insight widgets in the latest default layout', () => {
+      const widgets = getDefaultWidgets();
+      expect(widgets.map((widget) => widget.type)).toEqual([
+        'welcome',
+        'stats-overview',
+        'attention-center',
+        'provider-health-matrix',
+        'workspace-trends',
+        'quick-actions',
+        'quick-search',
+        'health-check',
+        'updates-available',
+        'recent-activity-feed',
+        'system-info',
+        'environment-list',
+        'package-list',
+        'environment-chart',
+        'package-chart',
+        'cache-usage',
+        'activity-timeline',
+        'download-stats',
+        'wsl-status',
+      ]);
+      expect(widgets.find((widget) => widget.id === 'w-trends')?.settings).toEqual({
+        range: '7d',
+        metric: 'installations',
+      });
+      expect(widgets.find((widget) => widget.id === 'w-health-matrix')?.settings).toEqual({
+        groupBy: 'provider',
+        showHealthy: true,
+      });
+    });
+
     it('setWidgets normalizes invalid payloads', () => {
       useDashboardStore.getState().setWidgets([
         { id: 'x', type: 'environment-chart', size: 'md', visible: true },
@@ -130,6 +205,16 @@ describe('useDashboardStore', () => {
       expect(added.size).toBe(WIDGET_DEFINITIONS['quick-actions'].defaultSize);
       expect(added.visible).toBe(WIDGET_DEFINITIONS['quick-actions'].defaultVisible);
       expect(added.id).toMatch(/^w-quick-actions-/);
+    });
+
+    it('initializes configurable insight widgets with canonical default settings', () => {
+      useDashboardStore.getState().addWidget('workspace-trends' as WidgetType);
+
+      const widget = useDashboardStore.getState().widgets.find((entry) => entry.type === 'workspace-trends');
+      expect(widget?.settings).toEqual({
+        range: '7d',
+        metric: 'installations',
+      });
     });
 
     it('does not add a single-instance widget twice', () => {
@@ -159,7 +244,8 @@ describe('useDashboardStore', () => {
     });
 
     it('moves widget from one position to another', () => {
-      useDashboardStore.getState().reorderWidgets(14, 0);
+      const currentIndex = useDashboardStore.getState().widgets.findIndex((widget) => widget.id === 'w-wsl');
+      useDashboardStore.getState().reorderWidgets(currentIndex, 0);
 
       const widgets = useDashboardStore.getState().widgets;
       expect(widgets[0].id).toBe('w-wsl');
@@ -195,7 +281,8 @@ describe('useDashboardStore', () => {
 
       const widgets = useDashboardStore.getState().widgets;
       expect(widgets).toEqual(getDefaultWidgets());
-      expect(widgets[2].id).toBe('w-actions');
+      expect(widgets[2].id).toBe('w-attention');
+      expect(widgets[4].id).toBe('w-trends');
     });
   });
 
@@ -218,8 +305,8 @@ describe('useDashboardStore', () => {
       expect(migrated.widgets.some((w) => w.type === 'welcome')).toBe(true);
     });
 
-    it('normalizes v2 payload during v3 migration', () => {
-      const v2Widgets = [
+    it('normalizes v3 payload during v4 migration', () => {
+      const v3Widgets = [
         { id: 'dup', type: 'environment-chart', size: 'md', visible: true },
         { id: 'dup', type: 'environment-chart', size: 'md', visible: true },
         { id: 'bad', type: 'unknown-widget', size: 'md', visible: true },
@@ -229,11 +316,52 @@ describe('useDashboardStore', () => {
         persist: { getOptions: () => { migrate: (state: unknown, version: number) => unknown } };
       }).persist.getOptions();
 
-      const migrated = persistConfig.migrate({ widgets: v2Widgets }, 2) as { widgets: WidgetConfig[] };
+      const migrated = persistConfig.migrate({ widgets: v3Widgets }, 3) as { widgets: WidgetConfig[] };
 
       expect(migrated.widgets).toHaveLength(2);
       expect(migrated.widgets[0].id).toBe('dup');
       expect(migrated.widgets[1].id).toBe('dup-2');
+    });
+
+    it('restores canonical settings for configurable insight widgets during migration', () => {
+      const persistConfig = (useDashboardStore as unknown as {
+        persist: { getOptions: () => { migrate: (state: unknown, version: number) => unknown } };
+      }).persist.getOptions();
+
+      const migrated = persistConfig.migrate({
+        widgets: [
+          {
+            id: 'trend',
+            type: 'workspace-trends',
+            size: 'lg',
+            visible: true,
+            settings: { range: 'bad', metric: 'bad' },
+          },
+        ],
+      }, 3) as { widgets: WidgetConfig[] };
+
+      expect(migrated.widgets[0]?.settings).toEqual({
+        range: '7d',
+        metric: 'installations',
+      });
+    });
+
+    it('preserves existing customized layouts without injecting new canonical insight widgets', () => {
+      const persistConfig = (useDashboardStore as unknown as {
+        persist: { getOptions: () => { migrate: (state: unknown, version: number) => unknown } };
+      }).persist.getOptions();
+
+      const migrated = persistConfig.migrate({
+        widgets: [
+          { id: 'w-stats', type: 'stats-overview', size: 'full', visible: true },
+          { id: 'w-search', type: 'quick-search', size: 'full', visible: true },
+        ],
+      }, 3) as { widgets: WidgetConfig[] };
+
+      expect(migrated.widgets.map((widget) => widget.type)).toEqual([
+        'stats-overview',
+        'quick-search',
+      ]);
     });
 
     it('falls back to canonical defaults when payload is missing', () => {

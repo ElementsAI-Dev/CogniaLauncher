@@ -19,12 +19,17 @@ const mockDeduplicatePath = jest.fn().mockResolvedValue(0);
 const mockPreviewPathRepair = jest.fn().mockResolvedValue(null);
 const mockApplyPathRepair = jest.fn().mockResolvedValue(null);
 const mockResolveConflict = jest.fn().mockResolvedValue(null);
+const mockRevealVar = jest.fn().mockResolvedValue(null);
 let mockIsTauri = false;
 
 const hookState = {
   envVars: {} as Record<string, string>,
+  processVarSummaries: [] as Array<{ key: string; scope: string; value: { displayValue: string; masked: boolean; hasValue: boolean; length: number; isSensitive: boolean; sensitivityReason?: string | null } }>,
   userPersistentVarsTyped: [] as Array<{ key: string; value: string; regType?: string }>,
   systemPersistentVarsTyped: [] as Array<{ key: string; value: string; regType?: string }>,
+  userPersistentVarSummaries: [] as Array<{ key: string; scope: string; regType?: string; value: { displayValue: string; masked: boolean; hasValue: boolean; length: number; isSensitive: boolean; sensitivityReason?: string | null } }>,
+  systemPersistentVarSummaries: [] as Array<{ key: string; scope: string; regType?: string; value: { displayValue: string; masked: boolean; hasValue: boolean; length: number; isSensitive: boolean; sensitivityReason?: string | null } }>,
+  revealedValues: {} as Record<string, string>,
   pathEntries: [] as never[],
   shellProfiles: [] as never[],
   conflicts: [] as Array<{ key: string; userValue: string; systemValue: string; effectiveValue: string }>,
@@ -34,6 +39,9 @@ const hookState = {
   pathRepairPreviewStale: false,
   shellGuidance: [] as Array<{ shell: string; configPath: string; command: string; autoApplied: boolean }>,
   loading: false,
+  detectionLoading: false,
+  pathLoading: false,
+  importExportLoading: false,
   error: null as string | null,
   detectionState: 'idle' as 'idle' | 'loading-no-cache' | 'showing-cache-refreshing' | 'showing-fresh' | 'empty' | 'error',
   detectionFromCache: false,
@@ -57,6 +65,7 @@ const hookState = {
   applyPathRepair: mockApplyPathRepair,
   clearPathRepairPreview: jest.fn(),
   resolveConflict: mockResolveConflict,
+  revealVar: mockRevealVar,
   loadDetection: mockLoadDetection,
 };
 
@@ -82,8 +91,12 @@ describe('EnvVarPage', () => {
   beforeEach(() => {
     mockIsTauri = false;
     hookState.envVars = {};
+    hookState.processVarSummaries = [];
     hookState.userPersistentVarsTyped = [];
     hookState.systemPersistentVarsTyped = [];
+    hookState.userPersistentVarSummaries = [];
+    hookState.systemPersistentVarSummaries = [];
+    hookState.revealedValues = {};
     hookState.pathEntries = [];
     hookState.shellProfiles = [];
     hookState.conflicts = [];
@@ -93,6 +106,9 @@ describe('EnvVarPage', () => {
     hookState.pathRepairPreviewStale = false;
     hookState.shellGuidance = [];
     hookState.loading = false;
+    hookState.detectionLoading = false;
+    hookState.pathLoading = false;
+    hookState.importExportLoading = false;
     hookState.error = null;
     hookState.detectionState = 'idle';
     hookState.detectionFromCache = false;

@@ -634,6 +634,17 @@ export function useTerminal({ t }: UseTerminalOptions) {
     }
   }, [t]);
 
+  const revealShellEnvVar = useCallback(async (key: string) => {
+    if (!isTauri()) return null;
+    try {
+      const result = await tauri.terminalRevealShellEnvVar(key);
+      return result.value;
+    } catch (e) {
+      toast.error(t('terminal.toastLoadEnvVarsFailed', { error: String(e) }));
+      return null;
+    }
+  }, [t]);
+
   // Profile Duplicate / Import / Export
   const duplicateProfile = useCallback(async (id: string) => {
     if (!isTauri()) return;
@@ -1174,6 +1185,7 @@ export function useTerminal({ t }: UseTerminalOptions) {
     fetchFrameworkCacheStats,
     cleanFrameworkCache,
     fetchShellEnvVars,
+    revealShellEnvVar,
     fetchProxyEnvVars,
     duplicateProfile,
     exportProfiles,

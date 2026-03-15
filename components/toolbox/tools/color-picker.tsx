@@ -134,7 +134,7 @@ function FormatRow({
 function WcagBadge({ pass, label }: { pass: boolean; label: string }) {
   return (
     <Badge variant={pass ? 'default' : 'destructive'} className="text-[10px] px-1.5 py-0">
-      {label} {pass ? 'Pass' : 'Fail'}
+      {label}
     </Badge>
   );
 }
@@ -147,7 +147,7 @@ export default function ColorPicker({ className }: ToolComponentProps) {
   const { t } = useLocale();
   const { preferences, setPreferences } = useToolPreferences('color-picker', DEFAULT_PREFERENCES);
   const [hex, setHex] = useState(preferences.hex);
-  const { copy } = useCopyToClipboard();
+  const { copy, error: clipboardError } = useCopyToClipboard();
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   const rgb = hexToRgb(hex);
@@ -193,8 +193,8 @@ export default function ColorPicker({ className }: ToolComponentProps) {
     { key: 'hex', label: t('toolbox.tools.colorPicker.formatHex'), value: validHex ? hex.toUpperCase() : '-' },
     { key: 'rgb', label: t('toolbox.tools.colorPicker.formatRgb'), value: rgb ? `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})` : '-' },
     { key: 'hsl', label: t('toolbox.tools.colorPicker.formatHsl'), value: hsl ? `hsl(${hsl.h}, ${hsl.s}%, ${hsl.l}%)` : '-' },
-    { key: 'oklch', label: 'OKLCH', value: oklch ? `oklch(${oklch.L}% ${oklch.C} ${oklch.H})` : '-' },
-    { key: 'css-var', label: 'CSS Var', value: validHex ? 'var(--color-primary)' : '-' },
+    { key: 'oklch', label: t('toolbox.tools.colorPicker.formatOklch'), value: oklch ? `oklch(${oklch.L}% ${oklch.C} ${oklch.H})` : '-' },
+    { key: 'css-var', label: t('toolbox.tools.colorPicker.formatCssVariable'), value: validHex ? 'var(--color-primary)' : '-' },
   ], [hex, rgb, hsl, oklch, t, validHex]);
 
   const bgColor = validHex ? hex : '#000000';
@@ -247,10 +247,10 @@ export default function ColorPicker({ className }: ToolComponentProps) {
 
             {/* Palette presets */}
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
-                <Palette className="h-3 w-3" />
-                Presets
-              </Label>
+                <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
+                  <Palette className="h-3 w-3" />
+                  {t('toolbox.tools.colorPicker.presets')}
+                </Label>
               <div className="flex flex-wrap gap-1.5">
                 {PALETTE.map((color) => (
                   <Tooltip key={color}>
@@ -274,7 +274,7 @@ export default function ColorPicker({ className }: ToolComponentProps) {
         </ToolSection>
 
         {/* ── Color Preview ───────────────────────────────── */}
-        <ToolSection title="Color Preview">
+        <ToolSection title={t('toolbox.tools.colorPicker.previewTitle')}>
           <div
             className="relative h-24 rounded-lg border overflow-hidden"
             style={{ backgroundColor: bgColor }}
@@ -291,7 +291,7 @@ export default function ColorPicker({ className }: ToolComponentProps) {
 
         {/* ── Color Formats ───────────────────────────────── */}
         <ToolSection
-          title="Color Formats"
+          title={t('toolbox.tools.colorPicker.formatsTitle')}
           headerRight={
             <Button
               variant="outline"
@@ -304,7 +304,7 @@ export default function ColorPicker({ className }: ToolComponentProps) {
               ) : (
                 <Copy className="h-3 w-3" />
               )}
-              Copy CSS
+              {t('toolbox.tools.colorPicker.copyCss')}
             </Button>
           }
         >
@@ -323,7 +323,7 @@ export default function ColorPicker({ className }: ToolComponentProps) {
         </ToolSection>
 
         {/* ── Accessibility (WCAG) ────────────────────────── */}
-        <ToolSection title="Accessibility">
+        <ToolSection title={t('toolbox.tools.colorPicker.accessibilityTitle')}>
           {contrast ? (
             <div className="space-y-3">
               <p className="text-xs text-muted-foreground">
@@ -334,13 +334,13 @@ export default function ColorPicker({ className }: ToolComponentProps) {
               </p>
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">vs White</span>
+                  <span className="text-sm font-medium">{t('toolbox.tools.colorPicker.contrastVsWhite')}</span>
                   <span className="text-sm font-mono tabular-nums">{contrast.white.toFixed(2)}:1</span>
                 </div>
                 <div className="flex gap-1.5">
-                  <WcagBadge pass={contrast.white >= 4.5} label="AA" />
-                  <WcagBadge pass={contrast.white >= 7} label="AAA" />
-                  <WcagBadge pass={contrast.white >= 3} label="AA Large" />
+                  <WcagBadge pass={contrast.white >= 4.5} label={`AA ${contrast.white >= 4.5 ? t('toolbox.tools.colorPicker.pass') : t('toolbox.tools.colorPicker.fail')}`} />
+                  <WcagBadge pass={contrast.white >= 7} label={`AAA ${contrast.white >= 7 ? t('toolbox.tools.colorPicker.pass') : t('toolbox.tools.colorPicker.fail')}`} />
+                  <WcagBadge pass={contrast.white >= 3} label={`AA Large ${contrast.white >= 3 ? t('toolbox.tools.colorPicker.pass') : t('toolbox.tools.colorPicker.fail')}`} />
                 </div>
               </div>
 
@@ -348,20 +348,21 @@ export default function ColorPicker({ className }: ToolComponentProps) {
 
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">vs Black</span>
+                  <span className="text-sm font-medium">{t('toolbox.tools.colorPicker.contrastVsBlack')}</span>
                   <span className="text-sm font-mono tabular-nums">{contrast.black.toFixed(2)}:1</span>
                 </div>
                 <div className="flex gap-1.5">
-                  <WcagBadge pass={contrast.black >= 4.5} label="AA" />
-                  <WcagBadge pass={contrast.black >= 7} label="AAA" />
-                  <WcagBadge pass={contrast.black >= 3} label="AA Large" />
+                  <WcagBadge pass={contrast.black >= 4.5} label={`AA ${contrast.black >= 4.5 ? t('toolbox.tools.colorPicker.pass') : t('toolbox.tools.colorPicker.fail')}`} />
+                  <WcagBadge pass={contrast.black >= 7} label={`AAA ${contrast.black >= 7 ? t('toolbox.tools.colorPicker.pass') : t('toolbox.tools.colorPicker.fail')}`} />
+                  <WcagBadge pass={contrast.black >= 3} label={`AA Large ${contrast.black >= 3 ? t('toolbox.tools.colorPicker.pass') : t('toolbox.tools.colorPicker.fail')}`} />
                 </div>
               </div>
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">Enter a valid color to see contrast analysis.</p>
+            <p className="text-sm text-muted-foreground">{t('toolbox.tools.colorPicker.accessibilityHint')}</p>
           )}
         </ToolSection>
+        {clipboardError && <ToolValidationMessage message={t('toolbox.actions.copyFailed')} />}
       </div>
     </div>
   );

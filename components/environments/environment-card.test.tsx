@@ -56,6 +56,18 @@ jest.mock("sonner", () => ({
   },
 }));
 
+const mockSyncWorkflowContext = jest.fn();
+
+jest.mock("@/hooks/use-environment-workflow", () => ({
+  useEnvironmentWorkflow: () => ({
+    syncWorkflowContext: mockSyncWorkflowContext,
+    setWorkflowActionState: jest.fn(),
+    requireProjectPath: jest.fn(),
+    requirePathConfigured: jest.fn(),
+    reconcileEnvironmentWorkflow: jest.fn(),
+  }),
+}));
+
 const mockUseEnvironmentStore = useEnvironmentStore as unknown as jest.Mock;
 
 describe("EnvironmentCard", () => {
@@ -205,6 +217,23 @@ describe("EnvironmentCard", () => {
     render(<EnvironmentCard env={defaultEnv} />);
     const link = screen.getByText("View Details").closest("a");
     expect(link).toHaveAttribute("href", "/environments/Node");
+  });
+
+  it("syncs shared workflow context before navigating to details", async () => {
+    const user = userEvent.setup();
+    render(<EnvironmentCard env={defaultEnv} projectPath="/workspace/app" />);
+
+    await user.click(screen.getByText("View Details"));
+
+    expect(mockSyncWorkflowContext).toHaveBeenCalledWith(
+      "Node",
+      expect.objectContaining({
+        origin: "overview",
+        returnHref: "/environments",
+        projectPath: "/workspace/app",
+        providerId: "fnm",
+      }),
+    );
   });
 
   it("shows loading state when loading prop is true", () => {

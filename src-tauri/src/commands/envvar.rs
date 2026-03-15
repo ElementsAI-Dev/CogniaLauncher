@@ -4,7 +4,10 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::error::CogniaError;
-use crate::platform::env::{self, EnvFileFormat, EnvVarScope, ShellProfileInfo};
+use crate::platform::env::{
+    self, EnvFileFormat, EnvVarScope, EnvVarSensitivityReason, EnvVarValueSummary,
+    ShellProfileInfo,
+};
 
 // ============================================================================
 // Types
@@ -51,6 +54,9 @@ pub struct EnvVarImportPreviewItem {
     pub value: String,
     pub action: String,
     pub reason: Option<String>,
+    pub is_sensitive: bool,
+    pub sensitivity_reason: Option<EnvVarSensitivityReason>,
+    pub redacted: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -60,6 +66,8 @@ pub struct EnvVarShellGuidance {
     pub config_path: String,
     pub command: String,
     pub auto_applied: bool,
+    pub contains_sensitive_value: bool,
+    pub redacted: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -102,6 +110,47 @@ pub struct EnvVarConflictResolutionResult {
     pub shell_guidance: Vec<EnvVarShellGuidance>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnvVarSummary {
+    pub key: String,
+    pub scope: EnvVarScope,
+    pub value: EnvVarValueSummary,
+    pub reg_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnvVarRevealResult {
+    pub key: String,
+    pub scope: EnvVarScope,
+    pub value: Option<String>,
+    pub is_sensitive: bool,
+    pub sensitivity_reason: Option<EnvVarSensitivityReason>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnvVarShellProfileReadResult {
+    pub path: String,
+    pub content: String,
+    pub redacted_count: usize,
+    pub contains_sensitive: bool,
+    pub revealed: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnvVarExportResult {
+    pub scope: EnvVarScope,
+    pub format: EnvFileFormat,
+    pub content: String,
+    pub redacted: bool,
+    pub sensitive_count: usize,
+    pub variable_count: usize,
+    pub revealed: bool,
+}
+
 // ============================================================================
 // Commands
 // ============================================================================
@@ -112,9 +161,48 @@ pub fn envvar_list_all() -> Result<HashMap<String, String>, CogniaError> {
 }
 
 #[tauri::command]
+pub fn envvar_list_process_summaries() -> Result<Vec<EnvVarSummary>, CogniaError> {
+    let mut items = env::get_all_vars()
+        .into_iter()
+        .map(|(key, value)| EnvVarSummary {
+            value: env::summarize_env_value(&key, &value),
+            key,
+            scope: EnvVarScope::Process,
+            reg_type: None,
+        })
+        .collect::<Vec<_>>();
+    items.sort_by(|a, b| a.key.cmp(&b.key));
+    Ok(items)
+}
+
+#[tauri::command]
 pub fn envvar_get(key: String) -> Result<Option<String>, CogniaError> {
     let key = env::normalize_env_var_key(&key)?;
     Ok(env::get_var(&key))
+}
+
+#[tauri::command]
+pub async fn envvar_reveal_value(
+    key: String,
+    scope: EnvVarScope,
+) -> Result<EnvVarRevealResult, CogniaError> {
+    let key = env::normalize_env_var_key(&key)?;
+    let value = env::get_persistent_var(&key, scope).await?;
+    let (is_sensitive, sensitivity_reason) = value
+        .as_deref()
+        .map(|current| {
+            let reason = env::classify_env_var_sensitivity(&key, current);
+            (reason.is_some(), reason)
+        })
+        .unwrap_or((false, None));
+
+    Ok(EnvVarRevealResult {
+        key,
+        scope,
+        value,
+        is_sensitive,
+        sensitivity_reason,
+    })
 }
 
 #[tauri::command]
@@ -223,8 +311,31 @@ pub fn envvar_list_shell_profiles() -> Result<Vec<ShellProfileInfo>, CogniaError
 }
 
 #[tauri::command]
-pub fn envvar_read_shell_profile(path: String) -> Result<String, CogniaError> {
-    env::read_shell_profile(&path)
+pub fn envvar_read_shell_profile(
+    path: String,
+    include_sensitive: Option<bool>,
+) -> Result<EnvVarShellProfileReadResult, CogniaError> {
+    let content = env::read_shell_profile(&path)?;
+    let reveal = include_sensitive.unwrap_or(false);
+    if reveal {
+        let redaction = env::redact_shell_profile_content(&content);
+        return Ok(EnvVarShellProfileReadResult {
+            path,
+            content,
+            redacted_count: redaction.redacted_count,
+            contains_sensitive: redaction.contains_sensitive,
+            revealed: true,
+        });
+    }
+
+    let redaction = env::redact_shell_profile_content(&content);
+    Ok(EnvVarShellProfileReadResult {
+        path,
+        content: redaction.content,
+        redacted_count: redaction.redacted_count,
+        contains_sensitive: redaction.contains_sensitive,
+        revealed: false,
+    })
 }
 
 #[tauri::command]
@@ -277,16 +388,16 @@ pub async fn envvar_apply_import_preview(
     scope: EnvVarScope,
     fingerprint: String,
 ) -> Result<EnvVarImportResult, CogniaError> {
-    let preview = build_import_preview(&content, scope).await?;
-    ensure_preview_fingerprint(&preview.fingerprint, &fingerprint)?;
+    let build = build_import_preview_internal(&content, scope).await?;
+    ensure_preview_fingerprint(&build.preview.fingerprint, &fingerprint)?;
 
     let mut imported = 0usize;
     let mut skipped = 0usize;
     let mut errors = Vec::new();
 
-    for item in &preview.items {
+    for item in &build.apply_items {
         match item.action.as_str() {
-            "add" | "update" => match env::set_persistent_var(&item.key, &item.value, scope).await {
+            "add" | "update" => match env::set_persistent_var(&item.key, &item.raw_value, scope).await {
                 Ok(()) => imported += 1,
                 Err(error) => {
                     skipped += 1;
@@ -315,7 +426,8 @@ pub async fn envvar_apply_import_preview(
 pub async fn envvar_export_env_file(
     scope: EnvVarScope,
     format: EnvFileFormat,
-) -> Result<String, CogniaError> {
+    include_sensitive: Option<bool>,
+) -> Result<EnvVarExportResult, CogniaError> {
     let vars: Vec<(String, String)> = match scope {
         EnvVarScope::Process => {
             let mut v: Vec<(String, String)> = env::get_all_vars().into_iter().collect();
@@ -325,7 +437,34 @@ pub async fn envvar_export_env_file(
         _ => env::list_persistent_vars(scope).await?,
     };
 
-    Ok(env::generate_env_file(&vars, format))
+    let reveal = include_sensitive.unwrap_or(false);
+    let sensitive_count = vars
+        .iter()
+        .filter(|(key, value)| env::classify_env_var_sensitivity(key, value).is_some())
+        .count();
+    let export_vars = if reveal {
+        vars.clone()
+    } else {
+        vars.iter()
+            .map(|(key, value)| {
+                if env::classify_env_var_sensitivity(key, value).is_some() {
+                    (key.clone(), env::mask_sensitive_value(value))
+                } else {
+                    (key.clone(), value.clone())
+                }
+            })
+            .collect::<Vec<_>>()
+    };
+
+    Ok(EnvVarExportResult {
+        scope,
+        format,
+        content: env::generate_env_file(&export_vars, format),
+        redacted: !reveal && sensitive_count > 0,
+        sensitive_count,
+        variable_count: vars.len(),
+        revealed: reveal,
+    })
 }
 
 // ============================================================================
@@ -367,6 +506,42 @@ pub async fn envvar_list_persistent_typed(
             .map(|(key, value)| PersistentEnvVar {
                 key,
                 value,
+                reg_type: None,
+            })
+            .collect())
+    }
+}
+
+#[tauri::command]
+pub async fn envvar_list_persistent_typed_summaries(
+    scope: EnvVarScope,
+) -> Result<Vec<EnvVarSummary>, CogniaError> {
+    #[cfg(windows)]
+    {
+        let items = env::list_persistent_vars_with_type(scope).await?;
+        Ok(items
+            .into_iter()
+            .map(|(key, value, reg_type)| EnvVarSummary {
+                value: env::summarize_env_value(&key, &value),
+                key,
+                scope,
+                reg_type: if reg_type.is_empty() {
+                    None
+                } else {
+                    Some(reg_type)
+                },
+            })
+            .collect())
+    }
+    #[cfg(not(windows))]
+    {
+        let items = env::list_persistent_vars(scope).await?;
+        Ok(items
+            .into_iter()
+            .map(|(key, value)| EnvVarSummary {
+                value: env::summarize_env_value(&key, &value),
+                key,
+                scope,
                 reg_type: None,
             })
             .collect())
@@ -428,6 +603,7 @@ pub async fn envvar_resolve_conflict(
         &[(key.clone(), value.clone())],
         target_scope,
         auto_applied_shell_for_scope(target_scope).as_deref(),
+        false,
     );
 
     Ok(EnvVarConflictResolutionResult {
@@ -473,12 +649,15 @@ pub fn envvar_generate_shell_guidance(
     value: Option<String>,
     path_entries: Option<Vec<String>>,
     auto_applied_shell: Option<String>,
+    include_sensitive: Option<bool>,
 ) -> Result<Vec<EnvVarShellGuidance>, CogniaError> {
+    let reveal = include_sensitive.unwrap_or(false);
     if let Some(entries) = path_entries {
         return Ok(shell_guidance_for_path(
             &entries,
             EnvVarScope::User,
             auto_applied_shell.as_deref(),
+            reveal,
         ));
     }
 
@@ -489,6 +668,7 @@ pub fn envvar_generate_shell_guidance(
                 &[(key, value)],
                 EnvVarScope::User,
                 auto_applied_shell.as_deref(),
+                reveal,
             ))
         }
         _ => Err(CogniaError::Config(
@@ -533,10 +713,31 @@ fn format_import_error(key: &str, error: &CogniaError) -> String {
     )
 }
 
+#[derive(Debug, Clone)]
+struct ImportPreviewApplyItem {
+    key: String,
+    raw_value: String,
+    action: String,
+    reason: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct ImportPreviewBuild {
+    preview: EnvVarImportPreview,
+    apply_items: Vec<ImportPreviewApplyItem>,
+}
+
 async fn build_import_preview(
     content: &str,
     scope: EnvVarScope,
 ) -> Result<EnvVarImportPreview, CogniaError> {
+    Ok(build_import_preview_internal(content, scope).await?.preview)
+}
+
+async fn build_import_preview_internal(
+    content: &str,
+    scope: EnvVarScope,
+) -> Result<ImportPreviewBuild, CogniaError> {
     let current_vars = list_scope_vars(scope).await?;
     let current_map: HashMap<String, String> = current_vars
         .iter()
@@ -552,6 +753,7 @@ async fn build_import_preview(
     let mut skipped = 0usize;
     let mut items = Vec::new();
     let mut guidance_pairs = Vec::new();
+    let mut apply_items = Vec::new();
 
     for (index, (raw_key, value)) in parsed.iter().enumerate() {
         match env::normalize_env_var_key(raw_key) {
@@ -559,19 +761,32 @@ async fn build_import_preview(
                 invalid += 1;
                 items.push(EnvVarImportPreviewItem {
                     key: import_key_label(raw_key),
-                    value: value.clone(),
+                    value: env::mask_sensitive_value(value),
                     action: "invalid".to_string(),
                     reason: Some(error.to_string()),
+                    is_sensitive: false,
+                    sensitivity_reason: None,
+                    redacted: false,
                 });
             }
             Ok(key) => {
+                let sensitivity_reason = env::classify_env_var_sensitivity(&key, value);
+                let is_sensitive = sensitivity_reason.is_some();
+                let display_value = if is_sensitive {
+                    env::mask_sensitive_value(value)
+                } else {
+                    value.clone()
+                };
                 if skipped_indexes.contains(&index) {
                     skipped += 1;
                     items.push(EnvVarImportPreviewItem {
                         key,
-                        value: value.clone(),
+                        value: display_value,
                         action: "skipped".to_string(),
                         reason: Some("overridden_by_later_entry".to_string()),
+                        is_sensitive,
+                        sensitivity_reason,
+                        redacted: is_sensitive,
                     });
                     continue;
                 }
@@ -594,8 +809,17 @@ async fn build_import_preview(
                 };
 
                 items.push(EnvVarImportPreviewItem {
+                    key: key.clone(),
+                    value: display_value,
+                    action: action.to_string(),
+                    reason: None,
+                    is_sensitive,
+                    sensitivity_reason,
+                    redacted: is_sensitive,
+                });
+                apply_items.push(ImportPreviewApplyItem {
                     key,
-                    value: value.clone(),
+                    raw_value: value.clone(),
                     action: action.to_string(),
                     reason: None,
                 });
@@ -603,21 +827,25 @@ async fn build_import_preview(
         }
     }
 
-    Ok(EnvVarImportPreview {
-        scope,
-        fingerprint: scope_snapshot_fingerprint(scope).await?,
-        additions,
-        updates,
-        noops,
-        invalid,
-        skipped,
-        items,
-        primary_shell_target: primary_shell_target_for_scope(scope),
-        shell_guidance: shell_guidance_for_pairs(
-            &guidance_pairs,
+    Ok(ImportPreviewBuild {
+        preview: EnvVarImportPreview {
             scope,
-            auto_applied_shell_for_scope(scope).as_deref(),
-        ),
+            fingerprint: scope_snapshot_fingerprint(scope).await?,
+            additions,
+            updates,
+            noops,
+            invalid,
+            skipped,
+            items,
+            primary_shell_target: primary_shell_target_for_scope(scope),
+            shell_guidance: shell_guidance_for_pairs(
+                &guidance_pairs,
+                scope,
+                auto_applied_shell_for_scope(scope).as_deref(),
+                false,
+            ),
+        },
+        apply_items,
     })
 }
 
@@ -658,6 +886,7 @@ async fn build_path_repair_preview(scope: EnvVarScope) -> Result<EnvVarPathRepai
             &repaired_entries,
             scope,
             auto_applied_shell_for_scope(scope).as_deref(),
+            false,
         ),
     })
 }
@@ -767,6 +996,7 @@ fn shell_guidance_for_pairs(
     pairs: &[(String, String)],
     scope: EnvVarScope,
     auto_applied_shell: Option<&str>,
+    include_sensitive: bool,
 ) -> Vec<EnvVarShellGuidance> {
     if pairs.is_empty() || scope != EnvVarScope::User {
         return Vec::new();
@@ -775,9 +1005,21 @@ fn shell_guidance_for_pairs(
     env::list_shell_profiles()
         .into_iter()
         .filter_map(|profile| {
+            let has_sensitive_value = pairs
+                .iter()
+                .any(|(key, value)| env::classify_env_var_sensitivity(key, value).is_some());
             let commands = pairs
                 .iter()
-                .filter_map(|(key, value)| env::render_shell_variable_command(&profile.shell, key, value))
+                .filter_map(|(key, value)| {
+                    let render_value = if !include_sensitive
+                        && env::classify_env_var_sensitivity(key, value).is_some()
+                    {
+                        env::mask_sensitive_value(value)
+                    } else {
+                        value.clone()
+                    };
+                    env::render_shell_variable_command(&profile.shell, key, &render_value)
+                })
                 .collect::<Vec<_>>();
 
             if commands.is_empty() {
@@ -789,6 +1031,8 @@ fn shell_guidance_for_pairs(
                 config_path: profile.config_path,
                 command: commands.join("\n"),
                 auto_applied: auto_applied_shell == Some(profile.shell.as_str()),
+                contains_sensitive_value: has_sensitive_value,
+                redacted: has_sensitive_value && !include_sensitive,
             })
         })
         .collect()
@@ -798,6 +1042,7 @@ fn shell_guidance_for_path(
     entries: &[String],
     scope: EnvVarScope,
     auto_applied_shell: Option<&str>,
+    _include_sensitive: bool,
 ) -> Vec<EnvVarShellGuidance> {
     if entries.is_empty() || scope != EnvVarScope::User {
         return Vec::new();
@@ -811,6 +1056,8 @@ fn shell_guidance_for_path(
                 config_path: profile.config_path,
                 command,
                 auto_applied: auto_applied_shell == Some(profile.shell.as_str()),
+                contains_sensitive_value: false,
+                redacted: false,
             })
         })
         .collect()
@@ -881,6 +1128,70 @@ mod tests {
         assert!(result.errors[0].contains("[invalid_input]"));
 
         env::remove_var("GOOD_KEY");
+    }
+
+    #[tokio::test]
+    async fn process_summaries_mask_sensitive_values() {
+        env::set_var("COGNIA_MASKED_TOKEN", "ghp_super_secret_token");
+        env::set_var("COGNIA_VISIBLE_MODE", "development");
+
+        let summaries = envvar_list_process_summaries()
+            .expect("list summaries should succeed");
+
+        let sensitive = summaries
+            .iter()
+            .find(|item| item.key == "COGNIA_MASKED_TOKEN")
+            .expect("sensitive summary should exist");
+        assert!(sensitive.value.is_sensitive);
+        assert!(sensitive.value.masked);
+        assert_ne!(sensitive.value.display_value, "ghp_super_secret_token");
+
+        let normal = summaries
+            .iter()
+            .find(|item| item.key == "COGNIA_VISIBLE_MODE")
+            .expect("non-sensitive summary should exist");
+        assert!(!normal.value.is_sensitive);
+        assert_eq!(normal.value.display_value, "development");
+
+        env::remove_var("COGNIA_MASKED_TOKEN");
+        env::remove_var("COGNIA_VISIBLE_MODE");
+    }
+
+    #[tokio::test]
+    async fn export_redacts_sensitive_values_by_default() {
+        env::set_var("COGNIA_EXPORT_TOKEN", "glpat-secret-value");
+
+        let result = envvar_export_env_file(EnvVarScope::Process, EnvFileFormat::Dotenv, None)
+            .await
+            .expect("export should succeed");
+
+        assert!(result.redacted);
+        assert!(result.sensitive_count >= 1);
+        assert!(result.content.contains("COGNIA_EXPORT_TOKEN"));
+        assert!(!result.content.contains("glpat-secret-value"));
+        assert!(result.content.contains("[hidden:"));
+
+        env::remove_var("COGNIA_EXPORT_TOKEN");
+    }
+
+    #[test]
+    fn shell_profile_reads_redact_sensitive_values_by_default() {
+        let dir = tempdir().expect("temp dir");
+        let path = dir.path().join(".bashrc");
+        std::fs::write(
+            &path,
+            "export GITHUB_TOKEN=\"ghp_secret\"\nexport NODE_ENV=\"development\"\n",
+        )
+        .expect("write shell profile");
+
+        let result = envvar_read_shell_profile(path.display().to_string(), None)
+            .expect("read shell profile should succeed");
+
+        assert!(result.contains_sensitive);
+        assert_eq!(result.redacted_count, 1);
+        assert!(result.content.contains("[REDACTED]"));
+        assert!(!result.content.contains("ghp_secret"));
+        assert!(result.content.contains("NODE_ENV=\"development\""));
     }
 
     #[tokio::test]
@@ -1049,6 +1360,7 @@ mod tests {
             Some("guide-value".into()),
             None,
             Some("bash".into()),
+            Some(true),
         )
         .expect("guidance generation should succeed");
 
@@ -1057,5 +1369,6 @@ mod tests {
         assert!(guidance.iter().any(|entry| entry.shell == "fish" && entry.command.contains("set -gx ENVVAR_GUIDE_KEY")));
         assert!(guidance.iter().any(|entry| entry.shell == "powershell" && entry.command.contains("$env:ENVVAR_GUIDE_KEY")));
         assert!(guidance.iter().any(|entry| entry.shell == "bash" && entry.auto_applied));
+        assert!(guidance.iter().all(|entry| !entry.redacted));
     }
 }

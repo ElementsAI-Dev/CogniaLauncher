@@ -121,11 +121,10 @@ export default function Base64Converter({ className }: ToolComponentProps) {
 
   const bytesFooter = output ? (
     <span className="text-xs text-muted-foreground tabular-nums">
-      {t('toolbox.tools.shared.ioMeta', {
+      {t('toolbox.tools.shared.byteMeta', {
         inputSize: byteSize(input),
         outputSize: byteSize(output),
-      })}{' '}
-      bytes
+      })}
     </span>
   ) : null;
 
@@ -143,7 +142,9 @@ export default function Base64Converter({ className }: ToolComponentProps) {
           }
           headerRight={
             <Badge variant="secondary" className="text-xs font-normal">
-              {isEncoding ? 'Text → Base64' : 'Base64 → Text'}
+              {isEncoding
+                ? t('toolbox.tools.base64Converter.directionEncode')
+                : t('toolbox.tools.base64Converter.directionDecode')}
             </Badge>
           }
         >
@@ -155,7 +156,11 @@ export default function Base64Converter({ className }: ToolComponentProps) {
             }
             value={input}
             onChange={setInput}
-            placeholder={isEncoding ? 'Hello, World!' : 'SGVsbG8sIFdvcmxkIQ=='}
+            placeholder={
+              isEncoding
+                ? t('toolbox.tools.base64Converter.placeholderText')
+                : t('toolbox.tools.base64Converter.placeholderBase64')
+            }
             showPaste
             showClear
             rows={8}
@@ -197,7 +202,11 @@ export default function Base64Converter({ className }: ToolComponentProps) {
               size="icon"
               className="h-8 w-8 rounded-full"
               onClick={toggleDirection}
-              aria-label={isEncoding ? 'Encoding' : 'Decoding'}
+              aria-label={
+                isEncoding
+                  ? t('toolbox.tools.base64Converter.directionEncode')
+                  : t('toolbox.tools.base64Converter.directionDecode')
+              }
             >
               {isEncoding ? (
                 <ArrowDown className="h-4 w-4" />

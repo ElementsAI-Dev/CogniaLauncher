@@ -150,7 +150,7 @@ export interface PackageListProps {
   ) => void;
   onPin?: (name: string, version?: string, provider?: string) => void;
   onUnpin?: (name: string, provider?: string) => void;
-  onBookmark?: (name: string) => void;
+  onBookmark?: (name: string, provider?: string) => void;
   selectable?: boolean;
   showSelectAll?: boolean;
 }
