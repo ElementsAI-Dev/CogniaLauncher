@@ -180,6 +180,54 @@ describe("ShortcutSettings", () => {
     );
   });
 
+  it("ignores shortcut recording without modifier keys", () => {
+    render(
+      <ShortcutSettings
+        localConfig={defaultConfig}
+        errors={{}}
+        onValueChange={mockOnValueChange}
+        t={mockT}
+      />,
+    );
+
+    const inputs = screen.getAllByRole("textbox");
+    fireEvent.click(inputs[0]);
+    fireEvent.keyDown(window, {
+      key: "a",
+      ctrlKey: false,
+      shiftKey: false,
+      altKey: false,
+      metaKey: false,
+    });
+
+    expect(mockOnValueChange).not.toHaveBeenCalledWith(
+      "shortcuts.toggle_window",
+      expect.any(String),
+    );
+    expect(screen.getByDisplayValue("Press keys...")).toBeInTheDocument();
+  });
+
+  it("resets a modified shortcut back to the default value", () => {
+    render(
+      <ShortcutSettings
+        localConfig={{
+          ...defaultConfig,
+          "shortcuts.toggle_window": "Alt+Space",
+        }}
+        errors={{}}
+        onValueChange={mockOnValueChange}
+        t={mockT}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset to Default" }));
+
+    expect(mockOnValueChange).toHaveBeenCalledWith(
+      "shortcuts.toggle_window",
+      "CmdOrCtrl+Shift+Space",
+    );
+  });
+
   it("shows reset button when value differs from default", () => {
     const customConfig = {
       ...defaultConfig,

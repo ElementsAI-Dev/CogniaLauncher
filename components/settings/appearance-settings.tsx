@@ -1,5 +1,19 @@
 "use client";
 
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Field,
+  FieldDescription,
+  FieldLabel,
+} from "@/components/ui/field";
 import { Separator } from "@/components/ui/separator";
 import { Label } from "@/components/ui/label";
 import { AccentColorPicker } from "./accent-color-picker";
@@ -15,10 +29,28 @@ import {
   type InterfaceDensity,
   type WindowEffect,
 } from "@/lib/theme/types";
+import { type WindowEffectRuntimeState } from "@/lib/theme/window-effects";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   ToggleGroup,
   ToggleGroupItem,
 } from "@/components/ui/toggle-group";
+
+const WINDOW_EFFECT_LABEL_KEYS: Record<WindowEffect, string> = {
+  auto: "settings.windowEffectAuto",
+  none: "settings.windowEffectNone",
+  mica: "settings.windowEffectMica",
+  "mica-tabbed": "settings.windowEffectMicaTabbed",
+  acrylic: "settings.windowEffectAcrylic",
+  blur: "settings.windowEffectBlur",
+  vibrancy: "settings.windowEffectVibrancy",
+};
 
 interface AppearanceSettingsProps {
   theme: string | undefined;
@@ -37,7 +69,15 @@ interface AppearanceSettingsProps {
   setReducedMotion: (reduced: boolean) => void;
   windowEffect: WindowEffect;
   setWindowEffect: (effect: string) => void;
+  windowEffectRuntime: WindowEffectRuntimeState;
   t: (key: string, values?: Record<string, string>) => string;
+}
+
+function getWindowEffectLabel(
+  effect: WindowEffect,
+  t: (key: string, values?: Record<string, string>) => string,
+) {
+  return t(WINDOW_EFFECT_LABEL_KEYS[effect]);
 }
 
 export function AppearanceSettings({
@@ -57,8 +97,13 @@ export function AppearanceSettings({
   setReducedMotion,
   windowEffect,
   setWindowEffect,
+  windowEffectRuntime,
   t,
 }: AppearanceSettingsProps) {
+  const selectedWindowEffect = windowEffectRuntime.requestedSupported
+    ? windowEffect
+    : "none";
+
   return (
     <div className="flex flex-col gap-4">
         <SelectSettingItem
@@ -186,24 +231,77 @@ export function AppearanceSettings({
         <Separator />
         <BackgroundSettings t={t} />
         <Separator />
-        <SelectSettingItem
-          id="window-effect"
-          label={t("settings.windowEffect")}
-          description={t("settings.windowEffectDesc")}
-          value={windowEffect}
-          onValueChange={setWindowEffect}
-          options={[
-            { value: "auto", label: t("settings.windowEffectAuto") },
-            { value: "none", label: t("settings.windowEffectNone") },
-            { value: "mica", label: t("settings.windowEffectMica") },
-            { value: "mica-tabbed", label: t("settings.windowEffectMicaTabbed") },
-            { value: "acrylic", label: t("settings.windowEffectAcrylic") },
-            { value: "blur", label: t("settings.windowEffectBlur") },
-            { value: "vibrancy", label: t("settings.windowEffectVibrancy") },
-          ]}
-          placeholder={t("settings.windowEffect")}
-          triggerClassName="w-40"
-        />
+        <Card className="gap-4 py-4">
+          <CardHeader className="gap-2 px-4">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div className="space-y-1">
+                <CardTitle className="text-base">
+                  {t("settings.windowEffectRuntimeCardTitle")}
+                </CardTitle>
+                <CardDescription>
+                  {t("settings.windowEffectRuntimeCardDesc")}
+                </CardDescription>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Badge variant="secondary">
+                  {t("settings.windowEffectConfiguredBadge")}:{" "}
+                  {getWindowEffectLabel(windowEffectRuntime.requested, t)}
+                </Badge>
+                {windowEffectRuntime.effective ? (
+                  <Badge variant="outline">
+                    {t("settings.windowEffectEffectiveBadge")}:{" "}
+                    {getWindowEffectLabel(windowEffectRuntime.effective, t)}
+                  </Badge>
+                ) : null}
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3 px-4">
+            {!windowEffectRuntime.desktop ? (
+              <Alert>
+                <AlertDescription>
+                  {t("settings.windowEffectDesktopOnly")}
+                </AlertDescription>
+              </Alert>
+            ) : null}
+
+            {windowEffectRuntime.desktop && windowEffectRuntime.unsupportedRequested ? (
+              <Alert>
+                <AlertDescription>
+                  {t("settings.windowEffectUnsupported")}
+                </AlertDescription>
+              </Alert>
+            ) : null}
+
+            <Field className="gap-1.5">
+              <FieldLabel htmlFor="window-effect">
+                {t("settings.windowEffect")}
+              </FieldLabel>
+              <FieldDescription id="window-effect-desc">
+                {t("settings.windowEffectDesc")}
+              </FieldDescription>
+            </Field>
+            <Select
+              value={selectedWindowEffect}
+              onValueChange={setWindowEffect}
+            >
+              <SelectTrigger
+                id="window-effect"
+                className="w-56"
+                aria-describedby="window-effect-desc"
+              >
+                <SelectValue placeholder={t("settings.windowEffect")} />
+              </SelectTrigger>
+              <SelectContent>
+                {windowEffectRuntime.selectable.map((effect) => (
+                  <SelectItem key={effect} value={effect}>
+                    {getWindowEffectLabel(effect, t)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </CardContent>
+        </Card>
     </div>
   );
 }

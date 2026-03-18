@@ -1,5 +1,7 @@
 import { render, screen, fireEvent } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { AppearanceSettings } from "./appearance-settings";
+import { buildWindowEffectRuntimeState } from "@/lib/theme/window-effects";
 
 jest.mock("@/lib/stores/appearance", () => ({
   useAppearanceStore: jest.fn(() => ({
@@ -128,9 +130,20 @@ const defaultProps = {
       "settings.windowEffectAcrylic": "Acrylic (Windows)",
       "settings.windowEffectBlur": "Blur (Windows)",
       "settings.windowEffectVibrancy": "Vibrancy (macOS)",
+      "settings.windowEffectDesktopOnly": "Native window effects are available in the desktop app only.",
+      "settings.windowEffectUnsupported": "The configured window effect is not supported on this runtime.",
+      "settings.windowEffectConfiguredBadge": "Configured",
+      "settings.windowEffectEffectiveBadge": "Effective",
+      "settings.windowEffectRuntimeCardTitle": "Native Window Transparency",
+      "settings.windowEffectRuntimeCardDesc": "Control native window translucency with runtime-aware options.",
     };
     return translations[key] || key;
   },
+  windowEffectRuntime: buildWindowEffectRuntimeState({
+    requested: "auto",
+    supported: ["auto", "none", "mica", "mica-tabbed", "acrylic", "blur"],
+    desktop: true,
+  }),
 };
 
 describe("AppearanceSettings", () => {
@@ -225,5 +238,99 @@ describe("AppearanceSettings", () => {
   it("renders window effect with current value", () => {
     render(<AppearanceSettings {...defaultProps} windowEffect="mica" />);
     expect(screen.getByText("Window Effect")).toBeInTheDocument();
+  });
+
+  it("shows desktop-only feedback when native window effects are unavailable", () => {
+    render(
+      <AppearanceSettings
+        {...defaultProps}
+        windowEffectRuntime={buildWindowEffectRuntimeState({
+          requested: "auto",
+          supported: [],
+          desktop: false,
+        })}
+      />,
+    );
+
+    expect(
+      screen.getByText("Native window effects are available in the desktop app only."),
+    ).toBeInTheDocument();
+  });
+
+  it("shows unsupported configured effect feedback while keeping actionable runtime options", () => {
+    render(
+      <AppearanceSettings
+        {...defaultProps}
+        windowEffect="mica"
+        windowEffectRuntime={buildWindowEffectRuntimeState({
+          requested: "mica",
+          supported: ["auto", "none", "vibrancy"],
+          desktop: true,
+        })}
+      />,
+    );
+
+    expect(
+      screen.getByText("The configured window effect is not supported on this runtime."),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Configured:/)).toBeInTheDocument();
+  });
+
+  it("wires theme, locale, chart theme, density and window effect controls to setters", async () => {
+    const setTheme = jest.fn();
+    const setLocale = jest.fn();
+    const setChartColorTheme = jest.fn();
+    const setInterfaceDensity = jest.fn();
+    const setWindowEffect = jest.fn();
+
+    render(
+      <AppearanceSettings
+        {...defaultProps}
+        setTheme={setTheme}
+        setLocale={setLocale}
+        setChartColorTheme={setChartColorTheme}
+        setInterfaceDensity={setInterfaceDensity}
+        setWindowEffect={setWindowEffect}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("combobox", { name: "Theme" }));
+    await userEvent.click(screen.getByRole("option", { name: "settings.dark" }));
+    await userEvent.click(screen.getByRole("combobox", { name: "Language" }));
+    await userEvent.click(screen.getByRole("option", { name: "settings.chinese" }));
+    await userEvent.click(screen.getByRole("combobox", { name: "Chart Color Theme" }));
+    await userEvent.click(screen.getByRole("option", { name: "settings.chartThemeOcean" }));
+    await userEvent.click(screen.getByRole("combobox", { name: "Interface Density" }));
+    await userEvent.click(screen.getByRole("option", { name: "Spacious" }));
+    await userEvent.click(screen.getByRole("combobox", { name: "Window Effect" }));
+    await userEvent.click(screen.getByRole("option", { name: "Mica (Windows 11)" }));
+
+    expect(setTheme).toHaveBeenCalledWith("dark");
+    expect(setLocale).toHaveBeenCalledWith("zh");
+    expect(setChartColorTheme).toHaveBeenCalledWith("ocean");
+    expect(setInterfaceDensity).toHaveBeenCalledWith("spacious");
+    expect(setWindowEffect).toHaveBeenCalledWith("mica");
+  });
+
+  it("wires accent color and radius controls to setters", async () => {
+    const setAccentColor = jest.fn();
+    const setInterfaceRadius = jest.fn();
+
+    render(
+      <AppearanceSettings
+        {...defaultProps}
+        setAccentColor={setAccentColor}
+        setInterfaceRadius={setInterfaceRadius}
+      />,
+    );
+
+    const accentOptions = screen.getAllByRole("radio", {
+      name: /settings.selectAccentColor/i,
+    });
+    await userEvent.click(accentOptions[0]);
+    await userEvent.click(screen.getByText("Round"));
+
+    expect(setAccentColor).toHaveBeenCalled();
+    expect(setInterfaceRadius).toHaveBeenCalled();
   });
 });

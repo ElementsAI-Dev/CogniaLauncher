@@ -67,7 +67,21 @@ export function useTrayAutostart({
     useState<TrayQuickAction>("check_updates");
   const [availableQuickActions, setAvailableQuickActions] = useState<
     TrayQuickAction[]
-  >(["open_settings", "open_downloads", "check_updates", "open_logs"]);
+  >([
+    "open_settings",
+    "open_downloads",
+    "check_updates",
+    "open_logs",
+    "open_command_palette",
+    "open_quick_search",
+    "toggle_logs",
+    "manage_plugins",
+    "install_plugin",
+    "create_plugin",
+    "go_dashboard",
+    "go_toolbox",
+    "report_bug",
+  ]);
   const [notificationEvents, setNotificationEvents] = useState<
     TrayNotificationEvent[]
   >(["updates", "downloads", "errors", "system"]);

@@ -280,4 +280,26 @@ describe("GeneralSettings", () => {
       screen.getByText("Value must be between 1 and 32"),
     ).toBeInTheDocument();
   });
+
+  it("wires additional numeric general settings back to onValueChange", () => {
+    const onValueChange = jest.fn();
+    render(<GeneralSettings {...defaultProps} onValueChange={onValueChange} />);
+
+    const spinbuttons = screen.getAllByRole("spinbutton");
+    fireEvent.change(spinbuttons[1], { target: { value: "250" } });
+    fireEvent.change(spinbuttons[2], { target: { value: "7200" } });
+    fireEvent.change(spinbuttons[3], { target: { value: "1073741824" } });
+    fireEvent.change(spinbuttons[4], { target: { value: "90" } });
+    fireEvent.change(spinbuttons[5], { target: { value: "85" } });
+    fireEvent.change(spinbuttons[6], { target: { value: "600" } });
+    fireEvent.change(spinbuttons[7], { target: { value: "2048" } });
+
+    expect(onValueChange).toHaveBeenCalledWith("general.min_install_space_mb", "250");
+    expect(onValueChange).toHaveBeenCalledWith("general.metadata_cache_ttl", "7200");
+    expect(onValueChange).toHaveBeenCalledWith("general.cache_max_size", "1073741824");
+    expect(onValueChange).toHaveBeenCalledWith("general.cache_max_age_days", "90");
+    expect(onValueChange).toHaveBeenCalledWith("general.cache_auto_clean_threshold", "85");
+    expect(onValueChange).toHaveBeenCalledWith("general.cache_monitor_interval", "600");
+    expect(onValueChange).toHaveBeenCalledWith("general.download_speed_limit", "2048");
+  });
 });

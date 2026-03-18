@@ -46,6 +46,9 @@ const t = (key: string) => {
     "settings.backgroundClear": "Clear Image",
     "settings.backgroundResetTuning": "Reset Image Tuning",
     "settings.backgroundDropPasteHint": "Drop an image here or paste from clipboard",
+    "settings.backgroundPreviewTitle": "Background Preview",
+    "settings.backgroundPreviewEmpty": "No image selected",
+    "settings.backgroundPreviewReady": "Image selected",
     "settings.backgroundInvalidImage": "Invalid image",
     "settings.backgroundUnsupportedFormat": "Unsupported format",
     "settings.backgroundProcessFailed": "Process failed",
@@ -264,5 +267,22 @@ describe("BackgroundSettings", () => {
     const img = container.querySelector("img");
     expect(img).toBeInTheDocument();
     expect(img).toHaveAttribute("src", "data:image/jpeg;base64,test");
+  });
+
+  it("shows empty preview state when no background image is selected", () => {
+    mockGetBackgroundImage.mockReturnValue(null);
+    render(<BackgroundSettings t={t} />);
+
+    expect(screen.getByText("Background Preview")).toBeInTheDocument();
+    expect(screen.getAllByText("No image selected").length).toBeGreaterThan(0);
+  });
+
+  it("shows ready preview state when a background image is available", () => {
+    mockGetBackgroundImage.mockReturnValue("data:image/jpeg;base64,test");
+
+    render(<BackgroundSettings t={t} />);
+
+    expect(screen.getByText("Background Preview")).toBeInTheDocument();
+    expect(screen.getByText("Image selected")).toBeInTheDocument();
   });
 });

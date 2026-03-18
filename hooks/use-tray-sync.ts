@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import { useLocale } from '@/components/providers/locale-provider';
+import { dispatchDesktopActionEvent } from '@/lib/desktop-actions';
 import {
   isTauri,
   traySetLanguage,
@@ -11,6 +12,7 @@ import {
   trayRebuild,
   listenNavigate,
   listenCheckUpdates,
+  listenDesktopAction,
   listenDownloadPauseAll,
   listenDownloadResumeAll,
   listenToggleAlwaysOnTop,
@@ -94,6 +96,23 @@ export function useTraySync() {
       unlisten?.();
     };
   }, [router]);
+
+  // Bridge shared desktop actions emitted by the tray into the browser runtime.
+  useEffect(() => {
+    if (!isTauri()) return;
+
+    let unlisten: (() => void) | undefined;
+
+    listenDesktopAction((actionId) => {
+      dispatchDesktopActionEvent(actionId);
+    }).then((fn) => {
+      unlisten = fn;
+    });
+
+    return () => {
+      unlisten?.();
+    };
+  }, []);
 
   // Listen for download pause/resume all from tray
   useEffect(() => {

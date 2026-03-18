@@ -21,13 +21,17 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import {
+  getDesktopAction,
+  type DesktopActionId,
+} from "@/lib/desktop-actions";
 import { cn } from "@/lib/utils";
 import type { TrayMenuItemId } from "@/lib/tauri";
 import { useTrayMenu } from "@/hooks/use-tray-menu";
 
 /** Human-readable labels for each menu item ID */
 function getMenuItemLabel(id: TrayMenuItemId, t: (key: string) => string): string {
-  const labelMap: Record<TrayMenuItemId, string> = {
+  const labelMap: Partial<Record<TrayMenuItemId, string>> = {
     show_hide: t("settings.trayMenu.showHide"),
     quick_nav: t("settings.trayMenu.quickNav"),
     downloads: t("settings.trayMenu.downloads"),
@@ -39,7 +43,17 @@ function getMenuItemLabel(id: TrayMenuItemId, t: (key: string) => string): strin
     autostart: t("settings.trayMenu.autostart"),
     quit: t("settings.trayMenu.quit"),
   };
-  return labelMap[id] || id;
+
+  const explicitLabel = labelMap[id];
+  if (explicitLabel) {
+    return explicitLabel;
+  }
+
+  try {
+    return t(getDesktopAction(id as DesktopActionId).titleKey);
+  } catch {
+    return id;
+  }
 }
 
 interface TrayMenuCustomizerProps {

@@ -2,6 +2,7 @@ import { render, screen, waitFor, fireEvent, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import SettingsPage from './page';
 import { LocaleProvider } from '@/components/providers/locale-provider';
+import { useOnboardingStore } from '@/lib/stores/onboarding';
 import { toast } from 'sonner';
 import type { AppSettings } from '@/lib/stores/settings';
 import { DEFAULT_SIDEBAR_ITEM_ORDER } from '@/lib/sidebar/order';
@@ -27,6 +28,10 @@ const mockDeletePreset = jest.fn();
 const mockSetActivePresetId = jest.fn();
 const mockApplyPreset = jest.fn();
 const mockReplacePresetCollection = jest.fn();
+const mockConfigExport = jest.fn();
+const mockConfigImport = jest.fn();
+const mockWindowEffectApply = jest.fn();
+const mockWindowEffectGetSupported = jest.fn();
 
 const baseConfig: Record<string, string> = {
   'general.parallel_downloads': '4',
@@ -96,6 +101,10 @@ jest.mock('next-themes', () => ({
 
 jest.mock('@/lib/tauri', () => ({
   isTauri: jest.fn().mockReturnValue(false),
+  configExport: (...args: unknown[]) => mockConfigExport(...args),
+  configImport: (...args: unknown[]) => mockConfigImport(...args),
+  windowEffectApply: (...args: unknown[]) => mockWindowEffectApply(...args),
+  windowEffectGetSupported: (...args: unknown[]) => mockWindowEffectGetSupported(...args),
 }));
 
 jest.mock('sonner', () => ({
@@ -244,8 +253,26 @@ const mockMessages = {
       chinese: '中文',
       accentColor: 'Accent Color',
       accentColorDesc: 'Choose the primary accent color',
+      chartColorTheme: 'Chart Color Theme',
+      chartThemeDefault: 'Default',
+      chartThemeVibrant: 'Vibrant',
+      chartThemePastel: 'Pastel',
+      chartThemeOcean: 'Ocean',
+      chartThemeSunset: 'Sunset',
+      chartThemeMonochrome: 'Monochrome',
       reducedMotion: 'Reduced Motion',
       reducedMotionDesc: 'Disable animations and transitions',
+      windowEffect: 'Window Effect',
+      windowEffectAuto: 'Auto (Recommended)',
+      windowEffectNone: 'None',
+      windowEffectMica: 'Mica (Windows 11)',
+      windowEffectMicaTabbed: 'Mica Tabbed (Windows 11)',
+      windowEffectAcrylic: 'Acrylic (Windows)',
+      windowEffectBlur: 'Blur (Windows)',
+      windowEffectVibrancy: 'Vibrancy (macOS)',
+      windowEffectRuntimeCardTitle: 'Native Window Transparency',
+      windowEffectRuntimeCardDesc: 'Control native window translucency with runtime-aware options.',
+      invalidTheme: 'Invalid theme',
       updates: 'Updates',
       updatesDesc: 'Configure update checks and notifications',
       checkUpdatesOnStart: 'Check on Start',
@@ -326,6 +353,36 @@ const mockMessages = {
       shortcutsRecording: 'Press keys...',
       shortcutsReset: 'Reset to Default',
       shortcutsDesktopOnly: 'Global shortcuts are only available in the desktop app',
+      onboardingTitle: 'Onboarding & Tour',
+      onboardingDesc: 'Manage setup progress and guided tour entry points.',
+      onboardingRerun: 'Re-run Setup Wizard',
+      onboardingResume: 'Continue Setup',
+      onboardingStartTour: 'Start Guided Tour',
+      onboardingResetSuccess: 'Setup wizard restarted.',
+      onboardingResumeSuccess: 'Resumed setup from your last step.',
+      onboardingTourStarted: 'Guided tour started.',
+      onboardingStatusCompleted: 'Setup completed',
+      onboardingStatusSkipped: 'Setup was skipped',
+      onboardingStatusPaused: 'Setup paused',
+      onboardingStatusResumable: 'Can resume',
+      onboardingTourDone: 'Guided tour completed',
+      onboardingModeQuick: 'Quick mode',
+      onboardingModeDetailed: 'Detailed mode',
+      onboardingRerunModeHint:
+        'Re-running onboarding now starts from mode selection so you can switch between quick and detailed setup.',
+      sidebarOrderTitle: 'Sidebar Content Order',
+      sidebarOrderDesc: 'Customize the order of top-level sidebar entries.',
+      sidebarOrderReset: 'Reset Order',
+      sidebarOrderResetSuccess: 'Sidebar order has been reset to defaults.',
+      sidebarOrderMoveUp: 'Move up',
+      sidebarOrderMoveDown: 'Move down',
+      hintsTitle: 'Bubble Hints',
+      hintsDesc: 'Show contextual tips on pages you visit for the first time.',
+      hintsReset: 'Reset Hints',
+      hintsResetSuccess: 'All bubble hints have been reset and will appear again.',
+      hintsDismissAll: 'Dismiss All',
+      hintsDismissAllSuccess: 'All bubble hints have been dismissed.',
+      hintsDismissedCount: '{count} hint(s) dismissed',
       nav: {
         label: 'Settings navigation',
         title: 'Section Navigation',
@@ -538,7 +595,39 @@ function mockFileReaderResponse(payload: Record<string, unknown>) {
 describe('SettingsPage', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockConfigExport.mockResolvedValue('backend-config');
+    mockConfigImport.mockResolvedValue(undefined);
+    mockWindowEffectApply.mockResolvedValue(undefined);
+    mockWindowEffectGetSupported.mockResolvedValue(['auto', 'none', 'mica']);
     setupMocks();
+    useOnboardingStore.setState({
+      mode: null,
+      completed: false,
+      skipped: false,
+      currentStep: 0,
+      visitedSteps: [],
+      wizardOpen: false,
+      tourCompleted: false,
+      tourActive: false,
+      tourStep: 0,
+      sessionState: 'idle',
+      lastActiveStepId: null,
+      lastActiveAt: null,
+      canResume: false,
+      sessionSummary: {
+        mode: null,
+        locale: null,
+        theme: null,
+        mirrorPreset: 'default',
+        detectedCount: 0,
+        primaryEnvironment: null,
+        manageableEnvironments: [],
+        shellType: null,
+        shellConfigured: null,
+      },
+      dismissedHints: [],
+      hintsEnabled: true,
+    });
     mockUpdateConfigValue.mockResolvedValue(undefined);
     mockResetConfig.mockResolvedValue(undefined);
     mockFetchConfig.mockResolvedValue(baseConfig);
@@ -796,6 +885,26 @@ describe('SettingsPage', () => {
     expect(toast.success).toHaveBeenCalledWith('Settings exported successfully');
   });
 
+  it('copies exported settings to clipboard', async () => {
+    const clipboardMock = jest.requireMock('@/lib/clipboard');
+    renderWithProviders(<SettingsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /settings/i })).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: /export/i }));
+    await waitFor(() => {
+      expect(screen.getByText('Copy to Clipboard')).toBeInTheDocument();
+    });
+    await userEvent.click(screen.getByText('Copy to Clipboard'));
+
+    await waitFor(() => {
+      expect(clipboardMock.writeClipboard).toHaveBeenCalled();
+    });
+    expect(toast.success).toHaveBeenCalledWith('Copy to Clipboard');
+  });
+
   it('imports settings with preview confirmation and updates app settings', async () => {
     renderWithProviders(<SettingsPage />);
 
@@ -829,6 +938,59 @@ describe('SettingsPage', () => {
       expect(mockSetAppSettings).toHaveBeenCalledWith({ checkUpdatesOnStart: false });
     });
     expect(toast.success).toHaveBeenCalledWith('Settings imported successfully');
+  });
+
+  it('imports settings from clipboard and allows preview cancellation', async () => {
+    const clipboardMock = jest.requireMock('@/lib/clipboard');
+    clipboardMock.readClipboard.mockResolvedValueOnce(
+      JSON.stringify({
+        settings: {
+          'network.timeout': '20',
+        },
+      }),
+    );
+
+    renderWithProviders(<SettingsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /settings/i })).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: /import/i }));
+    await waitFor(() => {
+      expect(screen.getByText('Import from Clipboard')).toBeInTheDocument();
+    });
+    await userEvent.click(screen.getByText('Import from Clipboard'));
+
+    await waitFor(() => {
+      expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: /^cancel$/i }));
+    await waitFor(() => {
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    });
+  });
+
+  it('shows an invalid format toast when clipboard payload cannot be parsed', async () => {
+    const clipboardMock = jest.requireMock('@/lib/clipboard');
+    clipboardMock.readClipboard.mockResolvedValueOnce('{invalid-json');
+
+    renderWithProviders(<SettingsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /settings/i })).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: /import/i }));
+    await waitFor(() => {
+      expect(screen.getByText('Import from Clipboard')).toBeInTheDocument();
+    });
+    await userEvent.click(screen.getByText('Import from Clipboard'));
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith('Invalid JSON payload');
+    });
   });
 
   it('persists config-backed update app settings through config writes', async () => {
@@ -1056,5 +1218,102 @@ describe('SettingsPage', () => {
     await waitFor(() => {
       expect(toast.error).toHaveBeenCalledWith('Clipboard is empty');
     });
+  });
+
+  it('shows resume but not start-tour when onboarding is paused and resumable', async () => {
+    useOnboardingStore.setState({
+      mode: 'quick',
+      sessionState: 'paused',
+      canResume: true,
+      completed: false,
+      skipped: false,
+      tourCompleted: false,
+    });
+
+    renderWithProviders(<SettingsPage />);
+
+    expect(await screen.findByRole('button', { name: 'Continue Setup' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Start Guided Tour' })).not.toBeInTheDocument();
+  });
+
+  it('runs onboarding resume and rerun actions from the onboarding card', async () => {
+    useOnboardingStore.setState({
+      mode: 'quick',
+      sessionState: 'paused',
+      canResume: true,
+      completed: false,
+      skipped: false,
+      tourCompleted: false,
+    });
+
+    renderWithProviders(<SettingsPage />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Continue Setup' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Re-run Setup Wizard' }));
+
+    expect(toast.info).toHaveBeenCalledWith('Resumed setup from your last step.');
+    expect(toast.success).toHaveBeenCalledWith('Setup wizard restarted.');
+  });
+
+  it('shows start-tour but not resume when onboarding was skipped', async () => {
+    useOnboardingStore.setState({
+      mode: 'quick',
+      sessionState: 'skipped',
+      canResume: false,
+      completed: false,
+      skipped: true,
+      tourCompleted: false,
+      dismissedHints: ['terminal-config-editor'],
+      hintsEnabled: true,
+    });
+
+    renderWithProviders(<SettingsPage />);
+
+    expect(await screen.findByRole('button', { name: 'Start Guided Tour' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Continue Setup' })).not.toBeInTheDocument();
+  });
+
+  it('runs onboarding hint actions and start-tour action', async () => {
+    useOnboardingStore.setState({
+      mode: 'quick',
+      sessionState: 'skipped',
+      canResume: false,
+      completed: false,
+      skipped: true,
+      tourCompleted: false,
+      dismissedHints: ['terminal-config-editor'],
+      hintsEnabled: true,
+    });
+
+    renderWithProviders(<SettingsPage />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Start Guided Tour' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Reset Hints' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Dismiss All' }));
+
+    expect(toast.info).toHaveBeenCalledWith('Guided tour started.');
+    expect(toast.success).toHaveBeenCalledWith('All bubble hints have been reset and will appear again.');
+    expect(toast.success).toHaveBeenCalledWith('All bubble hints have been dismissed.');
+  });
+
+  it('updates and resets sidebar order from the settings page', async () => {
+    renderWithProviders(<SettingsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Sidebar Content Order')).toBeInTheDocument();
+    });
+
+    mockSetAppSettings.mockClear();
+
+    const moveDownButtons = screen.getAllByRole('button', { name: 'Move down' });
+    await userEvent.click(moveDownButtons[0]);
+    expect(mockSetAppSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sidebarItemOrder: expect.any(Array),
+      }),
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Reset Order' }));
+    expect(toast.success).toHaveBeenCalledWith('Sidebar order has been reset to defaults.');
   });
 });

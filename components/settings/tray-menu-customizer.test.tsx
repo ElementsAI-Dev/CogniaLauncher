@@ -107,6 +107,7 @@ const mockT = (key: string) => {
     "settings.trayMenu.dragHint": "Drag to reorder",
     "settings.trayMenu.priority": "Mark as Priority",
     "settings.trayMenu.quit": "Quit",
+    "settings.desktopActions.openCommandPalette": "Open Command Palette",
     "common.reset": "Reset",
   };
   return translations[key] || key;
@@ -150,6 +151,24 @@ describe("TrayMenuCustomizer", () => {
     expect(screen.getByText("Show/Hide")).toBeInTheDocument();
     expect(screen.getByText("Downloads")).toBeInTheDocument();
     expect(screen.getByText("Quit")).toBeInTheDocument();
+  });
+
+  it("renders shared desktop action labels for action-backed menu items", async () => {
+    mockTrayGetAvailableMenuItems.mockResolvedValue([
+      "show_hide",
+      "open_command_palette",
+      "quit",
+    ]);
+    mockTrayGetMenuConfig.mockResolvedValue({
+      items: ["show_hide", "quit"],
+      priorityItems: [],
+    });
+
+    await act(async () => {
+      render(<TrayMenuCustomizer t={mockT} />);
+    });
+
+    expect(screen.getByText("Open Command Palette")).toBeInTheDocument();
   });
 
   it("keeps quit switch and priority button disabled", async () => {

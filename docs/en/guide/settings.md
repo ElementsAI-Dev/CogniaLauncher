@@ -79,6 +79,8 @@ The Terminal page now uses stricter safety and refresh rules for shell config an
 - Profile import now uses a pre-validation + summary confirmation step (valid/conflict/invalid counts) before applying
 - Import conflict strategy is explicit: choose **Merge** or **Replace** before execution
 - Proxy, environment-variable, and PowerShell tab data refresh only when related resources are marked stale
+- PowerShell module management now keeps gallery search, install/update/uninstall feedback, and execution-policy results inside the active Terminal workflow
+- Template management now supports custom template authoring, and Shell/Framework cards expose detail drilldowns for inspection before higher-risk actions like cache cleanup
 
 ---
 

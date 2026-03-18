@@ -6,6 +6,7 @@ const mockTraySetLanguage = jest.fn();
 const mockTrayRebuild = jest.fn();
 const mockListenNavigate = jest.fn();
 const mockListenCheckUpdates = jest.fn();
+const mockListenDesktopAction = jest.fn();
 const mockListenTrayShowNotificationsChanged = jest.fn();
 const mockTraySetActiveDownloads = jest.fn();
 const mockTraySetHasUpdate = jest.fn();
@@ -23,6 +24,7 @@ jest.mock('@/lib/tauri', () => ({
   },
   listenNavigate: (...args: unknown[]) => mockListenNavigate(...args),
   listenCheckUpdates: (...args: unknown[]) => mockListenCheckUpdates(...args),
+  listenDesktopAction: (...args: unknown[]) => mockListenDesktopAction(...args),
   listenTrayShowNotificationsChanged: (...args: unknown[]) =>
     mockListenTrayShowNotificationsChanged(...args),
   listenDownloadPauseAll: jest.fn().mockResolvedValue(() => {}),
@@ -63,6 +65,7 @@ describe('useTraySync', () => {
     jest.clearAllMocks();
     mockListenNavigate.mockResolvedValue(() => {});
     mockListenCheckUpdates.mockResolvedValue(() => {});
+    mockListenDesktopAction.mockResolvedValue(() => {});
     mockListenTrayShowNotificationsChanged.mockResolvedValue(() => {});
   });
 
@@ -86,6 +89,12 @@ describe('useTraySync', () => {
     renderHook(() => useTraySync());
 
     expect(mockListenCheckUpdates).toHaveBeenCalled();
+  });
+
+  it("listens for shared desktop actions from the tray bridge", () => {
+    renderHook(() => useTraySync());
+
+    expect(mockListenDesktopAction).toHaveBeenCalled();
   });
 
   it('should setup tray notification visibility listener', () => {

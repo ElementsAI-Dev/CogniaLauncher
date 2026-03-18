@@ -605,6 +605,7 @@ function BackupCard({
                   className="h-7 w-7"
                   onClick={onValidate}
                   disabled={validating}
+                  aria-label={t("backup.validate")}
                 >
                   {validating ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -623,6 +624,7 @@ function BackupCard({
                   className="h-7 w-7"
                   onClick={onRestore}
                   disabled={restoring}
+                  aria-label={t("backup.restore")}
                 >
                   {restoring ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -641,6 +643,7 @@ function BackupCard({
                       variant="ghost"
                       size="icon"
                       className="h-7 w-7 text-destructive hover:text-destructive"
+                      aria-label={t("backup.delete")}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>

@@ -37,7 +37,9 @@ import { isTauri } from "@/lib/tauri";
 import {
   APPEARANCE_DEFAULTS,
   areAppearancePresetConfigsEqual,
+  buildWindowEffectRuntimeState,
   isThemeMode,
+  normalizeSupportedWindowEffects,
   normalizeAccentColor,
   normalizeChartColorTheme,
   normalizeInterfaceDensity,
@@ -110,6 +112,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useOnboardingStore } from "@/lib/stores/onboarding";
 import { BUBBLE_HINTS } from "@/lib/constants/onboarding";
+import { getOnboardingSurfaceState } from "@/lib/onboarding-surface";
 import { toast } from "sonner";
 import { readClipboard, writeClipboard } from "@/lib/clipboard";
 import { type SettingsSection } from "@/lib/constants/settings-registry";
@@ -270,10 +273,12 @@ export default function SettingsPage() {
     Set<SettingsSection>
   >(new Set());
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [supportedWindowEffects, setSupportedWindowEffects] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const localConfigRef = useRef<Record<string, string>>(localConfig);
   const originalConfigRef = useRef<Record<string, string>>(originalConfig);
+  const isDesktopRuntime = isTauri();
 
   // Search functionality
   const search = useSettingsSearch({
@@ -1287,6 +1292,42 @@ export default function SettingsPage() {
     return !areAppearancePresetConfigsEqual(current, activePreset.config);
   }, [activePresetId, buildPresetFromCurrentState, presets]);
 
+  useEffect(() => {
+    let active = true;
+
+    if (!isDesktopRuntime) {
+      setSupportedWindowEffects([]);
+      return () => {
+        active = false;
+      };
+    }
+
+    void import("@/lib/tauri")
+      .then(({ windowEffectGetSupported }) => windowEffectGetSupported())
+      .then((supported) => {
+        if (!active) return;
+        setSupportedWindowEffects(normalizeSupportedWindowEffects(supported));
+      })
+      .catch(() => {
+        if (!active) return;
+        setSupportedWindowEffects([]);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [isDesktopRuntime]);
+
+  const windowEffectRuntime = useMemo(
+    () =>
+      buildWindowEffectRuntimeState({
+        requested: normalizeWindowEffect(windowEffect),
+        supported: supportedWindowEffects,
+        desktop: isDesktopRuntime,
+      }),
+    [isDesktopRuntime, supportedWindowEffects, windowEffect],
+  );
+
   const handleApplyAppearancePreset = useCallback(
     async (presetId: string) => {
       const selected = presets.find((preset) => preset.id === presetId);
@@ -2106,6 +2147,7 @@ export default function SettingsPage() {
                   setReducedMotion={handleReducedMotionChange}
                   windowEffect={windowEffect}
                   setWindowEffect={handleWindowEffectChange}
+                  windowEffectRuntime={windowEffectRuntime}
                   t={t}
                 />
                 <Separator />
@@ -2289,6 +2331,7 @@ function OnboardingSettingsCard({ t }: { t: (key: string) => string }) {
     tourCompleted,
     dismissedHints,
     hintsEnabled,
+    sessionSummary,
     resetOnboarding,
     resumeOnboarding,
     startTour,
@@ -2296,7 +2339,15 @@ function OnboardingSettingsCard({ t }: { t: (key: string) => string }) {
     setHintsEnabled,
     dismissAllHints,
   } = useOnboardingStore();
-  const hasBeenThrough = completed || skipped || sessionState === "paused";
+  const onboardingSurface = getOnboardingSurfaceState({
+    mode,
+    completed,
+    skipped,
+    sessionState,
+    canResume,
+    tourCompleted,
+    sessionSummary,
+  });
   const modeLabel = mode
     ? t(
         mode === "quick"
@@ -2315,7 +2366,7 @@ function OnboardingSettingsCard({ t }: { t: (key: string) => string }) {
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex flex-col sm:flex-row gap-3">
-          {canResume && !completed && !skipped && (
+          {onboardingSurface.showResumeAction && (
             <Button
               onClick={() => {
                 resumeOnboarding();
@@ -2335,7 +2386,7 @@ function OnboardingSettingsCard({ t }: { t: (key: string) => string }) {
             <RotateCcw className="h-4 w-4 mr-2" />
             {t("settings.onboardingRerun")}
           </Button>
-          {!tourCompleted && hasBeenThrough && (
+          {onboardingSurface.showStartTourAction && (
             <Button
               variant="outline"
               onClick={() => {
@@ -2350,15 +2401,11 @@ function OnboardingSettingsCard({ t }: { t: (key: string) => string }) {
         <p className="text-xs text-muted-foreground">
           {t("settings.onboardingRerunModeHint")}
         </p>
-        {hasBeenThrough && (
+        {onboardingSurface.hasBeenThrough && onboardingSurface.statusKey && (
           <p className="text-xs text-muted-foreground">
-            {completed
-              ? t("settings.onboardingStatusCompleted")
-              : skipped
-                ? t("settings.onboardingStatusSkipped")
-                : t("settings.onboardingStatusPaused")}
+            {t(onboardingSurface.statusKey)}
             {modeLabel ? ` · ${modeLabel}` : ""}
-            {canResume && !completed && !skipped
+            {onboardingSurface.showResumableStatus
               ? ` · ${t("settings.onboardingStatusResumable")}`
               : ""}
             {tourCompleted ? ` · ${t("settings.onboardingTourDone")}` : ""}

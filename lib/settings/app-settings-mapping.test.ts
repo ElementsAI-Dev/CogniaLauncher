@@ -4,6 +4,7 @@ import {
   appSettingKeyToConfigKey,
   appSettingValueToConfigValue,
   configToAppSettings,
+  readLegacyAppSettingsFromStorage,
   toConfigEntriesFromAppSettings,
 } from "./app-settings-mapping";
 
@@ -24,6 +25,10 @@ const fallback: AppSettings = {
 };
 
 describe("app-settings-mapping", () => {
+  afterEach(() => {
+    window.localStorage.clear();
+  });
+
   it("maps config values back to AppSettings", () => {
     const mapped = configToAppSettings(
       {
@@ -57,6 +62,43 @@ describe("app-settings-mapping", () => {
     expect(mapped.showNotifications).toBe(false);
     expect(mapped.trayNotificationLevel).toBe("important_only");
     expect(mapped.autostart).toBe(false);
+  });
+
+  it("falls back to existing settings when serialized values are invalid", () => {
+    const mapped = configToAppSettings(
+      {
+        "updates.check_on_start": "invalid",
+        "updates.source_mode": "mystery",
+        "updates.custom_endpoints": "[invalid",
+        "tray.click_behavior": "mystery",
+        "tray.notification_level": "mystery",
+      },
+      {
+        ...fallback,
+        updateCustomEndpoints: ["https://fallback.example.com"],
+      },
+    );
+
+    expect(mapped.checkUpdatesOnStart).toBe(true);
+    expect(mapped.updateSourceMode).toBe("official");
+    expect(mapped.updateCustomEndpoints).toEqual(["https://fallback.example.com"]);
+    expect(mapped.trayClickBehavior).toBe("toggle_window");
+    expect(mapped.trayNotificationLevel).toBe("all");
+  });
+
+  it("normalizes custom endpoints from newline and comma separated values", () => {
+    const mapped = configToAppSettings(
+      {
+        "updates.custom_endpoints":
+          "https://one.example.com\nhttps://two.example.com, https://one.example.com",
+      },
+      fallback,
+    );
+
+    expect(mapped.updateCustomEndpoints).toEqual([
+      "https://one.example.com",
+      "https://two.example.com",
+    ]);
   });
 
   it("returns config key for known app setting key", () => {
@@ -100,5 +142,41 @@ describe("app-settings-mapping", () => {
     ]);
     expect(entries).toContainEqual(["tray.click_behavior", "do_nothing"]);
     expect(entries).toContainEqual(["tray.notification_level", "important_only"]);
+  });
+
+  it("reads legacy app settings from both persist and direct payload shapes", () => {
+    window.localStorage.setItem(
+      "cognia-settings",
+      JSON.stringify({
+        state: {
+          appSettings: {
+            notifyOnUpdates: false,
+          },
+        },
+      }),
+    );
+    expect(readLegacyAppSettingsFromStorage()).toEqual({
+      notifyOnUpdates: false,
+    });
+
+    window.localStorage.setItem(
+      "cognia-settings",
+      JSON.stringify({
+        appSettings: {
+          startMinimized: true,
+        },
+      }),
+    );
+    expect(readLegacyAppSettingsFromStorage()).toEqual({
+      startMinimized: true,
+    });
+  });
+
+  it("returns null for missing or invalid legacy app settings payloads", () => {
+    window.localStorage.removeItem("cognia-settings");
+    expect(readLegacyAppSettingsFromStorage()).toBeNull();
+
+    window.localStorage.setItem("cognia-settings", "{invalid");
+    expect(readLegacyAppSettingsFromStorage()).toBeNull();
   });
 });

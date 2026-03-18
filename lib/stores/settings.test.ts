@@ -420,5 +420,31 @@ describe('useSettingsStore', () => {
       ]);
       expect(migrated.appSettings.sidebarItemOrder).not.toContain('unknown');
     });
+
+    it('should preserve migrated app settings for newer persisted versions and normalize array endpoints', () => {
+      const persistApi = (useSettingsStore as unknown as {
+        persist?: { getOptions: () => { migrate?: (state: unknown, version: number) => unknown } };
+      }).persist;
+      const migrate = persistApi?.getOptions().migrate;
+      expect(migrate).toBeDefined();
+
+      const migrated = migrate?.(
+        {
+          appSettings: {
+            updateSourceMode: 'custom',
+            updateCustomEndpoints: [' https://one.example ', '', 'https://two.example '],
+            sidebarItemOrder: ['packages', ...DEFAULT_SIDEBAR_ITEM_ORDER],
+          },
+        },
+        4,
+      ) as { appSettings: AppSettings };
+
+      expect(migrated.appSettings.updateSourceMode).toBe('custom');
+      expect(migrated.appSettings.updateCustomEndpoints).toEqual([
+        'https://one.example',
+        'https://two.example',
+      ]);
+      expect(migrated.appSettings.sidebarItemOrder[0]).toBe('packages');
+    });
   });
 });

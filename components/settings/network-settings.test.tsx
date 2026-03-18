@@ -3,8 +3,12 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { NetworkSettings } from "./network-settings";
 
 const mockIsTauri = jest.fn(() => false);
+const mockUseProxyTools = jest.fn();
 jest.mock("@/lib/platform", () => ({
   isTauri: () => mockIsTauri(),
+}));
+jest.mock("@/hooks/use-proxy-tools", () => ({
+  useProxyTools: (...args: unknown[]) => mockUseProxyTools(...args),
 }));
 
 const mockT = (key: string) => {
@@ -41,6 +45,14 @@ describe("NetworkSettings", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockIsTauri.mockReturnValue(false);
+    mockUseProxyTools.mockReturnValue({
+      detectLoading: false,
+      detectResult: null,
+      testLoading: false,
+      testResult: null,
+      handleDetectProxy: jest.fn(),
+      handleTestProxy: jest.fn(),
+    });
   });
 
   it("should render network settings content", () => {
@@ -174,19 +186,51 @@ describe("NetworkSettings", () => {
       expect(testBtn).not.toBeDisabled();
     });
 
-    it("should call detectSystemProxy when detect button is clicked", async () => {
-      const mockDetect = jest.fn().mockResolvedValue({ source: "none" });
-      jest.mock("@/lib/tauri", () => ({
-        detectSystemProxy: mockDetect,
-      }));
+    it("calls proxy tool handlers when action buttons are clicked", async () => {
+      const handleDetectProxy = jest.fn();
+      const handleTestProxy = jest.fn();
+      mockUseProxyTools.mockReturnValue({
+        detectLoading: false,
+        detectResult: null,
+        testLoading: false,
+        testResult: null,
+        handleDetectProxy,
+        handleTestProxy,
+      });
+
+      render(
+        <NetworkSettings
+          {...defaultProps}
+          localConfig={{
+            ...defaultProps.localConfig,
+            "network.proxy": "http://proxy:8080",
+          }}
+        />,
+      );
+
+      fireEvent.click(screen.getByText("Detect System Proxy").closest("button")!);
+      fireEvent.click(screen.getByText("Test Connection").closest("button")!);
+
+      expect(handleDetectProxy).toHaveBeenCalled();
+      expect(handleTestProxy).toHaveBeenCalled();
+    });
+
+    it("renders proxy tool feedback in tauri mode", () => {
+      mockUseProxyTools.mockReturnValue({
+        detectLoading: false,
+        detectResult: "Detected from environment: http://proxy:8080",
+        testLoading: false,
+        testResult: "Connection successful",
+        handleDetectProxy: jest.fn(),
+        handleTestProxy: jest.fn(),
+      });
 
       render(<NetworkSettings {...defaultProps} />);
 
-      const detectBtn = screen.getByText("Detect System Proxy").closest("button")!;
-      await fireEvent.click(detectBtn);
-
-      // The button was clicked - detect flow initiated (actual import is dynamic)
-      expect(detectBtn).toBeInTheDocument();
+      expect(
+        screen.getByText("Detected from environment: http://proxy:8080"),
+      ).toBeInTheDocument();
+      expect(screen.getByText("Connection successful")).toBeInTheDocument();
     });
   });
 });

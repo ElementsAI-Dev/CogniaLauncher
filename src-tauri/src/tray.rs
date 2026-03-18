@@ -66,6 +66,15 @@ pub enum TrayQuickAction {
     #[default]
     CheckUpdates,
     OpenLogs,
+    OpenCommandPalette,
+    OpenQuickSearch,
+    ToggleLogs,
+    ManagePlugins,
+    InstallPlugin,
+    CreatePlugin,
+    GoDashboard,
+    GoToolbox,
+    ReportBug,
 }
 
 impl TrayQuickAction {
@@ -75,6 +84,15 @@ impl TrayQuickAction {
             TrayQuickAction::OpenDownloads,
             TrayQuickAction::CheckUpdates,
             TrayQuickAction::OpenLogs,
+            TrayQuickAction::OpenCommandPalette,
+            TrayQuickAction::OpenQuickSearch,
+            TrayQuickAction::ToggleLogs,
+            TrayQuickAction::ManagePlugins,
+            TrayQuickAction::InstallPlugin,
+            TrayQuickAction::CreatePlugin,
+            TrayQuickAction::GoDashboard,
+            TrayQuickAction::GoToolbox,
+            TrayQuickAction::ReportBug,
         ]
     }
 }
@@ -121,6 +139,15 @@ pub enum TrayMenuItemId {
     CheckUpdates,
     ToggleNotifications,
     OpenLogs,
+    OpenCommandPalette,
+    OpenQuickSearch,
+    ToggleLogs,
+    ManagePlugins,
+    InstallPlugin,
+    CreatePlugin,
+    GoDashboard,
+    GoToolbox,
+    ReportBug,
     AlwaysOnTop,
     Autostart,
     Quit,
@@ -137,6 +164,30 @@ impl TrayMenuItemId {
             Self::CheckUpdates,
             Self::ToggleNotifications,
             Self::OpenLogs,
+            Self::AlwaysOnTop,
+            Self::Autostart,
+            Self::Quit,
+        ]
+    }
+
+    fn all() -> Vec<TrayMenuItemId> {
+        vec![
+            Self::ShowHide,
+            Self::QuickNav,
+            Self::Downloads,
+            Self::Settings,
+            Self::CheckUpdates,
+            Self::ToggleNotifications,
+            Self::OpenLogs,
+            Self::OpenCommandPalette,
+            Self::OpenQuickSearch,
+            Self::ToggleLogs,
+            Self::ManagePlugins,
+            Self::InstallPlugin,
+            Self::CreatePlugin,
+            Self::GoDashboard,
+            Self::GoToolbox,
+            Self::ReportBug,
             Self::AlwaysOnTop,
             Self::Autostart,
             Self::Quit,
@@ -212,6 +263,19 @@ struct MenuLabels {
     check_updates: &'static str,
     toggle_notifications: &'static str,
     open_logs: &'static str,
+    open_command_palette: &'static str,
+    open_quick_search: &'static str,
+    toggle_logs: &'static str,
+    manage_plugins: &'static str,
+    install_plugin: &'static str,
+    create_plugin: &'static str,
+    go_dashboard: &'static str,
+    go_toolbox: &'static str,
+    report_bug: &'static str,
+    status_summary: &'static str,
+    status_downloading: &'static str,
+    status_update: &'static str,
+    status_error: &'static str,
     autostart: &'static str,
     always_on_top: &'static str,
     quit: &'static str,
@@ -242,6 +306,19 @@ impl MenuLabels {
                 check_updates: "Check for Updates",
                 toggle_notifications: "Show Notifications",
                 open_logs: "Open Log Directory",
+                open_command_palette: "Open Command Palette",
+                open_quick_search: "Open Quick Search",
+                toggle_logs: "Toggle Logs",
+                manage_plugins: "Manage Plugins",
+                install_plugin: "Install Plugin",
+                create_plugin: "Create Plugin",
+                go_dashboard: "Go Dashboard",
+                go_toolbox: "Open Toolbox",
+                report_bug: "Report Bug",
+                status_summary: "Status",
+                status_downloading: "active download(s)",
+                status_update: "Update available",
+                status_error: "Last tray action failed",
                 autostart: "Start with System",
                 always_on_top: "Always on Top",
                 quit: "Quit CogniaLauncher",
@@ -266,6 +343,19 @@ impl MenuLabels {
                 check_updates: "检查更新",
                 toggle_notifications: "显示通知",
                 open_logs: "打开日志目录",
+                open_command_palette: "打开命令面板",
+                open_quick_search: "打开快速搜索",
+                toggle_logs: "切换日志抽屉",
+                manage_plugins: "管理插件",
+                install_plugin: "安装插件",
+                create_plugin: "创建插件",
+                go_dashboard: "打开仪表盘",
+                go_toolbox: "打开工具箱",
+                report_bug: "报告问题",
+                status_summary: "状态",
+                status_downloading: "个活动下载",
+                status_update: "有可用更新",
+                status_error: "最近一次托盘操作失败",
                 autostart: "开机启动",
                 always_on_top: "置顶窗口",
                 quit: "退出 CogniaLauncher",
@@ -316,6 +406,28 @@ fn get_tooltip(state: &TrayState) -> String {
             }
         }
     }
+}
+
+fn get_status_summary(state: &TrayState) -> Option<String> {
+    let labels = MenuLabels::for_language(state.language);
+    let active_downloads = state.active_downloads.load(Ordering::SeqCst);
+
+    if active_downloads > 0 {
+        return Some(match state.language {
+            TrayLanguage::En => format!("{}: {} {}", labels.status_summary, active_downloads, labels.status_downloading),
+            TrayLanguage::Zh => format!("{}: {} {}", labels.status_summary, active_downloads, labels.status_downloading),
+        });
+    }
+
+    if state.has_update {
+        return Some(format!("{}: {}", labels.status_summary, labels.status_update));
+    }
+
+    if state.has_error {
+        return Some(format!("{}: {}", labels.status_summary, labels.status_error));
+    }
+
+    None
 }
 
 fn resolve_icon_state(state: &TrayState) -> TrayIconState {
@@ -378,6 +490,10 @@ fn normalize_menu_config(config: &TrayMenuConfig) -> TrayMenuConfig {
         items,
         priority_items,
     }
+}
+
+pub(crate) fn normalize_tray_menu_config(config: &TrayMenuConfig) -> TrayMenuConfig {
+    normalize_menu_config(config)
 }
 
 fn resolve_menu_order(config: &TrayMenuConfig) -> Vec<TrayMenuItemId> {
@@ -582,6 +698,13 @@ fn build_menu<R: Runtime>(
     let menu = Menu::new(app)?;
     let mut need_separator = false;
 
+    if let Some(summary) = get_status_summary(state) {
+        let status_item =
+            MenuItem::with_id(app, "status_summary", &summary, false, None::<&str>)?;
+        menu.append(&status_item)?;
+        need_separator = true;
+    }
+
     let ordered_items = resolve_menu_order(&state.menu_config);
 
     for item_id in &ordered_items {
@@ -657,6 +780,105 @@ fn build_menu<R: Runtime>(
                 menu.append(&item)?;
                 need_separator = true;
             }
+            TrayMenuItemId::OpenCommandPalette => {
+                let item = MenuItem::with_id(
+                    app,
+                    "open_command_palette",
+                    labels.open_command_palette,
+                    true,
+                    None::<&str>,
+                )?;
+                menu.append(&item)?;
+                need_separator = true;
+            }
+            TrayMenuItemId::OpenQuickSearch => {
+                let item = MenuItem::with_id(
+                    app,
+                    "open_quick_search",
+                    labels.open_quick_search,
+                    true,
+                    None::<&str>,
+                )?;
+                menu.append(&item)?;
+                need_separator = true;
+            }
+            TrayMenuItemId::ToggleLogs => {
+                let item = MenuItem::with_id(
+                    app,
+                    "toggle_logs",
+                    labels.toggle_logs,
+                    true,
+                    None::<&str>,
+                )?;
+                menu.append(&item)?;
+                need_separator = true;
+            }
+            TrayMenuItemId::ManagePlugins => {
+                let item = MenuItem::with_id(
+                    app,
+                    "manage_plugins",
+                    labels.manage_plugins,
+                    true,
+                    None::<&str>,
+                )?;
+                menu.append(&item)?;
+                need_separator = true;
+            }
+            TrayMenuItemId::InstallPlugin => {
+                let item = MenuItem::with_id(
+                    app,
+                    "install_plugin",
+                    labels.install_plugin,
+                    true,
+                    None::<&str>,
+                )?;
+                menu.append(&item)?;
+                need_separator = true;
+            }
+            TrayMenuItemId::CreatePlugin => {
+                let item = MenuItem::with_id(
+                    app,
+                    "create_plugin",
+                    labels.create_plugin,
+                    true,
+                    None::<&str>,
+                )?;
+                menu.append(&item)?;
+                need_separator = true;
+            }
+            TrayMenuItemId::GoDashboard => {
+                let item = MenuItem::with_id(
+                    app,
+                    "go_dashboard",
+                    labels.go_dashboard,
+                    true,
+                    None::<&str>,
+                )?;
+                menu.append(&item)?;
+                need_separator = true;
+            }
+            TrayMenuItemId::GoToolbox => {
+                let item = MenuItem::with_id(
+                    app,
+                    "go_toolbox",
+                    labels.go_toolbox,
+                    true,
+                    None::<&str>,
+                )?;
+                menu.append(&item)?;
+                need_separator = true;
+            }
+            TrayMenuItemId::ReportBug => {
+                let item = MenuItem::with_id(
+                    app,
+                    "report_bug",
+                    labels.report_bug,
+                    true,
+                    None::<&str>,
+                )?;
+                menu.append(&item)?;
+                need_separator = true;
+            }
             TrayMenuItemId::AlwaysOnTop => {
                 if need_separator {
                     menu.append(&PredefinedMenuItem::separator(app)?)?;
@@ -703,6 +925,7 @@ enum TrayActionId {
     ShowWindow,
     HideWindow,
     ToggleWindow,
+    DesktopAction(TrayQuickAction),
     NavigateDashboard,
     NavigateEnvironments,
     NavigatePackages,
@@ -727,6 +950,27 @@ fn quick_action_to_action(action: TrayQuickAction) -> TrayActionId {
         TrayQuickAction::OpenDownloads => TrayActionId::OpenDownloadsPage,
         TrayQuickAction::CheckUpdates => TrayActionId::CheckUpdates,
         TrayQuickAction::OpenLogs => TrayActionId::OpenLogsDir,
+        TrayQuickAction::OpenCommandPalette => {
+            TrayActionId::DesktopAction(TrayQuickAction::OpenCommandPalette)
+        }
+        TrayQuickAction::OpenQuickSearch => {
+            TrayActionId::DesktopAction(TrayQuickAction::OpenQuickSearch)
+        }
+        TrayQuickAction::ToggleLogs => TrayActionId::DesktopAction(TrayQuickAction::ToggleLogs),
+        TrayQuickAction::ManagePlugins => {
+            TrayActionId::DesktopAction(TrayQuickAction::ManagePlugins)
+        }
+        TrayQuickAction::InstallPlugin => {
+            TrayActionId::DesktopAction(TrayQuickAction::InstallPlugin)
+        }
+        TrayQuickAction::CreatePlugin => {
+            TrayActionId::DesktopAction(TrayQuickAction::CreatePlugin)
+        }
+        TrayQuickAction::GoDashboard => {
+            TrayActionId::DesktopAction(TrayQuickAction::GoDashboard)
+        }
+        TrayQuickAction::GoToolbox => TrayActionId::DesktopAction(TrayQuickAction::GoToolbox),
+        TrayQuickAction::ReportBug => TrayActionId::DesktopAction(TrayQuickAction::ReportBug),
     }
 }
 
@@ -747,6 +991,21 @@ fn tray_action_from_menu_id(id: &str) -> Option<TrayActionId> {
         "check_updates" => Some(TrayActionId::CheckUpdates),
         "toggle_notifications" => Some(TrayActionId::ToggleNotifications),
         "open_logs" => Some(TrayActionId::OpenLogsDir),
+        "open_command_palette" => {
+            Some(TrayActionId::DesktopAction(TrayQuickAction::OpenCommandPalette))
+        }
+        "open_quick_search" => {
+            Some(TrayActionId::DesktopAction(TrayQuickAction::OpenQuickSearch))
+        }
+        "toggle_logs" => Some(TrayActionId::DesktopAction(TrayQuickAction::ToggleLogs)),
+        "manage_plugins" => {
+            Some(TrayActionId::DesktopAction(TrayQuickAction::ManagePlugins))
+        }
+        "install_plugin" => Some(TrayActionId::DesktopAction(TrayQuickAction::InstallPlugin)),
+        "create_plugin" => Some(TrayActionId::DesktopAction(TrayQuickAction::CreatePlugin)),
+        "go_dashboard" => Some(TrayActionId::DesktopAction(TrayQuickAction::GoDashboard)),
+        "go_toolbox" => Some(TrayActionId::DesktopAction(TrayQuickAction::GoToolbox)),
+        "report_bug" => Some(TrayActionId::DesktopAction(TrayQuickAction::ReportBug)),
         "toggle_always_on_top" => Some(TrayActionId::ToggleAlwaysOnTop),
         "toggle_autostart" => Some(TrayActionId::ToggleAutostart),
         "quit" => Some(TrayActionId::Quit),
@@ -784,6 +1043,14 @@ fn trigger_update_check<R: Runtime>(app: &AppHandle<R>) {
     let _ = app.emit("check-updates", ());
 }
 
+fn dispatch_desktop_action<R: Runtime>(app: &AppHandle<R>, action: TrayQuickAction) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+    let _ = app.emit("desktop-action", action);
+}
+
 fn execute_tray_action<R: Runtime>(app: &AppHandle<R>, action: TrayActionId) {
     match action {
         TrayActionId::ShowWindow => {
@@ -810,6 +1077,7 @@ fn execute_tray_action<R: Runtime>(app: &AppHandle<R>, action: TrayActionId) {
                 update_menu_state(app);
             }
         }
+        TrayActionId::DesktopAction(action) => dispatch_desktop_action(app, action),
         TrayActionId::NavigateDashboard => show_and_navigate(app, "/"),
         TrayActionId::NavigateEnvironments => show_and_navigate(app, "/environments"),
         TrayActionId::NavigatePackages => show_and_navigate(app, "/packages"),
@@ -1171,9 +1439,18 @@ pub async fn tray_set_click_behavior(
     state: State<'_, SharedTrayState>,
     behavior: TrayClickBehavior,
 ) -> Result<(), String> {
+    let normalized_quick_action = if matches!(behavior, TrayClickBehavior::CheckUpdates) {
+        Some(TrayQuickAction::CheckUpdates)
+    } else {
+        None
+    };
+
     {
         let mut guard = state.write().await;
         guard.click_behavior = behavior;
+        if let Some(action) = normalized_quick_action {
+            guard.quick_action = action;
+        }
     }
 
     // Rebuild tray with new behavior
@@ -1186,6 +1463,9 @@ pub async fn tray_set_click_behavior(
     if let Some(settings) = app.try_state::<SharedSettings>() {
         let mut settings_guard = settings.write().await;
         settings_guard.tray.click_behavior = behavior;
+        if let Some(action) = normalized_quick_action {
+            settings_guard.tray.quick_action = action;
+        }
         settings_guard.save().await.map_err(|e| e.to_string())?;
     }
 
@@ -1508,7 +1788,7 @@ pub async fn tray_set_menu_config(
     state: State<'_, SharedTrayState>,
     config: TrayMenuConfig,
 ) -> Result<(), String> {
-    let normalized = normalize_menu_config(&config);
+    let normalized = normalize_tray_menu_config(&config);
 
     {
         let mut guard = state.write().await;
@@ -1530,7 +1810,7 @@ pub async fn tray_set_menu_config(
 /// Get the list of all available menu item IDs (for customization UI)
 #[tauri::command]
 pub fn tray_get_available_menu_items() -> Vec<TrayMenuItemId> {
-    TrayMenuItemId::defaults()
+    TrayMenuItemId::all()
 }
 
 /// Reset menu config to defaults
@@ -1708,6 +1988,13 @@ mod tests {
         );
         assert_eq!(
             tray_action_from_click_behavior(
+                TrayClickBehavior::QuickAction,
+                TrayQuickAction::OpenSettings
+            ),
+            Some(TrayActionId::OpenSettings)
+        );
+        assert_eq!(
+            tray_action_from_click_behavior(
                 TrayClickBehavior::DoNothing,
                 TrayQuickAction::OpenLogs
             ),
@@ -1729,5 +2016,31 @@ mod tests {
         let tooltip_zh = get_tooltip(&state);
         assert!(tooltip_zh.contains("有可用更新"));
         assert!(!tooltip_zh.contains("失败"));
+    }
+
+    #[test]
+    fn get_status_summary_uses_download_update_error_priority() {
+        let mut state = TrayState::default();
+        state.language = TrayLanguage::En;
+        state.has_update = true;
+        state.has_error = true;
+
+        assert_eq!(
+            get_status_summary(&state),
+            Some("Status: Update available".to_string())
+        );
+
+        state.active_downloads.store(2, Ordering::SeqCst);
+        assert_eq!(
+            get_status_summary(&state),
+            Some("Status: 2 active download(s)".to_string())
+        );
+
+        state.active_downloads.store(0, Ordering::SeqCst);
+        state.has_update = false;
+        assert_eq!(
+            get_status_summary(&state),
+            Some("Status: Last tray action failed".to_string())
+        );
     }
 }

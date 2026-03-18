@@ -500,8 +500,7 @@ impl Settings {
         }
 
         let content = fs::read_file_string(&path).await?;
-        let settings: Settings = toml::from_str(&content)
-            .map_err(|e| CogniaError::Parse(format!("Failed to parse config: {}", e)))?;
+        let settings = Self::load_from_toml_with_tray_fallback(&content)?;
 
         Ok(settings)
     }
@@ -678,29 +677,217 @@ impl Settings {
         self.get_root_dir().join("state")
     }
 
-    fn parse_tray_menu_items(value: &str) -> CogniaResult<Vec<TrayMenuItemId>> {
-        fn parse_item(item: &str) -> Option<TrayMenuItemId> {
-            match item {
-                "show_hide" => Some(TrayMenuItemId::ShowHide),
-                "quick_nav" => Some(TrayMenuItemId::QuickNav),
-                "downloads" => Some(TrayMenuItemId::Downloads),
-                "settings" => Some(TrayMenuItemId::Settings),
-                "check_updates" => Some(TrayMenuItemId::CheckUpdates),
-                "toggle_notifications" => Some(TrayMenuItemId::ToggleNotifications),
-                "open_logs" => Some(TrayMenuItemId::OpenLogs),
-                "always_on_top" => Some(TrayMenuItemId::AlwaysOnTop),
-                "autostart" => Some(TrayMenuItemId::Autostart),
-                "quit" => Some(TrayMenuItemId::Quit),
-                _ => None,
+    fn load_from_toml_with_tray_fallback(content: &str) -> CogniaResult<Self> {
+        match toml::from_str(content) {
+            Ok(settings) => Ok(settings),
+            Err(parse_error) => {
+                let mut raw: toml::Value = toml::from_str(content).map_err(|_| {
+                    CogniaError::Parse(format!("Failed to parse config: {}", parse_error))
+                })?;
+
+                if !Self::sanitize_tray_fields(&mut raw) {
+                    return Err(CogniaError::Parse(format!(
+                        "Failed to parse config: {}",
+                        parse_error
+                    )));
+                }
+
+                raw.try_into().map_err(|retry_error| {
+                    CogniaError::Parse(format!(
+                        "Failed to parse config after tray fallback: {}",
+                        retry_error
+                    ))
+                })
+            }
+        }
+    }
+
+    fn sanitize_tray_fields(raw: &mut toml::Value) -> bool {
+        let Some(tray) = raw.get_mut("tray").and_then(|value| value.as_table_mut()) else {
+            return false;
+        };
+
+        let mut changed = false;
+
+        changed |= Self::sanitize_tray_string_field(tray, "click_behavior", |value| {
+            matches!(
+                value,
+                "toggle_window" | "show_menu" | "check_updates" | "quick_action" | "do_nothing"
+            )
+        });
+
+        changed |= Self::sanitize_tray_string_field(tray, "notification_level", |value| {
+            matches!(value, "all" | "important_only" | "none")
+        });
+
+        changed |= Self::sanitize_tray_string_field(tray, "quick_action", |value| {
+            Self::parse_tray_quick_action(value).is_ok()
+        });
+
+        changed |= Self::sanitize_tray_string_array_field(tray, "menu_items", |items| {
+            let normalized = Self::normalize_tray_menu_item_strings(items);
+            Some(normalized)
+        });
+
+        changed |= Self::sanitize_tray_string_array_field(tray, "menu_priority_items", |items| {
+            let normalized = Self::normalize_tray_menu_priority_item_strings(items);
+            Some(normalized)
+        });
+
+        changed |= Self::sanitize_tray_string_array_field(tray, "notification_events", |items| {
+            let normalized = Self::normalize_tray_notification_event_strings(items);
+            if normalized.is_empty() {
+                None
+            } else {
+                Some(normalized)
+            }
+        });
+
+        changed
+    }
+
+    fn sanitize_tray_string_field<F>(
+        tray: &mut toml::map::Map<String, toml::Value>,
+        key: &str,
+        is_valid: F,
+    ) -> bool
+    where
+        F: Fn(&str) -> bool,
+    {
+        let Some(value) = tray.get(key) else {
+            return false;
+        };
+
+        match value.as_str() {
+            Some(raw) if is_valid(raw) => false,
+            _ => tray.remove(key).is_some(),
+        }
+    }
+
+    fn sanitize_tray_string_array_field<F>(
+        tray: &mut toml::map::Map<String, toml::Value>,
+        key: &str,
+        normalize: F,
+    ) -> bool
+    where
+        F: Fn(&[String]) -> Option<Vec<String>>,
+    {
+        let Some(existing) = tray.get(key).cloned() else {
+            return false;
+        };
+
+        let Some(array) = existing.as_array() else {
+            return tray.remove(key).is_some();
+        };
+
+        let mut items = Vec::with_capacity(array.len());
+        for value in array {
+            let Some(raw) = value.as_str() else {
+                return tray.remove(key).is_some();
+            };
+            items.push(raw.to_string());
+        }
+
+        let normalized = normalize(&items);
+        match normalized {
+            Some(normalized_items) => {
+                if normalized_items == items {
+                    false
+                } else {
+                    tray.insert(
+                        key.to_string(),
+                        toml::Value::Array(
+                            normalized_items
+                                .into_iter()
+                                .map(toml::Value::String)
+                                .collect(),
+                        ),
+                    );
+                    true
+                }
+            }
+            None => tray.remove(key).is_some(),
+        }
+    }
+
+    fn normalize_tray_menu_item_strings(items: &[String]) -> Vec<String> {
+        let mut normalized = Vec::new();
+
+        for item in items {
+            if Self::parse_tray_menu_item_str(item).is_some() && !normalized.contains(item) {
+                normalized.push(item.clone());
             }
         }
 
+        if !normalized.iter().any(|item| item == "quit") {
+            normalized.push("quit".to_string());
+        }
+
+        normalized
+    }
+
+    fn normalize_tray_menu_priority_item_strings(items: &[String]) -> Vec<String> {
+        let mut normalized = Vec::new();
+
+        for item in items {
+            if item == "quit" {
+                continue;
+            }
+
+            if Self::parse_tray_menu_item_str(item).is_some() && !normalized.contains(item) {
+                normalized.push(item.clone());
+            }
+        }
+
+        normalized
+    }
+
+    fn normalize_tray_notification_event_strings(items: &[String]) -> Vec<String> {
+        let mut normalized = Vec::new();
+
+        for item in items {
+            if matches!(item.as_str(), "updates" | "downloads" | "errors" | "system")
+                && !normalized.contains(item)
+            {
+                normalized.push(item.clone());
+            }
+        }
+
+        normalized
+    }
+
+    fn parse_tray_menu_item_str(item: &str) -> Option<TrayMenuItemId> {
+        match item {
+            "show_hide" => Some(TrayMenuItemId::ShowHide),
+            "quick_nav" => Some(TrayMenuItemId::QuickNav),
+            "downloads" => Some(TrayMenuItemId::Downloads),
+            "settings" => Some(TrayMenuItemId::Settings),
+            "check_updates" => Some(TrayMenuItemId::CheckUpdates),
+            "toggle_notifications" => Some(TrayMenuItemId::ToggleNotifications),
+            "open_logs" => Some(TrayMenuItemId::OpenLogs),
+            "open_command_palette" => Some(TrayMenuItemId::OpenCommandPalette),
+            "open_quick_search" => Some(TrayMenuItemId::OpenQuickSearch),
+            "toggle_logs" => Some(TrayMenuItemId::ToggleLogs),
+            "manage_plugins" => Some(TrayMenuItemId::ManagePlugins),
+            "install_plugin" => Some(TrayMenuItemId::InstallPlugin),
+            "create_plugin" => Some(TrayMenuItemId::CreatePlugin),
+            "go_dashboard" => Some(TrayMenuItemId::GoDashboard),
+            "go_toolbox" => Some(TrayMenuItemId::GoToolbox),
+            "report_bug" => Some(TrayMenuItemId::ReportBug),
+            "always_on_top" => Some(TrayMenuItemId::AlwaysOnTop),
+            "autostart" => Some(TrayMenuItemId::Autostart),
+            "quit" => Some(TrayMenuItemId::Quit),
+            _ => None,
+        }
+    }
+
+    fn parse_tray_menu_items(value: &str) -> CogniaResult<Vec<TrayMenuItemId>> {
         let mut items = if value.trim().starts_with('[') {
             let raw: Vec<String> = serde_json::from_str(value)
                 .map_err(|_| CogniaError::Config("Invalid tray menu_items JSON array".into()))?;
             let mut parsed = Vec::with_capacity(raw.len());
             for item in raw {
-                if let Some(parsed_item) = parse_item(item.trim()) {
+                if let Some(parsed_item) = Self::parse_tray_menu_item_str(item.trim()) {
                     parsed.push(parsed_item);
                 }
             }
@@ -716,7 +903,7 @@ impl Settings {
                     .map(|s| s.trim())
                     .filter(|s| !s.is_empty())
                 {
-                    if let Some(parsed_item) = parse_item(item) {
+                    if let Some(parsed_item) = Self::parse_tray_menu_item_str(item) {
                         parsed.push(parsed_item);
                     }
                 }
@@ -814,6 +1001,15 @@ impl Settings {
             "open_downloads" => Ok(TrayQuickAction::OpenDownloads),
             "check_updates" => Ok(TrayQuickAction::CheckUpdates),
             "open_logs" => Ok(TrayQuickAction::OpenLogs),
+            "open_command_palette" => Ok(TrayQuickAction::OpenCommandPalette),
+            "open_quick_search" => Ok(TrayQuickAction::OpenQuickSearch),
+            "toggle_logs" => Ok(TrayQuickAction::ToggleLogs),
+            "manage_plugins" => Ok(TrayQuickAction::ManagePlugins),
+            "install_plugin" => Ok(TrayQuickAction::InstallPlugin),
+            "create_plugin" => Ok(TrayQuickAction::CreatePlugin),
+            "go_dashboard" => Ok(TrayQuickAction::GoDashboard),
+            "go_toolbox" => Ok(TrayQuickAction::GoToolbox),
+            "report_bug" => Ok(TrayQuickAction::ReportBug),
             _ => Err(CogniaError::Config(
                 "Invalid tray quick_action value".into(),
             )),
@@ -1064,6 +1260,15 @@ impl Settings {
                     TrayQuickAction::OpenDownloads => "open_downloads",
                     TrayQuickAction::CheckUpdates => "check_updates",
                     TrayQuickAction::OpenLogs => "open_logs",
+                    TrayQuickAction::OpenCommandPalette => "open_command_palette",
+                    TrayQuickAction::OpenQuickSearch => "open_quick_search",
+                    TrayQuickAction::ToggleLogs => "toggle_logs",
+                    TrayQuickAction::ManagePlugins => "manage_plugins",
+                    TrayQuickAction::InstallPlugin => "install_plugin",
+                    TrayQuickAction::CreatePlugin => "create_plugin",
+                    TrayQuickAction::GoDashboard => "go_dashboard",
+                    TrayQuickAction::GoToolbox => "go_toolbox",
+                    TrayQuickAction::ReportBug => "report_bug",
                 }
                 .to_string(),
             ),
@@ -3132,6 +3337,54 @@ notify = false
         assert!(parsed.updates.fallback_to_official);
     }
 
+    #[test]
+    fn test_load_from_toml_with_invalid_tray_expanded_values_keeps_other_settings() {
+        let raw = r#"
+[updates]
+check_on_start = false
+
+[tray]
+click_behavior = "quick_action"
+quick_action = "not_real"
+menu_items = ["settings", "open_command_palette", "bogus", "quit"]
+menu_priority_items = ["open_command_palette", "quit", "ghost"]
+"#;
+
+        let parsed = Settings::load_from_toml_with_tray_fallback(raw).unwrap();
+
+        assert!(!parsed.updates.check_on_start);
+        assert_eq!(parsed.tray.click_behavior, TrayClickBehavior::QuickAction);
+        assert_eq!(parsed.tray.quick_action, TrayQuickAction::CheckUpdates);
+        assert_eq!(
+            parsed.tray.menu_items,
+            vec![
+                TrayMenuItemId::Settings,
+                TrayMenuItemId::OpenCommandPalette,
+                TrayMenuItemId::Quit,
+            ]
+        );
+        assert_eq!(
+            parsed.tray.menu_priority_items,
+            vec![TrayMenuItemId::OpenCommandPalette]
+        );
+    }
+
+    #[test]
+    fn test_load_from_toml_with_invalid_tray_field_type_drops_only_that_field() {
+        let raw = r#"
+[tray]
+click_behavior = "invalid"
+quick_action = "open_downloads"
+menu_items = "not-an-array"
+"#;
+
+        let parsed = Settings::load_from_toml_with_tray_fallback(raw).unwrap();
+
+        assert_eq!(parsed.tray.click_behavior, TrayClickBehavior::ToggleWindow);
+        assert_eq!(parsed.tray.quick_action, TrayQuickAction::OpenDownloads);
+        assert_eq!(parsed.tray.menu_items, TraySettings::default().menu_items);
+    }
+
     // ===== TraySettings defaults and get/set =====
 
     #[test]
@@ -3252,6 +3505,38 @@ notify = false
         assert_eq!(
             s.tray.menu_priority_items,
             vec![TrayMenuItemId::Downloads, TrayMenuItemId::Settings]
+        );
+    }
+
+    #[test]
+    fn test_set_tray_expanded_action_values() {
+        let mut s = Settings::default();
+
+        s.set_value("tray.quick_action", "open_downloads")
+            .unwrap();
+        s.set_value(
+            "tray.menu_items",
+            r#"["show_hide","downloads","quit"]"#,
+        )
+        .unwrap();
+        s.set_value(
+            "tray.menu_priority_items",
+            r#"["downloads","quit"]"#,
+        )
+        .unwrap();
+
+        assert_eq!(s.tray.quick_action, TrayQuickAction::OpenDownloads);
+        assert_eq!(
+            s.tray.menu_items,
+            vec![
+                TrayMenuItemId::ShowHide,
+                TrayMenuItemId::Downloads,
+                TrayMenuItemId::Quit,
+            ]
+        );
+        assert_eq!(
+            s.tray.menu_priority_items,
+            vec![TrayMenuItemId::Downloads]
         );
     }
 

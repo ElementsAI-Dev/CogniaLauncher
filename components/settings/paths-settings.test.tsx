@@ -1,10 +1,24 @@
 import React from "react";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { PathsSettings } from "./paths-settings";
+import { toast } from "sonner";
+
+const mockIsTauri = jest.fn(() => false);
+const mockValidatePath = jest.fn();
 
 jest.mock("@/lib/tauri", () => ({
-  isTauri: jest.fn(() => false),
-  validatePath: jest.fn(),
+  isTauri: () => mockIsTauri(),
+  validatePath: (...args: unknown[]) => mockValidatePath(...args),
+}));
+
+jest.mock("sonner", () => ({
+  toast: {
+    info: jest.fn(),
+  },
+}));
+
+jest.mock("@tauri-apps/plugin-dialog", () => ({
+  open: jest.fn(),
 }));
 
 const mockT = (key: string) => {
@@ -57,6 +71,25 @@ describe("PathsSettings", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockIsTauri.mockReturnValue(false);
+    mockValidatePath.mockResolvedValue({
+      normalizedPath: '/chosen/path',
+      isValid: true,
+      exists: true,
+      isDirectory: true,
+      isFile: false,
+      writable: true,
+      readable: true,
+      isAbsolute: true,
+      parentExists: true,
+      parentWritable: true,
+      hasTraversal: false,
+      hasSuspiciousChars: false,
+      diskAvailable: 1024,
+      diskAvailableHuman: '1 KB',
+      warnings: [],
+      errors: [],
+    });
   });
 
   it("should render paths settings content", () => {
@@ -119,6 +152,40 @@ describe("PathsSettings", () => {
     );
 
     expect(screen.getByText("Invalid root path")).toBeInTheDocument();
+  });
+
+  it("browses for a path and validates the selected value in Tauri mode", async () => {
+    mockIsTauri.mockReturnValue(true);
+    const dialogModule = jest.requireMock("@tauri-apps/plugin-dialog");
+    dialogModule.open.mockResolvedValueOnce("/chosen/path");
+    const onValueChange = jest.fn();
+    render(
+      <PathsSettings
+        {...defaultProps}
+        onValueChange={onValueChange}
+      />,
+    );
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Browse" })[0]);
+
+    await waitFor(() => {
+      expect(onValueChange).toHaveBeenCalledWith("paths.root", "/chosen/path");
+      expect(mockValidatePath).toHaveBeenCalledWith("/chosen/path", true);
+    });
+  });
+
+  it("clears an existing path value", () => {
+    const onValueChange = jest.fn();
+    render(
+      <PathsSettings
+        {...defaultProps}
+        onValueChange={onValueChange}
+      />,
+    );
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Clear" })[0]);
+
+    expect(onValueChange).toHaveBeenCalledWith("paths.root", "");
   });
 
   it("should show validation error for relative path", async () => {

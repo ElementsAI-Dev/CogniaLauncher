@@ -2,7 +2,7 @@
 
 ## 1. Core Summary
 
-The system tray exposes 13 Tauri commands for state management, icon control, notifications, and autostart. Frontend communicates via `lib/tauri.ts` wrapper functions. State is managed through `SharedTrayState` (Arc<RwLock<TrayState>>).
+The system tray exposes Tauri commands for state management, icon control, notifications, autostart, and menu customization. Frontend communicates via `lib/tauri.ts` wrapper functions. State is managed through `SharedTrayState` (Arc<RwLock<TrayState>>).
 
 ## 2. Source of Truth
 
@@ -36,11 +36,12 @@ The system tray exposes 13 Tauri commands for state management, icon control, no
 |-------|--------|---------|
 | `navigate` | Tray menu → Frontend | `useTraySync()` → `router.push()` |
 | `check-updates` | Tray menu → Frontend | `useTraySync()` → `router.push('/about')` |
+| `desktop-action` | Tray menu/click → Frontend | `useTraySync()` → browser desktop-action bridge → shared executor |
 
 ## 5. Types
 
 ```typescript
 // TrayIconState: 'normal' | 'downloading' | 'update' | 'error'
 // TrayLanguage: 'en' | 'zh'
-// TrayClickBehavior: 'toggle_window' | 'show_menu' | 'do_nothing'
+// TrayClickBehavior: 'toggle_window' | 'show_menu' | 'check_updates' | 'quick_action' | 'do_nothing'
 ```

@@ -135,6 +135,83 @@ describe("UpdateSettings", () => {
     ]);
   });
 
+  it("blocks switching to custom mode when no custom endpoints are provided", async () => {
+    const onValueChange = jest.fn();
+    render(
+      <UpdateSettings
+        appSettings={appSettings}
+        onValueChange={onValueChange}
+        t={mockT}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("combobox", { name: "Update Source" }));
+    await userEvent.click(screen.getByRole("option", { name: "Custom" }));
+
+    expect(
+      screen.getByText("At least one valid HTTPS endpoint is required for custom mode."),
+    ).toBeInTheDocument();
+    expect(onValueChange).not.toHaveBeenCalledWith("updateSourceMode", "custom");
+  });
+
+  it("shows validation error for invalid custom endpoint templates", () => {
+    const onValueChange = jest.fn();
+    render(
+      <UpdateSettings
+        appSettings={{
+          ...appSettings,
+          updateSourceMode: "custom",
+          updateCustomEndpoints: [],
+        }}
+        onValueChange={onValueChange}
+        t={mockT}
+      />,
+    );
+
+    const textarea = screen.getByRole("textbox", { name: "Custom Endpoints" });
+    fireEvent.change(textarea, {
+      target: {
+        value: "http://insecure.example.com/latest.json",
+      },
+    });
+    fireEvent.blur(textarea);
+
+    expect(
+      screen.getByText("Please provide valid HTTPS endpoint URLs (one per line)."),
+    ).toBeInTheDocument();
+    expect(onValueChange).not.toHaveBeenCalledWith("updateCustomEndpoints", expect.anything());
+  });
+
+  it("deduplicates custom endpoints before committing them", () => {
+    const onValueChange = jest.fn();
+    render(
+      <UpdateSettings
+        appSettings={{
+          ...appSettings,
+          updateSourceMode: "custom",
+          updateCustomEndpoints: [],
+        }}
+        onValueChange={onValueChange}
+        t={mockT}
+      />,
+    );
+
+    const textarea = screen.getByRole("textbox", { name: "Custom Endpoints" });
+    fireEvent.change(textarea, {
+      target: {
+        value: [
+          "https://updates.example.com/{{target}}/{{current_version}}",
+          "https://updates.example.com/{{target}}/{{current_version}}",
+        ].join("\n"),
+      },
+    });
+    fireEvent.blur(textarea);
+
+    expect(onValueChange).toHaveBeenCalledWith("updateCustomEndpoints", [
+      "https://updates.example.com/{{target}}/{{current_version}}",
+    ]);
+  });
+
   it("resets custom endpoint draft when app settings change", () => {
     const onValueChange = jest.fn();
     const { rerender } = render(

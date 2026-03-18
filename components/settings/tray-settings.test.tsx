@@ -1,5 +1,6 @@
 import React from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { TraySettings } from "./tray-settings";
 import type { AppSettings } from "@/lib/stores/settings";
 import { DEFAULT_SIDEBAR_ITEM_ORDER } from "@/lib/sidebar/order";
@@ -338,6 +339,47 @@ describe("TraySettings", () => {
       // TrayMenuCustomizer is rendered only in Tauri mode
       // It will be in loading state initially
       expect(screen.getByText("Tray Click Behavior")).toBeInTheDocument();
+    });
+
+    it("updates tray notification level and quick action selections", async () => {
+      const onValueChange = jest.fn();
+      render(
+        <TraySettings
+          appSettings={{
+            ...appSettings,
+            trayClickBehavior: "quick_action",
+          }}
+          onValueChange={onValueChange}
+          t={mockT}
+        />,
+      );
+
+      await userEvent.tab();
+
+      const comboboxes = screen.getAllByRole("combobox");
+      await userEvent.click(comboboxes[0]);
+      await userEvent.click(screen.getByRole("option", { name: "Important Only" }));
+      await userEvent.click(comboboxes[2]);
+      await userEvent.click(screen.getByRole("option", { name: "Open Settings" }));
+
+      expect(onValueChange).toHaveBeenCalledWith("trayNotificationLevel", "important_only");
+      expect(mockTraySetQuickAction).toHaveBeenCalledWith("open_settings");
+    });
+
+    it("toggles tray notification event filters", () => {
+      const onValueChange = jest.fn();
+      render(
+        <TraySettings
+          appSettings={appSettings}
+          onValueChange={onValueChange}
+          t={mockT}
+        />,
+      );
+
+      const eventSwitches = screen.getAllByRole("switch");
+      fireEvent.click(eventSwitches[eventSwitches.length - 1]);
+
+      expect(mockTraySetNotificationEvents).toHaveBeenCalled();
     });
   });
 });
