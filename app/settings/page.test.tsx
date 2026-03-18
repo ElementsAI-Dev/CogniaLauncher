@@ -1325,6 +1325,48 @@ describe('SettingsPage', () => {
     });
   });
 
+  it('opens the hidden file input when selecting import-from-file', async () => {
+    renderWithProviders(<SettingsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /settings/i })).toBeInTheDocument();
+    });
+
+    const fileInput = screen.getByLabelText('Import settings') as HTMLInputElement;
+    const clickSpy = jest.spyOn(fileInput, 'click').mockImplementation(() => {});
+
+    await userEvent.click(screen.getByRole('button', { name: /import/i }));
+    await waitFor(() => {
+      expect(screen.getByText('Import from File')).toBeInTheDocument();
+    });
+    await userEvent.click(screen.getByText('Import from File'));
+
+    expect(clickSpy).toHaveBeenCalled();
+    clickSpy.mockRestore();
+  });
+
+  it('registers a beforeunload guard when settings have unsaved changes', async () => {
+    renderWithProviders(<SettingsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Parallel Downloads')).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText('Parallel Downloads'), {
+      target: { value: '11' },
+    });
+
+    const event = new Event('beforeunload', { cancelable: true });
+    Object.defineProperty(event, 'returnValue', {
+      writable: true,
+      value: undefined,
+    });
+
+    window.dispatchEvent(event);
+
+    expect((event as Event & { returnValue?: unknown }).returnValue).toBe('');
+  });
+
   it('renders export dropdown with file and clipboard options', async () => {
     setupMocks();
     renderWithProviders(<SettingsPage />);

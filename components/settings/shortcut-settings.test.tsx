@@ -180,6 +180,64 @@ describe("ShortcutSettings", () => {
     );
   });
 
+  it("ignores standalone modifier keys while recording", () => {
+    render(
+      <ShortcutSettings
+        localConfig={defaultConfig}
+        errors={{}}
+        onValueChange={mockOnValueChange}
+        t={mockT}
+      />,
+    );
+
+    const inputs = screen.getAllByRole("textbox");
+    fireEvent.click(inputs[0]);
+    fireEvent.keyDown(window, { key: "Shift", shiftKey: true });
+
+    expect(mockOnValueChange).not.toHaveBeenCalled();
+    expect(screen.getByDisplayValue("Press keys...")).toBeInTheDocument();
+  });
+
+  it("records Alt+Space shortcuts", () => {
+    render(
+      <ShortcutSettings
+        localConfig={defaultConfig}
+        errors={{}}
+        onValueChange={mockOnValueChange}
+        t={mockT}
+      />,
+    );
+
+    const inputs = screen.getAllByRole("textbox");
+    fireEvent.click(inputs[1]);
+    fireEvent.keyDown(window, { key: " ", altKey: true });
+
+    expect(mockOnValueChange).toHaveBeenCalledWith(
+      "shortcuts.command_palette",
+      "Alt+Space",
+    );
+  });
+
+  it("records Meta+ArrowUp shortcuts as CmdOrCtrl+Up", () => {
+    render(
+      <ShortcutSettings
+        localConfig={defaultConfig}
+        errors={{}}
+        onValueChange={mockOnValueChange}
+        t={mockT}
+      />,
+    );
+
+    const inputs = screen.getAllByRole("textbox");
+    fireEvent.click(inputs[2]);
+    fireEvent.keyDown(window, { key: "ArrowUp", metaKey: true });
+
+    expect(mockOnValueChange).toHaveBeenCalledWith(
+      "shortcuts.quick_search",
+      "CmdOrCtrl+Up",
+    );
+  });
+
   it("ignores shortcut recording without modifier keys", () => {
     render(
       <ShortcutSettings
@@ -278,5 +336,21 @@ describe("ShortcutSettings", () => {
 
     const toggle = screen.getByRole("switch");
     expect(toggle).not.toBeChecked();
+  });
+
+  it("falls back to empty shortcut values when local config keys are missing", () => {
+    render(
+      <ShortcutSettings
+        localConfig={{ "shortcuts.enabled": "true" }}
+        errors={{}}
+        onValueChange={mockOnValueChange}
+        t={mockT}
+      />,
+    );
+
+    const inputs = screen.getAllByRole("textbox");
+    expect(inputs[0]).toHaveValue("—");
+    expect(inputs[1]).toHaveValue("—");
+    expect(inputs[2]).toHaveValue("—");
   });
 });

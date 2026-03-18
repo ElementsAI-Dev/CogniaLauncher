@@ -313,4 +313,65 @@ describe("TrayMenuCustomizer", () => {
     expect(screen.queryByText("Customize Menu")).toBeInTheDocument();
     consoleSpy.mockRestore();
   });
+
+  it("renders empty section hints when priority and disabled sections are empty", async () => {
+    mockTrayGetAvailableMenuItems.mockResolvedValue([
+      "show_hide",
+      "quit",
+    ]);
+    mockTrayGetMenuConfig.mockResolvedValue({
+      items: ["show_hide", "quit"],
+      priorityItems: [],
+    });
+
+    await act(async () => {
+      render(<TrayMenuCustomizer t={mockT} />);
+    });
+
+    expect(screen.getByText("No priority items")).toBeInTheDocument();
+    expect(screen.getByText("No disabled items")).toBeInTheDocument();
+  });
+
+  it("does not persist reorder when drag end has no destination", async () => {
+    mockTrayGetMenuConfig.mockResolvedValue({
+      items: ["show_hide", "settings", "quit"],
+      priorityItems: [],
+    });
+
+    await act(async () => {
+      render(<TrayMenuCustomizer t={mockT} />);
+    });
+
+    const callsBefore = mockTraySetMenuConfig.mock.calls.length;
+    await act(async () => {
+      (
+        dndCore as unknown as {
+          __triggerDragEnd: (
+            index: number,
+            activeId: string,
+            overId: string | null,
+          ) => void;
+        }
+      ).__triggerDragEnd(1, "show_hide", null);
+    });
+
+    expect(mockTraySetMenuConfig).toHaveBeenCalledTimes(callsBefore);
+  });
+
+  it("falls back to raw id text for unknown menu items", async () => {
+    mockTrayGetAvailableMenuItems.mockResolvedValue([
+      "mystery_action",
+      "quit",
+    ]);
+    mockTrayGetMenuConfig.mockResolvedValue({
+      items: ["quit"],
+      priorityItems: [],
+    });
+
+    await act(async () => {
+      render(<TrayMenuCustomizer t={mockT} />);
+    });
+
+    expect(screen.getByText("mystery_action")).toBeInTheDocument();
+  });
 });

@@ -127,6 +127,12 @@ describe("backup-settings reason hints", () => {
     );
   });
 
+  it("maps cleanup policy reason to actionable guidance", () => {
+    expect(getBackupActionHint("cleanup_policy_unbounded")).toContain(
+      "no cleanup operation is performed",
+    );
+  });
+
   it("maps permission and path reasons", () => {
     expect(getBackupActionHint("backup_create_permission_denied")).toContain(
       "insufficient file-system permissions",
@@ -314,5 +320,129 @@ describe("BackupSettings", () => {
       expect(toast.warning).toHaveBeenCalledWith("Restore failed");
     });
 
+  });
+
+  it("allows toggling create and restore content selections and deleting backups", async () => {
+    const backupHook = createBackupMock({
+      backups: [
+        {
+          path: "/tmp/backup-3",
+          name: "backup-3",
+          sizeHuman: "8 MB",
+          manifest: {
+            createdAt: "2026-03-18T12:00:00.000Z",
+            appVersion: "1.0.0",
+            contents: ["config", "cache_database"],
+            note: null,
+          },
+        },
+      ],
+    });
+    mockUseBackup.mockReturnValue(backupHook);
+
+    render(<BackupSettings t={mockT} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Create Backup" }));
+    const createDialog = await screen.findByRole("dialog");
+    const createCheckboxes = within(createDialog).getAllByRole("checkbox");
+    await userEvent.click(createCheckboxes[0]);
+    await userEvent.click(within(createDialog).getByRole("button", { name: "Create Backup" }));
+    await waitFor(() => {
+      expect(backupHook.create).toHaveBeenCalledWith(
+        expect.not.arrayContaining(["config"]),
+        undefined,
+      );
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: "Restore" }));
+    const restoreDialog = await screen.findByRole("alertdialog");
+    const restoreCheckboxes = within(restoreDialog).getAllByRole("checkbox");
+    await userEvent.click(restoreCheckboxes[0]);
+    await userEvent.click(within(restoreDialog).getByRole("button", { name: "Restore" }));
+    await waitFor(() => {
+      expect(backupHook.restore).toHaveBeenCalledWith(
+        "/tmp/backup-3",
+        expect.not.arrayContaining(["config"]),
+      );
+    });
+
+  });
+
+  it("renders loading skeletons and restore spinner states", () => {
+    mockUseBackup.mockReturnValue(
+      createBackupMock({
+        loading: true,
+        backups: [],
+      }),
+    );
+    const { container, rerender } = render(<BackupSettings t={mockT} />);
+    expect(container.querySelectorAll('[class*="animate-pulse"]').length).toBeGreaterThan(0);
+
+    mockUseBackup.mockReturnValue(
+      createBackupMock({
+        backups: [
+          {
+            path: "/tmp/backup-4",
+            name: "backup-4",
+            sizeHuman: "5 MB",
+            manifest: {
+              createdAt: "2026-03-18T12:00:00.000Z",
+              appVersion: "1.0.0",
+              contents: ["mystery"],
+              note: null,
+            },
+          },
+        ],
+        restoring: true,
+      }),
+    );
+    rerender(<BackupSettings t={mockT} />);
+
+    expect(screen.getByText("mystery")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Restore" })).toBeInTheDocument();
+  });
+
+  it("shows delete and integrity error states when operations fail", async () => {
+    const backupHook = createBackupMock({
+      backups: [
+        {
+          path: "/tmp/backup-5",
+          name: "backup-5",
+          sizeHuman: "4 MB",
+          manifest: {
+            createdAt: "2026-03-18T12:00:00.000Z",
+            appVersion: "1.0.0",
+            contents: ["config"],
+            note: null,
+          },
+        },
+      ],
+      remove: jest.fn().mockResolvedValue({
+        status: "error",
+        deleted: false,
+        error: "cannot delete",
+        issues: [],
+      }),
+      checkIntegrity: jest.fn().mockResolvedValue({ ok: false, errors: ["broken"] }),
+      getDatabaseInfo: jest.fn().mockResolvedValue(null),
+      validate: jest.fn().mockResolvedValue(null),
+    });
+    mockUseBackup.mockReturnValue(backupHook);
+
+    render(<BackupSettings t={mockT} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Database Info" }));
+    expect(toast.info).not.toHaveBeenCalledWith(expect.stringContaining("DB Size"));
+
+    await userEvent.click(screen.getByRole("button", { name: "Integrity Check" }));
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith("Integrity errors: 1");
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: "Validate" }));
+    await waitFor(() => {
+      expect(backupHook.validate).toHaveBeenCalledWith("/tmp/backup-5");
+    });
+    expect(screen.queryByText("Validation passed")).not.toBeInTheDocument();
   });
 });

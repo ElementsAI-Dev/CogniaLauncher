@@ -155,6 +155,19 @@ describe("NetworkSettings", () => {
     expect(screen.queryByText("Test Connection")).not.toBeInTheDocument();
   });
 
+  it("falls back to default timeout and retries values when config is empty", () => {
+    render(
+      <NetworkSettings
+        {...defaultProps}
+        localConfig={{}}
+      />,
+    );
+
+    const inputs = screen.getAllByRole("spinbutton");
+    expect(inputs[0]).toHaveValue(30);
+    expect(inputs[1]).toHaveValue(3);
+  });
+
   describe("Tauri mode", () => {
     beforeEach(() => {
       mockIsTauri.mockReturnValue(true);
@@ -231,6 +244,22 @@ describe("NetworkSettings", () => {
         screen.getByText("Detected from environment: http://proxy:8080"),
       ).toBeInTheDocument();
       expect(screen.getByText("Connection successful")).toBeInTheDocument();
+    });
+
+    it("renders a single detect result without test feedback", () => {
+      mockUseProxyTools.mockReturnValue({
+        detectLoading: false,
+        detectResult: "Detected from environment",
+        testLoading: false,
+        testResult: null,
+        handleDetectProxy: jest.fn(),
+        handleTestProxy: jest.fn(),
+      });
+
+      render(<NetworkSettings {...defaultProps} />);
+
+      expect(screen.getByText("Detected from environment")).toBeInTheDocument();
+      expect(screen.queryByText("Connection successful")).not.toBeInTheDocument();
     });
   });
 });

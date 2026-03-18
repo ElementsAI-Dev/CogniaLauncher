@@ -259,6 +259,19 @@ describe('useSettings', () => {
     expect(mockSetError).toHaveBeenCalledWith('save failed');
   });
 
+  it('stringifies non-Error config update failures', async () => {
+    mockConfigSet.mockRejectedValue('save failed as string');
+    const { result } = renderHook(() => useSettings());
+
+    await expect(
+      act(async () => {
+        await result.current.updateConfigValue('theme', 'dark');
+      }),
+    ).rejects.toBe('save failed as string');
+
+    expect(mockSetError).toHaveBeenCalledWith('save failed as string');
+  });
+
   it('should reset config', async () => {
     mockConfigReset.mockResolvedValue(undefined);
     mockConfigList.mockResolvedValue([]);
@@ -282,6 +295,19 @@ describe('useSettings', () => {
     ).rejects.toThrow('reset failed');
 
     expect(mockSetError).toHaveBeenCalledWith('reset failed');
+  });
+
+  it('stringifies non-Error reset failures', async () => {
+    mockConfigReset.mockRejectedValue('reset failed as string');
+    const { result } = renderHook(() => useSettings());
+
+    await expect(
+      act(async () => {
+        await result.current.resetConfig();
+      }),
+    ).rejects.toBe('reset failed as string');
+
+    expect(mockSetError).toHaveBeenCalledWith('reset failed as string');
   });
 
   it('should clean cache', async () => {
@@ -312,6 +338,19 @@ describe('useSettings', () => {
     expect(mockSetError).toHaveBeenCalledWith('clean failed');
   });
 
+  it('stringifies non-Error cache clean failures', async () => {
+    mockCacheClean.mockRejectedValue('clean failed as string');
+    const { result } = renderHook(() => useSettings());
+
+    await expect(
+      act(async () => {
+        await result.current.cleanCache();
+      }),
+    ).rejects.toBe('clean failed as string');
+
+    expect(mockSetError).toHaveBeenCalledWith('clean failed as string');
+  });
+
   it('returns null when fetching cache info fails', async () => {
     mockCacheInfo.mockRejectedValue(new Error('cache info failed'));
     const { result } = renderHook(() => useSettings());
@@ -323,6 +362,19 @@ describe('useSettings', () => {
 
     expect(info).toBeNull();
     expect(mockSetError).toHaveBeenCalledWith('cache info failed');
+  });
+
+  it('stringifies non-Error cache info failures', async () => {
+    mockCacheInfo.mockRejectedValue('cache info string');
+    const { result } = renderHook(() => useSettings());
+
+    let info = 'not-null';
+    await act(async () => {
+      info = await result.current.fetchCacheInfo();
+    });
+
+    expect(info).toBeNull();
+    expect(mockSetError).toHaveBeenCalledWith('cache info string');
   });
 
   it('should fetch platform info', async () => {
@@ -353,6 +405,19 @@ describe('useSettings', () => {
     expect(mockSetError).toHaveBeenCalledWith('platform failed');
   });
 
+  it('stringifies non-Error platform info failures', async () => {
+    mockGetPlatformInfo.mockRejectedValue('platform failed as string');
+    const { result } = renderHook(() => useSettings());
+
+    let platform = 'not-null';
+    await act(async () => {
+      platform = await result.current.fetchPlatformInfo();
+    });
+
+    expect(platform).toBeNull();
+    expect(mockSetError).toHaveBeenCalledWith('platform failed as string');
+  });
+
   it('should handle fetch config error', async () => {
     const error = new Error('Config fetch failed');
     mockConfigList.mockRejectedValue(error);
@@ -363,6 +428,17 @@ describe('useSettings', () => {
     });
 
     expect(mockSetError).toHaveBeenCalled();
+  });
+
+  it('stringifies non-Error fetch config failures', async () => {
+    mockConfigList.mockRejectedValue('plain failure');
+    const { result } = renderHook(() => useSettings());
+
+    await act(async () => {
+      await result.current.fetchConfig();
+    });
+
+    expect(mockSetError).toHaveBeenCalledWith('plain failure');
   });
 
   it('migrates legacy desktop app settings into backend config on fetch', async () => {
@@ -476,6 +552,19 @@ describe('useSettings', () => {
     expect(mockSetError).toHaveBeenCalledWith('cache settings failed');
   });
 
+  it('stringifies non-Error cache settings failures', async () => {
+    mockGetCacheSettings.mockRejectedValue('cache settings string');
+    const { result } = renderHook(() => useSettings());
+
+    let cacheSettings = 'not-null';
+    await act(async () => {
+      cacheSettings = await result.current.fetchCacheSettings();
+    });
+
+    expect(cacheSettings).toBeNull();
+    expect(mockSetError).toHaveBeenCalledWith('cache settings string');
+  });
+
   it('updates cache settings through the backend bridge', async () => {
     const nextSettings = {
       max_size: 200,
@@ -511,6 +600,24 @@ describe('useSettings', () => {
     expect(mockSetError).toHaveBeenCalledWith('cache update failed');
   });
 
+  it('stringifies non-Error cache settings update failures', async () => {
+    mockTauriSetCacheSettings.mockRejectedValue('cache update failed as string');
+    const { result } = renderHook(() => useSettings());
+
+    await expect(
+      act(async () => {
+        await result.current.updateCacheSettings({
+          max_size: 200,
+          max_age_days: 60,
+          metadata_cache_ttl: 1800,
+          auto_clean: false,
+        });
+      }),
+    ).rejects.toBe('cache update failed as string');
+
+    expect(mockSetError).toHaveBeenCalledWith('cache update failed as string');
+  });
+
   it('verifies cache integrity and stores the result', async () => {
     mockCacheVerify.mockResolvedValue({
       is_healthy: false,
@@ -542,6 +649,19 @@ describe('useSettings', () => {
     expect(mockSetError).toHaveBeenCalledWith('verify failed');
   });
 
+  it('stringifies non-Error cache verification failures', async () => {
+    mockCacheVerify.mockRejectedValue('verify failed as string');
+    const { result } = renderHook(() => useSettings());
+
+    await expect(
+      act(async () => {
+        await result.current.verifyCacheIntegrity();
+      }),
+    ).rejects.toBe('verify failed as string');
+
+    expect(mockSetError).toHaveBeenCalledWith('verify failed as string');
+  });
+
   it('repairs cache and refreshes cache info', async () => {
     mockCacheInfo.mockResolvedValue({ total_size: 0, total_size_human: '0 B' });
     const { result } = renderHook(() => useSettings());
@@ -566,5 +686,18 @@ describe('useSettings', () => {
     ).rejects.toThrow('repair failed');
 
     expect(mockSetError).toHaveBeenCalledWith('repair failed');
+  });
+
+  it('stringifies non-Error cache repair failures', async () => {
+    mockCacheRepair.mockRejectedValue('repair failed as string');
+    const { result } = renderHook(() => useSettings());
+
+    await expect(
+      act(async () => {
+        await result.current.repairCache();
+      }),
+    ).rejects.toBe('repair failed as string');
+
+    expect(mockSetError).toHaveBeenCalledWith('repair failed as string');
   });
 });

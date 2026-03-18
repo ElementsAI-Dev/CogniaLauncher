@@ -90,6 +90,8 @@ describe("PathsSettings", () => {
       warnings: [],
       errors: [],
     });
+    const dialogModule = jest.requireMock("@tauri-apps/plugin-dialog");
+    dialogModule.open = jest.fn();
   });
 
   it("should render paths settings content", () => {
@@ -173,6 +175,7 @@ describe("PathsSettings", () => {
       expect(mockValidatePath).toHaveBeenCalledWith("/chosen/path", true);
     });
   });
+
 
   it("clears an existing path value", () => {
     const onValueChange = jest.fn();

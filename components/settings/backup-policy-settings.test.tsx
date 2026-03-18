@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { BackupPolicySettings } from './backup-policy-settings';
+import { BackupPolicySettings, getBackupPolicyBoundaryNotes } from './backup-policy-settings';
 
 const mockT = (key: string) => {
   const translations: Record<string, string> = {
@@ -70,5 +70,40 @@ describe('BackupPolicySettings', () => {
     expect(screen.getByText(/clamped to 1000/i)).toBeInTheDocument();
     expect(screen.getByText(/no age limit/i)).toBeInTheDocument();
     expect(screen.getByText(/scheduled automatic backup loop is disabled/i)).toBeInTheDocument();
+  });
+
+  it('describes fallback defaults when config values are omitted', () => {
+    expect(getBackupPolicyBoundaryNotes({})).toEqual([]);
+  });
+
+  it('reports upper clamp boundary notes for interval and retention limits', () => {
+    render(
+      <BackupPolicySettings
+        {...defaultProps}
+        localConfig={{
+          'backup.auto_backup_enabled': 'true',
+          'backup.auto_backup_interval_hours': '721',
+          'backup.max_backups': '10',
+          'backup.retention_days': '3651',
+        }}
+      />,
+    );
+
+    expect(screen.getByText(/clamped to 3650/i)).toBeInTheDocument();
+    expect(screen.getByText(/clamped to 720/i)).toBeInTheDocument();
+  });
+
+  it('falls back to default numeric values when backup policy config is missing', () => {
+    render(
+      <BackupPolicySettings
+        {...defaultProps}
+        localConfig={{}}
+      />,
+    );
+
+    const spinbuttons = screen.getAllByRole('spinbutton');
+    expect(spinbuttons[0]).toHaveValue(24);
+    expect(spinbuttons[1]).toHaveValue(10);
+    expect(spinbuttons[2]).toHaveValue(30);
   });
 });
