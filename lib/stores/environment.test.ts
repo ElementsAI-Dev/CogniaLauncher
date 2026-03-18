@@ -8,9 +8,13 @@ describe('useEnvironmentStore', () => {
       selectedEnv: null,
       detectedVersions: [],
       availableVersions: {},
+      availableProviders: [],
       loading: false,
       error: null,
       envSettings: {},
+      selectedProviders: {},
+      workflowContext: null,
+      workflowAction: null,
       currentInstallation: null,
       selectedVersions: [],
       addDialogOpen: false,
@@ -23,10 +27,12 @@ describe('useEnvironmentStore', () => {
       // Update check state
       updateCheckResults: {},
       lastEnvUpdateCheck: null,
+      lastEnvScanTimestamp: null,
       // Search and filter state
       searchQuery: '',
       statusFilter: 'all',
       sortBy: 'name',
+      viewMode: 'grid',
     });
   });
 
@@ -484,6 +490,127 @@ describe('useEnvironmentStore', () => {
       ];
       useEnvironmentStore.getState().setAvailableProviders(providers);
       expect(useEnvironmentStore.getState().availableProviders).toEqual(providers);
+    });
+
+    it('prunes incompatible persisted provider selections when provider list changes', () => {
+      useEnvironmentStore.setState({
+        selectedProviders: {
+          node: 'fnm',
+          python: 'pyenv',
+        },
+      });
+
+      // Only keep python provider available; node selection should be dropped.
+      useEnvironmentStore.getState().setAvailableProviders([
+        { id: 'pyenv', display_name: 'pyenv', env_type: 'python', description: '' },
+      ]);
+
+      expect(useEnvironmentStore.getState().selectedProviders).toEqual({
+        python: 'pyenv',
+      });
+    });
+  });
+
+  describe('provider selection', () => {
+    it('keys provider selection by logical env type and normalizes provider id', () => {
+      useEnvironmentStore.getState().setAvailableProviders([
+        { id: 'fnm', display_name: 'fnm', env_type: 'node', description: '' },
+      ]);
+
+      useEnvironmentStore.getState().setSelectedProvider('fnm', 'FNM');
+
+      expect(useEnvironmentStore.getState().selectedProviders).toEqual({
+        node: 'fnm',
+      });
+    });
+
+    it('clears provider selection by logical env type', () => {
+      useEnvironmentStore.getState().setAvailableProviders([
+        { id: 'fnm', display_name: 'fnm', env_type: 'node', description: '' },
+      ]);
+      useEnvironmentStore.getState().setSelectedProvider('node', 'fnm');
+      expect(useEnvironmentStore.getState().selectedProviders.node).toBe('fnm');
+
+      useEnvironmentStore.getState().clearSelectedProvider('node');
+      expect(useEnvironmentStore.getState().selectedProviders.node).toBeUndefined();
+    });
+
+    it('resolves selected provider only when compatible, otherwise falls back deterministically', () => {
+      useEnvironmentStore.getState().setAvailableProviders([
+        { id: 'fnm', display_name: 'fnm', env_type: 'node', description: '' },
+        { id: 'nvm', display_name: 'nvm', env_type: 'node', description: '' },
+        { id: 'pyenv', display_name: 'pyenv', env_type: 'python', description: '' },
+      ]);
+
+      useEnvironmentStore.setState({
+        selectedProviders: {
+          node: 'missing-provider',
+        },
+      });
+
+      // Incompatible selection should not win; fallbackProviderId is compatible, so it should win.
+      expect(useEnvironmentStore.getState().getSelectedProvider('node', 'nvm')).toBe('nvm');
+
+      // If fallback is also incompatible, the first matching provider wins.
+      expect(useEnvironmentStore.getState().getSelectedProvider('node', 'not-a-provider')).toBe('fnm');
+    });
+
+    it('includes selectedProviders in persisted partial state (and excludes workflow-only state)', () => {
+      useEnvironmentStore.getState().setAvailableProviders([
+        { id: 'fnm', display_name: 'fnm', env_type: 'node', description: '' },
+      ]);
+      useEnvironmentStore.getState().setSelectedProvider('node', 'fnm');
+      useEnvironmentStore.getState().setWorkflowContext({
+        envType: 'node',
+        origin: 'overview',
+        updatedAt: Date.now(),
+      });
+
+      const storeAny = useEnvironmentStore as unknown as {
+        persist?: { getOptions: () => { partialize: (state: unknown) => Record<string, unknown> } };
+      };
+      expect(storeAny.persist?.getOptions).toBeDefined();
+
+      const partialize = storeAny.persist!.getOptions().partialize;
+      const persisted = partialize(useEnvironmentStore.getState());
+      expect(persisted.selectedProviders).toEqual({ node: 'fnm' });
+      expect(persisted.workflowContext).toBeUndefined();
+      expect(persisted.workflowAction).toBeUndefined();
+    });
+  });
+
+  describe('workflow continuity', () => {
+    it('writes workflow context and action without mutating provider selections', () => {
+      useEnvironmentStore.setState({
+        selectedProviders: { node: 'fnm' },
+      });
+
+      useEnvironmentStore.getState().setWorkflowContext({
+        envType: 'node',
+        origin: 'overview',
+        returnHref: '/environments',
+        projectPath: '/project',
+        providerId: 'fnm',
+        updatedAt: 123,
+      });
+      useEnvironmentStore.getState().setWorkflowAction({
+        envType: 'node',
+        action: 'refresh',
+        status: 'running',
+        providerId: 'fnm',
+        projectPath: '/project',
+        updatedAt: 456,
+      });
+
+      const state = useEnvironmentStore.getState();
+      expect(state.workflowContext?.providerId).toBe('fnm');
+      expect(state.workflowAction?.status).toBe('running');
+      expect(state.selectedProviders).toEqual({ node: 'fnm' });
+
+      useEnvironmentStore.getState().clearWorkflowContext();
+      useEnvironmentStore.getState().clearWorkflowAction();
+      expect(useEnvironmentStore.getState().workflowContext).toBeNull();
+      expect(useEnvironmentStore.getState().workflowAction).toBeNull();
     });
   });
 

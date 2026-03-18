@@ -162,7 +162,7 @@ export interface PackageListProps {
 export interface ProviderStatusBadgeProps {
   providers: ProviderInfo[];
   onProviderToggle?: (providerId: string, enabled: boolean) => void;
-  onRefresh?: () => void;
+  onRefresh?: () => void | Promise<void>;
 }
 
 // ============================================================================

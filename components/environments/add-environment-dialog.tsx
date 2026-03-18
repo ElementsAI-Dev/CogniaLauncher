@@ -145,7 +145,7 @@ export function AddEnvironmentDialog({ onAdd }: AddEnvironmentDialogProps) {
       open={addDialogOpen}
       onOpenChange={(open) => !open && handleClose()}
     >
-      <DialogContent className="sm:max-w-[600px]" showCloseButton={false}>
+      <DialogContent className="sm:max-w-150" showCloseButton={false}>
         <DialogHeader>
           <div className="flex items-center justify-between">
             <div>

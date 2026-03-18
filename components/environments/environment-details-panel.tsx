@@ -219,7 +219,7 @@ export function EnvironmentDetailsPanel({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-[480px] sm:w-[540px] p-0 flex flex-col">
+      <SheetContent className="w-120 sm:w-135 p-0 flex flex-col">
         <SheetHeader className="p-6 pb-4 border-b">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">

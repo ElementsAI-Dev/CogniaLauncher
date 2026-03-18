@@ -6,9 +6,13 @@ import { formatError } from '@/lib/errors';
 import type {
   EnvVarScope,
   EnvFileFormat,
+  EnvVarActionSupport,
+  EnvVarSupportSnapshot,
   EnvVarSummary,
   EnvVarShellProfileReadResult,
   EnvVarExportResult,
+  EnvVarMutationResult,
+  EnvVarPathMutationResult,
   PathEntryInfo,
   ShellProfileInfo,
   EnvVarImportResult,
@@ -95,6 +99,105 @@ interface EnvVarState {
   detectionError: string | null;
   detectionCanRetry: boolean;
   detectionLastUpdated: number | null;
+  supportSnapshot: EnvVarSupportSnapshot | null;
+  supportLoading: boolean;
+  supportError: string | null;
+}
+
+function normalizeMutationResult(
+  result: EnvVarMutationResult | boolean | undefined,
+  key: string,
+  scope: EnvVarScope,
+  operation: string,
+): EnvVarMutationResult {
+  if (typeof result === 'object' && result !== null) {
+    return result;
+  }
+
+  const success = result !== false;
+  return {
+    operation,
+    key,
+    scope,
+    success,
+    verified: success,
+    status: success ? 'verified' : 'verification_failed',
+    reasonCode: null,
+    message: null,
+    effectiveValueSummary: null,
+    primaryShellTarget: null,
+    shellGuidance: [],
+  };
+}
+
+function normalizePathMutationResult(
+  result: EnvVarPathMutationResult | number | boolean | undefined,
+  scope: EnvVarScope,
+  operation: string,
+): EnvVarPathMutationResult {
+  if (typeof result === 'object' && result !== null) {
+    return result;
+  }
+
+  const removedCount = typeof result === 'number' ? result : 0;
+  const success = result !== false;
+  return {
+    operation,
+    scope,
+    success,
+    verified: success,
+    status: success ? 'verified' : 'verification_failed',
+    reasonCode: null,
+    message: null,
+    removedCount,
+    pathEntries: [],
+    primaryShellTarget: null,
+    shellGuidance: [],
+  };
+}
+
+function normalizeImportResult(
+  result: EnvVarImportResult | null,
+  scope: EnvVarScope,
+): EnvVarImportResult | null {
+  if (result == null) return null;
+  if (typeof result.success === 'boolean') return result;
+
+  return {
+    ...result,
+    scope,
+    success: true,
+    verified: true,
+    status: 'verified',
+    reasonCode: null,
+    message: null,
+    primaryShellTarget: null,
+    shellGuidance: [],
+  };
+}
+
+function normalizeConflictResult(
+  result: EnvVarConflictResolutionResult | null,
+): EnvVarConflictResolutionResult | null {
+  if (result == null) return null;
+  if (typeof result.success === 'boolean') return result;
+
+  return {
+    ...result,
+    appliedValueSummary: {
+      displayValue: result.appliedValue,
+      masked: false,
+      hasValue: Boolean(result.appliedValue),
+      length: result.appliedValue.length,
+      isSensitive: false,
+      sensitivityReason: null,
+    },
+    success: true,
+    verified: true,
+    status: 'verified',
+    reasonCode: null,
+    message: null,
+  };
 }
 
 export function useEnvVar() {
@@ -126,6 +229,9 @@ export function useEnvVar() {
     detectionError: null,
     detectionCanRetry: false,
     detectionLastUpdated: null,
+    supportSnapshot: null,
+    supportLoading: false,
+    supportError: null,
   });
 
   const stateRef = useRef(state);
@@ -341,6 +447,19 @@ export function useEnvVar() {
     }
   }, [setLoading, setError]);
 
+  const loadSupportSnapshot = useCallback(async (): Promise<EnvVarSupportSnapshot | null> => {
+    setState((s) => ({ ...s, supportLoading: true, supportError: null }));
+    try {
+      const supportSnapshot = await tauri.envvarGetSupportSnapshot();
+      setState((s) => ({ ...s, supportSnapshot, supportLoading: false, supportError: null }));
+      return supportSnapshot;
+    } catch (err) {
+      const message = formatError(err);
+      setState((s) => ({ ...s, supportLoading: false, supportError: message }));
+      return null;
+    }
+  }, []);
+
   const getVar = useCallback(async (key: string): Promise<string | null> => {
     try {
       return await tauri.envvarGet(key);
@@ -354,16 +473,18 @@ export function useEnvVar() {
     key: string,
     value: string,
     scope: EnvVarScope,
-  ): Promise<boolean> => {
+  ): Promise<EnvVarMutationResult | null> => {
     setError(null);
     try {
+      let rawResult: EnvVarMutationResult | boolean | undefined;
       if (scope === 'process') {
-        await tauri.envvarSetProcess(key, value);
+        rawResult = await tauri.envvarSetProcess(key, value);
       } else {
-        await tauri.envvarSetPersistent(key, value, scope);
+        rawResult = await tauri.envvarSetPersistent(key, value, scope);
       }
+      const result = normalizeMutationResult(rawResult, key, scope, 'set');
 
-      if (scope === 'process') {
+      if (scope === 'process' && result.success) {
         setState((s) => ({
           ...s,
           envVars: { ...s.envVars, [key]: value },
@@ -374,26 +495,32 @@ export function useEnvVar() {
         }));
       }
 
-      invalidateDetectionCache(scope);
-      return true;
+      if (result.success) {
+        invalidateDetectionCache(scope);
+      } else if (result.message) {
+        setError(result.message);
+      }
+      return result;
     } catch (err) {
       setError(formatError(err));
-      return false;
+      return null;
     }
   }, [invalidateDetectionCache, setError]);
 
   const removeVar = useCallback(async (
     key: string,
     scope: EnvVarScope,
-  ): Promise<boolean> => {
+  ): Promise<EnvVarMutationResult | null> => {
     setError(null);
     try {
+      let rawResult: EnvVarMutationResult | boolean | undefined;
       if (scope === 'process') {
-        await tauri.envvarRemoveProcess(key);
+        rawResult = await tauri.envvarRemoveProcess(key);
       } else {
-        await tauri.envvarRemovePersistent(key, scope);
+        rawResult = await tauri.envvarRemovePersistent(key, scope);
       }
-      if (scope === 'process') {
+      const result = normalizeMutationResult(rawResult, key, scope, 'remove');
+      if (scope === 'process' && result.success) {
         setState((s) => {
           // eslint-disable-next-line @typescript-eslint/no-unused-vars
           const { [key]: _removed, ...rest } = s.envVars;
@@ -401,18 +528,22 @@ export function useEnvVar() {
           delete nextRevealed[`${scope}:${key}`];
           return { ...s, envVars: rest, revealedValues: nextRevealed };
         });
-      } else {
+      } else if (result.success) {
         setState((s) => {
           const nextRevealed = { ...s.revealedValues };
           delete nextRevealed[`${scope}:${key}`];
           return { ...s, revealedValues: nextRevealed };
         });
       }
-      invalidateDetectionCache(scope);
-      return true;
+      if (result.success) {
+        invalidateDetectionCache(scope);
+      } else if (result.message) {
+        setError(result.message);
+      }
+      return result;
     } catch (err) {
       setError(formatError(err));
-      return false;
+      return null;
     }
   }, [invalidateDetectionCache, setError]);
 
@@ -434,45 +565,60 @@ export function useEnvVar() {
     path: string,
     scope: EnvVarScope,
     position?: number,
-  ): Promise<boolean> => {
+  ): Promise<EnvVarPathMutationResult | null> => {
     setError(null);
     try {
-      await tauri.envvarAddPathEntry(path, scope, position);
-      await refreshAfterPathMutation(scope);
-      return true;
+      const rawResult = await tauri.envvarAddPathEntry(path, scope, position);
+      const result = normalizePathMutationResult(rawResult, scope, 'path_add');
+      if (result.success) {
+        await refreshAfterPathMutation(scope);
+      } else if (result.message) {
+        setError(result.message);
+      }
+      return result;
     } catch (err) {
       setError(formatError(err));
-      return false;
+      return null;
     }
   }, [refreshAfterPathMutation, setError]);
 
   const removePathEntry = useCallback(async (
     path: string,
     scope: EnvVarScope,
-  ): Promise<boolean> => {
+  ): Promise<EnvVarPathMutationResult | null> => {
     setError(null);
     try {
-      await tauri.envvarRemovePathEntry(path, scope);
-      await refreshAfterPathMutation(scope);
-      return true;
+      const rawResult = await tauri.envvarRemovePathEntry(path, scope);
+      const result = normalizePathMutationResult(rawResult, scope, 'path_remove');
+      if (result.success) {
+        await refreshAfterPathMutation(scope);
+      } else if (result.message) {
+        setError(result.message);
+      }
+      return result;
     } catch (err) {
       setError(formatError(err));
-      return false;
+      return null;
     }
   }, [refreshAfterPathMutation, setError]);
 
   const reorderPath = useCallback(async (
     entries: string[],
     scope: EnvVarScope,
-  ): Promise<boolean> => {
+  ): Promise<EnvVarPathMutationResult | null> => {
     setError(null);
     try {
-      await tauri.envvarReorderPath(entries, scope);
-      await refreshAfterPathMutation(scope);
-      return true;
+      const rawResult = await tauri.envvarReorderPath(entries, scope);
+      const result = normalizePathMutationResult(rawResult, scope, 'path_reorder');
+      if (result.success) {
+        await refreshAfterPathMutation(scope);
+      } else if (result.message) {
+        setError(result.message);
+      }
+      return result;
     } catch (err) {
       setError(formatError(err));
-      return false;
+      return null;
     }
   }, [refreshAfterPathMutation, setError]);
 
@@ -543,8 +689,16 @@ export function useEnvVar() {
     setState((s) => ({ ...s, importExportLoading: true }));
     setError(null);
     try {
-      const result = await tauri.envvarApplyImportPreview(content, scope, fingerprint);
-      await refreshAfterScopeMutation(scope);
+      const rawResult = await tauri.envvarApplyImportPreview(content, scope, fingerprint);
+      const result = normalizeImportResult(rawResult, scope);
+      if (!result) {
+        return null;
+      }
+      if (result.success) {
+        await refreshAfterScopeMutation(scope);
+      } else if (result.message) {
+        setError(result.message);
+      }
       setState((s) => ({
         ...s,
         importPreviewStale: false,
@@ -571,9 +725,12 @@ export function useEnvVar() {
     setState((s) => ({ ...s, importExportLoading: true }));
     setError(null);
     try {
-      const result = await tauri.envvarImportEnvFile(content, scope);
-      if (result && (result.imported > 0 || result.skipped >= 0)) {
+      const rawResult = await tauri.envvarImportEnvFile(content, scope);
+      const result = normalizeImportResult(rawResult, scope);
+      if (result && result.success) {
         invalidateDetectionCache(scope);
+      } else if (result?.message) {
+        setError(result.message);
       }
       return result;
     } catch (err) {
@@ -628,15 +785,20 @@ export function useEnvVar() {
 
   const deduplicatePath = useCallback(async (
     scope: EnvVarScope,
-  ): Promise<number> => {
+  ): Promise<EnvVarPathMutationResult | null> => {
     setError(null);
     try {
-      const removed = await tauri.envvarDeduplicatePath(scope);
-      await refreshAfterPathMutation(scope);
-      return removed;
+      const rawResult = await tauri.envvarDeduplicatePath(scope);
+      const result = normalizePathMutationResult(rawResult, scope, 'path_deduplicate');
+      if (result.success) {
+        await refreshAfterPathMutation(scope);
+      } else if (result.message) {
+        setError(result.message);
+      }
+      return result;
     } catch (err) {
       setError(formatError(err));
-      return 0;
+      return null;
     }
   }, [refreshAfterPathMutation, setError]);
 
@@ -665,18 +827,23 @@ export function useEnvVar() {
   const applyPathRepair = useCallback(async (
     scope: EnvVarScope,
     fingerprint: string,
-  ): Promise<number | null> => {
+  ): Promise<EnvVarPathMutationResult | null> => {
     setState((s) => ({ ...s, pathLoading: true }));
     setError(null);
     try {
-      const removed = await tauri.envvarApplyPathRepair(scope, fingerprint);
-      await refreshAfterPathMutation(scope);
+      const rawResult = await tauri.envvarApplyPathRepair(scope, fingerprint);
+      const result = normalizePathMutationResult(rawResult, scope, 'path_repair');
+      if (result.success) {
+        await refreshAfterPathMutation(scope);
+      } else if (result.message) {
+        setError(result.message);
+      }
       setState((s) => ({
         ...s,
         pathRepairPreview: null,
         pathRepairPreviewStale: false,
       }));
-      return removed;
+      return result;
     } catch (err) {
       const message = formatError(err);
       setError(message);
@@ -765,11 +932,19 @@ export function useEnvVar() {
   ): Promise<EnvVarConflictResolutionResult | null> => {
     setError(null);
     try {
-      const result = await tauri.envvarResolveConflict(key, sourceScope, targetScope);
+      const rawResult = await tauri.envvarResolveConflict(key, sourceScope, targetScope);
+      const result = normalizeConflictResult(rawResult);
+      if (!result) {
+        return null;
+      }
       setState((s) => ({ ...s, shellGuidance: result.shellGuidance }));
       clearRevealedVar(key, sourceScope);
       clearRevealedVar(key, targetScope);
-      await refreshAfterScopeMutation(targetScope);
+      if (result.success) {
+        await refreshAfterScopeMutation(targetScope);
+      } else if (result.message) {
+        setError(result.message);
+      }
       return result;
     } catch (err) {
       setError(formatError(err));
@@ -777,9 +952,24 @@ export function useEnvVar() {
     }
   }, [clearRevealedVar, refreshAfterScopeMutation, setError]);
 
+  const getActionSupport = useCallback((
+    action: string,
+    scope?: EnvVarScope | 'all',
+  ): EnvVarActionSupport | null => {
+    if (!state.supportSnapshot) return null;
+    return state.supportSnapshot.actions.find((item) => {
+      if (item.action !== action) return false;
+      if (scope === 'all') {
+        return item.scope == null || item.scope === ('all' as never);
+      }
+      return item.scope === scope || (scope == null && item.scope == null);
+    }) ?? null;
+  }, [state.supportSnapshot]);
+
   return {
     ...state,
     fetchAllVars,
+    loadSupportSnapshot,
     getVar,
     setVar,
     removeVar,
@@ -808,5 +998,6 @@ export function useEnvVar() {
     readShellProfileResult,
     loadDetection,
     invalidateDetectionCache,
+    getActionSupport,
   };
 }

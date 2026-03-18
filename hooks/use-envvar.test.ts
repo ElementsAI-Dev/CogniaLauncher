@@ -20,6 +20,7 @@ const mockEnvvarApplyPathRepair = jest.fn();
 const mockEnvvarListPersistentTyped = jest.fn();
 const mockEnvvarDetectConflicts = jest.fn();
 const mockEnvvarResolveConflict = jest.fn();
+const mockEnvvarRevealValue = jest.fn();
 const mockEnvvarAddPathEntry = jest.fn();
 const mockEnvvarRemovePathEntry = jest.fn();
 const mockEnvvarReorderPath = jest.fn();
@@ -28,6 +29,7 @@ const mockEnvvarSetPersistent = jest.fn();
 const mockEnvvarRemovePersistent = jest.fn();
 const mockEnvvarListProcessSummaries = jest.fn();
 const mockEnvvarListPersistentTypedSummaries = jest.fn();
+const mockEnvvarGetSupportSnapshot = jest.fn();
 
 jest.mock('@/lib/tauri', () => ({
   envvarListAll: (...args: unknown[]) => mockEnvvarListAll(...args),
@@ -38,6 +40,7 @@ jest.mock('@/lib/tauri', () => ({
   envvarRemovePersistent: (...args: unknown[]) => mockEnvvarRemovePersistent(...args),
   envvarListProcessSummaries: (...args: unknown[]) => mockEnvvarListProcessSummaries(...args),
   envvarListPersistentTypedSummaries: (...args: unknown[]) => mockEnvvarListPersistentTypedSummaries(...args),
+  envvarGetSupportSnapshot: (...args: unknown[]) => mockEnvvarGetSupportSnapshot(...args),
   envvarGetPath: (...args: unknown[]) => mockEnvvarGetPath(...args),
   envvarAddPathEntry: (...args: unknown[]) => mockEnvvarAddPathEntry(...args),
   envvarRemovePathEntry: (...args: unknown[]) => mockEnvvarRemovePathEntry(...args),
@@ -56,6 +59,7 @@ jest.mock('@/lib/tauri', () => ({
   envvarListPersistentTyped: (...args: unknown[]) => mockEnvvarListPersistentTyped(...args),
   envvarDetectConflicts: (...args: unknown[]) => mockEnvvarDetectConflicts(...args),
   envvarResolveConflict: (...args: unknown[]) => mockEnvvarResolveConflict(...args),
+  envvarRevealValue: (...args: unknown[]) => mockEnvvarRevealValue(...args),
 }));
 
 jest.mock('@/lib/errors', () => ({
@@ -85,6 +89,25 @@ describe('useEnvVar', () => {
     mockEnvvarListProcessSummaries.mockResolvedValue([]);
     mockEnvvarListPersistentTypedSummaries.mockResolvedValue([]);
     mockEnvvarDetectConflicts.mockResolvedValue([]);
+    mockEnvvarGetSupportSnapshot.mockResolvedValue({
+      state: 'ready',
+      reasonCode: 'ready',
+      reason: 'Envvar workflows are ready.',
+      platform: 'linux',
+      detectedShells: 1,
+      primaryShellTarget: '/home/user/.bashrc',
+      actions: [
+        {
+          action: 'set',
+          scope: 'process',
+          supported: true,
+          state: 'ready',
+          reasonCode: 'ready',
+          reason: 'Process scope is ready.',
+          nextSteps: [],
+        },
+      ],
+    });
   });
 
   it('should initialize with empty state', () => {
@@ -105,6 +128,46 @@ describe('useEnvVar', () => {
     expect(result.current.detectionError).toBeNull();
     expect(result.current.detectionCanRetry).toBe(false);
     expect(result.current.detectionLastUpdated).toBeNull();
+    expect((result.current as unknown as { supportSnapshot?: unknown }).supportSnapshot ?? null).toBeNull();
+  });
+
+  it('loads support snapshot and exposes blocked action readiness', async () => {
+    mockEnvvarGetSupportSnapshot.mockResolvedValueOnce({
+      state: 'degraded',
+      reasonCode: 'system_scope_requires_permissions',
+      reason: 'Some envvar actions require additional permissions.',
+      platform: 'linux',
+      detectedShells: 1,
+      primaryShellTarget: '/home/user/.bashrc',
+      actions: [
+        {
+          action: 'set',
+          scope: 'system',
+          supported: false,
+          state: 'blocked',
+          reasonCode: 'system_scope_requires_permissions',
+          reason: 'System scope requires elevated permissions.',
+          nextSteps: ['Re-run with elevated permissions.'],
+        },
+      ],
+    });
+
+    const { result } = renderHook(() => useEnvVar());
+
+    await act(async () => {
+      await (result.current as unknown as {
+        loadSupportSnapshot: () => Promise<unknown>;
+      }).loadSupportSnapshot();
+    });
+
+    const supportSnapshot = (result.current as unknown as {
+      supportSnapshot?: { actions?: Array<{ state: string; reasonCode: string }> };
+    }).supportSnapshot;
+
+    expect(supportSnapshot?.actions?.[0]).toMatchObject({
+      state: 'blocked',
+      reasonCode: 'system_scope_requires_permissions',
+    });
   });
 
   it('should fetch all vars and update state', async () => {
@@ -150,16 +213,40 @@ describe('useEnvVar', () => {
   });
 
   it('should set a process var and update local state', async () => {
-    mockEnvvarSetProcess.mockResolvedValue(undefined);
+    mockEnvvarSetProcess.mockResolvedValue({
+      operation: 'set',
+      key: 'MY_VAR',
+      scope: 'process',
+      success: true,
+      verified: true,
+      status: 'verified',
+      reasonCode: null,
+      message: null,
+      effectiveValueSummary: {
+        displayValue: 'my_value',
+        masked: false,
+        hasValue: true,
+        length: 8,
+        isSensitive: false,
+      },
+      primaryShellTarget: null,
+      shellGuidance: [],
+    });
 
     const { result } = renderHook(() => useEnvVar());
 
-    let success = false;
+    let mutation: unknown = null;
     await act(async () => {
-      success = await result.current.setVar('MY_VAR', 'my_value', 'process');
+      mutation = await (result.current as unknown as {
+        setVar: (key: string, value: string, scope: 'process') => Promise<unknown>;
+      }).setVar('MY_VAR', 'my_value', 'process');
     });
 
-    expect(success).toBe(true);
+    expect(mutation).toMatchObject({
+      status: 'verified',
+      verified: true,
+      success: true,
+    });
     expect(mockEnvvarSetProcess).toHaveBeenCalledWith('MY_VAR', 'my_value');
     expect(result.current.envVars).toHaveProperty('MY_VAR', 'my_value');
   });
@@ -225,7 +312,13 @@ describe('useEnvVar', () => {
       importResult = await result.current.importEnvFile('FOO=bar\nBAZ=qux\nHELLO=world', 'process');
     });
 
-    expect(importResult).toEqual(mockResult);
+    expect(importResult).toMatchObject({
+      ...mockResult,
+      scope: 'process',
+      success: true,
+      verified: true,
+      status: 'verified',
+    });
     expect(mockEnvvarImportEnvFile).toHaveBeenCalledWith('FOO=bar\nBAZ=qux\nHELLO=world', 'process');
   });
 
@@ -281,16 +374,34 @@ describe('useEnvVar', () => {
   });
 
   it('should deduplicate path', async () => {
-    mockEnvvarDeduplicatePath.mockResolvedValue(3);
+    mockEnvvarDeduplicatePath.mockResolvedValue({
+      operation: 'deduplicate_path',
+      scope: 'user',
+      success: true,
+      verified: true,
+      status: 'verified',
+      reasonCode: null,
+      message: null,
+      removedCount: 3,
+      pathEntries: [],
+      primaryShellTarget: '/home/user/.bashrc',
+      shellGuidance: [],
+    });
 
     const { result } = renderHook(() => useEnvVar());
 
-    let removed = 0;
+    let resultValue: unknown = null;
     await act(async () => {
-      removed = await result.current.deduplicatePath('user');
+      resultValue = await (result.current as unknown as {
+        deduplicatePath: (scope: 'user') => Promise<unknown>;
+      }).deduplicatePath('user');
     });
 
-    expect(removed).toBe(3);
+    expect(resultValue).toMatchObject({
+      status: 'verified',
+      verified: true,
+      removedCount: 3,
+    });
     expect(mockEnvvarDeduplicatePath).toHaveBeenCalledWith('user');
     expect(mockEnvvarGetPath).toHaveBeenCalledWith('user');
   });
@@ -371,12 +482,17 @@ describe('useEnvVar', () => {
   it('should set a persistent (user) var via envvarSetPersistent', async () => {
     const { result } = renderHook(() => useEnvVar());
 
-    let success = false;
+    let success: unknown = false;
     await act(async () => {
       success = await result.current.setVar('MY_VAR', 'val', 'user');
     });
 
-    expect(success).toBe(true);
+    expect(success).toMatchObject({
+      success: true,
+      verified: true,
+      status: 'verified',
+      scope: 'user',
+    });
     // Should NOT update local envVars for non-process scope
     expect(result.current.envVars).toEqual({});
   });
@@ -386,24 +502,29 @@ describe('useEnvVar', () => {
 
     const { result } = renderHook(() => useEnvVar());
 
-    let success = true;
+    let success: unknown = true;
     await act(async () => {
       success = await result.current.setVar('K', 'V', 'process');
     });
 
-    expect(success).toBe(false);
+    expect(success).toBeNull();
     expect(result.current.error).toBe('Error: set failed');
   });
 
   it('should remove a persistent (user) var', async () => {
     const { result } = renderHook(() => useEnvVar());
 
-    let success = false;
+    let success: unknown = false;
     await act(async () => {
       success = await result.current.removeVar('MY_VAR', 'user');
     });
 
-    expect(success).toBe(true);
+    expect(success).toMatchObject({
+      success: true,
+      verified: true,
+      status: 'verified',
+      scope: 'user',
+    });
   });
 
   it('should handle removeVar error', async () => {
@@ -411,12 +532,12 @@ describe('useEnvVar', () => {
 
     const { result } = renderHook(() => useEnvVar());
 
-    let success = true;
+    let success: unknown = true;
     await act(async () => {
       success = await result.current.removeVar('K', 'process');
     });
 
-    expect(success).toBe(false);
+    expect(success).toBeNull();
     expect(result.current.error).toBe('Error: remove failed');
   });
 
@@ -452,12 +573,12 @@ describe('useEnvVar', () => {
 
     const { result } = renderHook(() => useEnvVar());
 
-    let success = true;
+    let success: unknown = true;
     await act(async () => {
       success = await result.current.addPathEntry('/bad', 'process');
     });
 
-    expect(success).toBe(false);
+    expect(success).toBeNull();
     expect(result.current.error).toBe('Error: add path failed');
   });
 
@@ -468,18 +589,18 @@ describe('useEnvVar', () => {
 
     const { result } = renderHook(() => useEnvVar());
 
-    let addSuccess = false;
-    let removeSuccess = false;
-    let reorderSuccess = false;
+    let addSuccess: unknown = false;
+    let removeSuccess: unknown = false;
+    let reorderSuccess: unknown = false;
     await act(async () => {
       addSuccess = await result.current.addPathEntry('/ok', 'process');
       removeSuccess = await result.current.removePathEntry('/ok', 'process');
       reorderSuccess = await result.current.reorderPath(['/a', '/b'], 'process');
     });
 
-    expect(addSuccess).toBe(true);
-    expect(removeSuccess).toBe(true);
-    expect(reorderSuccess).toBe(true);
+    expect(addSuccess).toMatchObject({ success: true, verified: true, status: 'verified' });
+    expect(removeSuccess).toMatchObject({ success: true, verified: true, status: 'verified' });
+    expect(reorderSuccess).toMatchObject({ success: true, verified: true, status: 'verified' });
     expect(mockEnvvarGetPath).toHaveBeenCalledTimes(3);
   });
 
@@ -488,12 +609,12 @@ describe('useEnvVar', () => {
 
     const { result } = renderHook(() => useEnvVar());
 
-    let success = true;
+    let success: unknown = true;
     await act(async () => {
       success = await result.current.removePathEntry('/bad', 'process');
     });
 
-    expect(success).toBe(false);
+    expect(success).toBeNull();
     expect(result.current.error).toBe('Error: remove path failed');
   });
 
@@ -502,12 +623,12 @@ describe('useEnvVar', () => {
 
     const { result } = renderHook(() => useEnvVar());
 
-    let success = true;
+    let success: unknown = true;
     await act(async () => {
       success = await result.current.reorderPath(['/a'], 'process');
     });
 
-    expect(success).toBe(false);
+    expect(success).toBeNull();
     expect(result.current.error).toBe('Error: reorder failed');
   });
 
@@ -572,12 +693,12 @@ describe('useEnvVar', () => {
 
     const { result } = renderHook(() => useEnvVar());
 
-    let removed = -1;
+    let removed: unknown = -1;
     await act(async () => {
       removed = await result.current.deduplicatePath('user');
     });
 
-    expect(removed).toBe(0);
+    expect(removed).toBeNull();
     expect(result.current.error).toBe('Error: dedup failed');
   });
 
@@ -763,6 +884,79 @@ describe('useEnvVar', () => {
     expect(result.current.detectionState).toBe('showing-fresh');
   });
 
+  it('loads user-scope detection without reloading other scope summaries', async () => {
+    const userSummaries = [makeSummary('JAVA_HOME', '/jdk', 'user')];
+    const existingSystemSummaries = [makeSummary('SYSTEM_KEY', '/system', 'system')];
+    mockEnvvarListPersistentTypedSummaries.mockResolvedValueOnce(existingSystemSummaries);
+    mockEnvvarDetectConflicts.mockResolvedValueOnce([]);
+
+    const { result } = renderHook(() => useEnvVar());
+
+    await act(async () => {
+      await result.current.loadDetection('system', { forceRefresh: true });
+    });
+
+    expect(result.current.systemPersistentVarSummaries).toEqual(existingSystemSummaries);
+
+    mockEnvvarListPersistentTypedSummaries.mockResolvedValueOnce(userSummaries);
+    mockEnvvarDetectConflicts.mockResolvedValueOnce([
+      { key: 'JAVA_HOME', userValue: '/jdk', systemValue: '/old-jdk', effectiveValue: '/jdk' },
+    ]);
+
+    await act(async () => {
+      await result.current.loadDetection('user', { forceRefresh: true });
+    });
+
+    expect(mockEnvvarListPersistentTypedSummaries).toHaveBeenLastCalledWith('user');
+    expect(result.current.userPersistentVarSummaries).toEqual(userSummaries);
+    expect(result.current.systemPersistentVarSummaries).toEqual(existingSystemSummaries);
+    expect(result.current.conflicts).toHaveLength(1);
+  });
+
+  it('marks scope-specific detection as empty when no summaries exist', async () => {
+    mockEnvvarListPersistentTypedSummaries.mockResolvedValueOnce([]);
+    mockEnvvarDetectConflicts.mockResolvedValueOnce([]);
+
+    const { result } = renderHook(() => useEnvVar());
+
+    await act(async () => {
+      await result.current.loadDetection('system', { forceRefresh: true });
+    });
+
+    expect(result.current.detectionState).toBe('empty');
+    expect(result.current.detectionCanRetry).toBe(true);
+  });
+
+  it('exposes retry metadata when detection fails without cache', async () => {
+    mockEnvvarListProcessSummaries.mockRejectedValueOnce(new Error('cold refresh failed'));
+
+    const { result } = renderHook(() => useEnvVar());
+
+    await act(async () => {
+      await result.current.loadDetection('process', { forceRefresh: true });
+    });
+
+    expect(result.current.detectionState).toBe('error');
+    expect(result.current.detectionFromCache).toBe(false);
+    expect(result.current.detectionError).toBe('Error: cold refresh failed');
+    expect(result.current.detectionCanRetry).toBe(true);
+  });
+
+  it('surfaces support snapshot loading failures', async () => {
+    mockEnvvarGetSupportSnapshot.mockRejectedValueOnce(new Error('support snapshot failed'));
+
+    const { result } = renderHook(() => useEnvVar());
+
+    let supportSnapshot: unknown = 'pending';
+    await act(async () => {
+      supportSnapshot = await result.current.loadSupportSnapshot();
+    });
+
+    expect(supportSnapshot).toBeNull();
+    expect(result.current.supportError).toBe('Error: support snapshot failed');
+    expect(result.current.supportLoading).toBe(false);
+  });
+
   it('stores import preview and shell guidance', async () => {
     mockEnvvarPreviewImportEnvFile.mockResolvedValue({
       scope: 'user',
@@ -801,6 +995,129 @@ describe('useEnvVar', () => {
     expect(result.current.error).toContain('stale_preview');
   });
 
+  it('clears import preview state on demand', async () => {
+    mockEnvvarPreviewImportEnvFile.mockResolvedValueOnce({
+      scope: 'user',
+      fingerprint: 'preview-fingerprint',
+      additions: 1,
+      updates: 0,
+      noops: 0,
+      invalid: 0,
+      skipped: 0,
+      items: [{ key: 'JAVA_HOME', value: '/jdk', action: 'add', reason: null }],
+      primaryShellTarget: '/home/user/.bashrc',
+      shellGuidance: [],
+    });
+
+    const { result } = renderHook(() => useEnvVar());
+
+    await act(async () => {
+      await result.current.previewImportEnvFile('JAVA_HOME=/jdk', 'user');
+    });
+
+    act(() => {
+      result.current.clearImportPreview();
+    });
+
+    expect(result.current.importPreview).toBeNull();
+    expect(result.current.importPreviewStale).toBe(false);
+  });
+
+  it('clears preview and surfaces message when applyImportPreview returns a failed result', async () => {
+    mockEnvvarPreviewImportEnvFile.mockResolvedValueOnce({
+      scope: 'user',
+      fingerprint: 'preview-fingerprint',
+      additions: 1,
+      updates: 0,
+      noops: 0,
+      invalid: 0,
+      skipped: 0,
+      items: [{ key: 'JAVA_HOME', value: '/jdk', action: 'add', reason: null }],
+      primaryShellTarget: '/home/user/.bashrc',
+      shellGuidance: [],
+    });
+    mockEnvvarApplyImportPreview.mockResolvedValueOnce({
+      scope: 'user',
+      imported: 0,
+      skipped: 1,
+      errors: ['failed'],
+      success: false,
+      verified: false,
+      status: 'verification_failed',
+      reasonCode: 'verification_failed',
+      message: 'preview apply failed',
+      primaryShellTarget: null,
+      shellGuidance: [],
+    });
+
+    const { result } = renderHook(() => useEnvVar());
+
+    await act(async () => {
+      await result.current.previewImportEnvFile('JAVA_HOME=/jdk', 'user');
+    });
+
+    await act(async () => {
+      await result.current.applyImportPreview('JAVA_HOME=/jdk', 'user', 'preview-fingerprint');
+    });
+
+    expect(result.current.error).toBe('preview apply failed');
+    expect(result.current.importPreview).toBeNull();
+    expect(result.current.importPreviewStale).toBe(false);
+  });
+
+  it('preserves preview when applyImportPreview returns null without a stale error', async () => {
+    mockEnvvarPreviewImportEnvFile.mockResolvedValueOnce({
+      scope: 'user',
+      fingerprint: 'preview-fingerprint',
+      additions: 1,
+      updates: 0,
+      noops: 0,
+      invalid: 0,
+      skipped: 0,
+      items: [{ key: 'JAVA_HOME', value: '/jdk', action: 'add', reason: null }],
+      primaryShellTarget: '/home/user/.bashrc',
+      shellGuidance: [],
+    });
+    mockEnvvarApplyImportPreview.mockResolvedValueOnce(null);
+
+    const { result } = renderHook(() => useEnvVar());
+
+    await act(async () => {
+      await result.current.previewImportEnvFile('JAVA_HOME=/jdk', 'user');
+    });
+
+    await act(async () => {
+      await result.current.applyImportPreview('JAVA_HOME=/jdk', 'user', 'preview-fingerprint');
+    });
+
+    expect(result.current.importPreview?.fingerprint).toBe('preview-fingerprint');
+    expect(result.current.error).toBeNull();
+  });
+
+  it('stores backend message when direct import verification fails', async () => {
+    mockEnvvarImportEnvFile.mockResolvedValueOnce({
+      scope: 'process',
+      imported: 0,
+      skipped: 1,
+      errors: ['invalid'],
+      success: false,
+      verified: false,
+      status: 'verification_failed',
+      reasonCode: 'verification_failed',
+      message: 'direct import failed',
+      primaryShellTarget: null,
+      shellGuidance: [],
+    });
+
+    const { result } = renderHook(() => useEnvVar());
+
+    await act(async () => {
+      await result.current.importEnvFile('BROKEN', 'process');
+    });
+
+    expect(result.current.error).toBe('direct import failed');
+  });
+
   it('stores path repair preview and stale state', async () => {
     mockEnvvarPreviewPathRepair.mockResolvedValue({
       scope: 'user',
@@ -828,6 +1145,289 @@ describe('useEnvVar', () => {
     });
 
     expect(result.current.pathRepairPreviewStale).toBe(true);
+  });
+
+  it('clears path repair preview state on demand', async () => {
+    mockEnvvarPreviewPathRepair.mockResolvedValueOnce({
+      scope: 'user',
+      fingerprint: 'path-fingerprint',
+      currentEntries: ['/missing', '/dup', '/dup'],
+      repairedEntries: ['/dup'],
+      duplicateCount: 1,
+      missingCount: 1,
+      removedCount: 2,
+      primaryShellTarget: '/home/user/.bashrc',
+      shellGuidance: [],
+    });
+
+    const { result } = renderHook(() => useEnvVar());
+
+    await act(async () => {
+      await result.current.previewPathRepair('user');
+    });
+
+    act(() => {
+      result.current.clearPathRepairPreview();
+    });
+
+    expect(result.current.pathRepairPreview).toBeNull();
+    expect(result.current.pathRepairPreviewStale).toBe(false);
+  });
+
+  it('stores backend messages for failed path mutations', async () => {
+    mockEnvvarAddPathEntry.mockResolvedValueOnce({
+      scope: 'process',
+      operation: 'path_add',
+      success: false,
+      verified: false,
+      status: 'verification_failed',
+      reasonCode: 'verification_failed',
+      message: 'path add failed',
+      removedCount: 0,
+      pathEntries: [],
+      primaryShellTarget: null,
+      shellGuidance: [],
+    });
+    mockEnvvarRemovePathEntry.mockResolvedValueOnce({
+      scope: 'process',
+      operation: 'path_remove',
+      success: false,
+      verified: false,
+      status: 'verification_failed',
+      reasonCode: 'verification_failed',
+      message: 'path remove failed',
+      removedCount: 0,
+      pathEntries: [],
+      primaryShellTarget: null,
+      shellGuidance: [],
+    });
+    mockEnvvarReorderPath.mockResolvedValueOnce({
+      scope: 'process',
+      operation: 'path_reorder',
+      success: false,
+      verified: false,
+      status: 'verification_failed',
+      reasonCode: 'verification_failed',
+      message: 'path reorder failed',
+      removedCount: 0,
+      pathEntries: [],
+      primaryShellTarget: null,
+      shellGuidance: [],
+    });
+
+    const { result } = renderHook(() => useEnvVar());
+
+    await act(async () => {
+      await result.current.addPathEntry('/broken', 'process');
+    });
+    expect(result.current.error).toBe('path add failed');
+
+    await act(async () => {
+      await result.current.removePathEntry('/broken', 'process');
+    });
+    expect(result.current.error).toBe('path remove failed');
+
+    await act(async () => {
+      await result.current.reorderPath(['/broken'], 'process');
+    });
+    expect(result.current.error).toBe('path reorder failed');
+  });
+
+  it('returns a structured shell profile read result and handles errors', async () => {
+    mockEnvvarReadShellProfile
+      .mockResolvedValueOnce({
+        path: '/home/user/.bashrc',
+        content: 'export JAVA_HOME="/jdk"',
+        redacted: false,
+        sensitiveCount: 0,
+      })
+      .mockRejectedValueOnce(new Error('sensitive read failed'));
+
+    const { result } = renderHook(() => useEnvVar());
+
+    let readResult: unknown = null;
+    await act(async () => {
+      readResult = await result.current.readShellProfileResult('/home/user/.bashrc', true);
+    });
+
+    expect(readResult).toMatchObject({
+      content: 'export JAVA_HOME="/jdk"',
+      redacted: false,
+    });
+    expect(mockEnvvarReadShellProfile).toHaveBeenNthCalledWith(1, '/home/user/.bashrc', true);
+
+    let failedRead: unknown = 'pending';
+    await act(async () => {
+      failedRead = await result.current.readShellProfileResult('/home/user/.bashrc', true);
+    });
+
+    expect(failedRead).toBeNull();
+    expect(result.current.error).toBe('Error: sensitive read failed');
+  });
+
+  it('stores backend mutation messages when variable verification fails', async () => {
+    mockEnvvarSetProcess.mockResolvedValueOnce({
+      operation: 'set',
+      key: 'BROKEN',
+      scope: 'process',
+      success: false,
+      verified: false,
+      status: 'verification_failed',
+      reasonCode: 'verification_failed',
+      message: 'set verification failed',
+      effectiveValueSummary: null,
+      primaryShellTarget: null,
+      shellGuidance: [],
+    });
+    mockEnvvarRemovePersistent.mockResolvedValueOnce({
+      operation: 'remove',
+      key: 'BROKEN',
+      scope: 'user',
+      success: false,
+      verified: false,
+      status: 'verification_failed',
+      reasonCode: 'verification_failed',
+      message: 'remove verification failed',
+      effectiveValueSummary: null,
+      primaryShellTarget: null,
+      shellGuidance: [],
+    });
+
+    const { result } = renderHook(() => useEnvVar());
+
+    await act(async () => {
+      await result.current.setVar('BROKEN', '1', 'process');
+    });
+    expect(result.current.error).toBe('set verification failed');
+
+    await act(async () => {
+      await result.current.removeVar('BROKEN', 'user');
+    });
+    expect(result.current.error).toBe('remove verification failed');
+  });
+
+  it('stores and clears revealed values per scope', async () => {
+    mockEnvvarRevealValue
+      .mockResolvedValueOnce({ key: 'API_TOKEN', scope: 'user', value: 'secret-user-token' })
+      .mockResolvedValueOnce({ key: 'API_TOKEN', scope: 'system', value: 'secret-system-token' });
+
+    const { result } = renderHook(() => useEnvVar());
+
+    await act(async () => {
+      await result.current.revealVar('API_TOKEN', 'user');
+      await result.current.revealVar('API_TOKEN', 'system');
+    });
+
+    expect(result.current.revealedValues).toMatchObject({
+      'user:API_TOKEN': 'secret-user-token',
+      'system:API_TOKEN': 'secret-system-token',
+    });
+
+    act(() => {
+      result.current.clearRevealedVar('API_TOKEN', 'user');
+    });
+
+    expect(result.current.revealedValues).toMatchObject({
+      'system:API_TOKEN': 'secret-system-token',
+    });
+    expect(result.current.revealedValues).not.toHaveProperty('user:API_TOKEN');
+  });
+
+  it('surfaces reveal failures', async () => {
+    mockEnvvarRevealValue.mockRejectedValueOnce(new Error('reveal failed'));
+
+    const { result } = renderHook(() => useEnvVar());
+
+    await act(async () => {
+      await result.current.revealVar('API_TOKEN', 'user');
+    });
+
+    expect(result.current.error).toBe('Error: reveal failed');
+  });
+
+  it('returns global and scoped action support entries', async () => {
+    mockEnvvarGetSupportSnapshot.mockResolvedValueOnce({
+      state: 'degraded',
+      reasonCode: 'degraded',
+      reason: 'degraded',
+      platform: 'linux',
+      detectedShells: 1,
+      primaryShellTarget: '/home/user/.bashrc',
+      actions: [
+        {
+          action: 'refresh',
+          scope: null,
+          supported: true,
+          state: 'ready',
+          reasonCode: 'ready',
+          reason: 'ready',
+          nextSteps: [],
+        },
+        {
+          action: 'set',
+          scope: 'system',
+          supported: false,
+          state: 'blocked',
+          reasonCode: 'blocked',
+          reason: 'blocked',
+          nextSteps: ['retry'],
+        },
+      ],
+    });
+
+    const { result } = renderHook(() => useEnvVar());
+
+    await act(async () => {
+      await result.current.loadSupportSnapshot();
+    });
+
+    expect(result.current.getActionSupport('refresh')).toMatchObject({
+      action: 'refresh',
+      scope: null,
+    });
+    expect(result.current.getActionSupport('set', 'system')).toMatchObject({
+      action: 'set',
+      scope: 'system',
+      supported: false,
+    });
+    expect(result.current.getActionSupport('set', 'all')).toBeNull();
+  });
+
+  it('returns null and surfaces errors when conflict resolution fails early', async () => {
+    mockEnvvarResolveConflict
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        key: 'JAVA_HOME',
+        sourceScope: 'system',
+        targetScope: 'user',
+        appliedValue: '/jdk-21',
+        success: false,
+        verified: false,
+        status: 'verification_failed',
+        reasonCode: 'verification_failed',
+        message: 'conflict resolution failed',
+        primaryShellTarget: null,
+        shellGuidance: [],
+      })
+      .mockRejectedValueOnce(new Error('conflict resolve exploded'));
+
+    const { result } = renderHook(() => useEnvVar());
+
+    let nullResult: unknown = 'pending';
+    await act(async () => {
+      nullResult = await result.current.resolveConflict('JAVA_HOME', 'system', 'user');
+    });
+    expect(nullResult).toBeNull();
+
+    await act(async () => {
+      await result.current.resolveConflict('JAVA_HOME', 'system', 'user');
+    });
+    expect(result.current.error).toBe('conflict resolution failed');
+
+    await act(async () => {
+      await result.current.resolveConflict('JAVA_HOME', 'system', 'user');
+    });
+    expect(result.current.error).toBe('Error: conflict resolve exploded');
   });
 
   it('resolves conflict and refreshes shell guidance', async () => {

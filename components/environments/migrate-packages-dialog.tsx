@@ -56,7 +56,7 @@ export function MigratePackagesDialog({
 
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !migrating && onOpenChange(isOpen)}>
-      <DialogContent className="sm:max-w-[520px] max-h-[80vh] flex flex-col">
+      <DialogContent className="sm:max-w-130 max-h-[80vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Package className="h-5 w-5" />
@@ -91,7 +91,7 @@ export function MigratePackagesDialog({
                 <Badge variant="secondary">{selected.size} {t("common.selected")}</Badge>
               </div>
 
-              <ScrollArea className="h-[250px] pr-3">
+              <ScrollArea className="h-62.5 pr-3">
                 <div className="space-y-1.5">
                   {packages.map((pkg) => (
                     <div

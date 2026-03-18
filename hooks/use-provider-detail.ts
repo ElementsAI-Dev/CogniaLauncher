@@ -5,6 +5,7 @@ import * as tauri from '@/lib/tauri';
 import { formatError } from '@/lib/errors';
 import { usePackages } from '@/hooks/use-packages';
 import { usePackageUpdates } from '@/hooks/use-package-updates';
+import { isProviderStatusAvailable } from '@/lib/utils/provider';
 import {
   type CacheInvalidationEvent,
   emitInvalidations,
@@ -143,7 +144,7 @@ export function useProviderDetail(providerId: string) {
     try {
       const status = await tauri.providerStatus(providerId);
       setProviderStatusInfo(status);
-      const available = status.scope_state === 'available' || status.installed;
+      const available = isProviderStatusAvailable(status) ?? false;
       setIsAvailable(available);
       return available;
     } catch {
@@ -508,7 +509,7 @@ export function useProviderDetail(providerId: string) {
       if (envProvider) {
         // Fetch actual environment data
         try {
-          const envInfo = await tauri.envGet(envProvider.env_type);
+          const envInfo = await tauri.envGet(envProvider.env_type, providerId);
           setEnvironmentInfo(envInfo);
         } catch {
           // Provider might not have an active environment
@@ -517,7 +518,10 @@ export function useProviderDetail(providerId: string) {
 
         // Fetch available versions
         try {
-          const versions = await tauri.envAvailableVersions(envProvider.env_type);
+          const versions = await tauri.envAvailableVersions(
+            envProvider.env_type,
+            providerId,
+          );
           setAvailableVersions(versions);
         } catch {
           setAvailableVersions([]);

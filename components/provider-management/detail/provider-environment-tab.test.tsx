@@ -1,7 +1,12 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { within } from "@testing-library/react";
 import { ProviderEnvironmentTab } from "./provider-environment-tab";
 import type { EnvironmentInfo, EnvironmentProviderInfo, VersionInfo } from "@/types/tauri";
+
+const mockEnvInstall = jest.fn(() => Promise.resolve());
+const mockEnvUninstall = jest.fn(() => Promise.resolve());
+const mockEnvUseGlobal = jest.fn(() => Promise.resolve({ success: true }));
 
 global.ResizeObserver = class ResizeObserver {
   observe() {}
@@ -11,9 +16,9 @@ global.ResizeObserver = class ResizeObserver {
 
 jest.mock("@/lib/tauri", () => ({
   isTauri: () => false,
-  envInstall: jest.fn(() => Promise.resolve()),
-  envUninstall: jest.fn(() => Promise.resolve()),
-  envUseGlobal: jest.fn(() => Promise.resolve()),
+  envInstall: (...args: Parameters<typeof mockEnvInstall>) => mockEnvInstall(...args),
+  envUninstall: (...args: Parameters<typeof mockEnvUninstall>) => mockEnvUninstall(...args),
+  envUseGlobal: (...args: Parameters<typeof mockEnvUseGlobal>) => mockEnvUseGlobal(...args),
 }));
 
 jest.mock("@/lib/utils", () => ({
@@ -165,5 +170,62 @@ describe("ProviderEnvironmentTab", () => {
   it("renders provider description in card", () => {
     render(<ProviderEnvironmentTab {...defaultProps} environmentInfo={envInfo} environmentProviderInfo={envProviderInfo} />);
     expect(screen.getByText("Manages Node.js versions")).toBeInTheDocument();
+  });
+
+  it("passes provider id when installing a version", async () => {
+    const user = userEvent.setup();
+    render(
+      <ProviderEnvironmentTab
+        {...defaultProps}
+        environmentInfo={envInfo}
+        environmentProviderInfo={envProviderInfo}
+        availableVersions={availableVersions}
+      />,
+    );
+
+    const installRow = screen.getByText("22.0.0").closest("tr");
+    expect(installRow).not.toBeNull();
+    await user.click(within(installRow as HTMLElement).getByRole("button"));
+
+    expect(mockEnvInstall).toHaveBeenCalledWith("node", "22.0.0", "nvm");
+    expect(defaultProps.onRefreshEnvironment).toHaveBeenCalled();
+  });
+
+  it("passes provider id when uninstalling an installed version", async () => {
+    const user = userEvent.setup();
+    render(
+      <ProviderEnvironmentTab
+        {...defaultProps}
+        environmentInfo={envInfo}
+        environmentProviderInfo={envProviderInfo}
+      />,
+    );
+
+    const uninstallRow = screen.getByText("18.19.0").closest("tr");
+    expect(uninstallRow).not.toBeNull();
+    const buttons = within(uninstallRow as HTMLElement).getAllByRole("button");
+    await user.click(buttons[1]);
+
+    expect(mockEnvUninstall).toHaveBeenCalledWith("node", "18.19.0", "nvm");
+    expect(defaultProps.onRefreshEnvironment).toHaveBeenCalled();
+  });
+
+  it("passes provider id when setting an installed version globally", async () => {
+    const user = userEvent.setup();
+    render(
+      <ProviderEnvironmentTab
+        {...defaultProps}
+        environmentInfo={envInfo}
+        environmentProviderInfo={envProviderInfo}
+      />,
+    );
+
+    const globalRow = screen.getByText("18.19.0").closest("tr");
+    expect(globalRow).not.toBeNull();
+    const buttons = within(globalRow as HTMLElement).getAllByRole("button");
+    await user.click(buttons[0]);
+
+    expect(mockEnvUseGlobal).toHaveBeenCalledWith("node", "18.19.0", "nvm");
+    expect(defaultProps.onRefreshEnvironment).toHaveBeenCalled();
   });
 });

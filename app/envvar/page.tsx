@@ -20,6 +20,27 @@ import { useLocale } from '@/components/providers/locale-provider';
 import { isTauri } from '@/lib/tauri';
 import { buildEnvVarRows } from '@/lib/envvar';
 import {
+  createApplyImportPreviewHandler,
+  createApplyPathRepairHandler,
+  createExportHandler,
+  createImportHandler,
+  createPathDeduplicateHandler,
+  createPathMutationHandler,
+  createPreviewImportHandler,
+  createPreviewPathRepairHandler,
+  createRefreshHandler,
+  createResolveConflictHandler,
+  createScopeFilterChangeHandler,
+  createVarMutationHandler,
+} from './page-action-handlers';
+import {
+  getActionLabel,
+  getDetectionStatusText,
+  getFilteredRowCount,
+  getSupportForAction,
+  type EnvVarAction,
+} from './page-helpers';
+import {
   Empty,
   EmptyHeader,
   EmptyMedia,
@@ -35,22 +56,6 @@ import {
 import { AlertCircle, Variable, Route, Terminal, Plus, Upload, Download, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import type { EnvVarScope } from '@/types/tauri';
-
-type EnvVarAction =
-  | 'refresh'
-  | 'add'
-  | 'edit'
-  | 'delete'
-  | 'import'
-  | 'import-preview'
-  | 'export'
-  | 'conflict-resolve'
-  | 'path-add'
-  | 'path-remove'
-  | 'path-reorder'
-  | 'path-deduplicate'
-  | 'path-repair'
-  | null;
 
 export default function EnvVarPage() {
   const {
@@ -74,6 +79,9 @@ export default function EnvVarPage() {
     detectionFromCache,
     detectionError,
     detectionCanRetry,
+    supportSnapshot,
+    supportLoading,
+    supportError,
     setVar,
     removeVar,
     fetchPath,
@@ -94,6 +102,7 @@ export default function EnvVarPage() {
     resolveConflict,
     revealVar,
     loadDetection,
+    loadSupportSnapshot,
   } = useEnvVar();
 
   const { t } = useLocale();
@@ -109,8 +118,9 @@ export default function EnvVarPage() {
   const [importExportTab, setImportExportTab] = useState<'import' | 'export'>('import');
   const [pathScope, setPathScope] = useState<EnvVarScope>('process');
   const [activeTab, setActiveTab] = useState<'variables' | 'path' | 'shells'>('variables');
-  const [activeAction, setActiveAction] = useState<EnvVarAction>(null);
+  const [activeAction, setActiveAction] = useState<EnvVarAction | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
 
   const refreshVariables = useCallback(async (
     scope: EnvVarScope | 'all',
@@ -120,73 +130,20 @@ export default function EnvVarPage() {
     await loadDetection(scope, options);
   }, [isDesktop, loadDetection]);
 
-  const resolveRefreshScope = useCallback((scope: EnvVarScope): EnvVarScope | 'all' => {
-    if (scopeFilter === 'all') return 'all';
-    return scope;
-  }, [scopeFilter]);
-
-  const getActionLabel = useCallback((action: Exclude<EnvVarAction, null>) => {
-    switch (action) {
-      case 'refresh':
-        return t('envvar.actions.refresh');
-      case 'add':
-        return t('envvar.actions.add');
-      case 'edit':
-        return t('envvar.actions.edit');
-      case 'delete':
-        return t('envvar.actions.delete');
-      case 'import':
-        return t('envvar.importExport.import');
-      case 'import-preview':
-        return t('envvar.importExport.preview');
-      case 'export':
-        return t('envvar.importExport.export');
-      case 'conflict-resolve':
-        return t('envvar.conflicts.resolve');
-      case 'path-add':
-        return t('envvar.pathEditor.add');
-      case 'path-remove':
-        return t('envvar.pathEditor.remove');
-      case 'path-reorder':
-        return t('envvar.pathEditor.title');
-      case 'path-deduplicate':
-        return t('envvar.pathEditor.deduplicate');
-      case 'path-repair':
-        return t('envvar.pathEditor.applyRepair');
-      default:
-        return t('common.error');
-    }
-  }, [t]);
-
   const actionLabel = useMemo(() => {
     if (!activeAction) return '';
-    return getActionLabel(activeAction);
-  }, [activeAction, getActionLabel]);
+    return getActionLabel(activeAction, t);
+  }, [activeAction, t]);
 
   const formatActionError = useCallback(
-    (action: Exclude<EnvVarAction, null>, message: string) => `${getActionLabel(action)}: ${message}`,
-    [getActionLabel],
+    (action: EnvVarAction, message: string) => `${getActionLabel(action, t)}: ${message}`,
+    [t],
   );
 
-  const detectionStatusText = useMemo(() => {
-    switch (detectionState) {
-      case 'loading-no-cache':
-        return t('envvar.detection.loading');
-      case 'showing-cache-refreshing':
-        return t('envvar.detection.cacheRefreshing');
-      case 'showing-fresh':
-        return t('envvar.detection.fresh');
-      case 'empty':
-        return t('envvar.detection.empty');
-      case 'error':
-        return detectionFromCache
-          ? t('envvar.detection.errorWithCache')
-          : t('envvar.detection.error');
-      case 'idle':
-      default:
-        return t('envvar.detection.idle');
-    }
-  }, [detectionFromCache, detectionState, t]);
+  const detectionStatusText = useMemo(
+    () => getDetectionStatusText(detectionState, detectionFromCache, t),
+    [detectionFromCache, detectionState, t],
+  );
 
   const envRows = useMemo(() => buildEnvVarRows({
     processVars: processVarSummaries,
@@ -204,22 +161,20 @@ export default function EnvVarPage() {
     userPersistentVarSummaries,
   ]);
 
-  const filteredRowCount = useMemo(() => {
-    if (!searchQuery) return envRows.length;
-    const q = searchQuery.toLowerCase();
-    return envRows.filter(
-      (r) => r.key.toLowerCase().includes(q) || r.value.toLowerCase().includes(q),
-    ).length;
-  }, [envRows, searchQuery]);
+  const filteredRowCount = useMemo(
+    () => getFilteredRowCount(envRows, searchQuery),
+    [envRows, searchQuery],
+  );
 
   useEffect(() => {
     if (!isDesktop || initializedRef.current) return;
     initializedRef.current = true;
     const timer = setTimeout(() => {
       void refreshVariables('all', { forceRefresh: true });
+      void loadSupportSnapshot();
     }, 0);
     return () => clearTimeout(timer);
-  }, [isDesktop, refreshVariables]);
+  }, [isDesktop, loadSupportSnapshot, refreshVariables]);
 
   const handleTabChange = useCallback((tab: string) => {
     const nextTab = (tab as 'variables' | 'path' | 'shells');
@@ -239,45 +194,24 @@ export default function EnvVarPage() {
     }
   }, [clearPathRepairPreview, fetchPath, isDesktop]);
 
-  const handleScopeFilterChange = useCallback(async (scope: EnvVarScope | 'all') => {
-    setActionError(null);
-    setActiveAction('refresh');
-    setScopeFilter(scope);
-    try {
-      await refreshVariables(scope);
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setActiveAction(null);
-    }
-  }, [refreshVariables]);
+  const handleScopeFilterChange = createScopeFilterChangeHandler({
+    refreshVariables,
+    setScopeFilter,
+    setActionError,
+    setActionNotice,
+    setActiveAction,
+  });
 
-  const runVarMutation = useCallback(async (
-    action: Exclude<EnvVarAction, null>,
-    scope: EnvVarScope,
-    mutate: () => Promise<boolean>,
-    successMessage: string,
-  ) => {
-    setActionError(null);
-    setActiveAction(action);
-    try {
-      const ok = await mutate();
-      if (!ok) {
-        setActionError(formatActionError(action, t('common.error')));
-        return false;
-      }
-      await refreshVariables(resolveRefreshScope(scope), { forceRefresh: true });
-      toast.success(successMessage);
-      return true;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setActionError(formatActionError(action, msg));
-      toast.error(msg);
-      return false;
-    } finally {
-      setActiveAction(null);
-    }
-  }, [formatActionError, refreshVariables, resolveRefreshScope, t]);
+  const runVarMutation = createVarMutationHandler({
+    scopeFilter,
+    refreshVariables,
+    toastApi: toast,
+    setActionError,
+    setActionNotice,
+    setActiveAction,
+    formatActionError,
+    t,
+  });
 
   const handleEdit = useCallback((key: string, value: string, scope: EnvVarScope) => {
     void runVarMutation('edit', scope, () => setVar(key, value, scope), t('common.saved'));
@@ -291,153 +225,100 @@ export default function EnvVarPage() {
     void runVarMutation('add', scope, () => setVar(key, value, scope), t('common.saved'));
   }, [runVarMutation, setVar, t]);
 
-  const handleRefresh = useCallback(async () => {
-    setActionError(null);
-    setActiveAction('refresh');
-    try {
-      await refreshVariables(scopeFilter, { forceRefresh: true });
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setActiveAction(null);
-    }
-  }, [refreshVariables, scopeFilter]);
+  const handleRefresh = createRefreshHandler({
+    scopeFilter,
+    refreshVariables,
+    setActionError,
+    setActionNotice,
+    setActiveAction,
+  });
 
-  const runPathMutation = useCallback(async (
-    action: Exclude<EnvVarAction, null>,
-    mutation: () => Promise<boolean>,
-  ) => {
-    setActionError(null);
-    setActiveAction(action);
-    try {
-      const ok = await mutation();
-      if (!ok) {
-        setActionError(formatActionError(action, t('common.error')));
-      }
-      return ok;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setActionError(formatActionError(action, msg));
-      return false;
-    } finally {
-      setActiveAction(null);
-    }
-  }, [formatActionError, t]);
+  const runPathMutation = createPathMutationHandler({
+    setActionError,
+    setActionNotice,
+    setActiveAction,
+    formatActionError,
+    t,
+  });
 
-  const handlePathDeduplicate = useCallback(async () => {
-    setActionError(null);
-    setActiveAction('path-deduplicate');
-    try {
-      return await deduplicatePath(pathScope);
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : String(err));
-      return 0;
-    } finally {
-      setActiveAction(null);
-    }
-  }, [deduplicatePath, pathScope]);
+  const handlePathDeduplicate = createPathDeduplicateHandler({
+    pathScope,
+    deduplicatePath,
+    setActionError,
+    setActionNotice,
+    setActiveAction,
+    t,
+  });
 
-  const handlePreviewImport = useCallback(async (content: string, scope: EnvVarScope) => {
-    setActionError(null);
-    setActiveAction('import-preview');
-    try {
-      const preview = await previewImportEnvFile(content, scope);
-      if (!preview) {
-        setActionError(formatActionError('import-preview', t('common.error')));
-      }
-      return preview;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setActionError(formatActionError('import-preview', message));
-      return null;
-    } finally {
-      setActiveAction(null);
-    }
-  }, [formatActionError, previewImportEnvFile, t]);
+  const handlePreviewImport = createPreviewImportHandler({
+    previewImportEnvFile,
+    setActionError,
+    setActionNotice,
+    setActiveAction,
+    formatActionError,
+    t,
+  });
 
-  const handleApplyImportPreview = useCallback(async (
-    content: string,
-    scope: EnvVarScope,
-    fingerprint: string,
-  ) => {
-    setActionError(null);
-    setActiveAction('import');
-    try {
-      const result = await applyImportPreview(content, scope, fingerprint);
-      if (!result) {
-        const message = importPreviewStale ? t('envvar.importExport.previewStale') : t('common.error');
-        setActionError(formatActionError('import', message));
-      }
-      return result;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setActionError(formatActionError('import', message));
-      return null;
-    } finally {
-      setActiveAction(null);
-    }
-  }, [applyImportPreview, formatActionError, importPreviewStale, t]);
+  const handleApplyImportPreview = createApplyImportPreviewHandler({
+    importPreviewStale,
+    applyImportPreview,
+    setActionError,
+    setActionNotice,
+    setActiveAction,
+    formatActionError,
+    t,
+  });
 
-  const handlePreviewPathRepair = useCallback(async () => {
-    setActionError(null);
-    setActiveAction('path-repair');
-    try {
-      const preview = await previewPathRepair(pathScope);
-      if (!preview) {
-        setActionError(formatActionError('path-repair', t('common.error')));
-      }
-      return preview;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setActionError(formatActionError('path-repair', message));
-      return null;
-    } finally {
-      setActiveAction(null);
-    }
-  }, [formatActionError, pathScope, previewPathRepair, t]);
+  const handlePreviewPathRepair = createPreviewPathRepairHandler({
+    pathScope,
+    previewPathRepair,
+    setActionError,
+    setActionNotice,
+    setActiveAction,
+    formatActionError,
+    t,
+  });
 
-  const handleApplyPathRepair = useCallback(async (fingerprint: string) => {
-    setActionError(null);
-    setActiveAction('path-repair');
-    try {
-      const removed = await applyPathRepair(pathScope, fingerprint);
-      if (removed === null) {
-        const message = pathRepairPreviewStale ? t('envvar.pathEditor.repairPreviewStale') : t('common.error');
-        setActionError(formatActionError('path-repair', message));
-      }
-      return removed;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setActionError(formatActionError('path-repair', message));
-      return null;
-    } finally {
-      setActiveAction(null);
-    }
-  }, [applyPathRepair, formatActionError, pathRepairPreviewStale, pathScope, t]);
+  const handleApplyPathRepair = createApplyPathRepairHandler({
+    pathScope,
+    pathRepairPreviewStale,
+    applyPathRepair,
+    setActionError,
+    setActionNotice,
+    setActiveAction,
+    formatActionError,
+    t,
+  });
 
-  const handleResolveConflict = useCallback(async (
-    key: string,
-    sourceScope: EnvVarScope,
-    targetScope: EnvVarScope,
-  ) => {
-    setActionError(null);
-    setActiveAction('conflict-resolve');
-    try {
-      const result = await resolveConflict(key, sourceScope, targetScope);
-      if (!result) {
-        setActionError(formatActionError('conflict-resolve', t('common.error')));
-        return false;
-      }
-      toast.success(t('common.saved'));
-      return true;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setActionError(formatActionError('conflict-resolve', message));
-      return false;
-    } finally {
-      setActiveAction(null);
-    }
-  }, [formatActionError, resolveConflict, t]);
+  const handleResolveConflict = createResolveConflictHandler({
+    resolveConflict,
+    toastApi: toast,
+    setActionError,
+    setActionNotice,
+    setActiveAction,
+    formatActionError,
+    t,
+  });
+
+  const handleImport = createImportHandler({
+    scopeFilter,
+    importEnvFile,
+    refreshVariables,
+    setActionError,
+    setActionNotice,
+    setActiveAction,
+    formatActionError,
+    t,
+  });
+
+  const handleExport = createExportHandler({
+    exportEnvFile,
+    setActionError,
+    setActionNotice,
+    setActiveAction,
+    formatActionError,
+    t,
+  });
 
   const handleOpenAdd = useCallback(() => {
     setEditKey(undefined);
@@ -449,6 +330,10 @@ export default function EnvVarPage() {
   const pathBusy = activeAction !== null || pathLoading;
   const importExportBusy = activeAction !== null || importExportLoading;
   const headerBusy = activeAction !== null || detectionLoading || importExportLoading;
+  const refreshSupport = getSupportForAction(supportSnapshot, 'refresh', scopeFilter);
+  const refreshBlocked = refreshSupport?.supported === false
+    || refreshSupport?.state === 'blocked'
+    || refreshSupport?.state === 'unavailable';
 
   const isRefreshing = detectionLoading
     || activeAction === 'refresh'
@@ -533,7 +418,7 @@ export default function EnvVarPage() {
                     variant="outline"
                     size="sm"
                     onClick={handleRefresh}
-                    disabled={headerBusy}
+                    disabled={headerBusy || Boolean(refreshBlocked) || supportLoading}
                     className="gap-1.5"
                   >
                     <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
@@ -553,7 +438,7 @@ export default function EnvVarPage() {
         />
 
         {/* Status alerts grouped */}
-        {(activeAction || error || actionError || (shellGuidance.length > 0 && activeTab !== 'shells')) && (
+        {(activeAction || error || actionError || actionNotice || supportError || (shellGuidance.length > 0 && activeTab !== 'shells')) && (
           <div className="flex shrink-0 flex-col gap-2">
             {activeAction && (
               <Alert data-testid="envvar-operation-status">
@@ -573,6 +458,20 @@ export default function EnvVarPage() {
               <Alert variant="destructive" data-testid="envvar-operation-error">
                 <AlertCircle className="h-4 w-4" />
                 <AlertDescription>{actionError}</AlertDescription>
+              </Alert>
+            )}
+
+            {actionNotice && (
+              <Alert data-testid="envvar-operation-notice">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{actionNotice}</AlertDescription>
+              </Alert>
+            )}
+
+            {supportError && (
+              <Alert variant="destructive" data-testid="envvar-support-error">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{supportError}</AlertDescription>
               </Alert>
             )}
 
@@ -767,40 +666,8 @@ export default function EnvVarPage() {
         onClearImportPreview={clearImportPreview}
         importPreview={importPreview}
         importPreviewStale={importPreviewStale}
-        onImport={async (content, scope) => {
-          setActionError(null);
-          setActiveAction('import');
-          try {
-            const result = await importEnvFile(content, scope);
-            if (result) {
-              await refreshVariables(resolveRefreshScope(scope), { forceRefresh: true });
-            } else {
-              setActionError(formatActionError('import', t('common.error')));
-            }
-            return result;
-          } catch (err) {
-            setActionError(formatActionError('import', err instanceof Error ? err.message : String(err)));
-            return null;
-          } finally {
-            setActiveAction(null);
-          }
-        }}
-        onExport={async (scope, format, includeSensitive = false) => {
-          setActionError(null);
-          setActiveAction('export');
-          try {
-            const result = await exportEnvFile(scope, format, includeSensitive);
-            if (!result) {
-              setActionError(formatActionError('export', t('common.error')));
-            }
-            return result;
-          } catch (err) {
-            setActionError(formatActionError('export', err instanceof Error ? err.message : String(err)));
-            return null;
-          } finally {
-            setActiveAction(null);
-          }
-        }}
+        onImport={handleImport}
+        onExport={handleExport}
         defaultTab={importExportTab}
         busy={importExportBusy}
         t={t}

@@ -464,7 +464,7 @@ impl EnvironmentManager {
                 let manager = EnvironmentManager::new(registry);
                 let timeout = tokio::time::timeout(
                     std::time::Duration::from_secs(5),
-                    manager.get_environment(&env_type),
+                    manager.get_environment(&env_type, None),
                 );
                 match timeout.await {
                     Ok(Ok(info)) => Some(info),
@@ -491,8 +491,13 @@ impl EnvironmentManager {
         Ok(envs)
     }
 
-    pub async fn get_environment(&self, env_type: &str) -> CogniaResult<EnvironmentInfo> {
-        let (logical, provider_id, provider) = self.resolve_provider(env_type, None, None).await?;
+    pub async fn get_environment(
+        &self,
+        env_type: &str,
+        provider_id: Option<&str>,
+    ) -> CogniaResult<EnvironmentInfo> {
+        let (logical, provider_id, provider) =
+            self.resolve_provider(env_type, provider_id, None).await?;
 
         let available = provider.is_available().await;
         let current = if available {

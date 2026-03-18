@@ -126,7 +126,7 @@ export function CleanupDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[520px] max-h-[80vh] flex flex-col">
+      <DialogContent className="sm:max-w-130 max-h-[80vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Trash2 className="h-5 w-5" />
@@ -166,7 +166,7 @@ export function CleanupDialog({
           </div>
 
           {/* Version list */}
-          <ScrollArea className="h-[300px] pr-3">
+          <ScrollArea className="h-75 pr-3">
             {installedVersions.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
                 <ShieldCheck className="h-8 w-8 mx-auto mb-2 opacity-50" />

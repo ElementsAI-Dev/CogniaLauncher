@@ -3,6 +3,63 @@ import userEvent from "@testing-library/user-event";
 import { ProviderStatusBadge } from "./provider-status-badge";
 import type { ProviderInfo } from "@/lib/tauri";
 
+const mockProviderEnable = jest.fn().mockResolvedValue(undefined);
+const mockProviderDisable = jest.fn().mockResolvedValue(undefined);
+const mockProviderStatus = jest.fn().mockImplementation(async (providerId: string) => ({
+  id: providerId,
+  display_name: providerId,
+  installed: providerId !== "zig",
+  platforms: ["Windows"],
+  scope_state: providerId === "zig" ? "timeout" : "available",
+  reason: providerId === "zig" ? "Timed out while probing provider" : null,
+  reason_code: providerId === "zig" ? "health_check_timeout" : null,
+  status: providerId === "zig" ? "unsupported" : "supported",
+  update_supported: providerId !== "zig",
+  update_reason: providerId === "zig" ? "Timed out while probing provider" : null,
+  update_reason_code: providerId === "zig" ? "health_check_timeout" : null,
+}));
+const mockProviderStatusAll = jest.fn().mockResolvedValue([
+  {
+    id: "pip",
+    display_name: "pip",
+    installed: true,
+    platforms: ["Windows"],
+    scope_state: "available",
+    reason: null,
+    reason_code: null,
+    status: "supported",
+    update_supported: true,
+    update_reason: null,
+    update_reason_code: null,
+  },
+  {
+    id: "npm",
+    display_name: "NPM",
+    installed: true,
+    platforms: ["Windows"],
+    scope_state: "available",
+    reason: null,
+    reason_code: null,
+    status: "supported",
+    update_supported: true,
+    update_reason: null,
+    update_reason_code: null,
+  },
+  {
+    id: "zig",
+    display_name: "Zig",
+    installed: false,
+    platforms: ["Windows"],
+    scope_state: "timeout",
+    reason: "Timed out while probing provider",
+    reason_code: "health_check_timeout",
+    status: "unsupported",
+    update_supported: false,
+    update_reason: "Timed out while probing provider",
+    update_reason_code: "health_check_timeout",
+  },
+]);
+
 jest.mock("@/components/providers/locale-provider", () => ({
   useLocale: () => ({
     t: (key: string) => {
@@ -17,6 +74,10 @@ jest.mock("@/components/providers/locale-provider", () => ({
         "providers.disableSuccess": "Provider disabled",
         "providers.enableError": "Failed to enable",
         "providers.disableError": "Failed to disable",
+        "providers.statusAvailable": "Available",
+        "providers.statusUnavailable": "Unavailable",
+        "providers.statusTimeout": "Timeout",
+        "providers.statusUnsupported": "Unsupported",
       };
       return translations[key] || key;
     },
@@ -25,9 +86,10 @@ jest.mock("@/components/providers/locale-provider", () => ({
 
 jest.mock("@/lib/tauri", () => ({
   isTauri: () => false,
-  providerEnable: jest.fn().mockResolvedValue(undefined),
-  providerDisable: jest.fn().mockResolvedValue(undefined),
-  providerCheck: jest.fn().mockResolvedValue(true),
+  providerEnable: (...args: unknown[]) => mockProviderEnable(...args),
+  providerDisable: (...args: unknown[]) => mockProviderDisable(...args),
+  providerStatus: (...args: unknown[]) => mockProviderStatus(...args),
+  providerStatusAll: (...args: unknown[]) => mockProviderStatusAll(...args),
 }));
 
 jest.mock("sonner", () => ({
@@ -173,5 +235,27 @@ describe("ProviderStatusBadge", () => {
     render(<ProviderStatusBadge providers={mockProviders} />);
     await user.click(screen.getByRole("button"));
     await user.click(screen.getByRole("button", { name: /check all status/i }));
+  });
+
+  it("loads structured provider statuses when the popover opens", async () => {
+    const user = userEvent.setup();
+    render(<ProviderStatusBadge providers={mockProviders} />);
+
+    await user.click(screen.getByRole("button"));
+
+    expect(mockProviderStatusAll).toHaveBeenCalled();
+    expect(await screen.findByText("Timeout")).toBeInTheDocument();
+  });
+
+  it("refreshes structured provider status after toggling a provider", async () => {
+    const user = userEvent.setup();
+    render(<ProviderStatusBadge providers={mockProviders} />);
+
+    await user.click(screen.getByRole("button"));
+    const switches = screen.getAllByRole("switch");
+    await user.click(switches[0]);
+
+    expect(mockProviderDisable).toHaveBeenCalled();
+    expect(mockProviderStatus).toHaveBeenCalled();
   });
 });

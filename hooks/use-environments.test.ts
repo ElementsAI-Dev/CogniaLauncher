@@ -304,14 +304,15 @@ describe('useEnvironments', () => {
     const updatedEnv = { env_type: 'python', provider_id: 'pyenv', provider: 'pyenv', current_version: '3.11.0', installed_versions: [], available: true };
     mockEnvUninstall.mockResolvedValue(undefined);
     mockEnvGet.mockResolvedValue(updatedEnv);
+    mockStoreState.selectedProviders = { python: 'pyenv' };
     const { result } = renderHook(() => useEnvironments());
 
     await act(async () => {
       await result.current.uninstallVersion('python', '3.10.0');
     });
 
-    expect(mockEnvUninstall).toHaveBeenCalledWith('python', '3.10.0');
-    expect(mockEnvGet).toHaveBeenCalledWith('python');
+    expect(mockEnvUninstall).toHaveBeenCalledWith('python', '3.10.0', 'pyenv');
+    expect(mockEnvGet).toHaveBeenCalledWith('python', 'pyenv');
     expect(mockStoreActions.updateEnvironment).toHaveBeenCalledWith(updatedEnv);
   });
 
@@ -319,14 +320,15 @@ describe('useEnvironments', () => {
     const updatedEnv = { env_type: 'python', provider_id: 'pyenv', provider: 'pyenv', current_version: '3.11.0', installed_versions: [], available: true };
     mockEnvUseGlobal.mockResolvedValue(undefined);
     mockEnvGet.mockResolvedValue(updatedEnv);
+    mockStoreState.selectedProviders = { python: 'pyenv' };
     const { result } = renderHook(() => useEnvironments());
 
     await act(async () => {
       await result.current.setGlobalVersion('python', '3.11.0');
     });
 
-    expect(mockEnvUseGlobal).toHaveBeenCalledWith('python', '3.11.0');
-    expect(mockEnvGet).toHaveBeenCalledWith('python');
+    expect(mockEnvUseGlobal).toHaveBeenCalledWith('python', '3.11.0', 'pyenv');
+    expect(mockEnvGet).toHaveBeenCalledWith('python', 'pyenv');
     expect(mockStoreActions.updateEnvironment).toHaveBeenCalledWith(updatedEnv);
   });
 
@@ -351,13 +353,14 @@ describe('useEnvironments', () => {
 
   it('should set local version and emit cache invalidation', async () => {
     mockEnvUseLocal.mockResolvedValue(undefined);
+    mockStoreState.selectedProviders = { python: 'pyenv' };
     const { result } = renderHook(() => useEnvironments());
 
     await act(async () => {
       await result.current.setLocalVersion('python', '3.11.0', '/project/path');
     });
 
-    expect(mockEnvUseLocal).toHaveBeenCalledWith('python', '3.11.0', '/project/path');
+    expect(mockEnvUseLocal).toHaveBeenCalledWith('python', '3.11.0', '/project/path', 'pyenv');
     expect(mockEmitInvalidations).toHaveBeenCalledWith(
       ['environment_data', 'provider_data'],
       'environments:set-local',
@@ -711,6 +714,7 @@ describe('useEnvironments', () => {
     mockStoreState.environments = [
       { env_type: 'node', provider_id: 'fnm', provider: 'fnm', current_version: '20.0.0', installed_versions: [], available: true },
     ];
+    mockStoreState.selectedProviders = { node: 'fnm' };
     mockEnvVerifyInstall.mockResolvedValue({ installed: true });
     mockEnvGet.mockResolvedValue({
       env_type: 'node',
@@ -744,6 +748,9 @@ describe('useEnvironments', () => {
       await result.current.installVersion('node', '20.0.0');
     });
 
+    expect(mockEnvInstall).toHaveBeenCalledWith('node', '20.0.0', 'fnm');
+    expect(mockEnvVerifyInstall).toHaveBeenCalledWith('node', '20.0.0', 'fnm');
+    expect(mockEnvGet).toHaveBeenCalledWith('node', 'fnm');
     expect(mockStoreActions.updateInstallationProgress).toHaveBeenCalledWith(
       expect.objectContaining({
         step: 'downloading',

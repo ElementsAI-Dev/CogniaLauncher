@@ -73,16 +73,18 @@ export function buildEnvVarRows({
 
   if (scopeFilter === 'all' || scopeFilter === 'process') {
     rows.push(
-      ...processVars.map((item) => ({
-        key: item.key,
-        value: revealedValues[getRevealKey('process', item.key)] ?? item.value.displayValue,
-        revealedValue: revealedValues[getRevealKey('process', item.key)] ?? null,
-        scope: 'process' as const,
-        isSensitive: item.value.isSensitive,
-        sensitivityReason: item.value.sensitivityReason,
-        hasValue: item.value.hasValue,
-        masked: item.value.masked && !revealedValues[getRevealKey('process', item.key)],
-      })),
+      ...processVars.map((item) =>
+        maybeSetConflict({
+          key: item.key,
+          value: revealedValues[getRevealKey('process', item.key)] ?? item.value.displayValue,
+          revealedValue: revealedValues[getRevealKey('process', item.key)] ?? null,
+          scope: 'process' as const,
+          isSensitive: item.value.isSensitive,
+          sensitivityReason: item.value.sensitivityReason,
+          hasValue: item.value.hasValue,
+          masked: item.value.masked && !revealedValues[getRevealKey('process', item.key)],
+        }),
+      ),
     );
   }
 

@@ -122,6 +122,50 @@ export function useEnvironments() {
     auto_switch: settings.autoSwitch,
   }), [toLogicalEnvType]);
 
+  const resolveProviderId = useCallback((
+    envType: string,
+    explicitProviderId?: string | null,
+  ): string | undefined => {
+    const state = useEnvironmentStore.getState();
+    const normalizedEnvType = normalizeEnvType(envType);
+    const logicalEnvType = toLogicalEnvType(envType);
+
+    if (explicitProviderId && explicitProviderId.trim()) {
+      return normalizeEnvType(explicitProviderId);
+    }
+
+    // Back-compat: some call-sites historically pass provider-id as envType.
+    // If envType maps to a different logical type, treat envType as provider-id.
+    if (normalizedEnvType !== logicalEnvType) {
+      return normalizedEnvType;
+    }
+
+    // Prefer persisted selection even if providers list is not loaded yet.
+    const persistedSelected = state.selectedProviders?.[logicalEnvType];
+    if (persistedSelected && persistedSelected.trim()) {
+      return normalizeEnvType(persistedSelected);
+    }
+
+    // Next best: provider id from the most recent environment row.
+    const envRowProviderId = state.environments.find((environment) => (
+      normalizeEnvType(environment.env_type) === logicalEnvType
+    ))?.provider_id;
+    if (envRowProviderId && envRowProviderId.trim()) {
+      return normalizeEnvType(envRowProviderId);
+    }
+
+    // Last resort: let store attempt selection if provider list is available.
+    const resolved = state.getSelectedProvider(envType, envRowProviderId ?? null);
+    const normalizedResolved = normalizeEnvType(resolved);
+    const resolvedLooksLikeEnvType =
+      normalizedResolved === logicalEnvType || normalizedResolved === normalizedEnvType;
+    if (!resolvedLooksLikeEnvType) {
+      return normalizedResolved;
+    }
+
+    return undefined;
+  }, [normalizeEnvType, toLogicalEnvType]);
+
   const reconcileEnvironmentWorkflow = useCallback(async (options?: {
     projectPath?: string | null;
     refreshProviders?: boolean;
@@ -492,7 +536,11 @@ export function useEnvironments() {
       // Post-install verification
       if (tauri.isTauri()) {
         try {
-          const verifyResult = await tauri.envVerifyInstall(envType, resolvedVersion);
+          const verifyResult = await tauri.envVerifyInstall(
+            envType,
+            resolvedVersion,
+            resolvedProviderId,
+          );
           if (verifyResult && !verifyResult.installed) {
             console.warn(`[env] Post-install verification failed for ${envType}@${resolvedVersion}`, verifyResult);
           }
@@ -502,7 +550,7 @@ export function useEnvironments() {
       }
       
       // Refresh environment data after successful install
-      const updatedEnv = await tauri.envGet(envType);
+      const updatedEnv = await tauri.envGet(envType, resolvedProviderId);
       updateEnvironment(updatedEnv);
       tauri.pluginDispatchEvent('env_version_installed', { envType, version: resolvedVersion }).catch(() => {});
       emitInvalidations(
@@ -572,27 +620,40 @@ export function useEnvironments() {
     closeProgressDialog,
     updateEnvironment,
     reconcileEnvironmentWorkflow,
+    resolveProviderId,
     setError,
     setWorkflowActionState,
   ]);
 
-  const uninstallVersion = useCallback(async (envType: string, version: string) => {
+  const uninstallVersion = useCallback(async (
+    envType: string,
+    version: string,
+    providerId?: string,
+  ) => {
     setLoading(true);
     setError(null);
-    setWorkflowActionState(envType, 'uninstall', 'running', { version });
+    const resolvedProviderId = resolveProviderId(envType, providerId);
+    setWorkflowActionState(envType, 'uninstall', 'running', {
+      version,
+      providerId: resolvedProviderId,
+    });
     try {
-      await tauri.envUninstall(envType, version);
-      const env = await tauri.envGet(envType);
+      await tauri.envUninstall(envType, version, resolvedProviderId);
+      const env = await tauri.envGet(envType, resolvedProviderId);
       updateEnvironment(env);
       emitInvalidations(
         ['environment_data', 'provider_data', 'cache_overview', 'about_cache_stats'],
         'environments:uninstall-version',
       );
       await reconcileEnvironmentWorkflow({ refreshProviders: true });
-      setWorkflowActionState(envType, 'uninstall', 'success', { version });
+      setWorkflowActionState(envType, 'uninstall', 'success', {
+        version,
+        providerId: resolvedProviderId,
+      });
     } catch (err) {
       setWorkflowActionState(envType, 'uninstall', 'error', {
         version,
+        providerId: resolvedProviderId,
         error: formatError(err),
         retryable: true,
       });
@@ -601,20 +662,32 @@ export function useEnvironments() {
     } finally {
       setLoading(false);
     }
-  }, [reconcileEnvironmentWorkflow, setError, setLoading, setWorkflowActionState, updateEnvironment]);
+  }, [reconcileEnvironmentWorkflow, resolveProviderId, setError, setLoading, setWorkflowActionState, updateEnvironment]);
 
-  const setGlobalVersion = useCallback(async (envType: string, version: string) => {
+  const setGlobalVersion = useCallback(async (
+    envType: string,
+    version: string,
+    providerId?: string,
+  ) => {
     setError(null);
-    setWorkflowActionState(envType, 'setGlobal', 'running', { version });
+    const resolvedProviderId = resolveProviderId(envType, providerId);
+    setWorkflowActionState(envType, 'setGlobal', 'running', {
+      version,
+      providerId: resolvedProviderId,
+    });
     try {
-      const mutation = await tauri.envUseGlobal(envType, version);
+      const mutation = await tauri.envUseGlobal(
+        envType,
+        version,
+        resolvedProviderId,
+      );
       if (mutation?.success === false) {
         throw new Error(
           mutation.message ||
             `Failed to switch global ${envType} version to ${version}`,
         );
       }
-      const env = await tauri.envGet(envType);
+      const env = await tauri.envGet(envType, resolvedProviderId);
       updateEnvironment(env);
       tauri.pluginDispatchEvent('env_version_switched', { envType, version }).catch(() => {});
       emitInvalidations(
@@ -622,26 +695,42 @@ export function useEnvironments() {
         'environments:set-global',
       );
       await reconcileEnvironmentWorkflow({});
-      setWorkflowActionState(envType, 'setGlobal', 'success', { version });
+      setWorkflowActionState(envType, 'setGlobal', 'success', {
+        version,
+        providerId: resolvedProviderId,
+      });
     } catch (err) {
       setWorkflowActionState(envType, 'setGlobal', 'error', {
         version,
+        providerId: resolvedProviderId,
         error: formatError(err),
         retryable: true,
       });
       setError(formatError(err));
       throw err;
     }
-  }, [reconcileEnvironmentWorkflow, setError, setWorkflowActionState, updateEnvironment]);
+  }, [reconcileEnvironmentWorkflow, resolveProviderId, setError, setWorkflowActionState, updateEnvironment]);
 
-  const setLocalVersion = useCallback(async (envType: string, version: string, projectPath: string) => {
+  const setLocalVersion = useCallback(async (
+    envType: string,
+    version: string,
+    projectPath: string,
+    providerId?: string,
+  ) => {
     setError(null);
+    const resolvedProviderId = resolveProviderId(envType, providerId);
     setWorkflowActionState(envType, 'setLocal', 'running', {
       version,
       projectPath,
+      providerId: resolvedProviderId,
     });
     try {
-      const mutation = await tauri.envUseLocal(envType, version, projectPath);
+      const mutation = await tauri.envUseLocal(
+        envType,
+        version,
+        projectPath,
+        resolvedProviderId,
+      );
       if (mutation?.success === false) {
         throw new Error(
           mutation.message ||
@@ -656,18 +745,20 @@ export function useEnvironments() {
       setWorkflowActionState(envType, 'setLocal', 'success', {
         version,
         projectPath,
+        providerId: resolvedProviderId,
       });
     } catch (err) {
       setWorkflowActionState(envType, 'setLocal', 'error', {
         version,
         projectPath,
+        providerId: resolvedProviderId,
         error: formatError(err),
         retryable: true,
       });
       setError(formatError(err));
       throw err;
     }
-  }, [reconcileEnvironmentWorkflow, setError, setWorkflowActionState]);
+  }, [reconcileEnvironmentWorkflow, resolveProviderId, setError, setWorkflowActionState]);
 
   const detectVersions = useCallback(async (
     startPath: string,
@@ -824,32 +915,63 @@ export function useEnvironments() {
     }
   }, [currentInstallation, setCurrentInstallation, closeProgressDialog, updateInstallationProgress]);
 
-  const verifyInstall = useCallback(async (envType: string, version: string) => {
+  const verifyInstall = useCallback(async (
+    envType: string,
+    version: string,
+    providerId?: string,
+  ) => {
     if (!tauri.isTauri()) return null;
+    const resolvedProviderId = resolveProviderId(envType, providerId);
     try {
+      if (resolvedProviderId) {
+        return await tauri.envVerifyInstall(envType, version, resolvedProviderId);
+      }
       return await tauri.envVerifyInstall(envType, version);
     } catch {
       return null;
     }
-  }, []);
+  }, [resolveProviderId]);
 
-  const getInstalledVersions = useCallback(async (envType: string, force?: boolean) => {
+  const getInstalledVersions = useCallback(async (
+    envType: string,
+    providerId?: string,
+    force?: boolean,
+  ) => {
     if (!tauri.isTauri()) return [];
+    const resolvedProviderId = resolveProviderId(envType, providerId);
     try {
-      return await tauri.envInstalledVersions(envType, force);
+      if (resolvedProviderId) {
+        if (force !== undefined) {
+          return await tauri.envInstalledVersions(envType, resolvedProviderId, force);
+        }
+        return await tauri.envInstalledVersions(envType, resolvedProviderId);
+      }
+
+      // Avoid passing an extra `undefined` argument when force is omitted.
+      if (force !== undefined) {
+        return await tauri.envInstalledVersions(envType, undefined, force);
+      }
+      return await tauri.envInstalledVersions(envType, undefined);
     } catch {
       return [];
     }
-  }, []);
+  }, [resolveProviderId]);
 
-  const getCurrentVersion = useCallback(async (envType: string) => {
+  const getCurrentVersion = useCallback(async (
+    envType: string,
+    providerId?: string,
+  ) => {
     if (!tauri.isTauri()) return null;
+    const resolvedProviderId = resolveProviderId(envType, providerId);
     try {
+      if (resolvedProviderId) {
+        return await tauri.envCurrentVersion(envType, resolvedProviderId);
+      }
       return await tauri.envCurrentVersion(envType);
     } catch {
       return null;
     }
-  }, []);
+  }, [resolveProviderId]);
 
   const checkEnvUpdates = useCallback(async (envType: string) => {
     if (!tauri.isTauri()) return null;

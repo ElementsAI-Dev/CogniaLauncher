@@ -89,7 +89,7 @@ export function VersionBrowserPanel({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-[400px] sm:w-[480px] p-0 flex flex-col">
+      <SheetContent className="w-100 sm:w-120 p-0 flex flex-col">
         <SheetHeader className="p-6 pb-4 border-b">
           <div className="flex items-center justify-between">
             <div>

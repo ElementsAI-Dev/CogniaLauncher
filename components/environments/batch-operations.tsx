@@ -178,7 +178,7 @@ export function EnvironmentBatchOperations({
                 <div className="text-sm font-medium">
                   {t("environments.batch.versions")}:
                 </div>
-                <ScrollArea className="h-[200px] border rounded-md p-2">
+                <ScrollArea className="h-50 border rounded-md p-2">
                   <div className="space-y-1">
                     {selectedVersions.map((v, i) => (
                       <div
@@ -248,7 +248,7 @@ export function EnvironmentBatchOperations({
                 </div>
 
                 {/* Detailed Results */}
-                <ScrollArea className="h-[150px] border rounded-md">
+                <ScrollArea className="h-37.5 border rounded-md">
                   <div className="p-2 space-y-2">
                     {result.successful.map((v, i) => (
                       <div

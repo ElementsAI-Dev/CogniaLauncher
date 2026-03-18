@@ -296,18 +296,21 @@ export default function EnvironmentsPage() {
   }, [focusWorkflow, getSelectedProvider, installVersion]);
 
   const handleUninstallVersion = useCallback(async (envType: string, version: string) => {
-    focusWorkflow(envType, getSelectedProvider(envType));
-    await uninstallVersion(envType, version);
+    const providerId = getSelectedProvider(envType);
+    focusWorkflow(envType, providerId);
+    await uninstallVersion(envType, version, providerId);
   }, [focusWorkflow, getSelectedProvider, uninstallVersion]);
 
   const handleSetGlobalVersion = useCallback(async (envType: string, version: string) => {
-    focusWorkflow(envType, getSelectedProvider(envType));
-    await setGlobalVersion(envType, version);
+    const providerId = getSelectedProvider(envType);
+    focusWorkflow(envType, providerId);
+    await setGlobalVersion(envType, version, providerId);
   }, [focusWorkflow, getSelectedProvider, setGlobalVersion]);
 
   const handleSetLocalVersion = useCallback(async (envType: string, version: string, projectPath: string) => {
-    focusWorkflow(envType, getSelectedProvider(envType));
-    await setLocalVersion(envType, version, projectPath);
+    const providerId = getSelectedProvider(envType);
+    focusWorkflow(envType, providerId);
+    await setLocalVersion(envType, version, projectPath, providerId);
   }, [focusWorkflow, getSelectedProvider, setLocalVersion]);
 
   const handleBatchInstall = useCallback(async (versions: { envType: string; version: string }[]) => {

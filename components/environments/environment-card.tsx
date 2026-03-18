@@ -258,7 +258,7 @@ export function EnvironmentCard({
 
             {/* Current Version Badge */}
             {env.current_version && (
-              <div className="text-right shrink-0 max-w-[180px]">
+              <div className="text-right shrink-0 max-w-45">
                 <div className="inline-flex items-center px-3 py-1.5 rounded-md border bg-background max-w-full">
                   <span className="font-mono text-base font-medium truncate">
                     {env.current_version}
@@ -326,7 +326,7 @@ export function EnvironmentCard({
                 onValueChange={handleInstall}
                 disabled={isInstalling || loading}
               >
-                <SelectTrigger className="w-[140px]">
+                <SelectTrigger className="w-35">
                   <SelectValue placeholder={t("environments.quickInstall")} />
                 </SelectTrigger>
                 <SelectContent>
@@ -370,7 +370,7 @@ export function EnvironmentCard({
                   onValueChange={setSelectedUninstall}
                   disabled={loading}
                 >
-                  <SelectTrigger className="w-[180px]">
+                  <SelectTrigger className="w-45">
                     <SelectValue
                       placeholder={t("environments.selectVersion")}
                     />
@@ -435,7 +435,7 @@ export function EnvironmentCard({
                   onValueChange={setSelectedLocalVersion}
                   disabled={loading}
                 >
-                  <SelectTrigger className="w-[130px]">
+                  <SelectTrigger className="w-32.5">
                     <SelectValue placeholder={t("environments.selectVersion")} />
                   </SelectTrigger>
                   <SelectContent>

@@ -117,6 +117,19 @@ Custom priority overrides are persisted per provider and immediately affect prov
 
 ---
 
+## Provider Status Semantics
+
+Provider management surfaces use the same structured detection states across the dedicated Providers page, Provider detail pages, and the embedded Provider controls on the Packages page.
+
+- `available`: the Provider is enabled and its runtime probe succeeded.
+- `unavailable`: the Provider cannot currently be used. Disabled Providers also appear in this state until they are re-enabled.
+- `timeout`: the Provider probe exceeded its timeout budget.
+- `unsupported`: the Provider is not supported in the current runtime or platform scope.
+
+Status checks preserve reason metadata when available, so timeout and unsupported results are no longer flattened into a generic boolean. After enabling, disabling, or reprioritizing a Provider, refresh and status-check actions pull the updated management state from the same backend contract.
+
+---
+
 ## Full List
 
 See [Provider List Reference](../reference/providers-list.md) for detailed information on all 51+ Providers.

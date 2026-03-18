@@ -28,6 +28,14 @@ pub struct EnvVarImportResult {
     pub imported: usize,
     pub skipped: usize,
     pub errors: Vec<String>,
+    pub scope: EnvVarScope,
+    pub success: bool,
+    pub verified: bool,
+    pub status: String,
+    pub reason_code: Option<String>,
+    pub message: Option<String>,
+    pub primary_shell_target: Option<String>,
+    pub shell_guidance: Vec<EnvVarShellGuidance>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -106,6 +114,12 @@ pub struct EnvVarConflictResolutionResult {
     pub source_scope: EnvVarScope,
     pub target_scope: EnvVarScope,
     pub applied_value: String,
+    pub applied_value_summary: EnvVarValueSummary,
+    pub success: bool,
+    pub verified: bool,
+    pub status: String,
+    pub reason_code: Option<String>,
+    pub message: Option<String>,
     pub primary_shell_target: Option<String>,
     pub shell_guidance: Vec<EnvVarShellGuidance>,
 }
@@ -151,9 +165,264 @@ pub struct EnvVarExportResult {
     pub revealed: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnvVarActionSupport {
+    pub action: String,
+    pub scope: Option<EnvVarScope>,
+    pub supported: bool,
+    pub state: String,
+    pub reason_code: String,
+    pub reason: String,
+    pub next_steps: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnvVarSupportSnapshot {
+    pub state: String,
+    pub reason_code: String,
+    pub reason: String,
+    pub platform: String,
+    pub detected_shells: usize,
+    pub primary_shell_target: Option<String>,
+    pub actions: Vec<EnvVarActionSupport>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnvVarMutationResult {
+    pub operation: String,
+    pub key: String,
+    pub scope: EnvVarScope,
+    pub success: bool,
+    pub verified: bool,
+    pub status: String,
+    pub reason_code: Option<String>,
+    pub message: Option<String>,
+    pub effective_value_summary: Option<EnvVarValueSummary>,
+    pub primary_shell_target: Option<String>,
+    pub shell_guidance: Vec<EnvVarShellGuidance>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnvVarPathMutationResult {
+    pub operation: String,
+    pub scope: EnvVarScope,
+    pub success: bool,
+    pub verified: bool,
+    pub status: String,
+    pub reason_code: Option<String>,
+    pub message: Option<String>,
+    pub removed_count: usize,
+    pub path_entries: Vec<PathEntryInfo>,
+    pub primary_shell_target: Option<String>,
+    pub shell_guidance: Vec<EnvVarShellGuidance>,
+}
+
+fn build_action_support(action: &str, scope: Option<EnvVarScope>) -> EnvVarActionSupport {
+    let readiness = env::evaluate_envvar_action_readiness(action, scope);
+    EnvVarActionSupport {
+        action: action.to_string(),
+        scope,
+        supported: readiness.supported,
+        state: readiness.state,
+        reason_code: readiness.reason_code,
+        reason: readiness.reason,
+        next_steps: readiness.next_steps,
+    }
+}
+
+fn derive_support_snapshot_state(
+    actions: &[EnvVarActionSupport],
+) -> (String, String, String) {
+    if let Some(action) = actions.iter().find(|item| item.state == "blocked") {
+        return (
+            "degraded".to_string(),
+            action.reason_code.clone(),
+            action.reason.clone(),
+        );
+    }
+    if let Some(action) = actions.iter().find(|item| item.state == "degraded") {
+        return (
+            "degraded".to_string(),
+            action.reason_code.clone(),
+            action.reason.clone(),
+        );
+    }
+    if let Some(action) = actions.iter().find(|item| item.state == "unavailable") {
+        return (
+            "degraded".to_string(),
+            action.reason_code.clone(),
+            action.reason.clone(),
+        );
+    }
+
+    (
+        "ready".to_string(),
+        "ready".to_string(),
+        "Envvar workflows are ready.".to_string(),
+    )
+}
+
+fn has_manual_followup(scope: EnvVarScope, shell_guidance: &[EnvVarShellGuidance]) -> bool {
+    scope == EnvVarScope::User && shell_guidance.iter().any(|entry| !entry.auto_applied)
+}
+
+fn mutation_status_from_verification(
+    verified: bool,
+    scope: EnvVarScope,
+    shell_guidance: &[EnvVarShellGuidance],
+) -> (bool, bool, String, Option<String>, Option<String>) {
+    if !verified {
+        return (
+            false,
+            false,
+            "verification_failed".to_string(),
+            Some("post_mutation_verification_failed".to_string()),
+            Some("The envvar mutation could not be verified from effective state.".to_string()),
+        );
+    }
+
+    if has_manual_followup(scope, shell_guidance) {
+        return (
+            true,
+            false,
+            "manual_followup_required".to_string(),
+            Some("shell_sync_required".to_string()),
+            Some(
+                "The change was persisted, but manual shell follow-up is still required.".to_string(),
+            ),
+        );
+    }
+
+    (
+        true,
+        true,
+        "verified".to_string(),
+        None,
+        None,
+    )
+}
+
+fn blocked_mutation_result(
+    operation: &str,
+    key: &str,
+    scope: EnvVarScope,
+    support: &EnvVarActionSupport,
+) -> EnvVarMutationResult {
+    EnvVarMutationResult {
+        operation: operation.to_string(),
+        key: key.to_string(),
+        scope,
+        success: false,
+        verified: false,
+        status: "blocked".to_string(),
+        reason_code: Some(support.reason_code.clone()),
+        message: Some(support.reason.clone()),
+        effective_value_summary: None,
+        primary_shell_target: None,
+        shell_guidance: Vec::new(),
+    }
+}
+
+fn blocked_path_mutation_result(
+    operation: &str,
+    scope: EnvVarScope,
+    support: &EnvVarActionSupport,
+) -> EnvVarPathMutationResult {
+    EnvVarPathMutationResult {
+        operation: operation.to_string(),
+        scope,
+        success: false,
+        verified: false,
+        status: "blocked".to_string(),
+        reason_code: Some(support.reason_code.clone()),
+        message: Some(support.reason.clone()),
+        removed_count: 0,
+        path_entries: Vec::new(),
+        primary_shell_target: None,
+        shell_guidance: Vec::new(),
+    }
+}
+
+fn summarize_path_entries(entries: Vec<String>) -> Vec<PathEntryInfo> {
+    let mut seen = HashSet::new();
+    entries
+        .into_iter()
+        .map(|path| {
+            let key = if cfg!(windows) {
+                path.to_lowercase()
+            } else {
+                path.clone()
+            };
+            let exists = Path::new(&path).exists();
+            let is_directory = Path::new(&path).is_dir();
+            PathEntryInfo {
+                path,
+                exists,
+                is_directory,
+                is_duplicate: !seen.insert(key),
+            }
+        })
+        .collect()
+}
+
 // ============================================================================
 // Commands
 // ============================================================================
+
+#[tauri::command]
+pub fn envvar_get_support_snapshot() -> Result<EnvVarSupportSnapshot, CogniaError> {
+    let actions = vec![
+        build_action_support("refresh", Some(EnvVarScope::Process)),
+        build_action_support("refresh", Some(EnvVarScope::User)),
+        build_action_support("refresh", Some(EnvVarScope::System)),
+        build_action_support("set", Some(EnvVarScope::Process)),
+        build_action_support("set", Some(EnvVarScope::User)),
+        build_action_support("set", Some(EnvVarScope::System)),
+        build_action_support("remove", Some(EnvVarScope::Process)),
+        build_action_support("remove", Some(EnvVarScope::User)),
+        build_action_support("remove", Some(EnvVarScope::System)),
+        build_action_support("import", Some(EnvVarScope::Process)),
+        build_action_support("import", Some(EnvVarScope::User)),
+        build_action_support("import", Some(EnvVarScope::System)),
+        build_action_support("export", Some(EnvVarScope::Process)),
+        build_action_support("export", Some(EnvVarScope::User)),
+        build_action_support("export", Some(EnvVarScope::System)),
+        build_action_support("path_add", Some(EnvVarScope::Process)),
+        build_action_support("path_add", Some(EnvVarScope::User)),
+        build_action_support("path_add", Some(EnvVarScope::System)),
+        build_action_support("path_remove", Some(EnvVarScope::Process)),
+        build_action_support("path_remove", Some(EnvVarScope::User)),
+        build_action_support("path_remove", Some(EnvVarScope::System)),
+        build_action_support("path_reorder", Some(EnvVarScope::Process)),
+        build_action_support("path_reorder", Some(EnvVarScope::User)),
+        build_action_support("path_reorder", Some(EnvVarScope::System)),
+        build_action_support("path_deduplicate", Some(EnvVarScope::Process)),
+        build_action_support("path_deduplicate", Some(EnvVarScope::User)),
+        build_action_support("path_deduplicate", Some(EnvVarScope::System)),
+        build_action_support("path_repair", Some(EnvVarScope::Process)),
+        build_action_support("path_repair", Some(EnvVarScope::User)),
+        build_action_support("path_repair", Some(EnvVarScope::System)),
+        build_action_support("resolve_conflict", Some(EnvVarScope::User)),
+        build_action_support("resolve_conflict", Some(EnvVarScope::System)),
+        build_action_support("read_shell_profile", None),
+        build_action_support("shell_guidance", None),
+    ];
+    let (state, reason_code, reason) = derive_support_snapshot_state(&actions);
+
+    Ok(EnvVarSupportSnapshot {
+        state,
+        reason_code,
+        reason,
+        platform: env::current_platform().as_str().to_string(),
+        detected_shells: env::list_shell_profiles().len(),
+        primary_shell_target: primary_shell_target_for_scope(EnvVarScope::User),
+        actions,
+    })
+}
 
 #[tauri::command]
 pub fn envvar_list_all() -> Result<HashMap<String, String>, CogniaError> {
@@ -206,17 +475,68 @@ pub async fn envvar_reveal_value(
 }
 
 #[tauri::command]
-pub fn envvar_set_process(key: String, value: String) -> Result<(), CogniaError> {
+pub async fn envvar_set_process(
+    key: String,
+    value: String,
+) -> Result<EnvVarMutationResult, CogniaError> {
     let key = env::normalize_env_var_key(&key)?;
+    let support = build_action_support("set", Some(EnvVarScope::Process));
+    if !support.supported {
+        return Ok(blocked_mutation_result("set", &key, EnvVarScope::Process, &support));
+    }
+
     env::set_var(&key, &value);
-    Ok(())
+    let (verified, summary) =
+        env::verify_envvar_value_state(&key, EnvVarScope::Process, Some(&value)).await?;
+    let (success, verified_flag, status, reason_code, message) =
+        mutation_status_from_verification(verified, EnvVarScope::Process, &[]);
+
+    Ok(EnvVarMutationResult {
+        operation: "set".to_string(),
+        key,
+        scope: EnvVarScope::Process,
+        success,
+        verified: verified_flag,
+        status,
+        reason_code,
+        message,
+        effective_value_summary: summary,
+        primary_shell_target: None,
+        shell_guidance: Vec::new(),
+    })
 }
 
 #[tauri::command]
-pub fn envvar_remove_process(key: String) -> Result<(), CogniaError> {
+pub async fn envvar_remove_process(key: String) -> Result<EnvVarMutationResult, CogniaError> {
     let key = env::normalize_env_var_key(&key)?;
+    let support = build_action_support("remove", Some(EnvVarScope::Process));
+    if !support.supported {
+        return Ok(blocked_mutation_result(
+            "remove",
+            &key,
+            EnvVarScope::Process,
+            &support,
+        ));
+    }
+
     env::remove_var(&key);
-    Ok(())
+    let (verified, summary) = env::verify_envvar_value_state(&key, EnvVarScope::Process, None).await?;
+    let (success, verified_flag, status, reason_code, message) =
+        mutation_status_from_verification(verified, EnvVarScope::Process, &[]);
+
+    Ok(EnvVarMutationResult {
+        operation: "remove".to_string(),
+        key,
+        scope: EnvVarScope::Process,
+        success,
+        verified: verified_flag,
+        status,
+        reason_code,
+        message,
+        effective_value_summary: summary,
+        primary_shell_target: None,
+        shell_guidance: Vec::new(),
+    })
 }
 
 #[tauri::command]
@@ -232,13 +552,71 @@ pub async fn envvar_set_persistent(
     key: String,
     value: String,
     scope: EnvVarScope,
-) -> Result<(), CogniaError> {
-    env::set_persistent_var(&key, &value, scope).await
+) -> Result<EnvVarMutationResult, CogniaError> {
+    let key = env::normalize_env_var_key(&key)?;
+    let support = build_action_support("set", Some(scope));
+    if !support.supported {
+        return Ok(blocked_mutation_result("set", &key, scope, &support));
+    }
+
+    env::set_persistent_var(&key, &value, scope).await?;
+    let primary_shell_target = primary_shell_target_for_scope(scope);
+    let shell_guidance = shell_guidance_for_pairs(
+        &[(key.clone(), value.clone())],
+        scope,
+        auto_applied_shell_for_scope(scope).as_deref(),
+        false,
+    );
+    let (verified, summary) = env::verify_envvar_value_state(&key, scope, Some(&value)).await?;
+    let (success, verified_flag, status, reason_code, message) =
+        mutation_status_from_verification(verified, scope, &shell_guidance);
+
+    Ok(EnvVarMutationResult {
+        operation: "set".to_string(),
+        key,
+        scope,
+        success,
+        verified: verified_flag,
+        status,
+        reason_code,
+        message,
+        effective_value_summary: summary,
+        primary_shell_target,
+        shell_guidance,
+    })
 }
 
 #[tauri::command]
-pub async fn envvar_remove_persistent(key: String, scope: EnvVarScope) -> Result<(), CogniaError> {
-    env::remove_persistent_var(&key, scope).await
+pub async fn envvar_remove_persistent(
+    key: String,
+    scope: EnvVarScope,
+) -> Result<EnvVarMutationResult, CogniaError> {
+    let key = env::normalize_env_var_key(&key)?;
+    let support = build_action_support("remove", Some(scope));
+    if !support.supported {
+        return Ok(blocked_mutation_result("remove", &key, scope, &support));
+    }
+
+    env::remove_persistent_var(&key, scope).await?;
+    let primary_shell_target = primary_shell_target_for_scope(scope);
+    let shell_guidance = Vec::new();
+    let (verified, summary) = env::verify_envvar_value_state(&key, scope, None).await?;
+    let (success, verified_flag, status, reason_code, message) =
+        mutation_status_from_verification(verified, scope, &shell_guidance);
+
+    Ok(EnvVarMutationResult {
+        operation: "remove".to_string(),
+        key,
+        scope,
+        success,
+        verified: verified_flag,
+        status,
+        reason_code,
+        message,
+        effective_value_summary: summary,
+        primary_shell_target,
+        shell_guidance,
+    })
 }
 
 #[tauri::command]
@@ -271,12 +649,35 @@ pub async fn envvar_add_path_entry(
     path: String,
     scope: EnvVarScope,
     position: Option<usize>,
-) -> Result<(), CogniaError> {
+) -> Result<EnvVarPathMutationResult, CogniaError> {
+    let support = build_action_support("path_add", Some(scope));
+    if !support.supported {
+        return Ok(blocked_path_mutation_result("path_add", scope, &support));
+    }
+
     let mut entries = env::get_persistent_path(scope).await?;
 
     // Avoid duplicates
     if entries.iter().any(|e| e == &path) {
-        return Ok(());
+        let path_entries = summarize_path_entries(entries.clone());
+        return Ok(EnvVarPathMutationResult {
+            operation: "path_add".to_string(),
+            scope,
+            success: true,
+            verified: true,
+            status: "verified".to_string(),
+            reason_code: None,
+            message: Some("The PATH entry already exists.".to_string()),
+            removed_count: 0,
+            path_entries,
+            primary_shell_target: primary_shell_target_for_scope(scope),
+            shell_guidance: shell_guidance_for_path(
+                &entries,
+                scope,
+                auto_applied_shell_for_scope(scope).as_deref(),
+                false,
+            ),
+        });
     }
 
     match position {
@@ -284,25 +685,107 @@ pub async fn envvar_add_path_entry(
         _ => entries.push(path),
     }
 
-    env::set_persistent_path(&entries, scope).await
+    env::set_persistent_path(&entries, scope).await?;
+    let shell_guidance = shell_guidance_for_path(
+        &entries,
+        scope,
+        auto_applied_shell_for_scope(scope).as_deref(),
+        false,
+    );
+    let (verified, actual_entries) = env::verify_envvar_path_state(scope, &entries).await?;
+    let (success, verified_flag, status, reason_code, message) =
+        mutation_status_from_verification(verified, scope, &shell_guidance);
+
+    Ok(EnvVarPathMutationResult {
+        operation: "path_add".to_string(),
+        scope,
+        success,
+        verified: verified_flag,
+        status,
+        reason_code,
+        message,
+        removed_count: 0,
+        path_entries: summarize_path_entries(actual_entries),
+        primary_shell_target: primary_shell_target_for_scope(scope),
+        shell_guidance,
+    })
 }
 
 #[tauri::command]
-pub async fn envvar_remove_path_entry(path: String, scope: EnvVarScope) -> Result<(), CogniaError> {
+pub async fn envvar_remove_path_entry(
+    path: String,
+    scope: EnvVarScope,
+) -> Result<EnvVarPathMutationResult, CogniaError> {
+    let support = build_action_support("path_remove", Some(scope));
+    if !support.supported {
+        return Ok(blocked_path_mutation_result("path_remove", scope, &support));
+    }
+
     let entries: Vec<String> = env::get_persistent_path(scope)
         .await?
         .into_iter()
         .filter(|e| e != &path)
         .collect();
-    env::set_persistent_path(&entries, scope).await
+    env::set_persistent_path(&entries, scope).await?;
+    let shell_guidance = shell_guidance_for_path(
+        &entries,
+        scope,
+        auto_applied_shell_for_scope(scope).as_deref(),
+        false,
+    );
+    let (verified, actual_entries) = env::verify_envvar_path_state(scope, &entries).await?;
+    let (success, verified_flag, status, reason_code, message) =
+        mutation_status_from_verification(verified, scope, &shell_guidance);
+
+    Ok(EnvVarPathMutationResult {
+        operation: "path_remove".to_string(),
+        scope,
+        success,
+        verified: verified_flag,
+        status,
+        reason_code,
+        message,
+        removed_count: 0,
+        path_entries: summarize_path_entries(actual_entries),
+        primary_shell_target: primary_shell_target_for_scope(scope),
+        shell_guidance,
+    })
 }
 
 #[tauri::command]
 pub async fn envvar_reorder_path(
     entries: Vec<String>,
     scope: EnvVarScope,
-) -> Result<(), CogniaError> {
-    env::set_persistent_path(&entries, scope).await
+) -> Result<EnvVarPathMutationResult, CogniaError> {
+    let support = build_action_support("path_reorder", Some(scope));
+    if !support.supported {
+        return Ok(blocked_path_mutation_result("path_reorder", scope, &support));
+    }
+
+    env::set_persistent_path(&entries, scope).await?;
+    let shell_guidance = shell_guidance_for_path(
+        &entries,
+        scope,
+        auto_applied_shell_for_scope(scope).as_deref(),
+        false,
+    );
+    let (verified, actual_entries) = env::verify_envvar_path_state(scope, &entries).await?;
+    let (success, verified_flag, status, reason_code, message) =
+        mutation_status_from_verification(verified, scope, &shell_guidance);
+
+    Ok(EnvVarPathMutationResult {
+        operation: "path_reorder".to_string(),
+        scope,
+        success,
+        verified: verified_flag,
+        status,
+        reason_code,
+        message,
+        removed_count: 0,
+        path_entries: summarize_path_entries(actual_entries),
+        primary_shell_target: primary_shell_target_for_scope(scope),
+        shell_guidance,
+    })
 }
 
 #[tauri::command]
@@ -343,6 +826,23 @@ pub async fn envvar_import_env_file(
     content: String,
     scope: EnvVarScope,
 ) -> Result<EnvVarImportResult, CogniaError> {
+    let support = build_action_support("import", Some(scope));
+    if !support.supported {
+        return Ok(EnvVarImportResult {
+            imported: 0,
+            skipped: 0,
+            errors: Vec::new(),
+            scope,
+            success: false,
+            verified: false,
+            status: "blocked".to_string(),
+            reason_code: Some(support.reason_code),
+            message: Some(support.reason),
+            primary_shell_target: None,
+            shell_guidance: Vec::new(),
+        });
+    }
+
     let parsed = env::parse_env_file(&content);
     let mut imported = 0usize;
     let mut skipped = 0usize;
@@ -371,6 +871,19 @@ pub async fn envvar_import_env_file(
         imported,
         skipped,
         errors,
+        scope,
+        success: true,
+        verified: true,
+        status: "verified".to_string(),
+        reason_code: None,
+        message: None,
+        primary_shell_target: primary_shell_target_for_scope(scope),
+        shell_guidance: shell_guidance_for_pairs(
+            &[],
+            scope,
+            auto_applied_shell_for_scope(scope).as_deref(),
+            false,
+        ),
     })
 }
 
@@ -388,6 +901,23 @@ pub async fn envvar_apply_import_preview(
     scope: EnvVarScope,
     fingerprint: String,
 ) -> Result<EnvVarImportResult, CogniaError> {
+    let support = build_action_support("import", Some(scope));
+    if !support.supported {
+        return Ok(EnvVarImportResult {
+            imported: 0,
+            skipped: 0,
+            errors: Vec::new(),
+            scope,
+            success: false,
+            verified: false,
+            status: "blocked".to_string(),
+            reason_code: Some(support.reason_code),
+            message: Some(support.reason),
+            primary_shell_target: None,
+            shell_guidance: Vec::new(),
+        });
+    }
+
     let build = build_import_preview_internal(&content, scope).await?;
     ensure_preview_fingerprint(&build.preview.fingerprint, &fingerprint)?;
 
@@ -419,6 +949,14 @@ pub async fn envvar_apply_import_preview(
         imported,
         skipped,
         errors,
+        scope,
+        success: true,
+        verified: true,
+        status: "verified".to_string(),
+        reason_code: None,
+        message: None,
+        primary_shell_target: build.preview.primary_shell_target,
+        shell_guidance: build.preview.shell_guidance,
     })
 }
 
@@ -592,6 +1130,23 @@ pub async fn envvar_resolve_conflict(
     target_scope: EnvVarScope,
 ) -> Result<EnvVarConflictResolutionResult, CogniaError> {
     let key = env::normalize_env_var_key(&key)?;
+    let support = build_action_support("resolve_conflict", Some(target_scope));
+    if !support.supported {
+        return Ok(EnvVarConflictResolutionResult {
+            key,
+            source_scope,
+            target_scope,
+            applied_value: String::new(),
+            applied_value_summary: env::summarize_env_value("UNAVAILABLE", ""),
+            success: false,
+            verified: false,
+            status: "blocked".to_string(),
+            reason_code: Some(support.reason_code),
+            message: Some(support.reason),
+            primary_shell_target: None,
+            shell_guidance: Vec::new(),
+        });
+    }
     let value = env::get_persistent_var(&key, source_scope)
         .await?
         .ok_or_else(|| CogniaError::Config(format!("missing_source_value:{key}")))?;
@@ -605,12 +1160,19 @@ pub async fn envvar_resolve_conflict(
         auto_applied_shell_for_scope(target_scope).as_deref(),
         false,
     );
+    let applied_value_summary = env::summarize_env_value(&key, &value);
 
     Ok(EnvVarConflictResolutionResult {
         key,
         source_scope,
         target_scope,
+        applied_value_summary,
         applied_value: value,
+        success: true,
+        verified: true,
+        status: "verified".to_string(),
+        reason_code: None,
+        message: None,
         primary_shell_target,
         shell_guidance,
     })
@@ -632,7 +1194,12 @@ pub async fn envvar_preview_path_repair(
 pub async fn envvar_apply_path_repair(
     scope: EnvVarScope,
     fingerprint: String,
-) -> Result<usize, CogniaError> {
+) -> Result<EnvVarPathMutationResult, CogniaError> {
+    let support = build_action_support("path_repair", Some(scope));
+    if !support.supported {
+        return Ok(blocked_path_mutation_result("path_repair", scope, &support));
+    }
+
     let preview = build_path_repair_preview(scope).await?;
     ensure_preview_fingerprint(&preview.fingerprint, &fingerprint)?;
 
@@ -640,7 +1207,19 @@ pub async fn envvar_apply_path_repair(
         env::set_persistent_path(&preview.repaired_entries, scope).await?;
     }
 
-    Ok(preview.removed_count)
+    Ok(EnvVarPathMutationResult {
+        operation: "path_repair".to_string(),
+        scope,
+        success: true,
+        verified: true,
+        status: "verified".to_string(),
+        reason_code: None,
+        message: None,
+        removed_count: preview.removed_count,
+        path_entries: summarize_path_entries(preview.repaired_entries),
+        primary_shell_target: preview.primary_shell_target,
+        shell_guidance: preview.shell_guidance,
+    })
 }
 
 #[tauri::command]
@@ -678,26 +1257,55 @@ pub fn envvar_generate_shell_guidance(
 }
 
 #[tauri::command]
-pub async fn envvar_deduplicate_path(scope: EnvVarScope) -> Result<usize, CogniaError> {
+pub async fn envvar_deduplicate_path(
+    scope: EnvVarScope,
+) -> Result<EnvVarPathMutationResult, CogniaError> {
+    let support = build_action_support("path_deduplicate", Some(scope));
+    if !support.supported {
+        return Ok(blocked_path_mutation_result(
+            "path_deduplicate",
+            scope,
+            &support,
+        ));
+    }
+
     let entries = env::get_persistent_path(scope).await?;
     let original_count = entries.len();
     let mut seen = HashSet::new();
     let deduped: Vec<String> = entries
-        .into_iter()
+        .iter()
         .filter(|e| {
             let key = if cfg!(windows) {
                 e.to_lowercase()
             } else {
-                e.clone()
+                (*e).clone()
             };
             seen.insert(key)
         })
+        .cloned()
         .collect();
     let removed = original_count - deduped.len();
     if removed > 0 {
         env::set_persistent_path(&deduped, scope).await?;
     }
-    Ok(removed)
+    Ok(EnvVarPathMutationResult {
+        operation: "path_deduplicate".to_string(),
+        scope,
+        success: true,
+        verified: true,
+        status: "verified".to_string(),
+        reason_code: None,
+        message: None,
+        removed_count: removed,
+        path_entries: summarize_path_entries(deduped),
+        primary_shell_target: primary_shell_target_for_scope(scope),
+        shell_guidance: shell_guidance_for_path(
+            &entries,
+            scope,
+            auto_applied_shell_for_scope(scope).as_deref(),
+            false,
+        ),
+    })
 }
 
 // ============================================================================
@@ -1216,8 +1824,8 @@ mod tests {
             .await
             .expect("second dedup");
 
-        assert_eq!(removed_first, 1);
-        assert_eq!(removed_second, 0);
+        assert_eq!(removed_first.removed_count, 1);
+        assert_eq!(removed_second.removed_count, 0);
 
         env::set_persistent_path(&original, EnvVarScope::Process)
             .await
@@ -1271,6 +1879,30 @@ mod tests {
         assert!(matches!(result, Err(CogniaError::Conflict(message)) if message.contains("stale_preview")));
 
         env::remove_var("ENVVAR_STALE_IMPORT");
+    }
+
+    #[tokio::test]
+    async fn apply_import_preview_returns_verification_metadata() {
+        let result = envvar_apply_import_preview(
+            "ENVVAR_IMPORT_VERIFY=after".into(),
+            EnvVarScope::Process,
+            envvar_preview_import_env_file(
+                "ENVVAR_IMPORT_VERIFY=after".into(),
+                EnvVarScope::Process,
+            )
+            .await
+            .expect("preview should succeed")
+            .fingerprint,
+        )
+        .await
+        .expect("apply import preview should succeed");
+
+        let json = serde_json::to_value(&result).expect("serialize result");
+        assert_eq!(json["status"], "verified");
+        assert_eq!(json["verified"], true);
+        assert_eq!(json["scope"], "process");
+
+        env::remove_var("ENVVAR_IMPORT_VERIFY");
     }
 
     #[tokio::test]
@@ -1353,6 +1985,26 @@ mod tests {
         env::remove_var("ENVVAR_RESOLVE_KEY");
     }
 
+    #[tokio::test]
+    async fn resolve_conflict_returns_verification_metadata() {
+        env::set_var("ENVVAR_RESOLVE_VERIFY", "from-source");
+
+        let result = envvar_resolve_conflict(
+            "ENVVAR_RESOLVE_VERIFY".into(),
+            EnvVarScope::Process,
+            EnvVarScope::Process,
+        )
+        .await
+        .expect("conflict resolution should succeed");
+
+        let json = serde_json::to_value(&result).expect("serialize result");
+        assert_eq!(json["status"], "verified");
+        assert_eq!(json["verified"], true);
+        assert_eq!(json["reasonCode"], serde_json::Value::Null);
+
+        env::remove_var("ENVVAR_RESOLVE_VERIFY");
+    }
+
     #[test]
     fn shell_guidance_generates_shell_specific_commands() {
         let guidance = envvar_generate_shell_guidance(
@@ -1370,5 +2022,60 @@ mod tests {
         assert!(guidance.iter().any(|entry| entry.shell == "powershell" && entry.command.contains("$env:ENVVAR_GUIDE_KEY")));
         assert!(guidance.iter().any(|entry| entry.shell == "bash" && entry.auto_applied));
         assert!(guidance.iter().all(|entry| !entry.redacted));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn support_snapshot_reports_blocked_user_mutation_without_shell_profile() {
+        let dir = tempdir().expect("temp dir");
+        let home_dir = dir.path().join("home");
+        std::fs::create_dir_all(&home_dir).expect("home dir");
+        crate::platform::env::configure_env_test_fixture(
+            home_dir,
+            crate::platform::env::ShellType::Bash,
+            dir.path().join("etc-environment"),
+        );
+
+        let snapshot = envvar_get_support_snapshot().expect("support snapshot");
+        let set_user = snapshot
+            .actions
+            .iter()
+            .find(|item| item.action == "set" && item.scope == Some(EnvVarScope::User))
+            .expect("user set support");
+
+        assert_eq!(set_user.state, "blocked");
+        assert_eq!(set_user.reason_code, "shell_profile_unavailable");
+
+        crate::platform::env::reset_env_test_overrides();
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn user_scope_set_returns_manual_followup_metadata() {
+        let dir = tempdir().expect("temp dir");
+        let home_dir = dir.path().join("home");
+        let bashrc = home_dir.join(".bashrc");
+        std::fs::create_dir_all(bashrc.parent().expect("bashrc parent")).expect("home tree");
+        std::fs::write(&bashrc, "").expect("bashrc");
+        crate::platform::env::configure_env_test_fixture(
+            home_dir,
+            crate::platform::env::ShellType::Bash,
+            dir.path().join("etc-environment"),
+        );
+
+        let result = envvar_set_persistent(
+            "COGNIA_USER_STATUS".into(),
+            "value".into(),
+            EnvVarScope::User,
+        )
+        .await
+        .expect("set user persistent");
+
+        assert_eq!(result.status, "manual_followup_required");
+        assert!(result.success);
+        assert!(!result.verified);
+        assert_eq!(result.reason_code.as_deref(), Some("shell_sync_required"));
+
+        crate::platform::env::reset_env_test_overrides();
     }
 }

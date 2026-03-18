@@ -202,7 +202,7 @@ export function ProfileManager({ open, onOpenChange }: ProfileManagerProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[640px] max-h-[85vh] flex flex-col">
+      <DialogContent className="sm:max-w-160 max-h-[85vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Bookmark className="h-5 w-5" />
@@ -432,7 +432,7 @@ export function ProfileManager({ open, onOpenChange }: ProfileManagerProps) {
           )}
 
           {/* Profile List */}
-          <ScrollArea className="h-[300px]">
+          <ScrollArea className="h-75">
             {profiles.length === 0 ? (
               <div className="text-center py-12 text-muted-foreground">
                 <Bookmark className="h-8 w-8 mx-auto mb-2 opacity-50" />

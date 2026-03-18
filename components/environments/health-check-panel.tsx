@@ -164,7 +164,7 @@ export function HealthCheckPanel({ className }: HealthCheckPanelProps) {
             )}
 
             {/* Environment Health */}
-            <ScrollArea className="h-[400px]">
+            <ScrollArea className="h-100">
               <div className="space-y-2 pr-4">
                 {systemHealth.environments.map((env) => (
                   <Collapsible

@@ -731,11 +731,12 @@ pub async fn env_list(
 #[tauri::command]
 pub async fn env_get(
     env_type: String,
+    provider_id: Option<String>,
     registry: State<'_, SharedRegistry>,
 ) -> Result<EnvironmentInfo, String> {
     let manager = EnvironmentManager::new(registry.inner().clone());
     manager
-        .get_environment(&env_type)
+        .get_environment(&env_type, provider_id.as_deref())
         .await
         .map_err(|e| e.to_string())
 }

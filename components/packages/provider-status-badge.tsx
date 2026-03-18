@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
@@ -22,9 +22,16 @@ import {
 import { useLocale } from "@/components/providers/locale-provider";
 import * as tauri from "@/lib/tauri";
 import { isPackageSurfaceProvider } from "@/lib/constants/providers";
+import {
+  getProviderStatusState,
+  normalizeProviderStatus,
+  isProviderStatusAvailable,
+} from "@/lib/utils/provider";
 import { toast } from "sonner";
 import Link from "next/link";
 import type { ProviderStatusBadgeProps } from "@/types/packages";
+import type { ProviderStatusInfo } from "@/types/tauri";
+import { ProviderStatusBadge as ManagementProviderStatusBadge } from "@/components/provider-management/provider-status-badge";
 
 export function ProviderStatusBadge({
   providers,
@@ -37,9 +44,10 @@ export function ProviderStatusBadge({
   const [checkingStatus, setCheckingStatus] = useState<Record<string, boolean>>(
     {},
   );
-  const [providerAvailability, setProviderAvailability] = useState<
-    Record<string, boolean>
+  const [providerStatusMap, setProviderStatusMap] = useState<
+    Record<string, ProviderStatusInfo>
   >({});
+  const [loadingAggregateStatus, setLoadingAggregateStatus] = useState(false);
 
   const enabledCount = useMemo(
     () => providers.filter((p) => p.enabled).length,
@@ -48,10 +56,64 @@ export function ProviderStatusBadge({
 
   const availableCount = useMemo(
     () =>
-      providers.filter((p) => p.enabled && providerAvailability[p.id] !== false)
+      providers.filter((provider) => {
+        if (!provider.enabled) {
+          return false;
+        }
+
+        const status = providerStatusMap[provider.id];
+        if (!status) {
+          return true;
+        }
+
+        return isProviderStatusAvailable(status) === true;
+      })
         .length,
-    [providers, providerAvailability],
+    [providers, providerStatusMap],
   );
+
+  const applyProviderStatus = useCallback((status: ProviderStatusInfo) => {
+    setProviderStatusMap((prev) => ({
+      ...prev,
+      [status.id]: normalizeProviderStatus(status.id, status) ?? status,
+    }));
+  }, []);
+
+  const loadAggregateStatuses = useCallback(async () => {
+    setLoadingAggregateStatus(true);
+    try {
+      const statuses = await tauri.providerStatusAll(true);
+      const nextMap: Record<string, ProviderStatusInfo> = {};
+      for (const status of statuses) {
+        const normalized = normalizeProviderStatus(status.id, status);
+        if (normalized) {
+          nextMap[status.id] = normalized;
+        }
+      }
+      setProviderStatusMap(nextMap);
+    } finally {
+      setLoadingAggregateStatus(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    void loadAggregateStatuses();
+  }, [loadAggregateStatuses, open]);
+
+  useEffect(() => {
+    setProviderStatusMap((prev) => {
+      const allowed = new Set(providers.map((provider) => provider.id));
+      const next = Object.fromEntries(
+        Object.entries(prev).filter(([providerId]) => allowed.has(providerId)),
+      );
+
+      return Object.keys(next).length === Object.keys(prev).length ? prev : next;
+    });
+  }, [providers]);
 
   const handleToggle = useCallback(
     async (providerId: string, enabled: boolean) => {
@@ -73,7 +135,8 @@ export function ProviderStatusBadge({
                 name: provider?.display_name || providerId,
               }),
         );
-        onRefresh?.();
+        await Promise.resolve(onRefresh?.());
+        applyProviderStatus(await tauri.providerStatus(providerId));
       } catch {
         toast.error(
           enabled
@@ -84,18 +147,17 @@ export function ProviderStatusBadge({
         setTogglingProvider(null);
       }
     },
-    [providers, onProviderToggle, onRefresh, t],
+    [applyProviderStatus, onProviderToggle, onRefresh, providers, t],
   );
 
   const handleCheckStatus = useCallback(async (providerId: string) => {
     setCheckingStatus((prev) => ({ ...prev, [providerId]: true }));
     try {
-      const available = await tauri.providerCheck(providerId);
-      setProviderAvailability((prev) => ({ ...prev, [providerId]: available }));
+      applyProviderStatus(await tauri.providerStatus(providerId));
     } finally {
       setCheckingStatus((prev) => ({ ...prev, [providerId]: false }));
     }
-  }, []);
+  }, [applyProviderStatus]);
 
   const packageProviders = useMemo(
     () => providers.filter((p) => isPackageSurfaceProvider(p)),
@@ -141,7 +203,8 @@ export function ProviderStatusBadge({
             {packageProviders.map((provider) => {
               const isToggling = togglingProvider === provider.id;
               const isChecking = checkingStatus[provider.id];
-              const availability = providerAvailability[provider.id];
+              const status = providerStatusMap[provider.id];
+              const statusState = getProviderStatusState(status);
 
               return (
                 <div
@@ -150,11 +213,11 @@ export function ProviderStatusBadge({
                 >
                   <div className="flex items-center gap-2 min-w-0">
                     <div className="relative">
-                      {isChecking ? (
+                      {isChecking || (loadingAggregateStatus && open && !status) ? (
                         <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                      ) : availability === true ? (
+                      ) : statusState === "available" ? (
                         <CheckCircle2 className="h-4 w-4 text-green-500" />
-                      ) : availability === false ? (
+                      ) : statusState !== "unknown" ? (
                         <XCircle className="h-4 w-4 text-destructive" />
                       ) : (
                         <Server className="h-4 w-4 text-muted-foreground" />
@@ -167,9 +230,14 @@ export function ProviderStatusBadge({
                       >
                         {provider.display_name}
                       </Label>
-                      <span className="text-xs text-muted-foreground font-mono">
-                        {provider.id}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground font-mono">
+                          {provider.id}
+                        </span>
+                        {status && (
+                          <ManagementProviderStatusBadge status={status} t={t} />
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -208,13 +276,13 @@ export function ProviderStatusBadge({
             size="sm"
             className="w-full"
             onClick={() => {
-              packageProviders.forEach((p) => {
-                if (p.enabled) {
-                  handleCheckStatus(p.id);
-                }
-              });
+              void loadAggregateStatuses();
             }}
+            disabled={loadingAggregateStatus}
           >
+            {loadingAggregateStatus ? (
+              <Loader2 className="h-3 w-3 animate-spin mr-2" />
+            ) : null}
             {t("providers.checkAllStatus")}
           </Button>
         </div>

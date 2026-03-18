@@ -24,6 +24,7 @@ import { SYSTEM_PROVIDER_IDS, isPackageManagerProvider } from '@/lib/constants/p
 import {
   getProviderStatusSortValue,
   getProviderStatusState,
+  isProviderStatusAvailable,
 } from '@/lib/utils/provider';
 import { emitInvalidations } from '@/lib/cache/invalidation';
 import { toast } from 'sonner';
@@ -77,7 +78,7 @@ export default function ProvidersPage() {
     try {
       const status = await tauri.providerStatus(providerId);
       setProviderStatus((prev) => ({ ...prev, [providerId]: status }));
-      if (status.scope_state === 'available' || status.installed) {
+      if (isProviderStatusAvailable(status) === true) {
         toast.success(t('providers.checkSuccess', { name: providerId }));
       } else {
         toast.warning(t('providers.checkFailed', { name: providerId }));

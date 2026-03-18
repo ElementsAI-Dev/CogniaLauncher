@@ -171,23 +171,23 @@ export function EnvDetailPageClient({ envType }: EnvDetailPageClientProps) {
 
   const handleUninstallVersion = useCallback(
     async (version: string) => {
-      await uninstallVersion(envType, version);
+      await uninstallVersion(envType, version, currentProviderId);
     },
-    [envType, uninstallVersion],
+    [currentProviderId, envType, uninstallVersion],
   );
 
   const handleSetGlobalVersion = useCallback(
     async (version: string) => {
-      await setGlobalVersion(envType, version);
+      await setGlobalVersion(envType, version, currentProviderId);
     },
-    [envType, setGlobalVersion],
+    [currentProviderId, envType, setGlobalVersion],
   );
 
   const handleSetLocalVersion = useCallback(
     async (version: string, path: string) => {
-      await setLocalVersion(envType, version, path);
+      await setLocalVersion(envType, version, path, currentProviderId);
     },
-    [envType, setLocalVersion],
+    [currentProviderId, envType, setLocalVersion],
   );
 
   const handleOpenVersionBrowser = useCallback(() => {

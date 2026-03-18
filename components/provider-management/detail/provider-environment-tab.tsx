@@ -105,7 +105,7 @@ export function ProviderEnvironmentTab({
     async (version: string) => {
       setUninstallingVersion(version);
       try {
-        await tauri.envUninstall(envType, version);
+        await tauri.envUninstall(envType, version, providerId);
         toast.success(
           t("providerDetail.versionUninstalled", { version }),
         );
@@ -118,14 +118,14 @@ export function ProviderEnvironmentTab({
         setUninstallingVersion(null);
       }
     },
-    [envType, onRefreshEnvironment, t],
+    [envType, onRefreshEnvironment, providerId, t],
   );
 
   const handleSetGlobal = useCallback(
     async (version: string) => {
       setSettingGlobal(version);
       try {
-        const mutation = await tauri.envUseGlobal(envType, version);
+        const mutation = await tauri.envUseGlobal(envType, version, providerId);
         if (mutation?.success === false) {
           throw new Error(mutation.message || "verification failed");
         }
@@ -141,7 +141,7 @@ export function ProviderEnvironmentTab({
         setSettingGlobal(null);
       }
     },
-    [envType, onRefreshEnvironment, t],
+    [envType, onRefreshEnvironment, providerId, t],
   );
 
   const installedVersionSet = new Set(

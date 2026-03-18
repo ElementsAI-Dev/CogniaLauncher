@@ -552,6 +552,8 @@ describe('useProviderDetail', () => {
     expect(result.current.environmentProviderInfo).toEqual(envProviders[0]);
     expect(result.current.environmentInfo).toEqual(envInfo);
     expect(result.current.availableVersions).toEqual(versions);
+    expect(mockEnvGet).toHaveBeenCalledWith('node', PROVIDER_ID);
+    expect(mockEnvAvailableVersions).toHaveBeenCalledWith('node', PROVIDER_ID);
   });
 
   it('should handle non-env provider in fetchEnvironmentInfo', async () => {

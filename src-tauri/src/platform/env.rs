@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::env;
 use std::path::{Path, PathBuf};
+#[cfg(test)]
+use std::sync::{Mutex, OnceLock};
 
 use serde::{Deserialize, Serialize};
 
@@ -173,6 +175,13 @@ pub enum ShellType {
 
 impl ShellType {
     pub fn detect() -> Self {
+        #[cfg(test)]
+        {
+            if let Some(shell_type) = get_env_test_overrides().shell_type {
+                return shell_type;
+            }
+        }
+
         if let Ok(shell) = env::var("SHELL") {
             if shell.contains("nu") && !shell.contains("bash") {
                 return ShellType::Nushell;
@@ -477,6 +486,69 @@ pub struct RedactedShellContent {
 }
 
 const REDACTED_ENV_VALUE_PLACEHOLDER: &str = "[REDACTED]";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EnvVarActionReadiness {
+    pub supported: bool,
+    pub state: String,
+    pub reason_code: String,
+    pub reason: String,
+    pub next_steps: Vec<String>,
+}
+
+#[cfg(test)]
+#[derive(Debug, Clone, Default)]
+struct EnvTestOverrides {
+    home_dir: Option<PathBuf>,
+    shell_type: Option<ShellType>,
+    #[cfg(not(windows))]
+    system_environment_path: Option<PathBuf>,
+}
+
+#[cfg(test)]
+static ENV_TEST_OVERRIDES: OnceLock<Mutex<EnvTestOverrides>> = OnceLock::new();
+
+#[cfg(test)]
+fn env_test_overrides() -> &'static Mutex<EnvTestOverrides> {
+    ENV_TEST_OVERRIDES.get_or_init(|| Mutex::new(EnvTestOverrides::default()))
+}
+
+#[cfg(test)]
+fn get_env_test_overrides() -> EnvTestOverrides {
+    env_test_overrides()
+        .lock()
+        .expect("env test overrides lock")
+        .clone()
+}
+
+#[cfg(test)]
+fn set_env_test_overrides(overrides: EnvTestOverrides) {
+    *env_test_overrides()
+        .lock()
+        .expect("env test overrides lock") = overrides;
+}
+
+#[cfg(test)]
+pub fn reset_env_test_overrides() {
+    *env_test_overrides()
+        .lock()
+        .expect("env test overrides lock") = EnvTestOverrides::default();
+}
+
+#[cfg(test)]
+pub fn configure_env_test_fixture(
+    home_dir: PathBuf,
+    shell_type: ShellType,
+    #[cfg(not(windows))]
+    system_environment_path: PathBuf,
+) {
+    set_env_test_overrides(EnvTestOverrides {
+        home_dir: Some(home_dir),
+        shell_type: Some(shell_type),
+        #[cfg(not(windows))]
+        system_environment_path: Some(system_environment_path),
+    });
+}
 
 // ============================================================================
 // Process-level helpers
@@ -814,7 +886,7 @@ async fn list_persistent_vars_platform(scope: EnvVarScope) -> CogniaResult<Vec<(
             // Linux: parse /etc/environment
             #[cfg(target_os = "linux")]
             {
-                let content = tokio::fs::read_to_string("/etc/environment")
+                let content = tokio::fs::read_to_string(system_environment_path())
                     .await
                     .unwrap_or_default();
                 let mut result: Vec<(String, String)> = parse_env_file(&content);
@@ -1358,7 +1430,7 @@ async fn get_persistent_var_platform(
     match scope {
         EnvVarScope::System => {
             // Read from /etc/environment
-            let content = tokio::fs::read_to_string("/etc/environment")
+            let content = tokio::fs::read_to_string(system_environment_path())
                 .await
                 .unwrap_or_default();
             for line in content.lines() {
@@ -1597,7 +1669,7 @@ async fn get_persistent_path_platform(scope: EnvVarScope) -> CogniaResult<Vec<St
             // Linux: parse PATH from /etc/environment
             #[cfg(target_os = "linux")]
             {
-                if let Ok(content) = tokio::fs::read_to_string("/etc/environment").await {
+                if let Ok(content) = tokio::fs::read_to_string(system_environment_path()).await {
                     for line in content.lines() {
                         let trimmed = line.trim();
                         if trimmed.starts_with("PATH=") {
@@ -1820,7 +1892,8 @@ async fn remove_shell_rc_var(rc_path: &Path, key: &str, shell: &ShellType) -> Co
 
 #[cfg(not(windows))]
 async fn upsert_etc_environment(key: &str, value: &str) -> CogniaResult<()> {
-    let etc_env = Path::new("/etc/environment");
+    let etc_env_path = system_environment_path();
+    let etc_env = etc_env_path.as_path();
     let content = if etc_env.exists() {
         tokio::fs::read_to_string(etc_env)
             .await
@@ -1860,7 +1933,8 @@ async fn upsert_etc_environment(key: &str, value: &str) -> CogniaResult<()> {
 
 #[cfg(not(windows))]
 async fn remove_etc_environment_var(key: &str) -> CogniaResult<()> {
-    let etc_env = Path::new("/etc/environment");
+    let etc_env_path = system_environment_path();
+    let etc_env = etc_env_path.as_path();
     if !etc_env.exists() {
         return Ok(());
     }
@@ -1885,7 +1959,176 @@ async fn remove_etc_environment_var(key: &str) -> CogniaResult<()> {
 }
 
 pub fn dirs_home() -> Option<PathBuf> {
+    #[cfg(test)]
+    {
+        if let Some(home_dir) = get_env_test_overrides().home_dir {
+            return Some(home_dir);
+        }
+    }
+
     directories::BaseDirs::new().map(|dirs| dirs.home_dir().to_path_buf())
+}
+
+#[cfg(not(windows))]
+fn system_environment_path() -> PathBuf {
+    #[cfg(test)]
+    {
+        if let Some(path) = get_env_test_overrides().system_environment_path {
+            return path;
+        }
+    }
+
+    PathBuf::from("/etc/environment")
+}
+
+pub fn evaluate_envvar_action_readiness(
+    action: &str,
+    scope: Option<EnvVarScope>,
+) -> EnvVarActionReadiness {
+    let shell_profiles = list_shell_profiles();
+    let has_shell_profile = shell_profiles.iter().any(|profile| profile.exists);
+    let current_shell = ShellType::detect();
+    let has_shell_config = current_shell
+        .config_file()
+        .map(|path| path.exists())
+        .unwrap_or(false);
+    let scope = scope.unwrap_or(EnvVarScope::Process);
+
+    match (action, scope) {
+        ("refresh", _)
+        | ("list", _)
+        | ("get", _)
+        | ("detect_conflicts", _)
+        | ("expand_path", _) => EnvVarActionReadiness {
+            supported: true,
+            state: "ready".to_string(),
+            reason_code: "ready".to_string(),
+            reason: "The workflow is ready.".to_string(),
+            next_steps: Vec::new(),
+        },
+        ("read_shell_profile", _) | ("shell_guidance", _) => {
+            if has_shell_profile {
+                EnvVarActionReadiness {
+                    supported: true,
+                    state: "ready".to_string(),
+                    reason_code: "ready".to_string(),
+                    reason: "Shell profile data is available.".to_string(),
+                    next_steps: Vec::new(),
+                }
+            } else {
+                EnvVarActionReadiness {
+                    supported: false,
+                    state: "unavailable".to_string(),
+                    reason_code: "shell_profile_unavailable".to_string(),
+                    reason: "No shell profile was detected on this host.".to_string(),
+                    next_steps: vec![
+                        "Configure a supported shell profile, then retry.".to_string(),
+                    ],
+                }
+            }
+        }
+        (_, EnvVarScope::Process) => EnvVarActionReadiness {
+            supported: true,
+            state: "ready".to_string(),
+            reason_code: "ready".to_string(),
+            reason: "Process-scope envvar workflows are ready.".to_string(),
+            next_steps: Vec::new(),
+        },
+        (_, EnvVarScope::User) => {
+            if !has_shell_config {
+                EnvVarActionReadiness {
+                    supported: false,
+                    state: "blocked".to_string(),
+                    reason_code: "shell_profile_unavailable".to_string(),
+                    reason: "No writable shell startup file is available for user-scope envvar changes.".to_string(),
+                    next_steps: vec![
+                        "Create or select a supported shell profile before retrying.".to_string(),
+                    ],
+                }
+            } else if !has_shell_profile {
+                EnvVarActionReadiness {
+                    supported: true,
+                    state: "degraded".to_string(),
+                    reason_code: "shell_profile_not_detected".to_string(),
+                    reason: "The current shell can be targeted, but follow-up guidance for other shells is unavailable.".to_string(),
+                    next_steps: vec![
+                        "Verify shell startup files manually after applying the change.".to_string(),
+                    ],
+                }
+            } else {
+                EnvVarActionReadiness {
+                    supported: true,
+                    state: "ready".to_string(),
+                    reason_code: "ready".to_string(),
+                    reason: "User-scope envvar workflows are ready.".to_string(),
+                    next_steps: Vec::new(),
+                }
+            }
+        }
+        (_, EnvVarScope::System) => EnvVarActionReadiness {
+            supported: true,
+            state: "degraded".to_string(),
+            reason_code: if cfg!(windows) {
+                "system_scope_requires_elevation".to_string()
+            } else {
+                "system_scope_requires_permissions".to_string()
+            },
+            reason: if cfg!(windows) {
+                "System-scope envvar changes may require elevation before they can be verified.".to_string()
+            } else {
+                "System-scope envvar changes depend on host-level permissions.".to_string()
+            },
+            next_steps: vec![
+                "Retry with the required system permissions if the mutation is blocked.".to_string(),
+            ],
+        },
+    }
+}
+
+pub async fn verify_envvar_value_state(
+    key: &str,
+    scope: EnvVarScope,
+    expected: Option<&str>,
+) -> CogniaResult<(bool, Option<EnvVarValueSummary>)> {
+    let actual = get_persistent_var(key, scope).await?;
+    let verified = match (expected, actual.as_deref()) {
+        (Some(expected), Some(actual)) => expected == actual,
+        (None, None) => true,
+        _ => false,
+    };
+
+    let summary = actual
+        .as_deref()
+        .map(|value| summarize_env_value(key, value));
+
+    Ok((verified, summary))
+}
+
+pub fn envvar_entries_match(expected: &[String], actual: &[String]) -> bool {
+    if expected.len() != actual.len() {
+        return false;
+    }
+
+    expected
+        .iter()
+        .zip(actual.iter())
+        .all(|(left, right)| scope_key_signature(left) == scope_key_signature(right))
+}
+
+pub async fn verify_envvar_path_state(
+    scope: EnvVarScope,
+    expected: &[String],
+) -> CogniaResult<(bool, Vec<String>)> {
+    let actual = get_persistent_path(scope).await?;
+    Ok((envvar_entries_match(expected, &actual), actual))
+}
+
+fn scope_key_signature(value: &str) -> String {
+    if cfg!(windows) {
+        value.to_lowercase()
+    } else {
+        value.to_string()
+    }
 }
 
 pub fn current_platform() -> Platform {
@@ -2020,6 +2263,69 @@ pub fn detect_libc() -> LibcType {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(not(windows))]
+    use tempfile::tempdir;
+
+    #[cfg(not(windows))]
+    struct EnvTestFixture {
+        _dir: tempfile::TempDir,
+        home_dir: PathBuf,
+        system_env_path: PathBuf,
+        shell_type: ShellType,
+    }
+
+    #[cfg(not(windows))]
+    impl EnvTestFixture {
+        fn new(shell_type: ShellType, create_shell_profile: bool) -> Self {
+            let dir = tempdir().expect("tempdir");
+            let home_dir = dir.path().join("home");
+            std::fs::create_dir_all(&home_dir).expect("create home dir");
+            let system_env_path = dir.path().join("etc-environment");
+
+            configure_env_test_fixture(
+                home_dir.clone(),
+                shell_type,
+                system_env_path.clone(),
+            );
+
+            let fixture = Self {
+                _dir: dir,
+                home_dir,
+                system_env_path,
+                shell_type,
+            };
+
+            if create_shell_profile {
+                let shell_config_path = fixture.shell_config_path();
+                if let Some(parent) = shell_config_path.parent() {
+                    std::fs::create_dir_all(parent).expect("create shell config parent");
+                }
+                std::fs::write(&shell_config_path, "").expect("create shell config");
+            }
+
+            fixture
+        }
+
+        fn shell_config_path(&self) -> PathBuf {
+            match self.shell_type {
+                ShellType::Bash => self.home_dir.join(".bashrc"),
+                ShellType::Zsh => self.home_dir.join(".zshrc"),
+                ShellType::Fish => self.home_dir.join(".config/fish/config.fish"),
+                ShellType::PowerShell => self
+                    .home_dir
+                    .join(".config/powershell/Microsoft.PowerShell_profile.ps1"),
+                ShellType::Nushell => self.home_dir.join(".config/nushell/config.nu"),
+                ShellType::Cmd => self.home_dir.join(".cmd-profile"),
+            }
+        }
+    }
+
+    #[cfg(not(windows))]
+    impl Drop for EnvTestFixture {
+        fn drop(&mut self) {
+            reset_env_test_overrides();
+        }
+    }
 
     #[test]
     fn test_env_modifications() {
@@ -2554,6 +2860,30 @@ mod tests {
         assert_eq!(summary.length, "development".len());
     }
 
+    #[cfg(not(windows))]
+    #[test]
+    fn test_envvar_readiness_blocks_user_scope_without_shell_profile_fixture() {
+        let _fixture = EnvTestFixture::new(ShellType::Bash, false);
+
+        let readiness = evaluate_envvar_action_readiness("set", Some(EnvVarScope::User));
+
+        assert!(!readiness.supported);
+        assert_eq!(readiness.state, "blocked");
+        assert_eq!(readiness.reason_code, "shell_profile_unavailable");
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn test_envvar_readiness_marks_user_scope_ready_with_shell_profile_fixture() {
+        let _fixture = EnvTestFixture::new(ShellType::Bash, true);
+
+        let readiness = evaluate_envvar_action_readiness("set", Some(EnvVarScope::User));
+
+        assert!(readiness.supported);
+        assert_eq!(readiness.state, "ready");
+        assert_eq!(readiness.reason_code, "ready");
+    }
+
     #[test]
     fn test_redact_shell_profile_content_masks_sensitive_assignments() {
         let content = [
@@ -2598,6 +2928,64 @@ mod tests {
             .unwrap();
         let val = get_persistent_var(key, EnvVarScope::Process).await.unwrap();
         assert!(val.is_none());
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn test_user_scope_persistent_var_uses_isolated_shell_fixture() {
+        let fixture = EnvTestFixture::new(ShellType::Bash, true);
+
+        set_persistent_var("COGNIA_USER_FIXTURE_KEY", "fixture-value", EnvVarScope::User)
+            .await
+            .expect("set user var");
+
+        let stored = get_persistent_var("COGNIA_USER_FIXTURE_KEY", EnvVarScope::User)
+            .await
+            .expect("get user var");
+        assert_eq!(stored, Some("fixture-value".to_string()));
+
+        let shell_content = tokio::fs::read_to_string(fixture.shell_config_path())
+            .await
+            .expect("read shell config");
+        assert!(shell_content.contains("COGNIA_USER_FIXTURE_KEY"));
+        assert!(shell_content.contains("fixture-value"));
+
+        remove_persistent_var("COGNIA_USER_FIXTURE_KEY", EnvVarScope::User)
+            .await
+            .expect("remove user var");
+        let after_remove = get_persistent_var("COGNIA_USER_FIXTURE_KEY", EnvVarScope::User)
+            .await
+            .expect("get removed user var");
+        assert_eq!(after_remove, None);
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn test_system_scope_persistent_var_uses_isolated_environment_fixture() {
+        let fixture = EnvTestFixture::new(ShellType::Bash, true);
+
+        set_persistent_var("COGNIA_SYSTEM_FIXTURE_KEY", "system-value", EnvVarScope::System)
+            .await
+            .expect("set system var");
+
+        let stored = get_persistent_var("COGNIA_SYSTEM_FIXTURE_KEY", EnvVarScope::System)
+            .await
+            .expect("get system var");
+        assert_eq!(stored, Some("system-value".to_string()));
+
+        let system_content = tokio::fs::read_to_string(&fixture.system_env_path)
+            .await
+            .expect("read system env file");
+        assert!(system_content.contains("COGNIA_SYSTEM_FIXTURE_KEY"));
+        assert!(system_content.contains("system-value"));
+
+        remove_persistent_var("COGNIA_SYSTEM_FIXTURE_KEY", EnvVarScope::System)
+            .await
+            .expect("remove system var");
+        let after_remove = get_persistent_var("COGNIA_SYSTEM_FIXTURE_KEY", EnvVarScope::System)
+            .await
+            .expect("get removed system var");
+        assert_eq!(after_remove, None);
     }
 
     #[tokio::test]

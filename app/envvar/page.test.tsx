@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import EnvVarPage from './page';
 
@@ -47,6 +47,26 @@ const hookState = {
   detectionFromCache: false,
   detectionError: null as string | null,
   detectionCanRetry: false,
+  supportSnapshot: null as null | {
+    state: string;
+    reasonCode: string;
+    reason: string;
+    platform: string;
+    detectedShells: number;
+    primaryShellTarget?: string | null;
+    actions: Array<{
+      action: string;
+      scope?: string | null;
+      supported: boolean;
+      state: string;
+      reasonCode: string;
+      reason: string;
+      nextSteps: string[];
+    }>;
+  },
+  supportLoading: false,
+  supportError: null as string | null,
+  loadSupportSnapshot: jest.fn(),
   setVar: mockSetVar,
   removeVar: mockRemoveVar,
   fetchPath: mockFetchPath,
@@ -87,6 +107,22 @@ jest.mock('sonner', () => ({
 
 describe('EnvVarPage', () => {
   const originalInnerWidth = window.innerWidth;
+  const makeSummary = (
+    key: string,
+    displayValue: string,
+    scope: 'process' | 'user' | 'system',
+  ) => ({
+    key,
+    scope,
+    value: {
+      displayValue,
+      masked: false,
+      hasValue: true,
+      length: displayValue.length,
+      isSensitive: false,
+      sensitivityReason: null,
+    },
+  });
 
   beforeEach(() => {
     mockIsTauri = false;
@@ -114,6 +150,9 @@ describe('EnvVarPage', () => {
     hookState.detectionFromCache = false;
     hookState.detectionError = null;
     hookState.detectionCanRetry = false;
+    hookState.supportSnapshot = null;
+    hookState.supportLoading = false;
+    hookState.supportError = null;
     mockSetVar.mockResolvedValue(true);
     mockLoadDetection.mockResolvedValue(null);
     jest.clearAllMocks();
@@ -160,6 +199,33 @@ describe('EnvVarPage', () => {
     await waitFor(() => {
       expect(mockLoadDetection).toHaveBeenCalled();
     });
+  });
+
+  it('disables refresh when backend support marks it blocked', async () => {
+    mockIsTauri = true;
+    hookState.supportSnapshot = {
+      state: 'degraded',
+      reasonCode: 'desktop_runtime_unavailable',
+      reason: 'Refresh is currently unavailable.',
+      platform: 'linux',
+      detectedShells: 1,
+      primaryShellTarget: '/home/user/.bashrc',
+      actions: [
+        {
+          action: 'refresh',
+          scope: 'all',
+          supported: false,
+          state: 'blocked',
+          reasonCode: 'desktop_runtime_unavailable',
+          reason: 'Refresh is currently unavailable.',
+          nextSteps: ['Start the desktop runtime.'],
+        },
+      ],
+    };
+
+    render(<EnvVarPage />);
+
+    expect(screen.getByRole('button', { name: 'envvar.actions.refresh' })).toBeDisabled();
   });
 
   it('keeps variables/path/shell tab content available with stable shells', async () => {
@@ -464,6 +530,39 @@ describe('EnvVarPage', () => {
     });
   });
 
+  it('shows manual follow-up notice for degraded conflict resolution results', async () => {
+    mockIsTauri = true;
+    hookState.conflicts = [
+      { key: 'JAVA_HOME', userValue: 'A', systemValue: 'B', effectiveValue: 'A' },
+    ];
+    hookState.detectionState = 'showing-fresh';
+    mockResolveConflict.mockResolvedValue({
+      key: 'JAVA_HOME',
+      sourceScope: 'system',
+      targetScope: 'user',
+      appliedValue: 'B',
+      success: true,
+      verified: false,
+      status: 'manual_followup_required',
+      reasonCode: 'shell_sync_required',
+      message: 'Manual shell sync is still required.',
+      primaryShellTarget: '/home/user/.bashrc',
+      shellGuidance: [],
+    });
+
+    render(<EnvVarPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('envvar-conflicts-table')).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByTestId('envvar-conflict-system-to-user-JAVA_HOME'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Manual shell sync is still required.')).toBeInTheDocument();
+    });
+  });
+
   it('shows shell guidance banner and opens shell tab from shortcut', async () => {
     mockIsTauri = true;
     hookState.detectionState = 'showing-fresh';
@@ -484,6 +583,322 @@ describe('EnvVarPage', () => {
 
     await waitFor(() => {
       expect(mockFetchShellProfiles).toHaveBeenCalled();
+    });
+  });
+
+  it('changes the toolbar scope filter and refreshes that scope', async () => {
+    mockIsTauri = true;
+    hookState.detectionState = 'showing-fresh';
+    hookState.processVarSummaries = [makeSummary('PATH', '/usr/bin', 'process')];
+
+    render(<EnvVarPage />);
+
+    await waitFor(() => {
+      expect(mockLoadDetection).toHaveBeenCalled();
+    });
+    mockLoadDetection.mockClear();
+
+    await userEvent.click(screen.getByRole('combobox', { name: 'envvar.table.scope' }));
+    await userEvent.click(await screen.findByText('envvar.scopes.user'));
+
+    await waitFor(() => {
+      expect(mockLoadDetection).toHaveBeenCalledWith('user', undefined);
+    });
+  });
+
+  it('shows a pending refresh status banner with the action label', async () => {
+    mockIsTauri = true;
+    hookState.detectionState = 'showing-fresh';
+
+    render(<EnvVarPage />);
+
+    await waitFor(() => {
+      expect(mockLoadDetection).toHaveBeenCalled();
+    });
+    mockLoadDetection.mockClear();
+    mockLoadDetection.mockImplementationOnce(() => new Promise(() => undefined));
+
+    await userEvent.click(screen.getByRole('button', { name: 'envvar.actions.refresh' }));
+
+    expect(screen.getByTestId('envvar-operation-status')).toHaveTextContent('common.loading');
+    expect(screen.getByTestId('envvar-operation-status')).toHaveTextContent('envvar.actions.refresh');
+  });
+
+  it('shows filtered count text when the toolbar search narrows results', async () => {
+    mockIsTauri = true;
+    hookState.detectionState = 'showing-fresh';
+    hookState.processVarSummaries = [
+      makeSummary('PATH', '/usr/bin', 'process'),
+      makeSummary('JAVA_HOME', '/jdk', 'process'),
+    ];
+
+    render(<EnvVarPage />);
+
+    await userEvent.type(screen.getByRole('textbox', { name: 'envvar.table.search' }), 'JAVA');
+
+    expect(screen.getByText('envvar.table.showingFiltered')).toBeInTheDocument();
+  });
+
+  it('changes the path scope and reloads entries', async () => {
+    mockIsTauri = true;
+    hookState.detectionState = 'showing-fresh';
+    hookState.pathEntries = [
+      { path: '/usr/bin', exists: true, isDirectory: true, isDuplicate: false },
+    ] as never[];
+
+    render(<EnvVarPage />);
+
+    await userEvent.click(
+      screen.getByRole('tab', { name: /^envvar\.tabs\.pathEditor(?:\s+\d+)?$/ }),
+    );
+
+    await waitFor(() => {
+      expect(mockFetchPath).toHaveBeenCalledWith('process');
+    });
+    mockFetchPath.mockClear();
+    hookState.clearPathRepairPreview.mockClear();
+
+    await userEvent.click(screen.getByRole('combobox', { name: 'envvar.table.scope' }));
+    await userEvent.click(await screen.findByText('envvar.scopes.user'));
+
+    await waitFor(() => {
+      expect(hookState.clearPathRepairPreview).toHaveBeenCalled();
+      expect(mockFetchPath).toHaveBeenCalledWith('user');
+    });
+  });
+
+  it('routes inline edit and delete actions through the page handlers', async () => {
+    mockIsTauri = true;
+    hookState.detectionState = 'showing-fresh';
+    hookState.processVarSummaries = [makeSummary('JAVA_HOME', '/jdk-21', 'process')];
+    mockSetVar.mockResolvedValue(true);
+    mockRemoveVar.mockResolvedValue(true);
+
+    render(<EnvVarPage />);
+
+    const editButtons = screen.getAllByRole('button').filter(
+      (button) => button.querySelector('.lucide-pencil'),
+    );
+    await userEvent.click(editButtons[0]);
+    const input = screen.getByDisplayValue('/jdk-21');
+    await userEvent.clear(input);
+    await userEvent.type(input, '/jdk-22{Enter}');
+
+    await waitFor(() => {
+      expect(mockSetVar).toHaveBeenCalledWith('JAVA_HOME', '/jdk-22', 'process');
+    });
+
+    const deleteButtons = screen.getAllByRole('button').filter(
+      (button) => button.querySelector('.lucide-trash-2'),
+    );
+    await userEvent.click(deleteButtons[0]);
+    await userEvent.click(screen.getByRole('button', { name: 'envvar.actions.delete' }));
+
+    await waitFor(() => {
+      expect(mockRemoveVar).toHaveBeenCalledWith('JAVA_HOME', 'process');
+    });
+  });
+
+  it('routes reveal and path editor action callbacks through the page handlers', async () => {
+    mockIsTauri = true;
+    hookState.detectionState = 'showing-fresh';
+    hookState.processVarSummaries = [
+      {
+        key: 'API_TOKEN',
+        scope: 'process',
+        value: {
+          displayValue: '[hidden: 12 chars]',
+          masked: true,
+          hasValue: true,
+          length: 12,
+          isSensitive: true,
+          sensitivityReason: 'token_key',
+        },
+      },
+    ] as never[];
+    hookState.pathEntries = [
+      { path: '/usr/bin', exists: true, isDirectory: true, isDuplicate: false },
+      { path: '/custom/bin', exists: true, isDirectory: true, isDuplicate: false },
+    ] as never[];
+    mockRevealVar.mockResolvedValue('revealed-token');
+    mockAddPathEntry.mockResolvedValue(true);
+    mockReorderPath.mockResolvedValue(true);
+    mockRemovePathEntry.mockResolvedValue(true);
+
+    render(<EnvVarPage />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'envvar.table.reveal' }));
+    await waitFor(() => {
+      expect(mockRevealVar).toHaveBeenCalledWith('API_TOKEN', 'process');
+    });
+
+    await userEvent.click(
+      screen.getByRole('tab', { name: /^envvar\.tabs\.pathEditor(?:\s+\d+)?$/ }),
+    );
+
+    await userEvent.type(screen.getByRole('textbox', { name: 'envvar.pathEditor.add' }), '/new/bin');
+    await userEvent.click(screen.getByRole('button', { name: 'envvar.pathEditor.add' }));
+    await waitFor(() => {
+      expect(mockAddPathEntry).toHaveBeenCalledWith('/new/bin', 'process', undefined);
+    });
+
+    const moveDownButtons = screen.getAllByRole('button', { name: 'envvar.pathEditor.moveDown' });
+    await userEvent.click(moveDownButtons[0]);
+    await waitFor(() => {
+      expect(mockReorderPath).toHaveBeenCalled();
+    });
+
+    const removeButtons = screen.getAllByRole('button', { name: 'envvar.pathEditor.remove' });
+    await userEvent.click(removeButtons[0]);
+    await userEvent.click(screen.getByRole('button', { name: 'envvar.actions.delete' }));
+    await waitFor(() => {
+      expect(mockRemovePathEntry).toHaveBeenCalledWith('/usr/bin', 'process');
+    });
+  });
+
+  it('surfaces preview import errors from the import dialog', async () => {
+    mockIsTauri = true;
+    hookState.detectionState = 'showing-fresh';
+    mockPreviewImportEnvFile.mockResolvedValue(null);
+
+    render(<EnvVarPage />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'envvar.importExport.import' }));
+    await userEvent.type(screen.getByRole('textbox'), 'FOO=bar');
+    await userEvent.click(screen.getByRole('button', { name: 'envvar.importExport.preview' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('envvar-operation-error')).toHaveTextContent('envvar.importExport.preview');
+    });
+  });
+
+  it('applies import previews and surfaces manual follow-up notices', async () => {
+    mockIsTauri = true;
+    hookState.detectionState = 'showing-fresh';
+    hookState.importPreview = {
+      scope: 'user',
+      fingerprint: 'preview-fingerprint',
+      additions: 1,
+      updates: 0,
+      noops: 0,
+      invalid: 0,
+      skipped: 0,
+      items: [{ key: 'JAVA_HOME', value: '/jdk', action: 'add', reason: null }],
+      primaryShellTarget: null,
+      shellGuidance: [],
+    } as never;
+    mockApplyImportPreview.mockResolvedValue({
+      imported: 1,
+      skipped: 0,
+      errors: [],
+      success: true,
+      status: 'manual_followup_required',
+      message: 'preview follow-up required',
+    });
+
+    render(<EnvVarPage />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'envvar.importExport.import' }));
+    await userEvent.type(screen.getByRole('textbox'), 'JAVA_HOME=/jdk');
+    await userEvent.click(screen.getByRole('button', { name: 'envvar.importExport.applyPreview' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('envvar-operation-notice')).toHaveTextContent('preview follow-up required');
+    });
+  });
+
+  it('surfaces export failures from the dialog actions', async () => {
+    mockIsTauri = true;
+    hookState.detectionState = 'showing-fresh';
+    mockExportEnvFile.mockResolvedValueOnce(null);
+
+    render(<EnvVarPage />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'envvar.importExport.export' }));
+    const exportDialog = screen.getByRole('dialog');
+    await userEvent.click(within(exportDialog).getByRole('tab', { name: 'envvar.importExport.export' }));
+    const exportButtons = within(exportDialog).getAllByRole('button', { name: 'envvar.importExport.export' });
+    fireEvent.click(exportButtons[exportButtons.length - 1]);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('envvar-operation-error')).toHaveTextContent('envvar.importExport.export');
+    });
+  });
+
+  it('surfaces path repair preview errors through the page handlers', async () => {
+    mockIsTauri = true;
+    hookState.detectionState = 'showing-fresh';
+    hookState.pathEntries = [
+      { path: '/missing', exists: false, isDirectory: false, isDuplicate: false },
+    ] as never[];
+    mockPreviewPathRepair.mockRejectedValueOnce(new Error('preview repair exploded'));
+
+    render(<EnvVarPage />);
+
+    await userEvent.click(
+      screen.getByRole('tab', { name: /^envvar\.tabs\.pathEditor(?:\s+\d+)?$/ }),
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'envvar.pathEditor.previewRepair' }));
+    await waitFor(() => {
+      expect(screen.getByTestId('envvar-operation-error')).toHaveTextContent('preview repair exploded');
+    });
+  });
+
+  it('surfaces path repair apply errors through the page handlers', async () => {
+    mockIsTauri = true;
+    hookState.detectionState = 'showing-fresh';
+    hookState.pathEntries = [
+      { path: '/missing', exists: false, isDirectory: false, isDuplicate: false },
+    ] as never[];
+    hookState.pathRepairPreview = {
+      scope: 'process',
+      fingerprint: 'repair-preview',
+      currentEntries: ['/missing'],
+      repairedEntries: [],
+      duplicateCount: 0,
+      missingCount: 1,
+      removedCount: 1,
+      primaryShellTarget: null,
+      shellGuidance: [],
+    } as never;
+    mockApplyPathRepair.mockResolvedValueOnce(null);
+
+    render(<EnvVarPage />);
+
+    await userEvent.click(
+      screen.getByRole('tab', { name: /^envvar\.tabs\.pathEditor(?:\s+\d+)?$/ }),
+    );
+
+    const previewShell = screen.getByTestId('envvar-path-repair-preview');
+    const toggleButton = within(previewShell).getByRole('button', { name: 'envvar.pathEditor.repairPreviewReady' });
+    fireEvent.click(toggleButton);
+    const applyRepairButton = await screen.findByRole('button', { name: 'envvar.pathEditor.applyRepair' });
+    await userEvent.click(applyRepairButton);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('envvar-operation-error')).toHaveTextContent('common.error');
+    });
+  });
+
+  it('surfaces null conflict resolution results as action errors', async () => {
+    mockIsTauri = true;
+    hookState.conflicts = [
+      { key: 'JAVA_HOME', userValue: 'A', systemValue: 'B', effectiveValue: 'A' },
+    ];
+    hookState.detectionState = 'showing-fresh';
+    mockResolveConflict.mockResolvedValue(null);
+
+    render(<EnvVarPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('envvar-conflicts-table')).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByTestId('envvar-conflict-system-to-user-JAVA_HOME'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('envvar-operation-error')).toHaveTextContent('envvar.conflicts.resolve');
     });
   });
 });

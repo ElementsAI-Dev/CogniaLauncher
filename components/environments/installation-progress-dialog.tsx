@@ -120,7 +120,7 @@ export function InstallationProgressDialog() {
       open={progressDialogOpen}
       onOpenChange={(open) => !open && isTerminal && closeProgressDialog()}
     >
-      <DialogContent className="sm:max-w-[520px]" showCloseButton={isTerminal}>
+      <DialogContent className="sm:max-w-130" showCloseButton={isTerminal}>
         <DialogHeader className="border-b pb-4">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-100">

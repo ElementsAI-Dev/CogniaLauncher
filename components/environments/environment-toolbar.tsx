@@ -61,7 +61,7 @@ export function EnvironmentToolbar({
     <div className="space-y-3">
       <ToolbarRow>
         {/* Search Input */}
-        <div className="relative flex-1 min-w-[200px] max-w-[400px]">
+        <div className="relative flex-1 min-w-50 max-w-100">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder={t("environments.toolbar.searchPlaceholder")}
@@ -88,7 +88,7 @@ export function EnvironmentToolbar({
           value={statusFilter}
           onValueChange={(v) => onStatusChange(v as EnvironmentStatusFilter)}
         >
-          <SelectTrigger className={`${denseToolbarControl.selectTrigger} w-[140px]`}>
+          <SelectTrigger className={`${denseToolbarControl.selectTrigger} w-35`}>
             <Filter className="h-4 w-4 mr-2 text-muted-foreground" />
             <SelectValue />
           </SelectTrigger>
@@ -110,7 +110,7 @@ export function EnvironmentToolbar({
           value={sortBy}
           onValueChange={(v) => onSortChange(v as EnvironmentSortBy)}
         >
-          <SelectTrigger className={`${denseToolbarControl.selectTrigger} w-[160px]`}>
+          <SelectTrigger className={`${denseToolbarControl.selectTrigger} w-40`}>
             <ArrowUpDown className="h-4 w-4 mr-2 text-muted-foreground" />
             <SelectValue />
           </SelectTrigger>

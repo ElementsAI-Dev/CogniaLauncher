@@ -4330,6 +4330,40 @@ rust-version = "1.70"
     }
 
     #[tokio::test]
+    async fn default_detection_sources_node_contract_is_explicit() {
+        // Drift guard: changes to backend detection-source ordering must be deliberate and reviewed.
+        assert_eq!(
+            default_detection_sources("node"),
+            &[
+                ".nvmrc",
+                ".node-version",
+                ".tool-versions",
+                "package.json (volta.node)",
+                "package.json (engines.node)",
+                "mise.toml",
+            ],
+        );
+    }
+
+    #[tokio::test]
+    async fn default_detection_sources_java_contract_is_explicit() {
+        // Drift guard: keep Java detection sources deterministic and explicitly reviewed.
+        assert_eq!(
+            default_detection_sources("java"),
+            &[
+                ".java-version",
+                ".sdkmanrc",
+                ".tool-versions",
+                "mise.toml",
+                JAVA_POM_SOURCE,
+                JAVA_GRADLE_SOURCE,
+                JAVA_GRADLE_WRAPPER_SOURCE,
+                JAVA_MAVEN_WRAPPER_SOURCE,
+            ],
+        );
+    }
+
+    #[tokio::test]
     async fn default_enabled_node_includes_all_supported_sources() {
         let enabled = default_enabled_detection_sources("node");
         assert_eq!(

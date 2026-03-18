@@ -98,10 +98,14 @@ jest.mock("@/components/providers/locale-provider", () => ({
 }));
 
 const mockAddLog = jest.fn();
+const mockSetObservability = jest.fn();
+const mockSetLatestCrashCapture = jest.fn();
 
 jest.mock("@/lib/stores/log", () => ({
   useLogStore: () => ({
     addLog: mockAddLog,
+    setObservability: mockSetObservability,
+    setLatestCrashCapture: mockSetLatestCrashCapture,
   }),
 }));
 
@@ -276,6 +280,15 @@ describe("LogProvider", () => {
           }),
         );
       });
+
+      expect(mockSetLatestCrashCapture).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: "captured",
+          crashInfo: expect.objectContaining({
+            reportPath: "report.zip",
+          }),
+        }),
+      );
 
       expect(mockAddLog).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -452,6 +465,12 @@ describe("LogProvider", () => {
           }),
         );
       });
+      expect(mockSetLatestCrashCapture).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: "capture_failed",
+          reason: "capture-failed",
+        }),
+      );
     });
   });
 
@@ -536,6 +555,13 @@ describe("LogProvider", () => {
         );
       });
 
+      expect(mockSetObservability).toHaveBeenCalledWith(
+        expect.objectContaining({
+          runtimeMode: "desktop-debug",
+          backendBridgeState: "unavailable",
+        }),
+      );
+
       expect(mockToastWarning).toHaveBeenCalledWith(
         "logs.backendBridgeUnavailableTitle",
         {
@@ -568,6 +594,12 @@ describe("LogProvider", () => {
         expect(listenSelfUpdateProgress).toHaveBeenCalled();
         expect(listenUpdateCheckProgress).toHaveBeenCalled();
       });
+      expect(mockSetObservability).toHaveBeenCalledWith(
+        expect.objectContaining({
+          runtimeMode: "desktop-release",
+          backendBridgeState: "available",
+        }),
+      );
     });
 
     it("does not register listeners in non-tauri mode", async () => {

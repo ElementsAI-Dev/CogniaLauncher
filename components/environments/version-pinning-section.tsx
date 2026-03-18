@@ -100,7 +100,7 @@ export function VersionPinningSection({
             value={currentVersion || ""}
             onValueChange={handleSetGlobal}
           >
-            <SelectTrigger className="w-[160px] h-9">
+            <SelectTrigger className="w-40 h-9">
               <SelectValue
                 placeholder={t("environments.selectVersion")}
               />
@@ -134,7 +134,7 @@ export function VersionPinningSection({
             value={selectedLocalVersion}
             onValueChange={setSelectedLocalVersion}
           >
-            <SelectTrigger className="w-[160px] h-9">
+            <SelectTrigger className="w-40 h-9">
               <SelectValue
                 placeholder={t("environments.selectVersion")}
               />

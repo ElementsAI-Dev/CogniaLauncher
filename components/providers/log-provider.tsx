@@ -122,7 +122,7 @@ function toConsoleMessagePart(value: unknown): string {
 }
 
 export function LogProvider({ children }: LogProviderProps) {
-  const { addLog } = useLogStore();
+  const { addLog, setObservability, setLatestCrashCapture } = useLogStore();
   const { t } = useLocale();
 
   // Helper function to format speed with i18n
@@ -202,6 +202,23 @@ export function LogProvider({ children }: LogProviderProps) {
   }, [addLog]);
 
   useEffect(() => {
+    if (!isTauri()) {
+      setObservability({
+        runtimeMode: 'web',
+        backendBridgeState: 'unsupported',
+        backendBridgeError: null,
+      });
+      return;
+    }
+
+    setObservability({
+      runtimeMode: 'desktop-release',
+      backendBridgeState: 'unavailable',
+      backendBridgeError: null,
+    });
+  }, [setObservability]);
+
+  useEffect(() => {
     if (typeof window === "undefined" || !isTauri()) return;
 
     const reportRuntimeCrash = async (
@@ -227,6 +244,12 @@ export function LogProvider({ children }: LogProviderProps) {
       });
 
       if (result.captured) {
+        setLatestCrashCapture({
+          status: 'captured',
+          reason: null,
+          crashInfo: result.crashInfo ?? null,
+          updatedAt: Date.now(),
+        });
         addLog({
           timestamp: Date.now(),
           level: "info",
@@ -247,6 +270,12 @@ export function LogProvider({ children }: LogProviderProps) {
           description: t("diagnostic.autoCaptureToastDescription"),
         });
       } else if (result.reason === "capture-failed") {
+        setLatestCrashCapture({
+          status: 'capture_failed',
+          reason: result.reason,
+          crashInfo: null,
+          updatedAt: Date.now(),
+        });
         addLog({
           timestamp: Date.now(),
           level: "warn",
@@ -255,6 +284,12 @@ export function LogProvider({ children }: LogProviderProps) {
           context: { reason: result.reason },
         });
       } else {
+        setLatestCrashCapture({
+          status: 'skipped',
+          reason: result.reason ?? 'unknown',
+          crashInfo: null,
+          updatedAt: Date.now(),
+        });
         addLog({
           timestamp: Date.now(),
           level: "debug",
@@ -303,7 +338,7 @@ export function LogProvider({ children }: LogProviderProps) {
         handleUnhandledRejection,
       );
     };
-  }, [addLog, t]);
+  }, [addLog, setLatestCrashCapture, t]);
 
   // Setup all event listeners for logging at app level
   useEffect(() => {
@@ -318,8 +353,19 @@ export function LogProvider({ children }: LogProviderProps) {
         try {
           const { attachConsole } = await import("@tauri-apps/plugin-log");
           detachConsole = await attachConsole();
+          setObservability({
+            runtimeMode: 'desktop-release',
+            backendBridgeState: 'available',
+            backendBridgeError: null,
+          });
         } catch (error) {
           const description = t("logs.backendBridgeUnavailableDescription");
+          const bridgeError = toRuntimeMessage(error);
+          setObservability({
+            runtimeMode: 'desktop-debug',
+            backendBridgeState: 'unavailable',
+            backendBridgeError: bridgeError,
+          });
           addLog({
             timestamp: Date.now(),
             level: "warn",
@@ -327,7 +373,7 @@ export function LogProvider({ children }: LogProviderProps) {
             target: "runtime",
             context: {
               bridge: "plugin-log",
-              error: toRuntimeMessage(error),
+              error: bridgeError,
             },
           });
           toast.warning(t("logs.backendBridgeUnavailableTitle"), {
@@ -660,7 +706,7 @@ export function LogProvider({ children }: LogProviderProps) {
       unlistenFns.forEach((unlisten) => unlisten());
       if (detachConsole) detachConsole();
     };
-  }, [addLog, formatSpeed, t]);
+  }, [addLog, formatSpeed, setObservability, t]);
 
   return <>{children}</>;
 }
