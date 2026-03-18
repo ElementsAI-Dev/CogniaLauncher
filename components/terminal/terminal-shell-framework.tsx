@@ -4,9 +4,18 @@ import { useState } from 'react';
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import { openExternal, revealPath } from '@/lib/tauri';
 import {
@@ -18,7 +27,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import { Blocks, Puzzle, RefreshCw, ExternalLink, Palette, FileText, Sparkles, Plug, Terminal, FolderOpen, HardDrive, Trash2, ScanSearch } from 'lucide-react';
@@ -35,7 +43,12 @@ interface TerminalShellFrameworkProps {
   onDetectFrameworks: (shellType: ShellType) => Promise<void>;
   onFetchPlugins: (frameworkName: string, frameworkPath: string, shellType: ShellType, configPath?: string | null) => Promise<void>;
   onFetchCacheStats?: () => Promise<void>;
-  onCleanFrameworkCache?: (name: string) => Promise<void>;
+  onGetFrameworkCacheInfo?: (
+    frameworkName: string,
+    frameworkPath: string,
+    shellType: ShellType,
+  ) => Promise<FrameworkCacheInfo | null> | FrameworkCacheInfo | null | void;
+  onCleanFrameworkCache?: (name: string) => Promise<number | null | void>;
   loading?: boolean;
 }
 
@@ -55,6 +68,7 @@ export function TerminalShellFramework({
   onDetectFrameworks,
   onFetchPlugins,
   onFetchCacheStats,
+  onGetFrameworkCacheInfo,
   onCleanFrameworkCache,
   loading,
 }: TerminalShellFrameworkProps) {
@@ -63,6 +77,16 @@ export function TerminalShellFramework({
   const [cleaningFramework, setCleaningFramework] = useState<string | null>(null);
   const [selectedFramework, setSelectedFramework] = useState<ShellFrameworkInfo | null>(null);
   const [shellFilter, setShellFilter] = useState<string>('all');
+  const [selectedCacheInfo, setSelectedCacheInfo] = useState<FrameworkCacheInfo | null>(null);
+  const [selectedCacheFramework, setSelectedCacheFramework] = useState<ShellFrameworkInfo | null>(null);
+  const [cacheDetailOpen, setCacheDetailOpen] = useState(false);
+  const [cacheDetailLoading, setCacheDetailLoading] = useState(false);
+  const [cacheCleanupConfirmOpen, setCacheCleanupConfirmOpen] = useState(false);
+  const [cacheFeedback, setCacheFeedback] = useState<{
+    status: 'success' | 'error';
+    title: string;
+    description: string;
+  } | null>(null);
 
   const shellTypes = Array.from(new Set(frameworks.map(fw => fw.shellType)));
   const filteredFrameworks = shellFilter === 'all' ? frameworks : frameworks.filter(fw => fw.shellType === shellFilter);
@@ -87,9 +111,53 @@ export function TerminalShellFramework({
     if (!onCleanFrameworkCache) return;
     setCleaningFramework(name);
     try {
-      await onCleanFrameworkCache(name);
+      const result = await onCleanFrameworkCache(name);
+      setCacheFeedback(
+        result == null
+          ? {
+              status: 'error',
+              title: t('terminal.frameworkCacheActionErrorTitle'),
+              description: t('terminal.frameworkCacheActionCleanFailed'),
+            }
+          : {
+              status: 'success',
+              title: t('terminal.frameworkCacheActionSuccessTitle'),
+              description: t('terminal.frameworkCacheActionCleaned', { name }),
+            },
+      );
     } finally {
       setCleaningFramework(null);
+    }
+  };
+
+  const handleOpenCacheDetails = async (cache: FrameworkCacheInfo) => {
+    setSelectedCacheInfo(cache);
+    setCacheDetailOpen(true);
+    const framework = frameworks.find((item) => item.name === cache.frameworkName) ?? null;
+    setSelectedCacheFramework(framework);
+
+    if (!framework || !onGetFrameworkCacheInfo) return;
+
+    setCacheDetailLoading(true);
+    try {
+      const detail = await onGetFrameworkCacheInfo(framework.name, framework.path, framework.shellType);
+      if (detail) {
+        setSelectedCacheInfo(detail);
+      }
+    } finally {
+      setCacheDetailLoading(false);
+    }
+  };
+
+  const refreshSelectedCacheInfo = async () => {
+    if (!selectedCacheFramework || !onGetFrameworkCacheInfo) return;
+    const detail = await onGetFrameworkCacheInfo(
+      selectedCacheFramework.name,
+      selectedCacheFramework.path,
+      selectedCacheFramework.shellType,
+    );
+    if (detail) {
+      setSelectedCacheInfo(detail);
     }
   };
 
@@ -121,6 +189,12 @@ export function TerminalShellFramework({
         </CardAction>
       </CardHeader>
       <CardContent className="space-y-4">
+        {cacheFeedback && (
+          <Alert variant={cacheFeedback.status === 'error' ? 'destructive' : 'default'}>
+            <AlertTitle>{cacheFeedback.title}</AlertTitle>
+            <AlertDescription>{cacheFeedback.description}</AlertDescription>
+          </Alert>
+        )}
         {loading || detecting ? (
           <div className="space-y-3">
             {Array.from({ length: 3 }).map((_, i) => (
@@ -411,40 +485,15 @@ export function TerminalShellFramework({
                         </Tooltip>
                       )}
                     </div>
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={!cache.canClean || cleaningFramework === cache.frameworkName}
-                          className="ml-2"
-                        >
-                          <Trash2 className="h-3.5 w-3.5 mr-1" />
-                          {cleaningFramework === cache.frameworkName
-                            ? t('terminal.cleanCache') + '...'
-                            : t('terminal.cleanCache')}
-                        </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>
-                            {t('terminal.cleanCache')} - {cache.frameworkName}
-                          </AlertDialogTitle>
-                          <AlertDialogDescription>
-                            {t('terminal.cleanCacheConfirm', { name: cache.frameworkName })}
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
-                          <AlertDialogAction
-                            onClick={() => handleCleanCache(cache.frameworkName)}
-                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                          >
-                            {t('terminal.cleanCache')}
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="ml-2"
+                      onClick={() => void handleOpenCacheDetails(cache)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5 mr-1" />
+                      {t('terminal.inspectCacheDetails')}
+                    </Button>
                   </div>
                 ))}
               </div>
@@ -452,6 +501,92 @@ export function TerminalShellFramework({
           </div>
         )}
       </CardContent>
+      <Dialog
+        open={cacheDetailOpen}
+        onOpenChange={(open) => {
+          setCacheDetailOpen(open);
+          if (!open) {
+            setCacheCleanupConfirmOpen(false);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle>{t('terminal.frameworkCacheDetailsTitle')}</DialogTitle>
+            <DialogDescription>{selectedCacheInfo?.frameworkName ?? ''}</DialogDescription>
+          </DialogHeader>
+          {cacheDetailLoading ? (
+            <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
+          ) : selectedCacheInfo ? (
+            <div className="space-y-4 text-sm">
+              <div className="flex items-center gap-2">
+                <Badge variant={selectedCacheInfo.totalSize > 0 ? 'default' : 'secondary'}>
+                  {selectedCacheInfo.totalSizeHuman}
+                </Badge>
+                <Badge variant={selectedCacheInfo.canClean ? 'outline' : 'secondary'}>
+                  {selectedCacheInfo.canClean ? t('terminal.cleanCache') : t('terminal.noCacheData')}
+                </Badge>
+              </div>
+              <div>
+                <p className="text-muted-foreground">{t('terminal.frameworkCacheDesc')}</p>
+                <p>{selectedCacheInfo.description}</p>
+              </div>
+              <div className="space-y-2">
+                <p className="text-muted-foreground">{t('terminal.frameworkCachePaths')}</p>
+                <div className="rounded-md border divide-y">
+                  {selectedCacheInfo.cachePaths.length > 0 ? selectedCacheInfo.cachePaths.map((path) => (
+                    <div key={path} className="px-3 py-2 font-mono text-xs break-all">
+                      {path}
+                    </div>
+                  )) : (
+                    <div className="px-3 py-2 text-muted-foreground">
+                      {t('terminal.noCacheData')}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCacheDetailOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              disabled={!selectedCacheInfo?.canClean || cleaningFramework === selectedCacheInfo?.frameworkName}
+              onClick={() => setCacheCleanupConfirmOpen(true)}
+            >
+              {t('terminal.cleanCache')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <AlertDialog open={cacheCleanupConfirmOpen} onOpenChange={setCacheCleanupConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t('terminal.cleanCache')} - {selectedCacheInfo?.frameworkName ?? ''}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('terminal.cleanCacheConfirm', { name: selectedCacheInfo?.frameworkName ?? '' })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (!selectedCacheInfo) return;
+                void handleCleanCache(selectedCacheInfo.frameworkName).then(() => {
+                  void refreshSelectedCacheInfo();
+                  setCacheCleanupConfirmOpen(false);
+                });
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {t('terminal.cleanCache')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }

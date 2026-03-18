@@ -7,6 +7,7 @@ const mockTerminalDetectShells = jest.fn();
 const mockTerminalListProfiles = jest.fn();
 const mockTerminalLaunchProfileDetailed = jest.fn();
 const mockTerminalDetectFramework = jest.fn();
+const mockTerminalGetShellInfo = jest.fn();
 const mockTerminalReadConfig = jest.fn();
 const mockTerminalParseConfigContent = jest.fn();
 const mockTerminalGetConfigEntries = jest.fn();
@@ -15,8 +16,18 @@ const mockTerminalGetConfigEditorMetadata = jest.fn();
 const mockTerminalRestoreConfigSnapshot = jest.fn();
 const mockTerminalWriteConfigVerified = jest.fn();
 const mockTerminalBackupConfigVerified = jest.fn();
+const mockTerminalListTemplates = jest.fn();
+const mockTerminalCreateCustomTemplate = jest.fn();
 const mockTerminalGetFrameworkCacheStats = jest.fn();
+const mockTerminalGetSingleFrameworkCacheInfo = jest.fn();
 const mockTerminalCleanFrameworkCache = jest.fn();
+const mockTerminalPsFindModule = jest.fn();
+const mockTerminalPsGetModuleDetail = jest.fn();
+const mockTerminalPsListAllModules = jest.fn();
+const mockTerminalPsListInstalledScripts = jest.fn();
+const mockTerminalPsInstallModule = jest.fn();
+const mockTerminalPsUninstallModule = jest.fn();
+const mockTerminalPsUpdateModule = jest.fn();
 const mockConfigSet = jest.fn();
 const mockConfigList = jest.fn();
 const mockTerminalGetProxyEnvVars = jest.fn();
@@ -27,7 +38,9 @@ jest.mock('@/lib/platform', () => ({
 
 jest.mock('@/lib/tauri', () => ({
   terminalDetectShells: (...args: unknown[]) => mockTerminalDetectShells(...args),
+  terminalGetShellInfo: (...args: unknown[]) => mockTerminalGetShellInfo(...args),
   terminalListProfiles: (...args: unknown[]) => mockTerminalListProfiles(...args),
+  terminalListTemplates: (...args: unknown[]) => mockTerminalListTemplates(...args),
   terminalLaunchProfileDetailed: (...args: unknown[]) => mockTerminalLaunchProfileDetailed(...args),
   terminalDetectFramework: (...args: unknown[]) => mockTerminalDetectFramework(...args),
   terminalCreateProfile: jest.fn(),
@@ -49,8 +62,14 @@ jest.mock('@/lib/tauri', () => ({
   terminalPsWriteProfile: jest.fn(),
   terminalPsGetExecutionPolicy: jest.fn(),
   terminalPsSetExecutionPolicy: jest.fn(),
-  terminalPsListAllModules: jest.fn(),
-  terminalPsListInstalledScripts: jest.fn(),
+  terminalPsListAllModules: (...args: unknown[]) => mockTerminalPsListAllModules(...args),
+  terminalPsGetModuleDetail: (...args: unknown[]) => mockTerminalPsGetModuleDetail(...args),
+  terminalPsListInstalledScripts: (...args: unknown[]) => mockTerminalPsListInstalledScripts(...args),
+  terminalPsFindModule: (...args: unknown[]) => mockTerminalPsFindModule(...args),
+  terminalPsInstallModule: (...args: unknown[]) => mockTerminalPsInstallModule(...args),
+  terminalPsUninstallModule: (...args: unknown[]) => mockTerminalPsUninstallModule(...args),
+  terminalPsUpdateModule: (...args: unknown[]) => mockTerminalPsUpdateModule(...args),
+  terminalCreateCustomTemplate: (...args: unknown[]) => mockTerminalCreateCustomTemplate(...args),
   terminalListPlugins: jest.fn(),
   terminalGetShellEnvVars: jest.fn(),
   terminalGetProxyEnvVars: (...args: unknown[]) => mockTerminalGetProxyEnvVars(...args),
@@ -58,8 +77,8 @@ jest.mock('@/lib/tauri', () => ({
   configSet: (...args: unknown[]) => mockConfigSet(...args),
   configList: (...args: unknown[]) => mockConfigList(...args),
   terminalGetFrameworkCacheStats: (...args: unknown[]) => mockTerminalGetFrameworkCacheStats(...args),
+  terminalGetSingleFrameworkCacheInfo: (...args: unknown[]) => mockTerminalGetSingleFrameworkCacheInfo(...args),
   terminalCleanFrameworkCache: (...args: unknown[]) => mockTerminalCleanFrameworkCache(...args),
-  terminalGetSingleFrameworkCacheInfo: jest.fn(),
 }));
 
 jest.mock('sonner', () => ({
@@ -85,7 +104,17 @@ describe('useTerminal', () => {
     jest.clearAllMocks();
     mockTerminalDetectShells.mockResolvedValue([]);
     mockTerminalListProfiles.mockResolvedValue([]);
+    mockTerminalListTemplates.mockResolvedValue([]);
     mockTerminalDetectFramework.mockResolvedValue([]);
+    mockTerminalGetShellInfo.mockResolvedValue({
+      id: 'bash',
+      name: 'Bash',
+      shellType: 'bash',
+      version: '5.2.0',
+      executablePath: '/bin/bash',
+      configFiles: [],
+      isDefault: true,
+    });
     mockTerminalReadConfig.mockResolvedValue('');
     mockTerminalParseConfigContent.mockResolvedValue({ aliases: [], exports: [], sources: [] });
     mockTerminalGetConfigEntries.mockResolvedValue({ aliases: [], exports: [], sources: [] });
@@ -122,7 +151,30 @@ describe('useTerminal', () => {
       verified: true,
       diagnostics: ['ok'],
     });
+    mockTerminalPsFindModule.mockResolvedValue([]);
+    mockTerminalPsGetModuleDetail.mockResolvedValue({
+      name: 'PSReadLine',
+      version: '2.3.6',
+      moduleType: 'Script',
+      path: 'C:/Modules/PSReadLine',
+      description: 'Interactive editing',
+      exportedCommandsCount: 5,
+    });
+    mockTerminalPsListAllModules.mockResolvedValue([]);
+    mockTerminalPsListInstalledScripts.mockResolvedValue([]);
+    mockTerminalPsInstallModule.mockResolvedValue(undefined);
+    mockTerminalPsUninstallModule.mockResolvedValue(undefined);
+    mockTerminalPsUpdateModule.mockResolvedValue(undefined);
+    mockTerminalCreateCustomTemplate.mockResolvedValue('custom-template-id');
     mockTerminalGetFrameworkCacheStats.mockResolvedValue([]);
+    mockTerminalGetSingleFrameworkCacheInfo.mockResolvedValue({
+      frameworkName: 'Oh My Zsh',
+      cachePaths: ['/home/user/.oh-my-zsh/cache'],
+      totalSize: 4096,
+      totalSizeHuman: '4 KB',
+      canClean: true,
+      description: 'Cache files',
+    });
     mockTerminalCleanFrameworkCache.mockResolvedValue(0);
     mockConfigSet.mockResolvedValue(undefined);
     mockConfigList.mockResolvedValue([
@@ -262,6 +314,129 @@ describe('useTerminal', () => {
     expect(result.current.frameworks).toEqual([...powershellFrameworks, ...bashFrameworks2]);
   });
 
+  it('getShellInfo returns a backend shell record', async () => {
+    const { result } = renderHook(() => useTerminal({ t: mockT }));
+    await waitFor(() => expect(mockTerminalDetectShells).toHaveBeenCalledTimes(1));
+
+    let shell = null;
+    await act(async () => {
+      shell = await result.current.getShellInfo('bash');
+    });
+
+    expect(mockTerminalGetShellInfo).toHaveBeenCalledWith('bash');
+    expect(shell).toEqual(expect.objectContaining({
+      id: 'bash',
+      executablePath: '/bin/bash',
+    }));
+  });
+
+  it('searchPSModules returns PowerShell gallery results', async () => {
+    mockTerminalPsFindModule.mockResolvedValue([
+      {
+        name: 'Pester',
+        version: '5.7.1',
+        moduleType: 'Script',
+        path: 'gallery://Pester',
+        description: 'PowerShell test framework',
+        exportedCommandsCount: 42,
+      },
+    ]);
+
+    const { result } = renderHook(() => useTerminal({ t: mockT }));
+    await waitFor(() => expect(mockTerminalDetectShells).toHaveBeenCalledTimes(1));
+
+    let modules = [];
+    await act(async () => {
+      modules = await result.current.searchPSModules('Pester');
+    });
+
+    expect(mockTerminalPsFindModule).toHaveBeenCalledWith('Pester');
+    expect(modules).toHaveLength(1);
+  });
+
+  it('getPSModuleDetail returns detail from backend', async () => {
+    const { result } = renderHook(() => useTerminal({ t: mockT }));
+    await waitFor(() => expect(mockTerminalDetectShells).toHaveBeenCalledTimes(1));
+
+    let detail = null;
+    await act(async () => {
+      detail = await result.current.getPSModuleDetail('PSReadLine');
+    });
+
+    expect(mockTerminalPsGetModuleDetail).toHaveBeenCalledWith('PSReadLine');
+    expect(detail).toEqual(expect.objectContaining({
+      name: 'PSReadLine',
+      exportedCommandsCount: 5,
+    }));
+  });
+
+  it('createCustomTemplate creates and refreshes only template data', async () => {
+    const { result } = renderHook(() => useTerminal({ t: mockT }));
+    await waitFor(() => expect(mockTerminalDetectShells).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      result.current.markResourcesFresh([
+        'profiles',
+        'configEntries',
+        'configMetadata',
+        'proxyConfig',
+        'proxyEnvVars',
+        'shellEnvVars',
+        'psProfiles',
+        'psModules',
+        'psScripts',
+        'executionPolicy',
+      ]);
+    });
+
+    await act(async () => {
+      await result.current.createCustomTemplate({
+        id: '',
+        name: 'Custom Template',
+        description: 'Created in test',
+        icon: 'terminal',
+        category: 'custom',
+        shellType: 'bash',
+        args: [],
+        envVars: {},
+        cwd: null,
+        startupCommand: 'echo hi',
+        envType: null,
+        envVersion: null,
+        isBuiltin: false,
+      });
+    });
+
+    expect(mockTerminalCreateCustomTemplate).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Custom Template',
+      category: 'custom',
+    }));
+    expect(mockTerminalListTemplates).toHaveBeenCalledTimes(2);
+    expect(result.current.resourceStale.templates).toBe(false);
+    expect(result.current.resourceStale.psModules).toBe(false);
+    expect(result.current.resourceStale.configEntries).toBe(false);
+  });
+
+  it('getSingleFrameworkCacheInfo returns a single-framework cache summary', async () => {
+    const { result } = renderHook(() => useTerminal({ t: mockT }));
+    await waitFor(() => expect(mockTerminalDetectShells).toHaveBeenCalledTimes(1));
+
+    let info = null;
+    await act(async () => {
+      info = await result.current.getSingleFrameworkCacheInfo('Oh My Zsh', '/home/user/.oh-my-zsh', 'zsh');
+    });
+
+    expect(mockTerminalGetSingleFrameworkCacheInfo).toHaveBeenCalledWith(
+      'Oh My Zsh',
+      '/home/user/.oh-my-zsh',
+      'zsh',
+    );
+    expect(info).toEqual(expect.objectContaining({
+      frameworkName: 'Oh My Zsh',
+      totalSize: 4096,
+    }));
+  });
+
   it('readShellConfig returns content from backend', async () => {
     mockTerminalReadConfig.mockResolvedValue('export PATH="/usr/bin"');
 
@@ -345,6 +520,26 @@ describe('useTerminal', () => {
 
     expect(mockTerminalGetConfigEntries).toHaveBeenCalledWith('/home/user/.bashrc', 'bash');
     expect(entries).toEqual(mockEntries);
+  });
+
+  it('getConfigEditorMetadata enriches supported targets with editor capability details', async () => {
+    const { result } = renderHook(() => useTerminal({ t: mockT }));
+    await waitFor(() => expect(mockTerminalDetectShells).toHaveBeenCalledTimes(1));
+
+    let metadata = null;
+    await act(async () => {
+      metadata = await result.current.getConfigEditorMetadata('/tmp/.bashrc', 'bash');
+    });
+
+    expect(metadata).toEqual(expect.objectContaining({
+      path: '/tmp/.bashrc',
+      capability: expect.objectContaining({
+        mode: 'enhanced',
+        bundleId: 'shell-posix-vscode-compat',
+        supportsCompletion: true,
+      }),
+    }));
+    expect(result.current.resourceStale.configMetadata).toBe(false);
   });
 
   it('fetchConfigEntries returns null and toasts on error', async () => {
@@ -611,13 +806,17 @@ describe('useTerminal', () => {
     });
 
     expect(mockTerminalGetConfigEditorMetadata).toHaveBeenCalledWith('/tmp/.bashrc', 'bash');
-    expect(metadata).toEqual({
+    expect(metadata).toEqual(expect.objectContaining({
       path: '/tmp/.bashrc',
       shellType: 'bash',
       language: 'bash',
       snapshotPath: '/tmp/.cognia/terminal-snapshots/.bashrc.latest',
       fingerprint: 'abc123',
-    });
+      capability: expect.objectContaining({
+        mode: 'enhanced',
+        bundleId: 'shell-posix-vscode-compat',
+      }),
+    }));
   });
 
   it('restoreConfigSnapshot updates mutation lifecycle on success', async () => {
@@ -770,5 +969,58 @@ describe('useTerminal', () => {
     });
 
     expect(result.current.resourceStale.proxyEnvVars).toBe(false);
+  });
+
+  it('installPSModule refreshes both module and script resources without touching unrelated state', async () => {
+    mockTerminalPsListAllModules.mockResolvedValue([
+      {
+        name: 'PSReadLine',
+        version: '2.3.6',
+        moduleType: 'Script',
+        path: 'C:/Modules/PSReadLine',
+        description: 'Interactive editing',
+        exportedCommandsCount: 5,
+      },
+    ]);
+    mockTerminalPsListInstalledScripts.mockResolvedValue([
+      {
+        name: 'Invoke-Build',
+        version: '5.12.0',
+        author: 'Nightroman',
+        description: 'Build automation',
+        installPath: 'C:/Scripts/Invoke-Build',
+      },
+    ]);
+
+    const { result } = renderHook(() => useTerminal({ t: mockT }));
+    await waitFor(() => expect(mockTerminalDetectShells).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      result.current.markResourcesFresh([
+        'profiles',
+        'templates',
+        'configEntries',
+        'configMetadata',
+        'proxyConfig',
+        'proxyEnvVars',
+        'shellEnvVars',
+        'psProfiles',
+        'psModules',
+        'psScripts',
+        'executionPolicy',
+      ]);
+    });
+
+    await act(async () => {
+      await result.current.installPSModule('PSReadLine', 'CurrentUser');
+    });
+
+    expect(mockTerminalPsInstallModule).toHaveBeenCalledWith('PSReadLine', 'CurrentUser');
+    expect(mockTerminalPsListAllModules).toHaveBeenCalled();
+    expect(mockTerminalPsListInstalledScripts).toHaveBeenCalled();
+    expect(result.current.resourceStale.psModules).toBe(false);
+    expect(result.current.resourceStale.psScripts).toBe(false);
+    expect(result.current.resourceStale.proxyConfig).toBe(false);
+    expect(result.current.resourceStale.configEntries).toBe(false);
   });
 });

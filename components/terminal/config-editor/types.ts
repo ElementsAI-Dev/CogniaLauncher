@@ -2,11 +2,13 @@ import type { ComponentType } from 'react';
 import type {
   ShellConfigEntries,
   ShellType,
+  TerminalConfigEditorCapability,
   TerminalConfigDiagnostic,
   TerminalEditorLanguage,
 } from '@/types/tauri';
 
 export interface TerminalConfigEditorSurfaceProps {
+  capability?: TerminalConfigEditorCapability | null;
   value: string;
   language: TerminalEditorLanguage;
   diagnostics?: TerminalConfigDiagnostic[];
@@ -23,6 +25,7 @@ export interface TerminalConfigEditorProps extends TerminalConfigEditorSurfacePr
   configPath?: string | null;
   snapshotPath?: string | null;
   fingerprint?: string | null;
+  capability?: TerminalConfigEditorCapability | null;
   structuredEntries?: ShellConfigEntries | null;
   structuredFallbackReason?: string | null;
   onStructuredEntriesChange?: (next: ShellConfigEntries) => void;

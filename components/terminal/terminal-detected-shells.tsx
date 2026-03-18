@@ -5,6 +5,13 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -25,6 +32,7 @@ interface TerminalDetectedShellsProps {
   healthResults?: Record<string, ShellHealthResult>;
   checkingHealthShellId?: string | null;
   onCheckShellHealth?: (shellId: string) => void;
+  onGetShellInfo?: (shellId: string) => Promise<ShellInfo | null> | ShellInfo | null | void;
 }
 
 const STATUS_ICONS = {
@@ -63,7 +71,17 @@ function getStartupColorClass(ms: number): string {
   return 'text-red-600 dark:text-red-400';
 }
 
-export function TerminalDetectedShells({ shells, loading, startupMeasurements = {}, measuringShellId, onMeasureStartup, healthResults = {}, checkingHealthShellId, onCheckShellHealth }: TerminalDetectedShellsProps) {
+export function TerminalDetectedShells({
+  shells,
+  loading,
+  startupMeasurements = {},
+  measuringShellId,
+  onMeasureStartup,
+  healthResults = {},
+  checkingHealthShellId,
+  onCheckShellHealth,
+  onGetShellInfo,
+}: TerminalDetectedShellsProps) {
   const { t } = useLocale();
 
   if (loading) {
@@ -136,6 +154,7 @@ export function TerminalDetectedShells({ shells, loading, startupMeasurements = 
             healthResult={healthResults[shell.id]}
             checkingHealthShellId={checkingHealthShellId}
             onCheckShellHealth={onCheckShellHealth}
+            onGetShellInfo={onGetShellInfo}
           />
         ))}
       </div>
@@ -151,6 +170,7 @@ function ShellCard({
   healthResult,
   checkingHealthShellId,
   onCheckShellHealth,
+  onGetShellInfo,
 }: {
   shell: ShellInfo;
   startupMeasurement?: ShellStartupMeasurement;
@@ -159,13 +179,35 @@ function ShellCard({
   healthResult?: ShellHealthResult;
   checkingHealthShellId?: string | null;
   onCheckShellHealth?: (shellId: string) => void;
+  onGetShellInfo?: (shellId: string) => Promise<ShellInfo | null> | ShellInfo | null | void;
 }) {
   const { t } = useLocale();
   const [issuesOpen, setIssuesOpen] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailShell, setDetailShell] = useState<ShellInfo | null>(null);
 
-  const hasActions = !!onMeasureStartup || !!onCheckShellHealth;
+  const hasActions = !!onMeasureStartup || !!onCheckShellHealth || !!onGetShellInfo;
   const issues = healthResult?.issues ?? [];
+
+  const activeShell = detailShell ?? shell;
+
+  const handleOpenDetails = async () => {
+    setDetailOpen(true);
+    if (!onGetShellInfo) {
+      setDetailShell(shell);
+      return;
+    }
+
+    setDetailLoading(true);
+    try {
+      const info = await onGetShellInfo(shell.id);
+      setDetailShell(info ?? shell);
+    } finally {
+      setDetailLoading(false);
+    }
+  };
 
   return (
     <Card className={cn('flex flex-col', shell.isDefault && 'border-primary/50')}>
@@ -322,8 +364,73 @@ function ShellCard({
               {t('terminal.healthCheck')}
             </Button>
           )}
+          {onGetShellInfo && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs gap-1"
+              onClick={() => void handleOpenDetails()}
+            >
+              {t('terminal.viewShellDetails')}
+            </Button>
+          )}
         </CardFooter>
       )}
+      <Dialog
+        open={detailOpen}
+        onOpenChange={(open) => {
+          setDetailOpen(open);
+          if (!open) {
+            setDetailLoading(false);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle>{t('terminal.shellDetailsTitle')}</DialogTitle>
+            <DialogDescription>{activeShell.name}</DialogDescription>
+          </DialogHeader>
+          {detailLoading ? (
+            <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
+          ) : (
+            <div className="space-y-4 text-sm">
+              <div>
+                <p className="text-muted-foreground">{t('terminal.path')}</p>
+                <p className="font-mono break-all">{activeShell.executablePath}</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {activeShell.isDefault && <Badge variant="secondary">{t('terminal.default')}</Badge>}
+                {activeShell.version && <Badge variant="outline">v{activeShell.version}</Badge>}
+              </div>
+              <div className="space-y-2">
+                <p className="text-muted-foreground">{t('terminal.configFilesCount', { count: activeShell.configFiles.length })}</p>
+                <div className="rounded-md border divide-y">
+                  {activeShell.configFiles.map((configFile) => (
+                    <div key={configFile.path} className="flex items-center justify-between gap-2 px-3 py-2">
+                      <span className="font-mono text-xs break-all">{configFile.path}</span>
+                      <Badge variant={configFile.exists ? 'secondary' : 'outline'}>
+                        {configFile.exists ? t('terminal.exists') : t('terminal.notExists')}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {startupMeasurement && (
+                <div className="space-y-1">
+                  <p className="text-muted-foreground">{t('terminal.measureStartup')}</p>
+                  <p>{startupMeasurement.withProfileMs}ms / {startupMeasurement.withoutProfileMs}ms</p>
+                </div>
+              )}
+              {healthResult && (
+                <div className="space-y-1">
+                  <p className="text-muted-foreground">{t('terminal.healthCheck')}</p>
+                  <p>{healthResult.status}</p>
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

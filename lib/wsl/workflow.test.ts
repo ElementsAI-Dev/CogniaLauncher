@@ -1,9 +1,19 @@
 import type { WslBatchWorkflowPreset, WslBatchWorkflowSummary } from '@/types/wsl';
 import {
   buildWslBatchWorkflowPreflight,
+  buildWslDistroHref,
+  buildWslOverviewHref,
+  getWslBatchWorkflowSteps,
   getRetryableWorkflowTargetNames,
+  getWslBatchWorkflowStepMeta,
+  legacyActionToWorkflowStep,
+  normalizeWslBatchWorkflowPreset,
+  normalizeSelectedDistros,
+  readWslOverviewContext,
   resolveWslBatchWorkflowTargets,
+  sanitizeWslOverviewContext,
   summarizeWslBatchWorkflowRun,
+  summarizeBatchResults,
 } from './workflow';
 
 const distros = [
@@ -192,6 +202,421 @@ describe('buildWslBatchWorkflowPreflight', () => {
     expect(result.blockedCount).toBe(1);
     expect(result.requiresConfirmation).toBe(true);
     expect(result.targets[0]).toMatchObject({ status: 'blocked', reason: 'Sparse mode is unavailable.' });
+  });
+
+  it('marks missing explicit targets and blocked empty commands', () => {
+    const workflow = {
+      id: 'wf-missing-command',
+      name: 'Missing distro and empty command',
+      createdAt: '2026-03-12T00:00:00.000Z',
+      updatedAt: '2026-03-12T00:00:00.000Z',
+      target: { mode: 'explicit', distroNames: ['Missing', 'Ubuntu'] },
+      steps: [
+        { id: 'command', kind: 'command', command: '   ', label: 'Run command' },
+      ],
+    } as unknown as WslBatchWorkflowPreset;
+
+    const result = buildWslBatchWorkflowPreflight({
+      workflow,
+      distros,
+      selectedDistros: new Set(),
+      distroTags: {},
+      capabilities: null,
+    });
+
+    expect(result.missingCount).toBe(1);
+    expect(result.blockedCount).toBe(1);
+    expect(result.requiresConfirmation).toBe(true);
+    expect(result.targets.find((entry) => entry.distroName === 'Missing')).toMatchObject({
+      status: 'missing',
+    });
+    expect(result.targets.find((entry) => entry.distroName === 'Ubuntu')?.stepStatuses[0]).toMatchObject({
+      status: 'blocked',
+      reason: 'Command is required.',
+    });
+  });
+
+  it('marks mixed maintenance coverage as partial when only some mutating steps are protected', () => {
+    const workflow = {
+      id: 'wf-partial-backup',
+      name: 'Partial backup coverage',
+      createdAt: '2026-03-12T00:00:00.000Z',
+      updatedAt: '2026-03-12T00:00:00.000Z',
+      target: { mode: 'explicit', distroNames: ['Ubuntu'] },
+      steps: [
+        { id: 'upgrade-1', kind: 'package-upkeep', mode: 'update', label: 'Update packages' },
+        { id: 'backup', kind: 'backup', label: 'Backup distro', destinationPath: 'C:\\WSL-Backups' },
+        { id: 'upgrade-2', kind: 'package-upkeep', mode: 'upgrade', label: 'Upgrade packages' },
+      ],
+    } as unknown as WslBatchWorkflowPreset;
+
+    const result = buildWslBatchWorkflowPreflight({
+      workflow,
+      distros,
+      selectedDistros: new Set(),
+      distroTags: {},
+      capabilities: null,
+    });
+
+    expect(result.backupCoverage).toBe('partial');
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([expect.stringContaining('Some mutating maintenance steps')]),
+    );
+  });
+
+  it('keeps backup coverage not-applicable for non-mutating health-only workflows', () => {
+    const workflow = {
+      id: 'wf-health-only',
+      name: 'Health only',
+      createdAt: '2026-03-12T00:00:00.000Z',
+      updatedAt: '2026-03-12T00:00:00.000Z',
+      target: { mode: 'explicit', distroNames: ['Ubuntu'] },
+      action: { kind: 'health-check', label: 'Check health' },
+    } as unknown as WslBatchWorkflowPreset;
+
+    const result = buildWslBatchWorkflowPreflight({
+      workflow,
+      distros,
+      selectedDistros: new Set(),
+      distroTags: {},
+      capabilities: null,
+    });
+
+    expect(result.backupCoverage).toBe('not-applicable');
+    expect(result.warnings).toEqual([]);
+    expect(result.actionLabel).toBe('Check health');
+  });
+
+  it('uses workflow name and skipped targets when no actionable steps are configured', () => {
+    const workflow = {
+      id: 'wf-empty',
+      name: 'Empty workflow',
+      createdAt: '2026-03-12T00:00:00.000Z',
+      updatedAt: '2026-03-12T00:00:00.000Z',
+      target: { mode: 'explicit', distroNames: ['Ubuntu'] },
+    } as unknown as WslBatchWorkflowPreset;
+
+    const result = buildWslBatchWorkflowPreflight({
+      workflow,
+      distros,
+      selectedDistros: new Set(),
+      distroTags: {},
+      capabilities: null,
+    });
+
+    expect(result.actionLabel).toBe('Empty workflow');
+    expect(result.steps).toEqual([]);
+    expect(result.targets[0]).toMatchObject({
+      status: 'skipped',
+    });
+  });
+
+  it('blocks assistance steps when the action descriptor is missing or runtime prerequisites are unmet', () => {
+    const missingActionWorkflow = {
+      id: 'wf-missing-action',
+      name: 'Missing action',
+      createdAt: '2026-03-12T00:00:00.000Z',
+      updatedAt: '2026-03-12T00:00:00.000Z',
+      target: { mode: 'explicit', distroNames: ['Ubuntu'] },
+      action: { kind: 'assistance', actionId: 'distro.unknown', label: 'Unknown assistance' },
+    } as unknown as WslBatchWorkflowPreset;
+
+    const missingActionResult = buildWslBatchWorkflowPreflight({
+      workflow: missingActionWorkflow,
+      distros,
+      selectedDistros: new Set(),
+      distroTags: {},
+      capabilities: null,
+    });
+    expect(missingActionResult.targets[0]).toMatchObject({
+      status: 'blocked',
+      reason: 'Assistance action is unavailable.',
+    });
+
+    const stoppedRuntimeWorkflow = {
+      id: 'wf-terminal-action',
+      name: 'Open terminal',
+      createdAt: '2026-03-12T00:00:00.000Z',
+      updatedAt: '2026-03-12T00:00:00.000Z',
+      target: { mode: 'explicit', distroNames: ['Debian'] },
+      action: { kind: 'assistance', actionId: 'distro.openTerminal', label: 'Open terminal' },
+    } as unknown as WslBatchWorkflowPreset;
+
+    const stoppedRuntimeResult = buildWslBatchWorkflowPreflight({
+      workflow: stoppedRuntimeWorkflow,
+      distros,
+      selectedDistros: new Set(),
+      distroTags: {},
+      capabilities: null,
+      resolveAssistanceAction: () => ({
+        id: 'distro.openTerminal',
+        scope: 'distro',
+        category: 'inspect',
+        risk: 'safe',
+        labelKey: 'x',
+        descriptionKey: 'y',
+        supported: true,
+      }),
+    });
+    expect(stoppedRuntimeResult.targets[0].stepStatuses[0]).toMatchObject({
+      status: 'blocked',
+      reason: 'Distribution must be running.',
+    });
+  });
+
+  it('falls back to the generic blocked assistance message and unsupported step handling', () => {
+    const unsupportedAssistanceWorkflow = {
+      id: 'wf-unsupported-assist',
+      name: 'Unsupported assistance',
+      createdAt: '2026-03-12T00:00:00.000Z',
+      updatedAt: '2026-03-12T00:00:00.000Z',
+      target: { mode: 'explicit', distroNames: ['Ubuntu'] },
+      action: { kind: 'assistance', actionId: 'distro.relaunch' },
+    } as unknown as WslBatchWorkflowPreset;
+
+    const unsupportedAssistResult = buildWslBatchWorkflowPreflight({
+      workflow: unsupportedAssistanceWorkflow,
+      distros,
+      selectedDistros: new Set(),
+      distroTags: {},
+      capabilities: null,
+      resolveAssistanceAction: () => ({
+        id: 'distro.relaunch',
+        scope: 'distro',
+        category: 'repair',
+        risk: 'safe',
+        labelKey: 'x',
+        descriptionKey: 'y',
+        supported: false,
+        blockedReason: null,
+      }),
+    });
+    expect(unsupportedAssistResult.targets[0]).toMatchObject({
+      status: 'blocked',
+      reason: 'Action is blocked.',
+    });
+
+    const unsupportedStepWorkflow = {
+      id: 'wf-unsupported-step',
+      name: 'Unsupported step',
+      createdAt: '2026-03-12T00:00:00.000Z',
+      updatedAt: '2026-03-12T00:00:00.000Z',
+      target: { mode: 'explicit', distroNames: ['Ubuntu'] },
+      steps: [{ id: 'unknown', kind: 'mystery' }],
+    } as unknown as WslBatchWorkflowPreset;
+
+    const unsupportedStepResult = buildWslBatchWorkflowPreflight({
+      workflow: unsupportedStepWorkflow,
+      distros,
+      selectedDistros: new Set(),
+      distroTags: {},
+      capabilities: null,
+    });
+    expect(unsupportedStepResult.targets[0].stepStatuses[0]).toMatchObject({
+      status: 'blocked',
+      reason: 'Unsupported workflow step.',
+    });
+  });
+});
+
+describe('wsl workflow helpers', () => {
+  it('normalizes overview context and builds stable hrefs', () => {
+    expect(sanitizeWslOverviewContext({ tab: 'available', tag: 'dev', origin: 'widget' })).toEqual({
+      tab: 'available',
+      tag: 'dev',
+      origin: 'widget',
+    });
+    expect(buildWslOverviewHref({ tab: 'available', tag: 'dev', origin: 'widget' })).toBe(
+      '/wsl?tab=available&tag=dev&origin=widget',
+    );
+    expect(
+      buildWslDistroHref('Ubuntu', {
+        origin: 'detail',
+        tab: 'available',
+        tag: 'dev',
+        continueAction: 'relaunch',
+      }),
+    ).toContain('continue=relaunch');
+  });
+
+  it('reads overview context from search params with fallback defaults', () => {
+    const params = new URLSearchParams('tab=available&tag=ops&origin=assistance');
+
+    expect(readWslOverviewContext(params, { origin: 'sidebar' })).toEqual({
+      tab: 'available',
+      tag: 'ops',
+      origin: 'assistance',
+    });
+    expect(readWslOverviewContext(null, { tag: 'fallback' })).toEqual({
+      tab: 'installed',
+      tag: 'fallback',
+      origin: 'overview',
+    });
+  });
+
+  it('normalizes selected distros and summarizes batch result tuples', () => {
+    expect(normalizeSelectedDistros(new Set(['Ubuntu', 'Missing']), distros)).toEqual(
+      new Set(['Ubuntu']),
+    );
+    expect(summarizeBatchResults([
+      ['Ubuntu', true, 'done'],
+      ['Debian', false, 'boom'],
+    ])).toEqual({
+      total: 2,
+      failed: 1,
+      succeeded: 1,
+      details: ['Ubuntu: ok - done', 'Debian: failed - boom'],
+    });
+  });
+
+  it('maps legacy actions to steps and exposes step metadata', () => {
+    const step = legacyActionToWorkflowStep({
+      kind: 'command',
+      command: 'echo ok',
+      label: 'Run command',
+    } as never, 1);
+
+    expect(step).toMatchObject({
+      id: 'command-2',
+      kind: 'command',
+      command: 'echo ok',
+    });
+    expect(getWslBatchWorkflowStepMeta({
+      id: 'assist',
+      kind: 'assistance',
+      actionId: 'distro.openTerminal',
+    } as never)).toMatchObject({
+      id: 'distro.openInTerminal',
+      refreshTargets: [],
+    });
+  });
+
+  it('normalizes action-driven workflows and fills missing step ids and labels', () => {
+    const workflow = normalizeWslBatchWorkflowPreset({
+      id: 'wf-action',
+      name: 'Action workflow',
+      createdAt: '2026-03-12T00:00:00.000Z',
+      updatedAt: '2026-03-12T00:00:00.000Z',
+      target: { mode: 'selected' },
+      action: { kind: 'package-upkeep', mode: 'update' },
+    } as never);
+
+    expect(workflow.steps).toEqual([
+      expect.objectContaining({
+        id: 'package-upkeep-1',
+        kind: 'package-upkeep',
+        mode: 'update',
+      }),
+    ]);
+    expect(workflow.action).toEqual({ kind: 'package-upkeep', mode: 'update' });
+    expect(getWslBatchWorkflowSteps({
+      id: 'wf-empty',
+      name: 'Empty',
+      createdAt: '2026-03-12T00:00:00.000Z',
+      updatedAt: '2026-03-12T00:00:00.000Z',
+      target: { mode: 'selected' },
+    } as never)).toEqual([]);
+  });
+
+  it('normalizes single-step workflows back into legacy action payloads for multiple step kinds', () => {
+    const backupWorkflow = normalizeWslBatchWorkflowPreset({
+      id: 'wf-backup',
+      name: 'Backup workflow',
+      createdAt: '2026-03-12T00:00:00.000Z',
+      updatedAt: '2026-03-12T00:00:00.000Z',
+      target: { mode: 'selected' },
+      steps: [{ kind: 'backup', destinationPath: 'C:\\WSL-Backups' }],
+    } as never);
+    expect(backupWorkflow.action).toEqual({
+      kind: 'backup',
+      destinationPath: 'C:\\WSL-Backups',
+      label: undefined,
+    });
+
+    const assistanceWorkflow = normalizeWslBatchWorkflowPreset({
+      id: 'wf-assist',
+      name: 'Assistance workflow',
+      createdAt: '2026-03-12T00:00:00.000Z',
+      updatedAt: '2026-03-12T00:00:00.000Z',
+      target: { mode: 'selected' },
+      steps: [{ kind: 'assistance', actionId: 'distro.healthCheck' }],
+    } as never);
+    expect(assistanceWorkflow.action).toEqual({
+      kind: 'assistance',
+      actionId: 'distro.healthCheck',
+      label: undefined,
+    });
+
+    const upkeepWorkflow = normalizeWslBatchWorkflowPreset({
+      id: 'wf-upkeep',
+      name: 'Upkeep workflow',
+      createdAt: '2026-03-12T00:00:00.000Z',
+      updatedAt: '2026-03-12T00:00:00.000Z',
+      target: { mode: 'selected' },
+      steps: [{ kind: 'package-upkeep', mode: 'upgrade' }],
+    } as never);
+    expect(upkeepWorkflow.action).toEqual({
+      kind: 'package-upkeep',
+      mode: 'upgrade',
+      label: undefined,
+    });
+  });
+
+  it('maps multiple legacy action kinds and metadata branches', () => {
+    expect(legacyActionToWorkflowStep({
+      kind: 'backup',
+      destinationPath: 'C:\\WSL-Backups',
+    } as never)).toMatchObject({
+      kind: 'backup',
+      destinationPath: 'C:\\WSL-Backups',
+    });
+    expect(legacyActionToWorkflowStep({
+      kind: 'assistance',
+      actionId: 'distro.relaunch',
+    } as never)).toMatchObject({
+      kind: 'assistance',
+      actionId: 'distro.relaunch',
+    });
+    expect(getWslBatchWorkflowStepMeta({
+      id: 'terminate',
+      kind: 'lifecycle',
+      operation: 'terminate',
+    } as never)).toMatchObject({
+      id: 'runtime.batchTerminate',
+      risk: 'safe',
+    });
+    expect(getWslBatchWorkflowStepMeta({
+      id: 'relaunch',
+      kind: 'lifecycle',
+      operation: 'relaunch',
+    } as never)).toMatchObject({
+      id: 'distro.relaunch',
+    });
+    expect(getWslBatchWorkflowStepMeta({
+      id: 'assist',
+      kind: 'assistance',
+      actionId: 'distro.healthCheck',
+    } as never)).toMatchObject({
+      id: 'distro.healthCheck',
+    });
+    expect(getWslBatchWorkflowStepMeta({
+      id: 'backup',
+      kind: 'backup',
+    } as never)).toMatchObject({
+      id: 'backup.create',
+    });
+    expect(getWslBatchWorkflowStepMeta({
+      id: 'upgrade',
+      kind: 'package-upkeep',
+      mode: 'upgrade',
+    } as never)).toMatchObject({
+      id: 'distro.packageUpgrade',
+    });
+  });
+
+  it('uses default overview href when no custom params are provided', () => {
+    expect(buildWslOverviewHref()).toBe('/wsl');
+    expect(buildWslDistroHref('Ubuntu')).toContain('returnTo=%2Fwsl');
   });
 });
 
@@ -409,6 +834,44 @@ describe('summarizeWslBatchWorkflowRun', () => {
     expect(extendedSummary.resumeFromStepIndexByDistro).toEqual({
       Ubuntu: 0,
       Debian: 2,
+    });
+  });
+
+  it('converts missing preflight targets into skipped summary entries', () => {
+    const workflow = {
+      id: 'wf-missing-summary',
+      name: 'Missing target summary',
+      createdAt: '2026-03-12T00:00:00.000Z',
+      updatedAt: '2026-03-12T00:00:00.000Z',
+      target: { mode: 'explicit', distroNames: ['Missing'] },
+      action: { kind: 'health-check', label: 'Health Check' },
+    } as unknown as WslBatchWorkflowPreset;
+
+    const preflight = buildWslBatchWorkflowPreflight({
+      workflow,
+      distros,
+      selectedDistros: new Set(),
+      distroTags: {},
+      capabilities: null,
+    });
+
+    const summary = summarizeWslBatchWorkflowRun({
+      workflow,
+      preflight,
+      startedAt: '2026-03-12T00:00:00.000Z',
+      completedAt: '2026-03-12T00:01:00.000Z',
+      executionResults: [],
+    });
+
+    expect(summary).toMatchObject({
+      total: 1,
+      skipped: 1,
+      failed: 0,
+      succeeded: 0,
+    });
+    expect(summary.results[0]).toMatchObject({
+      distroName: 'Missing',
+      status: 'skipped',
     });
   });
 });

@@ -41,6 +41,9 @@ import type {
 export function WslDistroOverview({
   distroName,
   distro,
+  info,
+  onRefreshInfo,
+  onRefreshLiveInfo,
   getDiskUsage,
   getIpAddress,
   getDistroConfig,
@@ -63,10 +66,28 @@ export function WslDistroOverview({
   const [lastResourceUpdate, setLastResourceUpdate] = useState<string | null>(null);
 
   const isRunning = distro?.state.toLowerCase() === 'running';
+  const hasSnapshotInfo = Boolean(info);
   const loadingEnv = isRunning && !envFetched;
+  const effectiveDiskUsage = info?.diskUsage.data ?? diskUsage;
+  const effectiveIpAddress = isRunning
+    ? (info?.ipAddress.data ?? ipAddress)
+    : null;
+  const effectiveEnv = info?.environment.data ?? env;
+  const effectiveResources = info?.resources.data ?? resources;
+  const effectiveLoadingDisk = hasSnapshotInfo
+    ? info?.diskUsage.state === 'loading'
+    : loadingDisk;
+  const effectiveLoadingEnv = hasSnapshotInfo
+    ? info?.environment.state === 'loading'
+    : loadingEnv;
+  const effectiveLoadingResources = hasSnapshotInfo
+    ? info?.resources.state === 'loading'
+    : !resourcesFetched;
+  const canRefreshInfo = Boolean(onRefreshInfo);
 
   // Load disk usage
   useEffect(() => {
+    if (hasSnapshotInfo) return;
     let cancelled = false;
     getDiskUsage(distroName)
       .then((usage) => {
@@ -77,10 +98,11 @@ export function WslDistroOverview({
         if (!cancelled) setLoadingDisk(false);
       });
     return () => { cancelled = true; };
-  }, [distroName, getDiskUsage]);
+  }, [distroName, getDiskUsage, hasSnapshotInfo]);
 
   // Load environment info (only when running)
   useEffect(() => {
+    if (hasSnapshotInfo) return;
     if (!isRunning) return;
     let cancelled = false;
     detectDistroEnv(distroName)
@@ -94,10 +116,11 @@ export function WslDistroOverview({
         if (!cancelled) setEnvFetched(true);
       });
     return () => { cancelled = true; };
-  }, [distroName, isRunning, detectDistroEnv]);
+  }, [detectDistroEnv, distroName, hasSnapshotInfo, isRunning]);
 
   // Load IP address
   useEffect(() => {
+    if (hasSnapshotInfo) return;
     if (!isRunning) return;
     let cancelled = false;
     getIpAddress(distroName)
@@ -108,10 +131,11 @@ export function WslDistroOverview({
         if (!cancelled) setIpAddress(null);
       });
     return () => { cancelled = true; };
-  }, [distroName, isRunning, getIpAddress]);
+  }, [distroName, getIpAddress, hasSnapshotInfo, isRunning]);
 
   // Load resource usage (only when running and prop provided)
   useEffect(() => {
+    if (hasSnapshotInfo) return;
     if (!isRunning || !getDistroResources) return;
     let cancelled = false;
     getDistroResources(distroName)
@@ -128,9 +152,13 @@ export function WslDistroOverview({
         if (!cancelled) setResourcesFetched(true);
       });
     return () => { cancelled = true; };
-  }, [distroName, isRunning, getDistroResources]);
+  }, [distroName, getDistroResources, hasSnapshotInfo, isRunning]);
 
   const handleRefreshResources = useCallback(() => {
+    if (onRefreshLiveInfo) {
+      void onRefreshLiveInfo();
+      return;
+    }
     if (!getDistroResources) return;
     setResourcesFetched(false);
     getDistroResources(distroName)
@@ -140,10 +168,11 @@ export function WslDistroOverview({
       })
       .catch(() => setResources(null))
       .finally(() => setResourcesFetched(true));
-  }, [distroName, getDistroResources]);
+  }, [distroName, getDistroResources, onRefreshLiveInfo]);
 
   // Auto-refresh resource monitoring (5s interval)
   useEffect(() => {
+    if (hasSnapshotInfo) return;
     if (autoRefresh && isRunning && getDistroResources) {
       autoRefreshRef.current = setInterval(() => {
         getDistroResources(distroName)
@@ -160,7 +189,7 @@ export function WslDistroOverview({
         autoRefreshRef.current = null;
       }
     };
-  }, [autoRefresh, isRunning, distroName, getDistroResources]);
+  }, [autoRefresh, distroName, getDistroResources, hasSnapshotInfo, isRunning]);
 
   const handlePackageAction = useCallback(async (mode: 'update' | 'upgrade') => {
     if (!updateDistroPackages) return;
@@ -180,10 +209,10 @@ export function WslDistroOverview({
   }, [distroName, updateDistroPackages, t]);
 
   // Derive displayed IP: only show when running
-  const displayedIp = isRunning ? ipAddress : null;
+  const displayedIp = effectiveIpAddress;
 
-  const diskPercent = diskUsage && diskUsage.totalBytes > 0
-    ? (diskUsage.usedBytes / diskUsage.totalBytes) * 100
+  const diskPercent = effectiveDiskUsage && effectiveDiskUsage.totalBytes > 0
+    ? (effectiveDiskUsage.usedBytes / effectiveDiskUsage.totalBytes) * 100
     : 0;
 
   return (
@@ -226,12 +255,12 @@ export function WslDistroOverview({
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {loadingDisk ? (
+            {effectiveLoadingDisk ? (
               <Skeleton className="h-6 w-32" />
-            ) : diskUsage && diskUsage.totalBytes > 0 ? (
+            ) : effectiveDiskUsage && effectiveDiskUsage.totalBytes > 0 ? (
               <div className="space-y-1.5">
                 <p className="text-sm font-semibold">
-                  {formatBytes(diskUsage.usedBytes)} / {formatBytes(diskUsage.totalBytes)}
+                  {formatBytes(effectiveDiskUsage.usedBytes)} / {formatBytes(effectiveDiskUsage.totalBytes)}
                 </p>
                 <Progress value={diskPercent} className={`h-2 ${
                   diskPercent > 80 ? '[&>div]:bg-red-500' : diskPercent > 50 ? '[&>div]:bg-amber-500' : ''
@@ -265,14 +294,14 @@ export function WslDistroOverview({
       </div>
 
       {/* Filesystem Path */}
-      {diskUsage?.filesystemPath && (
+      {effectiveDiskUsage?.filesystemPath && (
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center gap-2 text-sm">
               <FolderOpen className="h-4 w-4 text-muted-foreground shrink-0" />
               <span className="text-muted-foreground">{t('wsl.detail.filesystemPath')}:</span>
               <code className="font-mono text-xs bg-muted px-2 py-0.5 rounded flex-1 truncate">
-                {diskUsage.filesystemPath}
+                {effectiveDiskUsage.filesystemPath}
               </code>
             </div>
           </CardContent>
@@ -280,7 +309,7 @@ export function WslDistroOverview({
       )}
 
       {/* Environment Info */}
-      {isRunning && (
+      {(isRunning || hasSnapshotInfo) && (
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base font-semibold flex items-center gap-2">
@@ -289,26 +318,66 @@ export function WslDistroOverview({
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {loadingEnv ? (
+            {info?.environment.state === 'stale' && (
+              <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                <p>{t('wsl.detail.infoStale')}</p>
+                <p className="text-xs text-amber-800">{t('wsl.detail.infoRetryHint')}</p>
+                {canRefreshInfo && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-3"
+                    onClick={() => { void onRefreshInfo?.(); }}
+                  >
+                    {t('common.refresh')}
+                  </Button>
+                )}
+              </div>
+            )}
+            {effectiveLoadingEnv ? (
               <div className="grid gap-4 grid-cols-2 lg:grid-cols-3">
                 {Array.from({ length: 9 }, (_, i) => i + 1).map((i) => (
                   <Skeleton key={i} className="h-10 w-full" />
                 ))}
               </div>
-            ) : env ? (
+            ) : info?.environment.state === 'unavailable' ? (
+              <Empty className="border-none py-4">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <Server />
+                  </EmptyMedia>
+                  <EmptyTitle className="text-sm font-normal text-muted-foreground">
+                    {t('wsl.detail.infoUnavailable')}
+                  </EmptyTitle>
+                  <p className="text-xs text-muted-foreground">
+                    {info.environment.reason}
+                  </p>
+                  {canRefreshInfo && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-3"
+                      onClick={() => { void onRefreshInfo?.(); }}
+                    >
+                      {t('common.refresh')}
+                    </Button>
+                  )}
+                </EmptyHeader>
+              </Empty>
+            ) : effectiveEnv ? (
               <div className="grid gap-4 grid-cols-2 lg:grid-cols-3">
                 <div className="flex items-start gap-2">
                   <Info className="h-3.5 w-3.5 mt-0.5 text-muted-foreground shrink-0" />
                   <div>
                     <p className="text-xs text-muted-foreground">{t('wsl.detail.osName')}</p>
-                    <p className="text-sm font-medium">{env.prettyName}</p>
+                    <p className="text-sm font-medium">{effectiveEnv.prettyName}</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-2">
                   <Cpu className="h-3.5 w-3.5 mt-0.5 text-muted-foreground shrink-0" />
                   <div>
                     <p className="text-xs text-muted-foreground">{t('wsl.detail.architecture')}</p>
-                    <p className="text-sm font-medium">{env.architecture}</p>
+                    <p className="text-sm font-medium">{effectiveEnv.architecture}</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-2">
@@ -316,10 +385,10 @@ export function WslDistroOverview({
                   <div>
                     <p className="text-xs text-muted-foreground">{t('wsl.detail.packageManager')}</p>
                     <p className="text-sm font-medium">
-                      {formatPmLabel(env.packageManager)}
-                      {env.installedPackages != null && (
+                      {formatPmLabel(effectiveEnv.packageManager)}
+                      {effectiveEnv.installedPackages != null && (
                         <span className="text-xs text-muted-foreground ml-1">
-                          ({env.installedPackages.toLocaleString()} {t('wsl.detail.installedPackages').toLowerCase()})
+                          ({effectiveEnv.installedPackages.toLocaleString()} {t('wsl.detail.installedPackages').toLowerCase()})
                         </span>
                       )}
                     </p>
@@ -329,8 +398,8 @@ export function WslDistroOverview({
                   <Box className="h-3.5 w-3.5 mt-0.5 text-muted-foreground shrink-0" />
                   <div>
                     <p className="text-xs text-muted-foreground">{t('wsl.detail.kernel')}</p>
-                    <p className="text-sm font-medium font-mono truncate max-w-[200px]" title={env.kernelVersion}>
-                      {env.kernelVersion}
+                    <p className="text-sm font-medium font-mono truncate max-w-[200px]" title={effectiveEnv.kernelVersion}>
+                      {effectiveEnv.kernelVersion}
                     </p>
                   </div>
                 </div>
@@ -338,43 +407,43 @@ export function WslDistroOverview({
                   <Terminal className="h-3.5 w-3.5 mt-0.5 text-muted-foreground shrink-0" />
                   <div>
                     <p className="text-xs text-muted-foreground">{t('wsl.detail.initSystem')}</p>
-                    <p className="text-sm font-medium">{env.initSystem}</p>
+                    <p className="text-sm font-medium">{effectiveEnv.initSystem}</p>
                   </div>
                 </div>
-                {env.defaultShell && (
+                {effectiveEnv.defaultShell && (
                   <div className="flex items-start gap-2">
                     <Terminal className="h-3.5 w-3.5 mt-0.5 text-muted-foreground shrink-0" />
                     <div>
                       <p className="text-xs text-muted-foreground">{t('wsl.detail.defaultShell')}</p>
-                      <p className="text-sm font-medium font-mono">{env.defaultShell}</p>
+                      <p className="text-sm font-medium font-mono">{effectiveEnv.defaultShell}</p>
                     </div>
                   </div>
                 )}
-                {env.defaultUser && (
+                {effectiveEnv.defaultUser && (
                   <div className="flex items-start gap-2">
                     <User className="h-3.5 w-3.5 mt-0.5 text-muted-foreground shrink-0" />
                     <div>
                       <p className="text-xs text-muted-foreground">{t('wsl.detail.defaultUser')}</p>
-                      <p className="text-sm font-medium">{env.defaultUser}</p>
+                      <p className="text-sm font-medium">{effectiveEnv.defaultUser}</p>
                     </div>
                   </div>
                 )}
-                {env.hostname && (
+                {effectiveEnv.hostname && (
                   <div className="flex items-start gap-2">
                     <Server className="h-3.5 w-3.5 mt-0.5 text-muted-foreground shrink-0" />
                     <div>
                       <p className="text-xs text-muted-foreground">{t('wsl.detail.hostname')}</p>
-                      <p className="text-sm font-medium">{env.hostname}</p>
+                      <p className="text-sm font-medium">{effectiveEnv.hostname}</p>
                     </div>
                   </div>
                 )}
-                {env.versionCodename && (
+                {effectiveEnv.versionCodename && (
                   <div className="flex items-start gap-2">
                     <Info className="h-3.5 w-3.5 mt-0.5 text-muted-foreground shrink-0" />
                     <div>
                       <p className="text-xs text-muted-foreground">{t('wsl.detail.osVersion')}</p>
                       <p className="text-sm font-medium">
-                        {env.versionId ?? ''}{env.versionCodename ? ` (${env.versionCodename})` : ''}
+                        {effectiveEnv.versionId ?? ''}{effectiveEnv.versionCodename ? ` (${effectiveEnv.versionCodename})` : ''}
                       </p>
                     </div>
                   </div>
@@ -384,7 +453,7 @@ export function WslDistroOverview({
                   <div>
                     <p className="text-xs text-muted-foreground">{t('wsl.detail.docker')}</p>
                     <p className="text-sm font-medium">
-                      {env.dockerAvailable ? (
+                      {effectiveEnv.dockerAvailable ? (
                         <Badge variant="default" className="text-[10px]">{t('wsl.detail.dockerAvailable')}</Badge>
                       ) : (
                         <Badge variant="secondary" className="text-[10px]">{t('wsl.detail.dockerNotFound')}</Badge>
@@ -392,14 +461,14 @@ export function WslDistroOverview({
                     </p>
                   </div>
                 </div>
-                {env.gpuName && (
+                {effectiveEnv.gpuName && (
                   <div className="flex items-start gap-2">
                     <Gpu className="h-3.5 w-3.5 mt-0.5 text-muted-foreground shrink-0" />
                     <div>
                       <p className="text-xs text-muted-foreground">{t('wsl.detail.gpu')}</p>
-                      <p className="text-sm font-medium">{env.gpuName}</p>
-                      {env.gpuMemory && (
-                        <p className="text-xs text-muted-foreground">{env.gpuMemory}</p>
+                      <p className="text-sm font-medium">{effectiveEnv.gpuName}</p>
+                      {effectiveEnv.gpuMemory && (
+                        <p className="text-xs text-muted-foreground">{effectiveEnv.gpuMemory}</p>
                       )}
                     </div>
                   </div>
@@ -422,7 +491,7 @@ export function WslDistroOverview({
       )}
 
       {/* Resource Usage (only when running and prop provided) */}
-      {isRunning && getDistroResources && (
+      {(isRunning || hasSnapshotInfo) && getDistroResources && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base font-semibold flex items-center gap-2">
@@ -456,13 +525,53 @@ export function WslDistroOverview({
             </CardAction>
           </CardHeader>
           <CardContent>
-            {!resourcesFetched ? (
+            {info?.resources.state === 'stale' && (
+              <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                <p>{t('wsl.detail.infoStale')}</p>
+                <p className="text-xs text-amber-800">{t('wsl.detail.infoRetryHint')}</p>
+                {canRefreshInfo && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-3"
+                    onClick={() => { void onRefreshInfo?.(); }}
+                  >
+                    {t('common.refresh')}
+                  </Button>
+                )}
+              </div>
+            )}
+            {effectiveLoadingResources ? (
               <div className="grid gap-4 grid-cols-2 lg:grid-cols-3">
                 {[1, 2, 3].map((i) => (
                   <Skeleton key={i} className="h-16 w-full" />
                 ))}
               </div>
-            ) : resources ? (
+            ) : info?.resources.state === 'unavailable' ? (
+              <Empty className="border-none py-4">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <MemoryStick />
+                  </EmptyMedia>
+                  <EmptyTitle className="text-sm font-normal text-muted-foreground">
+                    {t('wsl.detail.infoUnavailable')}
+                  </EmptyTitle>
+                  <p className="text-xs text-muted-foreground">
+                    {info.resources.reason}
+                  </p>
+                  {canRefreshInfo && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-3"
+                      onClick={() => { void onRefreshInfo?.(); }}
+                    >
+                      {t('common.refresh')}
+                    </Button>
+                  )}
+                </EmptyHeader>
+              </Empty>
+            ) : effectiveResources ? (
               <div className="grid gap-4 grid-cols-2 lg:grid-cols-3">
                 {/* Memory */}
                 <div className="space-y-1.5">
@@ -471,23 +580,23 @@ export function WslDistroOverview({
                     {t('wsl.detail.memory')}
                   </p>
                   <p className="text-sm font-semibold">
-                    {formatKb(resources.memUsedKb)} / {formatKb(resources.memTotalKb)}
+                    {formatKb(effectiveResources.memUsedKb)} / {formatKb(effectiveResources.memTotalKb)}
                   </p>
                   <Progress
-                    value={resources.memTotalKb > 0 ? (resources.memUsedKb / resources.memTotalKb) * 100 : 0}
+                    value={effectiveResources.memTotalKb > 0 ? (effectiveResources.memUsedKb / effectiveResources.memTotalKb) * 100 : 0}
                     className="h-1.5"
                   />
                 </div>
                 {/* Swap */}
                 <div className="space-y-1.5">
                   <p className="text-xs text-muted-foreground">{t('wsl.detail.swap')}</p>
-                  {resources.swapTotalKb > 0 ? (
+                  {effectiveResources.swapTotalKb > 0 ? (
                     <>
                       <p className="text-sm font-semibold">
-                        {formatKb(resources.swapUsedKb)} / {formatKb(resources.swapTotalKb)}
+                        {formatKb(effectiveResources.swapUsedKb)} / {formatKb(effectiveResources.swapTotalKb)}
                       </p>
                       <Progress
-                        value={(resources.swapUsedKb / resources.swapTotalKb) * 100}
+                        value={(effectiveResources.swapUsedKb / effectiveResources.swapTotalKb) * 100}
                         className="h-1.5"
                       />
                     </>
@@ -502,10 +611,10 @@ export function WslDistroOverview({
                     {t('wsl.detail.cpuLoad')}
                   </p>
                   <p className="text-sm font-semibold">
-                    {resources.cpuCount} {resources.cpuCount === 1 ? 'core' : 'cores'}
+                    {effectiveResources.cpuCount} {effectiveResources.cpuCount === 1 ? 'core' : 'cores'}
                   </p>
                   <p className="text-xs text-muted-foreground font-mono">
-                    {t('wsl.detail.loadAvg')}: {resources.loadAvg[0].toFixed(2)} / {resources.loadAvg[1].toFixed(2)} / {resources.loadAvg[2].toFixed(2)}
+                    {t('wsl.detail.loadAvg')}: {effectiveResources.loadAvg[0].toFixed(2)} / {effectiveResources.loadAvg[1].toFixed(2)} / {effectiveResources.loadAvg[2].toFixed(2)}
                   </p>
                 </div>
               </div>
@@ -526,7 +635,7 @@ export function WslDistroOverview({
       )}
 
       {/* Package Update (only when running with env detected) */}
-      {isRunning && updateDistroPackages && env && env.packageManager !== 'unknown' && (
+      {isRunning && updateDistroPackages && effectiveEnv && effectiveEnv.packageManager !== 'unknown' && (
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base font-semibold flex items-center gap-2">
@@ -541,7 +650,7 @@ export function WslDistroOverview({
                 size="sm"
                 className="gap-1.5"
                 onClick={() => handlePackageAction('update')}
-                disabled={updatingPkgs !== null}
+                disabled={updatingPkgs !== null || info?.environment.state === 'stale'}
               >
                 {updatingPkgs === 'update' ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -555,7 +664,7 @@ export function WslDistroOverview({
                 size="sm"
                 className="gap-1.5"
                 onClick={() => handlePackageAction('upgrade')}
-                disabled={updatingPkgs !== null}
+                disabled={updatingPkgs !== null || info?.environment.state === 'stale'}
               >
                 {updatingPkgs === 'upgrade' ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -565,9 +674,14 @@ export function WslDistroOverview({
                 {t('wsl.detail.pkgUpgrade')}
               </Button>
               <span className="text-xs text-muted-foreground">
-                {formatPmLabel(env.packageManager)}
+                {formatPmLabel(effectiveEnv.packageManager)}
               </span>
             </div>
+            {info?.environment.state === 'stale' && (
+              <p className="mt-3 text-xs text-muted-foreground">
+                {t('wsl.detail.infoRetryHint')}
+              </p>
+            )}
           </CardContent>
         </Card>
       )}

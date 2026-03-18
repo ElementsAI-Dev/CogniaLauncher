@@ -265,6 +265,7 @@ export default function TerminalPage() {
             healthResults={terminal.healthResults}
             checkingHealthShellId={terminal.checkingHealthShellId}
             onCheckShellHealth={terminal.checkShellHealth}
+            onGetShellInfo={terminal.getShellInfo}
           />
         </TabsContent>
 
@@ -339,7 +340,7 @@ export default function TerminalPage() {
           />
         </TabsContent>
 
-        <TabsContent value="frameworks">
+      <TabsContent value="frameworks">
           <TerminalShellFramework
             shells={terminal.shells}
             frameworks={terminal.frameworks}
@@ -349,6 +350,7 @@ export default function TerminalPage() {
             onDetectFrameworks={terminal.detectFrameworks}
             onFetchPlugins={terminal.fetchPlugins}
             onFetchCacheStats={terminal.fetchFrameworkCacheStats}
+            onGetFrameworkCacheInfo={terminal.getSingleFrameworkCacheInfo}
             onCleanFrameworkCache={terminal.cleanFrameworkCache}
             loading={terminal.loading}
           />
@@ -373,6 +375,7 @@ export default function TerminalPage() {
             onInstallModule={terminal.installPSModule}
             onUninstallModule={terminal.uninstallPSModule}
             onUpdateModule={terminal.updatePSModule}
+            onSearchModules={terminal.searchPSModules}
             loading={terminal.loading}
           />
         </TabsContent>
@@ -425,6 +428,7 @@ export default function TerminalPage() {
         onOpenChange={setTemplatePickerOpen}
         templates={terminal.templates}
         onSelect={handleTemplateSelect}
+        onCreateCustom={terminal.createCustomTemplate}
         onDelete={terminal.deleteCustomTemplate}
       />
 

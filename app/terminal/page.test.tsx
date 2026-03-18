@@ -24,6 +24,8 @@ jest.mock('@/components/providers/locale-provider', () => ({
 const mockLoadProxyConfig = jest.fn();
 const mockFetchProxyEnvVars = jest.fn();
 const mockFetchShellEnvVars = jest.fn();
+const mockGetShellInfo = jest.fn();
+const mockGetSingleFrameworkCacheInfo = jest.fn();
 
 const mockTerminalHookState = {
   shells: [{ id: 'bash', name: 'Bash', path: '/bin/bash' }],
@@ -74,6 +76,7 @@ const mockTerminalHookState = {
   detectShells: jest.fn(),
   measureStartup: jest.fn(),
   checkShellHealth: jest.fn(),
+  getShellInfo: mockGetShellInfo,
   fetchProfiles: jest.fn(),
   launchProfile: jest.fn(),
   createProfile: jest.fn(),
@@ -93,6 +96,7 @@ const mockTerminalHookState = {
   detectFrameworks: jest.fn(),
   fetchPlugins: jest.fn(),
   fetchFrameworkCacheStats: jest.fn(),
+  getSingleFrameworkCacheInfo: mockGetSingleFrameworkCacheInfo,
   cleanFrameworkCache: jest.fn(),
   fetchPSProfiles: jest.fn(),
   readPSProfile: jest.fn(),
@@ -131,38 +135,123 @@ jest.mock('@/hooks/use-terminal', () => ({
 }));
 
 jest.mock('@/components/terminal', () => ({
-  TerminalDetectedShells: ({ shells }: { shells: unknown[] }) => (
-    <div data-testid="detected-shells">Shells: {shells.length}</div>
+  TerminalDetectedShells: ({
+    shells,
+    onGetShellInfo,
+  }: {
+    shells: unknown[];
+    onGetShellInfo?: (shellId: string) => void;
+  }) => (
+    <div data-testid="detected-shells">
+      Shells: {shells.length}
+      <button type="button" onClick={() => onGetShellInfo?.('bash')}>
+        inspect-shell
+      </button>
+    </div>
   ),
-  TerminalProfileList: () => <div data-testid="profile-list">Profiles</div>,
+  TerminalProfileList: ({ onFromTemplate }: { onFromTemplate?: () => void }) => (
+    <div data-testid="profile-list">
+      Profiles
+      <button type="button" onClick={() => onFromTemplate?.()}>open-template-picker</button>
+    </div>
+  ),
   TerminalProfileDialog: () => null,
   TerminalShellConfig: ({
     onDirtyChange,
     onRequestDiscard,
     onRefreshHandled,
+    refreshIntent,
   }: {
     onDirtyChange?: (value: boolean) => void;
     onRequestDiscard?: () => void;
     onRefreshHandled?: (handled: { configEntries: boolean; configMetadata: boolean }) => void;
+    refreshIntent?: { configEntries: boolean; configMetadata: boolean };
   }) => (
     <div data-testid="shell-config">
       <button type="button" onClick={() => onDirtyChange?.(true)}>set-config-dirty</button>
       <button type="button" onClick={() => onRequestDiscard?.()}>request-config-discard</button>
       <button
         type="button"
-        onClick={() => onRefreshHandled?.({ configEntries: true, configMetadata: true })}
+        onClick={() =>
+          onRefreshHandled?.({
+            configEntries: refreshIntent?.configEntries ?? true,
+            configMetadata: refreshIntent?.configMetadata ?? true,
+          })
+        }
       >
         acknowledge-config-refresh
       </button>
       Shell Config
     </div>
   ),
-  TerminalShellFramework: () => <div data-testid="shell-framework">Frameworks</div>,
+  TerminalShellFramework: ({
+    onGetFrameworkCacheInfo,
+  }: {
+    onGetFrameworkCacheInfo?: (frameworkName: string, frameworkPath: string, shellType: string) => void;
+  }) => (
+    <div data-testid="shell-framework">
+      Frameworks
+      <button
+        type="button"
+        onClick={() => onGetFrameworkCacheInfo?.('Oh My Zsh', '/home/user/.oh-my-zsh', 'zsh')}
+      >
+        inspect-framework-cache
+      </button>
+    </div>
+  ),
   TerminalPsManagement: () => <div data-testid="ps-management">PS Management</div>,
-  TerminalPsModulesTable: () => <div data-testid="ps-modules">PS Modules</div>,
+  TerminalPsModulesTable: ({ onSearchModules }: { onSearchModules?: (query: string) => void }) => (
+    <div data-testid="ps-modules">
+      PS Modules
+      <button type="button" onClick={() => onSearchModules?.('Pester')}>search-modules</button>
+    </div>
+  ),
   TerminalProxySettings: () => <div data-testid="proxy-settings">Proxy</div>,
   TerminalEnvVars: () => <div data-testid="env-vars">Env Vars</div>,
-  TerminalTemplatePicker: () => null,
+  TerminalTemplatePicker: ({
+    open,
+    onCreateCustom,
+  }: {
+    open?: boolean;
+    onCreateCustom?: (template: {
+      id: string;
+      name: string;
+      description: string;
+      icon: string;
+      category: string;
+      shellType: string | null;
+      args: string[];
+      envVars: Record<string, string>;
+      cwd: string | null;
+      startupCommand: string | null;
+      envType: string | null;
+      envVersion: string | null;
+      isBuiltin: boolean;
+    }) => void;
+  }) => open ? (
+    <div data-testid="template-picker">
+      <button
+        type="button"
+        onClick={() => onCreateCustom?.({
+          id: '',
+          name: 'Custom Template',
+          description: 'Custom description',
+          icon: 'terminal',
+          category: 'custom',
+          shellType: 'bash',
+          args: [],
+          envVars: {},
+          cwd: null,
+          startupCommand: 'echo hi',
+          envType: null,
+          envVersion: null,
+          isBuiltin: false,
+        })}
+      >
+        create-custom-template
+      </button>
+    </div>
+  ) : null,
 }));
 
 describe('TerminalPage', () => {
@@ -183,6 +272,8 @@ describe('TerminalPage', () => {
       psScripts: true,
       executionPolicy: true,
     };
+    mockGetShellInfo.mockResolvedValue(undefined);
+    mockGetSingleFrameworkCacheInfo.mockResolvedValue(undefined);
   });
 
   it('renders page title and description', () => {
@@ -361,5 +452,75 @@ describe('TerminalPage', () => {
     await waitFor(() => {
       expect(screen.getByTestId('profile-list')).toBeInTheDocument();
     });
+  });
+
+  it('marks only config metadata fresh when that is the only stale config resource', async () => {
+    const user = userEvent.setup();
+    mockTerminalHookState.resourceStale = {
+      ...mockTerminalHookState.resourceStale,
+      configEntries: false,
+      configMetadata: true,
+    };
+
+    render(<TerminalPage />);
+
+    await user.click(screen.getByRole('tab', { name: /config/i }));
+    await waitFor(() => {
+      expect(screen.getByTestId('shell-config')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: /acknowledge-config-refresh/i }));
+    expect(mockTerminalHookState.markResourcesFresh).toHaveBeenCalledWith(['configMetadata']);
+  });
+
+  it('wires PowerShell gallery search into the modules table', async () => {
+    const user = userEvent.setup();
+    render(<TerminalPage />);
+
+    await user.click(screen.getByRole('tab', { name: /powershell/i }));
+    await waitFor(() => {
+      expect(screen.getByTestId('ps-modules')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: /search-modules/i }));
+    expect(mockTerminalHookState.searchPSModules).toHaveBeenCalledWith('Pester');
+  });
+
+  it('wires custom template creation through the template picker workflow', async () => {
+    const user = userEvent.setup();
+    render(<TerminalPage />);
+
+    await user.click(screen.getByRole('tab', { name: /profiles/i }));
+    await waitFor(() => {
+      expect(screen.getByTestId('profile-list')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: /open-template-picker/i }));
+    await waitFor(() => {
+      expect(screen.getByTestId('template-picker')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: /create-custom-template/i }));
+    expect(mockTerminalHookState.createCustomTemplate).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Custom Template',
+      category: 'custom',
+      shellType: 'bash',
+    }));
+  });
+
+  it('wires shell and framework drilldown callbacks into terminal components', async () => {
+    const user = userEvent.setup();
+    render(<TerminalPage />);
+
+    await user.click(screen.getByRole('button', { name: /inspect-shell/i }));
+    expect(mockGetShellInfo).toHaveBeenCalledWith('bash');
+
+    await user.click(screen.getByRole('tab', { name: /frameworks/i }));
+    await waitFor(() => {
+      expect(screen.getByTestId('shell-framework')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: /inspect-framework-cache/i }));
+    expect(mockGetSingleFrameworkCacheInfo).toHaveBeenCalledWith('Oh My Zsh', '/home/user/.oh-my-zsh', 'zsh');
   });
 });

@@ -2,6 +2,8 @@ import type {
   WslDistroStatus,
   WslStatus,
   WslCapabilities,
+  WslRuntimeSnapshot,
+  WslVersionInfo,
   WslImportOptions,
   WslExecResult,
   WslDiskUsage,
@@ -347,6 +349,50 @@ export interface WslCompletenessSnapshot {
   degradedReasons: string[];
 }
 
+export type WslInfoSectionState =
+  | 'idle'
+  | 'loading'
+  | 'ready'
+  | 'partial'
+  | 'unavailable'
+  | 'failed'
+  | 'stale';
+
+export interface WslInfoFailure {
+  category: WslFailureCategory;
+  message: string;
+  raw: string;
+  retryable: boolean;
+}
+
+export interface WslInfoSection<T> {
+  state: WslInfoSectionState;
+  data: T | null;
+  failure: WslInfoFailure | null;
+  reason?: string;
+  updatedAt: string | null;
+}
+
+export interface WslRuntimeInfoSnapshot {
+  state: WslInfoSectionState;
+  runtime: WslInfoSection<WslRuntimeSnapshot>;
+  status: WslInfoSection<WslStatus>;
+  capabilities: WslInfoSection<WslCapabilities>;
+  versionInfo: WslInfoSection<WslVersionInfo>;
+  lastUpdatedAt: string | null;
+}
+
+export interface WslDistroInfoSnapshot {
+  distroName: string;
+  distroState: string | null;
+  state: WslInfoSectionState;
+  diskUsage: WslInfoSection<WslDiskUsage>;
+  ipAddress: WslInfoSection<string>;
+  environment: WslInfoSection<WslDistroEnvironment>;
+  resources: WslInfoSection<WslDistroResources>;
+  lastUpdatedAt: string | null;
+}
+
 // ============================================================================
 // WSL config setting definitions
 // ============================================================================
@@ -401,6 +447,7 @@ export interface WslDistroCardProps {
 
 export interface WslStatusCardProps {
   status: WslStatus | null;
+  runtimeInfo?: WslRuntimeInfoSnapshot | null;
   loading: boolean;
   onRefresh: () => void;
   onShutdownAll: () => void;
@@ -566,6 +613,9 @@ export interface WslDistroDetailPageProps {
 export interface WslDistroOverviewProps {
   distroName: string;
   distro: WslDistroStatus | null;
+  info?: WslDistroInfoSnapshot | null;
+  onRefreshInfo?: () => Promise<void>;
+  onRefreshLiveInfo?: () => Promise<void>;
   getDiskUsage: (name: string) => Promise<WslDiskUsage | null>;
   getIpAddress: (distro?: string) => Promise<string>;
   getDistroConfig: (distro: string) => Promise<WslDistroConfig | null>;

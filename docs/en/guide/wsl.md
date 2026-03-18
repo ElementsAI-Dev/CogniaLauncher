@@ -49,6 +49,8 @@ CogniaLauncher provides comprehensive Windows Subsystem for Linux (WSL) manageme
 - **Terminate** — Terminate a specific distribution
 - **Shutdown WSL** — Shut down all running distributions
 - **View Running** — List currently running distributions
+- **Runtime information snapshots** — Runtime overview now keeps status, capability, and version reads in a shared snapshot with refresh timestamps and degraded/stale hints
+- **Richer component versions** — Runtime overview surfaces WSL, kernel, WSLg, and Windows component version readouts from the same refresh path
 - **Open in Explorer** — Open distribution filesystem in Windows Explorer
 - **Open in Terminal** — Open distribution directly in Windows Terminal (or fallback shell)
 - **Inline lifecycle feedback** — Long-running, batch, and high-risk operations remain visible in-page with running, success, failure, and retry guidance
@@ -96,6 +98,12 @@ Manage per-distribution configuration via `/etc/wsl.conf`:
 
 - Check for WSL component updates
 - Execute WSL updates
+
+### Information Readouts & Refresh
+
+- Runtime and distro detail reads now use shared information snapshots instead of isolated one-off fetches.
+- Distro overview sections can explicitly report `unavailable`, `stale`, and refresh-retry guidance instead of silently clearing data.
+- If a refresh fails after a successful read, CogniaLauncher keeps the last successful data visible and marks it as stale so you can retry without losing context.
 
 ### High-Risk Operation Protection
 

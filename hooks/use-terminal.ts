@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import * as tauri from '@/lib/tauri';
 import { isTauri } from '@/lib/platform';
+import { resolveTerminalEditorCapability } from '@/lib/terminal/editor/capability-registry';
 import { toast } from 'sonner';
 import type {
   ShellType,
@@ -172,6 +173,16 @@ export function useTerminal({ t }: UseTerminalOptions) {
     } catch (e) {
       setState((prev) => ({ ...prev, checkingHealthShellId: null }));
       toast.error(t('terminal.toastCheckHealthFailed', { error: String(e) }));
+    }
+  }, [t]);
+
+  const getShellInfo = useCallback(async (shellId: string) => {
+    if (!isTauri()) return null;
+    try {
+      return await tauri.terminalGetShellInfo(shellId);
+    } catch (e) {
+      toast.error(t('terminal.toastLoadShellInfoFailed', { error: String(e) }));
+      return null;
     }
   }, [t]);
 
@@ -450,8 +461,18 @@ export function useTerminal({ t }: UseTerminalOptions) {
     if (!isTauri()) return null;
     try {
       const metadata = await tauri.terminalGetConfigEditorMetadata(path, shellType);
+      const enrichedMetadata = metadata.capability
+        ? metadata
+        : {
+            ...metadata,
+            capability: resolveTerminalEditorCapability({
+              shellType: metadata.shellType ?? shellType,
+              configPath: path,
+              language: metadata.language,
+            }),
+          };
       markResourcesFresh(['configMetadata']);
-      return metadata;
+      return enrichedMetadata;
     } catch (e) {
       toast.error(t('terminal.toastReadConfigFailed', { error: String(e) }));
       return null;
@@ -496,8 +517,10 @@ export function useTerminal({ t }: UseTerminalOptions) {
       markResourcesStale(['psProfiles']);
       await fetchPSProfiles();
       toast.success(t('terminal.toastPsProfileUpdated'));
+      return true;
     } catch (e) {
       toast.error(t('terminal.toastWritePsProfileFailed', { error: String(e) }));
+      return false;
     }
   }, [fetchPSProfiles, markResourcesStale, t]);
 
@@ -525,8 +548,10 @@ export function useTerminal({ t }: UseTerminalOptions) {
       markResourcesStale(['executionPolicy']);
       await fetchExecutionPolicy();
       toast.success(t('terminal.toastPolicySet', { policy }));
+      return true;
     } catch (e) {
       toast.error(t('terminal.toastSetPolicyFailed', { error: String(e) }));
+      return false;
     }
   }, [fetchExecutionPolicy, markResourcesStale, t]);
 
@@ -544,6 +569,16 @@ export function useTerminal({ t }: UseTerminalOptions) {
       }));
     } catch (e) {
       toast.error(t('terminal.toastLoadModulesFailed', { error: String(e) }));
+    }
+  }, [t]);
+
+  const getPSModuleDetail = useCallback(async (name: string) => {
+    if (!isTauri()) return null;
+    try {
+      return await tauri.terminalPsGetModuleDetail(name);
+    } catch (e) {
+      toast.error(t('terminal.toastLoadModuleDetailFailed', { error: String(e) }));
+      return null;
     }
   }, [t]);
 
@@ -604,6 +639,20 @@ export function useTerminal({ t }: UseTerminalOptions) {
     }
   }, [t]);
 
+  const getSingleFrameworkCacheInfo = useCallback(async (
+    frameworkName: string,
+    frameworkPath: string,
+    shellType: ShellType,
+  ) => {
+    if (!isTauri()) return null;
+    try {
+      return await tauri.terminalGetSingleFrameworkCacheInfo(frameworkName, frameworkPath, shellType);
+    } catch (e) {
+      toast.error(t('terminal.toastLoadCacheStatsFailed', { error: String(e) }));
+      return null;
+    }
+  }, [t]);
+
   const cleanFrameworkCache = useCallback(async (frameworkName: string) => {
     if (!isTauri()) return;
     try {
@@ -611,8 +660,10 @@ export function useTerminal({ t }: UseTerminalOptions) {
       const freedMB = (freedBytes / (1024 * 1024)).toFixed(1);
       toast.success(t('terminal.toastCacheCleaned', { size: freedMB, name: frameworkName }));
       await fetchFrameworkCacheStats();
+      return freedBytes;
     } catch (e) {
       toast.error(t('terminal.toastCleanCacheFailed', { name: frameworkName, error: String(e) }));
+      return null;
     }
   }, [fetchFrameworkCacheStats, t]);
 
@@ -723,8 +774,10 @@ export function useTerminal({ t }: UseTerminalOptions) {
       markResourcesStale(['templates']);
       await fetchTemplates();
       toast.success(t('terminal.toastTemplateDeleted'));
+      return true;
     } catch (e) {
       toast.error(t('terminal.toastDeleteTemplateFailed', { error: String(e) }));
+      return false;
     }
   }, [fetchTemplates, markResourcesStale, t]);
 
@@ -889,37 +942,43 @@ export function useTerminal({ t }: UseTerminalOptions) {
     if (!isTauri()) return;
     try {
       await tauri.terminalPsInstallModule(name, scope);
-      markResourcesStale(['psModules']);
-      await fetchPSModules();
+      markResourcesStale(['psModules', 'psScripts']);
+      await Promise.all([fetchPSModules(), fetchPSScripts()]);
       toast.success(t('terminal.toastModuleInstalled', { name }));
+      return true;
     } catch (e) {
       toast.error(t('terminal.toastInstallModuleFailed', { error: String(e) }));
+      return false;
     }
-  }, [fetchPSModules, markResourcesStale, t]);
+  }, [fetchPSModules, fetchPSScripts, markResourcesStale, t]);
 
   const uninstallPSModule = useCallback(async (name: string) => {
     if (!isTauri()) return;
     try {
       await tauri.terminalPsUninstallModule(name);
-      markResourcesStale(['psModules']);
-      await fetchPSModules();
+      markResourcesStale(['psModules', 'psScripts']);
+      await Promise.all([fetchPSModules(), fetchPSScripts()]);
       toast.success(t('terminal.toastModuleUninstalled', { name }));
+      return true;
     } catch (e) {
       toast.error(t('terminal.toastUninstallModuleFailed', { error: String(e) }));
+      return false;
     }
-  }, [fetchPSModules, markResourcesStale, t]);
+  }, [fetchPSModules, fetchPSScripts, markResourcesStale, t]);
 
   const updatePSModule = useCallback(async (name: string) => {
     if (!isTauri()) return;
     try {
       await tauri.terminalPsUpdateModule(name);
-      markResourcesStale(['psModules']);
-      await fetchPSModules();
+      markResourcesStale(['psModules', 'psScripts']);
+      await Promise.all([fetchPSModules(), fetchPSScripts()]);
       toast.success(t('terminal.toastModuleUpdated', { name }));
+      return true;
     } catch (e) {
       toast.error(t('terminal.toastUpdateModuleFailed', { error: String(e) }));
+      return false;
     }
-  }, [fetchPSModules, markResourcesStale, t]);
+  }, [fetchPSModules, fetchPSScripts, markResourcesStale, t]);
 
   const searchPSModules = useCallback(async (query: string) => {
     if (!isTauri()) return [];
@@ -1155,6 +1214,7 @@ export function useTerminal({ t }: UseTerminalOptions) {
     detectShells,
     measureStartup,
     checkShellHealth,
+    getShellInfo,
     fetchProfiles,
     createProfile,
     updateProfile,
@@ -1179,10 +1239,12 @@ export function useTerminal({ t }: UseTerminalOptions) {
     fetchExecutionPolicy,
     setExecutionPolicy,
     fetchPSModules,
+    getPSModuleDetail,
     fetchPSScripts,
     detectFrameworks,
     fetchPlugins,
     fetchFrameworkCacheStats,
+    getSingleFrameworkCacheInfo,
     cleanFrameworkCache,
     fetchShellEnvVars,
     revealShellEnvVar,

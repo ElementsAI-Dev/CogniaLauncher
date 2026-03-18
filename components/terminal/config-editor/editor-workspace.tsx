@@ -20,6 +20,7 @@ import type {
 export function TerminalConfigEditorWorkspace({
   SurfaceComponent,
   baselineValue = null,
+  capability = null,
   configPath = null,
   diagnostics = [],
   fingerprint = null,
@@ -81,6 +82,20 @@ export function TerminalConfigEditorWorkspace({
           snapshotPath={snapshotPath}
         />
 
+        {capability && (
+          <Alert data-testid="terminal-config-editor-capability">
+            <AlertTitle>
+              {capability.mode === "enhanced"
+                ? t("terminal.editorCapabilityEnhanced")
+                : t("terminal.editorCapabilityFallback")}
+            </AlertTitle>
+            <AlertDescription className="space-y-1">
+              {capability.bundleLabel && <p>{capability.bundleLabel}</p>}
+              {capability.fallbackReason && <p>{capability.fallbackReason}</p>}
+            </AlertDescription>
+          </Alert>
+        )}
+
         {hasDiagnostics && (
           <Alert variant="destructive">
             <AlertTitle>{getDiagnosticSummaryLabel(diagnostics.length, t)}</AlertTitle>
@@ -120,6 +135,7 @@ export function TerminalConfigEditorWorkspace({
 
           <TabsContent value="editor">
             <SurfaceComponent
+              capability={capability}
               value={value}
               language={language}
               diagnostics={diagnostics}

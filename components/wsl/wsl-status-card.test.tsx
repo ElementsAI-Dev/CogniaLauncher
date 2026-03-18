@@ -7,9 +7,15 @@ const mockT = (key: string) => {
   const translations: Record<string, string> = {
     'wsl.status': 'WSL Status',
     'wsl.kernelVersion': 'Kernel Version',
+    'wsl.wslgVersion': 'WSLg Version',
+    'wsl.windowsVersion': 'Windows Version',
     'wsl.runningDistros': 'Running Distributions',
     'wsl.noRunning': 'No distributions currently running',
     'wsl.shutdown': 'Shutdown All',
+    'wsl.infoState': 'Information State',
+    'wsl.infoState.partial': 'Partial',
+    'wsl.infoState.stale': 'Stale',
+    'wsl.infoLastUpdated': 'Last Updated',
   };
   return translations[key] || key;
 };
@@ -53,6 +59,13 @@ describe('WslStatusCard', () => {
     expect(screen.getByText('2')).toBeInTheDocument(); // count badge
   });
 
+  it('groups key runtime facts and running distro state into separate sections', () => {
+    render(<WslStatusCard status={statusWithRunning} {...defaultProps} />);
+
+    expect(screen.getByTestId('wsl-status-metrics')).toHaveTextContent('5.15.90.1');
+    expect(screen.getByTestId('wsl-status-running-section')).toHaveTextContent('Ubuntu');
+  });
+
   it('keeps running distro badges in a scroll-safe container', () => {
     render(<WslStatusCard status={statusWithRunning} {...defaultProps} />);
 
@@ -90,5 +103,40 @@ describe('WslStatusCard', () => {
     render(<WslStatusCard status={null} {...defaultProps} />);
 
     expect(screen.getByText('—')).toBeInTheDocument();
+  });
+
+  it('renders richer version readouts and snapshot state when runtime info is provided', () => {
+    render(
+      <WslStatusCard
+        status={statusWithRunning}
+        runtimeInfo={{
+          state: 'partial',
+          runtime: { state: 'ready', data: null, failure: null, updatedAt: '2026-03-15T12:00:00.000Z' },
+          status: { state: 'ready', data: statusWithRunning, failure: null, updatedAt: '2026-03-15T12:00:00.000Z' },
+          capabilities: { state: 'failed', data: null, failure: { category: 'runtime', message: 'Capability probe timed out', raw: 'Capability probe timed out', retryable: true }, updatedAt: null, reason: 'Capability probe timed out' },
+          versionInfo: {
+            state: 'ready',
+            data: {
+              wslVersion: '2.4.0',
+              kernelVersion: '6.6.87.2-1',
+              wslgVersion: '1.0.66',
+              windowsVersion: '10.0.26100.6584',
+            },
+            failure: null,
+            updatedAt: '2026-03-15T12:00:00.000Z',
+          },
+          lastUpdatedAt: '2026-03-15T12:00:00.000Z',
+        }}
+        {...defaultProps}
+      />,
+    );
+
+    expect(screen.getByText('WSLg Version')).toBeInTheDocument();
+    expect(screen.getByText('1.0.66')).toBeInTheDocument();
+    expect(screen.getByText('Windows Version')).toBeInTheDocument();
+    expect(screen.getByText('10.0.26100.6584')).toBeInTheDocument();
+    expect(screen.getByText('Information State')).toBeInTheDocument();
+    expect(screen.getByText('Partial')).toBeInTheDocument();
+    expect(screen.getByText('Last Updated')).toBeInTheDocument();
   });
 });

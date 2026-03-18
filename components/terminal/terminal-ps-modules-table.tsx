@@ -12,6 +12,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -55,9 +56,9 @@ interface TerminalPsModulesTableProps {
   scripts: PSScriptInfo[];
   onFetchModules: () => Promise<void>;
   onFetchScripts: () => Promise<void>;
-  onInstallModule?: (name: string, scope: string) => Promise<void>;
-  onUninstallModule?: (name: string) => Promise<void>;
-  onUpdateModule?: (name: string) => Promise<void>;
+  onInstallModule?: (name: string, scope: string) => Promise<boolean | void>;
+  onUninstallModule?: (name: string) => Promise<boolean | void>;
+  onUpdateModule?: (name: string) => Promise<boolean | void>;
   onSearchModules?: (query: string) => Promise<PSModuleInfo[]>;
   loading?: boolean;
 }
@@ -85,6 +86,11 @@ export function TerminalPsModulesTable({
   const [gallerySearch, setGallerySearch] = useState('');
   const [galleryResults, setGalleryResults] = useState<PSModuleInfo[]>([]);
   const [gallerySearching, setGallerySearching] = useState(false);
+  const [actionFeedback, setActionFeedback] = useState<{
+    status: 'success' | 'error';
+    title: string;
+    description: string;
+  } | null>(null);
 
   const filteredModules = modules.filter((m) =>
     m.name.toLowerCase().includes(search.toLowerCase())
@@ -95,6 +101,34 @@ export function TerminalPsModulesTable({
 
   const handleRefresh = async () => {
     await Promise.all([onFetchModules(), onFetchScripts()]);
+  };
+
+  const setModuleFeedback = (
+    status: 'success' | 'error',
+    titleKey: string,
+    descriptionKey: string,
+    name: string,
+  ) => {
+    setActionFeedback({
+      status,
+      title: t(titleKey),
+      description: t(descriptionKey, { name }),
+    });
+  };
+
+  const runModuleAction = async (
+    name: string,
+    execute: () => Promise<boolean | void>,
+    successKey: string,
+    errorKey: string,
+  ) => {
+    const result = await execute();
+    if (result === false) {
+      setModuleFeedback('error', 'terminal.moduleActionErrorTitle', errorKey, name);
+      return false;
+    }
+    setModuleFeedback('success', 'terminal.moduleActionSuccessTitle', successKey, name);
+    return true;
   };
 
   if (loading) {
@@ -142,6 +176,12 @@ export function TerminalPsModulesTable({
           </CardAction>
         </CardHeader>
         <CardContent className="space-y-4">
+          {actionFeedback && (
+            <Alert variant={actionFeedback.status === 'error' ? 'destructive' : 'default'}>
+              <AlertTitle>{actionFeedback.title}</AlertTitle>
+              <AlertDescription>{actionFeedback.description}</AlertDescription>
+            </Alert>
+          )}
           <div className="relative">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
@@ -241,7 +281,12 @@ export function TerminalPsModulesTable({
                                         onClick={(e) => {
                                           e.stopPropagation();
                                           setOperatingModule(mod.name);
-                                          onUpdateModule(mod.name).finally(() => setOperatingModule(null));
+                                          void runModuleAction(
+                                            mod.name,
+                                            () => onUpdateModule(mod.name),
+                                            'terminal.moduleActionUpdateSuccess',
+                                            'terminal.moduleActionUpdateFailed',
+                                          ).finally(() => setOperatingModule(null));
                                         }}
                                       >
                                         {operatingModule === mod.name ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowUpCircle className="h-3.5 w-3.5" />}
@@ -423,9 +468,16 @@ export function TerminalPsModulesTable({
                 placeholder="PSReadLine"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && installModuleName.trim() && onInstallModule) {
-                    onInstallModule(installModuleName.trim(), installScope);
-                    setInstallModuleName('');
-                    setInstallDialogOpen(false);
+                    void runModuleAction(
+                      installModuleName.trim(),
+                      () => onInstallModule(installModuleName.trim(), installScope),
+                      'terminal.moduleActionInstallSuccess',
+                      'terminal.moduleActionInstallFailed',
+                    ).then((success) => {
+                      if (!success) return;
+                      setInstallModuleName('');
+                      setInstallDialogOpen(false);
+                    });
                   }
                 }}
                 autoFocus
@@ -452,9 +504,16 @@ export function TerminalPsModulesTable({
               disabled={!installModuleName.trim()}
               onClick={() => {
                 if (onInstallModule && installModuleName.trim()) {
-                  onInstallModule(installModuleName.trim(), installScope);
-                  setInstallModuleName('');
-                  setInstallDialogOpen(false);
+                  void runModuleAction(
+                    installModuleName.trim(),
+                    () => onInstallModule(installModuleName.trim(), installScope),
+                    'terminal.moduleActionInstallSuccess',
+                    'terminal.moduleActionInstallFailed',
+                  ).then((success) => {
+                    if (!success) return;
+                    setInstallModuleName('');
+                    setInstallDialogOpen(false);
+                  });
                 }
               }}
             >
@@ -508,8 +567,15 @@ export function TerminalPsModulesTable({
                       <Badge variant="outline">{mod.version}</Badge>
                       {onInstallModule && (
                         <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => {
-                          onInstallModule(mod.name, 'CurrentUser');
-                          setGalleryDialogOpen(false);
+                          void runModuleAction(
+                            mod.name,
+                            () => onInstallModule(mod.name, 'CurrentUser'),
+                            'terminal.moduleActionInstallSuccess',
+                            'terminal.moduleActionInstallFailed',
+                          ).then((success) => {
+                            if (!success) return;
+                            setGalleryDialogOpen(false);
+                          });
                         }}>
                           {t('terminal.installModule')}
                         </Button>
@@ -541,8 +607,14 @@ export function TerminalPsModulesTable({
             <AlertDialogAction
               onClick={() => {
                 if (uninstallTarget && onUninstallModule) {
-                  onUninstallModule(uninstallTarget);
-                  setUninstallTarget(null);
+                  void runModuleAction(
+                    uninstallTarget,
+                    () => onUninstallModule(uninstallTarget),
+                    'terminal.moduleActionUninstallSuccess',
+                    'terminal.moduleActionUninstallFailed',
+                  ).then(() => {
+                    setUninstallTarget(null);
+                  });
                 }
               }}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"

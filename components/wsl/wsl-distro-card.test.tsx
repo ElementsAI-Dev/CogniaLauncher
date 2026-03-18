@@ -69,6 +69,14 @@ describe('WslDistroCard', () => {
     expect(screen.getByText('Stopped')).toBeInTheDocument();
   });
 
+  it('groups distro state and version metadata in a dedicated meta row', () => {
+    render(<WslDistroCard distro={runningDistro} {...defaultProps} />);
+
+    const meta = screen.getByTestId('wsl-distro-meta');
+    expect(meta).toHaveTextContent('Running');
+    expect(meta).toHaveTextContent('WSL 2');
+  });
+
   it('shows Default badge for default distro', () => {
     render(<WslDistroCard distro={runningDistro} {...defaultProps} />);
 

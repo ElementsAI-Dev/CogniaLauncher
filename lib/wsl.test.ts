@@ -28,6 +28,14 @@ drwxr-xr-x  3 user group 4096 Jan 15 10:30 ..
     expect(entries[0].type).toBe('other');
   });
 
+  it('treats non-regular permission prefixes as other types and keeps spaced filenames', () => {
+    const output = `crw-rw-rw- 1 root root 1 Jan 15 10:30 special device
+lrwxrwxrwx 1 user group 11 Jan 15 10:30 spaced link -> /target with spaces`;
+    const entries = parseFileEntries(output);
+    expect(entries[0]).toEqual(expect.objectContaining({ name: 'special device', type: 'other' }));
+    expect(entries[1]).toEqual(expect.objectContaining({ name: 'spaced link', linkTarget: '/target with spaces' }));
+  });
+
   it('returns empty for empty input', () => {
     expect(parseFileEntries('')).toEqual([]);
   });
@@ -54,6 +62,13 @@ LISTEN 0 128 0.0.0.0:3000 0.0.0.0:*`;
   it('returns empty for empty input', () => {
     expect(parseListeningPorts('')).toEqual([]);
   });
+
+  it('keeps empty process names when ss output lacks users metadata', () => {
+    const output = `LISTEN 0 128 127.0.0.1:5353 0.0.0.0:* -`;
+    expect(parseListeningPorts(output)).toEqual([
+      { protocol: 'LISTEN', address: '127.0.0.1', port: '5353', process: '' },
+    ]);
+  });
 });
 
 describe('parseInterfaces', () => {
@@ -75,6 +90,10 @@ describe('parseInterfaces', () => {
   it('returns empty for empty input', () => {
     expect(parseInterfaces('')).toEqual([]);
   });
+
+  it('skips malformed interface blocks with no parseable name', () => {
+    expect(parseInterfaces(': malformed\n    inet 10.0.0.1/24')).toEqual([]);
+  });
 });
 
 describe('parseServices', () => {
@@ -93,6 +112,11 @@ describe('parseServices', () => {
     const output = `  oneshot.service      loaded active exited  One Shot Service`;
     const services = parseServices(output);
     expect(services[0].status).toBe('exited');
+  });
+
+  it('maps active-but-not-running services to stopped', () => {
+    const output = `  custom.service      loaded active waiting  Waiting Service`;
+    expect(parseServices(output)[0]).toEqual(expect.objectContaining({ status: 'stopped' }));
   });
 
   it('returns empty for non-matching lines', () => {
@@ -123,5 +147,9 @@ describe('formatKb', () => {
   it('converts kilobytes to human-readable', () => {
     expect(formatKb(1024)).toContain('1');
     expect(formatKb(0)).toBeDefined();
+  });
+
+  it('supports fractional kilobyte values', () => {
+    expect(formatKb(1.5)).toContain('2');
   });
 });

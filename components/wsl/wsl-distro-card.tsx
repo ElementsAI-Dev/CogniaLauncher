@@ -75,18 +75,18 @@ export function WslDistroCard({
   }, [distro.name, getDiskUsage]);
 
   return (
-    <Card className="group relative overflow-hidden">
-      <CardContent className="p-4">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+    <Card className="group relative overflow-hidden border-border/60 bg-card/60 py-0">
+      <CardContent className="p-4 sm:p-5">
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10">
               <Terminal className="h-5 w-5 text-primary" />
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <Link
                   href={detailHref ?? `/wsl/distro?name=${encodeURIComponent(distro.name)}`}
-                  className="font-semibold truncate hover:underline hover:text-primary transition-colors"
+                  className="truncate text-base font-semibold hover:text-primary hover:underline transition-colors"
                 >
                   {distro.name}
                 </Link>
@@ -94,7 +94,7 @@ export function WslDistroCard({
                   <Star className="h-3.5 w-3.5 text-yellow-500 fill-yellow-500 shrink-0" />
                 )}
               </div>
-              <div className="flex items-center gap-2 mt-0.5">
+              <div data-testid="wsl-distro-meta" className="mt-1 flex flex-wrap items-center gap-2">
                 <Badge
                   variant={isRunning ? 'default' : 'secondary'}
                   className={isRunning ? 'bg-green-500/10 text-green-700 dark:text-green-400 text-xs' : 'text-xs'}
@@ -130,14 +130,14 @@ export function WslDistroCard({
 
           <div
             data-testid="wsl-distro-actions"
-            className="flex w-full flex-wrap items-center justify-end gap-1.5 md:w-auto md:flex-nowrap"
+            className="flex w-full flex-wrap items-center justify-start gap-1.5 sm:justify-end md:w-auto md:flex-nowrap"
           >
             {isRunning ? (
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => onTerminate(distro.name)}
-                className="gap-1.5 whitespace-nowrap"
+                className="h-9 gap-1.5 whitespace-nowrap"
               >
                 <Square className="h-3.5 w-3.5" />
                 {t('wsl.terminate')}
@@ -147,7 +147,7 @@ export function WslDistroCard({
                 variant="default"
                 size="sm"
                 onClick={() => onLaunch(distro.name)}
-                className="gap-1.5 whitespace-nowrap"
+                className="h-9 gap-1.5 whitespace-nowrap"
               >
                 <Play className="h-3.5 w-3.5" />
                 {t('wsl.launch')}

@@ -25,6 +25,17 @@ describe('TerminalConfigEditorWorkspace', () => {
         configPath="/home/user/.bashrc"
         snapshotPath="/home/user/.cognia/terminal-snapshots/.bashrc.latest"
         fingerprint="abc123"
+        capability={{
+          mode: 'enhanced',
+          enhancementLevel: 'enhanced',
+          bundleId: 'shell-posix-vscode-compat',
+          bundleLabel: 'POSIX Shell Essentials',
+          languageId: 'terminal-bash',
+          supportsCompletion: true,
+          supportsInlineDiagnostics: true,
+          fallbackReason: null,
+          contributions: [],
+        }}
         diagnostics={[
           {
             category: 'validation',
@@ -42,6 +53,8 @@ describe('TerminalConfigEditorWorkspace', () => {
     expect(screen.getByText('terminal.editorLanguageBadge')).toBeInTheDocument();
     expect(screen.getByText('terminal.editorLineCount')).toBeInTheDocument();
     expect(screen.getByText('abc123')).toBeInTheDocument();
+    expect(screen.getByText('terminal.editorCapabilityEnhanced')).toBeInTheDocument();
+    expect(screen.getByText('POSIX Shell Essentials')).toBeInTheDocument();
     expect(screen.getByText('terminal.editorDiagnosticsSummary')).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /terminal\.editorViewDiagnostics/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /terminal\.editorViewChanges/i })).toBeInTheDocument();
@@ -145,5 +158,34 @@ describe('TerminalConfigEditorWorkspace', () => {
     expect(screen.getByText('terminal.structuredEditingUnavailable')).toBeInTheDocument();
     expect(screen.getByText('advanced syntax detected')).toBeInTheDocument();
     expect(screen.getByTestId('terminal-config-editor-surface')).toBeInTheDocument();
+  });
+
+  it('renders fallback capability reason when enhanced editing is unavailable', () => {
+    render(
+      <TerminalConfigEditorWorkspace
+        SurfaceComponent={StubSurface}
+        value={'set -gx PATH /tmp $PATH'}
+        baselineValue={'set -gx PATH /tmp $PATH'}
+        language="bash"
+        capability={{
+          mode: 'fallback',
+          enhancementLevel: 'basic',
+          bundleId: null,
+          bundleLabel: null,
+          languageId: 'terminal-fish',
+          supportsCompletion: false,
+          supportsInlineDiagnostics: false,
+          fallbackReason: 'Fish fallback is active until a curated web-safe bundle is added.',
+          contributions: [],
+        }}
+        diagnostics={[]}
+        onChange={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByText('terminal.editorCapabilityFallback')).toBeInTheDocument();
+    expect(
+      screen.getByText('Fish fallback is active until a curated web-safe bundle is added.'),
+    ).toBeInTheDocument();
   });
 });

@@ -694,20 +694,22 @@ describe("WslPage", () => {
 
   it("renders grouped primary and supporting layout regions", () => {
     render(<WslPage />);
+    expect(screen.getByTestId("wsl-summary-band")).toBeInTheDocument();
     expect(screen.getByTestId("wsl-layout-grid")).toBeInTheDocument();
     expect(screen.getByTestId("wsl-primary-region")).toBeInTheDocument();
     expect(screen.getByTestId("wsl-supporting-region")).toBeInTheDocument();
+    expect(screen.getByTestId("wsl-summary-actions")).toBeInTheDocument();
     expect(
-      screen.getByTestId("wsl-runtime-support-section"),
+      screen.getByTestId("wsl-support-maintenance-group"),
     ).toBeInTheDocument();
     expect(
-      screen.getByTestId("wsl-operations-support-section"),
+      screen.getByTestId("wsl-support-automation-group"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId("wsl-support-config-group"),
     ).toBeInTheDocument();
     expect(
       screen.getByTestId("wsl-assistance-support-section"),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByTestId("wsl-config-support-section"),
     ).toBeInTheDocument();
   });
 
@@ -720,6 +722,21 @@ describe("WslPage", () => {
     expect(layout.className).not.toContain("lg:grid-cols");
     expect(screen.getByRole("button", { name: /update/i })).toBeInTheDocument();
     expect(screen.getByTestId("distro-Ubuntu")).toBeInTheDocument();
+  });
+
+  it("renders summary before the distro workspace and support rail", () => {
+    render(<WslPage />);
+
+    const summary = screen.getByTestId("wsl-summary-band");
+    const workspace = screen.getByTestId("wsl-distro-workflow-section");
+    const support = screen.getByTestId("wsl-supporting-region");
+
+    expect(summary.compareDocumentPosition(workspace)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(summary.compareDocumentPosition(support)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
   });
 
   it("normalizes per-distro config target when distro inventory changes", async () => {

@@ -29,14 +29,28 @@ import type {
   WslAssistanceSummary,
   WslAssistanceScope,
   WslCompletenessSnapshot,
+  WslDistroInfoSnapshot,
+  WslInfoSection,
   WslOperationFailure,
   WslOperationId,
+  WslRuntimeInfoSnapshot,
 } from '@/types/wsl';
 import {
   buildWslFailure,
   deriveWslCompleteness,
   resolveWslOperationGate,
 } from '@/lib/wsl/completeness';
+import {
+  beginWslInfoLoading,
+  createEmptyWslRuntimeInfoSnapshot,
+  createUnavailableWslInfoSection,
+  finalizeWslDistroInfoSnapshot,
+  finalizeWslRuntimeInfoSnapshot,
+  resolveWslInfoFailure,
+  resolveWslInfoSuccess,
+  syncWslDistroInfoSnapshots,
+  createEmptyWslDistroInfoSnapshot,
+} from '@/lib/wsl/information';
 import {
   buildWslBatchWorkflowPreflight,
   getRetryableWorkflowTargetNames,
@@ -57,6 +71,8 @@ export interface UseWslReturn {
   config: WslConfig | null;
   capabilities: WslCapabilities | null;
   runtimeSnapshot: WslRuntimeSnapshot | null;
+  runtimeInfo: WslRuntimeInfoSnapshot;
+  distroInfoByName: Record<string, WslDistroInfoSnapshot>;
   completeness: WslCompletenessSnapshot;
   lastFailure: WslOperationFailure | null;
   loading: boolean;
@@ -70,6 +86,8 @@ export interface UseWslReturn {
   refreshRunning: () => Promise<void>;
   refreshCapabilities: () => Promise<void>;
   refreshRuntimeSnapshot: () => Promise<WslRuntimeSnapshot | null>;
+  refreshRuntimeInfo: () => Promise<WslRuntimeInfoSnapshot>;
+  refreshDistroInfo: (distroName: string) => Promise<WslDistroInfoSnapshot | null>;
   refreshAll: () => Promise<void>;
   terminate: (name: string) => Promise<void>;
   shutdown: () => Promise<void>;
@@ -190,9 +208,26 @@ export function useWsl(): UseWslReturn {
   const [config, setConfig] = useState<WslConfig | null>(null);
   const [capabilities, setCapabilities] = useState<WslCapabilities | null>(null);
   const [runtimeSnapshot, setRuntimeSnapshot] = useState<WslRuntimeSnapshot | null>(null);
+  const [runtimeInfo, setRuntimeInfo] = useState<WslRuntimeInfoSnapshot>(() => createEmptyWslRuntimeInfoSnapshot());
+  const [distroInfoByName, setDistroInfoByName] = useState<Record<string, WslDistroInfoSnapshot>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastFailure, setLastFailure] = useState<WslOperationFailure | null>(null);
+  const runtimeInfoRef = useRef(runtimeInfo);
+  const distroInfoRef = useRef(distroInfoByName);
+  const distrosRef = useRef(distros);
+
+  useEffect(() => {
+    runtimeInfoRef.current = runtimeInfo;
+  }, [runtimeInfo]);
+
+  useEffect(() => {
+    distroInfoRef.current = distroInfoByName;
+  }, [distroInfoByName]);
+
+  useEffect(() => {
+    distrosRef.current = distros;
+  }, [distros]);
 
   const clearWslFailure = useCallback(() => {
     setError(null);
@@ -259,7 +294,9 @@ export function useWsl(): UseWslReturn {
       setLoading(true);
       setError(null);
       const result = await tauri.wslListDistros();
+      distrosRef.current = result;
       setDistros(result);
+      setDistroInfoByName((current) => syncWslDistroInfoSnapshots(result, current));
     } catch (err) {
       setError(String(err));
     } finally {
@@ -286,8 +323,18 @@ export function useWsl(): UseWslReturn {
     try {
       const result = await tauri.wslGetStatus();
       setStatus(result);
+      setRuntimeInfo((current) => finalizeWslRuntimeInfoSnapshot({
+        ...current,
+        status: resolveWslInfoSuccess(current.status, result),
+      }));
     } catch (err) {
       console.error('Failed to get WSL status:', err);
+      setRuntimeInfo((current) => finalizeWslRuntimeInfoSnapshot({
+        ...current,
+        status: resolveWslInfoFailure(current.status, err, {
+          reason: 'WSL status could not be read.',
+        }),
+      }));
     }
   }, []);
 
@@ -306,9 +353,19 @@ export function useWsl(): UseWslReturn {
     try {
       const result = await tauri.wslGetCapabilities();
       setCapabilities(result);
+      setRuntimeInfo((current) => finalizeWslRuntimeInfoSnapshot({
+        ...current,
+        capabilities: resolveWslInfoSuccess(current.capabilities, result),
+      }));
     } catch (err) {
       console.error('Failed to detect WSL capabilities:', err);
       setCapabilities(null);
+      setRuntimeInfo((current) => finalizeWslRuntimeInfoSnapshot({
+        ...current,
+        capabilities: resolveWslInfoFailure(current.capabilities, err, {
+          reason: 'WSL capabilities could not be detected.',
+        }),
+      }));
     }
   }, []);
 
@@ -318,12 +375,166 @@ export function useWsl(): UseWslReturn {
       const snapshot = await tauri.wslGetRuntimeSnapshot();
       setRuntimeSnapshot(snapshot);
       setAvailable(snapshot.available);
+      setRuntimeInfo((current) => finalizeWslRuntimeInfoSnapshot({
+        ...current,
+        runtime: resolveWslInfoSuccess(current.runtime, snapshot),
+      }));
       return snapshot;
     } catch (err) {
       console.error('Failed to detect staged WSL runtime snapshot:', err);
       setRuntimeSnapshot(null);
+      setRuntimeInfo((current) => finalizeWslRuntimeInfoSnapshot({
+        ...current,
+        runtime: resolveWslInfoFailure(current.runtime, err, {
+          reason: 'WSL runtime readiness could not be detected.',
+        }),
+      }));
       return null;
     }
+  }, []);
+
+  const refreshRuntimeInfo = useCallback(async (): Promise<WslRuntimeInfoSnapshot> => {
+    if (!tauri.isTauri()) {
+      const empty = createEmptyWslRuntimeInfoSnapshot();
+      setRuntimeInfo(empty);
+      return empty;
+    }
+
+    const previous = runtimeInfoRef.current;
+    setRuntimeInfo((current) => ({
+      ...current,
+      state: 'loading',
+      runtime: beginWslInfoLoading(current.runtime, 'Refreshing WSL runtime information.'),
+      status: beginWslInfoLoading(current.status, 'Refreshing WSL runtime information.'),
+      capabilities: beginWslInfoLoading(current.capabilities, 'Refreshing WSL runtime information.'),
+      versionInfo: beginWslInfoLoading(current.versionInfo, 'Refreshing WSL runtime information.'),
+    }));
+
+    const [runtimeResult, statusResult, capabilityResult, versionResult] = await Promise.allSettled([
+      tauri.wslGetRuntimeSnapshot(),
+      tauri.wslGetStatus(),
+      tauri.wslGetCapabilities(),
+      tauri.wslGetVersionInfo(),
+    ]);
+
+    const nextRuntimeInfo = finalizeWslRuntimeInfoSnapshot({
+      ...previous,
+      runtime: runtimeResult.status === 'fulfilled'
+        ? resolveWslInfoSuccess(previous.runtime, runtimeResult.value)
+        : resolveWslInfoFailure(previous.runtime, runtimeResult.reason, {
+          reason: 'WSL runtime readiness could not be detected.',
+        }),
+      status: statusResult.status === 'fulfilled'
+        ? resolveWslInfoSuccess(previous.status, statusResult.value)
+        : resolveWslInfoFailure(previous.status, statusResult.reason, {
+          reason: 'WSL status could not be read.',
+        }),
+      capabilities: capabilityResult.status === 'fulfilled'
+        ? resolveWslInfoSuccess(previous.capabilities, capabilityResult.value)
+        : resolveWslInfoFailure(previous.capabilities, capabilityResult.reason, {
+          reason: 'WSL capabilities could not be detected.',
+        }),
+      versionInfo: versionResult.status === 'fulfilled'
+        ? resolveWslInfoSuccess(previous.versionInfo, versionResult.value)
+        : resolveWslInfoFailure(previous.versionInfo, versionResult.reason, {
+          reason: 'WSL version details could not be detected.',
+        }),
+    });
+
+    setRuntimeInfo(nextRuntimeInfo);
+
+    if (runtimeResult.status === 'fulfilled') {
+      setRuntimeSnapshot(runtimeResult.value);
+      setAvailable(runtimeResult.value.available);
+    }
+    if (statusResult.status === 'fulfilled') {
+      setStatus(statusResult.value);
+    }
+    if (capabilityResult.status === 'fulfilled') {
+      setCapabilities(capabilityResult.value);
+    }
+
+    return nextRuntimeInfo;
+  }, []);
+
+  const refreshDistroInfo = useCallback(async (distroName: string): Promise<WslDistroInfoSnapshot | null> => {
+    if (!tauri.isTauri()) return null;
+
+    const distro = distrosRef.current.find((entry) => entry.name === distroName);
+    const previous = distroInfoRef.current[distroName] ?? createEmptyWslDistroInfoSnapshot(distroName, distro?.state ?? null);
+
+    setDistroInfoByName((current) => ({
+      ...current,
+      [distroName]: finalizeWslDistroInfoSnapshot({
+        ...previous,
+        distroState: distro?.state ?? previous.distroState,
+        state: 'loading',
+        diskUsage: beginWslInfoLoading(previous.diskUsage, 'Refreshing distribution information.'),
+        ipAddress: beginWslInfoLoading(previous.ipAddress, 'Refreshing distribution information.'),
+        environment: beginWslInfoLoading(previous.environment, 'Refreshing distribution information.'),
+        resources: beginWslInfoLoading(previous.resources, 'Refreshing distribution information.'),
+      }),
+    }));
+
+    let diskUsage: WslInfoSection<WslDiskUsage>;
+    try {
+      diskUsage = resolveWslInfoSuccess(previous.diskUsage, await tauri.wslDiskUsage(distroName));
+    } catch (err) {
+      diskUsage = resolveWslInfoFailure(previous.diskUsage, err, {
+        reason: 'Disk usage could not be loaded.',
+      });
+    }
+
+    const isRunning = (distro?.state ?? '').toLowerCase() === 'running';
+    let ipAddress: WslInfoSection<string>;
+    let environment: WslInfoSection<WslDistroEnvironment>;
+    let resources: WslInfoSection<WslDistroResources>;
+
+    if (!isRunning) {
+      ipAddress = createUnavailableWslInfoSection('Distribution is not running.');
+      environment = createUnavailableWslInfoSection('Distribution is not running.');
+      resources = createUnavailableWslInfoSection('Distribution is not running.');
+    } else {
+      try {
+        ipAddress = resolveWslInfoSuccess(previous.ipAddress, await tauri.wslGetIp(distroName));
+      } catch (err) {
+        ipAddress = resolveWslInfoFailure(previous.ipAddress, err, {
+          reason: 'IP address could not be loaded.',
+        });
+      }
+
+      try {
+        environment = resolveWslInfoSuccess(previous.environment, await tauri.wslDetectDistroEnv(distroName));
+      } catch (err) {
+        environment = resolveWslInfoFailure(previous.environment, err, {
+          reason: 'Distribution environment could not be detected.',
+        });
+      }
+
+      try {
+        resources = resolveWslInfoSuccess(previous.resources, await tauri.wslGetDistroResources(distroName));
+      } catch (err) {
+        resources = resolveWslInfoFailure(previous.resources, err, {
+          reason: 'Live resource usage could not be loaded.',
+        });
+      }
+    }
+
+    const nextSnapshot = finalizeWslDistroInfoSnapshot({
+      ...previous,
+      distroState: distro?.state ?? previous.distroState,
+      diskUsage,
+      ipAddress,
+      environment,
+      resources,
+    });
+
+    setDistroInfoByName((current) => ({
+      ...current,
+      [distroName]: nextSnapshot,
+    }));
+
+    return nextSnapshot;
   }, []);
 
   const refreshConfig = useCallback(async () => {
@@ -341,61 +552,53 @@ export function useWsl(): UseWslReturn {
     setLoading(true);
     setError(null);
     try {
-      const [runtimeResult, distroResult, onlineResult, statusResult, runningResult, configResult, capabilitiesResult] =
+      const [runtimeInfoResult, distroResult, onlineResult, runningResult, configResult] =
         await Promise.allSettled([
-          tauri.wslGetRuntimeSnapshot(),
+          refreshRuntimeInfo(),
           tauri.wslListDistros(),
           tauri.wslListOnline(),
-          tauri.wslGetStatus(),
           tauri.wslListRunning(),
           tauri.wslGetConfig(),
-          tauri.wslGetCapabilities(),
         ]);
 
-      if (runtimeResult.status === 'fulfilled') {
-        setRuntimeSnapshot(runtimeResult.value);
-        setAvailable(runtimeResult.value.available);
-      } else {
-        setRuntimeSnapshot(null);
+      if (runtimeInfoResult.status === 'rejected') {
+        setError(String(runtimeInfoResult.reason));
       }
-      if (distroResult.status === 'fulfilled') setDistros(distroResult.value);
+      if (distroResult.status === 'fulfilled') {
+        distrosRef.current = distroResult.value;
+        setDistros(distroResult.value);
+        setDistroInfoByName((current) => syncWslDistroInfoSnapshots(distroResult.value, current));
+      }
       if (onlineResult.status === 'fulfilled') setOnlineDistros(onlineResult.value);
-      if (statusResult.status === 'fulfilled') setStatus(statusResult.value);
       if (runningResult.status === 'fulfilled') setRunningDistros(runningResult.value);
       if (configResult.status === 'fulfilled') setConfig(configResult.value);
-      if (capabilitiesResult.status === 'fulfilled') setCapabilities(capabilitiesResult.value);
     } catch (err) {
       setError(String(err));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [refreshRuntimeInfo]);
 
   const refreshInventoryState = useCallback(async () => {
     await Promise.all([
-      refreshRuntimeSnapshot(),
+      refreshRuntimeInfo(),
       refreshDistros(),
       refreshRunning(),
-      refreshStatus(),
     ]);
-  }, [refreshDistros, refreshRunning, refreshRuntimeSnapshot, refreshStatus]);
+  }, [refreshDistros, refreshRunning, refreshRuntimeInfo]);
 
   const refreshRuntimeState = useCallback(async () => {
     await Promise.all([
-      refreshRuntimeSnapshot(),
+      refreshRuntimeInfo(),
       refreshDistros(),
       refreshRunning(),
-      refreshStatus(),
       refreshConfig(),
-      refreshCapabilities(),
     ]);
   }, [
-    refreshCapabilities,
     refreshConfig,
     refreshDistros,
     refreshRunning,
-    refreshRuntimeSnapshot,
-    refreshStatus,
+    refreshRuntimeInfo,
   ]);
 
   const terminate = useCallback(async (name: string) => {
@@ -643,8 +846,19 @@ export function useWsl(): UseWslReturn {
   const getVersionInfo = useCallback(async (): Promise<WslVersionInfo | null> => {
     if (!tauri.isTauri()) return null;
     try {
-      return await tauri.wslGetVersionInfo();
-    } catch {
+      const versionInfo = await tauri.wslGetVersionInfo();
+      setRuntimeInfo((current) => finalizeWslRuntimeInfoSnapshot({
+        ...current,
+        versionInfo: resolveWslInfoSuccess(current.versionInfo, versionInfo),
+      }));
+      return versionInfo;
+    } catch (err) {
+      setRuntimeInfo((current) => finalizeWslRuntimeInfoSnapshot({
+        ...current,
+        versionInfo: resolveWslInfoFailure(current.versionInfo, err, {
+          reason: 'WSL version details could not be detected.',
+        }),
+      }));
       return null;
     }
   }, []);
@@ -654,8 +868,18 @@ export function useWsl(): UseWslReturn {
     try {
       const detected = await tauri.wslGetCapabilities();
       setCapabilities(detected);
+      setRuntimeInfo((current) => finalizeWslRuntimeInfoSnapshot({
+        ...current,
+        capabilities: resolveWslInfoSuccess(current.capabilities, detected),
+      }));
       return detected;
-    } catch {
+    } catch (err) {
+      setRuntimeInfo((current) => finalizeWslRuntimeInfoSnapshot({
+        ...current,
+        capabilities: resolveWslInfoFailure(current.capabilities, err, {
+          reason: 'WSL capabilities could not be detected.',
+        }),
+      }));
       return null;
     }
   }, []);
@@ -759,8 +983,25 @@ export function useWsl(): UseWslReturn {
   const detectDistroEnv = useCallback(async (distro: string): Promise<WslDistroEnvironment | null> => {
     if (!tauri.isTauri()) return null;
     try {
-      return await tauri.wslDetectDistroEnv(distro);
-    } catch {
+      const environment = await tauri.wslDetectDistroEnv(distro);
+      setDistroInfoByName((current) => ({
+        ...current,
+        [distro]: finalizeWslDistroInfoSnapshot({
+          ...(current[distro] ?? createEmptyWslDistroInfoSnapshot(distro)),
+          environment: resolveWslInfoSuccess(current[distro]?.environment ?? null, environment),
+        }),
+      }));
+      return environment;
+    } catch (err) {
+      setDistroInfoByName((current) => ({
+        ...current,
+        [distro]: finalizeWslDistroInfoSnapshot({
+          ...(current[distro] ?? createEmptyWslDistroInfoSnapshot(distro)),
+          environment: resolveWslInfoFailure(current[distro]?.environment ?? null, err, {
+            reason: 'Distribution environment could not be detected.',
+          }),
+        }),
+      }));
       return null;
     }
   }, []);
@@ -768,8 +1009,25 @@ export function useWsl(): UseWslReturn {
   const getDistroResources = useCallback(async (distro: string): Promise<WslDistroResources | null> => {
     if (!tauri.isTauri()) return null;
     try {
-      return await tauri.wslGetDistroResources(distro);
-    } catch {
+      const resources = await tauri.wslGetDistroResources(distro);
+      setDistroInfoByName((current) => ({
+        ...current,
+        [distro]: finalizeWslDistroInfoSnapshot({
+          ...(current[distro] ?? createEmptyWslDistroInfoSnapshot(distro)),
+          resources: resolveWslInfoSuccess(current[distro]?.resources ?? null, resources),
+        }),
+      }));
+      return resources;
+    } catch (err) {
+      setDistroInfoByName((current) => ({
+        ...current,
+        [distro]: finalizeWslDistroInfoSnapshot({
+          ...(current[distro] ?? createEmptyWslDistroInfoSnapshot(distro)),
+          resources: resolveWslInfoFailure(current[distro]?.resources ?? null, err, {
+            reason: 'Live resource usage could not be loaded.',
+          }),
+        }),
+      }));
       return null;
     }
   }, []);
@@ -1910,6 +2168,8 @@ export function useWsl(): UseWslReturn {
     config,
     capabilities,
     runtimeSnapshot,
+    runtimeInfo,
+    distroInfoByName,
     completeness,
     lastFailure,
     loading,
@@ -1921,6 +2181,8 @@ export function useWsl(): UseWslReturn {
     refreshRunning,
     refreshCapabilities,
     refreshRuntimeSnapshot,
+    refreshRuntimeInfo,
+    refreshDistroInfo,
     refreshAll,
     terminate,
     shutdown,

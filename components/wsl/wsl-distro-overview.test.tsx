@@ -31,6 +31,9 @@ const mockT = (key: string) => {
     "wsl.detail.pkgUpgrade": "Upgrade Packages",
     "wsl.detail.pkgActionSuccess": "Package {mode} completed ({pm})",
     "wsl.detail.envDetectFailed": "Could not detect environment",
+    "wsl.detail.infoUnavailable": "Information unavailable",
+    "wsl.detail.infoStale": "Showing last successful data",
+    "wsl.detail.infoRetryHint": "Refresh to retry",
   };
   return translations[key] || key;
 };
@@ -225,6 +228,52 @@ describe("WslDistroOverview", () => {
         />,
       );
       expect(screen.queryByText("Package Management")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("snapshot-driven rendering", () => {
+    it("renders explicit unavailable state from distro info snapshot", async () => {
+      render(
+        <WslDistroOverview
+          {...baseProps}
+          distro={{ name: "Ubuntu", state: "Stopped", wslVersion: "2", isDefault: true }}
+          info={{
+            distroName: "Ubuntu",
+            distroState: "Stopped",
+            state: "partial",
+            lastUpdatedAt: "2026-03-15T12:00:00.000Z",
+            diskUsage: { state: "ready", data: { totalBytes: 1024, usedBytes: 256, filesystemPath: "\\\\wsl.localhost\\Ubuntu" }, failure: null, updatedAt: "2026-03-15T12:00:00.000Z" },
+            ipAddress: { state: "unavailable", data: null, failure: null, reason: "Distribution is not running.", updatedAt: null },
+            environment: { state: "unavailable", data: null, failure: null, reason: "Distribution is not running.", updatedAt: null },
+            resources: { state: "unavailable", data: null, failure: null, reason: "Distribution is not running.", updatedAt: null },
+          }}
+        />,
+      );
+
+      expect(screen.getByText("Information unavailable")).toBeInTheDocument();
+      expect(screen.getAllByText("Distribution is not running.").length).toBeGreaterThan(0);
+    });
+
+    it("renders stale state messaging from distro info snapshot", async () => {
+      render(
+        <WslDistroOverview
+          {...baseProps}
+          distro={{ name: "Ubuntu", state: "Running", wslVersion: "2", isDefault: true }}
+          info={{
+            distroName: "Ubuntu",
+            distroState: "Running",
+            state: "stale",
+            lastUpdatedAt: "2026-03-15T12:00:00.000Z",
+            diskUsage: { state: "stale", data: { totalBytes: 1024, usedBytes: 512, filesystemPath: "\\\\wsl.localhost\\Ubuntu" }, failure: { category: "runtime", message: "refresh timeout", raw: "refresh timeout", retryable: true }, reason: "Refresh timeout", updatedAt: "2026-03-15T12:00:00.000Z" },
+            ipAddress: { state: "ready", data: "172.24.240.1", failure: null, updatedAt: "2026-03-15T12:00:00.000Z" },
+            environment: { state: "stale", data: { distroId: "ubuntu", distroIdLike: ["debian"], prettyName: "Ubuntu 24.04", architecture: "x86_64", kernelVersion: "6.6.87.2-1", packageManager: "apt", initSystem: "systemd", dockerAvailable: false, dockerSocket: false }, failure: { category: "runtime", message: "refresh timeout", raw: "refresh timeout", retryable: true }, reason: "Refresh timeout", updatedAt: "2026-03-15T12:00:00.000Z" },
+            resources: { state: "stale", data: mockResources, failure: { category: "runtime", message: "refresh timeout", raw: "refresh timeout", retryable: true }, reason: "Refresh timeout", updatedAt: "2026-03-15T12:00:00.000Z" },
+          }}
+        />,
+      );
+
+      expect(screen.getAllByText("Showing last successful data").length).toBeGreaterThan(0);
+      expect(screen.getByText("Refresh to retry")).toBeInTheDocument();
     });
   });
 });

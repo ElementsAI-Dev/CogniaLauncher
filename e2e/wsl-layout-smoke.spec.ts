@@ -2,6 +2,19 @@ import { test, expect, type Page } from '@playwright/test';
 import { waitForAppReady } from './fixtures/app-fixture';
 
 type WslMockState = {
+  capabilityError?: string | null;
+  runtimeSnapshot: {
+    state: 'unavailable' | 'empty' | 'degraded' | 'ready';
+    available: boolean;
+    reasonCode: string;
+    reason: string;
+    runtimeProbes: Array<{ id: string; command: string; success: boolean; reasonCode: string; detail?: string }>;
+    statusProbe: { ready: boolean; reasonCode: string; detail?: string };
+    capabilityProbe: { ready: boolean; reasonCode: string; detail?: string };
+    distroProbe: { ready: boolean; reasonCode: string; detail?: string };
+    distroCount: number;
+    degradedReasons: string[];
+  };
   distros: Array<{ name: string; state: string; wslVersion: string; isDefault: boolean }>;
   status: {
     version: string;
@@ -24,11 +37,32 @@ type WslMockState = {
     importInPlace: boolean;
     version: string;
   };
+  versionInfo: {
+    wslVersion: string;
+    kernelVersion: string;
+    wslgVersion: string;
+    windowsVersion: string;
+  };
   config: Record<string, Record<string, string>>;
   distroConfig: Record<string, Record<string, Record<string, string>>>;
+  distroEnvironment: Record<string, Record<string, unknown>>;
+  distroResources: Record<string, Record<string, unknown>>;
 };
 
 const DEFAULT_WSL_MOCK_STATE: WslMockState = {
+  capabilityError: null,
+  runtimeSnapshot: {
+    state: 'ready',
+    available: true,
+    reasonCode: 'runtime_ready',
+    reason: 'Runtime and management probes passed.',
+    runtimeProbes: [],
+    statusProbe: { ready: true, reasonCode: 'ok' },
+    capabilityProbe: { ready: true, reasonCode: 'ok' },
+    distroProbe: { ready: true, reasonCode: 'ok' },
+    distroCount: 1,
+    degradedReasons: [],
+  },
   distros: [{ name: 'Ubuntu', state: 'Running', wslVersion: '2', isDefault: true }],
   status: {
     version: '2.4.0',
@@ -51,6 +85,12 @@ const DEFAULT_WSL_MOCK_STATE: WslMockState = {
     importInPlace: true,
     version: '2.4.0',
   },
+  versionInfo: {
+    wslVersion: '2.4.0',
+    kernelVersion: '5.15.153.1',
+    wslgVersion: '1.0.61',
+    windowsVersion: '10.0.22631',
+  },
   config: {
     wsl2: {
       memory: '4GB',
@@ -71,6 +111,34 @@ const DEFAULT_WSL_MOCK_STATE: WslMockState = {
       wsl2: {
         memory: '2GB',
       },
+    },
+  },
+  distroEnvironment: {
+    Ubuntu: {
+      distroId: 'ubuntu',
+      distroIdLike: ['debian'],
+      prettyName: 'Ubuntu 24.04 LTS',
+      architecture: 'x86_64',
+      kernelVersion: '5.15.153.1',
+      packageManager: 'apt',
+      initSystem: 'systemd',
+      defaultShell: '/bin/bash',
+      defaultUser: 'cognia',
+      installedPackages: 512,
+      dockerAvailable: true,
+      dockerSocket: true,
+      dockerContainerCount: 2,
+    },
+  },
+  distroResources: {
+    Ubuntu: {
+      memTotalKb: 1024 * 1024,
+      memAvailableKb: 512 * 1024,
+      memUsedKb: 512 * 1024,
+      swapTotalKb: 0,
+      swapUsedKb: 0,
+      cpuCount: 4,
+      loadAvg: [0.2, 0.1, 0.05],
     },
   },
 };
@@ -104,6 +172,9 @@ async function installTauriMock(page: Page): Promise<void> {
           return state.distros;
         case 'wsl_list_online':
           return [];
+        case 'wsl_get_runtime_snapshot':
+          state.runtimeSnapshot.distroCount = state.distros.length;
+          return state.runtimeSnapshot;
         case 'wsl_status':
           return state.status;
         case 'wsl_list_running':
@@ -115,13 +186,20 @@ async function installTauriMock(page: Page): Promise<void> {
           return state.distroConfig[distro] ?? null;
         }
         case 'wsl_get_capabilities':
+          if (state.capabilityError) {
+            throw new Error(state.capabilityError);
+          }
           return state.capabilities;
         case 'wsl_get_version_info':
-          return {
-            wslVersion: state.status.version,
-            kernelVersion: state.status.kernelVersion,
-            wslgVersion: state.status.wslgVersion,
-          };
+          return state.versionInfo;
+        case 'wsl_detect_distro_env': {
+          const distro = String(args.distro ?? '');
+          return state.distroEnvironment[distro] ?? null;
+        }
+        case 'wsl_get_distro_resources': {
+          const distro = String(args.distro ?? '');
+          return state.distroResources[distro] ?? null;
+        }
         case 'wsl_total_disk_usage':
           return [1024 * 1024 * 1024, [['Ubuntu', 1024 * 1024 * 1024]]];
         case 'wsl_set_config': {
@@ -195,7 +273,13 @@ async function installTauriMock(page: Page): Promise<void> {
       },
     });
 
-    (window as typeof window & { __TAURI_MOCK_CALLS?: unknown }).__TAURI_MOCK_CALLS = calls;
+    (window as typeof window & {
+      __TAURI_MOCK_CALLS?: unknown;
+      __WSL_MOCK_STATE?: WslMockState;
+    }).__TAURI_MOCK_CALLS = calls;
+    (window as typeof window & {
+      __WSL_MOCK_STATE?: WslMockState;
+    }).__WSL_MOCK_STATE = state;
   }, DEFAULT_WSL_MOCK_STATE);
 }
 
@@ -268,5 +352,32 @@ test.describe('WSL Layout Smoke (Mocked Desktop Runtime)', () => {
 
     await expect(globalForm.locator('button').last()).toBeVisible();
     await expect(distroForm.locator('button').last()).toBeVisible();
+  });
+
+  test('runtime refresh reconciles degraded snapshot hints', async ({ page }) => {
+    await openMockedWslPage(page, 1280, 900);
+
+    await page.evaluate(() => {
+      const state = (window as typeof window & {
+        __WSL_MOCK_STATE?: WslMockState;
+      }).__WSL_MOCK_STATE;
+      if (!state) return;
+
+      state.runtimeSnapshot.state = 'degraded';
+      state.runtimeSnapshot.reasonCode = 'runtime_degraded';
+      state.runtimeSnapshot.reason = 'Capabilities partially unavailable.';
+      state.runtimeSnapshot.degradedReasons = ['Capabilities partially unavailable.'];
+      state.capabilityError = 'Capabilities partially unavailable.';
+      state.runtimeSnapshot.capabilityProbe = {
+        ready: false,
+        reasonCode: 'capability_probe_failed',
+        detail: 'Capabilities partially unavailable.',
+      };
+    });
+
+    await page.getByTestId('refresh-status-btn').first().click();
+
+    await expect(page.getByTestId('wsl-summary-band')).toBeVisible();
+    await expect(page.getByRole('button', { name: /update/i }).first()).toBeVisible();
   });
 });

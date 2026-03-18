@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { TerminalShellFramework } from './terminal-shell-framework';
 import type { ShellInfo, ShellFrameworkInfo, FrameworkCacheInfo } from '@/types/tauri';
 
@@ -326,6 +327,7 @@ describe('TerminalShellFramework', () => {
       />,
     );
 
+    fireEvent.click(screen.getByRole('button', { name: /terminal\.inspectCacheDetails/i }));
     const cleanButton = screen.getByRole('button', { name: /terminal\.cleanCache/i });
     expect(cleanButton).toBeDisabled();
   });
@@ -347,5 +349,54 @@ describe('TerminalShellFramework', () => {
     // totalSize = 4096 → formatBytes should produce "4 KB" or similar
     // The total badge should be present somewhere
     expect(screen.getByText('terminal.frameworkCache')).toBeInTheDocument();
+  });
+
+  it('opens cache drilldown details before cleanup and refreshes selected cache info after cleaning', async () => {
+    const user = userEvent.setup();
+    const onGetFrameworkCacheInfo = jest.fn()
+      .mockResolvedValueOnce(mockCacheStats[0])
+      .mockResolvedValueOnce({
+        ...mockCacheStats[0],
+        totalSize: 0,
+        totalSizeHuman: '0 B',
+        canClean: false,
+      });
+    const onCleanFrameworkCache = jest.fn().mockResolvedValue(4096);
+
+    render(
+      <TerminalShellFramework
+        shells={shells}
+        frameworks={frameworks}
+        plugins={[]}
+        frameworkCacheStats={mockCacheStats}
+        onDetectFrameworks={jest.fn()}
+        onFetchPlugins={jest.fn()}
+        onFetchCacheStats={jest.fn()}
+        onGetFrameworkCacheInfo={onGetFrameworkCacheInfo}
+        onCleanFrameworkCache={onCleanFrameworkCache}
+      />,
+    );
+
+    await user.click(screen.getAllByRole('button', { name: /terminal\.inspectCacheDetails/i })[0]);
+
+    await waitFor(() => {
+      expect(onGetFrameworkCacheInfo).toHaveBeenCalledWith('Oh My Zsh', '/home/user/.oh-my-zsh', 'zsh');
+    });
+
+    expect(await screen.findByText('terminal.frameworkCacheDetailsTitle')).toBeInTheDocument();
+    expect(screen.getAllByText('/home/user/.oh-my-zsh/cache').length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('button', { name: /terminal\.cleanCache/i }));
+    const confirmButtons = screen.getAllByRole('button', { name: /terminal\.cleanCache/i });
+    fireEvent.click(confirmButtons[confirmButtons.length - 1]);
+
+    await waitFor(() => {
+      expect(onCleanFrameworkCache).toHaveBeenCalledWith('Oh My Zsh');
+    });
+
+    await waitFor(() => {
+      expect(onGetFrameworkCacheInfo).toHaveBeenCalledTimes(2);
+    });
+    expect(screen.getAllByText('0 B').length).toBeGreaterThan(0);
   });
 });

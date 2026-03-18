@@ -18,6 +18,7 @@ const mockTerminalConfigEditor = jest.fn(
     baselineValue,
     configPath,
     shellType,
+    capability,
     onChange,
   }: {
     language: string;
@@ -25,6 +26,7 @@ const mockTerminalConfigEditor = jest.fn(
     baselineValue?: string | null;
     configPath?: string | null;
     shellType?: string;
+    capability?: { mode?: string; bundleLabel?: string | null; fallbackReason?: string | null } | null;
     onChange?: (value: string) => void;
   }) => (
     <div data-testid="terminal-config-editor">
@@ -33,6 +35,9 @@ const mockTerminalConfigEditor = jest.fn(
       <span data-testid="terminal-config-editor-baseline">{baselineValue ?? ''}</span>
       <span data-testid="terminal-config-editor-config-path">{configPath ?? ''}</span>
       <span data-testid="terminal-config-editor-shell-type">{shellType ?? ''}</span>
+      <span data-testid="terminal-config-editor-capability-mode">{capability?.mode ?? ''}</span>
+      <span data-testid="terminal-config-editor-capability-bundle">{capability?.bundleLabel ?? ''}</span>
+      <span data-testid="terminal-config-editor-capability-reason">{capability?.fallbackReason ?? ''}</span>
       <button type="button" onClick={() => onChange?.('modified draft')}>
         edit-draft
       </button>
@@ -186,6 +191,7 @@ describe('TerminalShellConfig', () => {
     expect(screen.getByText('terminal.configTargetMissingTitle')).toBeInTheDocument();
     expect(screen.getByTestId('terminal-init-open')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /terminal\.loadConfig/i })).toBeDisabled();
+    expect(screen.getByText('terminal.editorCapabilityFallback')).toBeInTheDocument();
   });
 
   it('initializes a missing config target and enters editable session', async () => {
@@ -546,6 +552,8 @@ describe('TerminalShellConfig', () => {
     expect(screen.getByTestId('terminal-config-editor-baseline')).toHaveTextContent('export TEST=1');
     expect(screen.getByTestId('terminal-config-editor-config-path')).toHaveTextContent('/home/user/.bashrc');
     expect(screen.getByTestId('terminal-config-editor-shell-type')).toHaveTextContent('bash');
+    expect(screen.getByTestId('terminal-config-editor-capability-mode')).toHaveTextContent('enhanced');
+    expect(screen.getByTestId('terminal-config-editor-capability-bundle')).toHaveTextContent('POSIX Shell Essentials');
   });
 
   it('clears stale mutation state when loading a target or cancelling edit', async () => {

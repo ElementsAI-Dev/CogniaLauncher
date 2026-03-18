@@ -1,4 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { TerminalPsModulesTable } from './terminal-ps-modules-table';
 import type { PSModuleInfo, PSScriptInfo } from '@/types/tauri';
 
@@ -182,5 +183,30 @@ describe('TerminalPsModulesTable', () => {
     fireEvent.change(searchInput, { target: { value: 'nonexistent-xyz' } });
 
     expect(screen.getByText('terminal.noSearchResults')).toBeInTheDocument();
+  });
+
+  it('shows contextual feedback after updating a module', async () => {
+    const user = userEvent.setup();
+    const onUpdateModule = jest.fn().mockResolvedValue(true);
+
+    render(
+      <TerminalPsModulesTable
+        modules={modules}
+        scripts={scripts}
+        onFetchModules={jest.fn()}
+        onFetchScripts={jest.fn()}
+        onUpdateModule={onUpdateModule}
+      />,
+    );
+
+    const updateButtons = screen.getAllByTitle('terminal.updateModule');
+    await user.click(updateButtons[0]);
+
+    await waitFor(() => {
+      expect(onUpdateModule).toHaveBeenCalledWith('PSReadLine');
+    });
+
+    expect(screen.getByText('terminal.moduleActionSuccessTitle')).toBeInTheDocument();
+    expect(screen.getByText('terminal.moduleActionUpdateSuccess')).toBeInTheDocument();
   });
 });

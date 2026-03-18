@@ -79,4 +79,24 @@ describe('TerminalDetectedShells', () => {
     expect(screen.getByText('(0.5 KB)')).toBeInTheDocument();
     expect(screen.queryByText(/^v\d/)).not.toBeInTheDocument();
   });
+
+  it('opens a shell detail drilldown with executable path and config targets', async () => {
+    const user = userEvent.setup();
+    const onGetShellInfo = jest.fn().mockResolvedValue(shells[1]);
+
+    render(
+      <TerminalDetectedShells
+        shells={shells}
+        loading={false}
+        onGetShellInfo={onGetShellInfo}
+      />,
+    );
+
+    await user.click(screen.getAllByRole('button', { name: /terminal\.viewShellDetails/i })[1]);
+
+    expect(onGetShellInfo).toHaveBeenCalledWith('powershell');
+    expect(await screen.findByText('terminal.shellDetailsTitle')).toBeInTheDocument();
+    expect(screen.getByText('C:/pwsh.exe')).toBeInTheDocument();
+    expect(screen.getByText('C:/profile.ps1')).toBeInTheDocument();
+  });
 });

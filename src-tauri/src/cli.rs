@@ -2877,20 +2877,42 @@ async fn cmd_envvar(
                 Ok(value) => value,
                 Err(msg) => return usage_error(command, json_mode, msg),
             };
-            let set_result = env::set_persistent_var(&key, &value, scope)
-                .await
-                .map_err(|e| e.to_string());
+            let set_result = match scope {
+                EnvVarScope::Process => crate::commands::envvar::envvar_set_process(
+                    key.clone(),
+                    value.clone(),
+                )
+                .await,
+                _ => crate::commands::envvar::envvar_set_persistent(
+                    key.clone(),
+                    value.clone(),
+                    scope,
+                )
+                .await,
+            };
             match set_result {
-                Ok(()) => {
+                Ok(result) => {
                     if json_mode {
-                        print_command_json(
-                            command,
-                            &json!({ "key": key, "scope": scope_to_string(scope), "status": "set" }),
+                        print_command_json(command, &result);
+                    } else if result.success {
+                        println!(
+                            "Set {} ({}) [{}]",
+                            key,
+                            scope_to_string(scope),
+                            result.status
                         );
+                        if let Some(message) = result.message {
+                            println!("{}", message);
+                        }
                     } else {
-                        println!("Set {} ({})", key, scope_to_string(scope));
+                        eprintln!(
+                            "Set {} ({}) blocked: {}",
+                            key,
+                            scope_to_string(scope),
+                            result.message.unwrap_or_else(|| "unknown error".to_string())
+                        );
                     }
-                    EXIT_OK
+                    if result.success { EXIT_OK } else { EXIT_ERROR }
                 }
                 Err(e) => runtime_error(command, json_mode, format!("Set env var error: {}", e)),
             }
@@ -2910,20 +2932,33 @@ async fn cmd_envvar(
                 Ok(value) => value,
                 Err(msg) => return usage_error(command, json_mode, msg),
             };
-            let remove_result = env::remove_persistent_var(&key, scope)
-                .await
-                .map_err(|e| e.to_string());
+            let remove_result = match scope {
+                EnvVarScope::Process => crate::commands::envvar::envvar_remove_process(key.clone()).await,
+                _ => crate::commands::envvar::envvar_remove_persistent(key.clone(), scope).await,
+            };
             match remove_result {
-                Ok(()) => {
+                Ok(result) => {
                     if json_mode {
-                        print_command_json(
-                            command,
-                            &json!({ "key": key, "scope": scope_to_string(scope), "status": "removed" }),
+                        print_command_json(command, &result);
+                    } else if result.success {
+                        println!(
+                            "Removed {} ({}) [{}]",
+                            key,
+                            scope_to_string(scope),
+                            result.status
                         );
+                        if let Some(message) = result.message {
+                            println!("{}", message);
+                        }
                     } else {
-                        println!("Removed {} ({})", key, scope_to_string(scope));
+                        eprintln!(
+                            "Remove {} ({}) blocked: {}",
+                            key,
+                            scope_to_string(scope),
+                            result.message.unwrap_or_else(|| "unknown error".to_string())
+                        );
                     }
-                    EXIT_OK
+                    if result.success { EXIT_OK } else { EXIT_ERROR }
                 }
                 Err(e) => runtime_error(command, json_mode, format!("Remove env var error: {}", e)),
             }
@@ -3057,17 +3092,21 @@ async fn cmd_envvar(
                     Ok(value) => value,
                     Err(msg) => return usage_error(command, json_mode, msg),
                 };
-            match env::set_persistent_var(&key, &value, scope).await {
-                Ok(()) => {
+            match crate::commands::envvar::envvar_set_persistent(key.clone(), value.clone(), scope).await {
+                Ok(result) => {
                     if json_mode {
-                        print_command_json(
-                            command,
-                            &json!({ "key": key, "scope": scope_to_string(scope), "status": "set" }),
-                        );
+                        print_command_json(command, &result);
+                    } else if result.success {
+                        println!("Set persistent {} ({}) [{}]", key, scope_to_string(scope), result.status);
                     } else {
-                        println!("Set persistent {} ({})", key, scope_to_string(scope));
+                        eprintln!(
+                            "Set persistent {} ({}) blocked: {}",
+                            key,
+                            scope_to_string(scope),
+                            result.message.unwrap_or_else(|| "unknown error".to_string())
+                        );
                     }
-                    EXIT_OK
+                    if result.success { EXIT_OK } else { EXIT_ERROR }
                 }
                 Err(e) => runtime_error(
                     command,
@@ -3090,17 +3129,26 @@ async fn cmd_envvar(
                     Ok(value) => value,
                     Err(msg) => return usage_error(command, json_mode, msg),
                 };
-            match env::remove_persistent_var(&key, scope).await {
-                Ok(()) => {
+            match crate::commands::envvar::envvar_remove_persistent(key.clone(), scope).await {
+                Ok(result) => {
                     if json_mode {
-                        print_command_json(
-                            command,
-                            &json!({ "key": key, "scope": scope_to_string(scope), "status": "removed" }),
+                        print_command_json(command, &result);
+                    } else if result.success {
+                        println!(
+                            "Removed persistent {} ({}) [{}]",
+                            key,
+                            scope_to_string(scope),
+                            result.status
                         );
                     } else {
-                        println!("Removed persistent {} ({})", key, scope_to_string(scope));
+                        eprintln!(
+                            "Remove persistent {} ({}) blocked: {}",
+                            key,
+                            scope_to_string(scope),
+                            result.message.unwrap_or_else(|| "unknown error".to_string())
+                        );
                     }
-                    EXIT_OK
+                    if result.success { EXIT_OK } else { EXIT_ERROR }
                 }
                 Err(e) => runtime_error(
                     command,
@@ -3165,38 +3213,20 @@ async fn cmd_envvar(
                 Err(msg) => return usage_error(command, json_mode, msg),
             };
 
-            let result = async {
-                let mut entries = env::get_persistent_path(scope).await?;
-                if entries.iter().any(|item| item == &path) {
-                    return Ok::<bool, CogniaError>(false);
-                }
-                match position {
-                    Some(pos) if pos < entries.len() => entries.insert(pos, path.clone()),
-                    _ => entries.push(path.clone()),
-                }
-                env::set_persistent_path(&entries, scope).await?;
-                Ok(true)
-            }
-            .await;
-
-            match result {
-                Ok(changed) => {
+            match crate::commands::envvar::envvar_add_path_entry(path.clone(), scope, position).await {
+                Ok(result) => {
                     if json_mode {
-                        print_command_json(
-                            command,
-                            &json!({
-                                "scope": scope_to_string(scope),
-                                "path": path,
-                                "added": changed,
-                                "position": position,
-                            }),
-                        );
-                    } else if changed {
-                        println!("Added PATH entry ({})", scope_to_string(scope));
+                        print_command_json(command, &result);
+                    } else if result.success {
+                        println!("Added PATH entry ({}) [{}]", scope_to_string(scope), result.status);
                     } else {
-                        println!("PATH entry already exists ({})", scope_to_string(scope));
+                        eprintln!(
+                            "Add PATH entry blocked ({}) : {}",
+                            scope_to_string(scope),
+                            result.message.unwrap_or_else(|| "unknown error".to_string())
+                        );
                     }
-                    EXIT_OK
+                    if result.success { EXIT_OK } else { EXIT_ERROR }
                 }
                 Err(e) => runtime_error(command, json_mode, format!("Add PATH error: {}", e)),
             }
@@ -3214,38 +3244,20 @@ async fn cmd_envvar(
                 Ok(value) => value,
                 Err(msg) => return usage_error(command, json_mode, msg),
             };
-            let result = async {
-                let entries = env::get_persistent_path(scope).await?;
-                let filtered: Vec<String> = entries
-                    .iter()
-                    .filter(|entry| *entry != &path)
-                    .cloned()
-                    .collect();
-                let removed = filtered.len() != entries.len();
-                if removed {
-                    env::set_persistent_path(&filtered, scope).await?;
-                }
-                Ok::<bool, CogniaError>(removed)
-            }
-            .await;
-
-            match result {
-                Ok(removed) => {
+            match crate::commands::envvar::envvar_remove_path_entry(path.clone(), scope).await {
+                Ok(result) => {
                     if json_mode {
-                        print_command_json(
-                            command,
-                            &json!({
-                                "scope": scope_to_string(scope),
-                                "path": path,
-                                "removed": removed,
-                            }),
-                        );
-                    } else if removed {
-                        println!("Removed PATH entry ({})", scope_to_string(scope));
+                        print_command_json(command, &result);
+                    } else if result.success {
+                        println!("Removed PATH entry ({}) [{}]", scope_to_string(scope), result.status);
                     } else {
-                        println!("PATH entry not found ({})", scope_to_string(scope));
+                        eprintln!(
+                            "Remove PATH entry blocked ({}) : {}",
+                            scope_to_string(scope),
+                            result.message.unwrap_or_else(|| "unknown error".to_string())
+                        );
                     }
-                    EXIT_OK
+                    if result.success { EXIT_OK } else { EXIT_ERROR }
                 }
                 Err(e) => runtime_error(command, json_mode, format!("Remove PATH error: {}", e)),
             }
@@ -3263,24 +3275,25 @@ async fn cmd_envvar(
                 Ok(value) => value,
                 Err(msg) => return usage_error(command, json_mode, msg),
             };
-            match env::set_persistent_path(&entries, scope).await {
-                Ok(()) => {
+            match crate::commands::envvar::envvar_reorder_path(entries.clone(), scope).await {
+                Ok(result) => {
                     if json_mode {
-                        print_command_json(
-                            command,
-                            &json!({
-                                "scope": scope_to_string(scope),
-                                "count": entries.len(),
-                            }),
+                        print_command_json(command, &result);
+                    } else if result.success {
+                        println!(
+                            "Reordered {} PATH entries ({}) [{}]",
+                            entries.len(),
+                            scope_to_string(scope),
+                            result.status
                         );
                     } else {
-                        println!(
-                            "Reordered {} PATH entries ({})",
-                            entries.len(),
-                            scope_to_string(scope)
+                        eprintln!(
+                            "Reorder PATH blocked ({}) : {}",
+                            scope_to_string(scope),
+                            result.message.unwrap_or_else(|| "unknown error".to_string())
                         );
                     }
-                    EXIT_OK
+                    if result.success { EXIT_OK } else { EXIT_ERROR }
                 }
                 Err(e) => runtime_error(command, json_mode, format!("Reorder PATH error: {}", e)),
             }
@@ -3294,47 +3307,19 @@ async fn cmd_envvar(
                 Ok(value) => value,
                 Err(msg) => return usage_error(command, json_mode, msg),
             };
-            let result = async {
-                let entries = env::get_persistent_path(scope).await?;
-                let original_count = entries.len();
-                let mut seen = std::collections::HashSet::new();
-                let deduped: Vec<String> = entries
-                    .into_iter()
-                    .filter(|entry| {
-                        let key = if cfg!(windows) {
-                            entry.to_lowercase()
-                        } else {
-                            entry.clone()
-                        };
-                        seen.insert(key)
-                    })
-                    .collect();
-                let removed = original_count.saturating_sub(deduped.len());
-                if removed > 0 {
-                    env::set_persistent_path(&deduped, scope).await?;
-                }
-                Ok::<usize, CogniaError>(removed)
-            }
-            .await;
-
-            match result {
-                Ok(removed) => {
+            match crate::commands::envvar::envvar_deduplicate_path(scope).await {
+                Ok(result) => {
                     if json_mode {
-                        print_command_json(
-                            command,
-                            &json!({
-                                "scope": scope_to_string(scope),
-                                "removed": removed,
-                            }),
-                        );
+                        print_command_json(command, &result);
                     } else {
                         println!(
-                            "Removed {} duplicate PATH entries ({})",
-                            removed,
-                            scope_to_string(scope)
+                            "Removed {} duplicate PATH entries ({}) [{}]",
+                            result.removed_count,
+                            scope_to_string(scope),
+                            result.status
                         );
                     }
-                    EXIT_OK
+                    if result.success { EXIT_OK } else { EXIT_ERROR }
                 }
                 Err(e) => {
                     runtime_error(command, json_mode, format!("Deduplicate PATH error: {}", e))
@@ -3544,62 +3529,27 @@ async fn cmd_envvar(
                 Ok(text) => text,
                 Err(msg) => return runtime_error(command, json_mode, msg),
             };
-            let parsed = env::parse_env_file(&content);
-
-            let mut imported = 0usize;
-            let mut skipped = 0usize;
-            let mut failed = Vec::new();
-            for (raw_key, value) in parsed {
-                let key = match env::normalize_env_var_key(&raw_key) {
-                    Ok(normalized) => normalized,
-                    Err(e) => {
-                        skipped += 1;
-                        failed.push(format!(
-                            "{} [invalid_input]: {}",
-                            if raw_key.trim().is_empty() {
-                                "<empty>"
-                            } else {
-                                raw_key.trim()
-                            },
-                            e
-                        ));
-                        continue;
+            match crate::commands::envvar::envvar_import_env_file(content, scope).await {
+                Ok(result) => {
+                    if json_mode {
+                        print_command_json(command, &result);
+                    } else {
+                        println!(
+                            "Imported {} variable(s), skipped {} [{}]",
+                            result.imported,
+                            result.skipped,
+                            result.status
+                        );
+                        for err in &result.errors {
+                            eprintln!("Failed: {}", err);
+                        }
+                        if let Some(message) = &result.message {
+                            println!("{}", message);
+                        }
                     }
-                };
-                let result = env::set_persistent_var(&key, &value, scope)
-                    .await
-                    .map_err(|e| e.to_string());
-                match result {
-                    Ok(()) => imported += 1,
-                    Err(e) => {
-                        skipped += 1;
-                        failed.push(format!("{} [runtime_error]: {}", key, e));
-                    }
+                    if result.success { EXIT_OK } else { EXIT_ERROR }
                 }
-            }
-
-            if json_mode {
-                print_command_json(
-                    command,
-                    &json!({
-                        "file": file_path,
-                        "scope": scope_to_string(scope),
-                        "imported": imported,
-                        "skipped": skipped,
-                        "failed": failed,
-                    }),
-                );
-            } else {
-                println!("Imported {} variable(s), skipped {}", imported, skipped);
-                for err in &failed {
-                    eprintln!("Failed: {}", err);
-                }
-            }
-
-            if failed.is_empty() {
-                EXIT_OK
-            } else {
-                EXIT_ERROR
+                Err(e) => runtime_error(command, json_mode, format!("Import env vars error: {}", e)),
             }
         }
         "preview-import" => {
@@ -3665,9 +3615,17 @@ async fn cmd_envvar(
                     if json_mode {
                         print_command_json(command, &result);
                     } else {
-                        println!("Imported {} variable(s), skipped {}", result.imported, result.skipped);
+                        println!(
+                            "Imported {} variable(s), skipped {} [{}]",
+                            result.imported,
+                            result.skipped,
+                            result.status
+                        );
+                        if let Some(message) = &result.message {
+                            println!("{}", message);
+                        }
                     }
-                    if result.errors.is_empty() { EXIT_OK } else { EXIT_ERROR }
+                    if result.success { EXIT_OK } else { EXIT_ERROR }
                 }
                 Err(e) => runtime_error(command, json_mode, format!("Apply import error: {}", e)),
             }
@@ -3713,13 +3671,20 @@ async fn cmd_envvar(
             };
 
             match crate::commands::envvar::envvar_apply_path_repair(scope, fingerprint).await {
-                Ok(removed) => {
+                Ok(result) => {
                     if json_mode {
-                        print_command_json(command, &json!({ "removed": removed, "scope": scope_to_string(scope) }));
+                        print_command_json(command, &result);
                     } else {
-                        println!("Removed {} PATH entrie(s)", removed);
+                        println!(
+                            "Removed {} PATH entrie(s) [{}]",
+                            result.removed_count,
+                            result.status
+                        );
+                        if let Some(message) = &result.message {
+                            println!("{}", message);
+                        }
                     }
-                    EXIT_OK
+                    if result.success { EXIT_OK } else { EXIT_ERROR }
                 }
                 Err(e) => runtime_error(command, json_mode, format!("Apply PATH repair error: {}", e)),
             }
@@ -3749,14 +3714,23 @@ async fn cmd_envvar(
                 Ok(result) => {
                     if json_mode {
                         print_command_json(command, &result);
-                    } else {
+                    } else if result.success {
                         println!(
-                            "Resolved conflict to {} using {} scope value",
+                            "Resolved conflict to {} using {} scope value [{}]",
                             scope_to_string(result.target_scope),
-                            scope_to_string(result.source_scope)
+                            scope_to_string(result.source_scope),
+                            result.status
+                        );
+                        if let Some(message) = &result.message {
+                            println!("{}", message);
+                        }
+                    } else {
+                        eprintln!(
+                            "Resolve conflict blocked: {}",
+                            result.message.unwrap_or_else(|| "unknown error".to_string())
                         );
                     }
-                    EXIT_OK
+                    if result.success { EXIT_OK } else { EXIT_ERROR }
                 }
                 Err(e) => runtime_error(command, json_mode, format!("Resolve conflict error: {}", e)),
             }

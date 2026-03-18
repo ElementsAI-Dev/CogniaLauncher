@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -49,9 +50,9 @@ interface TerminalPsManagementProps {
   executionPolicy: [string, string][];
   onFetchPSProfiles: () => Promise<void>;
   onReadPSProfile: (scope: string) => Promise<string>;
-  onWritePSProfile: (scope: string, content: string) => Promise<void>;
+  onWritePSProfile: (scope: string, content: string) => Promise<boolean | void>;
   onFetchExecutionPolicy: () => Promise<void>;
-  onSetExecutionPolicy: (policy: string, scope: string) => Promise<void>;
+  onSetExecutionPolicy: (policy: string, scope: string) => Promise<boolean | void>;
   loading?: boolean;
 }
 
@@ -74,6 +75,11 @@ export function TerminalPsManagement({
   const [policyScope, setPolicyScope] = useState<string>('CurrentUser');
   const [policyValue, setPolicyValue] = useState<string>('');
   const [policyConfirmOpen, setPolicyConfirmOpen] = useState(false);
+  const [policyFeedback, setPolicyFeedback] = useState<{
+    status: 'success' | 'error';
+    title: string;
+    description: string;
+  } | null>(null);
 
   const handleLoadProfile = async (scope: string) => {
     setSelectedScope(scope);
@@ -99,7 +105,23 @@ export function TerminalPsManagement({
 
   const handleSetPolicy = async () => {
     if (!policyValue || !policyScope) return;
-    await onSetExecutionPolicy(policyValue, policyScope);
+    const result = await onSetExecutionPolicy(policyValue, policyScope);
+    setPolicyFeedback(
+      result === false
+        ? {
+            status: 'error',
+            title: t('terminal.policyActionErrorTitle'),
+            description: t('terminal.policyActionFailed'),
+          }
+        : {
+            status: 'success',
+            title: t('terminal.policyActionSuccessTitle'),
+            description: t('terminal.policyActionApplied', {
+              policy: policyValue,
+              scope: policyScope,
+            }),
+          },
+    );
   };
 
   if (loading) {
@@ -318,6 +340,12 @@ export function TerminalPsManagement({
           <CardDescription>{t('terminal.executionPolicyDesc')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {policyFeedback && (
+            <Alert variant={policyFeedback.status === 'error' ? 'destructive' : 'default'}>
+              <AlertTitle>{policyFeedback.title}</AlertTitle>
+              <AlertDescription>{policyFeedback.description}</AlertDescription>
+            </Alert>
+          )}
           {executionPolicy.length > 0 && (
             <div className="rounded-md border">
               <Table>

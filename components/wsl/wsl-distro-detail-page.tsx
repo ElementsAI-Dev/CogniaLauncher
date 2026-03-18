@@ -100,11 +100,14 @@ export function WslDistroDetailPage({
     available,
     distros,
     capabilities,
+    distroInfoByName,
     loading,
     error,
     checkAvailability,
+    refreshDistroInfo,
     getCapabilities,
     refreshDistros,
+    refreshRuntimeInfo,
     refreshStatus,
     terminate,
     setDefault,
@@ -171,6 +174,12 @@ export function WslDistroDetailPage({
     | { type: 'assistance'; actionId: string; origin: 'panel' | 'error' }
     | null
   >(null);
+  const distroInfoMap = distroInfoByName ?? {};
+  const refreshRuntimeInfoAction = refreshRuntimeInfo ?? (async () => {
+    await refreshStatus();
+    return null;
+  });
+  const refreshDistroInfoAction = refreshDistroInfo ?? (async () => null);
 
   // Initialize on mount
   useEffect(() => {
@@ -181,12 +190,15 @@ export function WslDistroDetailPage({
       const isAvailable = await checkAvailability();
       if (isAvailable) {
         await refreshDistros();
-        await refreshStatus();
-        await getCapabilities();
+        await Promise.all([
+          refreshRuntimeInfoAction(),
+          refreshDistroInfoAction(distroName),
+          getCapabilities(),
+        ]);
       }
     };
     init();
-  }, [isDesktop, checkAvailability, getCapabilities, refreshDistros, refreshStatus]);
+  }, [checkAvailability, distroName, getCapabilities, isDesktop, refreshDistroInfoAction, refreshDistros, refreshRuntimeInfoAction]);
 
   // Find the distro data
   const distro: WslDistroStatus | undefined = distros.find(
@@ -216,8 +228,11 @@ export function WslDistroDetailPage({
 
   const handleRefresh = useCallback(async () => {
     await refreshDistros();
-    await refreshStatus();
-  }, [refreshDistros, refreshStatus]);
+    await Promise.all([
+      refreshRuntimeInfoAction(),
+      refreshDistroInfoAction(distroName),
+    ]);
+  }, [distroName, refreshDistroInfoAction, refreshDistros, refreshRuntimeInfoAction]);
 
   const handleLaunch = useCallback(async () => {
     setLifecycleFeedback({
@@ -1037,6 +1052,9 @@ export function WslDistroDetailPage({
           <WslDistroOverview
             distroName={distroName}
             distro={distro ?? null}
+            info={distroInfoMap[distroName] ?? null}
+            onRefreshInfo={() => refreshDistroInfoAction(distroName).then(() => undefined)}
+            onRefreshLiveInfo={() => refreshDistroInfoAction(distroName).then(() => undefined)}
             getDiskUsage={getDiskUsage}
             getIpAddress={getIpAddress}
             getDistroConfig={getDistroConfig}

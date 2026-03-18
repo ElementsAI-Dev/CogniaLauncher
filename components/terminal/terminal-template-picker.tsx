@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
   Dialog,
   DialogContent,
@@ -22,7 +23,15 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   Tooltip,
   TooltipContent,
@@ -43,7 +52,7 @@ import {
   Trash2,
   User,
 } from 'lucide-react';
-import type { TerminalProfileTemplate, TemplateCategory } from '@/types/tauri';
+import type { ShellType, TerminalProfileTemplate, TemplateCategory } from '@/types/tauri';
 import { useLocale } from '@/components/providers/locale-provider';
 
 interface TerminalTemplatePickerProps {
@@ -51,7 +60,8 @@ interface TerminalTemplatePickerProps {
   onOpenChange: (open: boolean) => void;
   templates: TerminalProfileTemplate[];
   onSelect: (template: TerminalProfileTemplate) => void;
-  onDelete?: (id: string) => void;
+  onCreateCustom?: (template: TerminalProfileTemplate) => Promise<string | void> | string | void;
+  onDelete?: (id: string) => Promise<boolean | void> | boolean | void;
 }
 
 const ICON_MAP: Record<string, React.ReactNode> = {
@@ -66,6 +76,7 @@ const ICON_MAP: Record<string, React.ReactNode> = {
 };
 
 const CATEGORY_ORDER: TemplateCategory[] = ['general', 'development', 'devOps', 'admin', 'custom'];
+const CUSTOM_TEMPLATE_SHELLS: ShellType[] = ['bash', 'zsh', 'fish', 'powershell', 'cmd', 'nushell'];
 
 function getCategoryLabel(category: TemplateCategory, t: (key: string) => string): string {
   const map: Record<TemplateCategory, string> = {
@@ -96,11 +107,30 @@ export function TerminalTemplatePicker({
   onOpenChange,
   templates,
   onSelect,
+  onCreateCustom,
   onDelete,
 }: TerminalTemplatePickerProps) {
   const { t } = useLocale();
   const [search, setSearch] = useState('');
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createDraft, setCreateDraft] = useState<{
+    name: string;
+    description: string;
+    shellType: ShellType | '';
+    startupCommand: string;
+  }>({
+    name: '',
+    description: '',
+    shellType: '',
+    startupCommand: '',
+  });
+  const [createValidation, setCreateValidation] = useState<string | null>(null);
+  const [actionFeedback, setActionFeedback] = useState<{
+    status: 'success' | 'error';
+    title: string;
+    description: string;
+  } | null>(null);
 
   const filtered = useMemo(() => {
     if (!search.trim()) return templates;
@@ -130,14 +160,88 @@ export function TerminalTemplatePicker({
     setSearch('');
   };
 
+  const resetCreateState = () => {
+    setCreateDraft({
+      name: '',
+      description: '',
+      shellType: '',
+      startupCommand: '',
+    });
+    setCreateValidation(null);
+  };
+
+  const buildCustomTemplate = (): TerminalProfileTemplate => ({
+    id: '',
+    name: createDraft.name.trim(),
+    description: createDraft.description.trim() || t('terminal.customTemplateDescriptionFallback'),
+    icon: 'terminal',
+    category: 'custom',
+    shellType: createDraft.shellType || null,
+    args: [],
+    envVars: {},
+    cwd: null,
+    startupCommand: createDraft.startupCommand.trim() || null,
+    envType: null,
+    envVersion: null,
+    isBuiltin: false,
+  });
+
+  const handleCreateCustomTemplate = async () => {
+    if (!onCreateCustom) return;
+    if (!createDraft.name.trim()) {
+      setCreateValidation(t('terminal.templateValidationNameRequired'));
+      return;
+    }
+    if (!createDraft.shellType) {
+      setCreateValidation(t('terminal.templateValidationShellRequired'));
+      return;
+    }
+
+    setCreateValidation(null);
+    const result = await onCreateCustom(buildCustomTemplate());
+    if (!result) {
+      setActionFeedback({
+        status: 'error',
+        title: t('terminal.templateActionErrorTitle'),
+        description: t('terminal.templateActionCreateFailed'),
+      });
+      return;
+    }
+
+    setActionFeedback({
+      status: 'success',
+      title: t('terminal.templateActionSuccessTitle'),
+      description: t('terminal.templateActionCreated', { name: createDraft.name.trim() }),
+    });
+    setCreateOpen(false);
+    resetCreateState();
+  };
+
   return (
     <>
-      <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) setSearch(''); }}>
+      <Dialog
+        open={open}
+        onOpenChange={(v) => {
+          onOpenChange(v);
+          if (!v) {
+            setSearch('');
+            setCreateOpen(false);
+            resetCreateState();
+          }
+        }}
+      >
         <DialogContent className="sm:max-w-[640px] max-h-[85vh]">
           <DialogHeader>
             <DialogTitle>{t('terminal.templatePicker')}</DialogTitle>
             <DialogDescription>{t('terminal.templatePickerDesc')} ({templates.length})</DialogDescription>
           </DialogHeader>
+
+          {actionFeedback && (
+            <Alert variant={actionFeedback.status === 'error' ? 'destructive' : 'default'}>
+              <AlertTitle>{actionFeedback.title}</AlertTitle>
+              <AlertDescription>{actionFeedback.description}</AlertDescription>
+            </Alert>
+          )}
 
           <div className="relative">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -240,8 +344,112 @@ export function TerminalTemplatePicker({
           </ScrollArea>
 
           <DialogFooter>
+            {onCreateCustom && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setCreateOpen(true);
+                  setCreateValidation(null);
+                }}
+              >
+                {t('terminal.createCustomTemplate')}
+              </Button>
+            )}
             <Button variant="outline" onClick={() => { onOpenChange(false); setSearch(''); }}>
               {t('terminal.cancel')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={createOpen}
+        onOpenChange={(nextOpen) => {
+          setCreateOpen(nextOpen);
+          if (!nextOpen) {
+            resetCreateState();
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[460px]">
+          <DialogHeader>
+            <DialogTitle>{t('terminal.createCustomTemplate')}</DialogTitle>
+            <DialogDescription>{t('terminal.createCustomTemplateDesc')}</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid gap-2">
+              <Label htmlFor="custom-template-name">{t('terminal.templateName')}</Label>
+              <Input
+                id="custom-template-name"
+                value={createDraft.name}
+                onChange={(event) => setCreateDraft((current) => ({
+                  ...current,
+                  name: event.target.value,
+                }))}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="custom-template-description">{t('terminal.templateDescription')}</Label>
+              <Input
+                id="custom-template-description"
+                value={createDraft.description}
+                onChange={(event) => setCreateDraft((current) => ({
+                  ...current,
+                  description: event.target.value,
+                }))}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>{t('terminal.templateShellType')}</Label>
+              <Select
+                value={createDraft.shellType}
+                onValueChange={(value) => setCreateDraft((current) => ({
+                  ...current,
+                  shellType: value as ShellType,
+                }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={t('terminal.templateSelectShellType')} />
+                </SelectTrigger>
+                <SelectContent>
+                  {CUSTOM_TEMPLATE_SHELLS.map((shellType) => (
+                    <SelectItem key={shellType} value={shellType}>
+                      {shellType}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="custom-template-startup">{t('terminal.tooltipStartup')}</Label>
+              <Input
+                id="custom-template-startup"
+                value={createDraft.startupCommand}
+                onChange={(event) => setCreateDraft((current) => ({
+                  ...current,
+                  startupCommand: event.target.value,
+                }))}
+              />
+            </div>
+            {createValidation && (
+              <Alert variant="destructive">
+                <AlertTitle>{t('terminal.templateActionErrorTitle')}</AlertTitle>
+                <AlertDescription>{createValidation}</AlertDescription>
+              </Alert>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setCreateOpen(false);
+                resetCreateState();
+              }}
+            >
+              {t('terminal.cancel')}
+            </Button>
+            <Button onClick={() => void handleCreateCustomTemplate()}>
+              {t('terminal.saveTemplate')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -259,8 +467,22 @@ export function TerminalTemplatePicker({
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={() => {
                 if (deleteId && onDelete) {
-                  onDelete(deleteId);
-                  setDeleteId(null);
+                  void Promise.resolve(onDelete(deleteId)).then((result) => {
+                    setActionFeedback(
+                      result === false
+                        ? {
+                            status: 'error',
+                            title: t('terminal.templateActionErrorTitle'),
+                            description: t('terminal.templateActionDeleteFailed'),
+                          }
+                        : {
+                            status: 'success',
+                            title: t('terminal.templateActionSuccessTitle'),
+                            description: t('terminal.templateActionDeleted'),
+                          },
+                    );
+                    setDeleteId(null);
+                  });
                 }
               }}
             >

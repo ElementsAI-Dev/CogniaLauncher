@@ -1,7 +1,7 @@
 'use client';
 
 import { usePathname, useSearchParams } from 'next/navigation';
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo, type ReactNode } from 'react';
 import { PageHeader } from '@/components/layout/page-header';
 import { useWsl } from '@/hooks/use-wsl';
 import { useLocale } from '@/components/providers/locale-provider';
@@ -34,7 +34,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import {
   Select,
@@ -110,6 +110,107 @@ function createWorkflowDraft(t: (key: string, params?: Record<string, string | n
   };
 }
 
+interface WslOverviewSummaryBandProps {
+  summaryActions: ReactNode;
+  distrosCount: number;
+  runningCount: number;
+  defaultDistro: string | null;
+  totalDiskUsage: WslTotalDiskUsage | null;
+  completenessHint: string | null;
+  t: (key: string, params?: Record<string, string | number>) => string;
+}
+
+function WslSupportGroup({
+  testId,
+  title,
+  description,
+  children,
+}: {
+  testId: string;
+  title: string;
+  description: string;
+  children: ReactNode;
+}) {
+  return (
+    <section data-testid={testId} className="space-y-3">
+      <div className="space-y-1 px-1">
+        <h2 className="text-sm font-semibold">{title}</h2>
+        <p className="text-xs text-muted-foreground">{description}</p>
+      </div>
+      <div className="space-y-4">{children}</div>
+    </section>
+  );
+}
+
+function WslOverviewSummaryBand({
+  summaryActions,
+  distrosCount,
+  runningCount,
+  defaultDistro,
+  totalDiskUsage,
+  completenessHint,
+  t,
+}: WslOverviewSummaryBandProps) {
+  const summaryStats = [
+    {
+      label: t('wsl.distros'),
+      value: String(distrosCount),
+      hint: t('wsl.distros'),
+    },
+    {
+      label: t('wsl.runningDistros'),
+      value: String(runningCount),
+      hint: t(runningCount > 0 ? 'wsl.running' : 'wsl.noRunning'),
+    },
+    {
+      label: t('wsl.defaultDistribution'),
+      value: defaultDistro ?? '—',
+      hint: t('wsl.setDefault'),
+    },
+    {
+      label: t('wsl.totalDiskUsage'),
+      value: totalDiskUsage ? formatBytes(totalDiskUsage.totalBytes) : '—',
+      hint: t('wsl.versionInfo'),
+    },
+  ];
+
+  return (
+    <section data-testid="wsl-summary-band">
+      <Card className="border-border/60 bg-card/50 py-0">
+        <CardHeader className="pb-4">
+          <CardTitle className="text-base font-semibold">{t('wsl.summaryTitle')}</CardTitle>
+          <CardDescription>{t('wsl.summaryDesc')}</CardDescription>
+          <CardAction
+            data-testid="wsl-summary-actions"
+            className="flex flex-wrap items-center justify-end gap-2"
+          >
+            {summaryActions}
+          </CardAction>
+        </CardHeader>
+        <CardContent className="space-y-4 pb-6">
+          <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
+            {summaryStats.map((item) => (
+              <div
+                key={item.label}
+                className="rounded-xl border border-border/60 bg-background/60 p-3"
+              >
+                <p className="text-xs font-medium text-muted-foreground">{item.label}</p>
+                <p className="mt-2 truncate text-lg font-semibold">{item.value}</p>
+                <p className="mt-1 text-[11px] text-muted-foreground">{item.hint}</p>
+              </div>
+            ))}
+          </div>
+          {completenessHint && (
+            <Alert>
+              <AlertDescription>{completenessHint}</AlertDescription>
+            </Alert>
+          )}
+        </CardContent>
+      </Card>
+    </section>
+  );
+}
+
 export default function WslPage() {
   const { t } = useLocale();
   const isDesktop = isTauri();
@@ -122,6 +223,7 @@ export default function WslPage() {
     status,
     capabilities,
     runtimeSnapshot,
+    runtimeInfo,
     completeness,
     loading,
     error,
@@ -157,6 +259,7 @@ export default function WslPage() {
     unregisterDistro,
     installWithLocation,
     getVersionInfo,
+    refreshRuntimeInfo,
     getTotalDiskUsage,
     openInExplorer,
     openInTerminal,
@@ -215,7 +318,7 @@ export default function WslPage() {
   const [installLocationDistroName, setInstallLocationDistroName] = useState('');
   const [cloneDialogOpen, setCloneDialogOpen] = useState(false);
   const [cloneSourceDistro, setCloneSourceDistro] = useState('');
-  const [versionInfo, setVersionInfo] = useState<WslVersionInfo | null>(null);
+  const [legacyVersionInfo, setLegacyVersionInfo] = useState<WslVersionInfo | null>(null);
   const [totalDiskUsage, setTotalDiskUsage] = useState<WslTotalDiskUsage | null>(null);
   const [showAllDiskUsage, setShowAllDiskUsage] = useState(false);
   const [sidebarMetaLoading, setSidebarMetaLoading] = useState(false);
@@ -231,6 +334,15 @@ export default function WslPage() {
   const [workflowPreviewOpen, setWorkflowPreviewOpen] = useState(false);
   const [workflowPreviewCandidate, setWorkflowPreviewCandidate] = useState<WslBatchWorkflowPreset | null>(null);
   const [workflowRunning, setWorkflowRunning] = useState(false);
+  const runtimeInfoSnapshot = runtimeInfo ?? null;
+  const refreshRuntimeInfoAction = useCallback(async () => {
+    if (refreshRuntimeInfo) {
+      return await refreshRuntimeInfo();
+    }
+    await refreshStatus();
+    return runtimeInfoSnapshot;
+  }, [refreshRuntimeInfo, refreshStatus, runtimeInfoSnapshot]);
+  const versionInfo = runtimeInfoSnapshot?.versionInfo?.data ?? legacyVersionInfo;
 
   useEffect(() => {
     workflowDraftRef.current = workflowDraft;
@@ -285,16 +397,15 @@ export default function WslPage() {
     if (!isDesktop) return;
     setSidebarMetaLoading(true);
     try {
-      const [version, totalUsage] = await Promise.all([
-        getVersionInfo(),
-        getTotalDiskUsage(),
-      ]);
-      setVersionInfo(version);
+      if (!runtimeInfoSnapshot && getVersionInfo) {
+        setLegacyVersionInfo(await getVersionInfo());
+      }
+      const totalUsage = await getTotalDiskUsage();
       setTotalDiskUsage(totalUsage);
     } finally {
       setSidebarMetaLoading(false);
     }
-  }, [getTotalDiskUsage, getVersionInfo, isDesktop]);
+  }, [getTotalDiskUsage, getVersionInfo, isDesktop, runtimeInfoSnapshot]);
 
   const syncOverviewContext = useCallback((nextTab: 'installed' | 'available', nextTag: string | null) => {
     const href = buildWslOverviewHref({ tab: nextTab, tag: nextTag, origin: 'overview' });
@@ -378,11 +489,11 @@ export default function WslPage() {
 
   const handleRefresh = useCallback(async () => {
     if (activeTab === 'installed') {
-      await Promise.all([refreshDistros(), refreshStatus(), refreshSidebarMeta()]);
+      await Promise.all([refreshRuntimeInfoAction(), refreshDistros(), refreshSidebarMeta()]);
     } else {
       await refreshOnlineDistros();
     }
-  }, [activeTab, refreshDistros, refreshStatus, refreshOnlineDistros, refreshSidebarMeta]);
+  }, [activeTab, refreshDistros, refreshOnlineDistros, refreshRuntimeInfoAction, refreshSidebarMeta]);
 
   const setRunningFeedback = useCallback((action: string, retry?: () => void) => {
     retryActionRef.current = retry ?? null;
@@ -950,6 +1061,36 @@ export default function WslPage() {
   const assistanceGroups: Array<'check' | 'repair' | 'maintenance'> = ['check', 'repair', 'maintenance'];
   const desktopLayoutClass =
     'grid gap-6 xl:gap-8 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,1fr)] 2xl:grid-cols-[minmax(0,1.55fr)_minmax(340px,1fr)]';
+  const defaultDistroName = status?.defaultDistribution
+    ?? distros.find((distro) => distro.isDefault)?.name
+    ?? null;
+  const runningCount = status?.runningDistros.length ?? completeness.runningCount;
+  const summaryActions = (
+    <>
+      <Button variant="outline" size="sm" onClick={handleUpdate} className="gap-2 whitespace-nowrap">
+        <ArrowUpCircle className="h-4 w-4" />
+        {t('wsl.update')}
+      </Button>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => setImportOpen(true)}
+        className="gap-2 whitespace-nowrap"
+      >
+        <Upload className="h-4 w-4" />
+        {t('wsl.import')}
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={handleRefresh}
+        disabled={loading || available !== true}
+        className="h-8 w-8 shrink-0"
+      >
+        <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+      </Button>
+    </>
+  );
 
   // Non-Tauri fallback
   if (!isDesktop) {
@@ -969,35 +1110,6 @@ export default function WslPage() {
       <PageHeader
         title={t('wsl.title')}
         description={t('wsl.description')}
-        actions={
-          <div
-            data-testid="wsl-header-actions"
-            className="flex flex-wrap items-center justify-end gap-2 sm:flex-nowrap"
-          >
-            <Button variant="outline" size="sm" onClick={handleUpdate} className="gap-2 whitespace-nowrap">
-              <ArrowUpCircle className="h-4 w-4" />
-              {t('wsl.update')}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setImportOpen(true)}
-              className="gap-2 whitespace-nowrap"
-            >
-              <Upload className="h-4 w-4" />
-              {t('wsl.import')}
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleRefresh}
-              disabled={loading || available !== true}
-              className="h-8 w-8 shrink-0"
-            >
-              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            </Button>
-          </div>
-        }
       />
 
       {error && (
@@ -1031,51 +1143,95 @@ export default function WslPage() {
         </Alert>
       )}
 
-      {!error && available === true && completenessHint && (
-        <Alert>
-          <AlertDescription>{completenessHint}</AlertDescription>
-        </Alert>
-      )}
-
       <div data-testid="wsl-page-content" className="space-y-6">
         {available === false && (
-          <section data-testid="wsl-not-available" className="rounded-xl border border-border/60 bg-card/40 p-4 sm:p-5">
-            <WslNotAvailable t={t} onInstallWsl={handleInstallWslOnly} />
+          <section data-testid="wsl-summary-band" className="space-y-4">
+            <div data-testid="wsl-summary-actions" className="hidden" aria-hidden="true">
+              {summaryActions}
+            </div>
+            <section data-testid="wsl-not-available" className="rounded-xl border border-border/60 bg-card/40 p-4 sm:p-5">
+              <WslNotAvailable t={t} onInstallWsl={handleInstallWslOnly} />
+            </section>
           </section>
         )}
 
         {/* Loading skeleton before WSL availability is resolved */}
         {available === null && (
-          <div data-testid="wsl-layout-grid" className={desktopLayoutClass}>
-            <section data-testid="wsl-primary-region" className="space-y-4">
-              <Card className="border-dashed">
-                <CardHeader><Skeleton className="h-6 w-48" /></CardHeader>
-                <CardContent className="space-y-3">
-                  {[1, 2, 3].map((i) => (
-                    <div key={i} className="flex items-center gap-3 rounded-md border p-3">
-                      <Skeleton className="h-10 w-10 rounded-lg" />
-                      <div className="w-full space-y-2">
-                        <Skeleton className="h-5 w-28" />
-                        <Skeleton className="h-4 w-36" />
-                      </div>
+          <>
+            <section
+              data-testid="wsl-summary-band"
+              className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,1fr)]"
+            >
+              <Card className="border-dashed py-0">
+                <CardHeader className="pb-4">
+                  <Skeleton className="h-6 w-40" />
+                  <Skeleton className="h-4 w-64" />
+                  <CardAction data-testid="wsl-summary-actions" className="flex gap-2">
+                    <Skeleton className="h-8 w-24" />
+                    <Skeleton className="h-8 w-24" />
+                    <Skeleton className="h-8 w-8" />
+                  </CardAction>
+                </CardHeader>
+                <CardContent className="grid gap-3 pb-6 sm:grid-cols-2 2xl:grid-cols-4">
+                  {[1, 2, 3, 4].map((i) => (
+                    <div key={i} className="rounded-xl border border-dashed p-3">
+                      <Skeleton className="h-4 w-16" />
+                      <Skeleton className="mt-3 h-6 w-20" />
+                      <Skeleton className="mt-2 h-3 w-24" />
                     </div>
                   ))}
                 </CardContent>
               </Card>
+              <div className="grid gap-4">
+                {[1, 2].map((i) => (
+                  <Card key={i}>
+                    <CardHeader><Skeleton className="h-6 w-32" /></CardHeader>
+                    <CardContent><Skeleton className="h-20 w-full" /></CardContent>
+                  </Card>
+                ))}
+              </div>
             </section>
-            <aside data-testid="wsl-supporting-region" className="space-y-4">
-              {[1, 2].map((i) => (
-                <Card key={i}>
-                  <CardHeader><Skeleton className="h-6 w-32" /></CardHeader>
-                  <CardContent><Skeleton className="h-20 w-full" /></CardContent>
+            <div data-testid="wsl-layout-grid" className={desktopLayoutClass}>
+              <section data-testid="wsl-primary-region" className="space-y-4">
+                <Card className="border-dashed">
+                  <CardHeader><Skeleton className="h-6 w-48" /></CardHeader>
+                  <CardContent className="space-y-3">
+                    {[1, 2, 3].map((i) => (
+                      <div key={i} className="flex items-center gap-3 rounded-md border p-3">
+                        <Skeleton className="h-10 w-10 rounded-lg" />
+                        <div className="w-full space-y-2">
+                          <Skeleton className="h-5 w-28" />
+                          <Skeleton className="h-4 w-36" />
+                        </div>
+                      </div>
+                    ))}
+                  </CardContent>
                 </Card>
-              ))}
-            </aside>
-          </div>
+              </section>
+              <aside data-testid="wsl-supporting-region" className="space-y-4">
+                {[1, 2].map((i) => (
+                  <Card key={i}>
+                    <CardHeader><Skeleton className="h-6 w-32" /></CardHeader>
+                    <CardContent><Skeleton className="h-20 w-full" /></CardContent>
+                  </Card>
+                ))}
+              </aside>
+            </div>
+          </>
         )}
 
         {available === true && (
-          <div data-testid="wsl-layout-grid" className={desktopLayoutClass}>
+          <>
+            <WslOverviewSummaryBand
+              summaryActions={summaryActions}
+              distrosCount={distros.length}
+              runningCount={runningCount}
+              defaultDistro={defaultDistroName}
+              totalDiskUsage={totalDiskUsage}
+              completenessHint={completenessHint}
+              t={t}
+            />
+            <div data-testid="wsl-layout-grid" className={desktopLayoutClass}>
             {/* Primary workflow region */}
             <section data-testid="wsl-primary-region" className="space-y-5">
               <section
@@ -1257,7 +1413,7 @@ export default function WslPage() {
             </section>
 
             {/* Supporting region */}
-            <aside data-testid="wsl-supporting-region" className="space-y-5">
+            <aside data-testid="wsl-supporting-region" className="space-y-6">
               {lifecycleFeedback && (
                 <Alert
                   data-testid="wsl-lifecycle-feedback"
@@ -1288,9 +1444,15 @@ export default function WslPage() {
                   </AlertDescription>
                 </Alert>
               )}
+              <WslSupportGroup
+                testId="wsl-support-maintenance-group"
+                title={t('wsl.supportGroups.maintenanceTitle')}
+                description={t('wsl.supportGroups.maintenanceDesc')}
+              >
               <section data-testid="wsl-runtime-support-section" className="space-y-4">
                 <WslStatusCard
                   status={status}
+                  runtimeInfo={runtimeInfoSnapshot ?? undefined}
                   loading={loading}
                   onRefresh={() => refreshStatus()}
                   onShutdownAll={() => setConfirmAction({ type: 'shutdown' })}
@@ -1393,7 +1555,6 @@ export default function WslPage() {
                   </CardContent>
                 </Card>
               </section>
-
               <section data-testid="wsl-operations-support-section" className="space-y-4">
                 <Card data-testid="wsl-assistance-support-section">
                   <CardHeader className="pb-3">
@@ -1541,6 +1702,14 @@ export default function WslPage() {
                     )}
                   </CardContent>
                 </Card>
+              </section>
+              </WslSupportGroup>
+
+              <WslSupportGroup
+                testId="wsl-support-automation-group"
+                title={t('wsl.supportGroups.automationTitle')}
+                description={t('wsl.supportGroups.automationDesc')}
+              >
                 <WslBackupCard
                   distroNames={distros.map((d) => d.name)}
                   backupDistro={backupDistro}
@@ -1574,8 +1743,13 @@ export default function WslPage() {
                   onRetry={handleRetryWorkflowSummary}
                   t={t}
                 />
-              </section>
+              </WslSupportGroup>
 
+              <WslSupportGroup
+                testId="wsl-support-config-group"
+                title={t('wsl.supportGroups.configTitle')}
+                description={t('wsl.supportGroups.configDesc')}
+              >
               <section data-testid="wsl-config-support-section" className="space-y-4">
                 <WslConfigCard
                   config={config}
@@ -1615,8 +1789,10 @@ export default function WslPage() {
                   />
                 )}
               </section>
+              </WslSupportGroup>
             </aside>
           </div>
+          </>
         )}
       </div>
 

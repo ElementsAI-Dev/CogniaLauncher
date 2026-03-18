@@ -58,6 +58,7 @@ import {
   getTerminalBootstrapTemplate,
   getTerminalEditorLanguage,
 } from "@/lib/constants/terminal";
+import { resolveTerminalEditorCapability } from "@/lib/terminal/editor/capability-registry";
 import { TerminalConfigEditor } from "./terminal-config-editor";
 import type {
   ShellInfo,
@@ -361,14 +362,28 @@ export function TerminalShellConfig({
   const selectedConfigMissing = selectedConfigFile ? !selectedConfigFile.exists : false;
   const canInitializeSelectedConfig =
     Boolean(selectedShell && selectedConfigPath && selectedConfigMissing && onWriteConfig);
-  const diagnostics = mutationResult?.diagnosticDetails?.length
-    ? mutationResult.diagnosticDetails
-    : liveDiagnostics;
   const effectiveLanguage =
     editorMetadata?.language ??
     (selectedShell
       ? getTerminalEditorLanguage(selectedShell.shellType)
       : "plaintext");
+  const selectedTargetCapability = useMemo(() => {
+    if (!selectedShell || !selectedConfigPath) {
+      return null;
+    }
+
+    return (
+      editorMetadata?.capability ??
+      resolveTerminalEditorCapability({
+        shellType: selectedShell.shellType,
+        configPath: selectedConfigPath,
+        language: effectiveLanguage,
+      })
+    );
+  }, [editorMetadata?.capability, effectiveLanguage, selectedConfigPath, selectedShell]);
+  const diagnostics = mutationResult?.diagnosticDetails?.length
+    ? mutationResult.diagnosticDetails
+    : liveDiagnostics;
   const isBusy = loading || mutationStatus === "loading" || sessionStatus === "saving";
   const isDirty =
     loaded &&
@@ -858,6 +873,24 @@ export function TerminalShellConfig({
           </Alert>
         )}
 
+        {selectedTargetCapability && (
+          <Alert data-testid="terminal-shell-config-capability">
+            <AlertTitle>
+              {selectedTargetCapability.mode === "enhanced"
+                ? t("terminal.editorCapabilityEnhanced")
+                : t("terminal.editorCapabilityFallback")}
+            </AlertTitle>
+            <AlertDescription className="space-y-1">
+              {selectedTargetCapability.bundleLabel && (
+                <p>{selectedTargetCapability.bundleLabel}</p>
+              )}
+              {selectedTargetCapability.fallbackReason && (
+                <p>{selectedTargetCapability.fallbackReason}</p>
+              )}
+            </AlertDescription>
+          </Alert>
+        )}
+
         {configFiles.length === 0 && selectedShellId && (
           <Empty className="border-dashed py-5">
             <EmptyHeader>
@@ -1129,6 +1162,7 @@ export function TerminalShellConfig({
                   value={draftContent}
                   onChange={handleDraftChange}
                   language={effectiveLanguage}
+                  capability={selectedTargetCapability}
                   diagnostics={diagnostics}
                   baselineValue={persistedBaseline}
                   shellType={selectedShell?.shellType ?? null}

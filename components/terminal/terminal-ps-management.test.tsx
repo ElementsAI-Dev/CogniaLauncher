@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { TerminalPsManagement } from './terminal-ps-management';
 import type { PSProfileInfo } from '@/types/tauri';
 
@@ -189,5 +190,35 @@ describe('TerminalPsManagement', () => {
     // Click save
     fireEvent.click(screen.getByRole('button', { name: /terminal\.save/i }));
     expect(onWritePSProfile).toHaveBeenCalledWith('CurrentUserCurrentHost', '# original content');
+  });
+
+  it('shows contextual execution policy feedback after apply', async () => {
+    const user = userEvent.setup();
+    const onSetExecutionPolicy = jest.fn().mockResolvedValue(true);
+
+    render(
+      <TerminalPsManagement
+        psProfiles={psProfiles}
+        executionPolicy={executionPolicy}
+        onFetchPSProfiles={jest.fn()}
+        onReadPSProfile={jest.fn()}
+        onWritePSProfile={jest.fn()}
+        onFetchExecutionPolicy={jest.fn()}
+        onSetExecutionPolicy={onSetExecutionPolicy}
+      />,
+    );
+
+    await user.click(screen.getAllByRole('combobox')[1]);
+    await user.click(screen.getByRole('option', { name: 'RemoteSigned' }));
+    await user.click(screen.getByRole('button', { name: /terminal\.applyPolicy/i }));
+    const confirmButtons = screen.getAllByRole('button', { name: /terminal\.applyPolicy/i });
+    fireEvent.click(confirmButtons[confirmButtons.length - 1]);
+
+    await waitFor(() => {
+      expect(onSetExecutionPolicy).toHaveBeenCalledWith('RemoteSigned', 'CurrentUser');
+    });
+
+    expect(screen.getByText('terminal.policyActionSuccessTitle')).toBeInTheDocument();
+    expect(screen.getByText('terminal.policyActionApplied')).toBeInTheDocument();
   });
 });
