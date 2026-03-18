@@ -78,6 +78,29 @@ describe('useFeedback', () => {
     expect(mockOpenDialog).toHaveBeenCalledWith({ category: 'bug' });
   });
 
+  it('openFeedbackDialog forwards releaseContext to the store', () => {
+    const { result } = renderHook(() => useFeedback());
+    const releaseContext = {
+      version: '1.2.3',
+      date: '2026-03-16',
+      source: 'remote' as const,
+      trigger: 'whats_new' as const,
+      url: 'https://github.com/test/releases/tag/v1.2.3',
+    };
+
+    act(() => {
+      result.current.openFeedbackDialog({
+        category: 'bug',
+        releaseContext,
+      });
+    });
+
+    expect(mockOpenDialog).toHaveBeenCalledWith({
+      category: 'bug',
+      releaseContext,
+    });
+  });
+
   it('closeFeedbackDialog calls store closeDialog', () => {
     const { result } = renderHook(() => useFeedback());
     act(() => {
@@ -155,6 +178,13 @@ describe('useFeedback', () => {
           title: 'Test bug',
           description: 'Test desc',
           includeDiagnostics: false,
+          releaseContext: {
+            version: '1.2.3',
+            date: '2026-03-16',
+            source: 'remote',
+            trigger: 'changelog',
+            url: 'https://github.com/test/releases/tag/v1.2.3',
+          },
         },
         mockT,
       );
@@ -166,6 +196,13 @@ describe('useFeedback', () => {
         title: 'Test bug',
         os: 'Windows 11',
         arch: 'x86_64',
+        releaseContext: {
+          version: '1.2.3',
+          date: '2026-03-16',
+          source: 'remote',
+          trigger: 'changelog',
+          url: 'https://github.com/test/releases/tag/v1.2.3',
+        },
       }),
     );
     expect(outcome).toEqual({

@@ -1,53 +1,17 @@
+/* eslint-disable @next/next/no-img-element */
 import { render, screen } from "@testing-library/react";
 import { BuildDepsCard } from "./build-deps-card";
 
-jest.mock("next-themes", () => ({
-  useTheme: () => ({ resolvedTheme: "light" }),
+jest.mock("next/image", () => ({
+  __esModule: true,
+  default: ({ unoptimized, alt, ...props }: React.ComponentProps<"img"> & { unoptimized?: boolean }) => {
+    void unoptimized;
+    return <img {...props} alt={alt ?? ""} />;
+  },
 }));
 
-jest.mock("@/lib/constants/about", () => ({
-  BUILD_DEPENDENCIES: [
-    {
-      name: "Tauri",
-      version: "v2.9.0",
-      color: "#FFC131",
-      textColor: "#000",
-      darkColor: "#FFC131",
-      darkTextColor: "#000",
-      letter: "T",
-      url: "https://tauri.app",
-    },
-    {
-      name: "Rust",
-      version: "v1.77.2",
-      color: "#DEA584",
-      textColor: "#000",
-      darkColor: "#DEA584",
-      darkTextColor: "#000",
-      letter: "R",
-      url: "https://www.rust-lang.org",
-    },
-    {
-      name: "Next.js",
-      version: "v16.0.0",
-      color: "#000",
-      textColor: "#FFF",
-      darkColor: "#FFF",
-      darkTextColor: "#000",
-      letter: "N",
-      url: "https://nextjs.org",
-    },
-    {
-      name: "React",
-      version: "v19.0.0",
-      color: "#61DAFB",
-      textColor: "#000",
-      darkColor: "#61DAFB",
-      darkTextColor: "#000",
-      letter: "⚛",
-      url: "https://react.dev",
-    },
-  ],
+jest.mock("next-themes", () => ({
+  useTheme: () => ({ resolvedTheme: "light" }),
 }));
 
 const mockT = (key: string) => {
@@ -113,5 +77,22 @@ describe("BuildDepsCard", () => {
   it("renders dependency list with table semantics", () => {
     render(<BuildDepsCard t={mockT} />);
     expect(screen.getByRole("table")).toBeInTheDocument();
+  });
+
+  it("renders repository-managed brand icons for primary dependencies", () => {
+    const { container } = render(<BuildDepsCard t={mockT} />);
+
+    expect(
+      container.querySelector('img[src="/icons/brands/light/tauri.svg"]'),
+    ).toBeInTheDocument();
+    expect(
+      container.querySelector('img[src="/icons/languages/light/rust.svg"]'),
+    ).toBeInTheDocument();
+    expect(
+      container.querySelector('img[src="/icons/brands/light/nextjs.svg"]'),
+    ).toBeInTheDocument();
+    expect(
+      container.querySelector('img[src="/icons/brands/light/react.svg"]'),
+    ).toBeInTheDocument();
   });
 });

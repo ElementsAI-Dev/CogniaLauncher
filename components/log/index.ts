@@ -4,3 +4,4 @@ export { LogPanel } from "./log-panel";
 export { LogDrawer } from "./log-drawer";
 export { LogFileViewer } from "./log-file-viewer";
 export { LogManagementCard } from "./log-management-card";
+export { LogDiagnosticsCard } from "./log-diagnostics-card";

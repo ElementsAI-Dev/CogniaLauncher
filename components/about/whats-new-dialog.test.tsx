@@ -3,11 +3,19 @@ import userEvent from "@testing-library/user-event";
 import { WhatsNewDialog } from "./whats-new-dialog";
 import type { ChangelogEntry } from "@/lib/constants/about";
 
+const mockOpenDialog = jest.fn();
+
 // Mock MarkdownRenderer (react-markdown is ESM-only)
 jest.mock("@/components/docs/markdown-renderer", () => ({
   MarkdownRenderer: ({ content }: { content: string }) => (
     <div data-testid="markdown-renderer">{content}</div>
   ),
+}));
+
+jest.mock("@/lib/stores/feedback", () => ({
+  useFeedbackStore: () => ({
+    openDialog: mockOpenDialog,
+  }),
 }));
 
 jest.mock("@/lib/constants/changelog-utils", () => ({
@@ -22,14 +30,18 @@ jest.mock("@/lib/constants/changelog-utils", () => ({
   },
 }));
 
-const mockT = (key: string) => {
+const mockT = (key: string, params?: Record<string, string | number>) => {
   const translations: Record<string, string> = {
     "about.changelogWhatsNew": "What's New",
     "about.changelogWhatsNewDesc": "See what changed in recent versions",
+    "about.changelogWhatsNewScope": `Showing ${params?.count ?? 0} newer versions since v${params?.version ?? ""}`,
+    "about.changelogWhatsNewEmptyTitle": "Release details unavailable",
+    "about.changelogWhatsNewEmptyDesc": "We couldn't load detailed notes for this update yet.",
     "about.changelogPrerelease": "Pre-release",
     "about.changelogViewOnGithub": "View on GitHub",
     "about.changelogShowAll": "Show All",
     "about.changelogGotIt": "Got It",
+    "about.changelogReportIssue": "Report issue",
     "about.changelogLocal": "Bundled",
     "about.changelogRemote": "GitHub",
     "about.changelogReleaseNotes": "Release Notes",
@@ -69,6 +81,7 @@ const defaultProps = {
   onOpenChange: jest.fn(),
   entries,
   locale: "en",
+  previousVersion: "0.9.5",
   onDismiss: jest.fn(),
   onShowFullChangelog: jest.fn(),
   t: mockT,
@@ -86,11 +99,21 @@ describe("WhatsNewDialog", () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it("returns null when open but entries empty and not loading", () => {
-    const { container } = render(
-      <WhatsNewDialog {...defaultProps} entries={[]} />,
+  it("keeps the dialog open with an actionable fallback when entries are unavailable", () => {
+    render(
+      <WhatsNewDialog
+        {...defaultProps}
+        entries={[]}
+        error="Remote changelog unavailable"
+      />,
     );
-    expect(container.firstChild).toBeNull();
+
+    expect(screen.getByText("What's New")).toBeInTheDocument();
+    expect(screen.getByText("Release details unavailable")).toBeInTheDocument();
+    expect(
+      screen.getByText("We couldn't load detailed notes for this update yet."),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Show All")).toBeInTheDocument();
   });
 
   it("renders dialog title when open with entries", () => {
@@ -102,6 +125,13 @@ describe("WhatsNewDialog", () => {
     render(<WhatsNewDialog {...defaultProps} />);
     expect(
       screen.getByText("See what changed in recent versions"),
+    ).toBeInTheDocument();
+  });
+
+  it("renders upgrade scope summary", () => {
+    render(<WhatsNewDialog {...defaultProps} />);
+    expect(
+      screen.getByText("Showing 2 newer versions since v0.9.5"),
     ).toBeInTheDocument();
   });
 
@@ -174,6 +204,24 @@ describe("WhatsNewDialog", () => {
     render(<WhatsNewDialog {...defaultProps} />);
     await userEvent.click(screen.getByText("Show All"));
     expect(defaultProps.onShowFullChangelog).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens feedback dialog with release context for a What's New entry", async () => {
+    render(<WhatsNewDialog {...defaultProps} />);
+
+    const reportButtons = screen.getAllByRole("button", { name: "Report issue" });
+    await userEvent.click(reportButtons[0]!);
+
+    expect(mockOpenDialog).toHaveBeenCalledWith({
+      category: "bug",
+      releaseContext: {
+        version: "1.1.0",
+        date: "2025-02-01",
+        source: "local",
+        trigger: "whats_new",
+        url: undefined,
+      },
+    });
   });
 
   it("does not render View on GitHub for entries without url", () => {

@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { useLogStore } from '@/lib/stores/log';
 import {
   isTauri,
+  diagnosticListCrashReports,
   logListFiles,
   logQuery,
   logClear,
@@ -13,7 +14,10 @@ import {
   logDeleteFile,
   logDeleteBatch,
 } from '@/lib/tauri';
+import { exportDesktopDiagnosticBundle } from '@/lib/diagnostic-export';
 import type {
+  CrashReportInfo,
+  DiagnosticExportResult,
   LogCleanupOptions,
   LogCleanupPolicyInput,
   LogCleanupPreviewResult,
@@ -42,6 +46,30 @@ interface QueryLogFileOptions {
   limit?: number;
   offset?: number;
   maxScanLines?: number;
+}
+
+interface ExportDiagnosticBundleOptions {
+  t: (key: string) => string;
+  workspaceSection: string;
+  selectedFile?: string | null;
+  fileQueryContext?: {
+    totalCount?: number;
+    matchedCount?: number;
+    scannedLines?: number;
+    sourceLineCount?: number;
+    maxScanLines?: number | null;
+    windowStartLine?: number | null;
+    windowEndLine?: number | null;
+  };
+  filterContext?: {
+    levels?: string[];
+    target?: string;
+    search?: string;
+    useRegex?: boolean;
+    startTime?: number | null;
+    endTime?: number | null;
+    maxScanLines?: number | null;
+  };
 }
 
 function toLogErrorMessage(error: unknown, fallback: string): string {
@@ -243,6 +271,9 @@ export function useLogs() {
     paused,
     drawerOpen,
     logFiles,
+    crashReports,
+    observability,
+    latestDiagnosticAction,
     addLog,
     clearLogs,
     setFilter,
@@ -256,6 +287,8 @@ export function useLogs() {
     closeDrawer,
     toggleDrawer,
     setLogFiles,
+    setCrashReports,
+    setLatestDiagnosticAction,
     setMaxLogs,
     getFilteredLogs,
     getLogStats,
@@ -464,6 +497,98 @@ export function useLogs() {
     }
   }, []);
 
+  const loadCrashReports = useCallback(async () => {
+    if (!isTauri()) {
+      setCrashReports([]);
+      return {
+        ok: false,
+        error: 'Crash report history is available in desktop mode only',
+      } satisfies LogActionResult<never>;
+    }
+
+    try {
+      const reports = await diagnosticListCrashReports();
+      setCrashReports(reports);
+      return { ok: true, data: reports } satisfies LogActionResult<CrashReportInfo[]>;
+    } catch (error) {
+      console.error('Failed to load crash reports:', error);
+      return {
+        ok: false,
+        error: toLogErrorMessage(error, 'Failed to load crash reports'),
+      } satisfies LogActionResult<never>;
+    }
+  }, [setCrashReports]);
+
+  const exportDiagnosticBundle = useCallback(async (options: ExportDiagnosticBundleOptions) => {
+    if (!isTauri()) {
+      return {
+        ok: false,
+        error: 'Full diagnostic export is available in desktop mode only',
+      } satisfies LogActionResult<never>;
+    }
+
+    const result = await exportDesktopDiagnosticBundle({
+      t: options.t,
+      failureToastKey: 'logs.diagnosticBundleError',
+      includeConfig: true,
+      errorContext: {
+        message: 'Logs workspace diagnostic export',
+        component: 'logs-workspace',
+        timestamp: new Date().toISOString(),
+        extra: {
+          logsContext: {
+            runtimeMode: observability.runtimeMode,
+            bridgeState: observability.backendBridgeState,
+            backendBridgeError: observability.backendBridgeError,
+            workspaceSection: options.workspaceSection,
+            selectedFile: options.selectedFile ?? null,
+            filters: options.filterContext ?? null,
+            fileQuery: options.fileQueryContext ?? null,
+            latestCrashCapture: observability.latestCrashCapture
+              ? {
+                  status: observability.latestCrashCapture.status,
+                  reason: observability.latestCrashCapture.reason ?? null,
+                  crashInfo: observability.latestCrashCapture.crashInfo,
+                  updatedAt: observability.latestCrashCapture.updatedAt,
+                }
+              : null,
+          },
+        },
+      },
+    });
+
+    if (result.ok) {
+      setLatestDiagnosticAction({
+        kind: 'full_diagnostic_export',
+        status: 'success',
+        path: result.data.path,
+        error: null,
+        fileCount: result.data.fileCount,
+        sizeBytes: result.data.size,
+        updatedAt: Date.now(),
+      });
+      return { ok: true, data: result.data } satisfies LogActionResult<DiagnosticExportResult>;
+    }
+
+    if ('cancelled' in result) {
+      return { ok: true, data: null } satisfies LogActionResult<DiagnosticExportResult | null>;
+    }
+
+    setLatestDiagnosticAction({
+      kind: 'full_diagnostic_export',
+      status: 'failed',
+      path: null,
+      error: result.error,
+      fileCount: null,
+      sizeBytes: null,
+      updatedAt: Date.now(),
+    });
+    return {
+      ok: false,
+      error: result.error,
+    } satisfies LogActionResult<never>;
+  }, [observability, setLatestDiagnosticAction]);
+
   // Run log cleanup based on configured retention policy
   const cleanupLogs = useCallback(async (options?: LogCleanupOptions) => {
     if (!isTauri()) {
@@ -568,6 +693,9 @@ export function useLogs() {
     paused,
     drawerOpen,
     logFiles,
+    crashReports,
+    observability,
+    latestDiagnosticAction,
     
     // Actions
     addLog,
@@ -595,7 +723,9 @@ export function useLogs() {
     getLogDirectory,
     exportLogs,
     exportLogFile,
+    exportDiagnosticBundle,
     getTotalSize,
+    loadCrashReports,
 
     // Log management
     cleanupLogs,

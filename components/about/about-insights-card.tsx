@@ -79,7 +79,7 @@ function ValueRow({
   loading: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 min-h-[24px]">
+    <div className="flex items-center justify-between gap-4 min-h-6">
       <span className="text-[13px] text-muted-foreground">{label}</span>
       {loading ? (
         <Skeleton className="h-4 w-20" />

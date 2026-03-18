@@ -25,12 +25,21 @@ CogniaLauncher's logging architecture consists of three layers: backend structur
 - Use the in-app `/logs` page to inspect persisted session files and historical exports in release-style builds where `tauri-plugin-log` is enabled.
 - It is expected that a desktop debug build may not stream Rust backend logs into the in-app log panel.
 
+### `/logs` Observability Workbench
+
+- The `/logs` page now acts as the primary observability workspace for desktop troubleshooting.
+- It keeps realtime logs, historical file browsing, cleanup controls, backend bridge guidance, full diagnostic export, and recent crash-report browsing in one place.
+- In desktop debug mode, the page keeps a persistent reminder that backend investigation should move to CrabNebula DevTools.
+- In desktop release mode, the page indicates that persisted session files and historical log browsing should be available in-app.
+- In web mode, the page can still show in-memory frontend logs, but backend log files and full diagnostic bundles are explicitly marked as unavailable.
+
 ### Crash Diagnostic Bundles
 
 - Rust panic: automatically generates a ZIP via panic hook
 - Frontend uncaught exceptions (desktop mode only): auto-calls `diagnostic_capture_frontend_crash`
 - Max 1 auto-report per session to avoid flooding
 - Keeps the most recent 20 bundles, older ones are auto-cleaned
+- `/logs` surfaces recent crash reports with source, timestamp, file path, and pending-state context so you can correlate them with startup recovery prompts
 
 ---
 
@@ -57,6 +66,12 @@ Notes:
 - When filters are enabled, `max_scan_lines` can be passed to limit scan depth (especially useful in follow/polling mode).
 - `log_export` supports filtered export in TXT/JSON for the same log formats.
 
+### Filtered Log Export vs Full Diagnostic Bundle
+
+- Toolbar exports (`TXT`, `JSON`, `CSV`) are filtered log exports. They only contain the currently selected log stream or historical query window.
+- The full diagnostic export action in `/logs` creates a support bundle through `diagnostic_export_bundle` and includes broader runtime information beyond the current log rows.
+- When the full diagnostic export is triggered from `/logs`, the bundle also captures logs-page context such as runtime mode, bridge state, selected file, and active filters.
+
 ---
 
 ## Crash Recovery Experience
@@ -77,4 +92,5 @@ Notes:
 | `log_get_total_size` | Get total log size |
 | `log_clear` | Clear log files |
 | `diagnostic_export_bundle` | Manually export diagnostic bundle |
+| `diagnostic_list_crash_reports` | List recent crash-report artifacts for the logs workspace |
 | `diagnostic_capture_frontend_crash` | Frontend exception auto-diagnostic command |

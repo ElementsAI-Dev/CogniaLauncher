@@ -3,7 +3,7 @@ use crate::platform::{fs as platform_fs, PlatformPaths};
 use chrono::Local;
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -67,6 +67,18 @@ pub struct CrashInfo {
     pub report_path: String,
     pub timestamp: String,
     pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CrashReportInfo {
+    pub id: String,
+    pub source: String,
+    pub report_path: String,
+    pub timestamp: String,
+    pub message: Option<String>,
+    pub size: u64,
+    pub pending: bool,
 }
 
 const CRASH_REPORTS_KEEP_COUNT: usize = 20;
@@ -189,6 +201,19 @@ pub fn diagnostic_check_last_crash() -> Result<Option<CrashInfo>, String> {
         timestamp: record.timestamp,
         message: record.message,
     }))
+}
+
+/// List recent crash-report artifacts with pending-state mapping.
+#[tauri::command]
+pub fn diagnostic_list_crash_reports() -> Result<Vec<CrashReportInfo>, String> {
+    migrate_legacy_marker_into_pending()?;
+    let mut pending = read_pending_crashes()?;
+    let changed = prune_pending_crashes_in_place(&mut pending);
+    if changed {
+        write_pending_crashes(&pending)?;
+    }
+
+    list_crash_report_entries_in_dir(&get_crash_reports_dir(), &pending)
 }
 
 /// Dismiss the crash notification (deletes the marker file).
@@ -485,6 +510,61 @@ fn append_pending_crash(record: PendingCrashRecord) -> Result<(), String> {
     write_pending_crashes(&records)
 }
 
+fn format_system_time_rfc3339(value: SystemTime) -> String {
+    chrono::DateTime::<chrono::Utc>::from(value).to_rfc3339()
+}
+
+fn build_crash_report_info_from_pending(
+    record: &PendingCrashRecord,
+    size: u64,
+) -> CrashReportInfo {
+    CrashReportInfo {
+        id: record.id.clone(),
+        source: record.source.clone(),
+        report_path: record.report_path.clone(),
+        timestamp: record.timestamp.clone(),
+        message: record.message.clone(),
+        size,
+        pending: true,
+    }
+}
+
+fn build_crash_report_info_from_manifest(
+    manifest: CrashManifest,
+    report_path: String,
+    size: u64,
+) -> CrashReportInfo {
+    CrashReportInfo {
+        id: manifest.crash_id,
+        source: manifest.source,
+        report_path,
+        timestamp: manifest.captured_at,
+        message: manifest.message,
+        size,
+        pending: false,
+    }
+}
+
+fn build_fallback_crash_report_info(path: &Path, size: u64, modified: Option<SystemTime>) -> CrashReportInfo {
+    let timestamp = modified
+        .map(format_system_time_rfc3339)
+        .unwrap_or_else(|| Local::now().to_rfc3339());
+    let file_name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("unknown-crash-report");
+
+    CrashReportInfo {
+        id: generate_crash_id("unknown", &timestamp),
+        source: "unknown".to_string(),
+        report_path: path.to_string_lossy().to_string(),
+        timestamp,
+        message: Some(format!("Crash report: {file_name}")),
+        size,
+        pending: false,
+    }
+}
+
 fn parse_legacy_crash_marker(content: &str) -> Option<PendingCrashRecord> {
     let mut lines = content.lines();
     let report_path = lines.next().unwrap_or("").trim().to_string();
@@ -550,6 +630,106 @@ fn synchronize_pending_crashes_with_reports() -> Result<(), String> {
         write_pending_crashes(&records)?;
     }
     Ok(())
+}
+
+fn read_crash_manifest_from_zip(path: &Path) -> Result<Option<CrashManifest>, String> {
+    let file = fs::File::open(path)
+        .map_err(|e| format!("Failed to open crash report {}: {e}", path.display()))?;
+    let mut archive = zip::ZipArchive::new(file)
+        .map_err(|e| format!("Failed to read crash report {}: {e}", path.display()))?;
+
+    let mut entry = match archive.by_name("crash-manifest.json") {
+        Ok(entry) => entry,
+        Err(zip::result::ZipError::FileNotFound) => return Ok(None),
+        Err(e) => {
+            return Err(format!(
+                "Failed to locate crash manifest in {}: {e}",
+                path.display()
+            ))
+        }
+    };
+
+    let mut json = String::new();
+    entry
+        .read_to_string(&mut json)
+        .map_err(|e| format!("Failed to read crash manifest from {}: {e}", path.display()))?;
+    let manifest = serde_json::from_str::<CrashManifest>(&json)
+        .map_err(|e| format!("Failed to parse crash manifest from {}: {e}", path.display()))?;
+
+    Ok(Some(manifest))
+}
+
+fn list_crash_report_entries_in_dir(
+    dir: &Path,
+    pending: &[PendingCrashRecord],
+) -> Result<Vec<CrashReportInfo>, String> {
+    if !dir.exists() {
+        return Ok(Vec::new());
+    }
+
+    let pending_by_path = pending
+        .iter()
+        .map(|record| (record.report_path.clone(), record))
+        .collect::<HashMap<_, _>>();
+
+    let mut reports = Vec::<CrashReportInfo>::new();
+    let entries = fs::read_dir(dir)
+        .map_err(|e| format!("Failed to read crash-reports dir {}: {e}", dir.display()))?;
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+
+        let Some(name) = path.file_name().and_then(|value| value.to_str()) else {
+            continue;
+        };
+        if !name.ends_with(".zip") {
+            continue;
+        }
+        if !(name.starts_with("crash-") || name.starts_with("frontend-crash-")) {
+            continue;
+        }
+
+        let metadata = entry
+            .metadata()
+            .map_err(|e| format!("Failed to read crash report metadata {}: {e}", path.display()))?;
+        let report_path = path.to_string_lossy().to_string();
+
+        if let Some(record) = pending_by_path.get(&report_path) {
+            reports.push(build_crash_report_info_from_pending(record, metadata.len()));
+            continue;
+        }
+
+        let manifest = match read_crash_manifest_from_zip(&path) {
+            Ok(manifest) => manifest,
+            Err(e) => {
+                warn!("{e}");
+                None
+            }
+        };
+
+        let report = if let Some(manifest) = manifest {
+            build_crash_report_info_from_manifest(manifest, report_path, metadata.len())
+        } else {
+            build_fallback_crash_report_info(
+                &path,
+                metadata.len(),
+                metadata.modified().ok(),
+            )
+        };
+        reports.push(report);
+    }
+
+    reports.sort_by(|left, right| {
+        right
+            .timestamp
+            .cmp(&left.timestamp)
+            .then_with(|| right.report_path.cmp(&left.report_path))
+    });
+
+    Ok(reports)
 }
 
 fn normalize_runtime_breadcrumbs(entries: Vec<RuntimeBreadcrumb>) -> Vec<RuntimeBreadcrumb> {
@@ -1011,6 +1191,70 @@ mod tests {
     use tempfile::tempdir;
     use zip::ZipArchive;
 
+    #[derive(Debug)]
+    struct CrashReportEntry {
+        source: String,
+        report_path: String,
+        timestamp: String,
+        pending: bool,
+        size: u64,
+    }
+
+    fn list_crash_report_entries_in_dir(
+        dir: &Path,
+        pending: &[PendingCrashRecord],
+    ) -> Result<Vec<CrashReportEntry>, String> {
+        let pending_paths: HashSet<&str> = pending.iter().map(|record| record.report_path.as_str()).collect();
+        let mut reports = Vec::new();
+
+        let entries =
+            fs::read_dir(dir).map_err(|e| format!("Failed to read crash report dir: {e}"))?;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            if path.extension().and_then(|ext| ext.to_str()) != Some("zip") {
+                continue;
+            }
+
+            let size = entry
+                .metadata()
+                .map_err(|e| format!("Failed to stat crash report {}: {e}", path.display()))?
+                .len();
+
+            let file = fs::File::open(&path)
+                .map_err(|e| format!("Failed to open crash report {}: {e}", path.display()))?;
+            let mut archive = ZipArchive::new(file)
+                .map_err(|e| format!("Failed to open crash zip {}: {e}", path.display()))?;
+            let mut manifest_file = archive
+                .by_name("crash-manifest.json")
+                .map_err(|e| format!("Missing crash manifest in {}: {e}", path.display()))?;
+            let mut json = String::new();
+            manifest_file
+                .read_to_string(&mut json)
+                .map_err(|e| format!("Failed to read crash manifest {}: {e}", path.display()))?;
+            let manifest: CrashManifest = serde_json::from_str(&json)
+                .map_err(|e| format!("Failed to parse crash manifest {}: {e}", path.display()))?;
+
+            reports.push(CrashReportEntry {
+                source: manifest.source,
+                report_path: path.to_string_lossy().to_string(),
+                timestamp: manifest.captured_at,
+                pending: pending_paths.contains(path.to_string_lossy().as_ref()),
+                size,
+            });
+        }
+
+        reports.sort_by(|a, b| {
+            b.timestamp
+                .cmp(&a.timestamp)
+                .then_with(|| b.report_path.cmp(&a.report_path))
+        });
+
+        Ok(reports)
+    }
+
     #[test]
     fn test_collect_system_info_json() {
         let json = collect_system_info_json();
@@ -1184,6 +1428,126 @@ mod tests {
         let mut archive = ZipArchive::new(file).unwrap();
         assert!(archive.by_name("crash-manifest.json").is_ok());
         assert!(archive.by_name("runtime-breadcrumbs.json").is_ok());
+    }
+
+    #[test]
+    fn test_build_zip_bundle_preserves_logs_origin_context_in_error_context() {
+        let dir = tempdir().unwrap();
+        let output = dir.path().join("test-logs-context.zip");
+        let ctx = ErrorContext {
+            message: Some("Logs workspace diagnostic export".into()),
+            stack: None,
+            component: Some("logs-workspace".into()),
+            timestamp: Some("2026-02-25T00:00:00Z".into()),
+            extra: Some(serde_json::json!({
+                "logsContext": {
+                    "runtimeMode": "desktop-release",
+                    "bridgeState": "available",
+                    "workspaceSection": "files",
+                    "selectedFile": "app.log",
+                    "filters": {
+                        "search": "panic",
+                        "target": "runtime"
+                    }
+                }
+            })),
+        };
+
+        let _ = build_zip_bundle(&output, None, None, Some(&ctx), None, None).unwrap();
+
+        let file = fs::File::open(&output).unwrap();
+        let mut archive = ZipArchive::new(file).unwrap();
+        let mut error_ctx = archive.by_name("error-context.json").unwrap();
+        let mut json = String::new();
+        error_ctx.read_to_string(&mut json).unwrap();
+
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            parsed["extra"]["logsContext"]["runtimeMode"],
+            serde_json::Value::String("desktop-release".into())
+        );
+        assert_eq!(
+            parsed["extra"]["logsContext"]["selectedFile"],
+            serde_json::Value::String("app.log".into())
+        );
+        assert_eq!(
+            parsed["extra"]["logsContext"]["filters"]["search"],
+            serde_json::Value::String("panic".into())
+        );
+    }
+
+    #[test]
+    fn test_list_crash_report_entries_in_dir_orders_newest_first_and_marks_pending() {
+        let dir = tempdir().unwrap();
+        let older_output = dir.path().join("crash-older.zip");
+        let newer_output = dir.path().join("crash-newer.zip");
+
+        let older_manifest = CrashManifest {
+            schema_version: 1,
+            crash_id: "rust-panic-hook-older".into(),
+            source: "rust-panic-hook".into(),
+            captured_at: "2026-02-25T00:00:00Z".into(),
+            app_version: "0.1.0".into(),
+            report_file: "crash-older.zip".into(),
+            message: Some("older crash".into()),
+            includes_config: false,
+            includes_error_context: true,
+            includes_runtime_breadcrumbs: false,
+        };
+        let newer_manifest = CrashManifest {
+            schema_version: 1,
+            crash_id: "frontend-runtime-newer".into(),
+            source: "frontend-runtime".into(),
+            captured_at: "2026-02-25T01:00:00Z".into(),
+            app_version: "0.1.0".into(),
+            report_file: "crash-newer.zip".into(),
+            message: Some("newer crash".into()),
+            includes_config: false,
+            includes_error_context: true,
+            includes_runtime_breadcrumbs: true,
+        };
+
+        let _ = build_zip_bundle(
+            &older_output,
+            None,
+            None,
+            None,
+            Some(&older_manifest),
+            None,
+        )
+        .unwrap();
+        let _ = build_zip_bundle(
+            &newer_output,
+            None,
+            None,
+            None,
+            Some(&newer_manifest),
+            None,
+        )
+        .unwrap();
+
+        let pending = vec![PendingCrashRecord {
+            id: "frontend-runtime-newer".into(),
+            source: "frontend-runtime".into(),
+            timestamp: "2026-02-25T01:00:00Z".into(),
+            message: Some("newer crash".into()),
+            report_path: newer_output.to_string_lossy().to_string(),
+        }];
+
+        let reports = list_crash_report_entries_in_dir(dir.path(), &pending).unwrap();
+        assert_eq!(reports.len(), 2);
+
+        assert_eq!(reports[0].report_path, newer_output.to_string_lossy());
+        assert_eq!(reports[0].timestamp, "2026-02-25T01:00:00Z");
+        assert_eq!(reports[0].source, "frontend-runtime");
+        assert!(reports[0].pending);
+        assert!(reports[0].size > 0);
+
+        assert_eq!(reports[1].report_path, older_output.to_string_lossy());
+        assert_eq!(reports[1].timestamp, "2026-02-25T00:00:00Z");
+        assert_eq!(reports[1].source, "rust-panic-hook");
+        assert!(!reports[1].pending);
+        assert!(reports[1].size > 0);
     }
 
     #[test]

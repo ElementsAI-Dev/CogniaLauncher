@@ -12,6 +12,7 @@ import type {
   FeedbackSubmitOutcome,
   FeedbackCategory,
   FeedbackErrorContext,
+  FeedbackReleaseContext,
 } from '@/types/feedback';
 
 export interface UseFeedbackReturn {
@@ -23,6 +24,7 @@ export interface UseFeedbackReturn {
   openFeedbackDialog: (options?: {
     category?: FeedbackCategory;
     errorContext?: FeedbackErrorContext;
+    releaseContext?: FeedbackReleaseContext;
   }) => void;
   closeFeedbackDialog: () => void;
   listFeedbacks: () => Promise<FeedbackItem[]>;
@@ -57,6 +59,7 @@ export function useFeedback(): UseFeedbackReturn {
             os: systemInfo.os,
             arch: systemInfo.arch,
             currentPage: systemInfo.currentPage,
+            releaseContext: data.releaseContext,
             errorContext: data.errorContext
               ? {
                   message: data.errorContext.message,
@@ -134,6 +137,7 @@ export function useFeedback(): UseFeedbackReturn {
     (options?: {
       category?: FeedbackCategory;
       errorContext?: FeedbackErrorContext;
+      releaseContext?: FeedbackReleaseContext;
     }) => {
       openDialog(options);
     },

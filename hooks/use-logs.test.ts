@@ -4,6 +4,7 @@ import type { LogFileInfo } from '@/types/log';
 
 // Mock Tauri APIs
 const mockIsTauri = jest.fn(() => true);
+const mockDiagnosticListCrashReports = jest.fn();
 const mockLogListFiles = jest.fn();
 const mockLogQuery = jest.fn();
 const mockLogClear = jest.fn();
@@ -14,9 +15,11 @@ const mockLogCleanup = jest.fn();
 const mockLogCleanupPreview = jest.fn();
 const mockLogDeleteFile = jest.fn();
 const mockLogDeleteBatch = jest.fn();
+const mockExportDesktopDiagnosticBundle = jest.fn();
 
 jest.mock('@/lib/tauri', () => ({
   isTauri: () => mockIsTauri(),
+  diagnosticListCrashReports: (...args: unknown[]) => mockDiagnosticListCrashReports(...args),
   logListFiles: (...args: unknown[]) => mockLogListFiles(...args),
   logQuery: (...args: unknown[]) => mockLogQuery(...args),
   logClear: (...args: unknown[]) => mockLogClear(...args),
@@ -29,10 +32,19 @@ jest.mock('@/lib/tauri', () => ({
   logDeleteBatch: (...args: unknown[]) => mockLogDeleteBatch(...args),
 }));
 
+jest.mock('@/lib/diagnostic-export', () => ({
+  exportDesktopDiagnosticBundle: (...args: unknown[]) =>
+    mockExportDesktopDiagnosticBundle(...args),
+}));
+
 // Mock log store
 const mockSetLogFiles = jest.fn();
+const mockSetCrashReports = jest.fn();
+const mockSetLatestDiagnosticAction = jest.fn();
 const mockClearLogs = jest.fn();
 let mockStoreLogFiles: LogFileInfo[] = [];
+let mockCrashReports: Array<Record<string, unknown>> = [];
+let mockLatestDiagnosticAction: Record<string, unknown> | null = null;
 
 jest.mock('@/lib/stores/log', () => ({
   useLogStore: jest.fn(() => ({
@@ -49,6 +61,14 @@ jest.mock('@/lib/stores/log', () => ({
     paused: false,
     drawerOpen: false,
     logFiles: mockStoreLogFiles,
+    crashReports: mockCrashReports,
+    observability: {
+      runtimeMode: 'desktop-release',
+      backendBridgeState: 'available',
+      backendBridgeError: null,
+      latestCrashCapture: null,
+    },
+    latestDiagnosticAction: mockLatestDiagnosticAction,
     addLog: jest.fn(),
     clearLogs: mockClearLogs,
     setFilter: jest.fn(),
@@ -62,6 +82,8 @@ jest.mock('@/lib/stores/log', () => ({
     closeDrawer: jest.fn(),
     toggleDrawer: jest.fn(),
     setLogFiles: mockSetLogFiles,
+    setCrashReports: mockSetCrashReports,
+    setLatestDiagnosticAction: mockSetLatestDiagnosticAction,
     setMaxLogs: jest.fn(),
     getFilteredLogs: () => [],
     getLogStats: () => ({ total: 0 }),
@@ -73,6 +95,8 @@ describe('useLogs', () => {
     jest.clearAllMocks();
     mockIsTauri.mockReturnValue(true);
     mockStoreLogFiles = [];
+    mockCrashReports = [];
+    mockLatestDiagnosticAction = null;
   });
 
   it('returns log methods and store state', () => {
@@ -87,8 +111,12 @@ describe('useLogs', () => {
     expect(result.current).toHaveProperty('deleteLogFiles');
     expect(result.current).toHaveProperty('previewCleanupLogs');
     expect(result.current).toHaveProperty('getTotalSize');
+    expect(result.current).toHaveProperty('loadCrashReports');
+    expect(result.current).toHaveProperty('exportDiagnosticBundle');
     expect(result.current).toHaveProperty('logs');
     expect(result.current).toHaveProperty('logFiles');
+    expect(result.current).toHaveProperty('crashReports');
+    expect(result.current).toHaveProperty('observability');
     expect(result.current).toHaveProperty('filter');
   });
 
@@ -378,6 +406,109 @@ describe('useLogs', () => {
 
     expect(mockLogGetTotalSize).toHaveBeenCalled();
     expect(response).toEqual({ ok: true, data: 5120 });
+  });
+
+  it('loads crash reports with structured success result', async () => {
+    const reports = [
+      {
+        id: 'frontend-runtime-1',
+        source: 'frontend-runtime',
+        reportPath: 'D:/Crash/report.zip',
+        timestamp: '2026-02-25T00:00:00Z',
+        message: 'boom',
+        size: 2048,
+        pending: true,
+      },
+    ];
+    mockDiagnosticListCrashReports.mockResolvedValue(reports);
+    const { result } = renderHook(() => useLogs());
+
+    let response;
+    await act(async () => {
+      response = await result.current.loadCrashReports();
+    });
+
+    expect(mockDiagnosticListCrashReports).toHaveBeenCalled();
+    expect(mockSetCrashReports).toHaveBeenCalledWith(reports);
+    expect(response).toEqual({ ok: true, data: reports });
+  });
+
+  it('exports a full diagnostic bundle and stores the latest successful result', async () => {
+    mockExportDesktopDiagnosticBundle.mockResolvedValue({
+      ok: true,
+      data: {
+        path: 'D:/Crash/cognia-diagnostic.zip',
+        size: 4096,
+        fileCount: 8,
+      },
+    });
+    const { result } = renderHook(() => useLogs());
+
+    let response;
+    await act(async () => {
+      response = await result.current.exportDiagnosticBundle({
+        t: (key: string) => key,
+        workspaceSection: 'files',
+        selectedFile: 'app.log',
+        filterContext: {
+          search: 'panic',
+          target: 'runtime',
+          useRegex: false,
+        },
+      });
+    });
+
+    expect(mockExportDesktopDiagnosticBundle).toHaveBeenCalledWith(
+      expect.objectContaining({
+        failureToastKey: 'logs.diagnosticBundleError',
+        errorContext: expect.objectContaining({
+          message: 'Logs workspace diagnostic export',
+          extra: expect.objectContaining({
+            logsContext: expect.objectContaining({
+              workspaceSection: 'files',
+              selectedFile: 'app.log',
+            }),
+          }),
+        }),
+      }),
+    );
+    expect(mockSetLatestDiagnosticAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'full_diagnostic_export',
+        status: 'success',
+        path: 'D:/Crash/cognia-diagnostic.zip',
+      }),
+    );
+    expect(response).toEqual({
+      ok: true,
+      data: {
+        path: 'D:/Crash/cognia-diagnostic.zip',
+        size: 4096,
+        fileCount: 8,
+      },
+    });
+  });
+
+  it('returns a quiet success with null data when diagnostic export is cancelled', async () => {
+    mockExportDesktopDiagnosticBundle.mockResolvedValue({
+      ok: false,
+      cancelled: true,
+    });
+    const { result } = renderHook(() => useLogs());
+
+    let response;
+    await act(async () => {
+      response = await result.current.exportDiagnosticBundle({
+        t: (key: string) => key,
+        workspaceSection: 'management',
+      });
+    });
+
+    expect(mockSetLatestDiagnosticAction).not.toHaveBeenCalled();
+    expect(response).toEqual({
+      ok: true,
+      data: null,
+    });
   });
 
   it('returns structured error for cleanup failure', async () => {

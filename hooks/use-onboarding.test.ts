@@ -132,6 +132,30 @@ describe('useOnboarding', () => {
     ]);
   });
 
+  it('omits the guided tour completion action once the tour is already finished', () => {
+    useOnboardingStore.setState({
+      tourCompleted: true,
+      sessionSummary: {
+        mode: 'quick',
+        locale: 'en',
+        theme: 'dark',
+        mirrorPreset: 'default',
+        detectedCount: 1,
+        primaryEnvironment: 'node',
+        manageableEnvironments: ['node'],
+        shellType: 'powershell',
+        shellConfigured: true,
+      },
+    });
+
+    const { result } = renderHook(() => useOnboarding());
+
+    expect(result.current.nextActions.map((a) => a.id)).toEqual([
+      'manage-primary-environment',
+      'review-settings',
+    ]);
+  });
+
   it('navigates next and previous steps', () => {
     useOnboardingStore.setState({ mode: 'quick', currentStep: 0, sessionState: 'active', wizardOpen: true });
     const { result } = renderHook(() => useOnboarding());
@@ -177,5 +201,25 @@ describe('useOnboarding', () => {
 
     expect(result.current.tourActive).toBe(false);
     expect(result.current.tourCompleted).toBe(true);
+  });
+
+  it('starts the tour from a skipped session without reopening the wizard state', () => {
+    useOnboardingStore.setState({
+      skipped: true,
+      completed: false,
+      wizardOpen: false,
+      sessionState: 'skipped',
+      tourCompleted: false,
+    });
+
+    const { result } = renderHook(() => useOnboarding());
+
+    act(() => {
+      result.current.startTour();
+    });
+
+    expect(result.current.tourActive).toBe(true);
+    expect(result.current.sessionState).toBe('skipped');
+    expect(result.current.shouldShowWizard).toBe(false);
   });
 });

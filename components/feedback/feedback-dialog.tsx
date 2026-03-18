@@ -57,6 +57,7 @@ import type {
   FeedbackCategory,
   FeedbackSeverity,
   FeedbackFormData,
+  FeedbackReleaseContext,
 } from "@/types/feedback";
 import {
   FEEDBACK_CATEGORIES,
@@ -131,6 +132,7 @@ export function FeedbackDialog() {
     dialogOpen,
     preSelectedCategory,
     preFilledErrorContext,
+    preFilledReleaseContext,
     closeDialog,
     saveDraft,
     clearDraft,
@@ -153,6 +155,7 @@ export function FeedbackDialog() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [releaseContext, setReleaseContext] = useState<FeedbackReleaseContext | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const successTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -180,6 +183,7 @@ export function FeedbackDialog() {
     setDragOver(false);
     setPreviewOpen(false);
     setSubmitted(false);
+    setReleaseContext(null);
   }, [clearSuccessTimeout]);
 
   useEffect(() => {
@@ -189,6 +193,7 @@ export function FeedbackDialog() {
 
     const initialCategory = preSelectedCategory ?? draft?.category ?? "bug";
     setCategory(initialCategory);
+    setReleaseContext(preFilledReleaseContext ?? null);
 
     if (preFilledErrorContext) {
       const errMsg = preFilledErrorContext.message || "";
@@ -268,6 +273,7 @@ export function FeedbackDialog() {
       screenshot: screenshot || undefined,
       includeDiagnostics,
       errorContext: preFilledErrorContext || undefined,
+      releaseContext: releaseContext || undefined,
     };
 
     const outcome = await submitFeedback(data, t);
@@ -291,6 +297,7 @@ export function FeedbackDialog() {
     screenshot,
     includeDiagnostics,
     preFilledErrorContext,
+    releaseContext,
     submitFeedback,
     clearDraft,
     clearSuccessTimeout,
@@ -387,6 +394,12 @@ export function FeedbackDialog() {
   const canSubmit = title.trim().length > 0 && !submitting && !emailError;
   const titleInvalid = titleTouched && !title.trim();
   const CategoryIcon = CATEGORY_ICONS[category];
+  const releaseSourceLabel = releaseContext
+    ? t(`feedback.releaseSource.${releaseContext.source}`)
+    : null;
+  const releaseTriggerLabel = releaseContext
+    ? t(`feedback.releaseTrigger.${releaseContext.trigger}`)
+    : null;
 
   return (
     <>
@@ -414,6 +427,31 @@ export function FeedbackDialog() {
 
               <ScrollArea className="flex-1 px-6">
                 <FieldGroup className="py-4 gap-5">
+                  {releaseContext ? (
+                    <Alert className="mb-1">
+                      <Info className="h-4 w-4" />
+                      <AlertDescription className="space-y-2">
+                        <p className="font-medium">{t("feedback.releaseContextTitle")}</p>
+                        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                          <span>{t("feedback.releaseContextVersion")}:</span>
+                          <Badge variant="outline">{releaseContext.version}</Badge>
+                          {releaseSourceLabel ? (
+                            <>
+                              <span>{t("feedback.releaseContextSource")}:</span>
+                              <Badge variant="outline">{releaseSourceLabel}</Badge>
+                            </>
+                          ) : null}
+                          {releaseTriggerLabel ? (
+                            <>
+                              <span>{t("feedback.releaseContextTrigger")}:</span>
+                              <Badge variant="outline">{releaseTriggerLabel}</Badge>
+                            </>
+                          ) : null}
+                        </div>
+                      </AlertDescription>
+                    </Alert>
+                  ) : null}
+
                   {restoredFromDraft && (
                     <Alert className="mb-1">
                       <Info className="h-4 w-4" />

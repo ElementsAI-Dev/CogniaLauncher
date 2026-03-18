@@ -135,6 +135,14 @@ describe('compareVersions', () => {
     expect(compareVersions('1.0.0-beta.1', '1.0.0-beta.2')).toBeLessThan(0);
     expect(compareVersions('1.0.0-beta', '1.0.0-beta.1')).toBeLessThan(0);
   });
+
+  it('orders numeric prerelease identifiers below alpha identifiers and handles lexical fallback', () => {
+    expect(compareVersions('1.0.0-1', '1.0.0-alpha')).toBeLessThan(0);
+    expect(compareVersions('1.0.0-alpha', '1.0.0-1')).toBeGreaterThan(0);
+    expect(compareVersions('nightly', 'canary')).not.toBe(0);
+    expect(compareVersions('1.0.0+build.1', '1.0.0')).toBe(0);
+    expect(compareVersions('1.0.0-alpha.1', '1.0.0-alpha.1')).toBe(0);
+  });
 });
 
 describe('parseReleaseNotesToChanges', () => {
@@ -165,10 +173,51 @@ describe('parseReleaseNotesToChanges', () => {
     ]);
   });
 
+  it('recognizes bold headings, aliases, and bracketed heading text', () => {
+    const markdown = [
+      '**Breaking Changes**',
+      '- Requires fresh config sync',
+      '## [Perf]:',
+      '- Faster cache scans',
+      '### Update',
+      '- Refreshed settings copy',
+    ].join('\n');
+
+    expect(parseReleaseNotesToChanges(markdown)).toEqual([
+      { type: 'breaking', description: 'Requires fresh config sync' },
+      { type: 'performance', description: 'Faster cache scans' },
+      { type: 'changed', description: 'Refreshed settings copy' },
+    ]);
+  });
+
   it('does not fabricate changes when no recognizable sections exist', () => {
     const markdown = ['## Release Notes', '- A bullet without typed section'].join(
       '\n',
     );
     expect(parseReleaseNotesToChanges(markdown)).toEqual([]);
+  });
+
+  it('ignores bullets until a recognizable heading appears', () => {
+    const markdown = [
+      '- stray bullet',
+      '## Added',
+      '- Feature A',
+    ].join('\n');
+
+    expect(parseReleaseNotesToChanges(markdown)).toEqual([
+      { type: 'added', description: 'Feature A' },
+    ]);
+  });
+
+  it('ignores non-list body text inside recognized sections', () => {
+    const markdown = [
+      '## Added',
+      'Some prose that should be ignored',
+      '- Feature A',
+    ].join('\n');
+
+    expect(parseReleaseNotesToChanges(markdown)).toEqual([
+      { type: 'added', description: 'Feature A' },
+    ]);
   });
 });

@@ -1,6 +1,15 @@
+/* eslint-disable @next/next/no-img-element */
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ActionsCard } from "./actions-card";
+
+jest.mock("next/image", () => ({
+  __esModule: true,
+  default: ({ unoptimized, alt, ...props }: React.ComponentProps<"img"> & { unoptimized?: boolean }) => {
+    void unoptimized;
+    return <img {...props} alt={alt ?? ""} />;
+  },
+}));
 
 jest.mock("@/lib/tauri", () => ({
   openExternal: jest.fn(),
@@ -135,5 +144,12 @@ describe("ActionsCard", () => {
     render(<ActionsCard {...defaultProps} />);
     await userEvent.click(screen.getByText("Feature Request"));
     expect(mockOpenDialog).toHaveBeenCalledWith({ category: "feature" });
+  });
+
+  it("renders a repository-managed GitHub brand icon for the branded outbound action", () => {
+    const { container } = render(<ActionsCard {...defaultProps} />);
+    expect(
+      container.querySelector('img[src="/icons/providers/light/github.svg"]'),
+    ).toBeInTheDocument();
   });
 });

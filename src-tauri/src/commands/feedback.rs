@@ -38,6 +38,7 @@ pub struct FeedbackItem {
     pub created_at: String,
     pub updated_at: String,
     pub error_context: Option<FeedbackErrorContext>,
+    pub release_context: Option<FeedbackReleaseContext>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -47,6 +48,16 @@ pub struct FeedbackErrorContext {
     pub stack: Option<String>,
     pub component: Option<String>,
     pub digest: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FeedbackReleaseContext {
+    pub version: String,
+    pub date: String,
+    pub source: String,
+    pub trigger: String,
+    pub url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -63,6 +74,7 @@ pub struct FeedbackSaveRequest {
     pub os: String,
     pub arch: String,
     pub current_page: String,
+    pub release_context: Option<FeedbackReleaseContext>,
     pub error_context: Option<FeedbackErrorContext>,
 }
 
@@ -119,6 +131,7 @@ pub async fn feedback_save(
         created_at: now.clone(),
         updated_at: now,
         error_context: request.error_context.clone(),
+        release_context: request.release_context.clone(),
     };
 
     let file_path = dir.join(format!("{id}.json"));
@@ -418,6 +431,7 @@ mod tests {
             os: "Windows".to_string(),
             arch: "x86_64".to_string(),
             current_page: "/dashboard".to_string(),
+            release_context: None,
             error_context: None,
         }
     }
@@ -443,6 +457,7 @@ mod tests {
             created_at: "2026-01-01T00:00:00Z".into(),
             updated_at: "2026-01-01T00:00:00Z".into(),
             error_context: None,
+            release_context: None,
         };
 
         let json = serde_json::to_string(&item).unwrap();
@@ -467,6 +482,61 @@ mod tests {
         assert_eq!(req.category, "feature");
         assert!(req.include_diagnostics);
         assert!(req.severity.is_none());
+    }
+
+    #[test]
+    fn test_feedback_save_request_deserializes_optional_release_context() {
+        let json = r#"{
+            "category": "bug",
+            "title": "Broken release",
+            "description": "Something regressed",
+            "includeDiagnostics": false,
+            "appVersion": "0.1.0",
+            "os": "Windows",
+            "arch": "x86_64",
+            "currentPage": "/about",
+            "releaseContext": {
+                "version": "1.2.3",
+                "date": "2026-03-16",
+                "source": "remote",
+                "trigger": "changelog",
+                "url": "https://github.com/test/releases/tag/v1.2.3"
+            }
+        }"#;
+
+        let req: FeedbackSaveRequest = serde_json::from_str(json).unwrap();
+        let release_context = req.release_context.expect("release context should deserialize");
+        assert_eq!(release_context.version, "1.2.3");
+        assert_eq!(release_context.trigger, "changelog");
+        assert_eq!(release_context.source, "remote");
+    }
+
+    #[test]
+    fn test_feedback_item_deserializes_without_release_context_for_backward_compatibility() {
+        let json = r#"{
+            "id": "fb-legacy",
+            "category": "bug",
+            "severity": "high",
+            "title": "Legacy item",
+            "description": "Saved before release context existed",
+            "contactEmail": null,
+            "screenshot": null,
+            "includeDiagnostics": false,
+            "diagnosticPath": null,
+            "diagnosticError": null,
+            "appVersion": "0.1.0",
+            "os": "Windows",
+            "arch": "x86_64",
+            "currentPage": "/about",
+            "status": "saved",
+            "createdAt": "2026-01-01T00:00:00Z",
+            "updatedAt": "2026-01-01T00:00:00Z",
+            "errorContext": null
+        }"#;
+
+        let item: FeedbackItem = serde_json::from_str(json).unwrap();
+        assert_eq!(item.id, "fb-legacy");
+        assert!(item.release_context.is_none());
     }
 
     #[test]
@@ -510,6 +580,7 @@ mod tests {
             created_at: "2026-01-01T00:00:00Z".into(),
             updated_at: "2026-01-01T00:00:00Z".into(),
             error_context: None,
+            release_context: None,
         };
 
         apply_diagnostics_outcome(&mut item, Ok(Some("C:/diag.zip".into())));
@@ -538,6 +609,7 @@ mod tests {
             created_at: "2026-01-01T00:00:00Z".into(),
             updated_at: "2026-01-01T00:00:00Z".into(),
             error_context: None,
+            release_context: None,
         };
 
         apply_diagnostics_outcome(&mut item, Err("zip failed".into()));
@@ -575,6 +647,7 @@ mod tests {
                 created_at: format!("2026-01-01T00:00:0{i}Z"),
                 updated_at: format!("2026-01-01T00:00:0{i}Z"),
                 error_context: None,
+                release_context: None,
             };
             let json_path = dir.path().join(format!("{id}.json"));
             let attachment_path = dir.path().join(format!("{id}-diagnostic.zip"));
@@ -620,6 +693,7 @@ mod tests {
             created_at: "2026-01-01T00:00:00Z".into(),
             updated_at: "2026-01-01T00:00:00Z".into(),
             error_context: None,
+            release_context: None,
         };
 
         mark_feedback_exported(&mut item);

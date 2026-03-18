@@ -3,10 +3,10 @@
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { openExternal } from "@/lib/tauri";
+import { ABOUT_BRANDED_EXTERNAL_LINKS } from "@/lib/constants/about";
 import {
   Settings,
   RefreshCw,
-  Github,
   BookOpen,
   Bug,
   MessageSquarePlus,
@@ -14,6 +14,7 @@ import {
   ClipboardList,
 } from "lucide-react";
 import { useFeedbackStore } from "@/lib/stores/feedback";
+import { AboutBrandIcon } from "./about-brand-icon";
 
 interface ActionsCardProps {
   loading: boolean;
@@ -33,6 +34,7 @@ export function ActionsCard({
   t,
 }: ActionsCardProps) {
   const { openDialog } = useFeedbackStore();
+  const githubLink = ABOUT_BRANDED_EXTERNAL_LINKS.find((link) => link.id === "github");
   const handleOpen = (url: string) => () => {
     void openExternal(url);
   };
@@ -84,17 +86,21 @@ export function ActionsCard({
           </Button>
 
           {/* GitHub */}
-          <Button
-            variant="outline"
-            onClick={handleOpen(
-              "https://github.com/ElementAstro/CogniaLauncher",
-            )}
-            aria-label={`GitHub - ${t("about.openInNewTab")}`}
-            className="justify-start"
-          >
-            <Github className="h-4 w-4 mr-2" aria-hidden="true" />
-            GitHub
-          </Button>
+          {githubLink ? (
+            <Button
+              variant="outline"
+              onClick={handleOpen(githubLink.url)}
+              aria-label={`${githubLink.label} - ${t("about.openInNewTab")}`}
+              className="justify-start"
+            >
+              <AboutBrandIcon
+                asset={githubLink.icon}
+                size={16}
+                className="mr-2 h-4 w-4"
+              />
+              {githubLink.label}
+            </Button>
+          ) : null}
 
           {/* Documentation */}
           <Button

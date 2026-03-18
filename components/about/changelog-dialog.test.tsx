@@ -3,11 +3,19 @@ import userEvent from "@testing-library/user-event";
 import { ChangelogDialog } from "./changelog-dialog";
 import type { ChangelogEntry } from "@/lib/constants/about";
 
+const mockOpenDialog = jest.fn();
+
 // Mock MarkdownRenderer (react-markdown is ESM-only)
 jest.mock("@/components/docs/markdown-renderer", () => ({
   MarkdownRenderer: ({ content }: { content: string }) => (
     <div data-testid="markdown-renderer">{content}</div>
   ),
+}));
+
+jest.mock("@/lib/stores/feedback", () => ({
+  useFeedbackStore: () => ({
+    openDialog: mockOpenDialog,
+  }),
 }));
 
 const mockT = (
@@ -43,6 +51,7 @@ const mockT = (
     "about.changelogFilterBySource": "Source",
     "about.changelogAllSources": "All Sources",
     "about.changelogShowPrerelease": "Include pre-releases",
+    "about.changelogReportIssue": "Report issue",
     "about.changelogRelativeTime": `${params?.time ?? ""} ago`,
   };
   return translations[key] || key;
@@ -80,6 +89,10 @@ const defaultProps = {
 };
 
 describe("ChangelogDialog", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   it("renders dialog title when open", () => {
     render(<ChangelogDialog {...defaultProps} />);
     expect(screen.getByText("Changelog")).toBeInTheDocument();
@@ -284,5 +297,23 @@ describe("ChangelogDialog", () => {
     });
     await userEvent.click(prereleaseSwitch);
     expect(screen.queryByText("v0.9.0")).not.toBeInTheDocument();
+  });
+
+  it("opens feedback dialog with release context for a changelog entry", async () => {
+    render(<ChangelogDialog {...defaultProps} />);
+
+    const reportButtons = screen.getAllByRole("button", { name: "Report issue" });
+    await userEvent.click(reportButtons[0]!);
+
+    expect(mockOpenDialog).toHaveBeenCalledWith({
+      category: "bug",
+      releaseContext: {
+        version: "1.0.0",
+        date: "2025-01-15",
+        source: "local",
+        trigger: "changelog",
+        url: undefined,
+      },
+    });
   });
 });

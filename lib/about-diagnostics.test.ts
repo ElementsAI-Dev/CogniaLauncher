@@ -16,6 +16,13 @@ describe('about-diagnostics', () => {
     );
   });
 
+  it('falls back for empty or malformed identifiers', () => {
+    expect(redactIpAddress('')).toBe('');
+    expect(redactIpAddress('10.0.0')).toBe('[redacted]');
+    expect(redactMacAddress('')).toBe('');
+    expect(redactMacAddress('not-a-mac')).toBe('[redacted]');
+  });
+
   it('redacts mac addresses', () => {
     expect(redactMacAddress('aa:bb:cc:dd:ee:ff')).toBe('AABBCC******');
   });
@@ -60,6 +67,18 @@ describe('about-diagnostics', () => {
     expect(summary.components).toMatchObject({ status: 'ok', itemCount: 1 });
     expect(summary.networks).toMatchObject({ status: 'failed', itemCount: 0 });
     expect(summary.cache).toMatchObject({ status: 'failed' });
+  });
+
+  it('marks all sections unavailable when no system info is present', () => {
+    expect(buildSystemSectionSummary(null)).toEqual({
+      platform: { status: 'unavailable' },
+      components: { status: 'unavailable', itemCount: 0 },
+      battery: { status: 'unavailable' },
+      disks: { status: 'unavailable', itemCount: 0 },
+      networks: { status: 'unavailable', itemCount: 0 },
+      cache: { status: 'unavailable' },
+      homeDir: { status: 'unavailable' },
+    });
   });
 
   it('builds web diagnostics report with normalized update and redacted network data', () => {
@@ -187,5 +206,60 @@ describe('about-diagnostics', () => {
     expect(networks[0].ipAddressesRedacted).toEqual(['192.168.1.*']);
     expect(networks[0].macAddressRedacted).toBe('112233******');
     expect(networks[0]).not.toHaveProperty('macAddress');
+  });
+
+  it('builds fallback web diagnostics report fields when system info and update info are missing', () => {
+    const report = buildWebDiagnosticsReport({
+      generatedAt: '2026-03-05T00:00:00.000Z',
+      systemInfo: null,
+      aboutInsights: null,
+      updateInfo: null,
+      updateStatus: 'idle',
+      updateErrorCategory: null,
+      updateErrorMessage: null,
+      runtime: {
+        navigator: {
+          userAgent: 'UA',
+          language: 'en-US',
+          languages: ['en-US', 'zh-CN'],
+          platform: 'WebPlatform',
+          cookieEnabled: false,
+          onLine: false,
+          hardwareConcurrency: 4,
+          deviceMemory: 8,
+          maxTouchPoints: 2,
+        },
+        screen: {
+          width: 1440,
+          height: 900,
+          colorDepth: 24,
+          pixelRatio: 2,
+        },
+        performance: {
+          memory: { usedJSHeapSize: 1 },
+          timing: {
+            navigationStart: 1,
+            loadEventEnd: 2,
+            domContentLoadedEventEnd: 3,
+          },
+        },
+      },
+    });
+
+    expect(report.system).toMatchObject({
+      os: 'Web',
+      osName: 'WebPlatform',
+      hostnameRedacted: null,
+      memoryTotal: 'Unknown',
+      sectionSummary: {
+        platform: { status: 'unavailable' },
+      },
+      networks: [],
+    });
+    expect(report.update).toBeNull();
+    expect(report.browser).toMatchObject({
+      onLine: false,
+      maxTouchPoints: 2,
+    });
   });
 });

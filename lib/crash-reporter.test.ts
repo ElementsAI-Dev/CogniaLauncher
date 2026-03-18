@@ -129,6 +129,48 @@ describe("crash-reporter", () => {
     );
   });
 
+  it("builds diagnostic context for string and unknown primitive errors", () => {
+    expect(buildDiagnosticErrorContext({
+      source: "string-error",
+      error: "plain failure",
+      extra: { ignored: undefined, keep: "yes" },
+    })).toMatchObject({
+      message: "plain failure",
+      extra: expect.objectContaining({
+        source: "string-error",
+        keep: "yes",
+        rawError: "plain failure",
+      }),
+    });
+
+    expect(buildDiagnosticErrorContext({
+      source: "unknown-error",
+      error: 123,
+    })).toMatchObject({
+      message: "Unknown frontend error",
+      extra: expect.objectContaining({
+        rawError: 123,
+      }),
+    });
+  });
+
+  it("uses the error name when Error.message is empty and preserves object stacks", () => {
+    expect(buildDiagnosticErrorContext({
+      source: "named-error",
+      error: Object.assign(new Error(""), { name: "NamedError" }),
+    })).toMatchObject({
+      message: "NamedError",
+    });
+
+    expect(buildDiagnosticErrorContext({
+      source: "object-stack",
+      error: { message: "boom", stack: "stack-trace" },
+    })).toMatchObject({
+      message: "boom",
+      stack: "stack-trace",
+    });
+  });
+
   it("bounds runtime breadcrumbs before sending capture payload", async () => {
     mockIsTauri.mockReturnValue(true);
     mockDiagnosticCaptureFrontendCrash.mockResolvedValue({
@@ -156,5 +198,49 @@ describe("crash-reporter", () => {
     expect(payload.runtimeBreadcrumbs).toHaveLength(100);
     expect(payload.runtimeBreadcrumbs?.[0].message).toBe("entry-20");
     expect(payload.runtimeBreadcrumbs?.[99].message.length).toBe(4096);
+  });
+
+  it("respects includeConfig overrides and omits empty breadcrumb arrays", async () => {
+    mockIsTauri.mockReturnValue(true);
+    mockDiagnosticCaptureFrontendCrash.mockResolvedValue({
+      reportPath: "report.zip",
+      timestamp: "2026-02-25T00:00:00Z",
+      message: "ok",
+    });
+
+    await captureFrontendCrash({
+      source: "window.error",
+      error: new Error("boom"),
+      includeConfig: false,
+      runtimeBreadcrumbs: [],
+    });
+
+    expect(mockDiagnosticCaptureFrontendCrash).toHaveBeenCalledWith(
+      expect.objectContaining({
+        includeConfig: false,
+        runtimeBreadcrumbs: undefined,
+      }),
+    );
+  });
+
+  it("reset helper clears the session marker so a later capture can run again", async () => {
+    mockIsTauri.mockReturnValue(true);
+    mockDiagnosticCaptureFrontendCrash.mockResolvedValue({
+      reportPath: "report.zip",
+      timestamp: "2026-02-25T00:00:00Z",
+      message: "ok",
+    });
+
+    await captureFrontendCrash({
+      source: "window.error",
+      error: new Error("boom"),
+    });
+    _resetFrontendCrashCaptureForTests();
+    await captureFrontendCrash({
+      source: "window.error",
+      error: new Error("boom-again"),
+    });
+
+    expect(mockDiagnosticCaptureFrontendCrash).toHaveBeenCalledTimes(2);
   });
 });

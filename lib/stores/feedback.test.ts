@@ -8,6 +8,7 @@ describe('feedback store', () => {
         dialogOpen: false,
         preSelectedCategory: null,
         preFilledErrorContext: null,
+        preFilledReleaseContext: null,
         draft: null,
       });
     });
@@ -18,6 +19,7 @@ describe('feedback store', () => {
     expect(state.dialogOpen).toBe(false);
     expect(state.preSelectedCategory).toBeNull();
     expect(state.preFilledErrorContext).toBeNull();
+    expect(state.preFilledReleaseContext).toBeNull();
     expect(state.draft).toBeNull();
   });
 
@@ -53,6 +55,28 @@ describe('feedback store', () => {
     expect(state.preFilledErrorContext).toEqual(errorContext);
   });
 
+  it('openDialog with releaseContext sets preFilledReleaseContext', () => {
+    const releaseContext = {
+      version: '1.2.3',
+      date: '2026-03-16',
+      source: 'remote' as const,
+      trigger: 'changelog' as const,
+      url: 'https://github.com/test/releases/tag/v1.2.3',
+    };
+
+    act(() => {
+      useFeedbackStore.getState().openDialog({
+        category: 'bug',
+        releaseContext,
+      });
+    });
+
+    const state = useFeedbackStore.getState();
+    expect(state.dialogOpen).toBe(true);
+    expect(state.preSelectedCategory).toBe('bug');
+    expect(state.preFilledReleaseContext).toEqual(releaseContext);
+  });
+
   it('closeDialog resets dialog state', () => {
     act(() => {
       useFeedbackStore.getState().openDialog({ category: 'feature' });
@@ -66,6 +90,7 @@ describe('feedback store', () => {
     expect(state.dialogOpen).toBe(false);
     expect(state.preSelectedCategory).toBeNull();
     expect(state.preFilledErrorContext).toBeNull();
+    expect(state.preFilledReleaseContext).toBeNull();
   });
 
   it('saveDraft persists draft data', () => {

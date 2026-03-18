@@ -19,15 +19,14 @@ import {
 } from "@/components/ui/empty";
 import { Blocks } from "lucide-react";
 import { BUILD_DEPENDENCIES } from "@/lib/constants/about";
-import { useTheme } from "next-themes";
+import { AboutBrandIcon } from "./about-brand-icon";
 
 interface DepItemProps {
   dep: (typeof BUILD_DEPENDENCIES)[number];
-  isDark: boolean;
   openLabel: string;
 }
 
-function DepItem({ dep, isDark, openLabel }: DepItemProps) {
+function DepItem({ dep, openLabel }: DepItemProps) {
   return (
     <TableRow>
       <TableCell className="py-2">
@@ -38,15 +37,8 @@ function DepItem({ dep, isDark, openLabel }: DepItemProps) {
           className="inline-flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
           aria-label={`${dep.name} ${dep.version} - ${openLabel}`}
         >
-          <div
-            className="flex items-center justify-center w-6 h-6 rounded text-xs font-bold flex-shrink-0"
-            style={{
-              backgroundColor: isDark ? dep.darkColor : dep.color,
-              color: isDark ? dep.darkTextColor : dep.textColor,
-            }}
-            aria-hidden="true"
-          >
-            {dep.letter}
+          <div className="flex h-8 w-8 items-center justify-center rounded-md border border-border bg-background/80 shadow-sm" aria-hidden="true">
+            <AboutBrandIcon asset={dep.icon} size={18} className="h-4.5 w-4.5" />
           </div>
           <span className="text-[13px] font-medium text-foreground">
             {dep.name}
@@ -67,8 +59,6 @@ interface BuildDepsCardProps {
 }
 
 export function BuildDepsCard({ t }: BuildDepsCardProps) {
-  const { resolvedTheme } = useTheme();
-  const isDark = resolvedTheme === "dark";
   const openLabel = t("about.openInNewTab");
   const hasDependencies = BUILD_DEPENDENCIES.length > 0;
 
@@ -106,7 +96,7 @@ export function BuildDepsCard({ t }: BuildDepsCardProps) {
             </TableHeader>
             <TableBody>
               {BUILD_DEPENDENCIES.map((dep) => (
-                <DepItem key={dep.name} dep={dep} isDark={isDark} openLabel={openLabel} />
+                <DepItem key={dep.id} dep={dep} openLabel={openLabel} />
               ))}
             </TableBody>
           </Table>

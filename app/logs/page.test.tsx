@@ -36,10 +36,11 @@ const mockDeleteLogFiles = jest.fn();
 const mockDeleteLogFile = jest.fn();
 const mockClearLogs = jest.fn();
 const mockLoadLogFiles = jest.fn();
+const mockLoadCrashReports = jest.fn();
 const mockGetLogDirectory = jest.fn();
 const mockClearLogFile = jest.fn();
 const mockPreviewCleanupLogs = jest.fn();
-const mockExportLogFile = jest.fn();
+const mockExportDiagnosticBundle = jest.fn();
 
 jest.mock('@/components/providers/locale-provider', () => ({
   useLocale: () => ({
@@ -57,7 +58,7 @@ jest.mock('@/components/providers/locale-provider', () => ({
         'logs.openDir': 'Open Directory',
         'logs.copyDir': 'Copy Folder Path',
         'logs.copyFilePath': 'Copy File Path',
-        'logs.exportDiagnostic': 'Export Diagnostic',
+        'logs.exportFullDiagnostic': 'Export Full Diagnostic',
         'logs.openDirError': 'Failed to open directory',
         'logs.viewFile': 'View File',
         'logs.currentSession': 'Current Session',
@@ -116,14 +117,23 @@ jest.mock('@/lib/stores/log', () => ({
 jest.mock('@/hooks/use-logs', () => ({
   useLogs: () => ({
     cleanupLogs: mockCleanupLogs,
+    crashReports: [],
+    observability: {
+      runtimeMode: 'desktop-release',
+      backendBridgeState: 'available',
+      backendBridgeError: null,
+      latestCrashCapture: null,
+    },
+    latestDiagnosticAction: null,
     deleteLogFiles: mockDeleteLogFiles,
     deleteLogFile: mockDeleteLogFile,
     clearLogs: mockClearLogs,
     loadLogFiles: mockLoadLogFiles,
+    loadCrashReports: mockLoadCrashReports,
     getLogDirectory: mockGetLogDirectory,
     clearLogFile: mockClearLogFile,
     previewCleanupLogs: mockPreviewCleanupLogs,
-    exportLogFile: mockExportLogFile,
+    exportDiagnosticBundle: mockExportDiagnosticBundle,
   }),
 }));
 
@@ -161,6 +171,10 @@ jest.mock('@/components/log/log-management-card', () => ({
   LogManagementCard: () => <div data-testid="log-management-card">Management</div>,
 }));
 
+jest.mock('@/components/log/log-diagnostics-card', () => ({
+  LogDiagnosticsCard: () => <div data-testid="log-diagnostics-card">Diagnostics</div>,
+}));
+
 jest.mock('@/lib/utils', () => ({
   formatBytes: (size: number) => `${size} B`,
   formatDate: (date: number | string) => String(date),
@@ -183,6 +197,7 @@ describe('LogsPage', () => {
     mockSelectedLogFile = null;
     mockLoadLogFiles.mockResolvedValue({ ok: true, data: defaultFiles });
     mockGetLogDirectory.mockResolvedValue({ ok: true, data: '' });
+    mockLoadCrashReports.mockResolvedValue({ ok: true, data: [] });
     mockDeleteLogFiles.mockResolvedValue({
       ok: true,
       data: {
@@ -258,16 +273,12 @@ describe('LogsPage', () => {
         maxTotalSizeMb: 100,
       },
     });
-    mockExportLogFile.mockResolvedValue({
+    mockExportDiagnosticBundle.mockResolvedValue({
       ok: true,
       data: {
-        content: '{}',
-        fileName: 'diagnostic.json',
-        sizeBytes: 2,
-        status: 'success',
-        redactedCount: 0,
-        sanitized: true,
-        warnings: [],
+        path: 'D:/Diagnostics/cognia-diagnostic.zip',
+        size: 2,
+        fileCount: 1,
       },
     });
   });

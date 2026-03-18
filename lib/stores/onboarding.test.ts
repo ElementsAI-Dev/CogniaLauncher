@@ -52,6 +52,33 @@ describe('useOnboardingStore', () => {
       store.goToStep(999);
       expect(useOnboardingStore.getState().currentStep).toBe(ONBOARDING_STEP_SEQUENCES.quick.length - 1);
     });
+
+    it('goToStep preserves completed session state instead of reopening the wizard flow', () => {
+      const store = useOnboardingStore.getState();
+      store.selectMode('quick');
+      store.completeOnboarding();
+
+      store.goToStep(1);
+
+      expect(useOnboardingStore.getState()).toMatchObject({
+        currentStep: 1,
+        sessionState: 'completed',
+      });
+    });
+
+    it('reselecting the same mode keeps the current step but refreshes session metadata', () => {
+      const store = useOnboardingStore.getState();
+      store.selectMode('quick');
+      store.goToStep(2);
+
+      store.selectMode('quick');
+
+      const state = useOnboardingStore.getState();
+      expect(state.currentStep).toBe(2);
+      expect(state.sessionState).toBe('active');
+      expect(state.lastActiveStepId).toBe('mode-selection');
+      expect(state.visitedSteps).toContain('mode-selection');
+    });
   });
 
   describe('close vs skip semantics', () => {
@@ -97,6 +124,54 @@ describe('useOnboardingStore', () => {
       expect(state.sessionState).toBe('skipped');
       expect(state.canResume).toBe(false);
     });
+
+    it('pauseOnboarding after completion only closes the wizard', () => {
+      const store = useOnboardingStore.getState();
+      store.selectMode('quick');
+      store.completeOnboarding();
+      store.setWizardOpen(true);
+
+      store.pauseOnboarding();
+
+      const state = useOnboardingStore.getState();
+      expect(state.wizardOpen).toBe(false);
+      expect(state.sessionState).toBe('completed');
+      expect(state.canResume).toBe(false);
+    });
+
+    it('resumeOnboarding does nothing after skip/completion', () => {
+      const store = useOnboardingStore.getState();
+      store.skipOnboarding();
+
+      const skippedSnapshot = useOnboardingStore.getState();
+      store.resumeOnboarding();
+
+      expect(useOnboardingStore.getState()).toEqual(skippedSnapshot);
+    });
+
+    it('setWizardOpen does not reactivate skipped or completed sessions', () => {
+      const store = useOnboardingStore.getState();
+      store.skipOnboarding();
+      store.setWizardOpen(true);
+      expect(useOnboardingStore.getState().sessionState).toBe('skipped');
+
+      store.resetOnboarding();
+      store.selectMode('quick');
+      store.completeOnboarding();
+      store.setWizardOpen(true);
+      expect(useOnboardingStore.getState().sessionState).toBe('completed');
+    });
+
+    it('prevStep preserves skipped session state', () => {
+      const store = useOnboardingStore.getState();
+      store.selectMode('quick');
+      store.goToStep(2);
+      store.skipOnboarding();
+
+      store.prevStep();
+
+      expect(useOnboardingStore.getState().sessionState).toBe('skipped');
+    });
   });
 
   describe('summary updates', () => {
@@ -111,6 +186,29 @@ describe('useOnboardingStore', () => {
       expect(state.sessionSummary.locale).toBe('en');
       expect(state.sessionSummary.manageableEnvironments).toEqual(['node', 'python']);
       expect(state.sessionSummary.primaryEnvironment).toBe('node');
+    });
+
+    it('respects an explicit primary environment over the derived first manageable item', () => {
+      const store = useOnboardingStore.getState();
+      store.updateSessionSummary({
+        manageableEnvironments: ['node', 'python'],
+        primaryEnvironment: 'python',
+      });
+
+      expect(useOnboardingStore.getState().sessionSummary).toMatchObject({
+        manageableEnvironments: ['node', 'python'],
+        primaryEnvironment: 'python',
+      });
+    });
+
+    it('falls back to the first manageable environment when primaryEnvironment is nullish', () => {
+      const store = useOnboardingStore.getState();
+      store.updateSessionSummary({
+        manageableEnvironments: ['ruby', 'node'],
+        primaryEnvironment: null,
+      });
+
+      expect(useOnboardingStore.getState().sessionSummary.primaryEnvironment).toBe('ruby');
     });
   });
 
@@ -144,6 +242,25 @@ describe('useOnboardingStore', () => {
       expect(state.sessionSummary.mode).toBeNull();
       expect(state.wizardOpen).toBe(true);
     });
+
+    it('resetOnboarding clears skipped/completed markers and guided-tour completion for a rerun', () => {
+      const store = useOnboardingStore.getState();
+      store.selectMode('quick');
+      store.skipOnboarding();
+      store.completeTour();
+
+      store.resetOnboarding();
+
+      expect(useOnboardingStore.getState()).toMatchObject({
+        mode: null,
+        completed: false,
+        skipped: false,
+        tourCompleted: false,
+        currentStep: 0,
+        sessionState: 'active',
+        wizardOpen: true,
+      });
+    });
   });
 
   describe('guided tour and hints', () => {
@@ -159,14 +276,48 @@ describe('useOnboardingStore', () => {
       expect(state.tourStep).toBe(0);
     });
 
+    it('startTour is idempotent and prevTourStep clamps at zero', () => {
+      const store = useOnboardingStore.getState();
+      store.startTour();
+      const firstSnapshot = useOnboardingStore.getState();
+      store.startTour();
+      store.prevTourStep();
+
+      const state = useOnboardingStore.getState();
+      expect(state.tourActive).toBe(firstSnapshot.tourActive);
+      expect(state.tourStep).toBe(0);
+    });
+
     it('hint controls still work', () => {
       const store = useOnboardingStore.getState();
       store.dismissHint('test-hint');
+      store.dismissHint('test-hint');
       store.setHintsEnabled(false);
+      store.dismissAllHints(['a', 'b']);
+      store.resetHints();
+      store.dismissHint('test-hint');
+      store.startTour();
+      store.stopTour();
 
       const state = useOnboardingStore.getState();
       expect(state.dismissedHints).toEqual(['test-hint']);
       expect(state.hintsEnabled).toBe(false);
+      expect(state.tourActive).toBe(false);
+      expect(state.tourStep).toBe(0);
+    });
+
+    it('markStepVisited only changes lastActiveStepId for known steps and dismissAllHints without args keeps current dismissals', () => {
+      const store = useOnboardingStore.getState();
+      store.selectMode('quick');
+      store.markStepVisited('language');
+      store.markStepVisited('custom-step');
+      store.dismissHint('test-hint');
+      store.dismissAllHints();
+
+      const state = useOnboardingStore.getState();
+      expect(state.lastActiveStepId).toBe('language');
+      expect(state.visitedSteps).toEqual(expect.arrayContaining(['language', 'custom-step']));
+      expect(state.dismissedHints).toEqual(['test-hint']);
     });
   });
 
@@ -228,6 +379,87 @@ describe('useOnboardingStore', () => {
       expect(migrated.sessionState).toBe('paused');
       expect(migrated.canResume).toBe(true);
       expect(migrated.lastActiveStepId).toBe('theme');
+    });
+
+    it('v3 -> v4 normalizes invalid mode and malformed summary payloads', () => {
+      const v3State = {
+        mode: 'broken-mode',
+        completed: false,
+        skipped: false,
+        currentStep: 99,
+        lastActiveAt: 'not-a-number',
+        sessionSummary: {
+          locale: 123,
+          manageableEnvironments: ['node', '', 'node'],
+          primaryEnvironment: 999,
+          detectedCount: -10,
+          shellConfigured: 'yes',
+        },
+        version: 3,
+      };
+      const migrated = getPersistConfig().migrate(v3State, 3) as Record<string, unknown>;
+
+      expect(migrated.mode).toBeNull();
+      expect(migrated.currentStep).toBe(0);
+      expect(migrated.lastActiveStepId).toBe('mode-selection');
+      expect(migrated.lastActiveAt).toBeNull();
+      expect(migrated.sessionState).toBe('paused');
+      expect(migrated.canResume).toBe(true);
+      expect(migrated.sessionSummary).toMatchObject({
+        mode: null,
+        mirrorPreset: 'default',
+        manageableEnvironments: ['node'],
+        primaryEnvironment: 'node',
+        detectedCount: 0,
+        shellConfigured: null,
+      });
+    });
+
+    it('v1 -> v4 preserves valid summary fields while backfilling newer session metadata', () => {
+      const v1State = {
+        completed: false,
+        skipped: false,
+        currentStep: 2,
+        mode: 'detailed',
+        sessionSummary: {
+          locale: 'zh-CN',
+          theme: 'system',
+          mirrorPreset: 'cn',
+          detectedCount: 3,
+          primaryEnvironment: 'node',
+          manageableEnvironments: ['node', 'python'],
+          shellType: 'pwsh',
+          shellConfigured: true,
+        },
+      };
+      const migrated = getPersistConfig().migrate(v1State, 1) as Record<string, unknown>;
+
+      expect(migrated.sessionSummary).toMatchObject({
+        mode: 'detailed',
+        locale: 'zh-CN',
+        theme: 'system',
+        mirrorPreset: 'cn',
+        detectedCount: 3,
+        primaryEnvironment: 'node',
+        manageableEnvironments: ['node', 'python'],
+        shellType: 'pwsh',
+        shellConfigured: true,
+      });
+      expect(migrated.sessionState).toBe('paused');
+      expect(migrated.canResume).toBe(true);
+    });
+
+    it('v3 -> v4 preserves skipped sessions as non-resumable', () => {
+      const migrated = getPersistConfig().migrate({
+        completed: false,
+        skipped: true,
+        currentStep: 2,
+        mode: 'quick',
+        version: 3,
+      }, 3) as Record<string, unknown>;
+
+      expect(migrated.sessionState).toBe('skipped');
+      expect(migrated.canResume).toBe(false);
     });
   });
 

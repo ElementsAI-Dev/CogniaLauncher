@@ -96,7 +96,7 @@ export function LogFileViewer({
 }: LogFileViewerProps) {
   const { t } = useLocale();
   const logFiles = useLogStore((state) => state.logFiles);
-  const { queryLogFile, exportLogFile } = useLogs();
+  const { queryLogFile, exportLogFile, exportDiagnosticBundle } = useLogs();
   const [entries, setEntries] = useState<UiLogEntry[]>([]);
   const [hasMore, setHasMore] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
@@ -455,42 +455,52 @@ export function LogFileViewer({
   );
 
   const handleDiagnosticExport = useCallback(async () => {
-    if (!fileName) return;
-
-    const result = await exportLogFile({
-      fileName: queryOptions.fileName,
-      levelFilter: queryOptions.levelFilter,
-      target: queryOptions.target,
-      search: queryOptions.search,
-      useRegex: queryOptions.useRegex,
-      startTime: queryOptions.startTime,
-      endTime: queryOptions.endTime,
-      format: "json",
-      diagnosticMode: true,
-      sanitizeSensitive: true,
+    const result = await exportDiagnosticBundle({
+      t,
+      workspaceSection: "historical-viewer",
+      selectedFile: fileName,
+      filterContext: {
+        levels: historicalFilter.levels.map((level) => level.toUpperCase()),
+        target: historicalFilter.target,
+        search: historicalFilter.search || undefined,
+        useRegex: historicalFilter.useRegex,
+        startTime: historicalFilter.startTime ?? undefined,
+        endTime: historicalFilter.endTime ?? undefined,
+        maxScanLines: historicalFilter.maxScanLines ?? undefined,
+      },
+      fileQueryContext: {
+        totalCount,
+        matchedCount: queryMeta.matchedCount,
+        scannedLines: queryMeta.scannedLines,
+        sourceLineCount: queryMeta.sourceLineCount,
+        maxScanLines: queryMeta.effectiveMaxScanLines,
+        windowStartLine: queryMeta.windowStartLine,
+        windowEndLine: queryMeta.windowEndLine,
+      },
     });
 
-    if (!result.ok) {
-      toast.error(result.error || t("logs.exportError"));
+    if (!result.ok || !result.data) {
       return;
     }
-
-    try {
-      const blob = new Blob([result.data.content], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = result.data.fileName;
-      document.body.appendChild(anchor);
-      anchor.click();
-      document.body.removeChild(anchor);
-      URL.revokeObjectURL(url);
-      toast.success(t("logs.exportSuccess"));
-    } catch (error) {
-      console.error("Failed to export diagnostic log file:", error);
-      toast.error(t("logs.exportError"));
-    }
-  }, [exportLogFile, fileName, queryOptions, t]);
+  }, [
+    exportDiagnosticBundle,
+    fileName,
+    historicalFilter.endTime,
+    historicalFilter.levels,
+    historicalFilter.maxScanLines,
+    historicalFilter.search,
+    historicalFilter.startTime,
+    historicalFilter.target,
+    historicalFilter.useRegex,
+    queryMeta.effectiveMaxScanLines,
+    queryMeta.matchedCount,
+    queryMeta.scannedLines,
+    queryMeta.sourceLineCount,
+    queryMeta.windowEndLine,
+    queryMeta.windowStartLine,
+    t,
+    totalCount,
+  ]);
 
   useEffect(() => {
     if (!open || !fileName) {
@@ -682,6 +692,14 @@ export function LogFileViewer({
   const scannedRangeLabel = queryMeta.sourceLineCount > 0
     ? `${queryMeta.scannedLines}/${queryMeta.sourceLineCount}`
     : `${queryMeta.scannedLines}`;
+  const stateLabel =
+    viewState === "ready"
+      ? t("logs.viewerStateReady")
+      : viewState === "empty"
+        ? t("logs.viewerStateEmpty")
+        : viewState === "truncated"
+          ? t("logs.viewerStateTruncated")
+          : t("logs.viewerStateError");
   const historicalFilterSummary = useMemo(() => {
     const parts: string[] = [];
     if (historicalFilter.levels.length > 0) {
@@ -800,26 +818,26 @@ export function LogFileViewer({
               </div>
             </div>
             <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground/90">
-              <span>state={viewState}</span>
-              <span>matched={queryMeta.matchedCount}</span>
-              <span>window={windowRangeLabel}</span>
-              <span>scanned={scannedRangeLabel}</span>
+              <span>{t("logs.viewerStateLabel")}={stateLabel}</span>
+              <span>{t("logs.viewerMatchedLabel")}={queryMeta.matchedCount}</span>
+              <span>{t("logs.viewerWindowLabel")}={windowRangeLabel}</span>
+              <span>{t("logs.viewerScannedLabel")}={scannedRangeLabel}</span>
               <span>
-                scanCap=
+                {t("logs.viewerScanCapLabel")}=
                 {queryMeta.effectiveMaxScanLines != null
                   ? queryMeta.effectiveMaxScanLines
-                  : "none"}
+                  : t("common.none")}
               </span>
             </div>
             <p className="mt-1 truncate text-[11px] text-muted-foreground/80">
-              filters={historicalFilterSummary}
+              {t("logs.viewerFiltersLabel")}={historicalFilterSummary}
             </p>
             {viewState === "truncated" && (
               <p
                 data-testid="log-file-viewer-truncated-hint"
                 className="mt-1 text-[11px] text-amber-600"
               >
-                Results are partial because the historical scan window is capped.
+                {t("logs.viewerTruncatedHint")}
               </p>
             )}
           </section>
@@ -857,7 +875,7 @@ export function LogFileViewer({
                 <div className="p-3">
                   <Alert variant="destructive" data-testid="log-file-viewer-error-state">
                     <TriangleAlert />
-                    <AlertTitle>Failed to load log history</AlertTitle>
+                    <AlertTitle>{t("logs.viewerLoadErrorTitle")}</AlertTitle>
                     <AlertDescription>
                       <p>{queryError || t("logs.loadEntriesError")}</p>
                       <Button
@@ -886,12 +904,12 @@ export function LogFileViewer({
                     </EmptyMedia>
                     <EmptyTitle className="text-sm font-normal text-muted-foreground">
                       {viewState === "truncated"
-                        ? "No entries found in the scanned window"
+                        ? t("logs.viewerTruncatedEmptyTitle")
                         : t("logs.noFileEntries")}
                     </EmptyTitle>
                     {viewState === "truncated" ? (
                       <p className="text-xs text-muted-foreground">
-                        Increase max scan lines or narrow filters to inspect older history.
+                        {t("logs.viewerTruncatedEmptyDescription")}
                       </p>
                     ) : null}
                   </EmptyHeader>
@@ -900,7 +918,7 @@ export function LogFileViewer({
                 <div className="divide-y divide-border/50">
                   {viewState === "truncated" && (
                     <div className="px-3 py-2 text-xs text-amber-600">
-                      Showing partial history from the newest scanned lines only.
+                      {t("logs.viewerPartialHistoryNotice")}
                     </div>
                   )}
                   {hasMore && (

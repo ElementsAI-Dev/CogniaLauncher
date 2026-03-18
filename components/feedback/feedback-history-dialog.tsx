@@ -66,6 +66,33 @@ function categoryVariant(category: string) {
   return "secondary" as const;
 }
 
+function buildHistorySearchText(item: FeedbackItem): string {
+  return [
+    item.title,
+    item.releaseContext?.version,
+    item.releaseContext?.source,
+    item.releaseContext?.trigger,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function formatReleaseContextLabel(
+  item: FeedbackItem,
+  t: (key: string) => string,
+): { version: string; source: string; trigger: string } | null {
+  if (!item.releaseContext) return null;
+
+  const source = t(`feedback.releaseSource.${item.releaseContext.source}`);
+  const trigger = t(`feedback.releaseTrigger.${item.releaseContext.trigger}`);
+  return {
+    version: `v${item.releaseContext.version}`,
+    source,
+    trigger,
+  };
+}
+
 export function FeedbackHistoryDialog({
   open,
   onOpenChange,
@@ -133,7 +160,7 @@ export function FeedbackHistoryDialog({
     () =>
       query
         ? items.filter((item) =>
-            item.title.toLowerCase().includes(query.toLowerCase()),
+            buildHistorySearchText(item).includes(query.toLowerCase()),
           )
         : items,
     [items, query],
@@ -259,6 +286,19 @@ export function FeedbackHistoryDialog({
                         <p className="font-medium truncate" title={item.title}>
                           {item.title}
                         </p>
+                        {formatReleaseContextLabel(item, t) ? (
+                          <div className="flex flex-wrap gap-1">
+                            <Badge variant="outline">
+                              {formatReleaseContextLabel(item, t)!.version}
+                            </Badge>
+                            <Badge variant="outline">
+                              {formatReleaseContextLabel(item, t)!.source}
+                            </Badge>
+                            <Badge variant="outline">
+                              {formatReleaseContextLabel(item, t)!.trigger}
+                            </Badge>
+                          </div>
+                        ) : null}
                         <p className="text-xs text-muted-foreground">
                           {new Date(item.createdAt).toLocaleString()}
                         </p>

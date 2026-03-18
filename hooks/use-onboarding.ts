@@ -11,42 +11,7 @@ import {
 } from '@/lib/stores/onboarding';
 import type { OnboardingNextAction } from '@/types/onboarding';
 import { useOnboardingHydration } from './use-onboarding-hydration';
-
-function buildNextActions(
-  summary: OnboardingSessionSummary,
-  tourCompleted: boolean,
-): OnboardingNextAction[] {
-  const actions: OnboardingNextAction[] = [];
-
-  if (summary.primaryEnvironment) {
-    actions.push({
-      id: 'manage-primary-environment',
-      kind: 'environment',
-      labelKey: 'onboarding.completeActionManageEnvironment',
-      descriptionKey: 'onboarding.completeActionManageEnvironmentDesc',
-      envType: summary.primaryEnvironment,
-    });
-  }
-
-  if (!tourCompleted) {
-    actions.push({
-      id: 'start-guided-tour',
-      kind: 'tour',
-      labelKey: 'onboarding.completeActionTour',
-      descriptionKey: 'onboarding.completeActionTourDesc',
-    });
-  }
-
-  actions.push({
-    id: 'review-settings',
-    kind: 'route',
-    labelKey: 'onboarding.completeActionSettings',
-    descriptionKey: 'onboarding.completeActionSettingsDesc',
-    route: '/settings',
-  });
-
-  return actions;
-}
+import { buildOnboardingNextActions } from '@/lib/onboarding-surface';
 
 export interface UseOnboardingReturn {
   isHydrated: boolean;
@@ -173,7 +138,7 @@ export function useOnboarding(): UseOnboardingReturn {
   const shouldShowWizard = isHydrated && wizardOpen;
 
   const nextActions = useMemo(
-    () => buildNextActions(sessionSummary, tourCompleted),
+    () => buildOnboardingNextActions(sessionSummary, tourCompleted),
     [sessionSummary, tourCompleted],
   );
 

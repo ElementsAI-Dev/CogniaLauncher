@@ -1,5 +1,6 @@
 import {
   BUILD_DEPENDENCIES,
+  ABOUT_BRANDED_EXTERNAL_LINKS,
   getChangelog,
   type BuildDependency,
   type ChangelogEntry,
@@ -22,14 +23,12 @@ describe('BUILD_DEPENDENCIES', () => {
 
   it('each dependency has all required fields', () => {
     BUILD_DEPENDENCIES.forEach((dep: BuildDependency) => {
+      expect(typeof dep.id).toBe('string');
       expect(typeof dep.name).toBe('string');
       expect(typeof dep.version).toBe('string');
-      expect(typeof dep.color).toBe('string');
-      expect(typeof dep.textColor).toBe('string');
-      expect(typeof dep.darkColor).toBe('string');
-      expect(typeof dep.darkTextColor).toBe('string');
-      expect(typeof dep.letter).toBe('string');
       expect(typeof dep.url).toBe('string');
+      expect(typeof dep.icon.category).toBe('string');
+      expect(typeof dep.icon.name).toBe('string');
     });
   });
 
@@ -45,18 +44,25 @@ describe('BUILD_DEPENDENCIES', () => {
     });
   });
 
-  it('each dependency has a non-empty letter', () => {
+  it('each dependency has a configured icon reference', () => {
     BUILD_DEPENDENCIES.forEach((dep) => {
-      expect(dep.letter.length).toBeGreaterThan(0);
+      expect(['brands', 'languages', 'providers']).toContain(dep.icon.category);
+      expect(dep.icon.name.length).toBeGreaterThan(0);
     });
   });
+});
 
-  it('colors are hex format', () => {
-    BUILD_DEPENDENCIES.forEach((dep) => {
-      expect(dep.color).toMatch(/^#[0-9A-Fa-f]{6}$/);
-      expect(dep.textColor).toMatch(/^#[0-9A-Fa-f]{6}$/);
-      expect(dep.darkColor).toMatch(/^#[0-9A-Fa-f]{6}$/);
-      expect(dep.darkTextColor).toMatch(/^#[0-9A-Fa-f]{6}$/);
+describe('ABOUT_BRANDED_EXTERNAL_LINKS', () => {
+  it('contains the GitHub outbound destination', () => {
+    expect(ABOUT_BRANDED_EXTERNAL_LINKS.map((link) => link.id)).toContain('github');
+  });
+
+  it('uses icon metadata for each branded destination', () => {
+    ABOUT_BRANDED_EXTERNAL_LINKS.forEach((link) => {
+      expect(typeof link.label).toBe('string');
+      expect(link.url).toMatch(/^https?:\/\//);
+      expect(['brands', 'languages', 'providers']).toContain(link.icon.category);
+      expect(link.icon.name.length).toBeGreaterThan(0);
     });
   });
 });

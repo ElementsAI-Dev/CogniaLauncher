@@ -4,6 +4,7 @@ import type {
   FeedbackCategory,
   FeedbackFormData,
   FeedbackErrorContext,
+  FeedbackReleaseContext,
 } from '@/types/feedback';
 
 interface FeedbackDialogState {
@@ -13,6 +14,8 @@ interface FeedbackDialogState {
   preSelectedCategory: FeedbackCategory | null;
   /** Pre-filled error context (from error boundaries / crash recovery) */
   preFilledErrorContext: FeedbackErrorContext | null;
+  /** Pre-filled release context (from changelog / what's new entry points) */
+  preFilledReleaseContext: FeedbackReleaseContext | null;
   /** Draft data persisted across sessions */
   draft: Partial<FeedbackFormData> | null;
 }
@@ -21,6 +24,7 @@ interface FeedbackStoreActions {
   openDialog: (options?: {
     category?: FeedbackCategory;
     errorContext?: FeedbackErrorContext;
+    releaseContext?: FeedbackReleaseContext;
   }) => void;
   closeDialog: () => void;
   saveDraft: (data: Partial<FeedbackFormData>) => void;
@@ -35,6 +39,7 @@ export const useFeedbackStore = create<FeedbackStore>()(
       dialogOpen: false,
       preSelectedCategory: null,
       preFilledErrorContext: null,
+      preFilledReleaseContext: null,
       draft: null,
 
       openDialog: (options) =>
@@ -42,6 +47,7 @@ export const useFeedbackStore = create<FeedbackStore>()(
           dialogOpen: true,
           preSelectedCategory: options?.category ?? null,
           preFilledErrorContext: options?.errorContext ?? null,
+          preFilledReleaseContext: options?.releaseContext ?? null,
         }),
 
       closeDialog: () =>
@@ -49,6 +55,7 @@ export const useFeedbackStore = create<FeedbackStore>()(
           dialogOpen: false,
           preSelectedCategory: null,
           preFilledErrorContext: null,
+          preFilledReleaseContext: null,
         }),
 
       saveDraft: (data) => set({ draft: data }),

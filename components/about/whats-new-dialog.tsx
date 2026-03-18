@@ -14,14 +14,23 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import {
   Sparkles,
   Calendar,
   Tag,
   ExternalLink,
   FileText,
+  AlertTriangle,
 } from "lucide-react";
 import { MarkdownRenderer } from "@/components/docs/markdown-renderer";
 import { getTypeColor, getTypeLabel } from "@/lib/constants/changelog-utils";
+import { useFeedbackStore } from "@/lib/stores/feedback";
 import type { ChangelogEntry } from "@/lib/constants/about";
 import { formatLocalizedRelativeDate } from "@/lib/utils/date";
 
@@ -30,7 +39,9 @@ interface WhatsNewDialogProps {
   onOpenChange: (open: boolean) => void;
   entries: ChangelogEntry[];
   locale: string;
+  previousVersion?: string;
   loading?: boolean;
+  error?: string | null;
   onDismiss: () => void;
   onShowFullChangelog: () => void;
   t: (key: string, params?: Record<string, string | number>) => string;
@@ -41,12 +52,39 @@ export function WhatsNewDialog({
   onOpenChange,
   entries,
   locale,
+  previousVersion,
   loading = false,
+  error = null,
   onDismiss,
   onShowFullChangelog,
   t,
 }: WhatsNewDialogProps) {
-  if (!open || (entries.length === 0 && !loading)) return null;
+  const { openDialog } = useFeedbackStore();
+
+  if (!open) return null;
+
+  const hasEntries = entries.length > 0;
+  if (!loading && !hasEntries && !previousVersion && !error) return null;
+
+  const scopeSummary = previousVersion
+    ? t("about.changelogWhatsNewScope", {
+        count: entries.length,
+        version: previousVersion,
+      })
+    : null;
+
+  const handleReportIssue = (entry: ChangelogEntry) => {
+    openDialog({
+      category: "bug",
+      releaseContext: {
+        version: entry.version,
+        date: entry.date,
+        source: entry.source ?? "local",
+        trigger: "whats_new",
+        url: entry.url,
+      },
+    });
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -59,6 +97,9 @@ export function WhatsNewDialog({
           <DialogDescription>
             {t("about.changelogWhatsNewDesc")}
           </DialogDescription>
+          {scopeSummary ? (
+            <p className="text-xs text-muted-foreground">{scopeSummary}</p>
+          ) : null}
         </DialogHeader>
 
         <ScrollArea className="max-h-[45vh] pr-4">
@@ -72,6 +113,19 @@ export function WhatsNewDialog({
                 </div>
               ))}
             </div>
+          ) : !hasEntries ? (
+            <Empty className="min-h-44 border border-dashed py-8">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <AlertTriangle className="size-5" aria-hidden="true" />
+                </EmptyMedia>
+                <EmptyTitle>{t("about.changelogWhatsNewEmptyTitle")}</EmptyTitle>
+                <EmptyDescription>
+                  <span>{t("about.changelogWhatsNewEmptyDesc")}</span>
+                  {error ? <span className="block mt-1">{error}</span> : null}
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
           ) : (
             <div className="space-y-5">
               {entries.map((entry, idx) => (
@@ -126,7 +180,7 @@ export function WhatsNewDialog({
                         <li key={i} className="flex items-start gap-2">
                           <Badge
                             variant="secondary"
-                            className={`text-[10px] px-1.5 py-0 h-5 flex-shrink-0 ${getTypeColor(change.type)}`}
+                            className={`text-[10px] px-1.5 py-0 h-5 shrink-0 ${getTypeColor(change.type)}`}
                           >
                             {getTypeLabel(change.type, t)}
                           </Badge>
@@ -138,17 +192,28 @@ export function WhatsNewDialog({
                     </ul>
                   )}
 
-                  {entry.url && (
-                    <a
-                      href={entry.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => handleReportIssue(entry)}
                     >
-                      <ExternalLink className="h-3 w-3" aria-hidden="true" />
-                      {t("about.changelogViewOnGithub")}
-                    </a>
-                  )}
+                      {t("about.changelogReportIssue")}
+                    </Button>
+                    {entry.url && (
+                      <a
+                        href={entry.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                        {t("about.changelogViewOnGithub")}
+                      </a>
+                    )}
+                  </div>
                 </article>
               ))}
             </div>

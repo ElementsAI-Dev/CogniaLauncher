@@ -29,6 +29,7 @@ import {
   buildSystemSectionSummary,
   buildWebDiagnosticsReport,
 } from "@/lib/about-diagnostics";
+import { exportDesktopDiagnosticBundle } from "@/lib/diagnostic-export";
 import { formatBytes } from "@/lib/utils";
 
 export type { SystemInfo, UpdateStatus };
@@ -651,54 +652,11 @@ export function useAboutData(locale: string): UseAboutDataReturn {
     async (t: (key: string) => string) => {
       // Desktop mode: full ZIP bundle via Tauri backend
       if (isTauri()) {
-        try {
-          let outputPath: string | undefined;
-          try {
-            const { save } = await import("@tauri-apps/plugin-dialog");
-            const defaultPath = await tauri.diagnosticGetDefaultExportPath();
-            const ts = new Date()
-              .toISOString()
-              .replace(/[:.]/g, "-")
-              .slice(0, 19);
-            const selected = await save({
-              title: t("diagnostic.selectExportPath"),
-              defaultPath: `${defaultPath}/cognia-diagnostic-${ts}.zip`,
-              filters: [{ name: "ZIP", extensions: ["zip"] }],
-            });
-            if (!selected) return; // user cancelled
-            outputPath = selected;
-          } catch {
-            // Dialog failed, let backend use default path
-          }
-
-          toast.info(t("diagnostic.generating"));
-
-          const result = await tauri.diagnosticExportBundle({
-            outputPath,
-            includeConfig: true,
-          });
-
-          const sizeMb = (result.size / (1024 * 1024)).toFixed(1);
-          toast.success(t("diagnostic.exportSuccess"), {
-            description: `${result.path} (${sizeMb} MB, ${result.fileCount} files)`,
-            duration: 8000,
-            action: {
-              label: t("diagnostic.openFolder"),
-              onClick: async () => {
-                try {
-                  const { revealItemInDir } =
-                    await import("@tauri-apps/plugin-opener");
-                  await revealItemInDir(result.path);
-                } catch {
-                  // fallback: ignore
-                }
-              },
-            },
-          });
-        } catch (err) {
-          console.error("Failed to export diagnostics:", err);
-          toast.error(t("about.diagnosticsFailed"));
-        }
+        await exportDesktopDiagnosticBundle({
+          t,
+          failureToastKey: "about.diagnosticsFailed",
+          includeConfig: true,
+        });
         return;
       }
 

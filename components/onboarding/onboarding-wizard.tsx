@@ -242,7 +242,7 @@ export function OnboardingWizard({
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => { if (!nextOpen) onClose(); }}>
-      <DialogContent className="sm:max-w-[600px] max-h-[85vh] overflow-hidden flex flex-col gap-0 p-0">
+      <DialogContent className="w-[calc(100vw-2rem)] max-w-[600px] max-h-[85vh] overflow-hidden flex flex-col gap-0 p-0">
         <DialogHeader className="px-6 pt-6 pb-2">
           <DialogTitle className="sr-only">
             {t('onboarding.wizardTitle')}
@@ -294,7 +294,10 @@ export function OnboardingWizard({
 
         <Separator />
 
-        <ScrollArea className="flex-1 min-h-0">
+        <ScrollArea
+          className="flex-1 min-h-0"
+          data-testid="onboarding-wizard-body"
+        >
           <div
             key={`${mode ?? 'unselected'}-${currentStepId}`}
             className={cn(
@@ -306,29 +309,40 @@ export function OnboardingWizard({
           </div>
         </ScrollArea>
 
-        <DialogFooter className="px-6 pb-6 pt-2 flex-row justify-between border-t">
-          <div>
+        <DialogFooter
+          className="border-t px-6 pb-6 pt-3 flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between"
+          data-testid="onboarding-wizard-footer"
+        >
+          <div className="flex w-full sm:w-auto">
             {!isFirstStep && !isLastStep && (
-              <Button variant="ghost" size="sm" onClick={onSkip} className="text-muted-foreground">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onSkip}
+                className="w-full text-muted-foreground sm:w-auto"
+              >
                 <SkipForward className="h-4 w-4 mr-1.5" />
                 {t('onboarding.skip')}
               </Button>
             )}
           </div>
-          <div className="flex gap-2">
+          <div
+            className="flex w-full flex-col-reverse gap-2 sm:w-auto sm:flex-row"
+            data-testid="onboarding-wizard-actions"
+          >
             {!isFirstStep && (
-              <Button variant="outline" onClick={onPrev}>
+              <Button variant="outline" onClick={onPrev} className="w-full sm:w-auto">
                 <ChevronLeft className="h-4 w-4 mr-1" />
                 {t('onboarding.back')}
               </Button>
             )}
             {isLastStep ? (
-              <Button onClick={onComplete}>
+              <Button onClick={onComplete} className="w-full sm:w-auto">
                 <Check className="h-4 w-4 mr-1" />
                 {t('onboarding.finish')}
               </Button>
             ) : (
-              <Button onClick={handleAdvance} disabled={nextDisabled}>
+              <Button onClick={handleAdvance} disabled={nextDisabled} className="w-full sm:w-auto">
                 {t('onboarding.next')}
                 <ChevronRight className="h-4 w-4 ml-1" />
               </Button>

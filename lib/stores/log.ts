@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { ALL_LEVELS } from '@/lib/constants/log';
+import { isTauri } from '@/lib/platform';
 
 export type { LogLevel, LogEntry, LogFilter, LogFileInfo } from '@/types/log';
 export type { LogFilterPreset, LogPresetScope } from '@/types/log';
@@ -12,11 +13,58 @@ import type {
   LogFilterPreset,
   LogPresetScope,
 } from '@/types/log';
+import type { CrashInfo, CrashReportInfo } from '@/types/tauri';
 
 const EMPTY_LOG_COUNTS: Record<LogLevel, number> = {
   trace: 0, debug: 0, info: 0, warn: 0, error: 0,
 };
 const LOG_FILTER_PRESET_VERSION = 1;
+
+export type LogRuntimeMode = 'web' | 'desktop-debug' | 'desktop-release';
+export type LogBackendBridgeState = 'available' | 'unavailable' | 'unsupported';
+export type LogCrashCaptureStatus = 'captured' | 'capture_failed' | 'skipped';
+
+export interface LogCrashCaptureSummary {
+  status: LogCrashCaptureStatus;
+  reason?: string | null;
+  crashInfo: CrashInfo | null;
+  updatedAt: number;
+}
+
+export interface LogObservabilitySummary {
+  runtimeMode: LogRuntimeMode;
+  backendBridgeState: LogBackendBridgeState;
+  backendBridgeError: string | null;
+  latestCrashCapture: LogCrashCaptureSummary | null;
+}
+
+export interface LogDiagnosticActionResult {
+  kind: 'full_diagnostic_export';
+  status: 'success' | 'failed';
+  path: string | null;
+  error: string | null;
+  fileCount: number | null;
+  sizeBytes: number | null;
+  updatedAt: number;
+}
+
+function initialObservabilitySummary(): LogObservabilitySummary {
+  if (!isTauri()) {
+    return {
+      runtimeMode: 'web',
+      backendBridgeState: 'unsupported',
+      backendBridgeError: null,
+      latestCrashCapture: null,
+    };
+  }
+
+  return {
+    runtimeMode: 'desktop-release',
+    backendBridgeState: 'unavailable',
+    backendBridgeError: null,
+    latestCrashCapture: null,
+  };
+}
 
 interface LogState {
   logs: LogEntry[];
@@ -30,6 +78,9 @@ interface LogState {
   filterPresets: LogFilterPreset[];
   bookmarkedIds: string[];
   showBookmarksOnly: boolean;
+  crashReports: CrashReportInfo[];
+  observability: LogObservabilitySummary;
+  latestDiagnosticAction: LogDiagnosticActionResult | null;
   _logCounts: Record<LogLevel, number>;
   
   // Actions
@@ -54,6 +105,10 @@ interface LogState {
   getFilterPresets: (scope: LogPresetScope) => LogFilterPreset[];
   toggleBookmark: (id: string) => void;
   setShowBookmarksOnly: (show: boolean) => void;
+  setCrashReports: (reports: CrashReportInfo[]) => void;
+  setObservability: (patch: Partial<LogObservabilitySummary>) => void;
+  setLatestCrashCapture: (summary: LogCrashCaptureSummary | null) => void;
+  setLatestDiagnosticAction: (result: LogDiagnosticActionResult | null) => void;
   
   // Computed
   getFilteredLogs: () => LogEntry[];
@@ -106,6 +161,9 @@ export const useLogStore = create<LogState>()(
       filterPresets: [],
       bookmarkedIds: [],
       showBookmarksOnly: false,
+      crashReports: [],
+      observability: initialObservabilitySummary(),
+      latestDiagnosticAction: null,
       _logCounts: { ...EMPTY_LOG_COUNTS },
 
       addLog: (log) => set((state) => {
@@ -248,6 +306,20 @@ export const useLogStore = create<LogState>()(
           : [...state.bookmarkedIds, id],
       })),
       setShowBookmarksOnly: (showBookmarksOnly) => set({ showBookmarksOnly }),
+      setCrashReports: (crashReports) => set({ crashReports }),
+      setObservability: (patch) => set((state) => ({
+        observability: {
+          ...state.observability,
+          ...patch,
+        },
+      })),
+      setLatestCrashCapture: (latestCrashCapture) => set((state) => ({
+        observability: {
+          ...state.observability,
+          latestCrashCapture,
+        },
+      })),
+      setLatestDiagnosticAction: (latestDiagnosticAction) => set({ latestDiagnosticAction }),
 
       getFilteredLogs: () => {
         const state = get();

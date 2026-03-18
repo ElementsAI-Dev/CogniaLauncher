@@ -46,6 +46,7 @@ import {
 import { MarkdownRenderer } from "@/components/docs/markdown-renderer";
 import { getTypeColor, getTypeLabel } from "@/lib/constants/changelog-utils";
 import { ALL_CHANGE_TYPES } from "@/lib/constants/about";
+import { useFeedbackStore } from "@/lib/stores/feedback";
 import type {
   ChangelogEntry,
   ChangelogChangeType,
@@ -117,6 +118,7 @@ export function ChangelogDialog({
   onRetry,
   t,
 }: ChangelogDialogProps) {
+  const { openDialog } = useFeedbackStore();
   const [typeFilter, setTypeFilter] = useState<ChangelogFilterValue>(
     FILTER_ALL,
   );
@@ -207,6 +209,19 @@ export function ChangelogDialog({
       return;
     }
     setUserExpandedVersions(filteredEntries.map((entry) => entry.version));
+  };
+
+  const handleReportIssue = (entry: ChangelogEntry) => {
+    openDialog({
+      category: "bug",
+      releaseContext: {
+        version: entry.version,
+        date: entry.date,
+        source: entry.source ?? "local",
+        trigger: "changelog",
+        url: entry.url,
+      },
+    });
   };
 
   return (
@@ -475,17 +490,28 @@ export function ChangelogDialog({
                           </ul>
                         ) : null}
 
-                        {entry.url ? (
-                          <a
-                            href={entry.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                        <div className="flex flex-wrap items-center gap-3">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs"
+                            onClick={() => handleReportIssue(entry)}
                           >
-                            <ExternalLink className="h-3 w-3" aria-hidden="true" />
-                            {t("about.changelogViewOnGithub")}
-                          </a>
-                        ) : null}
+                            {t("about.changelogReportIssue")}
+                          </Button>
+                          {entry.url ? (
+                            <a
+                              href={entry.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                            >
+                              <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                              {t("about.changelogViewOnGithub")}
+                            </a>
+                          ) : null}
+                        </div>
                       </AccordionContent>
                     </AccordionItem>
                   );

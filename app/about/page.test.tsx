@@ -624,6 +624,20 @@ describe("About Page", () => {
         expect(screen.getByText("React")).toBeInTheDocument();
       });
     });
+
+    it("keeps branded reference items reachable in About reading order", async () => {
+      renderWithProviders(<AboutPage />);
+
+      const tauriLink = await screen.findByRole("link", {
+        name: /tauri .*opens in new tab/i,
+      });
+      const githubButton = screen.getByRole("button", { name: /github/i });
+
+      expect(
+        tauriLink.compareDocumentPosition(githubButton) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
   });
 });
 

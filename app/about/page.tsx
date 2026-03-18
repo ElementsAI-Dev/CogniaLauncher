@@ -238,7 +238,9 @@ export default function AboutPage() {
         }}
         entries={whatsNewEntries}
         locale={locale}
+        previousVersion={lastSeenVersion || undefined}
         loading={changelog.loading}
+        error={changelog.error}
         onDismiss={() => dismissWhatsNew(APP_VERSION)}
         onShowFullChangelog={() => {
           dismissWhatsNew(APP_VERSION);

@@ -8,6 +8,22 @@ export type FeedbackSeverity = 'critical' | 'high' | 'medium' | 'low';
 
 export type FeedbackStatus = 'draft' | 'saved' | 'submitted' | 'exported';
 
+export type FeedbackReleaseSource = 'local' | 'remote';
+
+export type FeedbackReleaseTrigger =
+  | 'changelog'
+  | 'whats_new'
+  | 'update_banner'
+  | 'support_overview';
+
+export interface FeedbackReleaseContext {
+  version: string;
+  date: string;
+  source: FeedbackReleaseSource;
+  trigger: FeedbackReleaseTrigger;
+  url?: string;
+}
+
 export interface FeedbackItem {
   id: string;
   category: FeedbackCategory;
@@ -27,6 +43,7 @@ export interface FeedbackItem {
   createdAt: string;
   updatedAt: string;
   errorContext?: FeedbackErrorContext;
+  releaseContext?: FeedbackReleaseContext;
 }
 
 export interface FeedbackErrorContext {
@@ -45,6 +62,7 @@ export interface FeedbackFormData {
   screenshot?: string;
   includeDiagnostics: boolean;
   errorContext?: FeedbackErrorContext;
+  releaseContext?: FeedbackReleaseContext;
 }
 
 export interface FeedbackSaveResult {

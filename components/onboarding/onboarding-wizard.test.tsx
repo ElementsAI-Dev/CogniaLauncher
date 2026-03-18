@@ -349,4 +349,24 @@ describe('OnboardingWizard', () => {
 
     expect(defaultProps.onClose).toHaveBeenCalled();
   });
+
+  it('keeps step content in a dedicated scroll region and uses responsive footer actions', () => {
+    render(
+      <OnboardingWizard
+        {...defaultProps}
+        currentStep={2}
+        stepIds={quickStepIds}
+        mode="quick"
+        totalSteps={quickStepIds.length}
+        progress={33}
+        isFirstStep={false}
+        isLastStep={false}
+      />,
+    );
+
+    expect(screen.getByTestId('onboarding-wizard-body')).toHaveClass('flex-1', 'min-h-0');
+    expect(screen.getByTestId('onboarding-wizard-footer').className).toContain('flex-col-reverse');
+    expect(screen.getByTestId('onboarding-wizard-footer').className).toContain('sm:flex-row');
+    expect(screen.getByTestId('onboarding-wizard-actions')).toHaveClass('w-full', 'sm:w-auto');
+  });
 });

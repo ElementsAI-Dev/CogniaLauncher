@@ -56,7 +56,7 @@ export function LicenseCard({ t }: LicenseCardProps) {
         {/* Copyright Row */}
         <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50 border border-border">
           <Copyright
-            className="h-5 w-5 text-muted-foreground flex-shrink-0"
+            className="h-5 w-5 text-muted-foreground shrink-0"
             aria-hidden="true"
           />
           <div className="flex flex-col gap-0.5">

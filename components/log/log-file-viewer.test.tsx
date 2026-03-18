@@ -6,11 +6,13 @@ import { toast } from "sonner";
 
 const mockQueryLogFile = jest.fn();
 const mockExportLogFile = jest.fn();
+const mockExportDiagnosticBundle = jest.fn();
 
 jest.mock("@/hooks/use-logs", () => ({
   useLogs: () => ({
     queryLogFile: mockQueryLogFile,
     exportLogFile: mockExportLogFile,
+    exportDiagnosticBundle: mockExportDiagnosticBundle,
   }),
 }));
 
@@ -33,6 +35,7 @@ const mockT = jest.fn((key: string, params?: Record<string, unknown>) => {
     "logs.exportTxt": "Export TXT",
     "logs.exportJson": "Export JSON",
     "logs.exportCsv": "Export CSV",
+    "logs.exportDiagnostic": "Export Full Diagnostic",
     "logs.clear": "Clear logs",
     "logs.total": "Total",
     "logs.paused": "Paused",
@@ -56,6 +59,24 @@ const mockT = jest.fn((key: string, params?: Record<string, unknown>) => {
     "logs.advanced": "Advanced",
     "common.refresh": "Refresh",
     "logs.follow": "Follow",
+    "logs.viewerStateLabel": "state",
+    "logs.viewerMatchedLabel": "matched",
+    "logs.viewerWindowLabel": "window",
+    "logs.viewerScannedLabel": "scanned",
+    "logs.viewerScanCapLabel": "scanCap",
+    "logs.viewerFiltersLabel": "filters",
+    "logs.viewerTruncatedHint":
+      "Results are partial because the historical scan window is capped.",
+    "logs.viewerLoadErrorTitle": "Failed to load log history",
+    "logs.viewerTruncatedEmptyTitle": "No entries found in the scanned window",
+    "logs.viewerTruncatedEmptyDescription":
+      "Increase max scan lines or narrow filters to inspect older history.",
+    "logs.viewerPartialHistoryNotice":
+      "Showing partial history from the newest scanned lines only.",
+    "logs.viewerStateReady": "ready",
+    "logs.viewerStateEmpty": "empty",
+    "logs.viewerStateTruncated": "truncated",
+    "logs.viewerStateError": "error",
   };
   if (key === "logs.fileEntries") return `${params?.count ?? 0} entries`;
   return map[key] || key;
@@ -173,6 +194,14 @@ describe("LogFileViewer", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     resetStore();
+    mockExportDiagnosticBundle.mockResolvedValue({
+      ok: true,
+      data: {
+        path: "D:/Diagnostics/cognia-diagnostic.zip",
+        size: 1024,
+        fileCount: 4,
+      },
+    });
   });
 
   it("does not query when open is false", () => {
@@ -491,6 +520,35 @@ describe("LogFileViewer", () => {
         expect.objectContaining({ format: "csv" }),
       );
       expect(toast.success).toHaveBeenCalledWith("Export successful");
+    });
+  });
+
+  it("routes the diagnostic action through full bundle export with file context", async () => {
+    const user = userEvent.setup();
+    mockQueryLogFile.mockResolvedValue({
+      ok: true,
+      data: buildQueryData(sampleEntries, 3, false),
+    });
+
+    render(<LogFileViewer open fileName="app.log" onOpenChange={() => undefined} />);
+
+    await waitFor(() => expect(screen.getByText("First log entry")).toBeInTheDocument());
+
+    await user.click(screen.getByRole("button", { name: /export logs/i }));
+    await user.click(screen.getByText("Export Full Diagnostic"));
+
+    await waitFor(() => {
+      expect(mockExportDiagnosticBundle).toHaveBeenCalledWith(
+        expect.objectContaining({
+          workspaceSection: "historical-viewer",
+          selectedFile: "app.log",
+          fileQueryContext: expect.objectContaining({
+            totalCount: 3,
+            windowStartLine: 1,
+            windowEndLine: 3,
+          }),
+        }),
+      );
     });
   });
 

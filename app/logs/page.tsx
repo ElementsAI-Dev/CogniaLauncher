@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { LogPanel } from "@/components/log";
 import { LogFileViewer } from "@/components/log/log-file-viewer";
+import { LogDiagnosticsCard } from "@/components/log/log-diagnostics-card";
 import { LogManagementCard } from "@/components/log/log-management-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -77,15 +78,19 @@ export default function LogsPage() {
   const { logFiles, getLogStats, selectedLogFile, setSelectedLogFile, filter } =
     useLogStore();
   const {
+    crashReports,
+    observability,
+    latestDiagnosticAction,
     cleanupLogs,
     previewCleanupLogs,
     deleteLogFiles,
     deleteLogFile,
     clearLogs,
     loadLogFiles,
+    loadCrashReports,
     getLogDirectory,
     clearLogFile,
-    exportLogFile,
+    exportDiagnosticBundle,
   } = useLogs();
   const [logDir, setLogDir] = useState<string>("");
   const [cleanupPreview, setCleanupPreview] =
@@ -114,6 +119,9 @@ export default function LogsPage() {
   const [loading, setLoading] = useState(false);
   const [totalSize, setTotalSize] = useState(0);
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
+  const [activeTab, setActiveTab] = useState<
+    "realtime" | "files" | "management"
+  >("realtime");
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_PRESETS[0]);
   const [customPageSize, setCustomPageSize] = useState<string>(
@@ -143,6 +151,7 @@ export default function LogsPage() {
       const [fileResult, dirResult] = await Promise.all([
         loadLogFiles(),
         getLogDirectory(),
+        loadCrashReports(),
       ]);
 
       if (!fileResult.ok) {
@@ -161,7 +170,7 @@ export default function LogsPage() {
     } finally {
       setLoading(false);
     }
-  }, [getLogDirectory, loadLogFiles, t]);
+  }, [getLogDirectory, loadCrashReports, loadLogFiles, t]);
 
   useEffect(() => {
     refreshLogsPage();
@@ -205,6 +214,21 @@ export default function LogsPage() {
       toast.error(t("logs.openDirError"));
     }
   };
+
+  const handleRevealPath = useCallback(
+    async (path: string) => {
+      if (!isTauri()) return;
+
+      try {
+        const { revealItemInDir } = await import("@tauri-apps/plugin-opener");
+        await revealItemInDir(path);
+      } catch (error) {
+        console.error("Failed to reveal path:", error);
+        toast.error(t("logs.openDirError"));
+      }
+    },
+    [t],
+  );
 
   const handleCloseViewer = useCallback(
     () => setSelectedLogFile(null),
@@ -347,46 +371,25 @@ export default function LogsPage() {
   );
 
   const handleExportDiagnostic = useCallback(async () => {
-    const result = await exportLogFile({
-      levelFilter: filter.levels.map((level) => level.toUpperCase()),
-      target: filter.target,
-      search: filter.search || undefined,
-      useRegex: filter.useRegex,
-      startTime: filter.startTime ?? undefined,
-      endTime: filter.endTime ?? undefined,
-      format: "json",
-      diagnosticMode: true,
-      sanitizeSensitive: true,
+    const result = await exportDiagnosticBundle({
+      t,
+      workspaceSection: activeTab,
+      selectedFile: selectedLogFile,
+      filterContext: {
+        levels: filter.levels.map((level) => level.toUpperCase()),
+        target: filter.target,
+        search: filter.search || undefined,
+        useRegex: filter.useRegex,
+        startTime: filter.startTime ?? undefined,
+        endTime: filter.endTime ?? undefined,
+        maxScanLines: filter.maxScanLines ?? undefined,
+      },
     });
 
-    if (!result.ok) {
-      toast.error(result.error || t("logs.exportError"));
+    if (!result.ok || !result.data) {
       return;
     }
-
-    try {
-      const blob = new Blob([result.data.content], {
-        type: "application/json",
-      });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = result.data.fileName;
-      document.body.appendChild(anchor);
-      anchor.click();
-      document.body.removeChild(anchor);
-      URL.revokeObjectURL(url);
-      toast.success(t("logs.exportSuccess"));
-      if (result.data.redactedCount > 0) {
-        toast.info(
-          t("logs.redactionApplied", { count: result.data.redactedCount }),
-        );
-      }
-    } catch (error) {
-      console.error("Failed to export diagnostic logs:", error);
-      toast.error(t("logs.exportError"));
-    }
-  }, [exportLogFile, filter, t]);
+  }, [activeTab, exportDiagnosticBundle, filter, selectedLogFile, t]);
 
   const handlePreviewCleanup = useCallback(
     async (policy?: LogCleanupPolicyInput) => {
@@ -533,11 +536,12 @@ export default function LogsPage() {
                 variant="outline"
                 size="sm"
                 onClick={handleExportDiagnostic}
+                disabled={!isTauri()}
                 className="h-8 sm:h-9"
               >
                 <ShieldAlert className="h-4 w-4 sm:mr-2" />
                 <span className="hidden sm:inline">
-                  {t("logs.exportDiagnostic")}
+                  {t("logs.exportFullDiagnostic")}
                 </span>
               </Button>
               <Button
@@ -586,7 +590,13 @@ export default function LogsPage() {
       </div>
 
       {/* Tabs */}
-      <Tabs defaultValue="realtime" className="flex-1 flex flex-col min-h-0">
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) =>
+          setActiveTab(value as "realtime" | "files" | "management")
+        }
+        className="flex-1 flex flex-col min-h-0"
+      >
         <div className="shrink-0 px-4 sm:px-6 pt-3 sm:pt-4">
           <TabsList className="h-10 p-1">
             <TabsTrigger value="realtime" className="gap-2 px-3 sm:px-4 h-8">
@@ -663,7 +673,7 @@ export default function LogsPage() {
             {renderResultSummarySection()}
 
             <section className="min-h-0 flex-1">
-              <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4 h-full min-h-0">
+              <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-4 h-full min-h-0">
             {/* File list */}
             <Card className="flex flex-col min-h-0">
               <CardHeader className="shrink-0 pb-3">
@@ -910,18 +920,30 @@ export default function LogsPage() {
             </Card>
 
             {/* Management sidebar */}
-            {isTauri() && (
-              <div className="hidden lg:block">
-                <LogManagementCard
-                  totalSize={totalSize}
-                  fileCount={logFiles.length}
-                  previewResult={cleanupPreview}
-                  onPreviewCleanup={handlePreviewCleanup}
-                  onCleanup={handleManagementCleanup}
-                  onRefresh={handleManagementRefresh}
-                />
-              </div>
-            )}
+            <div className="hidden lg:flex lg:min-h-0 lg:flex-col lg:gap-4">
+              <LogDiagnosticsCard
+                isDesktopRuntime={isTauri()}
+                observability={observability}
+                crashReports={crashReports}
+                latestDiagnosticAction={latestDiagnosticAction}
+                onExportDiagnostic={handleExportDiagnostic}
+                onRefreshCrashReports={refreshLogsPage}
+                onCopyPath={handleCopyPath}
+                onRevealPath={handleRevealPath}
+              />
+              {isTauri() && (
+                <div className="min-h-0">
+                  <LogManagementCard
+                    totalSize={totalSize}
+                    fileCount={logFiles.length}
+                    previewResult={cleanupPreview}
+                    onPreviewCleanup={handlePreviewCleanup}
+                    onCleanup={handleManagementCleanup}
+                    onRefresh={handleManagementRefresh}
+                  />
+                </div>
+              )}
+            </div>
               </div>
             </section>
           </div>
@@ -949,16 +971,28 @@ export default function LogsPage() {
             </section>
             {renderResultSummarySection()}
             <section className="min-h-0 flex-1">
-              {isTauri() && (
-                <LogManagementCard
-                  totalSize={totalSize}
-                  fileCount={logFiles.length}
-                  previewResult={cleanupPreview}
-                  onPreviewCleanup={handlePreviewCleanup}
-                  onCleanup={handleManagementCleanup}
-                  onRefresh={handleManagementRefresh}
+              <div className="flex flex-col gap-4">
+                <LogDiagnosticsCard
+                  isDesktopRuntime={isTauri()}
+                  observability={observability}
+                  crashReports={crashReports}
+                  latestDiagnosticAction={latestDiagnosticAction}
+                  onExportDiagnostic={handleExportDiagnostic}
+                  onRefreshCrashReports={refreshLogsPage}
+                  onCopyPath={handleCopyPath}
+                  onRevealPath={handleRevealPath}
                 />
-              )}
+                {isTauri() && (
+                  <LogManagementCard
+                    totalSize={totalSize}
+                    fileCount={logFiles.length}
+                    previewResult={cleanupPreview}
+                    onPreviewCleanup={handlePreviewCleanup}
+                    onCleanup={handleManagementCleanup}
+                    onRefresh={handleManagementRefresh}
+                  />
+                )}
+              </div>
             </section>
           </div>
         </TabsContent>

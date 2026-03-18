@@ -81,6 +81,14 @@ const feedbackTranslations: Record<string, string> = {
   "feedback.clearDraft": "Clear draft",
   "feedback.thankYou": "Thank you!",
   "feedback.thankYouDesc": "Your feedback has been saved.",
+  "feedback.releaseContextTitle": "Release context",
+  "feedback.releaseContextVersion": "Version",
+  "feedback.releaseContextSource": "Source",
+  "feedback.releaseContextTrigger": "Opened from",
+  "feedback.releaseSource.local": "Bundled",
+  "feedback.releaseSource.remote": "GitHub",
+  "feedback.releaseTrigger.changelog": "Changelog",
+  "feedback.releaseTrigger.whats_new": "What's New",
   "feedback.viewHistory": "History",
   "feedback.history": "Feedback History",
   "feedback.historyDesc": "View previously saved feedback",
@@ -104,6 +112,7 @@ const mockFeedbackT = (key: string) => feedbackTranslations[key] || key;
 let mockDialogOpen = false;
 let mockPreSelectedCategory: string | null = null;
 let mockPreFilledErrorContext: Record<string, unknown> | null = null;
+let mockPreFilledReleaseContext: Record<string, unknown> | null = null;
 let mockDraft: Record<string, unknown> | null = null;
 
 jest.mock("@/lib/stores/feedback", () => ({
@@ -111,6 +120,7 @@ jest.mock("@/lib/stores/feedback", () => ({
     dialogOpen: mockDialogOpen,
     preSelectedCategory: mockPreSelectedCategory,
     preFilledErrorContext: mockPreFilledErrorContext,
+    preFilledReleaseContext: mockPreFilledReleaseContext,
     draft: mockDraft,
     openDialog: mockOpenDialog,
     closeDialog: mockCloseDialog,
@@ -158,6 +168,7 @@ describe("FeedbackDialog", () => {
     mockDialogOpen = false;
     mockPreSelectedCategory = null;
     mockPreFilledErrorContext = null;
+    mockPreFilledReleaseContext = null;
     mockDraft = null;
   });
 
@@ -572,6 +583,24 @@ describe("FeedbackDialog", () => {
     expect(screen.getByText("Error info attached")).toBeInTheDocument();
   });
 
+  it("shows release context summary when provided", () => {
+    mockPreFilledReleaseContext = {
+      version: "1.2.3",
+      date: "2026-03-16",
+      source: "remote",
+      trigger: "changelog",
+      url: "https://github.com/test/releases/tag/v1.2.3",
+    };
+    mockDialogOpen = true;
+
+    render(<FeedbackDialog />);
+
+    expect(screen.getByText("Release context")).toBeInTheDocument();
+    expect(screen.getByText("1.2.3")).toBeInTheDocument();
+    expect(screen.getByText("GitHub")).toBeInTheDocument();
+    expect(screen.getByText("Changelog")).toBeInTheDocument();
+  });
+
   // -----------------------------------------------------------------------
   // handleOpenGitHub
   // -----------------------------------------------------------------------
@@ -776,6 +805,7 @@ describe("FeedbackHistoryDialog", () => {
     mockDialogOpen = true;
     mockPreSelectedCategory = null;
     mockPreFilledErrorContext = null;
+    mockPreFilledReleaseContext = null;
     mockDraft = null;
   });
 
@@ -880,6 +910,13 @@ describe("FeedbackHistoryDialog", () => {
         severity: "high",
         title: "Test feedback item",
         description: "desc",
+        releaseContext: {
+          version: "1.2.3",
+          date: "2026-03-16",
+          source: "remote",
+          trigger: "whats_new",
+          url: "https://github.com/test/releases/tag/v1.2.3",
+        },
         includeDiagnostics: false,
         appVersion: "0.1.0",
         os: "Windows",
@@ -907,6 +944,7 @@ describe("FeedbackHistoryDialog", () => {
     expect(item).toBeInTheDocument();
     // "Bug Report" appears in both main dialog categories and history table badge
     expect(screen.getAllByText("Bug Report").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("v1.2.3")).toBeInTheDocument();
   });
 
   it("exports feedback as JSON download", async () => {
@@ -1084,6 +1122,12 @@ describe("FeedbackHistoryDialog", () => {
         category: "bug",
         title: "Alpha bug",
         description: "",
+        releaseContext: {
+          version: "1.2.3",
+          date: "2026-03-16",
+          source: "remote",
+          trigger: "changelog",
+        },
         includeDiagnostics: false,
         appVersion: "0.1.0",
         os: "Windows",
@@ -1098,6 +1142,12 @@ describe("FeedbackHistoryDialog", () => {
         category: "feature",
         title: "Beta feature",
         description: "",
+        releaseContext: {
+          version: "2.0.0",
+          date: "2026-03-17",
+          source: "local",
+          trigger: "whats_new",
+        },
         includeDiagnostics: false,
         appVersion: "0.1.0",
         os: "Windows",
@@ -1125,6 +1175,66 @@ describe("FeedbackHistoryDialog", () => {
       "View previously saved feedback",
     );
     await user.type(searchInput, "Alpha");
+
+    expect(screen.getByText("Alpha bug")).toBeInTheDocument();
+    expect(screen.queryByText("Beta feature")).not.toBeInTheDocument();
+  });
+
+  it("filters history items by release version metadata", async () => {
+    mockIsTauri.mockReturnValue(true);
+    mockListFeedbacks.mockResolvedValue([
+      {
+        id: "fb-meta-1",
+        category: "bug",
+        title: "Alpha bug",
+        description: "",
+        releaseContext: {
+          version: "1.2.3",
+          date: "2026-03-16",
+          source: "remote",
+          trigger: "changelog",
+        },
+        includeDiagnostics: false,
+        appVersion: "0.1.0",
+        os: "Windows",
+        arch: "x86_64",
+        currentPage: "/",
+        status: "saved",
+        createdAt: "2026-01-15T10:00:00Z",
+        updatedAt: "2026-01-15T10:00:00Z",
+      },
+      {
+        id: "fb-meta-2",
+        category: "feature",
+        title: "Beta feature",
+        description: "",
+        releaseContext: {
+          version: "2.0.0",
+          date: "2026-03-17",
+          source: "local",
+          trigger: "whats_new",
+        },
+        includeDiagnostics: false,
+        appVersion: "0.1.0",
+        os: "Windows",
+        arch: "x86_64",
+        currentPage: "/",
+        status: "saved",
+        createdAt: "2026-01-16T10:00:00Z",
+        updatedAt: "2026-01-16T10:00:00Z",
+      },
+    ]);
+
+    const user = userEvent.setup();
+    render(<FeedbackDialog />);
+    await user.click(screen.getByRole("button", { name: "History" }));
+    await screen.findByText("Feedback History");
+    await screen.findByText("Alpha bug", {}, { timeout: 5000 });
+
+    const searchInput = screen.getByPlaceholderText(
+      "View previously saved feedback",
+    );
+    await user.type(searchInput, "1.2.3");
 
     expect(screen.getByText("Alpha bug")).toBeInTheDocument();
     expect(screen.queryByText("Beta feature")).not.toBeInTheDocument();
