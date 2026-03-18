@@ -31,6 +31,7 @@ pub mod terminal;
 pub mod updater;
 pub mod uv;
 pub mod window_effect;
+pub mod window_effect_support;
 pub mod winget;
 pub mod wsl;
 pub mod xmake;
@@ -79,7 +80,8 @@ pub use custom_detection::{
 };
 pub use diagnostic::{
     diagnostic_capture_frontend_crash, diagnostic_check_last_crash, diagnostic_dismiss_crash,
-    diagnostic_export_bundle, diagnostic_get_default_export_path, install_panic_hook,
+    diagnostic_export_bundle, diagnostic_get_default_export_path, diagnostic_list_crash_reports,
+    install_panic_hook, CrashReportInfo,
 };
 pub use download::{
     disk_space_check, disk_space_get, download_add, download_batch_cancel, download_batch_pause,
@@ -108,10 +110,10 @@ pub use environment::{
 pub use envvar::{
     envvar_add_path_entry, envvar_deduplicate_path, envvar_detect_conflicts, envvar_expand,
     envvar_export_env_file, envvar_get, envvar_get_path, envvar_get_persistent,
-    envvar_import_env_file, envvar_list_all, envvar_list_persistent, envvar_list_persistent_typed,
-    envvar_list_shell_profiles, envvar_read_shell_profile, envvar_remove_path_entry,
-    envvar_remove_persistent, envvar_remove_process, envvar_reorder_path, envvar_set_persistent,
-    envvar_set_process,
+    envvar_get_support_snapshot, envvar_import_env_file, envvar_list_all, envvar_list_persistent,
+    envvar_list_persistent_typed, envvar_list_shell_profiles, envvar_read_shell_profile,
+    envvar_remove_path_entry, envvar_remove_persistent, envvar_remove_process,
+    envvar_reorder_path, envvar_set_persistent, envvar_set_process,
 };
 pub use feedback::{
     feedback_count, feedback_delete, feedback_export, feedback_get, feedback_list, feedback_save,

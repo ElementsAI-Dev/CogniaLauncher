@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { DesktopActionId } from "@/lib/desktop-actions";
 import { isTauri } from "@/lib/platform";
 
 // Re-export all types from types/tauri.ts
@@ -219,12 +220,15 @@ export type {
   PathStatusInfo,
   EnvVarScope,
   EnvFileFormat,
+  EnvVarSupportSnapshot,
   EnvVarSummary,
   EnvVarRevealResult,
+  EnvVarMutationResult,
   PathEntryInfo,
   ShellProfileInfo,
   EnvVarImportResult,
   EnvVarImportPreview,
+  EnvVarPathMutationResult,
   EnvVarPathRepairPreview,
   EnvVarShellGuidance,
   EnvVarConflictResolutionResult,
@@ -257,6 +261,7 @@ export type {
   DiagnosticExportResult,
   DiagnosticErrorContext,
   CrashInfo,
+  CrashReportInfo,
   BrewTap,
   BrewService,
   BrewDoctorResult,
@@ -448,12 +453,15 @@ import type {
   PathStatusInfo,
   EnvVarScope,
   EnvFileFormat,
+  EnvVarSupportSnapshot,
   EnvVarSummary,
   EnvVarRevealResult,
+  EnvVarMutationResult,
   PathEntryInfo,
   ShellProfileInfo,
   EnvVarImportResult,
   EnvVarImportPreview,
+  EnvVarPathMutationResult,
   EnvVarPathRepairPreview,
   EnvVarShellGuidance,
   EnvVarConflictResolutionResult,
@@ -484,6 +492,7 @@ import type {
   DiagnosticCaptureFrontendCrashOptions,
   DiagnosticExportResult,
   CrashInfo,
+  CrashReportInfo,
 } from "@/types/tauri";
 
 import type {
@@ -582,26 +591,39 @@ export const envResolveAlias = (envType: string, alias: string) =>
 // Environment commands
 export const envList = (force?: boolean) =>
   invoke<EnvironmentInfo[]>("env_list", { force });
-export const envGet = (envType: string) =>
-  invoke<EnvironmentInfo>("env_get", { envType });
+export const envGet = (envType: string, providerId?: string) =>
+  invoke<EnvironmentInfo>("env_get", { envType, providerId });
 export const envInstall = (
   envType: string,
   version: string,
   providerId?: string,
 ) => invoke<void>("env_install", { envType, version, providerId });
-export const envUninstall = (envType: string, version: string) =>
-  invoke<void>("env_uninstall", { envType, version });
-export const envUseGlobal = (envType: string, version: string) =>
-  invoke<EnvVersionMutationResult>("env_use_global", { envType, version });
+export const envUninstall = (
+  envType: string,
+  version: string,
+  providerId?: string,
+) => invoke<void>("env_uninstall", { envType, version, providerId });
+export const envUseGlobal = (
+  envType: string,
+  version: string,
+  providerId?: string,
+) =>
+  invoke<EnvVersionMutationResult>("env_use_global", {
+    envType,
+    version,
+    providerId,
+  });
 export const envUseLocal = (
   envType: string,
   version: string,
   projectPath: string,
+  providerId?: string,
 ) =>
   invoke<EnvVersionMutationResult>("env_use_local", {
     envType,
     version,
     projectPath,
+    providerId,
   });
 export const envDetect = (envType: string, startPath: string) =>
   invoke<DetectedEnvironment | null>("env_detect", { envType, startPath });
@@ -649,14 +671,30 @@ export const envGetTypeMapping = () =>
   invoke<EnvironmentTypeMapping>("env_get_type_mapping");
 
 // Environment verification and query commands
-export const envVerifyInstall = (envType: string, version: string) =>
-  invoke<EnvVerifyResult>("env_verify_install", { envType, version });
+export const envVerifyInstall = (
+  envType: string,
+  version: string,
+  providerId?: string,
+) =>
+  invoke<EnvVerifyResult>("env_verify_install", {
+    envType,
+    version,
+    providerId,
+  });
 
-export const envInstalledVersions = (envType: string, force?: boolean) =>
-  invoke<InstalledVersion[]>("env_installed_versions", { envType, force });
+export const envInstalledVersions = (
+  envType: string,
+  providerId?: string,
+  force?: boolean,
+) =>
+  invoke<InstalledVersion[]>("env_installed_versions", {
+    envType,
+    providerId,
+    force,
+  });
 
-export const envCurrentVersion = (envType: string) =>
-  invoke<string | null>("env_current_version", { envType });
+export const envCurrentVersion = (envType: string, providerId?: string) =>
+  invoke<string | null>("env_current_version", { envType, providerId });
 
 // Environment update checking & cleanup commands
 export const envCheckUpdates = (envType: string) =>
@@ -1450,6 +1488,8 @@ export const diagnosticGetDefaultExportPath = () =>
   invoke<string>("diagnostic_get_default_export_path");
 export const diagnosticCheckLastCrash = () =>
   invoke<CrashInfo | null>("diagnostic_check_last_crash");
+export const diagnosticListCrashReports = () =>
+  invoke<CrashReportInfo[]>("diagnostic_list_crash_reports");
 export const diagnosticDismissCrash = () =>
   invoke<void>("diagnostic_dismiss_crash");
 
@@ -1801,6 +1841,14 @@ export async function listenCheckUpdates(
 ): Promise<UnlistenFn> {
   return listen<void>("check-updates", () => {
     callback();
+  });
+}
+
+export async function listenDesktopAction(
+  callback: (actionId: DesktopActionId) => void,
+): Promise<UnlistenFn> {
+  return listen<DesktopActionId>("desktop-action", (event) => {
+    callback(event.payload);
   });
 }
 
@@ -3595,13 +3643,17 @@ export const envvarGet = (key: string) =>
 export const envvarRevealValue = (key: string, scope: EnvVarScope) =>
   invoke<EnvVarRevealResult>("envvar_reveal_value", { key, scope });
 
+/** Get runtime support/readiness information for envvar workflows */
+export const envvarGetSupportSnapshot = () =>
+  invoke<EnvVarSupportSnapshot>("envvar_get_support_snapshot");
+
 /** Set a process-level environment variable */
 export const envvarSetProcess = (key: string, value: string) =>
-  invoke<void>("envvar_set_process", { key, value });
+  invoke<EnvVarMutationResult>("envvar_set_process", { key, value });
 
 /** Remove a process-level environment variable */
 export const envvarRemoveProcess = (key: string) =>
-  invoke<void>("envvar_remove_process", { key });
+  invoke<EnvVarMutationResult>("envvar_remove_process", { key });
 
 /** Get a persistent environment variable by scope */
 export const envvarGetPersistent = (key: string, scope: EnvVarScope) =>
@@ -3612,11 +3664,11 @@ export const envvarSetPersistent = (
   key: string,
   value: string,
   scope: EnvVarScope,
-) => invoke<void>("envvar_set_persistent", { key, value, scope });
+) => invoke<EnvVarMutationResult>("envvar_set_persistent", { key, value, scope });
 
 /** Remove a persistent environment variable */
 export const envvarRemovePersistent = (key: string, scope: EnvVarScope) =>
-  invoke<void>("envvar_remove_persistent", { key, scope });
+  invoke<EnvVarMutationResult>("envvar_remove_persistent", { key, scope });
 
 /** Get PATH entries with existence info */
 export const envvarGetPath = (scope: EnvVarScope) =>
@@ -3627,15 +3679,15 @@ export const envvarAddPathEntry = (
   path: string,
   scope: EnvVarScope,
   position?: number,
-) => invoke<void>("envvar_add_path_entry", { path, scope, position });
+) => invoke<EnvVarPathMutationResult>("envvar_add_path_entry", { path, scope, position });
 
 /** Remove a PATH entry */
 export const envvarRemovePathEntry = (path: string, scope: EnvVarScope) =>
-  invoke<void>("envvar_remove_path_entry", { path, scope });
+  invoke<EnvVarPathMutationResult>("envvar_remove_path_entry", { path, scope });
 
 /** Reorder PATH entries (full replacement) */
 export const envvarReorderPath = (entries: string[], scope: EnvVarScope) =>
-  invoke<void>("envvar_reorder_path", { entries, scope });
+  invoke<EnvVarPathMutationResult>("envvar_reorder_path", { entries, scope });
 
 /** List available shell profiles */
 export const envvarListShellProfiles = () =>
@@ -3688,7 +3740,7 @@ export const envvarExpand = (path: string) =>
 
 /** Remove duplicate PATH entries for a given scope, returns count removed */
 export const envvarDeduplicatePath = (scope: EnvVarScope) =>
-  invoke<number>("envvar_deduplicate_path", { scope });
+  invoke<EnvVarPathMutationResult>("envvar_deduplicate_path", { scope });
 
 /** Preview PATH repair for a given scope */
 export const envvarPreviewPathRepair = (scope: EnvVarScope) =>
@@ -3696,7 +3748,7 @@ export const envvarPreviewPathRepair = (scope: EnvVarScope) =>
 
 /** Apply PATH repair from a preview fingerprint */
 export const envvarApplyPathRepair = (scope: EnvVarScope, fingerprint: string) =>
-  invoke<number>("envvar_apply_path_repair", { scope, fingerprint });
+  invoke<EnvVarPathMutationResult>("envvar_apply_path_repair", { scope, fingerprint });
 
 /** List persistent vars with registry type info (Windows: REG_SZ/REG_EXPAND_SZ) */
 export const envvarListPersistentTyped = (scope: EnvVarScope) =>
@@ -3848,6 +3900,18 @@ export const terminalGetConfigEditorMetadata = (
   invoke<TerminalConfigEditorMetadata>("terminal_get_config_editor_metadata", {
     path,
     shellType,
+  }).then(async (metadata) => {
+    const { resolveTerminalEditorCapability } = await import(
+      "@/lib/terminal/editor/capability-registry"
+    );
+    return {
+      ...metadata,
+      capability: resolveTerminalEditorCapability({
+        shellType: metadata.shellType ?? shellType,
+        configPath: path,
+        language: metadata.language,
+      }),
+    };
   });
 
 /** Restore shell config from latest persisted snapshot */
@@ -4020,6 +4084,13 @@ export const feedbackSave = (request: {
   os: string;
   arch: string;
   currentPage: string;
+  releaseContext?: {
+    version: string;
+    date: string;
+    source: 'local' | 'remote';
+    trigger: 'changelog' | 'whats_new' | 'update_banner' | 'support_overview';
+    url?: string;
+  };
   errorContext?: {
     message?: string;
     stack?: string;
@@ -4607,7 +4678,7 @@ export const pipxListJson = () => invoke<string>("pipx_list_json");
 // ============================================================================
 
 export const windowEffectApply = (effect: string, dark?: boolean) =>
-  invoke<void>("window_effect_apply", { effect, dark: dark ?? null });
+  invoke<string>("window_effect_apply", { effect, dark: dark ?? null });
 export const windowEffectClear = () => invoke<void>("window_effect_clear");
 export const windowEffectGetSupported = () =>
   invoke<string[]>("window_effect_get_supported");

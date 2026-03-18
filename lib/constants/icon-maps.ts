@@ -94,6 +94,12 @@ export const PROVIDER_ICON_FILES: Record<string, string> = {
   "system-fortran": "fortran",
 };
 
+export const BRAND_ICON_FILES: Record<string, string> = {
+  tauri: "tauri",
+  nextjs: "nextjs",
+  react: "react",
+};
+
 export const PLATFORM_ICON_FILES: Record<string, string> = {
   windows: "windows",
   linux: "linux",

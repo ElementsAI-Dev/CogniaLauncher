@@ -192,14 +192,18 @@ pub fn run() {
                     let mut tray_guard = tray_state.write().await;
                     tray_guard.click_behavior = settings_guard.tray.click_behavior;
                     tray_guard.quick_action = settings_guard.tray.quick_action;
+                    if matches!(tray_guard.click_behavior, tray::TrayClickBehavior::CheckUpdates) {
+                        tray_guard.quick_action = tray::TrayQuickAction::CheckUpdates;
+                    }
                     tray_guard.minimize_to_tray = settings_guard.tray.minimize_to_tray;
                     tray_guard.start_minimized = settings_guard.tray.start_minimized;
                     tray_guard.show_notifications = settings_guard.tray.show_notifications;
                     tray_guard.notification_level = settings_guard.tray.notification_level;
                     tray_guard.notification_events = settings_guard.tray.notification_events.clone();
-                    tray_guard.menu_config.items = settings_guard.tray.menu_items.clone();
-                    tray_guard.menu_config.priority_items =
-                        settings_guard.tray.menu_priority_items.clone();
+                    tray_guard.menu_config = tray::normalize_tray_menu_config(&tray::TrayMenuConfig {
+                        items: settings_guard.tray.menu_items.clone(),
+                        priority_items: settings_guard.tray.menu_priority_items.clone(),
+                    });
                     tray_guard.language = if settings_guard.appearance.language == "zh" {
                         TrayLanguage::Zh
                     } else {
@@ -699,6 +703,7 @@ pub fn run() {
             commands::shim::path_check,
             commands::shim::path_get_add_command,
             // Environment variable management commands
+            commands::envvar::envvar_get_support_snapshot,
             commands::envvar::envvar_list_all,
             commands::envvar::envvar_list_process_summaries,
             commands::envvar::envvar_get,
@@ -746,6 +751,7 @@ pub fn run() {
             commands::diagnostic::diagnostic_export_bundle,
             commands::diagnostic::diagnostic_get_default_export_path,
             commands::diagnostic::diagnostic_check_last_crash,
+            commands::diagnostic::diagnostic_list_crash_reports,
             commands::diagnostic::diagnostic_dismiss_crash,
             commands::diagnostic::diagnostic_capture_frontend_crash,
             // Manifest commands

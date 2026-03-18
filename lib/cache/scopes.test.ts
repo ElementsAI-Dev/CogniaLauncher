@@ -1,8 +1,13 @@
 import {
+  canonicalScopeToCleanType,
   canonicalScopeFromDetailType,
   canonicalScopeLabelKey,
+  cleanTypeLabelKey,
+  cleanTypeToCanonicalScope,
   formatCleanTypeLabel,
   isCanonicalCacheScope,
+  isPreviewCapableCleanType,
+  isTrashApplicableCleanType,
 } from './scopes';
 
 describe('cache scopes', () => {
@@ -25,8 +30,21 @@ describe('cache scopes', () => {
 
   it('formats clean type labels for known scopes and preserves unknown strings', () => {
     expect(isCanonicalCacheScope('downloads')).toBe(true);
+    expect(isCanonicalCacheScope('mystery')).toBe(false);
     expect(formatCleanTypeLabel('downloads', t)).toBe('cache.typeDownload');
     expect(formatCleanTypeLabel('unknown_scope', t)).toBe('unknown_scope');
   });
-});
 
+  it('maps canonical scopes to clean types and back', () => {
+    expect(cleanTypeToCanonicalScope('downloads')).toBe('downloads');
+    expect(cleanTypeToCanonicalScope('all')).toBe('all');
+    expect(canonicalScopeToCleanType('downloads')).toBe('downloads');
+    expect(canonicalScopeToCleanType('external')).toBeNull();
+  });
+
+  it('builds clean type label keys and preview/trash applicability', () => {
+    expect(cleanTypeLabelKey('metadata')).toBe('cache.typeMetadata');
+    expect(isPreviewCapableCleanType('downloads')).toBe(true);
+    expect(isTrashApplicableCleanType('all')).toBe(true);
+  });
+});

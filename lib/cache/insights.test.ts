@@ -214,4 +214,260 @@ describe('cache overview insights', () => {
     );
     expect(insights.freshness.state).toBe('missing');
   });
+
+  it('recommends history review when history loading failed and freshness is stale', () => {
+    const staleNow = now + 20 * 60 * 1000;
+    const insights = deriveCacheOverviewInsights({
+      cacheInfo: {
+        download_cache: { entry_count: 1, size: 100, size_human: '100 B', location: '/cache/downloads' },
+        metadata_cache: { entry_count: 1, size: 50, size_human: '50 B', location: '/cache/metadata' },
+        default_downloads: { entry_count: 0, size: 0, size_human: '0 B', location: '/downloads', is_available: true, reason: null },
+        total_size: 150,
+        total_size_human: '150 B',
+        max_size: 1000,
+        usage_percent: 15,
+      },
+      monitor: null,
+      accessStats: null,
+      accessStatsReadState: {
+        status: 'ready',
+        error: null,
+        lastUpdatedAt: now - 30 * 60 * 1000,
+      },
+      hotFiles: [],
+      hotFilesReadState: {
+        status: 'idle',
+        error: null,
+        lastUpdatedAt: null,
+      },
+      historySummary: null,
+      historyReadState: {
+        status: 'error',
+        error: 'boom',
+        lastUpdatedAt: now - 40 * 60 * 1000,
+      },
+      cacheVerification: null,
+      totalIssues: 0,
+      now: staleNow,
+    });
+
+    expect(insights.primaryAction.id).toBe('history');
+    expect(insights.freshness.state).toBe('stale');
+    expect(insights.secondaryActions.some((action) => action.id === 'history')).toBe(false);
+  });
+
+  it('recommends external cleanup when external caches dominate and entry review when hot files exist', () => {
+    const externalInsights = deriveCacheOverviewInsights({
+      cacheInfo: {
+        download_cache: { entry_count: 1, size: 100, size_human: '100 B', location: '/cache/downloads' },
+        metadata_cache: { entry_count: 1, size: 50, size_human: '50 B', location: '/cache/metadata' },
+        default_downloads: { entry_count: 0, size: 0, size_human: '0 B', location: '/downloads', is_available: true, reason: null },
+        total_size: 150,
+        total_size_human: '150 B',
+        max_size: 1000,
+        usage_percent: 15,
+      },
+      monitor: {
+        internalSize: 100,
+        internalSizeHuman: '100 B',
+        defaultDownloadsSize: 0,
+        defaultDownloadsSizeHuman: '0 B',
+        defaultDownloadsCount: 0,
+        defaultDownloadsPath: '/downloads',
+        defaultDownloadsAvailable: true,
+        defaultDownloadsReason: null,
+        externalSize: 200,
+        externalSizeHuman: '200 B',
+        totalSize: 300,
+        totalSizeHuman: '300 B',
+        maxSize: 1000,
+        maxSizeHuman: '1 KB',
+        usagePercent: 10,
+        threshold: 80,
+        exceedsThreshold: false,
+        diskTotal: 0,
+        diskAvailable: 0,
+        diskAvailableHuman: '0 B',
+        externalCaches: [],
+      },
+      accessStats: null,
+      accessStatsReadState: {
+        status: 'idle',
+        error: null,
+        lastUpdatedAt: null,
+      },
+      hotFiles: [],
+      hotFilesReadState: {
+        status: 'idle',
+        error: null,
+        lastUpdatedAt: null,
+      },
+      historySummary: null,
+      historyReadState: {
+        status: 'idle',
+        error: null,
+        lastUpdatedAt: null,
+      },
+      cacheVerification: null,
+      totalIssues: 0,
+      now,
+    });
+    expect(externalInsights.primaryAction.id).toBe('external');
+
+    const entryInsights = deriveCacheOverviewInsights({
+      cacheInfo: null,
+      monitor: null,
+      accessStats: { hits: 1, misses: 1, hit_rate: 0.5, total_requests: 2, last_reset: null },
+      accessStatsReadState: { status: 'ready', error: null, lastUpdatedAt: now - 1_000 },
+      hotFiles: [
+        {
+          key: 'downloads/file.zip',
+          file_path: '/cache/downloads/file.zip',
+          size: 10,
+          size_human: '10 B',
+          checksum: 'abc',
+          entry_type: 'download',
+          created_at: '2026-03-14T11:00:00.000Z',
+          last_accessed: '2026-03-14T11:59:00.000Z',
+          hit_count: 2,
+        },
+      ],
+      hotFilesReadState: { status: 'ready', error: null, lastUpdatedAt: now - 500 },
+      historySummary: null,
+      historyReadState: { status: 'idle', error: null, lastUpdatedAt: null },
+      cacheVerification: null,
+      totalIssues: 0,
+      now,
+    });
+    expect(entryInsights.primaryAction.id).toBe('entries');
+  });
+
+  it('falls back to monitor guidance when no issues or activity signals are present', () => {
+    const insights = deriveCacheOverviewInsights({
+      cacheInfo: null,
+      monitor: null,
+      accessStats: null,
+      accessStatsReadState: { status: 'idle', error: null, lastUpdatedAt: null },
+      hotFiles: [],
+      hotFilesReadState: { status: 'idle', error: null, lastUpdatedAt: null },
+      historySummary: null,
+      historyReadState: { status: 'idle', error: null, lastUpdatedAt: null },
+      cacheVerification: null,
+      totalIssues: 0,
+      now,
+    });
+
+    expect(insights.primaryAction.id).toBe('monitor');
+    expect(insights.secondaryActions.map((action) => action.id)).toContain('clean');
+  });
+
+  it('derives usage percent from max_size when explicit usage metrics are missing', () => {
+    const insights = deriveCacheOverviewInsights({
+      cacheInfo: {
+        download_cache: { entry_count: 3, size: 400, size_human: '400 B', location: '/cache/downloads' },
+        metadata_cache: { entry_count: 2, size: 100, size_human: '100 B', location: '/cache/metadata' },
+        default_downloads: { entry_count: 0, size: 0, size_human: '0 B', location: '/downloads', is_available: true, reason: null },
+        total_size: 500,
+        total_size_human: '500 B',
+        max_size: 1000,
+      } as never,
+      monitor: null,
+      accessStats: null,
+      accessStatsReadState: { status: 'idle', error: null, lastUpdatedAt: null },
+      hotFiles: [],
+      hotFilesReadState: { status: 'idle', error: null, lastUpdatedAt: null },
+      historySummary: null,
+      historyReadState: { status: 'idle', error: null, lastUpdatedAt: null },
+      cacheVerification: null,
+      totalIssues: 0,
+      now,
+    });
+
+    expect(insights.scopeSummaries.find((scope) => scope.id === 'internal')).toEqual(
+      expect.objectContaining({
+        status: 'healthy',
+        tone: 'success',
+      }),
+    );
+  });
+
+  it('uses default and muted external tones when the external snapshot is present but not dominant', () => {
+    const defaultTone = deriveCacheOverviewInsights({
+      cacheInfo: null,
+      monitor: {
+        internalSize: 500,
+        internalSizeHuman: '500 B',
+        defaultDownloadsSize: 0,
+        defaultDownloadsSizeHuman: '0 B',
+        defaultDownloadsCount: 0,
+        defaultDownloadsPath: '/downloads',
+        defaultDownloadsAvailable: true,
+        defaultDownloadsReason: null,
+        externalSize: 100,
+        externalSizeHuman: '100 B',
+        totalSize: 600,
+        totalSizeHuman: '600 B',
+        maxSize: 1000,
+        maxSizeHuman: '1 KB',
+        usagePercent: 10,
+        threshold: 80,
+        exceedsThreshold: false,
+        diskTotal: 0,
+        diskAvailable: 0,
+        diskAvailableHuman: '0 B',
+        externalCaches: [],
+      },
+      accessStats: null,
+      accessStatsReadState: { status: 'idle', error: null, lastUpdatedAt: null },
+      hotFiles: [],
+      hotFilesReadState: { status: 'idle', error: null, lastUpdatedAt: null },
+      historySummary: null,
+      historyReadState: { status: 'idle', error: null, lastUpdatedAt: null },
+      cacheVerification: null,
+      totalIssues: 0,
+      now,
+    });
+    expect(defaultTone.scopeSummaries.find((scope) => scope.id === 'external')).toEqual(
+      expect.objectContaining({ tone: 'default' }),
+    );
+
+    const mutedInsights = deriveCacheOverviewInsights({
+      cacheInfo: null,
+      monitor: {
+        internalSize: 500,
+        internalSizeHuman: '500 B',
+        defaultDownloadsSize: 0,
+        defaultDownloadsSizeHuman: '0 B',
+        defaultDownloadsCount: 0,
+        defaultDownloadsPath: '/downloads',
+        defaultDownloadsAvailable: true,
+        defaultDownloadsReason: null,
+        externalSize: 0,
+        externalSizeHuman: '0 B',
+        totalSize: 500,
+        totalSizeHuman: '500 B',
+        maxSize: 1000,
+        maxSizeHuman: '1 KB',
+        usagePercent: 10,
+        threshold: 80,
+        exceedsThreshold: false,
+        diskTotal: 0,
+        diskAvailable: 0,
+        diskAvailableHuman: '0 B',
+        externalCaches: [],
+      },
+      accessStats: null,
+      accessStatsReadState: { status: 'idle', error: null, lastUpdatedAt: null },
+      hotFiles: [],
+      hotFilesReadState: { status: 'idle', error: null, lastUpdatedAt: null },
+      historySummary: null,
+      historyReadState: { status: 'idle', error: null, lastUpdatedAt: null },
+      cacheVerification: null,
+      totalIssues: 0,
+      now,
+    });
+    expect(mutedInsights.scopeSummaries.find((scope) => scope.id === 'external')).toEqual(
+      expect.objectContaining({ tone: 'muted' }),
+    );
+  });
 });

@@ -1,8 +1,36 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { AppShell } from "./app-shell";
+import { DESKTOP_ACTION_EVENT } from "@/lib/desktop-actions";
 
 const mockToggleDrawer = jest.fn();
 const mockFetchConfig = jest.fn();
+const mockRequestDashboardQuickSearchFocus = jest.fn();
+
+jest.mock("@/hooks/use-desktop-action-executor", () => ({
+  useDesktopActionExecutor:
+    (options: {
+      openCommandPalette?: () => void;
+      openQuickSearch?: () => void;
+      toggleWindow?: () => Promise<void>;
+    }) =>
+    async (actionId: string) => {
+      if (actionId === "open_command_palette") {
+        options.openCommandPalette?.();
+      }
+      if (actionId === "open_quick_search") {
+        options.openQuickSearch?.();
+      }
+      if (actionId === "toggle_window") {
+        await options.toggleWindow?.();
+      }
+      return true;
+    },
+}));
+
+jest.mock("@/lib/dashboard-quick-search-focus", () => ({
+  requestDashboardQuickSearchFocus: () =>
+    mockRequestDashboardQuickSearchFocus(),
+}));
 
 jest.mock("@/components/providers/locale-provider", () => ({
   useLocale: () => ({
@@ -142,11 +170,81 @@ jest.mock("@/components/language-toggle", () => ({
   LanguageToggle: () => <button data-testid="language-toggle">Language</button>,
 }));
 
+const mockOnboarding = {
+  isHydrated: true,
+  shouldShowWizard: false,
+  mode: null,
+  sessionState: 'idle',
+  canResume: false,
+  sessionSummary: {
+    mode: null,
+    locale: null,
+    theme: null,
+    mirrorPreset: 'default',
+    detectedCount: 0,
+    primaryEnvironment: null,
+    manageableEnvironments: [],
+    shellType: null,
+    shellConfigured: null,
+  },
+  nextActions: [],
+  isCompleted: false,
+  isSkipped: false,
+  currentStep: 0,
+  currentStepId: 'mode-selection',
+  stepIds: ['mode-selection'],
+  totalSteps: 1,
+  progress: 0,
+  isFirstStep: true,
+  isLastStep: false,
+  wizardOpen: false,
+  tourActive: false,
+  tourCompleted: false,
+  tourStep: 0,
+  openWizard: jest.fn(),
+  closeWizard: jest.fn(),
+  selectMode: jest.fn(),
+  updateSummary: jest.fn(),
+  next: jest.fn(),
+  prev: jest.fn(),
+  goTo: jest.fn(),
+  complete: jest.fn(),
+  skip: jest.fn(),
+  reset: jest.fn(),
+  startTour: jest.fn(),
+  nextTourStep: jest.fn(),
+  prevTourStep: jest.fn(),
+  completeTour: jest.fn(),
+  stopTour: jest.fn(),
+};
+
+jest.mock("@/hooks/use-onboarding", () => ({
+  useOnboarding: () => mockOnboarding,
+}));
+
+jest.mock("@/components/onboarding", () => ({
+  OnboardingWizard: ({ open }: { open: boolean }) => (
+    <div data-testid="onboarding-wizard" data-open={String(open)}>
+      OnboardingWizard
+    </div>
+  ),
+  TourOverlay: ({ active }: { active: boolean }) => (
+    <div data-testid="tour-overlay" data-active={String(active)}>
+      TourOverlay
+    </div>
+  ),
+  BubbleHintLayer: () => <div data-testid="bubble-hints">BubbleHints</div>,
+}));
+
 describe("AppShell", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockWindowControls.maximizeInsets = { top: 0, right: 0, bottom: 0, left: 0 };
     mockWindowControls.maximizePadding = 0;
+    document.documentElement.removeAttribute("data-window-effect");
+    mockOnboarding.isHydrated = true;
+    mockOnboarding.shouldShowWizard = false;
+    mockOnboarding.tourActive = false;
   });
 
   it("renders children content", () => {
@@ -202,6 +300,18 @@ describe("AppShell", () => {
     expect(mockToggleDrawer).toHaveBeenCalledTimes(1);
   });
 
+  it("does not set native window transparency attribute in web mode", () => {
+    render(
+      <AppShell>
+        <div>Content</div>
+      </AppShell>,
+    );
+
+    expect(
+      document.documentElement.hasAttribute("data-window-effect"),
+    ).toBe(false);
+  });
+
   it("has search button that opens command palette", () => {
     const { container } = render(
       <AppShell>
@@ -211,6 +321,25 @@ describe("AppShell", () => {
 
     const searchButton = container.querySelector('[data-tour="command-palette-btn"]');
     expect(searchButton).toBeInTheDocument();
+  });
+
+  it("keeps desktop quick-search actions out of the command palette flow", async () => {
+    render(
+      <AppShell>
+        <div>Content</div>
+      </AppShell>,
+    );
+
+    window.dispatchEvent(
+      new CustomEvent(DESKTOP_ACTION_EVENT, {
+        detail: "open_quick_search",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(mockRequestDashboardQuickSearchFocus).toHaveBeenCalledTimes(1);
+    });
+    expect(screen.queryByTestId("command-palette")).not.toBeInTheDocument();
   });
 
   it("does not apply content padding when maximize insets are all zero", () => {
@@ -251,5 +380,36 @@ describe("AppShell", () => {
       paddingBottom: "4px",
       paddingLeft: "2px",
     });
+  });
+
+  it("renders onboarding surfaces when hydration is ready", () => {
+    mockOnboarding.shouldShowWizard = true;
+    mockOnboarding.tourActive = true;
+
+    render(
+      <AppShell>
+        <div>Content</div>
+      </AppShell>,
+    );
+
+    expect(screen.getByTestId("onboarding-wizard")).toHaveAttribute("data-open", "true");
+    expect(screen.getByTestId("tour-overlay")).toHaveAttribute("data-active", "true");
+    expect(screen.getByTestId("bubble-hints")).toBeInTheDocument();
+  });
+
+  it("does not render onboarding surfaces before hydration completes", () => {
+    mockOnboarding.isHydrated = false;
+    mockOnboarding.shouldShowWizard = true;
+    mockOnboarding.tourActive = true;
+
+    render(
+      <AppShell>
+        <div>Content</div>
+      </AppShell>,
+    );
+
+    expect(screen.queryByTestId("onboarding-wizard")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("tour-overlay")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("bubble-hints")).not.toBeInTheDocument();
   });
 });

@@ -31,12 +31,23 @@ import { useAppearanceStore } from "@/lib/stores/appearance";
 import { useSettings } from "@/hooks/use-settings";
 import { useAppearanceConfigSync } from "@/hooks/use-appearance-config-sync";
 import { useAutoUpdate } from "@/hooks/use-auto-update";
+import { useDesktopActionExecutor } from "@/hooks/use-desktop-action-executor";
 import { useGlobalShortcuts } from "@/hooks/use-global-shortcuts";
 import { useAppInit } from "@/hooks/use-app-init";
 import { useOnboarding } from "@/hooks/use-onboarding";
+import {
+  DESKTOP_ACTION_EVENT,
+  type DesktopActionId,
+} from "@/lib/desktop-actions";
+import { requestDashboardQuickSearchFocus } from "@/lib/dashboard-quick-search-focus";
 import { isTauri } from "@/lib/platform";
+import {
+  buildWindowEffectRuntimeState,
+  normalizeSupportedWindowEffects,
+  type WindowEffect,
+} from "@/lib/theme/window-effects";
 import { ScrollText, Search } from "lucide-react";
-import { ReactNode, useCallback, useEffect, useState } from "react";
+import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 
 interface AppShellProps {
   children: ReactNode;
@@ -63,22 +74,36 @@ export function AppShell({ children }: AppShellProps) {
   const autoUpdateReady = !isDesktopMode || Object.keys(config).length > 0;
   useAutoUpdate({ ready: autoUpdateReady });
 
+  const handleToggleWindow = useCallback(async () => {
+    if (!isTauri()) return;
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    const win = getCurrentWindow();
+    const visible = await win.isVisible();
+    if (visible) {
+      await win.hide();
+    } else {
+      await win.show();
+      await win.setFocus();
+    }
+  }, []);
+
+  const runDesktopAction = useDesktopActionExecutor({
+    openCommandPalette: () => setCommandOpen(true),
+    openQuickSearch: () => requestDashboardQuickSearchFocus(),
+    toggleWindow: handleToggleWindow,
+  });
+
   // Global shortcuts (OS-level, work even when window is unfocused)
   useGlobalShortcuts({
     onToggleWindow: async () => {
-      if (!isTauri()) return;
-      const { getCurrentWindow } = await import("@tauri-apps/api/window");
-      const win = getCurrentWindow();
-      const visible = await win.isVisible();
-      if (visible) {
-        await win.hide();
-      } else {
-        await win.show();
-        await win.setFocus();
-      }
+      await runDesktopAction("toggle_window");
     },
-    onCommandPalette: () => setCommandOpen(true),
-    onQuickSearch: () => setCommandOpen(true),
+    onCommandPalette: () => {
+      void runDesktopAction("open_command_palette");
+    },
+    onQuickSearch: () => {
+      void runDesktopAction("open_quick_search");
+    },
   });
 
   // Window controls (Tauri window management, maximize padding, etc.)
@@ -94,18 +119,75 @@ export function AppShell({ children }: AppShellProps) {
 
   // Sync native window effect attribute to <html> for CSS selectors
   const windowEffect = useAppearanceStore((s) => s.windowEffect);
+  const [supportedWindowEffects, setSupportedWindowEffects] = useState<WindowEffect[]>([]);
+
   useEffect(() => {
-    const resolved = windowEffect === "auto" ? "mica" : windowEffect;
-    document.documentElement.setAttribute("data-window-effect", resolved);
+    let active = true;
+
+    if (!isDesktopMode) {
+      setSupportedWindowEffects([]);
+      return () => {
+        active = false;
+      };
+    }
+
+    void import("@/lib/tauri")
+      .then(({ windowEffectGetSupported }) => windowEffectGetSupported())
+      .then((supported) => {
+        if (!active) return;
+        setSupportedWindowEffects(normalizeSupportedWindowEffects(supported));
+      })
+      .catch(() => {
+        if (!active) return;
+        setSupportedWindowEffects([]);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [isDesktopMode]);
+
+  const effectiveWindowEffect = useMemo(
+    () =>
+      buildWindowEffectRuntimeState({
+        requested: windowEffect,
+        supported: supportedWindowEffects,
+        desktop: isDesktopMode,
+      }).effective,
+    [isDesktopMode, supportedWindowEffects, windowEffect],
+  );
+
+  useEffect(() => {
+    if (!effectiveWindowEffect) {
+      document.documentElement.removeAttribute("data-window-effect");
+      return () => {
+        document.documentElement.removeAttribute("data-window-effect");
+      };
+    }
+
+    document.documentElement.setAttribute("data-window-effect", effectiveWindowEffect);
     return () => {
       document.documentElement.removeAttribute("data-window-effect");
     };
-  }, [windowEffect]);
+  }, [effectiveWindowEffect]);
 
   useEffect(() => {
     if (!isDesktopMode) return;
     fetchConfig();
   }, [isDesktopMode, fetchConfig]);
+
+  useEffect(() => {
+    const handleDesktopAction = (event: Event) => {
+      const detail = (event as CustomEvent<DesktopActionId>).detail;
+      if (!detail) return;
+      void runDesktopAction(detail);
+    };
+
+    window.addEventListener(DESKTOP_ACTION_EVENT, handleDesktopAction);
+    return () => {
+      window.removeEventListener(DESKTOP_ACTION_EVENT, handleDesktopAction);
+    };
+  }, [runDesktopAction]);
 
   // Keyboard shortcut for opening log drawer (Ctrl+Shift+L)
   useEffect(() => {

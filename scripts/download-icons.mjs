@@ -1,5 +1,5 @@
 /**
- * Download provider/platform/language SVG icons from Simple Icons CDN.
+ * Download provider/platform/language/brand SVG icons from Simple Icons CDN.
  * Usage: node scripts/download-icons.mjs
  */
 
@@ -120,6 +120,12 @@ const LANGUAGE_MAP = {
   fortran: { slug: "fortran", darkColor: "734F96" },
 };
 
+const BRAND_MAP = {
+  tauri: { slug: "tauri", darkColor: "FFC131" },
+  nextjs: { slug: "nextdotjs", darkColor: "FFFFFF" },
+  react: { slug: "react", darkColor: "61DAFB" },
+};
+
 // Custom SVGs are now managed by fix-missing-icons.mjs
 const CUSTOM_SVGS = {};
 
@@ -213,6 +219,7 @@ async function main() {
   await downloadIcons(PROVIDER_MAP, join(root, "providers"), "provider");
   await downloadIcons(PLATFORM_MAP, join(root, "platforms"), "platform");
   await downloadIcons(LANGUAGE_MAP, join(root, "languages"), "language");
+  await downloadIcons(BRAND_MAP, join(root, "brands"), "brand");
 
   console.log("\n✅ All icons downloaded!");
 }

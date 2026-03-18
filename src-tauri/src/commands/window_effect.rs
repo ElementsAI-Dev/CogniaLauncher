@@ -1,44 +1,27 @@
 use tauri::{AppHandle, Manager};
 
+use crate::commands::window_effect_support::{
+    resolve_requested_effect, supported_window_effects,
+};
+
 /// Apply a window effect to the given window.
 /// Called from lib.rs setup and from Tauri commands at runtime.
 pub(crate) fn apply_effect_to_window(
     window: &tauri::WebviewWindow,
     effect: &str,
     dark: Option<bool>,
-) -> Result<(), String> {
-    // Resolve "auto" to the best effect for the current platform
-    let resolved = if effect == "auto" {
-        resolve_auto_effect()
-    } else {
-        effect.to_string()
-    };
+) -> Result<String, String> {
+    let resolved = resolve_requested_effect(effect)?;
 
     // Clear any previously applied effect first
     clear_all_effects(window);
 
     if resolved == "none" {
-        return Ok(());
+        return Ok(resolved);
     }
 
-    apply_platform_effect(window, &resolved, dark)
-}
-
-/// Resolve "auto" to the best native effect for the current OS.
-fn resolve_auto_effect() -> String {
-    #[cfg(target_os = "windows")]
-    {
-        // Prefer Mica on Windows 11, fall back to none on older versions
-        "mica".to_string()
-    }
-    #[cfg(target_os = "macos")]
-    {
-        "vibrancy".to_string()
-    }
-    #[cfg(target_os = "linux")]
-    {
-        "none".to_string()
-    }
+    apply_platform_effect(window, &resolved, dark)?;
+    Ok(resolved)
 }
 
 /// Clear all vibrancy/blur effects from the window.
@@ -117,7 +100,7 @@ pub async fn window_effect_apply(
     app: AppHandle,
     effect: String,
     dark: Option<bool>,
-) -> Result<(), String> {
+) -> Result<String, String> {
     let window = app
         .get_webview_window("main")
         .ok_or("No main window found")?;
@@ -135,30 +118,13 @@ pub async fn window_effect_clear(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 pub fn window_effect_get_supported() -> Vec<String> {
-    #[cfg(target_os = "windows")]
-    {
-        vec![
-            "auto".into(),
-            "none".into(),
-            "mica".into(),
-            "mica-tabbed".into(),
-            "acrylic".into(),
-            "blur".into(),
-        ]
-    }
-    #[cfg(target_os = "macos")]
-    {
-        vec!["auto".into(), "none".into(), "vibrancy".into()]
-    }
-    #[cfg(target_os = "linux")]
-    {
-        vec!["auto".into(), "none".into()]
-    }
+    supported_window_effects()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::commands::window_effect_support::resolve_auto_effect;
 
     #[test]
     fn test_resolve_auto_effect() {
@@ -189,5 +155,30 @@ mod tests {
         }
         #[cfg(target_os = "macos")]
         assert!(supported.contains(&"vibrancy".to_string()));
+    }
+
+    #[test]
+    fn test_resolve_requested_effect_auto_and_none() {
+        assert_eq!(resolve_requested_effect("none").unwrap(), "none");
+
+        let resolved = resolve_requested_effect("auto").unwrap();
+        #[cfg(target_os = "windows")]
+        assert_eq!(resolved, "mica");
+        #[cfg(target_os = "macos")]
+        assert_eq!(resolved, "vibrancy");
+        #[cfg(target_os = "linux")]
+        assert_eq!(resolved, "none");
+    }
+
+    #[test]
+    fn test_resolve_requested_effect_rejects_platform_unsupported_values() {
+        #[cfg(target_os = "windows")]
+        assert!(resolve_requested_effect("vibrancy").is_err());
+
+        #[cfg(target_os = "macos")]
+        assert!(resolve_requested_effect("mica").is_err());
+
+        #[cfg(target_os = "linux")]
+        assert!(resolve_requested_effect("mica").is_err());
     }
 }

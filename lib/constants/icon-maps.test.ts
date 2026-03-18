@@ -1,4 +1,4 @@
-import { PROVIDER_ICON_FILES, PLATFORM_ICON_FILES, LANGUAGE_ICON_FILES, CACHE_PROVIDER_MAP } from './icon-maps';
+import { PROVIDER_ICON_FILES, PLATFORM_ICON_FILES, LANGUAGE_ICON_FILES, CACHE_PROVIDER_MAP, BRAND_ICON_FILES } from './icon-maps';
 
 describe('PROVIDER_ICON_FILES', () => {
   it('is a non-empty Record', () => {
@@ -46,6 +46,14 @@ describe('LANGUAGE_ICON_FILES', () => {
 
   it('has more than 20 languages', () => {
     expect(Object.keys(LANGUAGE_ICON_FILES).length).toBeGreaterThan(20);
+  });
+});
+
+describe('BRAND_ICON_FILES', () => {
+  it('contains About page framework brands', () => {
+    expect(BRAND_ICON_FILES['tauri']).toBe('tauri');
+    expect(BRAND_ICON_FILES['nextjs']).toBe('nextjs');
+    expect(BRAND_ICON_FILES['react']).toBe('react');
   });
 });
 

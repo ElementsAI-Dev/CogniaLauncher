@@ -34,6 +34,21 @@ import {
   isTauri,
   openExternal,
   advancedSearch,
+  envList,
+  envGet,
+  envInstall,
+  envUninstall,
+  envUseGlobal,
+  envUseLocal,
+  envDetectAll,
+  envListProviders,
+  envSaveSettings,
+  envLoadSettings,
+  envGetDetectionSources,
+  envGetDefaultDetectionSources,
+  envVerifyInstall,
+  envInstalledVersions,
+  envCurrentVersion,
   envvarListAll,
   envvarSetProcess,
   envvarGetPath,
@@ -286,6 +301,151 @@ describe('Envvar Bridge Contract', () => {
     mockInvoke.mockResolvedValueOnce([]);
     await envvarDetectConflicts();
     expect(mockInvoke).toHaveBeenCalledWith('envvar_detect_conflicts');
+  });
+});
+
+describe('Environment Bridge Contract', () => {
+  beforeEach(() => {
+    mockInvoke.mockReset();
+  });
+
+  it('maps env list to expected invoke command and payload', async () => {
+    mockInvoke.mockResolvedValueOnce([]);
+    await envList(true);
+    expect(mockInvoke).toHaveBeenCalledWith('env_list', { force: true });
+  });
+
+  it('maps env get to expected invoke command and provider-aware payload', async () => {
+    mockInvoke.mockResolvedValueOnce({});
+    await envGet('node', 'fnm');
+    expect(mockInvoke).toHaveBeenCalledWith('env_get', {
+      envType: 'node',
+      providerId: 'fnm',
+    });
+  });
+
+  it('maps env install to expected invoke command and payload', async () => {
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await envInstall('node', '20.11.0', 'fnm');
+    expect(mockInvoke).toHaveBeenCalledWith('env_install', {
+      envType: 'node',
+      version: '20.11.0',
+      providerId: 'fnm',
+    });
+  });
+
+  it('maps env uninstall to expected invoke command and provider-aware payload', async () => {
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await envUninstall('node', '20.11.0', 'fnm');
+    expect(mockInvoke).toHaveBeenCalledWith('env_uninstall', {
+      envType: 'node',
+      version: '20.11.0',
+      providerId: 'fnm',
+    });
+  });
+
+  it('maps env use global to expected invoke command and provider-aware payload', async () => {
+    mockInvoke.mockResolvedValueOnce({});
+    await envUseGlobal('node', '20.11.0', 'fnm');
+    expect(mockInvoke).toHaveBeenCalledWith('env_use_global', {
+      envType: 'node',
+      version: '20.11.0',
+      providerId: 'fnm',
+    });
+  });
+
+  it('maps env use local to expected invoke command and provider-aware payload', async () => {
+    mockInvoke.mockResolvedValueOnce({});
+    await envUseLocal('node', '20.11.0', '/workspace', 'fnm');
+    expect(mockInvoke).toHaveBeenCalledWith('env_use_local', {
+      envType: 'node',
+      version: '20.11.0',
+      projectPath: '/workspace',
+      providerId: 'fnm',
+    });
+  });
+
+  it('maps env detect all to expected invoke command and payload', async () => {
+    mockInvoke.mockResolvedValueOnce([]);
+    await envDetectAll('/workspace');
+    expect(mockInvoke).toHaveBeenCalledWith('env_detect_all', {
+      startPath: '/workspace',
+    });
+  });
+
+  it('maps env save settings to expected invoke command and payload', async () => {
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await envSaveSettings({
+      env_type: 'node',
+      env_variables: [{ key: 'NODE_ENV', value: 'development', enabled: true }],
+      detection_files: [{ file_name: '.nvmrc', enabled: true }],
+      auto_switch: true,
+    });
+    expect(mockInvoke).toHaveBeenCalledWith('env_save_settings', {
+      settings: {
+        env_type: 'node',
+        env_variables: [{ key: 'NODE_ENV', value: 'development', enabled: true }],
+        detection_files: [{ file_name: '.nvmrc', enabled: true }],
+        auto_switch: true,
+      },
+    });
+  });
+
+  it('maps env load settings to expected invoke command and payload', async () => {
+    mockInvoke.mockResolvedValueOnce(null);
+    await envLoadSettings('node');
+    expect(mockInvoke).toHaveBeenCalledWith('env_load_settings', { envType: 'node' });
+  });
+
+  it('maps env get detection sources to expected invoke command and payload', async () => {
+    mockInvoke.mockResolvedValueOnce([]);
+    await envGetDetectionSources('node');
+    expect(mockInvoke).toHaveBeenCalledWith('env_get_detection_sources', {
+      envType: 'node',
+    });
+  });
+
+  it('maps env get default detection sources to expected invoke command and payload', async () => {
+    mockInvoke.mockResolvedValueOnce([]);
+    await envGetDefaultDetectionSources('node');
+    expect(mockInvoke).toHaveBeenCalledWith('env_get_default_detection_sources', {
+      envType: 'node',
+    });
+  });
+
+  it('maps env list providers to expected invoke command and payload', async () => {
+    mockInvoke.mockResolvedValueOnce([]);
+    await envListProviders(true);
+    expect(mockInvoke).toHaveBeenCalledWith('env_list_providers', { force: true });
+  });
+
+  it('maps env verify install to expected invoke command and provider-aware payload', async () => {
+    mockInvoke.mockResolvedValueOnce({});
+    await envVerifyInstall('node', '20.11.0', 'fnm');
+    expect(mockInvoke).toHaveBeenCalledWith('env_verify_install', {
+      envType: 'node',
+      version: '20.11.0',
+      providerId: 'fnm',
+    });
+  });
+
+  it('maps env installed versions to expected invoke command and provider-aware payload', async () => {
+    mockInvoke.mockResolvedValueOnce([]);
+    await envInstalledVersions('node', 'fnm', true);
+    expect(mockInvoke).toHaveBeenCalledWith('env_installed_versions', {
+      envType: 'node',
+      providerId: 'fnm',
+      force: true,
+    });
+  });
+
+  it('maps env current version to expected invoke command and provider-aware payload', async () => {
+    mockInvoke.mockResolvedValueOnce('20.11.0');
+    await envCurrentVersion('node', 'fnm');
+    expect(mockInvoke).toHaveBeenCalledWith('env_current_version', {
+      envType: 'node',
+      providerId: 'fnm',
+    });
   });
 });
 

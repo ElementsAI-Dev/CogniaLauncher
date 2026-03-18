@@ -1412,7 +1412,16 @@ export type TrayQuickAction =
   | 'open_settings'
   | 'open_downloads'
   | 'check_updates'
-  | 'open_logs';
+  | 'open_logs'
+  | 'open_command_palette'
+  | 'open_quick_search'
+  | 'toggle_logs'
+  | 'manage_plugins'
+  | 'install_plugin'
+  | 'create_plugin'
+  | 'go_dashboard'
+  | 'go_toolbox'
+  | 'report_bug';
 export type TrayNotificationLevel = 'all' | 'important_only' | 'none';
 export type TrayNotificationEvent = 'updates' | 'downloads' | 'errors' | 'system';
 
@@ -1424,6 +1433,15 @@ export type TrayMenuItemId =
   | 'check_updates'
   | 'toggle_notifications'
   | 'open_logs'
+  | 'open_command_palette'
+  | 'open_quick_search'
+  | 'toggle_logs'
+  | 'manage_plugins'
+  | 'install_plugin'
+  | 'create_plugin'
+  | 'go_dashboard'
+  | 'go_toolbox'
+  | 'report_bug'
   | 'always_on_top'
   | 'autostart'
   | 'quit';
@@ -2414,6 +2432,14 @@ export interface EnvVarImportResult {
   imported: number;
   skipped: number;
   errors: string[];
+  scope: EnvVarScope;
+  success: boolean;
+  verified: boolean;
+  status: 'verified' | 'verification_failed' | 'manual_followup_required' | 'blocked';
+  reasonCode?: string | null;
+  message?: string | null;
+  primaryShellTarget?: string | null;
+  shellGuidance: EnvVarShellGuidance[];
 }
 
 export type EnvVarImportPreviewAction = 'add' | 'update' | 'noop' | 'invalid' | 'skipped';
@@ -2467,6 +2493,12 @@ export interface EnvVarConflictResolutionResult {
   sourceScope: EnvVarScope;
   targetScope: EnvVarScope;
   appliedValue: string;
+  appliedValueSummary: EnvVarValueSummary;
+  success: boolean;
+  verified: boolean;
+  status: 'verified' | 'verification_failed' | 'manual_followup_required' | 'blocked';
+  reasonCode?: string | null;
+  message?: string | null;
   primaryShellTarget?: string | null;
   shellGuidance: EnvVarShellGuidance[];
 }
@@ -2500,6 +2532,54 @@ export interface EnvVarConflict {
   userValue: string;
   systemValue: string;
   effectiveValue: string;
+}
+
+export interface EnvVarActionSupport {
+  action: string;
+  scope?: EnvVarScope | null;
+  supported: boolean;
+  state: 'ready' | 'blocked' | 'degraded' | 'unavailable';
+  reasonCode: string;
+  reason: string;
+  nextSteps: string[];
+}
+
+export interface EnvVarSupportSnapshot {
+  state: 'ready' | 'degraded';
+  reasonCode: string;
+  reason: string;
+  platform: string;
+  detectedShells: number;
+  primaryShellTarget?: string | null;
+  actions: EnvVarActionSupport[];
+}
+
+export interface EnvVarMutationResult {
+  operation: string;
+  key: string;
+  scope: EnvVarScope;
+  success: boolean;
+  verified: boolean;
+  status: 'verified' | 'verification_failed' | 'manual_followup_required' | 'blocked';
+  reasonCode?: string | null;
+  message?: string | null;
+  effectiveValueSummary?: EnvVarValueSummary | null;
+  primaryShellTarget?: string | null;
+  shellGuidance: EnvVarShellGuidance[];
+}
+
+export interface EnvVarPathMutationResult {
+  operation: string;
+  scope: EnvVarScope;
+  success: boolean;
+  verified: boolean;
+  status: 'verified' | 'verification_failed' | 'manual_followup_required' | 'blocked';
+  reasonCode?: string | null;
+  message?: string | null;
+  removedCount: number;
+  pathEntries: PathEntryInfo[];
+  primaryShellTarget?: string | null;
+  shellGuidance: EnvVarShellGuidance[];
 }
 
 // ============================================================================
@@ -2643,6 +2723,37 @@ export interface ShellConfigEntries {
 }
 
 export type TerminalEditorLanguage = 'bash' | 'powershell' | 'dos' | 'plaintext';
+export type TerminalEditorMode = 'enhanced' | 'fallback';
+export type TerminalEditorEnhancementLevel = 'basic' | 'enhanced';
+export type TerminalEditorContributionKind =
+  | 'grammar'
+  | 'language-configuration'
+  | 'snippets'
+  | 'theme'
+  | 'completion'
+  | 'diagnostics';
+
+export interface TerminalEditorContribution {
+  id: string;
+  label: string;
+  kind: TerminalEditorContributionKind;
+  source: 'vscode-compatible';
+  enabled: boolean;
+  reason: string | null;
+}
+
+export interface TerminalConfigEditorCapability {
+  mode: TerminalEditorMode;
+  enhancementLevel: TerminalEditorEnhancementLevel;
+  bundleId: string | null;
+  bundleLabel: string | null;
+  languageId: string;
+  supportsCompletion: boolean;
+  supportsInlineDiagnostics: boolean;
+  fallbackReason: string | null;
+  contributions: TerminalEditorContribution[];
+}
+
 export type TerminalConfigMutationOperation = 'backup' | 'append' | 'write';
 export type TerminalConfigMutationStage = 'validation' | 'backup' | 'write' | 'verification';
 export type TerminalConfigDiagnosticCategory =
@@ -2673,6 +2784,7 @@ export interface TerminalConfigEditorMetadata {
   language: TerminalEditorLanguage;
   snapshotPath: string | null;
   fingerprint: string | null;
+  capability?: TerminalConfigEditorCapability | null;
 }
 
 export interface TerminalConfigMutationResult {
@@ -2748,6 +2860,17 @@ export interface CrashInfo {
   reportPath: string;
   timestamp: string;
   message?: string;
+}
+
+/** Crash report artifact metadata exposed to the logs workspace */
+export interface CrashReportInfo {
+  id: string;
+  source: string;
+  reportPath: string;
+  timestamp: string;
+  message?: string;
+  size: number;
+  pending: boolean;
 }
 
 // ============================================================================

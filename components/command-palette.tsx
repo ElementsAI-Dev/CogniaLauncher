@@ -3,10 +3,13 @@
 import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useLocale } from "@/components/providers/locale-provider";
-import { useLogStore } from "@/lib/stores/log";
-import { useFeedbackStore } from "@/lib/stores/feedback";
+import { useDesktopActionExecutor } from "@/hooks/use-desktop-action-executor";
 import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import { useToolbox } from "@/hooks/use-toolbox";
+import {
+  getDesktopAction,
+  type DesktopActionId,
+} from "@/lib/desktop-actions";
 import { isTauri } from "@/lib/tauri";
 import { getToolboxDetailPath } from "@/lib/toolbox-route";
 import {
@@ -28,10 +31,12 @@ interface CommandPaletteProps {
 export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const router = useRouter();
   const { t } = useLocale();
-  const { toggleDrawer } = useLogStore();
-  const { openDialog: openFeedback } = useFeedbackStore();
   const { allTools } = useToolbox();
   const [search, setSearch] = useState("");
+  const executeDesktopAction = useDesktopActionExecutor({
+    openCommandPalette: () => onOpenChange(true),
+    openQuickSearch: () => onOpenChange(true),
+  });
 
   const navigationItems = useMemo(
     () => [
@@ -50,6 +55,26 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     ],
     [t],
   );
+
+  const actionItems = useMemo(() => {
+    const ids: DesktopActionId[] = [
+      "toggle_logs",
+      "report_bug",
+      "feature_request",
+    ];
+
+    if (isTauri()) {
+      ids.push("manage_plugins", "install_plugin", "create_plugin");
+    }
+
+    return ids.map((id) => {
+      const action = getDesktopAction(id);
+      return {
+        id,
+        label: t(action.titleKey),
+      };
+    });
+  }, [t]);
 
   const closePalette = useCallback(() => {
     setSearch("");
@@ -102,34 +127,21 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         </CommandGroup>
         <CommandSeparator />
         <CommandGroup heading={t("commandPalette.groups.actions")}>
-          <CommandItem
-            value={t("commandPalette.actions.toggleLogs")}
-            onSelect={() => {
-              toggleDrawer();
-              closePalette();
-            }}
-          >
-            {t("commandPalette.actions.toggleLogs")}
-            <CommandShortcut>Ctrl+Shift+L</CommandShortcut>
-          </CommandItem>
-          <CommandItem
-            value={t("about.reportBug")}
-            onSelect={() => {
-              openFeedback({ category: "bug" });
-              closePalette();
-            }}
-          >
-            {t("about.reportBug")}
-          </CommandItem>
-          <CommandItem
-            value={t("about.featureRequest")}
-            onSelect={() => {
-              openFeedback({ category: "feature" });
-              closePalette();
-            }}
-          >
-            {t("about.featureRequest")}
-          </CommandItem>
+          {actionItems.map((action) => (
+            <CommandItem
+              key={action.id}
+              value={action.label}
+              onSelect={() => {
+                void executeDesktopAction(action.id);
+                closePalette();
+              }}
+            >
+              {action.label}
+              {action.id === "toggle_logs" && (
+                <CommandShortcut>Ctrl+Shift+L</CommandShortcut>
+              )}
+            </CommandItem>
+          ))}
         </CommandGroup>
         {allTools.length > 0 && (
           <>
@@ -147,40 +159,6 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                   {tool.name}
                 </CommandItem>
               ))}
-            </CommandGroup>
-          </>
-        )}
-        {isTauri() && (
-          <>
-            <CommandSeparator />
-            <CommandGroup heading={t("commandPalette.groups.pluginManagement")}>
-              <CommandItem
-                value={t("commandPalette.actions.managePlugins")}
-                onSelect={() => {
-                  router.push("/toolbox/plugins");
-                  closePalette();
-                }}
-              >
-                {t("commandPalette.actions.managePlugins")}
-              </CommandItem>
-              <CommandItem
-                value={t("commandPalette.actions.installPlugin")}
-                onSelect={() => {
-                  router.push("/toolbox/plugins?action=install");
-                  closePalette();
-                }}
-              >
-                {t("commandPalette.actions.installPlugin")}
-              </CommandItem>
-              <CommandItem
-                value={t("commandPalette.actions.createPlugin")}
-                onSelect={() => {
-                  router.push("/toolbox/plugins?action=scaffold");
-                  closePalette();
-                }}
-              >
-                {t("commandPalette.actions.createPlugin")}
-              </CommandItem>
             </CommandGroup>
           </>
         )}
