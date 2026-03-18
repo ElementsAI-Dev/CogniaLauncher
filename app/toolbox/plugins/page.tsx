@@ -776,6 +776,29 @@ export default function PluginsPage() {
       .slice()
       .sort(comparePluginToolsForPreview);
   }, [detailPlugin, pluginTools]);
+  const detailDialogCapabilityCoverage = useMemo(() => {
+    const byCapability = new Map<
+      string,
+      NonNullable<PluginToolInfo["sdkCapabilityCoverage"]>[number]
+    >();
+
+    for (const tool of detailPluginTools) {
+      for (const coverage of tool.sdkCapabilityCoverage ?? []) {
+        const existing = byCapability.get(coverage.capabilityId);
+        if (
+          !existing
+          || (existing.status === "covered" && coverage.status !== "covered")
+          || (existing.status === "warning" && coverage.status === "blocked")
+        ) {
+          byCapability.set(coverage.capabilityId, coverage);
+        }
+      }
+    }
+
+    return [...byCapability.values()].sort((left, right) =>
+      left.capabilityId.localeCompare(right.capabilityId),
+    );
+  }, [detailPluginTools]);
 
   const detailToolPreviewLoading = useMemo(() => {
     if (!detailPlugin) return false;
@@ -2029,6 +2052,25 @@ export default function PluginsPage() {
                       {detailDialogMissingCaps.join(", ")}
                     </div>
                   )}
+                {detailDialogCapabilityCoverage.length > 0 && (
+                  <div className="rounded-md border p-2 text-[11px]">
+                    <p className="font-medium">SDK capability coverage</p>
+                    <div className="mt-1 space-y-1">
+                      {detailDialogCapabilityCoverage.map((coverage) => (
+                        <p
+                          key={`${coverage.capabilityId}:${coverage.status}`}
+                          className={
+                            coverage.status === "covered"
+                              ? "font-mono"
+                              : "text-red-800 dark:text-red-300"
+                          }
+                        >
+                          {coverage.reason ?? `${coverage.capabilityId}: ${coverage.status}`}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <Separator />
                 <div>
                   <h4 className="text-sm font-medium mb-2">

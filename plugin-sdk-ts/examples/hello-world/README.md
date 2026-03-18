@@ -6,6 +6,9 @@ A minimal example plugin demonstrating the Cognia TypeScript Plugin SDK.
 
 - **hello** — Greets the user with platform info and i18n translation
 - **env-check** — Detects installed development environments (Node.js, Python, Rust)
+- **env-dashboard** — Declarative UI dashboard with actions, structured blocks, and launcher-mediated feedback
+- **custom-view** — iframe-backed UI sample using the plugin HTML bridge
+- **capability-snapshot** — Read-only snapshot across advanced SDK capability families such as batch, cache, download, git, health, launch, profiles, shell, and WSL
 - **cognia_on_log** — Observes plugin-origin log envelopes via `listen_logs = ["plugin"]`
 
 ## Unified Contract Notes
@@ -73,9 +76,19 @@ Copy this directory into CogniaLauncher's plugins folder, or use the "Install Pl
 - `cognia.platform.info()` — Get OS, arch, hostname
 - `cognia.i18n.translate(key, params)` — Localized strings with interpolation
 - `cognia.env.detect(envType)` — Check if Node/Python/Rust is installed
+- `cognia.ui.*` — Declarative builders, action parsing, and launcher-mediated feedback helpers
 - `cognia.log.info(msg)` — Write to launcher log
 - `cognia.log.write(record)` — Write a structured log record
 - `cognia.log.parseEnvelope(input)` — Parse `cognia_on_log` listener payloads
 - `cognia.event.emitStr(name, data)` — Emit plugin events
 - `cognia.event.getPluginId()` — Get own plugin ID
 - `cognia.event.parseEnvelope(input)` — Parse `cognia_on_event` listener payloads
+- `cognia.batch.*` — Package-history and pinned-package snapshot helpers
+- `cognia.cache.*` — Cache details, access stats, and external cache discovery
+- `cognia.download.*` — Download queue and history stats
+- `cognia.git.*` — Read-only Git availability and version checks
+- `cognia.health.*` — Package-manager health reporting
+- `cognia.launch.*` — Environment activation metadata and program resolution
+- `cognia.profiles.*` — Environment profile listing
+- `cognia.shell.*` — Shell detection and default-profile metadata
+- `cognia.wsl.*` — WSL availability and status snapshot

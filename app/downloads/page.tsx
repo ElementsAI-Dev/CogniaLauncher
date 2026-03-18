@@ -38,7 +38,10 @@ import {
   ListPlus,
 } from 'lucide-react';
 import { EMPTY_QUEUE_STATS } from '@/lib/constants/downloads';
-import { runDownloadPreflightWithUi } from '@/lib/downloads';
+import {
+  createHistoryDownloadDraft,
+  runDownloadPreflightWithUi,
+} from '@/lib/downloads';
 import type { DownloadRequest, DownloadTask, HistoryRecord } from '@/lib/stores/download';
 
 export default function DownloadsPage() {
@@ -59,7 +62,10 @@ export default function DownloadsPage() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [batchImportOpen, setBatchImportOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
-  const [initialUrl, setInitialUrl] = useState<string | null>(null);
+  const [initialRequest, setInitialRequest] = useState<Partial<DownloadRequest> | null>(null);
+  const [historyDestinationAvailability, setHistoryDestinationAvailability] = useState<
+    Record<string, boolean>
+  >({});
 
   const {
     tasks,
@@ -107,7 +113,7 @@ export default function DownloadsPage() {
     checkDiskSpace,
     verifyFile,
     extractArchive,
-  } = useDownloads({ enableRuntime: false });
+  } = useDownloads();
 
   const queueStats = stats ?? EMPTY_QUEUE_STATS;
   const extractingCount = useMemo(
@@ -158,6 +164,48 @@ export default function DownloadsPage() {
   }, [historyQuery, searchHistory]);
 
   const activeHistory = historyResults ?? history;
+
+  useEffect(() => {
+    if (activeTab !== 'history' || !isDesktop) {
+      setHistoryDestinationAvailability({});
+      return;
+    }
+
+    let disposed = false;
+
+    const loadAvailability = async () => {
+      try {
+        const fsModule = await import('@tauri-apps/plugin-fs').catch(() => null);
+        if (!fsModule?.exists) {
+          if (!disposed) {
+            setHistoryDestinationAvailability({});
+          }
+          return;
+        }
+
+        const entries = await Promise.all(
+          activeHistory.map(async (record) => [
+            record.id,
+            record.status === 'completed' ? await fsModule.exists(record.destination) : false,
+          ] as const)
+        );
+
+        if (!disposed) {
+          setHistoryDestinationAvailability(Object.fromEntries(entries));
+        }
+      } catch {
+        if (!disposed) {
+          setHistoryDestinationAvailability({});
+        }
+      }
+    };
+
+    void loadAvailability();
+
+    return () => {
+      disposed = true;
+    };
+  }, [activeHistory, activeTab, isDesktop]);
 
   const filteredTasks = useMemo(() => {
     let result = tasks;
@@ -217,7 +265,7 @@ export default function DownloadsPage() {
       || e.dataTransfer.getData('text');
 
     if (url && /^https?:\/\//i.test(url.trim())) {
-      setInitialUrl(url.trim());
+      setInitialRequest({ url: url.trim() });
       setAddDialogOpen(true);
     }
   }, []);
@@ -228,7 +276,7 @@ export default function DownloadsPage() {
       if (typeof customEvent.detail !== 'string' || !customEvent.detail.trim()) {
         return;
       }
-      setInitialUrl(customEvent.detail.trim());
+      setInitialRequest({ url: customEvent.detail.trim() });
       setAddDialogOpen(true);
     };
 
@@ -407,7 +455,13 @@ export default function DownloadsPage() {
         description={t('downloads.description')}
         actions={(
           <>
-            <Button size="sm" onClick={() => setAddDialogOpen(true)}>
+            <Button
+              size="sm"
+              onClick={() => {
+                setInitialRequest(null);
+                setAddDialogOpen(true);
+              }}
+            >
               <ArrowDownToLine className="h-4 w-4 mr-2" />
               {t('downloads.addDownload')}
             </Button>
@@ -611,6 +665,13 @@ export default function DownloadsPage() {
             onHistoryQueryChange={setHistoryQuery}
             onClearHistory={async (days) => void clearHistory(days)}
             onRemoveRecord={async (id) => void removeHistoryRecord(id)}
+            onOpenRecord={async (record) => void openFile(record.destination)}
+            onRevealRecord={async (record) => void revealFile(record.destination)}
+            onReuseRecord={async (record) => {
+              setInitialRequest(createHistoryDownloadDraft(record));
+              setAddDialogOpen(true);
+            }}
+            destinationAvailability={historyDestinationAvailability}
             t={t}
           />
         </TabsContent>
@@ -620,10 +681,10 @@ export default function DownloadsPage() {
         open={addDialogOpen}
         onOpenChange={(open) => {
           setAddDialogOpen(open);
-          if (!open) setInitialUrl(null);
+          if (!open) setInitialRequest(null);
         }}
         onSubmit={handleAdd}
-        initialUrl={initialUrl ?? undefined}
+        initialRequest={initialRequest ?? undefined}
       />
 
       <GitHubDownloadDialog

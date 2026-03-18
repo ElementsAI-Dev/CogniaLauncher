@@ -54,6 +54,10 @@ describe("DownloadHistoryPanel", () => {
     onHistoryQueryChange: jest.fn(),
     onClearHistory: jest.fn<(days?: number) => void>(),
     onRemoveRecord: jest.fn(),
+    onOpenRecord: jest.fn(),
+    onRevealRecord: jest.fn(),
+    onReuseRecord: jest.fn(),
+    destinationAvailability: {} as Record<string, boolean>,
     t: mockT,
   };
 
@@ -306,5 +310,47 @@ describe("DownloadHistoryPanel", () => {
     );
 
     expect(screen.getByText("https://cdn.example.com/archive.tar.gz")).toBeInTheDocument();
+  });
+
+  it("renders open and reveal actions for completed records with available destinations", async () => {
+    const onOpenRecord = jest.fn();
+    const onRevealRecord = jest.fn();
+    const record = makeRecord({ id: "rec-openable", status: "completed" });
+    render(
+      <DownloadHistoryPanel
+        {...defaultProps}
+        history={[record]}
+        destinationAvailability={{ [record.id]: true }}
+        onOpenRecord={onOpenRecord}
+        onRevealRecord={onRevealRecord}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "downloads.actions.open" }));
+    await userEvent.click(screen.getByRole("button", { name: "downloads.actions.reveal" }));
+
+    expect(onOpenRecord).toHaveBeenCalledWith(record);
+    expect(onRevealRecord).toHaveBeenCalledWith(record);
+  });
+
+  it("offers reuse instead of file actions when destination is unavailable", async () => {
+    const onReuseRecord = jest.fn();
+    const record = makeRecord({ id: "rec-reuse", status: "failed" });
+    render(
+      <DownloadHistoryPanel
+        {...defaultProps}
+        history={[record]}
+        destinationAvailability={{ [record.id]: false }}
+        onReuseRecord={onReuseRecord}
+      />,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: "downloads.actions.open" }),
+    ).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "downloads.historyPanel.reuse" }));
+
+    expect(onReuseRecord).toHaveBeenCalledWith(record);
   });
 });

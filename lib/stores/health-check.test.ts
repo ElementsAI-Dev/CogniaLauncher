@@ -60,6 +60,48 @@ describe('useHealthCheckStore', () => {
     expect(useHealthCheckStore.getState().environmentHealth.python).toEqual(envResult);
   });
 
+  it('merges environment updates back into systemHealth and derives overall status', () => {
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(1800000000000);
+    useHealthCheckStore.setState({
+      systemHealth: {
+        overall_status: 'healthy',
+        environments: [
+          {
+            env_type: 'node',
+            provider_id: 'fnm',
+            status: 'healthy',
+            issues: [],
+            suggestions: [],
+            current_version: '20.11.0',
+            installed_count: 1,
+            checked_at: '2026-03-05T00:00:00Z',
+          },
+        ],
+        package_managers: [],
+        system_issues: [],
+        skipped_providers: [],
+        checked_at: '2026-03-05T00:00:00Z',
+      } as never,
+    });
+
+    useHealthCheckStore.getState().setEnvironmentHealth('python', {
+      env_type: 'python',
+      provider_id: 'uv',
+      status: 'warning',
+      issues: [],
+      suggestions: [],
+      current_version: '3.12',
+      installed_count: 1,
+      checked_at: '2026-03-05T00:01:00Z',
+    } as never);
+
+    const state = useHealthCheckStore.getState();
+    expect(state.systemHealth?.overall_status).toBe('warning');
+    expect(state.systemHealth?.environments.map((entry) => entry.env_type)).toEqual(['node', 'python']);
+    expect(state.lastCheckedAt).toBe(1800000000000);
+    nowSpy.mockRestore();
+  });
+
   it('tracks loading, error, and progress transitions', () => {
     useHealthCheckStore.getState().setLoading(true);
     useHealthCheckStore.getState().setError('network timeout');
@@ -76,6 +118,23 @@ describe('useHealthCheckStore', () => {
     expect(state.progress?.completed).toBe(2);
   });
 
+  it('tracks remediation metadata', () => {
+    useHealthCheckStore.getState().setActiveRemediationId('repair-node');
+    useHealthCheckStore.getState().setLastRemediationResult({
+      id: 'repair-node',
+      success: true,
+      message: 'done',
+    } as never);
+
+    expect(useHealthCheckStore.getState()).toMatchObject({
+      activeRemediationId: 'repair-node',
+      lastRemediationResult: {
+        id: 'repair-node',
+        success: true,
+      },
+    });
+  });
+
   it('clears transient results but keeps lastCheckedAt for staleness checks', () => {
     useHealthCheckStore.setState({
       systemHealth: { overall_status: 'healthy', environments: [], package_managers: [], system_issues: [], skipped_providers: [], checked_at: 'x' } as never,
@@ -83,6 +142,8 @@ describe('useHealthCheckStore', () => {
       error: 'boom',
       progress: { completed: 1, total: 2, currentProvider: 'fnm', phase: 'done' },
       lastCheckedAt: 123,
+      activeRemediationId: 'repair-node',
+      lastRemediationResult: { id: 'repair-node' } as never,
     });
 
     useHealthCheckStore.getState().clearResults();
@@ -92,6 +153,8 @@ describe('useHealthCheckStore', () => {
     expect(state.error).toBeNull();
     expect(state.progress).toBeNull();
     expect(state.lastCheckedAt).toBe(123);
+    expect(state.activeRemediationId).toBeNull();
+    expect(state.lastRemediationResult).toBeNull();
   });
 
   it('evaluates staleness with a 10-minute threshold', () => {

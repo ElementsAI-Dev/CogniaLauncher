@@ -66,7 +66,7 @@ export const DownloadTaskRow = memo(function DownloadTaskRow({
           aria-label={`Select ${task.name}`}
         />
       </TableCell>
-      <TableCell className="min-w-[220px]">
+      <TableCell className="min-w-55">
         <div className="space-y-1">
           <p
             className="font-medium truncate cursor-pointer hover:underline"
@@ -97,7 +97,7 @@ export const DownloadTaskRow = memo(function DownloadTaskRow({
           {t(`downloads.state.${task.state}`)}
         </Badge>
       </TableCell>
-      <TableCell className="min-w-[200px]">
+      <TableCell className="min-w-50">
         <div className="space-y-2">
           <Progress value={progress.percent} className="h-2" />
           <div className="flex justify-between text-xs text-muted-foreground">

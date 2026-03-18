@@ -12,7 +12,10 @@ use crate::SharedSecretVault;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use super::download::{download_add, DownloadRequest, SharedDownloadManager, SharedSettings};
+use super::download::{
+    build_download_request_preset, download_add, DownloadRequest, DownloadRequestPreset,
+    SharedDownloadManager, SharedSettings,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -146,31 +149,16 @@ fn build_github_download_request(
     provider: String,
     headers: std::collections::HashMap<String, String>,
 ) -> DownloadRequest {
-    let full_path = std::path::PathBuf::from(destination)
-        .join(&file_name)
-        .display()
-        .to_string();
-    DownloadRequest {
+    build_download_request_preset(
         url,
-        destination: full_path,
-        name: file_name,
-        checksum: None,
-        priority: None,
-        provider: Some(provider),
-        headers: if headers.is_empty() {
-            None
-        } else {
-            Some(headers)
+        destination,
+        file_name,
+        DownloadRequestPreset {
+            provider: Some(provider),
+            headers: Some(headers),
+            ..DownloadRequestPreset::default()
         },
-        auto_extract: None,
-        extract_dest: None,
-        segments: None,
-        mirror_urls: None,
-        post_action: None,
-        delete_after_extract: None,
-        auto_rename: None,
-        tags: None,
-    }
+    )
 }
 
 #[tauri::command]

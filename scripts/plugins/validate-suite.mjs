@@ -4,11 +4,13 @@ import {
   createRunSummary,
   ensureFileExists,
   formatMetadataDrift,
+  getOfficialSdkCapabilityFamilies,
   parseMaintainerArgs,
   printRunSummary,
   readCatalog,
   readExtensionPointMatrix,
   readSdkCapabilityMatrix,
+  readSdkUsageInventory,
   recordRunFailure,
   recordRunSuccess,
   resolveArtifactPath,
@@ -20,6 +22,7 @@ import {
   validateExtensionPointMatrixShape,
   validatePluginCapabilityMatrixEntry,
   validateSdkCapabilityMatrixShape,
+  validateSdkUsageInventoryShape,
   validatePluginProjectMetadata,
 } from './lib.mjs';
 import { readFileSync } from 'node:fs';
@@ -48,6 +51,7 @@ let catalog;
 let summary;
 let sdkCapabilityMatrix;
 let extensionPointMatrix;
+let sdkUsageInventory;
 
 try {
   parsedArgs = parseMaintainerArgs(process.argv.slice(2), {
@@ -60,6 +64,13 @@ try {
   validateExtensionPointMatrixShape(extensionPointMatrix);
   sdkCapabilityMatrix = readSdkCapabilityMatrix();
   validateSdkCapabilityMatrixShape(sdkCapabilityMatrix, catalog);
+  sdkUsageInventory = readSdkUsageInventory();
+  validateSdkUsageInventoryShape(sdkUsageInventory, {
+    officialCapabilities: getOfficialSdkCapabilityFamilies(),
+    catalog,
+    sdkCapabilityMatrix,
+    extensionPointMatrix,
+  });
 
   const selection = resolveSelectedPlugins(catalog, parsedArgs);
   summary = createRunSummary(command, selection, { json: parsedArgs.json });

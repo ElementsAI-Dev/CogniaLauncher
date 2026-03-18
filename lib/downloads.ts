@@ -1,5 +1,9 @@
 import { PRIORITY_OPTIONS } from "@/lib/constants/downloads";
-import type { DownloadTask } from "@/types/tauri";
+import type {
+  DownloadHistoryRecord,
+  DownloadRequest,
+  DownloadTask,
+} from "@/types/tauri";
 
 export type DownloadFailureClass =
   | "selection_error"
@@ -81,6 +85,61 @@ export function joinDestinationPath(basePath: string, itemName: string): string 
   const separator =
     trimmedBase.includes("\\") && !trimmedBase.includes("/") ? "\\" : "/";
   return `${trimmedBase}${separator}${trimmedName}`;
+}
+
+function normalizeOptionalString(value?: string | null): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function normalizeStringList(values?: string[] | null): string[] | undefined {
+  const normalized = (values ?? [])
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+export function createDownloadRequestDraft(
+  request: Pick<DownloadRequest, "url" | "destination"> &
+    Partial<DownloadRequest> & { name?: string }
+): DownloadRequest {
+  return {
+    url: request.url.trim(),
+    destination: request.destination.trim(),
+    name: normalizeOptionalString(request.name) ?? inferNameFromUrl(request.url),
+    checksum: normalizeOptionalString(request.checksum),
+    priority: request.priority,
+    provider: normalizeOptionalString(request.provider),
+    headers:
+      request.headers && Object.keys(request.headers).length > 0
+        ? request.headers
+        : undefined,
+    autoExtract: request.autoExtract || undefined,
+    extractDest: normalizeOptionalString(request.extractDest),
+    segments:
+      typeof request.segments === "number" && request.segments > 1
+        ? request.segments
+        : undefined,
+    mirrorUrls: normalizeStringList(request.mirrorUrls),
+    postAction:
+      request.postAction && request.postAction !== "none"
+        ? request.postAction
+        : undefined,
+    deleteAfterExtract: request.deleteAfterExtract || undefined,
+    autoRename: request.autoRename || undefined,
+    tags: normalizeStringList(request.tags),
+  };
+}
+
+export function createHistoryDownloadDraft(
+  record: DownloadHistoryRecord
+): DownloadRequest {
+  return createDownloadRequestDraft({
+    url: record.url,
+    destination: record.destination,
+    name: record.filename,
+    provider: record.provider ?? undefined,
+  });
 }
 
 /**

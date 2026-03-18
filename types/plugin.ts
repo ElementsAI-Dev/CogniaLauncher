@@ -87,6 +87,18 @@ export interface PluginPermissions {
   clipboard: boolean;
   notification: boolean;
   processExec: boolean;
+  downloadRead?: boolean;
+  downloadWrite?: boolean;
+  gitRead?: boolean;
+  gitWrite?: boolean;
+  healthRead?: boolean;
+  profilesRead?: boolean;
+  profilesWrite?: boolean;
+  cacheRead?: boolean;
+  cacheWrite?: boolean;
+  shellRead?: boolean;
+  wslRead?: boolean;
+  launch?: boolean;
 }
 
 export interface PluginPermissionState {
@@ -130,6 +142,7 @@ export interface PluginInfo {
   builtinSyncMessage: string | null;
   pluginPoints?: PluginPointInventoryEntry[];
   deprecationWarnings?: PluginDeprecationNotice[];
+  sdkCapabilityCoverage?: PluginSdkCapabilityCoverage[];
 }
 
 export interface PluginUpdateInfo {
@@ -197,6 +210,33 @@ export interface PluginCapabilityAuditRecord {
   reason: string | null;
 }
 
+export type PluginSdkUsagePathType =
+  | 'builtin-plugin'
+  | 'official-example'
+  | 'scaffold-workflow';
+
+export interface PluginSdkUsagePath {
+  type: PluginSdkUsagePathType;
+  path: string;
+  pluginId?: string;
+  entrypoints: string[];
+  requiredPermissions: string[];
+  pluginPointIds?: string[];
+}
+
+export interface PluginSdkCapabilityCoverage {
+  capabilityId: string;
+  permissionGuidance: string[];
+  hostPrerequisites: string[];
+  usagePaths: PluginSdkUsagePath[];
+  requiredPermissions: string[];
+  recoveryActions: string[];
+  desktopOnly: boolean;
+  status: 'covered' | 'warning' | 'blocked';
+  reason: string | null;
+  missingPermissions: string[];
+}
+
 export interface PluginSettingDeclaration {
   id: string;
   type: 'string' | 'number' | 'boolean' | 'select';
@@ -251,6 +291,7 @@ export interface PluginToolInfo {
   discoverable?: boolean;
   exclusionReason?: string | null;
   deprecationWarnings?: PluginDeprecationNotice[];
+  sdkCapabilityCoverage?: PluginSdkCapabilityCoverage[];
 }
 
 export interface PluginToolPreview {

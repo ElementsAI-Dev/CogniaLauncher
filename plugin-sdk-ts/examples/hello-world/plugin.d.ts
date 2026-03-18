@@ -3,6 +3,7 @@ declare module "main" {
   export function env_check(): I32;
   export function env_dashboard(): I32;
   export function custom_view(): I32;
+  export function capability_snapshot(): I32;
 }
 
 declare module "extism:host" {

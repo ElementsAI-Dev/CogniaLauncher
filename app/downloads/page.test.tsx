@@ -364,14 +364,14 @@ describe('DownloadsPage', () => {
     expect(screen.getByText(/manage download tasks/i)).toBeInTheDocument();
   });
 
-  it('uses non-runtime downloads hook mode on page', () => {
+  it('uses downloads hook with runtime enabled on page', () => {
     const { useDownloads } = jest.requireMock('@/hooks/use-downloads') as {
       useDownloads: jest.Mock;
     };
 
     renderWithProviders(<DownloadsPage />);
 
-    expect(useDownloads).toHaveBeenCalledWith({ enableRuntime: false });
+    expect(useDownloads).toHaveBeenCalledWith();
   });
 
   it('passes checkDiskSpace down to provider dialogs', () => {

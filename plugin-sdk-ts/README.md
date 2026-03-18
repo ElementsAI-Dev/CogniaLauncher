@@ -370,17 +370,22 @@ Supported plugin-point governance is declared in `plugins/extension-point-matrix
 
 ## Built-in Capability Mapping
 
-The built-in plugin workspace includes concrete SDK usage references:
+The built-in plugin workspace and official examples now provide full stable SDK coverage:
 
-| SDK Module(s) | Built-in Example | Path |
+| SDK Module(s) | Maintained Usage Path | Path |
 |---|---|---|
 | `env`, `platform`, `event`, `notification` | Env Provider Audit | `plugins/typescript/env-provider-audit` |
 | `pkg`, `clipboard`, `notification`, `event` | Package Update Advisor | `plugins/typescript/pkg-update-advisor` |
 | `fs`, `config` | File Config Assistant | `plugins/rust/file-config-assistant` |
+| `http` | Local API Workbench | `plugins/typescript/local-api-workbench` |
+| `process` | Port Inspector | `plugins/typescript/port-inspector` |
+| `batch`, `cache`, `download`, `git`, `health`, `launch`, `profiles`, `shell`, `wsl` | Hello World capability snapshot | `plugin-sdk-ts/examples/hello-world` |
+| `i18n`, `log`, `ui` | Hello World / Env Dashboard | `plugin-sdk-ts/examples/hello-world` |
 
 Governance source:
 
 - `plugins/sdk-capability-matrix.json` defines required plugin IDs, expected permissions, and primary entrypoints used by built-in validation.
+- `plugins/sdk-usage-inventory.json` defines the full stable SDK capability inventory, permission guidance, maintained usage paths, and toolbox/runtime prerequisite hints.
 - `plugins/extension-point-matrix.json` defines officially supported plugin points, prerequisites, SDK coverage, and scaffold support.
 
 ## Host Contract Compatibility

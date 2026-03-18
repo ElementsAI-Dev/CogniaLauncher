@@ -152,6 +152,130 @@ describe("usePluginStore", () => {
     expect(result.current.pluginTools[0].pluginId).toBe("other");
   });
 
+  it("updates plugin health and permission state independently", () => {
+    const { result } = renderHook(() => usePluginStore());
+
+    act(() => {
+      result.current.setHealthMap({
+        "com.example.test": {
+          consecutiveFailures: 1,
+          totalCalls: 2,
+          failedCalls: 1,
+          totalDurationMs: 20,
+          lastError: "boom",
+          autoDisabled: false,
+        },
+      });
+      result.current.setPluginHealth("other.plugin", {
+        consecutiveFailures: 0,
+        totalCalls: 1,
+        failedCalls: 0,
+        totalDurationMs: 5,
+        lastError: null,
+        autoDisabled: false,
+      });
+      result.current.setPermissionMode("strict");
+      result.current.setPermissionStates({
+        "com.example.test": {
+          declared: {
+            uiFeedback: false,
+            uiDialog: false,
+            uiFilePicker: false,
+            uiNavigation: false,
+            fsRead: [],
+            fsWrite: [],
+            http: [],
+            configRead: false,
+            configWrite: false,
+            envRead: false,
+            pkgSearch: false,
+            pkgInstall: false,
+            clipboard: false,
+            notification: false,
+            processExec: false,
+          },
+          granted: ["env_read"],
+          denied: [],
+        },
+      });
+      result.current.setPluginPermissionState("other.plugin", {
+        declared: {
+          uiFeedback: false,
+          uiDialog: false,
+          uiFilePicker: false,
+          uiNavigation: false,
+          fsRead: [],
+          fsWrite: [],
+          http: [],
+          configRead: false,
+          configWrite: false,
+          envRead: false,
+          pkgSearch: false,
+          pkgInstall: false,
+          clipboard: false,
+          notification: false,
+          processExec: false,
+        },
+        granted: ["http"],
+        denied: [],
+      });
+    });
+
+    expect(result.current.permissionMode).toBe("strict");
+    expect(result.current.healthMap["com.example.test"]).toBeDefined();
+    expect(result.current.healthMap["other.plugin"]).toBeDefined();
+    expect(result.current.permissionStates["com.example.test"]).toBeDefined();
+    expect(result.current.permissionStates["other.plugin"]).toBeDefined();
+  });
+
+  it("removes plugin-specific health and permission state together with the plugin", () => {
+    const { result } = renderHook(() => usePluginStore());
+    act(() => {
+      result.current.setInstalledPlugins([mockPlugin]);
+      result.current.setPluginTools([mockTool]);
+      result.current.setHealthMap({
+        "com.example.test": {
+          consecutiveFailures: 1,
+          totalCalls: 1,
+          failedCalls: 1,
+          totalDurationMs: 10,
+          lastError: "boom",
+          autoDisabled: false,
+        },
+      });
+      result.current.setPermissionStates({
+        "com.example.test": {
+          declared: {
+            uiFeedback: false,
+            uiDialog: false,
+            uiFilePicker: false,
+            uiNavigation: false,
+            fsRead: [],
+            fsWrite: [],
+            http: [],
+            configRead: false,
+            configWrite: false,
+            envRead: false,
+            pkgSearch: false,
+            pkgInstall: false,
+            clipboard: false,
+            notification: false,
+            processExec: false,
+          },
+          granted: [],
+          denied: [],
+        },
+      });
+    });
+
+    act(() => {
+      result.current.removePlugin("com.example.test");
+    });
+
+    expect(result.current.healthMap).toEqual({});
+    expect(result.current.permissionStates).toEqual({});
+  });
+
   it("stores marketplace catalog and sync metadata", () => {
     const catalog: ToolboxMarketplaceCatalog = {
       schemaVersion: 1,

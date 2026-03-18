@@ -91,6 +91,7 @@ export function ToolDetailPageClient({ toolId }: { toolId: string }) {
         tool.pluginTool.compatibility && !tool.pluginTool.compatibility.compatible
           ? tool.pluginTool.compatibility.reason
           : null,
+      sdkCapabilityCoverage: tool.pluginTool.sdkCapabilityCoverage ?? [],
     };
   }, [healthMap, installedPlugins, permissionStates, tool]);
 
@@ -220,6 +221,19 @@ export function ToolDetailPageClient({ toolId }: { toolId: string }) {
             <p className="text-red-700 dark:text-red-300">
               {t('toolbox.plugin.capabilityPolicyMismatch')}: {pluginGovernance.missingCapabilities.join(', ')}
             </p>
+          )}
+          {pluginGovernance.sdkCapabilityCoverage.length > 0 && (
+            <div className="space-y-1">
+              <p className="font-medium">SDK capability coverage</p>
+              {pluginGovernance.sdkCapabilityCoverage.map((coverage) => (
+                <p
+                  key={`${coverage.capabilityId}:${coverage.status}`}
+                  className={coverage.status === 'covered' ? 'font-mono break-all' : 'break-all text-red-700 dark:text-red-300'}
+                >
+                  {coverage.reason ?? `${coverage.capabilityId}: ${coverage.status}`}
+                </p>
+              ))}
+            </div>
           )}
         </div>
       )}

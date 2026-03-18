@@ -52,6 +52,17 @@ icon = "AppWindow"
 entry = "custom_view"
 ui_mode = "iframe"
 
+[[tools]]
+id = "capability-snapshot"
+name_en = "Capability Snapshot"
+name_zh = "能力快照"
+description_en = "Read-only snapshot across advanced SDK capability families."
+description_zh = "对高级 SDK 能力族进行只读快照。"
+category = "developer"
+keywords = ["sdk", "capability", "snapshot", "diagnostics"]
+icon = "Workflow"
+entry = "capability_snapshot"
+
 [ui]
 entry = "ui/index.html"
 width = 800
@@ -62,6 +73,13 @@ ui_feedback = true
 config_read = true
 env_read = true
 pkg_search = true
+cache_read = true
+download_read = true
+git_read = true
+health_read = true
+profiles_read = true
+shell_read = true
+wsl_read = true
 
 [locales.en]
 greeting = "Hello, {name}! Welcome to CogniaLauncher plugins."

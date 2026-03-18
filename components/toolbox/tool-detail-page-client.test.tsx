@@ -204,6 +204,20 @@ describe('ToolDetailPageClient', () => {
           entry: 'run',
           uiMode: 'text',
           capabilityDeclarations: ['process.exec'],
+          sdkCapabilityCoverage: [
+            {
+              capabilityId: 'process',
+              permissionGuidance: ['process_exec'],
+              hostPrerequisites: ['desktop-host'],
+              usagePaths: [],
+              requiredPermissions: ['process_exec'],
+              recoveryActions: ['manage-plugin'],
+              desktopOnly: true,
+              status: 'blocked',
+              reason: 'Missing permissions: process_exec',
+              missingPermissions: ['process_exec'],
+            },
+          ],
         },
       },
     ];
@@ -240,5 +254,6 @@ describe('ToolDetailPageClient', () => {
     expect(screen.getByText('toolbox.plugin.grantedCapabilities')).toBeInTheDocument();
     expect(screen.getAllByText('process.exec').length).toBeGreaterThan(0);
     expect(screen.getByText('deprecated capability use new one')).toBeInTheDocument();
+    expect(screen.getByText('Missing permissions: process_exec')).toBeInTheDocument();
   });
 });

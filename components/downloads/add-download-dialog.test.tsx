@@ -251,4 +251,35 @@ describe("AddDownloadDialog", () => {
 
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
+
+  it("prefills fields from an initial request draft", () => {
+    render(
+      <TestWrapper>
+        <AddDownloadDialog
+          {...defaultProps}
+          initialRequest={{
+            url: "https://example.com/history.zip",
+            destination: "/downloads/history.zip",
+            name: "history.zip",
+            provider: "github:owner/repo",
+            autoExtract: true,
+            extractDest: "/downloads/history",
+          }}
+        />
+      </TestWrapper>,
+    );
+
+    expect(screen.getByLabelText("URL")).toHaveValue(
+      "https://example.com/history.zip",
+    );
+    expect(screen.getByPlaceholderText("/path/to/file.zip")).toHaveValue(
+      "/downloads/history.zip",
+    );
+    expect(screen.getByLabelText("Name")).toHaveValue("history.zip");
+    expect(screen.getByLabelText("Provider")).toHaveValue("github:owner/repo");
+    expect(screen.getByLabelText("Auto Extract")).toBeChecked();
+    expect(screen.getByPlaceholderText("/path/to/extracted")).toHaveValue(
+      "/downloads/history",
+    );
+  });
 });

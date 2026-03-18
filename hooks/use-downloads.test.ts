@@ -24,6 +24,7 @@ const mockDownloadCancelAll = jest.fn();
 const mockDownloadClearFinished = jest.fn();
 const mockDownloadRetryFailed = jest.fn();
 const mockDownloadSetPriority = jest.fn();
+const mockDownloadSetTaskSpeedLimit = jest.fn();
 const mockDownloadRetry = jest.fn();
 const mockDownloadCalculateChecksum = jest.fn();
 const mockDownloadExtract = jest.fn();
@@ -74,6 +75,7 @@ jest.mock('@/lib/tauri', () => ({
   downloadClearFinished: (...args: unknown[]) => mockDownloadClearFinished(...args),
   downloadRetryFailed: (...args: unknown[]) => mockDownloadRetryFailed(...args),
   downloadSetPriority: (...args: unknown[]) => mockDownloadSetPriority(...args),
+  downloadSetTaskSpeedLimit: (...args: unknown[]) => mockDownloadSetTaskSpeedLimit(...args),
   downloadRetry: (...args: unknown[]) => mockDownloadRetry(...args),
   downloadCalculateChecksum: (...args: unknown[]) => mockDownloadCalculateChecksum(...args),
   downloadExtract: (...args: unknown[]) => mockDownloadExtract(...args),
@@ -321,6 +323,28 @@ describe('useDownloads', () => {
     expect(mockDownloadCancelAll).not.toHaveBeenCalled();
   });
 
+  it('cleans up listeners even when setup resolves after unmount', async () => {
+    let resolveAdded: ((cleanup: () => void) => void) | null = null;
+    const lateCleanup = jest.fn();
+    mockListenDownloadTaskAdded.mockImplementationOnce(
+      () =>
+        new Promise<() => void>((resolve) => {
+          resolveAdded = resolve;
+        })
+    );
+
+    const { unmount } = renderHook(() => useDownloads());
+
+    unmount();
+
+    await act(async () => {
+      resolveAdded?.(lateCleanup);
+      await Promise.resolve();
+    });
+
+    expect(lateCleanup).toHaveBeenCalled();
+  });
+
   it('should add a download', async () => {
     mockDownloadAdd.mockResolvedValue('task-1');
     const { result } = renderHook(() => useDownloads());
@@ -368,6 +392,32 @@ describe('useDownloads', () => {
     });
 
     expect(mockDownloadCancel).toHaveBeenCalledWith('task-1');
+  });
+
+  it('keeps single-task queue actions in sync when runtime is disabled', async () => {
+    mockDownloadPause.mockResolvedValue(undefined);
+    mockDownloadResume.mockResolvedValue(undefined);
+    mockDownloadCancel.mockResolvedValue(undefined);
+    mockDownloadRemove.mockResolvedValue(undefined);
+    mockDownloadStats.mockResolvedValue({ totalTasks: 0 });
+    mockDownloadHistoryList.mockResolvedValue([{ id: 'hist-1' }]);
+    mockDownloadHistoryStats.mockResolvedValue({ totalCount: 1 });
+    const { result } = renderHook(() => useDownloads({ enableRuntime: false }));
+
+    await act(async () => {
+      await result.current.pauseDownload('task-1');
+      await result.current.resumeDownload('task-1');
+      await result.current.cancelDownload('task-1');
+      await result.current.removeDownload('task-1');
+    });
+
+    expect(mockUpdateTask).toHaveBeenCalledWith('task-1', { state: 'paused' });
+    expect(mockUpdateTask).toHaveBeenCalledWith('task-1', { state: 'queued' });
+    expect(mockUpdateTask).toHaveBeenCalledWith('task-1', { state: 'cancelled' });
+    expect(mockRemoveTask).toHaveBeenCalledWith('task-1');
+    expect(mockDownloadStats).toHaveBeenCalled();
+    expect(mockDownloadHistoryList).toHaveBeenCalled();
+    expect(mockDownloadHistoryStats).toHaveBeenCalled();
   });
 
   it('should remove a download', async () => {
@@ -540,6 +590,18 @@ describe('useDownloads', () => {
     expect(result.current).toHaveProperty('speedLimit');
     expect(result.current).toHaveProperty('isLoading');
     expect(result.current).toHaveProperty('error');
+  });
+
+  it('updates task speed limit in current session state', async () => {
+    mockDownloadSetTaskSpeedLimit.mockResolvedValue(undefined);
+    const { result } = renderHook(() => useDownloads({ enableRuntime: false }));
+
+    await act(async () => {
+      await result.current.setTaskSpeedLimit('task-1', 2048);
+    });
+
+    expect(mockDownloadSetTaskSpeedLimit).toHaveBeenCalledWith('task-1', 2048);
+    expect(mockUpdateTask).toHaveBeenCalledWith('task-1', { speedLimit: 2048 });
   });
 
   // === Pause/Resume/Cancel All ===
@@ -751,6 +813,34 @@ describe('useDownloads', () => {
 
     expect(mockDownloadBatchRemove).toHaveBeenCalledWith(['t1', 't2']);
     expect(count).toBe(2);
+  });
+
+  it('refreshes session state after batch queue actions', async () => {
+    mockDownloadBatchPause.mockResolvedValue(2);
+    mockDownloadBatchResume.mockResolvedValue(2);
+    mockDownloadBatchCancel.mockResolvedValue(2);
+    mockDownloadBatchRemove.mockResolvedValue(2);
+    mockDownloadStats.mockResolvedValue({ totalTasks: 0 });
+    mockDownloadList.mockResolvedValue([]);
+    mockDownloadHistoryList.mockResolvedValue([{ id: 'hist-batch' }]);
+    mockDownloadHistoryStats.mockResolvedValue({ totalCount: 1 });
+    const { result } = renderHook(() => useDownloads({ enableRuntime: false }));
+
+    await act(async () => {
+      await result.current.batchPause();
+      await result.current.batchResume();
+      await result.current.batchCancel();
+      await result.current.batchRemove();
+    });
+
+    expect(mockDownloadBatchPause).toHaveBeenCalledWith(['sel-1', 'sel-2']);
+    expect(mockDownloadBatchResume).toHaveBeenCalledWith(['sel-1', 'sel-2']);
+    expect(mockDownloadBatchCancel).toHaveBeenCalledWith(['sel-1', 'sel-2']);
+    expect(mockDownloadBatchRemove).toHaveBeenCalledWith(['sel-1', 'sel-2']);
+    expect(mockDownloadStats).toHaveBeenCalled();
+    expect(mockDownloadList).toHaveBeenCalled();
+    expect(mockDownloadHistoryList).toHaveBeenCalled();
+    expect(mockDownloadHistoryStats).toHaveBeenCalled();
   });
 
   // === History Operations ===

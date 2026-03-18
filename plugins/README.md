@@ -6,6 +6,7 @@ This directory hosts first-party production plugins shipped with CogniaLauncher.
 
 - `manifest.json`: Built-in plugin catalog (id/version/framework/checksum metadata).
 - `sdk-capability-matrix.json`: Capability governance for required built-ins (`sdkCapabilities`, `expectedPermissions`, `primaryEntrypoints`).
+- `sdk-usage-inventory.json`: Capability-centric coverage inventory for the full stable SDK export surface (`permissionGuidance`, maintained usage paths, toolbox/runtime prerequisites).
 - `extension-point-matrix.json`: Official plugin-point support matrix (`manifestPrerequisites`, SDK coverage, scaffold support, reference examples).
 - `rust/*`: Rust SDK built-in plugins.
 - `typescript/*`: TypeScript SDK built-in plugins.
@@ -62,13 +63,30 @@ Selector rules:
   - Focus: `pkg`, `clipboard`, `notification`, `event`
 - `com.cognia.builtin.file-config-assistant` (`plugins/rust/file-config-assistant`)
   - Focus: `fs`, `config`
+- `com.cognia.builtin.local-api-workbench` (`plugins/typescript/local-api-workbench`)
+  - Focus: `http`
+- `com.cognia.builtin.port-inspector` (`plugins/typescript/port-inspector`)
+  - Focus: `process`
 
 When adding or modifying required built-ins:
 
 1. Update `plugins/sdk-capability-matrix.json`.
 2. Keep `expectedPermissions` aligned with `plugin.toml` `[permissions]`.
 3. Keep `primaryEntrypoints` aligned with `[[tools]].entry` and source exports.
-4. Keep `plugins/extension-point-matrix.json` reference examples and supported plugin-point coverage aligned with the built-in implementation.
+4. Keep `plugins/sdk-usage-inventory.json` aligned with the maintained usage path you expect contributors and toolbox/runtime diagnostics to rely on.
+5. Keep `plugins/extension-point-matrix.json` reference examples and supported plugin-point coverage aligned with the built-in implementation.
+
+## Stable SDK Usage Coverage
+
+The repository now tracks full stable SDK capability coverage in `plugins/sdk-usage-inventory.json`.
+
+- Built-in paths cover high-value in-product workflows such as `env`, `pkg`, `fs`, `config`, `http`, and `process`.
+- Official example paths cover broader operational capability families that do not yet need dedicated built-in surfaces, including `batch`, `cache`, `download`, `git`, `health`, `launch`, `profiles`, `shell`, and `wsl`.
+- `pnpm plugins:validate` blocks drift between:
+  - public SDK exports in `plugin-sdk/src/lib.rs` and `plugin-sdk-ts/src/index.ts`
+  - `plugins/sdk-usage-inventory.json`
+  - `plugins/sdk-capability-matrix.json`
+  - referenced built-in/example assets
 
 ## Runtime Sync Behavior
 

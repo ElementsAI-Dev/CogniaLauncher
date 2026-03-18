@@ -363,7 +363,7 @@ export function DownloadDetailDialog({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-6 w-6 flex-shrink-0"
+                  className="h-6 w-6 shrink-0"
                   onClick={handleCopyUrl}
                 >
                   <Copy className="h-3 w-3" />
@@ -382,7 +382,7 @@ export function DownloadDetailDialog({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-6 w-6 flex-shrink-0"
+                  className="h-6 w-6 shrink-0"
                   onClick={handleCopyDestination}
                 >
                   <Copy className="h-3 w-3" />
@@ -430,7 +430,7 @@ export function DownloadDetailDialog({
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-6 w-6 flex-shrink-0"
+                    className="h-6 w-6 shrink-0"
                     onClick={() => {
                       writeClipboard(resolvedTask.expectedChecksum!).then(
                         () => {

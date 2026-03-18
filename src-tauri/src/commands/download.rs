@@ -10,6 +10,7 @@ use crate::download::{
 };
 use crate::platform::disk::{self, format_size, DiskSpace};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State};
@@ -170,6 +171,50 @@ pub struct DownloadRequest {
     pub auto_rename: Option<bool>,
     #[serde(default)]
     pub tags: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct DownloadRequestPreset {
+    pub provider: Option<String>,
+    pub headers: Option<HashMap<String, String>>,
+    pub auto_extract: Option<bool>,
+    pub extract_dest: Option<String>,
+    pub segments: Option<u8>,
+    pub mirror_urls: Option<Vec<String>>,
+    pub post_action: Option<String>,
+    pub delete_after_extract: Option<bool>,
+    pub auto_rename: Option<bool>,
+    pub tags: Option<Vec<String>>,
+}
+
+pub(crate) fn build_download_request_preset(
+    url: String,
+    destination_root: &str,
+    file_name: String,
+    preset: DownloadRequestPreset,
+) -> DownloadRequest {
+    let full_path = PathBuf::from(destination_root)
+        .join(&file_name)
+        .display()
+        .to_string();
+
+    DownloadRequest {
+        url,
+        destination: full_path,
+        name: file_name,
+        checksum: None,
+        priority: None,
+        provider: preset.provider,
+        headers: preset.headers.filter(|headers| !headers.is_empty()),
+        auto_extract: preset.auto_extract,
+        extract_dest: preset.extract_dest,
+        segments: preset.segments,
+        mirror_urls: preset.mirror_urls.filter(|urls| !urls.is_empty()),
+        post_action: preset.post_action,
+        delete_after_extract: preset.delete_after_extract,
+        auto_rename: preset.auto_rename,
+        tags: preset.tags.filter(|tags| !tags.is_empty()),
+    }
 }
 
 /// Initialize the download manager in-place and start event forwarding.

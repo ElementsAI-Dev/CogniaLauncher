@@ -25,7 +25,11 @@ import { useLocale } from "@/components/providers/locale-provider";
 import { DestinationPicker } from "./destination-picker";
 import type { DownloadRequest } from "@/lib/stores/download";
 import { isTauri } from "@/lib/tauri";
-import { isValidUrl, inferNameFromUrl } from "@/lib/downloads";
+import {
+  createDownloadRequestDraft,
+  inferNameFromUrl,
+  isValidUrl,
+} from "@/lib/downloads";
 import { DEFAULT_DOWNLOAD_FORM, SEGMENT_OPTIONS, POST_ACTION_OPTIONS } from "@/lib/constants/downloads";
 
 interface AddDownloadDialogProps {
@@ -33,14 +37,38 @@ interface AddDownloadDialogProps {
   onOpenChange: (open: boolean) => void;
   onSubmit: (request: DownloadRequest) => Promise<void>;
   initialUrl?: string;
+  initialRequest?: Partial<DownloadRequest>;
 }
 
+function buildFormFromRequest(
+  request?: Partial<DownloadRequest>,
+  initialUrl?: string
+) {
+  return {
+    ...DEFAULT_DOWNLOAD_FORM,
+    url: request?.url ?? initialUrl ?? "",
+    destination: request?.destination ?? "",
+    name: request?.name ?? "",
+    checksum: request?.checksum ?? "",
+    priority: request?.priority != null ? String(request.priority) : "",
+    provider: request?.provider ?? "",
+    autoExtract: request?.autoExtract ?? false,
+    autoRename: request?.autoRename ?? false,
+    deleteAfterExtract: request?.deleteAfterExtract ?? false,
+    extractDest: request?.extractDest ?? "",
+    segments: request?.segments != null ? String(request.segments) : "1",
+    mirrorUrls: request?.mirrorUrls ?? [],
+    tags: request?.tags?.join(",") ?? "",
+    postAction: request?.postAction ?? "none",
+  };
+}
 
 export function AddDownloadDialog({
   open,
   onOpenChange,
   onSubmit,
   initialUrl,
+  initialRequest,
 }: AddDownloadDialogProps) {
   const { t } = useLocale();
   const [form, setForm] = useState(DEFAULT_DOWNLOAD_FORM);
@@ -51,10 +79,10 @@ export function AddDownloadDialog({
     if (!open) {
       setForm(DEFAULT_DOWNLOAD_FORM);
       nameManuallyEdited.current = false;
-    } else if (initialUrl) {
-      setForm((prev) => ({ ...prev, url: initialUrl }));
+    } else if (initialRequest || initialUrl) {
+      setForm(buildFormFromRequest(initialRequest, initialUrl));
     }
-  }, [open, initialUrl]);
+  }, [initialRequest, initialUrl, open]);
 
   useEffect(() => {
     if (!nameManuallyEdited.current && !form.name.trim() && form.url.trim()) {
@@ -75,27 +103,24 @@ export function AddDownloadDialog({
 
     setIsSubmitting(true);
     try {
-      const tags = form.tags
-        .split(",")
-        .map((tag) => tag.trim())
-        .filter((tag) => tag.length > 0);
-
-      await onSubmit({
+      await onSubmit(
+        createDownloadRequestDraft({
         url: form.url.trim(),
         destination: form.destination.trim(),
         name: form.name.trim(),
-        checksum: form.checksum.trim() || undefined,
+        checksum: form.checksum,
         priority: form.priority ? Number(form.priority) : undefined,
-        provider: form.provider.trim() || undefined,
-        autoExtract: form.autoExtract || undefined,
-        extractDest: form.extractDest.trim() || undefined,
-        deleteAfterExtract: form.deleteAfterExtract || undefined,
-        autoRename: form.autoRename || undefined,
-        tags: tags.length > 0 ? tags : undefined,
+        provider: form.provider,
+        autoExtract: form.autoExtract,
+        extractDest: form.extractDest,
+        deleteAfterExtract: form.deleteAfterExtract,
+        autoRename: form.autoRename,
+        tags: form.tags.split(","),
         segments: form.segments !== "1" ? Number(form.segments) : undefined,
-        mirrorUrls: form.mirrorUrls.length > 0 ? form.mirrorUrls : undefined,
-        postAction: form.postAction !== "none" ? form.postAction as DownloadRequest['postAction'] : undefined,
-      });
+        mirrorUrls: form.mirrorUrls,
+        postAction: form.postAction as DownloadRequest['postAction'],
+      })
+      );
       onOpenChange(false);
     } finally {
       setIsSubmitting(false);
@@ -104,7 +129,7 @@ export function AddDownloadDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[520px]">
+      <DialogContent className="sm:max-w-130">
         <DialogHeader>
           <DialogTitle className="text-xl">
             {t("downloads.addDownload")}
@@ -244,7 +269,7 @@ export function AddDownloadDialog({
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 flex-shrink-0"
+                  className="h-8 w-8 shrink-0"
                   onClick={() => {
                     const updated = form.mirrorUrls.filter((_, i) => i !== idx);
                     setForm((prev) => ({ ...prev, mirrorUrls: updated }));

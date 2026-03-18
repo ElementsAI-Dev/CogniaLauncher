@@ -39,6 +39,7 @@ import {
   isTauri,
 } from "@/lib/tauri";
 import { evaluatePluginDeprecations } from "@/lib/plugin-governance";
+import { resolveDeclaredSdkCapabilityCoverage } from "@/lib/plugin-sdk-usage";
 import { runEditorActionFlow } from "@/lib/editor-action";
 import type {
   PluginInfo,
@@ -147,7 +148,9 @@ function comparePluginToolsForPreview(
 function normalizePluginTools(
   rawTools: PluginToolInfo[],
   pluginsById: Map<string, PluginInfo>,
+  permissionsByPlugin: Record<string, PluginPermissionState>,
 ): PluginToolInfo[] {
+  const desktop = isTauri();
   return rawTools.map((tool) => {
     const normalizedName = getNormalizedToolName(tool);
     const normalizedDescription = normalizeOptionalText(tool.descriptionEn);
@@ -165,6 +168,11 @@ function normalizePluginTools(
         },
       ],
     );
+    const sdkCapabilityCoverage = resolveDeclaredSdkCapabilityCoverage({
+      declarations: tool.capabilityDeclarations ?? [],
+      grantedPermissions: permissionsByPlugin[tool.pluginId]?.granted ?? [],
+      isDesktop: desktop,
+    });
 
     return {
       ...tool,
@@ -178,8 +186,37 @@ function normalizePluginTools(
       exclusionReason: normalizeOptionalText(tool.exclusionReason),
       discoverable: tool.discoverable ?? true,
       deprecationWarnings: deprecations.length > 0 ? deprecations : undefined,
+      sdkCapabilityCoverage:
+        sdkCapabilityCoverage.length > 0 ? sdkCapabilityCoverage : undefined,
     };
   });
+}
+
+function mergePluginCapabilityCoverage(
+  pluginTools: PluginToolInfo[],
+): PluginInfo["sdkCapabilityCoverage"] {
+  const byCapability = new Map<
+    string,
+    NonNullable<PluginToolInfo["sdkCapabilityCoverage"]>[number]
+  >();
+
+  for (const tool of pluginTools) {
+    for (const coverage of tool.sdkCapabilityCoverage ?? []) {
+      const existing = byCapability.get(coverage.capabilityId);
+      if (
+        !existing
+        || (existing.status === "covered" && coverage.status !== "covered")
+        || (existing.status === "warning" && coverage.status === "blocked")
+      ) {
+        byCapability.set(coverage.capabilityId, coverage);
+      }
+    }
+  }
+
+  const merged = [...byCapability.values()].sort((left, right) =>
+    left.capabilityId.localeCompare(right.capabilityId),
+  );
+  return merged.length > 0 ? merged : undefined;
 }
 
 function buildPluginToolPreview(tool: PluginToolInfo): PluginToolPreview {
@@ -364,7 +401,11 @@ export function usePlugins() {
         for (const plugin of installedPlugins) {
           pluginById.set(plugin.id, plugin);
         }
-        const nextTools = normalizePluginTools(tools, pluginById);
+        const nextTools = normalizePluginTools(
+          tools,
+          pluginById,
+          permissionsByPlugin,
+        );
         const toolsByPlugin = new Map<string, PluginToolInfo[]>();
         for (const tool of nextTools) {
           const existing = toolsByPlugin.get(tool.pluginId);
@@ -386,6 +427,7 @@ export function usePlugins() {
             ...buildPluginPreviewReadyState(pluginTools),
             deprecationWarnings:
               deprecations.length > 0 ? deprecations : undefined,
+            sdkCapabilityCoverage: mergePluginCapabilityCoverage(pluginTools),
           };
         });
 

@@ -10,23 +10,34 @@ export const REPO_ROOT = path.resolve(SCRIPT_DIR, '..', '..');
 export const PLUGINS_ROOT = path.join(REPO_ROOT, 'plugins');
 export const CATALOG_PATH = path.join(PLUGINS_ROOT, 'manifest.json');
 export const SDK_CAPABILITY_MATRIX_PATH = path.join(PLUGINS_ROOT, 'sdk-capability-matrix.json');
+export const SDK_USAGE_INVENTORY_PATH = path.join(PLUGINS_ROOT, 'sdk-usage-inventory.json');
 export const EXTENSION_POINT_MATRIX_PATH = path.join(PLUGINS_ROOT, 'extension-point-matrix.json');
 export const SUPPORTED_FRAMEWORKS = ['rust', 'typescript'];
 export const DEFAULT_SUPPORTED_SDK_CAPABILITIES = [
+  'batch',
+  'cache',
   'clipboard',
   'config',
+  'download',
   'env',
   'event',
   'fs',
+  'git',
+  'health',
   'http',
   'i18n',
+  'launch',
   'log',
   'notification',
   'pkg',
   'platform',
   'process',
+  'profiles',
+  'shell',
   'ui',
+  'wsl',
 ];
+export const SDK_USAGE_PATH_TYPES = ['builtin-plugin', 'official-example', 'scaffold-workflow'];
 
 export function readCatalog() {
   const raw = readFileSync(CATALOG_PATH, 'utf8');
@@ -47,6 +58,12 @@ export function readExtensionPointMatrix(options = {}) {
   const matrixPath = resolveRepoPath('plugins/extension-point-matrix.json', options);
   ensureFileExists(matrixPath, 'Plugin-point matrix');
   return JSON.parse(readFileSync(matrixPath, 'utf8'));
+}
+
+export function readSdkUsageInventory(options = {}) {
+  const inventoryPath = resolveRepoPath('plugins/sdk-usage-inventory.json', options);
+  ensureFileExists(inventoryPath, 'SDK usage inventory');
+  return JSON.parse(readFileSync(inventoryPath, 'utf8'));
 }
 
 function ensureRequiredString(value, field, pluginId) {
@@ -110,6 +127,232 @@ function ensureStringArray(value, label) {
     return item.trim();
   });
   return [...new Set(normalized)];
+}
+
+function equalStringSets(left, right) {
+  const leftValues = [...left].sort();
+  const rightValues = [...right].sort();
+  return leftValues.length === rightValues.length
+    && leftValues.every((value, index) => value === rightValues[index]);
+}
+
+function parseRustSdkCapabilityFamilies(raw) {
+  return [...new Set(
+    [...raw.matchAll(/^\s*pub mod ([a-z0-9_]+);\s*$/gm)]
+      .map((match) => match[1])
+      .filter((capability) => capability !== 'types'),
+  )].sort();
+}
+
+function parseTypeScriptSdkCapabilityFamilies(raw) {
+  return [...new Set(
+    [...raw.matchAll(/^\s*export \* as ([a-z0-9_]+) from '\.\/[a-z0-9_]+';\s*$/gm)]
+      .map((match) => match[1]),
+  )].sort();
+}
+
+export function getOfficialSdkCapabilityFamilies(options = {}) {
+  const rustPath = resolveRepoPath('plugin-sdk/src/lib.rs', options);
+  const tsPath = resolveRepoPath('plugin-sdk-ts/src/index.ts', options);
+  ensureFileExists(rustPath, 'Rust SDK entrypoint');
+  ensureFileExists(tsPath, 'TypeScript SDK entrypoint');
+
+  const rustCapabilities = parseRustSdkCapabilityFamilies(readFileSync(rustPath, 'utf8'));
+  const tsCapabilities = parseTypeScriptSdkCapabilityFamilies(readFileSync(tsPath, 'utf8'));
+  const rustOnly = rustCapabilities.filter((capability) => !tsCapabilities.includes(capability));
+  const tsOnly = tsCapabilities.filter((capability) => !rustCapabilities.includes(capability));
+  if (rustOnly.length > 0 || tsOnly.length > 0) {
+    const parts = [];
+    if (rustOnly.length > 0) {
+      parts.push(`Rust-only: ${rustOnly.join(', ')}`);
+    }
+    if (tsOnly.length > 0) {
+      parts.push(`TypeScript-only: ${tsOnly.join(', ')}`);
+    }
+    throw new Error(`Official SDK capability export drift detected. ${parts.join(' | ')}`);
+  }
+
+  return rustCapabilities;
+}
+
+function buildSdkUsageValidationError(errors) {
+  return errors.join('\n');
+}
+
+export function validateSdkUsageInventoryShape(inventory, context = {}) {
+  const errors = [];
+
+  if (!inventory || typeof inventory !== 'object') {
+    throw new Error('SDK usage inventory must be an object.');
+  }
+  if (inventory.schemaVersion !== 1) {
+    throw new Error(`Unsupported SDK usage inventory schemaVersion: ${inventory.schemaVersion}`);
+  }
+
+  const officialCapabilities = ensureStringArray(
+    context.officialCapabilities ?? getOfficialSdkCapabilityFamilies(context),
+    'officialCapabilities',
+  );
+  const catalog = context.catalog ?? readCatalog();
+  const sdkCapabilityMatrix = context.sdkCapabilityMatrix ?? readSdkCapabilityMatrix(context);
+  const extensionPointMatrix = context.extensionPointMatrix ?? readExtensionPointMatrix(context);
+  const pluginPointIds = new Set(
+    Array.isArray(extensionPointMatrix?.pluginPoints)
+      ? extensionPointMatrix.pluginPoints
+        .map((point) => point?.id)
+        .filter((value) => typeof value === 'string' && value.trim() !== '')
+      : [],
+  );
+
+  const capabilityEntries = Array.isArray(inventory.capabilities) ? inventory.capabilities : null;
+  if (!capabilityEntries || capabilityEntries.length === 0) {
+    throw new Error('SDK usage inventory must contain non-empty capabilities[].');
+  }
+
+  const seenCapabilityIds = new Set();
+  for (const entry of capabilityEntries) {
+    if (!entry || typeof entry !== 'object') {
+      errors.push('SDK usage inventory capabilities[] entries must be objects.');
+      continue;
+    }
+
+    const capabilityId = typeof entry.id === 'string' ? entry.id.trim() : '';
+    if (!capabilityId) {
+      errors.push('SDK usage inventory capability entry missing non-empty id.');
+      continue;
+    }
+    if (seenCapabilityIds.has(capabilityId)) {
+      errors.push(`Duplicate SDK usage inventory capability id: ${capabilityId}`);
+      continue;
+    }
+    seenCapabilityIds.add(capabilityId);
+
+    if (!officialCapabilities.includes(capabilityId)) {
+      errors.push(`SDK usage inventory contains unsupported capability id: ${capabilityId}`);
+    }
+
+    const permissionGuidance = ensureStringArray(
+      entry.permissionGuidance ?? [],
+      `capabilities[${capabilityId}].permissionGuidance`,
+    );
+    const hostPrerequisites = ensureStringArray(
+      entry.hostPrerequisites ?? [],
+      `capabilities[${capabilityId}].hostPrerequisites`,
+    );
+    void hostPrerequisites;
+
+    const usagePaths = Array.isArray(entry.usagePaths) ? entry.usagePaths : null;
+    if (!usagePaths || usagePaths.length === 0) {
+      errors.push(`capabilities[${capabilityId}].usagePaths must contain at least one usage path.`);
+      continue;
+    }
+
+    for (const [usageIndex, usagePath] of usagePaths.entries()) {
+      if (!usagePath || typeof usagePath !== 'object') {
+        errors.push(`capabilities[${capabilityId}].usagePaths[${usageIndex}] must be an object.`);
+        continue;
+      }
+
+      const usageType = typeof usagePath.type === 'string' ? usagePath.type.trim() : '';
+      const usageRefPath = typeof usagePath.path === 'string' ? usagePath.path.trim() : '';
+      if (!SDK_USAGE_PATH_TYPES.includes(usageType)) {
+        errors.push(
+          `capabilities[${capabilityId}].usagePaths[${usageIndex}] has unsupported type '${usageType || '<missing>'}'.`,
+        );
+        continue;
+      }
+      if (!usageRefPath) {
+        errors.push(`capabilities[${capabilityId}].usagePaths[${usageIndex}] missing non-empty path.`);
+        continue;
+      }
+
+      const resolvedUsagePath = resolveRepoPath(usageRefPath, context);
+      if (!existsSync(resolvedUsagePath)) {
+        errors.push(`${capabilityId} usage path not found: ${usageRefPath}`);
+      }
+
+      const requiredPermissions = ensureStringArray(
+        usagePath.requiredPermissions ?? [],
+        `capabilities[${capabilityId}].usagePaths[${usageIndex}].requiredPermissions`,
+      );
+      const undeclaredPermissions = requiredPermissions.filter(
+        (permission) => !permissionGuidance.includes(permission),
+      );
+      if (usageType !== 'builtin-plugin' && undeclaredPermissions.length > 0) {
+        errors.push(
+          `${capabilityId} usage path permissions exceed permissionGuidance: ${undeclaredPermissions.join(', ')}`,
+        );
+      }
+
+      const entrypoints = ensureStringArray(
+        usagePath.entrypoints ?? [],
+        `capabilities[${capabilityId}].usagePaths[${usageIndex}].entrypoints`,
+      );
+      const pluginPointIdsForUsage = ensureStringArray(
+        usagePath.pluginPointIds ?? [],
+        `capabilities[${capabilityId}].usagePaths[${usageIndex}].pluginPointIds`,
+      );
+      for (const pluginPointId of pluginPointIdsForUsage) {
+        if (!pluginPointIds.has(pluginPointId)) {
+          errors.push(
+            `${capabilityId} usage path references unknown plugin point '${pluginPointId}'.`,
+          );
+        }
+      }
+
+      if (usageType === 'builtin-plugin') {
+        const pluginId = typeof usagePath.pluginId === 'string' ? usagePath.pluginId.trim() : '';
+        if (!pluginId) {
+          errors.push(`${capabilityId} built-in usage path is missing pluginId.`);
+          continue;
+        }
+        const catalogPlugin = (catalog.plugins ?? []).find((plugin) => plugin.id === pluginId);
+        if (!catalogPlugin) {
+          errors.push(`${capabilityId} built-in usage path references unknown plugin '${pluginId}'.`);
+          continue;
+        }
+
+        const expectedPluginPath = path.join('plugins', catalogPlugin.pluginDir).replace(/\\/g, '/');
+        if (usageRefPath.replace(/\\/g, '/') !== expectedPluginPath) {
+          errors.push(
+            `${pluginId} usage path must match catalog pluginDir (${expectedPluginPath}), received ${usageRefPath}.`,
+          );
+        }
+
+        const matrixEntry = (sdkCapabilityMatrix.plugins ?? []).find((plugin) => plugin.id === pluginId);
+        if (!matrixEntry) {
+          errors.push(`${pluginId} built-in usage path is missing sdk-capability-matrix entry.`);
+          continue;
+        }
+        if (!(matrixEntry.sdkCapabilities ?? []).includes(capabilityId)) {
+          errors.push(`${pluginId} built-in usage path is missing capability '${capabilityId}' in sdk-capability-matrix.`);
+        }
+        if (!equalStringSets(requiredPermissions, ensureStringArray(
+          matrixEntry.expectedPermissions ?? [],
+          `plugins[${pluginId}].expectedPermissions`,
+        ))) {
+          errors.push(`${pluginId} usage path permissions drift from sdk-capability-matrix expectedPermissions.`);
+        }
+        if (entrypoints.length > 0 && !equalStringSets(entrypoints, ensureStringArray(
+          matrixEntry.primaryEntrypoints ?? [],
+          `plugins[${pluginId}].primaryEntrypoints`,
+        ))) {
+          errors.push(`${pluginId} usage path entrypoints drift from sdk-capability-matrix primaryEntrypoints.`);
+        }
+      }
+    }
+  }
+
+  const missingCapabilities = officialCapabilities.filter((capability) => !seenCapabilityIds.has(capability));
+  if (missingCapabilities.length > 0) {
+    errors.push(
+      `Missing sdk usage inventory entries for official capabilities: ${missingCapabilities.join(', ')}`,
+    );
+  }
+
+  if (errors.length > 0) {
+    throw new Error(buildSdkUsageValidationError(errors));
+  }
 }
 
 export function validateSdkCapabilityMatrixShape(matrix, catalog) {
@@ -772,7 +1015,8 @@ export async function buildPlugin(plugin, options = {}) {
 export function runPluginTests(plugin, options = {}) {
   const quiet = options.quiet ?? false;
   if (plugin.framework === 'typescript') {
-    runCommand('pnpm', ['test', '--', '--runInBand', plugin.testFile], {
+    const testCommand = buildTypeScriptPluginTestCommand(plugin);
+    runCommand(testCommand.command, testCommand.args, {
       cwd: options.repoRoot ?? REPO_ROOT,
       quiet,
     });
@@ -788,4 +1032,11 @@ export function runPluginTests(plugin, options = {}) {
 
 export async function listTopLevelPluginFiles(pluginRoot) {
   return readdir(pluginRoot, { withFileTypes: true });
+}
+
+export function buildTypeScriptPluginTestCommand(plugin) {
+  return {
+    command: 'pnpm',
+    args: ['exec', 'jest', '--runInBand', plugin.testFile],
+  };
 }

@@ -193,4 +193,188 @@ describe('scripts/plugins lib helpers', () => {
       fs.rmSync(tempRoot, { recursive: true, force: true });
     }
   });
+
+  it('extracts official SDK capability families from both public entrypoints', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'builtin-sdk-capability-exports-'));
+
+    try {
+      fs.mkdirSync(path.join(tempRoot, 'plugin-sdk', 'src'), { recursive: true });
+      fs.mkdirSync(path.join(tempRoot, 'plugin-sdk-ts', 'src'), { recursive: true });
+
+      fs.writeFileSync(
+        path.join(tempRoot, 'plugin-sdk', 'src', 'lib.rs'),
+        [
+          'pub mod batch;',
+          'pub mod env;',
+          'pub mod platform;',
+          'pub mod types;',
+        ].join('\n'),
+        'utf8',
+      );
+      fs.writeFileSync(
+        path.join(tempRoot, 'plugin-sdk-ts', 'src', 'index.ts'),
+        [
+          "export * as batch from './batch';",
+          "export * as env from './env';",
+          "export * as platform from './platform';",
+          "export * from './types';",
+        ].join('\n'),
+        'utf8',
+      );
+
+      expect(pluginLib.getOfficialSdkCapabilityFamilies({ repoRoot: tempRoot })).toEqual([
+        'batch',
+        'env',
+        'platform',
+      ]);
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects sdk usage inventory entries that drift from official capability exports', () => {
+    expect(() =>
+      pluginLib.validateSdkUsageInventoryShape(
+        {
+          schemaVersion: 1,
+          capabilities: [
+            {
+              id: 'env',
+              permissionGuidance: ['env_read'],
+              hostPrerequisites: [],
+              usagePaths: [
+                {
+                  type: 'official-example',
+                  path: 'plugin-sdk-ts/examples/hello-world',
+                  requiredPermissions: ['env_read'],
+                },
+              ],
+            },
+          ],
+        },
+        {
+          officialCapabilities: ['env', 'platform'],
+          catalog,
+          sdkCapabilityMatrix: {
+            schemaVersion: 1,
+            requiredPluginIds: [],
+            supportedSdkCapabilities: ['env', 'platform'],
+            plugins: [],
+          },
+          extensionPointMatrix: {
+            schemaVersion: 1,
+            pluginPoints: [],
+          },
+          repoRoot: process.cwd(),
+        },
+      ),
+    ).toThrow('Missing sdk usage inventory entries for official capabilities: platform');
+  });
+
+  it('rejects broken usage asset references and built-in permission drift in sdk usage inventory', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'builtin-sdk-usage-inventory-'));
+
+    try {
+      const pluginRoot = path.join(tempRoot, 'plugins', 'typescript', 'alpha');
+      fs.mkdirSync(pluginRoot, { recursive: true });
+      fs.writeFileSync(
+        path.join(pluginRoot, 'plugin.toml'),
+        [
+          '[plugin]',
+          'id = "com.example.alpha"',
+          'name = "Alpha"',
+          'version = "1.0.0"',
+          '',
+          '[[tools]]',
+          'id = "alpha-tool"',
+          'name_en = "Alpha Tool"',
+          'description_en = "Alpha"',
+          'entry = "alpha_entry"',
+          '',
+          '[permissions]',
+          'env_read = true',
+        ].join('\n'),
+        'utf8',
+      );
+      fs.mkdirSync(path.join(pluginRoot, 'src'), { recursive: true });
+      fs.writeFileSync(
+        path.join(pluginRoot, 'src', 'index.ts'),
+        'export function alpha_entry() { return 0; }\n',
+        'utf8',
+      );
+
+      expect(() =>
+        pluginLib.validateSdkUsageInventoryShape(
+          {
+            schemaVersion: 1,
+            capabilities: [
+              {
+                id: 'env',
+                permissionGuidance: ['env_read'],
+                hostPrerequisites: [],
+                usagePaths: [
+                  {
+                    type: 'builtin-plugin',
+                    pluginId: 'com.example.alpha',
+                    path: 'plugins/typescript/alpha',
+                    entrypoints: ['alpha_entry'],
+                    requiredPermissions: ['config_read'],
+                  },
+                ],
+              },
+              {
+                id: 'platform',
+                permissionGuidance: [],
+                hostPrerequisites: [],
+                usagePaths: [
+                  {
+                    type: 'official-example',
+                    path: 'plugin-sdk-ts/examples/missing-example',
+                    requiredPermissions: [],
+                  },
+                ],
+              },
+            ],
+          },
+          {
+            officialCapabilities: ['env', 'platform'],
+            catalog: {
+              plugins: [catalog.plugins[0]],
+            },
+            sdkCapabilityMatrix: {
+              schemaVersion: 1,
+              requiredPluginIds: [],
+              supportedSdkCapabilities: ['env', 'platform'],
+              plugins: [
+                {
+                  id: 'com.example.alpha',
+                  sdkCapabilities: ['env'],
+                  expectedPermissions: ['env_read'],
+                  primaryEntrypoints: ['alpha_entry'],
+                },
+              ],
+            },
+            extensionPointMatrix: {
+              schemaVersion: 1,
+              pluginPoints: [],
+            },
+            repoRoot: tempRoot,
+          },
+        ),
+      ).toThrow("com.example.alpha usage path permissions drift");
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('builds direct jest args for TypeScript plugin tests so runInBand stays a real option', () => {
+    expect(
+      pluginLib.buildTypeScriptPluginTestCommand({
+        testFile: 'plugins/typescript/alpha/src/index.test.ts',
+      }),
+    ).toEqual({
+      command: 'pnpm',
+      args: ['exec', 'jest', '--runInBand', 'plugins/typescript/alpha/src/index.test.ts'],
+    });
+  });
 });

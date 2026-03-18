@@ -67,13 +67,19 @@ pub struct ShutdownOutcome {
 struct TaskControl {
     paused: Arc<AtomicBool>,
     cancelled: Arc<AtomicBool>,
+    task_speed_limiter: SpeedLimiter,
 }
 
 impl TaskControl {
-    fn new() -> Self {
+    fn new(speed_limit: u64) -> Self {
         Self {
             paused: Arc::new(AtomicBool::new(false)),
             cancelled: Arc::new(AtomicBool::new(false)),
+            task_speed_limiter: if speed_limit > 0 {
+                SpeedLimiter::with_limit(speed_limit)
+            } else {
+                SpeedLimiter::new()
+            },
         }
     }
 
@@ -354,13 +360,14 @@ impl DownloadManager {
                 let count = tasks.len();
                 for task in tasks {
                     let task_id = task.id.clone();
+                    let speed_limit = task.config.speed_limit;
                     {
                         let mut queue = self.queue.write().await;
                         queue.add(task);
                     }
                     {
                         let mut controls = self.task_controls.write().await;
-                        controls.insert(task_id, TaskControl::new());
+                        controls.insert(task_id, TaskControl::new(speed_limit));
                     }
                 }
                 count
@@ -425,6 +432,7 @@ impl DownloadManager {
         let task_id = task.id.clone();
 
         // Add to queue
+        let task_speed_limit = task.config.speed_limit;
         {
             let mut queue = self.queue.write().await;
             queue.add(task);
@@ -433,7 +441,7 @@ impl DownloadManager {
         // Add control
         {
             let mut controls = self.task_controls.write().await;
-            controls.insert(task_id.clone(), TaskControl::new());
+            controls.insert(task_id.clone(), TaskControl::new(task_speed_limit));
         }
 
         self.emit(DownloadEvent::TaskAdded {
@@ -606,6 +614,12 @@ impl DownloadManager {
             id: task_id.to_string(),
         })?;
         task.config.speed_limit = bytes_per_second;
+        drop(queue);
+
+        let controls = self.task_controls.read().await;
+        if let Some(control) = controls.get(task_id) {
+            control.task_speed_limiter.set_limit(bytes_per_second);
+        }
         Ok(())
     }
 
@@ -864,6 +878,7 @@ impl DownloadManager {
                             controls.get(&task_id).map(|c| TaskControl {
                                 paused: c.paused.clone(),
                                 cancelled: c.cancelled.clone(),
+                                task_speed_limiter: c.task_speed_limiter.clone(),
                             })
                         };
 
@@ -1155,11 +1170,7 @@ impl DownloadManager {
         let requested_destination = task.destination.clone();
 
         // Per-task speed limiter (stacks with the global limiter)
-        let task_limiter = if task.config.speed_limit > 0 {
-            Some(SpeedLimiter::with_limit(task.config.speed_limit))
-        } else {
-            None
-        };
+        let task_limiter = control.task_speed_limiter.clone();
 
         if let Some(parent) = requested_destination.parent() {
             tokio::fs::create_dir_all(parent)
@@ -1502,10 +1513,10 @@ impl DownloadManager {
                             }
                         }
                         // Per-task speed limit (stacks with global)
-                        if let Some(ref tl) = seg_task_limiter {
+                        if seg_task_limiter.is_enabled() {
                             let mut remaining = chunk_len;
                             while remaining > 0 {
-                                let allowed = tl.acquire(remaining).await;
+                                let allowed = seg_task_limiter.acquire(remaining).await;
                                 remaining -= allowed;
                             }
                         }
@@ -1652,10 +1663,10 @@ impl DownloadManager {
                     }
                 }
                 // Per-task speed limit (stacks with global)
-                if let Some(ref tl) = task_limiter {
+                if task_limiter.is_enabled() {
                     let mut remaining = chunk_len;
                     while remaining > 0 {
-                        let allowed = tl.acquire(remaining).await;
+                        let allowed = task_limiter.acquire(remaining).await;
                         remaining -= allowed;
                     }
                 }
@@ -2444,6 +2455,28 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_download_manager_set_task_speed_limit_updates_runtime_limiter() {
+        let manager = DownloadManager::new(DownloadManagerConfig::default(), Client::new());
+
+        let task_id = manager
+            .download(
+                "https://example.com/file.zip".to_string(),
+                PathBuf::from("/tmp/file.zip"),
+                "Test File".to_string(),
+            )
+            .await;
+
+        manager.set_task_speed_limit(&task_id, 2048).await.unwrap();
+
+        let task = manager.get_task(&task_id).await.unwrap();
+        assert_eq!(task.config.speed_limit, 2048);
+
+        let controls = manager.task_controls.read().await;
+        let control = controls.get(&task_id).expect("task control should exist");
+        assert_eq!(control.task_speed_limiter.get_limit().await, 2048);
+    }
+
+    #[tokio::test]
     async fn test_download_manager_retry_task() {
         let manager = DownloadManager::new(DownloadManagerConfig::default(), Client::new());
 
@@ -2588,7 +2621,7 @@ mod tests {
 
     #[test]
     fn test_task_control_operations() {
-        let control = TaskControl::new();
+        let control = TaskControl::new(0);
         assert!(!control.is_paused());
         assert!(!control.is_cancelled());
 

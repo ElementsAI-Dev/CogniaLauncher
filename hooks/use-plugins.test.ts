@@ -488,6 +488,90 @@ describe('usePlugins', () => {
     expect(plugin.toolPreviewLoading).toBe(false);
   });
 
+  it('annotates fetched plugin tools with sdk capability coverage and plugin-level summary', async () => {
+    tauri.isTauri.mockReturnValue(true);
+    tauri.pluginList.mockResolvedValue([
+      {
+        id: 'com.example.covered',
+        name: 'Covered Plugin',
+        version: '1.0.0',
+        description: 'Coverage plugin',
+        authors: [],
+        toolCount: 1,
+        enabled: true,
+        installedAt: '2026-03-01T00:00:00.000Z',
+        updatedAt: null,
+        updateUrl: null,
+        source: { type: 'local', path: 'C:/plugins/covered' },
+        builtinCandidate: false,
+        builtinSyncStatus: null,
+        builtinSyncMessage: null,
+      },
+    ]);
+    tauri.pluginListAllTools.mockResolvedValue([
+      {
+        pluginId: 'com.example.covered',
+        pluginName: 'Covered Plugin',
+        toolId: 'run',
+        nameEn: 'Run',
+        nameZh: null,
+        descriptionEn: 'run tool',
+        descriptionZh: null,
+        category: 'developer',
+        keywords: [],
+        icon: 'Plug',
+        entry: 'run',
+        uiMode: 'text',
+        capabilityDeclarations: ['process.exec'],
+      },
+    ]);
+    tauri.pluginGetPermissionMode.mockResolvedValue('compat');
+    tauri.pluginGetPermissions.mockResolvedValue({
+      declared: {
+        uiFeedback: false,
+        uiDialog: false,
+        uiFilePicker: false,
+        uiNavigation: false,
+        fsRead: [],
+        fsWrite: [],
+        http: [],
+        configRead: false,
+        configWrite: false,
+        envRead: false,
+        pkgSearch: false,
+        pkgInstall: false,
+        clipboard: false,
+        notification: false,
+        processExec: false,
+      },
+      granted: [],
+      denied: ['process_exec'],
+    });
+
+    const { result } = renderHook(() => usePlugins());
+    await act(async () => {
+      await result.current.fetchPlugins();
+    });
+
+    const tool = usePluginStore.getState().pluginTools[0];
+    expect(tool.sdkCapabilityCoverage).toEqual([
+      expect.objectContaining({
+        capabilityId: 'process',
+        status: 'blocked',
+        missingPermissions: ['process_exec'],
+        reason: 'Missing permissions: process_exec',
+      }),
+    ]);
+
+    const plugin = usePluginStore.getState().installedPlugins[0];
+    expect(plugin.sdkCapabilityCoverage).toEqual([
+      expect.objectContaining({
+        capabilityId: 'process',
+        status: 'blocked',
+      }),
+    ]);
+  });
+
   it('should skip scaffold when not Tauri', async () => {
     tauri.isTauri.mockReturnValue(false);
     const { result } = renderHook(() => usePlugins());

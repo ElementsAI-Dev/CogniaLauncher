@@ -117,6 +117,32 @@ describe('PluginToolRunner', () => {
     expect(screen.getByText('tool-text')).toBeInTheDocument();
   });
 
+  it('shows capability readiness feedback when sdk coverage is blocked', () => {
+    render(
+      <PluginToolRunner
+        tool={{
+          ...baseTool,
+          sdkCapabilityCoverage: [
+            {
+              capabilityId: 'process',
+              permissionGuidance: ['process_exec'],
+              hostPrerequisites: ['desktop-host'],
+              usagePaths: [],
+              requiredPermissions: ['process_exec'],
+              recoveryActions: ['manage-plugin'],
+              desktopOnly: true,
+              status: 'blocked',
+              reason: 'Missing permissions: process_exec',
+              missingPermissions: ['process_exec'],
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByText('Missing permissions: process_exec')).toBeInTheDocument();
+  });
+
   it('renders text mode when uiMode is "text"', () => {
     const tool = { ...baseTool, uiMode: 'text' };
     render(<PluginToolRunner tool={tool} />);

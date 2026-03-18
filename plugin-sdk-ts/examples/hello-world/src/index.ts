@@ -223,6 +223,83 @@ function custom_view(): number {
     return 0;
 }
 
+/**
+ * Tool: "capability-snapshot" — read-only snapshot across advanced SDK modules
+ */
+function capability_snapshot(): number {
+    cognia.log.info('Capability snapshot tool invoked');
+
+    const platform = cognia.platform.info();
+    const batchHistory = safeCapabilityCall(() => cognia.batch.getHistory(5), []);
+    const pinnedPackages = safeCapabilityCall(() => cognia.batch.getPinnedPackages(), []);
+    const cacheInfo = safeCapabilityCall(() => cognia.cache.info());
+    const cacheStats = safeCapabilityCall(() => cognia.cache.getAccessStats());
+    const externalCaches = safeCapabilityCall(() => cognia.cache.discoverExternal(), []);
+    const downloadStats = safeCapabilityCall(() => cognia.download.stats());
+    const downloadHistoryStats = safeCapabilityCall(() => cognia.download.historyStats());
+    const gitAvailable = safeCapabilityCall(() => cognia.git.isAvailable(), false);
+    const gitVersion = gitAvailable ? safeCapabilityCall(() => cognia.git.getVersion()) : null;
+    const healthReport = safeCapabilityCall(() => cognia.health.checkPackageManagers());
+    const envActivationInfo = safeCapabilityCall(() => cognia.launch.getEnvInfo('node'));
+    const nodePath = safeCapabilityCall(() => cognia.launch.whichProgram('node', 'node'));
+    const profiles = safeCapabilityCall(() => cognia.profiles.list(), []);
+    const shells = safeCapabilityCall(() => cognia.shell.detectShells(), []);
+    const defaultProfile = safeCapabilityCall(() => cognia.shell.getDefaultProfile());
+    const wslAvailable = safeCapabilityCall(() => cognia.wsl.isAvailable(), false);
+    const wslStatus = safeCapabilityCall(() => cognia.wsl.status());
+
+    Host.outputString(JSON.stringify({
+        platform: {
+            os: platform.os,
+            arch: platform.arch,
+            hostname: platform.hostname,
+        },
+        batch: {
+            historyCount: batchHistory.length,
+            pinnedCount: pinnedPackages.length,
+        },
+        cache: {
+            cacheInfo,
+            cacheStats,
+            externalCacheCount: externalCaches.length,
+        },
+        download: {
+            downloadStats,
+            downloadHistoryStats,
+        },
+        git: {
+            available: gitAvailable,
+            version: gitVersion,
+        },
+        health: healthReport,
+        launch: {
+            envActivationInfo,
+            nodePath,
+        },
+        profiles: {
+            count: profiles.length,
+            firstProfileId: profiles[0]?.id ?? null,
+        },
+        shell: {
+            shellCount: shells.length,
+            defaultProfile,
+        },
+        wsl: {
+            available: wslAvailable,
+            status: wslStatus,
+        },
+    }));
+    return 0;
+}
+
+function safeCapabilityCall<T>(operation: () => T, fallback: T | null = null): T | null {
+    try {
+        return operation();
+    } catch {
+        return fallback;
+    }
+}
+
 function cognia_on_log(): number {
     const envelope = cognia.log.parseEnvelope<{ os?: string; arch?: string }>(
         Host.inputString(),
@@ -238,4 +315,4 @@ function cognia_on_log(): number {
     return 0;
 }
 
-module.exports = { hello, env_check, env_dashboard, custom_view, cognia_on_log };
+module.exports = { hello, env_check, env_dashboard, custom_view, capability_snapshot, cognia_on_log };

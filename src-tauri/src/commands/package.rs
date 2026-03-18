@@ -7,8 +7,8 @@ use crate::provider::{
         classify_provider_scope, provider_health_probe_timeout, update_support_reason,
         ProviderAvailabilityProbe, SUPPORT_STATUS_SUPPORTED, SUPPORT_STATUS_UNSUPPORTED,
     },
-    Capability, InstalledFilter, InstalledPackage, PackageInfo, PackageSummary, ProviderRegistry,
-    SearchOptions,
+    Capability, InstalledFilter, InstalledPackage, PackageInfo, PackageSummary, Provider,
+    ProviderRegistry, SearchOptions,
 };
 use futures::future::join_all;
 use std::collections::HashSet;
@@ -368,11 +368,21 @@ pub async fn provider_check(
     provider_id: String,
     registry: State<'_, SharedRegistry>,
 ) -> Result<bool, String> {
-    let reg = registry.read().await;
-    if reg.get(&provider_id).is_some() {
-        Ok(reg.check_provider_available(&provider_id).await)
-    } else {
-        Ok(false)
+    let platform = current_platform();
+    let payload = {
+        let reg = registry.read().await;
+        reg.get_provider_info(&provider_id).map(|info| {
+            let provider = reg.get(&info.id);
+            let is_api_provider = reg.get_api_provider_config(&info.id).is_some();
+            (info, provider, is_api_provider)
+        })
+    };
+
+    match payload {
+        Some((info, provider, is_api_provider)) => Ok(provider_status_is_available(
+            &resolve_provider_status_info(info, provider, is_api_provider, platform).await,
+        )),
+        None => Ok(false),
     }
 }
 
@@ -444,39 +454,54 @@ fn build_provider_status_info(
     }
 }
 
+fn provider_status_is_available(status: &ProviderStatusInfo) -> bool {
+    status.installed
+        && status.scope_state == "available"
+        && status.status == SUPPORT_STATUS_SUPPORTED
+}
+
+async fn resolve_provider_status_info(
+    info: crate::provider::ProviderInfo,
+    provider: Option<Arc<dyn Provider>>,
+    is_api_provider: bool,
+    platform: Platform,
+) -> ProviderStatusInfo {
+    let availability = if !info.enabled {
+        ProviderAvailabilityProbe::Unavailable
+    } else {
+        match provider {
+            Some(provider) => {
+                let timeout = provider_health_probe_timeout(&info.id, is_api_provider);
+                match tokio::time::timeout(timeout, provider.is_available()).await {
+                    Ok(true) => ProviderAvailabilityProbe::Available,
+                    Ok(false) => ProviderAvailabilityProbe::Unavailable,
+                    Err(_) => ProviderAvailabilityProbe::Timeout,
+                }
+            }
+            None => ProviderAvailabilityProbe::Unavailable,
+        }
+    };
+
+    build_provider_status_info(info, platform, availability)
+}
+
 #[tauri::command]
 pub async fn provider_status(
     provider_id: String,
     registry: State<'_, SharedRegistry>,
 ) -> Result<ProviderStatusInfo, String> {
     let platform = current_platform();
-    let info = {
+    let (info, provider, is_api_provider) = {
         let reg = registry.read().await;
-        reg.get_provider_info(&provider_id)
-            .ok_or_else(|| format!("Provider not found: {}", provider_id))?
-    };
-
-    let availability = {
-        let reg = registry.read().await;
+        let info = reg
+            .get_provider_info(&provider_id)
+            .ok_or_else(|| format!("Provider not found: {}", provider_id))?;
+        let provider = reg.get(&info.id);
         let is_api_provider = reg.get_api_provider_config(&info.id).is_some();
-        if !info.enabled {
-            ProviderAvailabilityProbe::Unavailable
-        } else {
-            match reg.get(&info.id) {
-                Some(provider) => {
-                    let timeout = provider_health_probe_timeout(&info.id, is_api_provider);
-                    match tokio::time::timeout(timeout, provider.is_available()).await {
-                        Ok(true) => ProviderAvailabilityProbe::Available,
-                        Ok(false) => ProviderAvailabilityProbe::Unavailable,
-                        Err(_) => ProviderAvailabilityProbe::Timeout,
-                    }
-                }
-                None => ProviderAvailabilityProbe::Unavailable,
-            }
-        }
+        (info, provider, is_api_provider)
     };
 
-    Ok(build_provider_status_info(info, platform, availability))
+    Ok(resolve_provider_status_info(info, provider, is_api_provider, platform).await)
 }
 
 #[tauri::command]
@@ -513,20 +538,8 @@ pub async fn provider_status_all(
 
         let futures = to_check
             .into_iter()
-            .map(|(info, provider, is_api_provider)| async move {
-                let availability = match provider {
-                    Some(p) => {
-                        let timeout_budget =
-                            provider_health_probe_timeout(&info.id, is_api_provider);
-                        match tokio::time::timeout(timeout_budget, p.is_available()).await {
-                            Ok(true) => ProviderAvailabilityProbe::Available,
-                            Ok(false) => ProviderAvailabilityProbe::Unavailable,
-                            Err(_) => ProviderAvailabilityProbe::Timeout,
-                        }
-                    }
-                    None => ProviderAvailabilityProbe::Unavailable,
-                };
-                build_provider_status_info(info, platform, availability)
+            .map(|(info, provider, is_api_provider)| {
+                resolve_provider_status_info(info, provider, is_api_provider, platform)
             })
             .collect::<Vec<_>>();
         join_all(futures).await
@@ -691,11 +704,15 @@ pub async fn provider_set_priority(
 
 #[cfg(test)]
 mod tests {
-    use super::{build_provider_status_info, dedupe_installed_packages};
-    use crate::platform::env::Platform;
+    use super::{
+        build_provider_status_info, dedupe_installed_packages, provider_status_is_available,
+        resolve_provider_status_info,
+    };
+    use crate::config::Settings;
+    use crate::platform::env::{current_platform, Platform};
     use crate::provider::support::ProviderAvailabilityProbe;
     use crate::provider::support::{REASON_HEALTH_CHECK_TIMEOUT, REASON_PROVIDER_UNAVAILABLE};
-    use crate::provider::{Capability, InstalledPackage, ProviderInfo};
+    use crate::provider::{Capability, InstalledPackage, ProviderInfo, ProviderRegistry};
     use std::path::PathBuf;
 
     fn installed_pkg(provider: &str, name: &str, version: &str) -> InstalledPackage {
@@ -837,5 +854,47 @@ mod tests {
             status.reason_code.as_deref(),
             Some(REASON_PROVIDER_UNAVAILABLE)
         );
+    }
+
+    #[tokio::test]
+    async fn resolve_provider_status_info_treats_disabled_provider_as_unavailable() {
+        let mut settings = Settings::default();
+        settings.set_provider_enabled_override("npm", Some(false));
+
+        let registry = ProviderRegistry::with_settings(&settings)
+            .await
+            .expect("registry should build");
+        let info = registry
+            .get_provider_info("npm")
+            .expect("npm should remain visible in provider info");
+        let provider = registry.get("npm");
+        let is_api_provider = registry.get_api_provider_config("npm").is_some();
+
+        let status =
+            resolve_provider_status_info(info, provider, is_api_provider, current_platform()).await;
+
+        assert_eq!(status.scope_state, "unavailable");
+        assert_eq!(status.reason_code.as_deref(), Some(REASON_PROVIDER_UNAVAILABLE));
+        assert!(!provider_status_is_available(&status));
+    }
+
+    #[test]
+    fn provider_status_is_available_rejects_timeout_and_unsupported_states() {
+        let timeout_status = build_provider_status_info(
+            provider_info("npm", vec![Capability::Update]),
+            Platform::Windows,
+            ProviderAvailabilityProbe::Timeout,
+        );
+        let unsupported_status = build_provider_status_info(
+            ProviderInfo {
+                enabled: true,
+                ..provider_info("npm", vec![Capability::Update])
+            },
+            Platform::Linux,
+            ProviderAvailabilityProbe::Available,
+        );
+
+        assert!(!provider_status_is_available(&timeout_status));
+        assert!(!provider_status_is_available(&unsupported_status));
     }
 }

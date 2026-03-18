@@ -1,0 +1,388 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-03-15T00:00:00.000Z",
+  "capabilities": [
+    {
+      "id": "batch",
+      "permissionGuidance": ["pkg_search", "pkg_install"],
+      "hostPrerequisites": ["desktop-host"],
+      "toolbox": {
+        "desktopOnly": true,
+        "recoveryActions": ["open-guidance", "use-desktop"]
+      },
+      "usagePaths": [
+        {
+          "type": "official-example",
+          "path": "plugin-sdk-ts/examples/hello-world",
+          "entrypoints": ["capability_snapshot"],
+          "requiredPermissions": ["pkg_search"]
+        }
+      ]
+    },
+    {
+      "id": "cache",
+      "permissionGuidance": ["cache_read", "cache_write"],
+      "hostPrerequisites": ["desktop-host"],
+      "toolbox": {
+        "desktopOnly": true,
+        "recoveryActions": ["open-guidance", "use-desktop"]
+      },
+      "usagePaths": [
+        {
+          "type": "official-example",
+          "path": "plugin-sdk-ts/examples/hello-world",
+          "entrypoints": ["capability_snapshot"],
+          "requiredPermissions": ["cache_read"]
+        }
+      ]
+    },
+    {
+      "id": "clipboard",
+      "permissionGuidance": ["clipboard"],
+      "hostPrerequisites": ["desktop-host"],
+      "toolbox": {
+        "desktopOnly": true,
+        "recoveryActions": ["manage-plugin", "grant-permissions", "use-desktop"]
+      },
+      "usagePaths": [
+        {
+          "type": "builtin-plugin",
+          "pluginId": "com.cognia.builtin.pkg-update-advisor",
+          "path": "plugins/typescript/pkg-update-advisor",
+          "entrypoints": ["pkg_update_advisor"],
+          "requiredPermissions": ["pkg_search", "clipboard", "notification"]
+        }
+      ]
+    },
+    {
+      "id": "config",
+      "permissionGuidance": ["config_read", "config_write"],
+      "hostPrerequisites": ["desktop-host"],
+      "toolbox": {
+        "desktopOnly": true,
+        "recoveryActions": ["manage-plugin", "grant-permissions", "use-desktop"]
+      },
+      "usagePaths": [
+        {
+          "type": "builtin-plugin",
+          "pluginId": "com.cognia.builtin.file-config-assistant",
+          "path": "plugins/rust/file-config-assistant",
+          "entrypoints": ["file_config_assistant"],
+          "requiredPermissions": ["fs_read", "fs_write", "config_read", "config_write"]
+        }
+      ]
+    },
+    {
+      "id": "download",
+      "permissionGuidance": ["download_read", "download_write", "http"],
+      "hostPrerequisites": ["desktop-host"],
+      "toolbox": {
+        "desktopOnly": true,
+        "recoveryActions": ["open-guidance", "use-desktop"]
+      },
+      "usagePaths": [
+        {
+          "type": "official-example",
+          "path": "plugin-sdk-ts/examples/hello-world",
+          "entrypoints": ["capability_snapshot"],
+          "requiredPermissions": ["download_read"]
+        }
+      ]
+    },
+    {
+      "id": "env",
+      "permissionGuidance": ["env_read", "pkg_install"],
+      "hostPrerequisites": ["desktop-host"],
+      "toolbox": {
+        "desktopOnly": true,
+        "recoveryActions": ["manage-plugin", "grant-permissions", "use-desktop"]
+      },
+      "usagePaths": [
+        {
+          "type": "builtin-plugin",
+          "pluginId": "com.cognia.builtin.env-provider-audit",
+          "path": "plugins/typescript/env-provider-audit",
+          "entrypoints": ["env_provider_audit"],
+          "requiredPermissions": ["env_read", "notification"]
+        }
+      ]
+    },
+    {
+      "id": "event",
+      "permissionGuidance": [],
+      "hostPrerequisites": ["desktop-host"],
+      "toolbox": {
+        "desktopOnly": true,
+        "recoveryActions": ["open-guidance", "use-desktop"]
+      },
+      "usagePaths": [
+        {
+          "type": "official-example",
+          "path": "plugin-sdk-ts/examples/hello-world",
+          "entrypoints": ["hello", "cognia_on_log"],
+          "requiredPermissions": []
+        }
+      ]
+    },
+    {
+      "id": "fs",
+      "permissionGuidance": ["fs_read", "fs_write"],
+      "hostPrerequisites": ["desktop-host"],
+      "toolbox": {
+        "desktopOnly": true,
+        "recoveryActions": ["manage-plugin", "grant-permissions", "use-desktop"]
+      },
+      "usagePaths": [
+        {
+          "type": "builtin-plugin",
+          "pluginId": "com.cognia.builtin.file-config-assistant",
+          "path": "plugins/rust/file-config-assistant",
+          "entrypoints": ["file_config_assistant"],
+          "requiredPermissions": ["fs_read", "fs_write", "config_read", "config_write"]
+        }
+      ]
+    },
+    {
+      "id": "git",
+      "permissionGuidance": ["git_read", "git_write"],
+      "hostPrerequisites": ["desktop-host"],
+      "toolbox": {
+        "desktopOnly": true,
+        "recoveryActions": ["open-guidance", "use-desktop"]
+      },
+      "usagePaths": [
+        {
+          "type": "official-example",
+          "path": "plugin-sdk-ts/examples/hello-world",
+          "entrypoints": ["capability_snapshot"],
+          "requiredPermissions": ["git_read"]
+        }
+      ]
+    },
+    {
+      "id": "health",
+      "permissionGuidance": ["health_read"],
+      "hostPrerequisites": ["desktop-host"],
+      "toolbox": {
+        "desktopOnly": true,
+        "recoveryActions": ["open-guidance", "use-desktop"]
+      },
+      "usagePaths": [
+        {
+          "type": "official-example",
+          "path": "plugin-sdk-ts/examples/hello-world",
+          "entrypoints": ["capability_snapshot"],
+          "requiredPermissions": ["health_read"]
+        }
+      ]
+    },
+    {
+      "id": "http",
+      "permissionGuidance": ["http"],
+      "hostPrerequisites": ["desktop-host"],
+      "toolbox": {
+        "desktopOnly": true,
+        "recoveryActions": ["manage-plugin", "grant-permissions", "use-desktop"]
+      },
+      "usagePaths": [
+        {
+          "type": "builtin-plugin",
+          "pluginId": "com.cognia.builtin.local-api-workbench",
+          "path": "plugins/typescript/local-api-workbench",
+          "entrypoints": ["local_api_workbench"],
+          "requiredPermissions": ["http"]
+        }
+      ]
+    },
+    {
+      "id": "i18n",
+      "permissionGuidance": [],
+      "hostPrerequisites": ["desktop-host"],
+      "toolbox": {
+        "desktopOnly": true,
+        "recoveryActions": ["open-guidance", "use-desktop"]
+      },
+      "usagePaths": [
+        {
+          "type": "official-example",
+          "path": "plugin-sdk-ts/examples/hello-world",
+          "entrypoints": ["hello", "env_check"],
+          "requiredPermissions": []
+        }
+      ]
+    },
+    {
+      "id": "launch",
+      "permissionGuidance": ["launch", "env_read"],
+      "hostPrerequisites": ["desktop-host"],
+      "toolbox": {
+        "desktopOnly": true,
+        "recoveryActions": ["open-guidance", "use-desktop"]
+      },
+      "usagePaths": [
+        {
+          "type": "official-example",
+          "path": "plugin-sdk-ts/examples/hello-world",
+          "entrypoints": ["capability_snapshot"],
+          "requiredPermissions": ["env_read"]
+        }
+      ]
+    },
+    {
+      "id": "log",
+      "permissionGuidance": [],
+      "hostPrerequisites": ["desktop-host"],
+      "toolbox": {
+        "desktopOnly": true,
+        "recoveryActions": ["open-guidance", "use-desktop"]
+      },
+      "usagePaths": [
+        {
+          "type": "official-example",
+          "path": "plugin-sdk-ts/examples/hello-world",
+          "entrypoints": ["hello", "cognia_on_log"],
+          "requiredPermissions": []
+        }
+      ]
+    },
+    {
+      "id": "notification",
+      "permissionGuidance": ["notification"],
+      "hostPrerequisites": ["desktop-host"],
+      "toolbox": {
+        "desktopOnly": true,
+        "recoveryActions": ["manage-plugin", "grant-permissions", "use-desktop"]
+      },
+      "usagePaths": [
+        {
+          "type": "builtin-plugin",
+          "pluginId": "com.cognia.builtin.env-provider-audit",
+          "path": "plugins/typescript/env-provider-audit",
+          "entrypoints": ["env_provider_audit"],
+          "requiredPermissions": ["env_read", "notification"]
+        }
+      ]
+    },
+    {
+      "id": "pkg",
+      "permissionGuidance": ["pkg_search", "pkg_install"],
+      "hostPrerequisites": ["desktop-host"],
+      "toolbox": {
+        "desktopOnly": true,
+        "recoveryActions": ["manage-plugin", "grant-permissions", "use-desktop"]
+      },
+      "usagePaths": [
+        {
+          "type": "builtin-plugin",
+          "pluginId": "com.cognia.builtin.pkg-update-advisor",
+          "path": "plugins/typescript/pkg-update-advisor",
+          "entrypoints": ["pkg_update_advisor"],
+          "requiredPermissions": ["pkg_search", "clipboard", "notification"]
+        }
+      ]
+    },
+    {
+      "id": "platform",
+      "permissionGuidance": [],
+      "hostPrerequisites": ["desktop-host"],
+      "toolbox": {
+        "desktopOnly": true,
+        "recoveryActions": ["open-guidance", "use-desktop"]
+      },
+      "usagePaths": [
+        {
+          "type": "official-example",
+          "path": "plugin-sdk-ts/examples/hello-world",
+          "entrypoints": ["hello", "capability_snapshot"],
+          "requiredPermissions": []
+        }
+      ]
+    },
+    {
+      "id": "process",
+      "permissionGuidance": ["process_exec"],
+      "hostPrerequisites": ["desktop-host"],
+      "toolbox": {
+        "desktopOnly": true,
+        "recoveryActions": ["manage-plugin", "grant-permissions", "use-desktop"]
+      },
+      "usagePaths": [
+        {
+          "type": "builtin-plugin",
+          "pluginId": "com.cognia.builtin.port-inspector",
+          "path": "plugins/typescript/port-inspector",
+          "entrypoints": ["port_inspect"],
+          "requiredPermissions": ["process_exec"]
+        }
+      ]
+    },
+    {
+      "id": "profiles",
+      "permissionGuidance": ["profiles_read", "profiles_write"],
+      "hostPrerequisites": ["desktop-host"],
+      "toolbox": {
+        "desktopOnly": true,
+        "recoveryActions": ["open-guidance", "use-desktop"]
+      },
+      "usagePaths": [
+        {
+          "type": "official-example",
+          "path": "plugin-sdk-ts/examples/hello-world",
+          "entrypoints": ["capability_snapshot"],
+          "requiredPermissions": ["profiles_read"]
+        }
+      ]
+    },
+    {
+      "id": "shell",
+      "permissionGuidance": ["shell_read"],
+      "hostPrerequisites": ["desktop-host"],
+      "toolbox": {
+        "desktopOnly": true,
+        "recoveryActions": ["open-guidance", "use-desktop"]
+      },
+      "usagePaths": [
+        {
+          "type": "official-example",
+          "path": "plugin-sdk-ts/examples/hello-world",
+          "entrypoints": ["capability_snapshot"],
+          "requiredPermissions": ["shell_read"]
+        }
+      ]
+    },
+    {
+      "id": "ui",
+      "permissionGuidance": ["ui_feedback", "ui_dialog", "ui_file_picker", "ui_navigation"],
+      "hostPrerequisites": ["desktop-host"],
+      "toolbox": {
+        "desktopOnly": true,
+        "recoveryActions": ["open-guidance", "use-desktop"]
+      },
+      "usagePaths": [
+        {
+          "type": "official-example",
+          "path": "plugin-sdk-ts/examples/hello-world",
+          "entrypoints": ["hello", "env_dashboard"],
+          "requiredPermissions": ["ui_feedback"]
+        }
+      ]
+    },
+    {
+      "id": "wsl",
+      "permissionGuidance": ["wsl_read", "process_exec"],
+      "hostPrerequisites": ["desktop-host", "windows-host"],
+      "toolbox": {
+        "desktopOnly": true,
+        "recoveryActions": ["open-guidance", "use-desktop"]
+      },
+      "usagePaths": [
+        {
+          "type": "official-example",
+          "path": "plugin-sdk-ts/examples/hello-world",
+          "entrypoints": ["capability_snapshot"],
+          "requiredPermissions": ["wsl_read"]
+        }
+      ]
+    }
+  ]
+}

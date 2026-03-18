@@ -7,19 +7,29 @@
     "com.cognia.builtin.file-config-assistant"
   ],
   "supportedSdkCapabilities": [
+    "batch",
+    "cache",
     "clipboard",
     "config",
+    "download",
     "env",
     "event",
     "fs",
+    "git",
+    "health",
     "http",
     "i18n",
+    "launch",
     "log",
     "notification",
     "pkg",
     "platform",
     "process",
+    "profiles",
+    "shell",
     "ui"
+    ,
+    "wsl"
   ],
   "plugins": [
     {
@@ -39,6 +49,18 @@
       "sdkCapabilities": ["fs", "config"],
       "expectedPermissions": ["fs_read", "fs_write", "config_read", "config_write"],
       "primaryEntrypoints": ["file_config_assistant"]
+    },
+    {
+      "id": "com.cognia.builtin.local-api-workbench",
+      "sdkCapabilities": ["http"],
+      "expectedPermissions": ["http"],
+      "primaryEntrypoints": ["local_api_workbench"]
+    },
+    {
+      "id": "com.cognia.builtin.port-inspector",
+      "sdkCapabilities": ["process"],
+      "expectedPermissions": ["process_exec"],
+      "primaryEntrypoints": ["port_inspect"]
     }
   ]
 }

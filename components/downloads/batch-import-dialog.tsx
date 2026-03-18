@@ -16,7 +16,12 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { useLocale } from "@/components/providers/locale-provider";
 import { DestinationPicker } from "./destination-picker";
-import { inferNameFromUrl, isValidUrl, joinDestinationPath } from "@/lib/downloads";
+import {
+  createDownloadRequestDraft,
+  inferNameFromUrl,
+  isValidUrl,
+  joinDestinationPath,
+} from "@/lib/downloads";
 import { isTauri } from "@/lib/tauri";
 import type { DownloadRequest } from "@/lib/stores/download";
 import { FileDown, Trash2, ClipboardPaste } from "lucide-react";
@@ -67,11 +72,13 @@ export function BatchImportDialog({
     try {
       const requests: DownloadRequest[] = parsedUrls
         .filter((p) => p.valid)
-        .map((p) => ({
+        .map((p) =>
+          createDownloadRequestDraft({
           url: p.url,
           destination: joinDestinationPath(destination, p.name),
           name: p.name,
-        }));
+          })
+        );
       await onSubmit(requests);
       onOpenChange(false);
       setRawText("");
@@ -87,7 +94,7 @@ export function BatchImportDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px]">
+      <DialogContent className="sm:max-w-150">
         <DialogHeader>
           <DialogTitle className="text-xl">
             {t("downloads.batchImport")}
@@ -149,7 +156,7 @@ export function BatchImportDialog({
           </div>
 
           {parsedUrls.length > 0 && (
-            <ScrollArea className="h-[140px] rounded-md border p-2">
+            <ScrollArea className="h-35 rounded-md border p-2">
               <div className="space-y-1">
                 {parsedUrls.map((p, i) => (
                   <div
@@ -157,7 +164,7 @@ export function BatchImportDialog({
                     className="flex items-center gap-2 text-xs py-0.5"
                   >
                     <FileDown
-                      className={`h-3 w-3 flex-shrink-0 ${
+                      className={`h-3 w-3 shrink-0 ${
                         p.valid
                           ? "text-green-500"
                           : "text-destructive"

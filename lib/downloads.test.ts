@@ -7,6 +7,8 @@ import {
   normalizeDownloadFailure,
   runDownloadPreflight,
   runDownloadPreflightWithUi,
+  createDownloadRequestDraft,
+  createHistoryDownloadDraft,
 } from './downloads';
 
 describe('isValidUrl', () => {
@@ -90,6 +92,92 @@ describe('joinDestinationPath', () => {
 
   it('normalizes leading separators from filename', () => {
     expect(joinDestinationPath('/downloads', '/nested/file.zip')).toBe('/downloads/nested/file.zip');
+  });
+
+  it('returns the non-empty side when either base path or item name is blank', () => {
+    expect(joinDestinationPath('', 'file.zip')).toBe('file.zip');
+    expect(joinDestinationPath('/downloads', '')).toBe('/downloads');
+  });
+});
+
+describe('createDownloadRequestDraft', () => {
+  it('normalizes optional request fields into a reusable draft', () => {
+    expect(
+      createDownloadRequestDraft({
+        url: ' https://example.com/archive.zip ',
+        destination: ' /downloads/archive.zip ',
+        name: ' archive.zip ',
+        provider: ' github:owner/repo ',
+        tags: [' release ', 'github', ''],
+        mirrorUrls: [' https://mirror.example.com/archive.zip ', ''],
+        postAction: 'none',
+        segments: 1,
+      })
+    ).toEqual({
+      url: 'https://example.com/archive.zip',
+      destination: '/downloads/archive.zip',
+      name: 'archive.zip',
+      provider: 'github:owner/repo',
+      tags: ['release', 'github'],
+      mirrorUrls: ['https://mirror.example.com/archive.zip'],
+    });
+  });
+
+  it('preserves enabled extraction, headers, segments, and post actions when explicitly configured', () => {
+    expect(
+      createDownloadRequestDraft({
+        url: 'https://example.com/archive.zip',
+        destination: '/downloads/archive.zip',
+        headers: { Authorization: 'token' },
+        autoExtract: true,
+        extractDest: '/downloads/unpacked',
+        segments: 4,
+        postAction: 'install',
+        deleteAfterExtract: true,
+        autoRename: true,
+      } as never)
+    ).toEqual({
+      url: 'https://example.com/archive.zip',
+      destination: '/downloads/archive.zip',
+      name: 'archive.zip',
+      headers: { Authorization: 'token' },
+      autoExtract: true,
+      extractDest: '/downloads/unpacked',
+      segments: 4,
+      postAction: 'install',
+      deleteAfterExtract: true,
+      autoRename: true,
+    });
+  });
+});
+
+describe('createHistoryDownloadDraft', () => {
+  it('builds a reusable draft from a history record', () => {
+    expect(
+      createHistoryDownloadDraft({
+        id: 'hist-1',
+        url: 'https://example.com/file.zip',
+        filename: 'file.zip',
+        destination: '/downloads/file.zip',
+        size: 1024,
+        sizeHuman: '1 KB',
+        checksum: null,
+        startedAt: '2026-01-01T00:00:00Z',
+        completedAt: '2026-01-01T00:00:02Z',
+        durationSecs: 2,
+        durationHuman: '2s',
+        averageSpeed: 512,
+        speedHuman: '512 B/s',
+        status: 'failed',
+        error: 'network',
+        provider: 'github:owner/repo',
+      })
+    ).toEqual({
+      url: 'https://example.com/file.zip',
+      destination: '/downloads/file.zip',
+      name: 'file.zip',
+      provider: 'github:owner/repo',
+    });
   });
 });
 
@@ -177,6 +265,29 @@ describe('runDownloadPreflight', () => {
     });
 
     expect(result).toEqual({
+      allowed: true,
+      reason: 'unknown_size',
+    });
+    expect(checkDiskSpace).not.toHaveBeenCalled();
+  });
+
+  it('treats non-finite or zero byte sizes as unknown-size preflight cases', async () => {
+    const checkDiskSpace = jest.fn().mockResolvedValue(true);
+
+    expect(await runDownloadPreflight({
+      destinationPath: 'C:/downloads',
+      expectedBytes: 0,
+      checkDiskSpace,
+    })).toEqual({
+      allowed: true,
+      reason: 'unknown_size',
+    });
+
+    expect(await runDownloadPreflight({
+      destinationPath: 'C:/downloads',
+      expectedBytes: Number.NaN,
+      checkDiskSpace,
+    })).toEqual({
       allowed: true,
       reason: 'unknown_size',
     });
@@ -307,6 +418,34 @@ describe('runDownloadPreflightWithUi', () => {
     expect(onError).toHaveBeenCalledWith('disk exploded');
     expect(onInfo).not.toHaveBeenCalled();
   });
+
+  it('skips unknown-size warnings when disabled and returns true for successful known-size checks', async () => {
+    const onInfo = jest.fn();
+    const onError = jest.fn();
+    const checkDiskSpace = jest.fn().mockResolvedValue(true);
+
+    const unknown = await runDownloadPreflightWithUi(
+      {
+        destinationPath: 'C:/downloads',
+        expectedBytes: null,
+        checkDiskSpace,
+      },
+      { t, onInfo, onError, warnUnknownSize: false }
+    );
+    const ok = await runDownloadPreflightWithUi(
+      {
+        destinationPath: 'C:/downloads',
+        expectedBytes: 2048,
+        checkDiskSpace,
+      },
+      { t, onInfo, onError }
+    );
+
+    expect(unknown).toBe(true);
+    expect(ok).toBe(true);
+    expect(onInfo).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+  });
 });
 
 describe('normalizeDownloadFailure', () => {
@@ -361,5 +500,59 @@ describe('normalizeDownloadFailure', () => {
 
     expect(info.failureClass).toBe('network_error');
     expect(info.retryable).toBe(false);
+  });
+
+  it('maps selection, cache, and timeout failures from reason codes and raw messages', () => {
+    expect(normalizeDownloadFailure({
+      state: 'failed',
+      reasonCode: 'invalid_url',
+      error: 'ignored',
+    })).toEqual({ failureClass: 'selection_error', retryable: false });
+
+    expect(normalizeDownloadFailure({
+      state: 'failed',
+      reasonCode: 'cache_validation_failed',
+      error: 'ignored',
+    })).toEqual({ failureClass: 'cache_error', retryable: true });
+
+    expect(normalizeDownloadFailure({
+      state: 'failed',
+      error: 'connection timeout while downloading',
+    })).toEqual({ failureClass: 'timeout', retryable: true });
+  });
+
+  it('maps remaining raw-message and reason-code branches for failure normalization', () => {
+    expect(normalizeDownloadFailure({
+      state: 'failed',
+      reasonCode: 'timeout',
+      error: 'ignored',
+    })).toEqual({ failureClass: 'timeout', retryable: true });
+
+    expect(normalizeDownloadFailure({
+      state: 'failed',
+      error: 'forbidden by remote policy',
+    })).toEqual({ failureClass: 'selection_error', retryable: false });
+
+    expect(normalizeDownloadFailure({
+      state: 'failed',
+      error: 'corrupted cached archive detected',
+    })).toEqual({ failureClass: 'cache_error', retryable: true });
+
+    expect(normalizeDownloadFailure({
+      state: 'failed',
+      error: 'network connection reset by peer',
+    })).toEqual({ failureClass: 'network_error', retryable: true });
+  });
+
+  it('treats http error and rate-limited raw messages as retryable network failures', () => {
+    expect(normalizeDownloadFailure({
+      state: 'failed',
+      error: 'HTTP error: 503 Service Unavailable',
+    })).toEqual({ failureClass: 'network_error', retryable: true });
+
+    expect(normalizeDownloadFailure({
+      state: 'failed',
+      error: 'request was rate limited by upstream',
+    })).toEqual({ failureClass: 'network_error', retryable: true });
   });
 });

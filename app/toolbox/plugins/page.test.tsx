@@ -806,6 +806,20 @@ describe('PluginsPage plugin bootstrap', () => {
         entry: 'run',
         uiMode: 'text',
         capabilityDeclarations: ['process.exec'],
+        sdkCapabilityCoverage: [
+          {
+            capabilityId: 'process',
+            permissionGuidance: ['process_exec'],
+            hostPrerequisites: ['desktop-host'],
+            usagePaths: [],
+            requiredPermissions: ['process_exec'],
+            recoveryActions: ['manage-plugin'],
+            desktopOnly: true,
+            status: 'blocked',
+            reason: 'Missing permissions: process_exec',
+            missingPermissions: ['process_exec'],
+          },
+        ],
       },
     ];
     mockPermissionStates = {
@@ -844,6 +858,7 @@ describe('PluginsPage plugin bootstrap', () => {
     expect(screen.getByText('toolbox.plugin.declaredCapabilities')).toBeInTheDocument();
     expect(screen.getByText('toolbox.plugin.grantedCapabilities')).toBeInTheDocument();
     expect(screen.getAllByText('process.exec').length).toBeGreaterThan(0);
+    expect(screen.getByText('Missing permissions: process_exec')).toBeInTheDocument();
   });
 
   it('renders description fallback and tool preview states on cards, and full tools in detail view', () => {

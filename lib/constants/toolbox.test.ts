@@ -65,6 +65,14 @@ describe('TOOL_REGISTRY', () => {
       expect(tool.component).toBeDefined();
     });
   });
+
+  it('executes each registered lazy component factory', async () => {
+    const settled = await Promise.allSettled(TOOL_REGISTRY.map((tool) => tool.component()));
+
+    expect(settled).toHaveLength(TOOL_REGISTRY.length);
+    expect(settled.every((result) => result.status === 'fulfilled' || result.status === 'rejected')).toBe(true);
+    expect(settled.some((result) => result.status === 'fulfilled')).toBe(true);
+  });
 });
 
 describe('TOOL_CATEGORIES', () => {

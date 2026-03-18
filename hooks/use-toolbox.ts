@@ -17,7 +17,11 @@ import { useLocale } from '@/components/providers/locale-provider';
 import { isTauri } from '@/lib/tauri';
 import type { ToolCompatibility, ToolContractMetadata } from '@/types/tool-contract';
 import type { ToolCategory, ToolCategoryMeta, ToolDefinitionWithMeta } from '@/types/toolbox';
-import type { PluginDeprecationNotice, PluginToolInfo } from '@/types/plugin';
+import type {
+  PluginDeprecationNotice,
+  PluginSdkCapabilityCoverage,
+  PluginToolInfo,
+} from '@/types/plugin';
 
 /** Unified tool item that can be either a built-in tool or a plugin tool */
 export interface UnifiedTool {
@@ -34,6 +38,7 @@ export interface UnifiedTool {
   compatibility?: ToolCompatibility;
   pluginHealthStatus?: PluginHealthStatus;
   deprecationWarnings?: PluginDeprecationNotice[];
+  sdkCapabilityCoverage?: PluginSdkCapabilityCoverage[];
   /** Only for built-in tools */
   builtInDef?: ToolDefinitionWithMeta;
   /** Only for plugin tools */
@@ -86,6 +91,7 @@ function pluginToolToUnified(
     compatibility: buildPluginCompatibility(tool),
     pluginHealthStatus: options?.pluginHealthStatus,
     deprecationWarnings: options?.deprecationWarnings,
+    sdkCapabilityCoverage: tool.sdkCapabilityCoverage,
     pluginTool: tool,
   };
 }

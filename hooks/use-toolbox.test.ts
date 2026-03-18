@@ -53,6 +53,20 @@ const pluginState = {
       category: 'network',
       keywords: ['proxy'],
       deprecationWarnings: [],
+      sdkCapabilityCoverage: [
+        {
+          capabilityId: 'process',
+          permissionGuidance: ['process_exec'],
+          hostPrerequisites: ['desktop-host'],
+          usagePaths: [],
+          requiredPermissions: ['process_exec'],
+          recoveryActions: ['manage-plugin'],
+          desktopOnly: true,
+          status: 'blocked',
+          reason: 'Missing permissions: process_exec',
+          missingPermissions: ['process_exec'],
+        },
+      ],
     },
     {
       pluginId: 'p2',
@@ -147,6 +161,15 @@ describe('useToolbox', () => {
     const { result } = renderHook(() => useToolbox());
 
     expect(result.current.allTools.some((t) => t.id === 'plugin:p1:t1')).toBe(true);
+    expect(
+      result.current.allTools.find((tool) => tool.id === 'plugin:p1:t1')
+        ?.sdkCapabilityCoverage,
+    ).toEqual([
+      expect.objectContaining({
+        capabilityId: 'process',
+        status: 'blocked',
+      }),
+    ]);
     expect(result.current.allTools.some((t) => t.id === 'plugin:p2:t2')).toBe(false);
     expect(result.current.excludedTools).toEqual(
       expect.arrayContaining([

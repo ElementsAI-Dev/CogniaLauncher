@@ -72,15 +72,29 @@ export function useDownloads(options: UseDownloadsOptions = {}) {
   useEffect(() => {
     if (!enableRuntime || !tauri.isTauri()) return;
 
+    let disposed = false;
+    const registerUnlisten = (unlisten: () => void) => {
+      if (disposed) {
+        unlisten();
+        return;
+      }
+
+      unlistenRefs.current = [...unlistenRefs.current, unlisten];
+    };
+
     const setupListeners = async () => {
       try {
         const unlistenAdded = await tauri.listenDownloadTaskAdded(() => {
-          refreshTasks();
+          void refreshTasks();
+          void refreshStats();
         });
+        registerUnlisten(unlistenAdded);
 
         const unlistenStarted = await tauri.listenDownloadTaskStarted((taskId) => {
           store.updateTask(taskId, { state: 'downloading' });
+          void refreshStats();
         });
+        registerUnlisten(unlistenStarted);
 
         let lastSpeedSample = 0;
         const unlistenProgress = await tauri.listenDownloadTaskProgress(
@@ -93,11 +107,14 @@ export function useDownloads(options: UseDownloadsOptions = {}) {
             }
           }
         );
+        registerUnlisten(unlistenProgress);
 
         const unlistenCompleted = await tauri.listenDownloadTaskCompleted((taskId) => {
           store.updateTask(taskId, { state: 'completed' });
-          refreshHistory();
+          void refreshStats();
+          void refreshHistory();
         });
+        registerUnlisten(unlistenCompleted);
 
         const unlistenFailed = await tauri.listenDownloadTaskFailed(
           (taskId, error, reasonCode, recoverable) => {
@@ -107,48 +124,45 @@ export function useDownloads(options: UseDownloadsOptions = {}) {
               recoverable,
               failureReasonCode: reasonCode,
             });
-            refreshHistory();
+            void refreshStats();
+            void refreshHistory();
           }
         );
+        registerUnlisten(unlistenFailed);
 
         const unlistenPaused = await tauri.listenDownloadTaskPaused((taskId) => {
           store.updateTask(taskId, { state: 'paused' });
+          void refreshStats();
         });
+        registerUnlisten(unlistenPaused);
 
         const unlistenResumed = await tauri.listenDownloadTaskResumed((taskId) => {
           store.updateTask(taskId, { state: 'queued' });
+          void refreshStats();
         });
+        registerUnlisten(unlistenResumed);
 
         const unlistenCancelled = await tauri.listenDownloadTaskCancelled((taskId) => {
           store.updateTask(taskId, { state: 'cancelled' });
-          refreshHistory();
+          void refreshStats();
+          void refreshHistory();
         });
+        registerUnlisten(unlistenCancelled);
 
         const unlistenQueueUpdated = await tauri.listenDownloadQueueUpdated((stats) => {
           store.setStats(stats as QueueStats);
         });
+        registerUnlisten(unlistenQueueUpdated);
 
         const unlistenExtracting = await tauri.listenDownloadTaskExtracting((taskId) => {
           store.updateTask(taskId, { state: 'extracting' });
         });
+        registerUnlisten(unlistenExtracting);
 
         const unlistenExtracted = await tauri.listenDownloadTaskExtracted(() => {
-          refreshTasks();
+          void refreshTasks();
         });
-
-        unlistenRefs.current = [
-          unlistenAdded,
-          unlistenStarted,
-          unlistenProgress,
-          unlistenCompleted,
-          unlistenFailed,
-          unlistenPaused,
-          unlistenResumed,
-          unlistenCancelled,
-          unlistenQueueUpdated,
-          unlistenExtracting,
-          unlistenExtracted,
-        ];
+        registerUnlisten(unlistenExtracted);
       } catch (err) {
         console.error('Failed to setup download listeners:', err);
       }
@@ -157,15 +171,17 @@ export function useDownloads(options: UseDownloadsOptions = {}) {
     setupListeners();
 
     return () => {
-      unlistenRefs.current.forEach((unlisten) => unlisten?.());
+      disposed = true;
+      const unlisteners = unlistenRefs.current;
       unlistenRefs.current = [];
+      unlisteners.forEach((unlisten) => unlisten?.());
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enableRuntime, refreshTasks, refreshHistory]);
+  }, [enableRuntime, refreshTasks, refreshHistory, refreshStats]);
 
   // Initial data fetch and sync settings from backend
   useEffect(() => {
-    if (!enableRuntime) return;
+    if (!enableRuntime || !tauri.isTauri()) return;
 
     refreshTasks();
     refreshStats();
@@ -173,7 +189,6 @@ export function useDownloads(options: UseDownloadsOptions = {}) {
 
     // Sync speed limit and concurrency from backend
     const syncSettings = async () => {
-      if (!tauri.isTauri()) return;
       try {
         const [backendSpeed, backendConcurrent] = await Promise.all([
           tauri.downloadGetSpeedLimit(),
@@ -254,30 +269,36 @@ export function useDownloads(options: UseDownloadsOptions = {}) {
       }
 
       const taskId = await tauri.downloadAdd(request as tauri.DownloadRequest);
-      await refreshTasks();
+      await Promise.all([refreshTasks(), refreshStats()]);
       return taskId;
     },
      
-    [refreshTasks]
+    [refreshStats, refreshTasks]
   );
 
   // Pause a download
   const pauseDownload = useCallback(async (taskId: string) => {
     if (!tauri.isTauri()) return;
     await tauri.downloadPause(taskId);
-  }, []);
+    store.updateTask(taskId, { state: 'paused' });
+    await refreshStats();
+  }, [refreshStats, store]);
 
   // Resume a download
   const resumeDownload = useCallback(async (taskId: string) => {
     if (!tauri.isTauri()) return;
     await tauri.downloadResume(taskId);
-  }, []);
+    store.updateTask(taskId, { state: 'queued' });
+    await refreshStats();
+  }, [refreshStats, store]);
 
   // Cancel a download
   const cancelDownload = useCallback(async (taskId: string) => {
     if (!tauri.isTauri()) return;
     await tauri.downloadCancel(taskId);
-  }, []);
+    store.updateTask(taskId, { state: 'cancelled' });
+    await Promise.all([refreshStats(), refreshHistory()]);
+  }, [refreshHistory, refreshStats, store]);
 
   // Remove a download
   const removeDownload = useCallback(
@@ -285,42 +306,59 @@ export function useDownloads(options: UseDownloadsOptions = {}) {
       if (!tauri.isTauri()) return;
       await tauri.downloadRemove(taskId);
       store.removeTask(taskId);
+      await refreshStats();
     },
-    [store]
+    [refreshStats, store]
   );
 
   // Pause all downloads
   const pauseAll = useCallback(async (): Promise<number> => {
     if (!tauri.isTauri()) return 0;
-    return await tauri.downloadPauseAll();
-  }, []);
+    const count = await tauri.downloadPauseAll();
+    if (count > 0) {
+      await Promise.all([refreshTasks(), refreshStats()]);
+    }
+    return count;
+  }, [refreshStats, refreshTasks]);
 
   // Resume all downloads
   const resumeAll = useCallback(async (): Promise<number> => {
     if (!tauri.isTauri()) return 0;
-    return await tauri.downloadResumeAll();
-  }, []);
+    const count = await tauri.downloadResumeAll();
+    if (count > 0) {
+      await Promise.all([refreshTasks(), refreshStats()]);
+    }
+    return count;
+  }, [refreshStats, refreshTasks]);
 
   // Cancel all downloads
   const cancelAll = useCallback(async (): Promise<number> => {
     if (!tauri.isTauri()) return 0;
-    return await tauri.downloadCancelAll();
-  }, []);
+    const count = await tauri.downloadCancelAll();
+    if (count > 0) {
+      await Promise.all([refreshTasks(), refreshStats(), refreshHistory()]);
+    }
+    return count;
+  }, [refreshHistory, refreshStats, refreshTasks]);
 
   // Clear finished downloads
   const clearFinished = useCallback(async (): Promise<number> => {
     if (!tauri.isTauri()) return 0;
     const count = await tauri.downloadClearFinished();
-    await refreshTasks();
+    await Promise.all([refreshTasks(), refreshStats()]);
     return count;
   },  
-    [refreshTasks]);
+    [refreshStats, refreshTasks]);
 
   // Retry failed downloads
   const retryFailed = useCallback(async (): Promise<number> => {
     if (!tauri.isTauri()) return 0;
-    return await tauri.downloadRetryFailed();
-  }, []);
+    const count = await tauri.downloadRetryFailed();
+    if (count > 0) {
+      await Promise.all([refreshTasks(), refreshStats()]);
+    }
+    return count;
+  }, [refreshStats, refreshTasks]);
 
   // Set speed limit
   const setSpeedLimit = useCallback(
@@ -392,8 +430,9 @@ export function useDownloads(options: UseDownloadsOptions = {}) {
     async (taskId: string, bytesPerSecond: number) => {
       if (!tauri.isTauri()) return;
       await tauri.downloadSetTaskSpeedLimit(taskId, bytesPerSecond);
+      store.updateTask(taskId, { speedLimit: bytesPerSecond });
     },
-    []
+    [store]
   );
 
   // Force-retry a single terminal task (failed/cancelled/completed)
@@ -401,9 +440,9 @@ export function useDownloads(options: UseDownloadsOptions = {}) {
     async (taskId: string) => {
       if (!tauri.isTauri()) return;
       await tauri.downloadRetry(taskId);
-      await refreshTasks();
+      await Promise.all([refreshTasks(), refreshStats()]);
     },
-    [refreshTasks]
+    [refreshStats, refreshTasks]
   );
 
   // Calculate SHA256 checksum of a file
@@ -423,9 +462,13 @@ export function useDownloads(options: UseDownloadsOptions = {}) {
       if (!tauri.isTauri()) return 0;
       const ids = taskIds ?? [...store.selectedTaskIds];
       if (ids.length === 0) return 0;
-      return await tauri.downloadBatchPause(ids);
+      const count = await tauri.downloadBatchPause(ids);
+      if (count > 0) {
+        await Promise.all([refreshTasks(), refreshStats()]);
+      }
+      return count;
     },
-    [store.selectedTaskIds]
+    [refreshStats, refreshTasks, store.selectedTaskIds]
   );
 
   // Batch resume selected downloads
@@ -434,9 +477,13 @@ export function useDownloads(options: UseDownloadsOptions = {}) {
       if (!tauri.isTauri()) return 0;
       const ids = taskIds ?? [...store.selectedTaskIds];
       if (ids.length === 0) return 0;
-      return await tauri.downloadBatchResume(ids);
+      const count = await tauri.downloadBatchResume(ids);
+      if (count > 0) {
+        await Promise.all([refreshTasks(), refreshStats()]);
+      }
+      return count;
     },
-    [store.selectedTaskIds]
+    [refreshStats, refreshTasks, store.selectedTaskIds]
   );
 
   // Batch cancel selected downloads
@@ -445,9 +492,13 @@ export function useDownloads(options: UseDownloadsOptions = {}) {
       if (!tauri.isTauri()) return 0;
       const ids = taskIds ?? [...store.selectedTaskIds];
       if (ids.length === 0) return 0;
-      return await tauri.downloadBatchCancel(ids);
+      const count = await tauri.downloadBatchCancel(ids);
+      if (count > 0) {
+        await Promise.all([refreshTasks(), refreshStats(), refreshHistory()]);
+      }
+      return count;
     },
-    [store.selectedTaskIds]
+    [refreshHistory, refreshStats, refreshTasks, store.selectedTaskIds]
   );
 
   // Batch remove selected downloads
@@ -457,10 +508,12 @@ export function useDownloads(options: UseDownloadsOptions = {}) {
       const ids = taskIds ?? [...store.selectedTaskIds];
       if (ids.length === 0) return 0;
       const count = await tauri.downloadBatchRemove(ids);
-      await refreshTasks();
+      if (count > 0) {
+        await Promise.all([refreshTasks(), refreshStats()]);
+      }
       return count;
     },
-    [store.selectedTaskIds, refreshTasks]
+    [refreshStats, refreshTasks, store.selectedTaskIds]
   );
 
   // Search history

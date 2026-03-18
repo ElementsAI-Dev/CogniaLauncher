@@ -71,6 +71,9 @@ function TextToolRunner({ tool, className }: PluginToolRunnerProps) {
   const [hasRun, setHasRun] = useState(false);
   const cancelledRef = useRef(false);
   const runIdRef = useRef(0);
+  const capabilityCoverageIssues = (tool.sdkCapabilityCoverage ?? []).filter(
+    (coverage) => coverage.status !== 'covered',
+  );
 
   useEffect(() => {
     setToolLifecycle(unifiedToolId, 'idle');
@@ -147,6 +150,19 @@ function TextToolRunner({ tool, className }: PluginToolRunnerProps) {
           showClear
           rows={8}
         />
+
+        {capabilityCoverageIssues.length > 0 && (
+          <Alert>
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription className="space-y-1 text-xs">
+              {capabilityCoverageIssues.map((coverage) => (
+                <p key={`${coverage.capabilityId}:${coverage.status}`}>
+                  {coverage.reason ?? `${coverage.capabilityId} is ${coverage.status}.`}
+                </p>
+              ))}
+            </AlertDescription>
+          </Alert>
+        )}
 
         {error && (
           <Alert variant="destructive">
