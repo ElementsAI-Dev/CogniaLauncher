@@ -34,14 +34,17 @@ const mockUseDashboardInsights = jest.fn(() => ({
   recentActivityFeed: {},
   workspaceTrends: {},
   providerHealthMatrix: {},
+  activityTimeline: {},
 }));
 const mockSetIsCustomizing = jest.fn();
 const mockSetIsEditMode = jest.fn();
+const mockSetVisualContext = jest.fn();
 let mockEnvsError: string | null = null;
 let mockPkgsError: string | null = null;
 let mockSettingsError: string | null = null;
 let mockDashboardIsCustomizing = false;
 let mockDashboardIsEditMode = false;
+let mockDashboardVisualContext = { range: "7d" };
 
 // Mock hooks used by the dashboard page
 jest.mock("@/hooks/use-environments", () => ({
@@ -101,6 +104,33 @@ jest.mock("@/hooks/use-dashboard-insights", () => ({
   useDashboardInsights: (...args: unknown[]) => mockUseDashboardInsights(...args),
 }));
 
+jest.mock("@/components/dashboard/customize-dialog", () => ({
+  CustomizeDialog: ({
+    open,
+    onOpenChange,
+  }: {
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+  }) => (
+    <div data-testid="mock-customize-dialog" data-open={String(open)}>
+      <button
+        type="button"
+        data-testid="mock-customize-dialog-open"
+        onClick={() => onOpenChange(true)}
+      >
+        open
+      </button>
+      <button
+        type="button"
+        data-testid="mock-customize-dialog-close"
+        onClick={() => onOpenChange(false)}
+      >
+        close
+      </button>
+    </div>
+  ),
+}));
+
 jest.mock("@/lib/stores/dashboard", () => {
   const actual = jest.requireActual("@/lib/stores/dashboard");
   return {
@@ -109,8 +139,10 @@ jest.mock("@/lib/stores/dashboard", () => {
       const state = {
         isCustomizing: mockDashboardIsCustomizing,
         isEditMode: mockDashboardIsEditMode,
+        visualContext: mockDashboardVisualContext,
         setIsCustomizing: (...args: unknown[]) => mockSetIsCustomizing(...args),
         setIsEditMode: (...args: unknown[]) => mockSetIsEditMode(...args),
+        setVisualContext: (...args: unknown[]) => mockSetVisualContext(...args),
         widgets: [
           { id: 'w-stats', type: 'stats-overview', size: 'full', visible: true },
           { id: 'w-search', type: 'quick-search', size: 'full', visible: true },
@@ -258,6 +290,7 @@ describe("Dashboard Page", () => {
     mockSettingsError = null;
     mockDashboardIsCustomizing = false;
     mockDashboardIsEditMode = false;
+    mockDashboardVisualContext = { range: "7d" };
   });
 
   it("renders the dashboard title", async () => {
@@ -461,6 +494,31 @@ describe("Dashboard Page", () => {
     expect(mockSetIsCustomizing).toHaveBeenCalledWith(true);
   });
 
+  it("enables edit mode when customize dialog requests opening while not editing", async () => {
+    renderWithProviders(<DashboardPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("mock-customize-dialog-open")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId("mock-customize-dialog-open"));
+
+    expect(mockSetIsEditMode).toHaveBeenCalledWith(true);
+    expect(mockSetIsCustomizing).toHaveBeenCalledWith(true);
+  });
+
+  it("updates shared analytics range from the dashboard header controls", async () => {
+    renderWithProviders(<DashboardPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("dashboard-analytics-range-30d")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId("dashboard-analytics-range-30d"));
+
+    expect(mockSetVisualContext).toHaveBeenCalledWith({ range: "30d" });
+  });
+
   it("closes customize dialog when turning off edit mode", async () => {
     mockDashboardIsCustomizing = true;
     mockDashboardIsEditMode = true;
@@ -474,6 +532,48 @@ describe("Dashboard Page", () => {
 
     expect(mockSetIsEditMode).toHaveBeenCalledWith(false);
     expect(mockSetIsCustomizing).toHaveBeenCalledWith(false);
+  });
+
+  it("clears any pending cache refresh timeout during cleanup", async () => {
+    mockIsTauri.mockReturnValue(true);
+    const dispose = jest.fn();
+    let callback: (() => void) | undefined;
+    mockSubscribeInvalidation.mockImplementation((...args: unknown[]) => {
+      callback = args[1] as (() => void) | undefined;
+      return dispose;
+    });
+
+    const { unmount } = renderWithProviders(<DashboardPage />);
+
+    await waitFor(() => {
+      expect(mockSubscribeInvalidation).toHaveBeenCalledTimes(1);
+    });
+
+    jest.useFakeTimers();
+    const clearTimeoutSpy = jest.spyOn(global, "clearTimeout");
+    try {
+      mockFetchCacheInfo.mockClear();
+
+      act(() => {
+        callback?.();
+      });
+
+      expect(mockFetchCacheInfo).not.toHaveBeenCalled();
+
+      unmount();
+
+      expect(clearTimeoutSpy).toHaveBeenCalled();
+      expect(dispose).toHaveBeenCalled();
+
+      act(() => {
+        jest.advanceTimersByTime(350);
+      });
+
+      expect(mockFetchCacheInfo).not.toHaveBeenCalled();
+    } finally {
+      clearTimeoutSpy.mockRestore();
+      jest.useRealTimers();
+    }
   });
 
   it("shows new errors after a previously dismissed error", async () => {

@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { useLocale } from "@/components/providers/locale-provider";
 import {
   DashboardEmptyState,
+  DashboardMetaRow,
   DashboardMetricGrid,
   DashboardMetricItem,
   DashboardStatusBadge,
@@ -41,6 +42,22 @@ export function ProviderHealthMatrixWidget({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        <DashboardMetaRow>
+          <DashboardStatusBadge tone="default">
+            {t(`dashboard.widgets.settingsViewMode_${model.viewMode}`)}
+          </DashboardStatusBadge>
+          {model.lastUpdatedAt ? (
+            <DashboardStatusBadge tone="muted">
+              {t("dashboard.widgets.lastUpdated")}
+            </DashboardStatusBadge>
+          ) : null}
+          {model.missingSources.map((source) => (
+            <DashboardStatusBadge key={source} tone="warning">
+              {t(`dashboard.widgets.missingSources_${source}`)}
+            </DashboardStatusBadge>
+          ))}
+        </DashboardMetaRow>
+
         {model.cells.length === 0 ? (
           <DashboardEmptyState
             className="py-4"
@@ -56,25 +73,53 @@ export function ProviderHealthMatrixWidget({
               <DashboardMetricItem label={t("dashboard.widgets.healthStatus_unknown")} value={model.totals.unknown} />
             </DashboardMetricGrid>
 
-            <div className="grid gap-2 sm:grid-cols-2">
-              {model.cells.map((cell) => (
-                <Link
-                  key={cell.id}
-                  href={cell.href}
-                  className="rounded-lg border p-3 transition-colors hover:bg-accent/40"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-medium">{cell.label}</span>
-                    <DashboardStatusBadge tone={TONE_BY_STATUS[cell.status]}>
-                      {cell.status}
-                    </DashboardStatusBadge>
-                  </div>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {cell.issueCount} issue(s)
-                  </p>
-                </Link>
-              ))}
-            </div>
+            {model.viewMode === "heatmap" ? (
+              <div data-testid="provider-health-matrix-heatmap" className="grid gap-2 sm:grid-cols-2">
+                {model.cells.map((cell) => (
+                  <Link
+                    key={cell.id}
+                    href={cell.href}
+                    className="rounded-lg border p-3 transition-colors hover:bg-accent/40"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium">{cell.label}</span>
+                      <DashboardStatusBadge tone={TONE_BY_STATUS[cell.status]}>
+                        {cell.status}
+                      </DashboardStatusBadge>
+                    </div>
+                    <div className="mt-2 h-2 rounded-full bg-muted">
+                      <div
+                        className="h-2 rounded-full bg-current opacity-70"
+                        style={{ width: `${Math.min(100, Math.max(cell.issueCount * 25, cell.issueCount > 0 ? 25 : 10))}%` }}
+                      />
+                    </div>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {cell.issueCount} issue(s)
+                    </p>
+                  </Link>
+                ))}
+              </div>
+            ) : (
+              <div className="grid gap-2 sm:grid-cols-2">
+                {model.cells.map((cell) => (
+                  <Link
+                    key={cell.id}
+                    href={cell.href}
+                    className="rounded-lg border p-3 transition-colors hover:bg-accent/40"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium">{cell.label}</span>
+                      <DashboardStatusBadge tone={TONE_BY_STATUS[cell.status]}>
+                        {cell.status}
+                      </DashboardStatusBadge>
+                    </div>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {cell.issueCount} issue(s)
+                    </p>
+                  </Link>
+                ))}
+              </div>
+            )}
           </>
         )}
       </CardContent>

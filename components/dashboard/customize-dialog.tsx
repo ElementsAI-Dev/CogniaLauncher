@@ -183,6 +183,22 @@ export function CustomizeDialog({ open, onOpenChange }: CustomizeDialogProps) {
                           {t("dashboard.widgets.configurable")}
                         </DashboardStatusBadge>
                       )}
+                      {def.analytics && (
+                        <DashboardStatusBadge
+                          tone="default"
+                          data-testid={`dashboard-customize-analytics-${def.type}`}
+                        >
+                          {t("dashboard.widgets.analyticsCapable")}
+                        </DashboardStatusBadge>
+                      )}
+                      {def.analytics?.supportsSharedRange && (
+                        <DashboardStatusBadge
+                          tone="success"
+                          data-testid={`dashboard-customize-shared-scope-${def.type}`}
+                        >
+                          {t("dashboard.widgets.sharedScope")}
+                        </DashboardStatusBadge>
+                      )}
                       {instanceCount > 0 && (
                         <DashboardStatusBadge data-testid={`dashboard-customize-count-${def.type}`}>
                           x{instanceCount}

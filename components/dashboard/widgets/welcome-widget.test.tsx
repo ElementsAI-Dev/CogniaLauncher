@@ -11,17 +11,51 @@ jest.mock("next/navigation", () => ({
 }));
 
 const mockStartTour = jest.fn();
+const mockOnboardingState = {
+  completed: false,
+  skipped: false,
+  sessionState: 'idle' as const,
+  canResume: false,
+  tourCompleted: false,
+  sessionSummary: {
+    mode: null,
+    locale: null,
+    theme: null,
+    mirrorPreset: 'default',
+    detectedCount: 0,
+    primaryEnvironment: null,
+    manageableEnvironments: [],
+    shellType: null,
+    shellConfigured: null,
+  },
+  startTour: mockStartTour,
+};
+
 jest.mock("@/lib/stores/onboarding", () => ({
-  useOnboardingStore: jest.fn(() => ({
-    completed: false,
-    tourCompleted: false,
-    startTour: mockStartTour,
-  })),
+  useOnboardingStore: jest.fn((selector?: (state: typeof mockOnboardingState) => unknown) =>
+    selector ? selector(mockOnboardingState) : mockOnboardingState,
+  ),
 }));
 
 describe("WelcomeWidget", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockOnboardingState.completed = false;
+    mockOnboardingState.skipped = false;
+    mockOnboardingState.sessionState = 'idle';
+    mockOnboardingState.canResume = false;
+    mockOnboardingState.tourCompleted = false;
+    mockOnboardingState.sessionSummary = {
+      mode: null,
+      locale: null,
+      theme: null,
+      mirrorPreset: 'default',
+      detectedCount: 0,
+      primaryEnvironment: null,
+      manageableEnvironments: [],
+      shellType: null,
+      shellConfigured: null,
+    };
   });
 
   it("renders when user has no environments and no packages", () => {
@@ -105,12 +139,22 @@ describe("WelcomeWidget", () => {
     expect(container.firstChild).toHaveClass("custom");
   });
 
-  it("renders Take Tour button when tour not completed", () => {
+  it("does not render Take Tour button before onboarding is completed or skipped", () => {
     render(<WelcomeWidget hasEnvironments={false} hasPackages={false} />);
+    expect(screen.queryByText("dashboard.widgets.welcomeTakeTour")).not.toBeInTheDocument();
+  });
+
+  it("renders Take Tour button when onboarding was skipped and tour is still incomplete", () => {
+    mockOnboardingState.skipped = true;
+
+    render(<WelcomeWidget hasEnvironments={false} hasPackages={false} />);
+
     expect(screen.getByText("dashboard.widgets.welcomeTakeTour")).toBeInTheDocument();
   });
 
-  it("calls startTour when Take Tour button is clicked", () => {
+  it("calls startTour when Take Tour button is clicked from a valid shortcut state", () => {
+    mockOnboardingState.completed = true;
+
     render(<WelcomeWidget hasEnvironments={false} hasPackages={false} />);
     const tourBtn = screen.getByText("dashboard.widgets.welcomeTakeTour").closest("button");
     if (tourBtn) fireEvent.click(tourBtn);

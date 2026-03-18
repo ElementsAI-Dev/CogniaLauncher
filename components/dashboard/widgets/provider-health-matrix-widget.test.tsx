@@ -12,6 +12,7 @@ describe("ProviderHealthMatrixWidget", () => {
         model={{
           groupBy: "provider",
           showHealthy: true,
+          viewMode: "heatmap",
           cells: [
             {
               id: "provider:npm",
@@ -39,6 +40,8 @@ describe("ProviderHealthMatrixWidget", () => {
           isLoading: false,
           error: null,
           lastUpdatedAt: "2026-03-14T12:00:00.000Z",
+          missingSources: [],
+          isPartial: false,
         }}
       />,
     );
@@ -46,6 +49,7 @@ describe("ProviderHealthMatrixWidget", () => {
     expect(screen.getByText("npm")).toBeInTheDocument();
     expect(screen.getByText("pnpm")).toBeInTheDocument();
     expect(screen.getByText("1 issue(s)")).toBeInTheDocument();
+    expect(screen.getByTestId("provider-health-matrix-heatmap")).toBeInTheDocument();
   });
 
   it("renders an empty state when no health cells are available", () => {
@@ -54,6 +58,7 @@ describe("ProviderHealthMatrixWidget", () => {
         model={{
           groupBy: "provider",
           showHealthy: false,
+          viewMode: "status-list",
           cells: [],
           totals: {
             healthy: 0,
@@ -64,6 +69,8 @@ describe("ProviderHealthMatrixWidget", () => {
           isLoading: false,
           error: null,
           lastUpdatedAt: null,
+          missingSources: ["health"],
+          isPartial: false,
         }}
       />,
     );

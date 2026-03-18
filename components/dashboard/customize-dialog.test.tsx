@@ -101,6 +101,11 @@ jest.mock("@/lib/stores/dashboard", () => {
         range: "7d",
         metric: "installations",
       },
+      analytics: {
+        supportsSharedRange: true,
+        supportedModes: ["single", "comparison"],
+        defaultMode: "single",
+      },
     },
   };
 
@@ -178,6 +183,15 @@ describe("CustomizeDialog", () => {
     );
 
     expect(screen.getByTestId("dashboard-customize-configurable-workspace-trends")).toBeInTheDocument();
+  });
+
+  it("shows analytics capability badges for advanced visual widgets", () => {
+    render(
+      <CustomizeDialog open={true} onOpenChange={jest.fn()} />,
+    );
+
+    expect(screen.getByTestId("dashboard-customize-analytics-workspace-trends")).toBeInTheDocument();
+    expect(screen.getByTestId("dashboard-customize-shared-scope-workspace-trends")).toBeInTheDocument();
   });
 
   it("shows disabled limit state when widget type reached max instances", () => {

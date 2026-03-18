@@ -40,11 +40,16 @@ let mockAllTools: Array<{
   description: string;
   keywords: string[];
 }> = [];
+const mockExecuteDesktopAction = jest.fn();
 
 jest.mock("@/hooks/use-toolbox", () => ({
   useToolbox: () => ({
     allTools: mockAllTools,
   }),
+}));
+
+jest.mock("@/hooks/use-desktop-action-executor", () => ({
+  useDesktopActionExecutor: () => mockExecuteDesktopAction,
 }));
 
 const mockEnvironments: EnvironmentInfo[] = [
@@ -393,6 +398,118 @@ describe("QuickSearch", () => {
     fireEvent.click(resultItem);
 
     expect(mockPush).toHaveBeenCalledWith("/toolbox/tool?id=builtin%3Ajson-formatter");
+  });
+
+  it("navigates when selecting a package result", async () => {
+    render(
+      <QuickSearch environments={mockEnvironments} packages={mockPackages} />,
+    );
+
+    const input = screen.getByPlaceholderText(
+      "Search environments, packages...",
+    );
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "typescript" } });
+
+    await waitFor(() => {
+      expect(screen.getByText("typescript")).toBeInTheDocument();
+    });
+
+    const resultText = screen.getByText("typescript");
+    const resultItem = resultText.closest("[cmdk-item]") ?? resultText;
+    fireEvent.click(resultItem);
+
+    expect(mockPush).toHaveBeenCalledWith("/packages");
+  });
+
+  it("reuses a recent search term when it is selected", async () => {
+    localStorage.setItem(
+      "cognia-dashboard-search-history",
+      JSON.stringify(["python"]),
+    );
+
+    render(
+      <QuickSearch environments={mockEnvironments} packages={mockPackages} />,
+    );
+
+    const input = screen.getByPlaceholderText(
+      "Search environments, packages...",
+    ) as HTMLInputElement;
+    fireEvent.focus(input);
+
+    await waitFor(() => {
+      expect(screen.getByText("python")).toBeInTheDocument();
+    });
+
+    const historyItem = screen.getByText("python").closest("[cmdk-item]") ?? screen.getByText("python");
+    fireEvent.click(historyItem);
+
+    expect(input.value).toBe("python");
+  });
+
+  it("executes quick actions from the default dropdown state", async () => {
+    render(
+      <QuickSearch environments={mockEnvironments} packages={mockPackages} />,
+    );
+
+    const input = screen.getByPlaceholderText(
+      "Search environments, packages...",
+    );
+    fireEvent.focus(input);
+
+    await waitFor(() => {
+      expect(screen.getByText("Add Environment")).toBeInTheDocument();
+    });
+
+    const actionItem =
+      screen.getByText("Add Environment").closest("[cmdk-item]") ??
+      screen.getByText("Add Environment");
+    fireEvent.click(actionItem);
+
+    expect(mockPush).toHaveBeenCalledWith("/environments");
+  });
+
+  it("executes action search results and saves the typed query", async () => {
+    render(
+      <QuickSearch environments={mockEnvironments} packages={mockPackages} />,
+    );
+
+    const input = screen.getByPlaceholderText(
+      "Search environments, packages...",
+    );
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "settings" } });
+
+    await waitFor(() => {
+      expect(screen.getByText("nav.settings")).toBeInTheDocument();
+    });
+
+    const actionItem =
+      screen.getByText("nav.settings").closest("[cmdk-item]") ??
+      screen.getByText("nav.settings");
+    fireEvent.click(actionItem);
+
+    expect(mockExecuteDesktopAction).toHaveBeenCalledWith("open_settings");
+    expect(localStorage.getItem("cognia-dashboard-search-history")).toContain("settings");
+  });
+
+  it("focuses the dashboard quick-search surface when a desktop request arrives", async () => {
+    render(
+      <QuickSearch environments={mockEnvironments} packages={mockPackages} />,
+    );
+
+    const input = screen.getByPlaceholderText(
+      "Search environments, packages...",
+    );
+
+    window.dispatchEvent(
+      new CustomEvent("cognia:dashboard-quick-search-focus"),
+    );
+
+    await waitFor(() => {
+      expect(input).toHaveFocus();
+      expect(screen.getByText("Quick Actions")).toBeInTheDocument();
+    });
   });
 
 });

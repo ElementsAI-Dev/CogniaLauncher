@@ -16,6 +16,7 @@ const mockUseToolbox = jest.fn(() => ({
     },
   ],
 }));
+const mockExecuteDesktopAction = jest.fn();
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: (...args: unknown[]) => mockPush(...args) }),
@@ -37,6 +38,10 @@ jest.mock('@/lib/toolbox-route', () => ({
 
 jest.mock('@/hooks/use-toolbox', () => ({
   useToolbox: () => mockUseToolbox(),
+}));
+
+jest.mock('@/hooks/use-desktop-action-executor', () => ({
+  useDesktopActionExecutor: () => mockExecuteDesktopAction,
 }));
 
 describe('useDashboardSearch', () => {
@@ -66,6 +71,21 @@ describe('useDashboardSearch', () => {
     expect(result.current.showDropdown).toBe(true);
   });
 
+  it("includes shared desktop actions in quick actions", () => {
+    const { result } = renderHook(() =>
+      useDashboardSearch({ environments, packages, containerRef, inputRef }),
+    );
+
+    expect(result.current.quickActions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "open_settings",
+          type: "action",
+        }),
+      ]),
+    );
+  });
+
   it('saves history and routes when selecting result', () => {
     const { result } = renderHook(() =>
       useDashboardSearch({ environments, packages, containerRef, inputRef }),
@@ -89,4 +109,3 @@ describe('useDashboardSearch', () => {
     expect(result.current.open).toBe(false);
   });
 });
-

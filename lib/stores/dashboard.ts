@@ -15,6 +15,14 @@ export type DashboardDataSource =
 export type WidgetRange = '7d' | '30d';
 export type WorkspaceTrendMetric = 'installations' | 'downloads' | 'updates';
 export type ProviderHealthGroupBy = 'provider' | 'environment';
+export type DashboardVisualRange = WidgetRange;
+export type WorkspaceTrendViewMode = 'single' | 'comparison';
+export type ProviderHealthMatrixViewMode = 'status-list' | 'heatmap';
+export type ActivityTimelineViewMode = 'distribution' | 'intensity';
+
+export interface DashboardVisualContext {
+  range: DashboardVisualRange;
+}
 
 export interface AttentionCenterSettings {
   maxItems: 3 | 5;
@@ -23,21 +31,32 @@ export interface AttentionCenterSettings {
 export interface WorkspaceTrendsSettings {
   range: WidgetRange;
   metric: WorkspaceTrendMetric;
+  viewMode: WorkspaceTrendViewMode;
+  useSharedRange: boolean;
 }
 
 export interface ProviderHealthMatrixSettings {
   groupBy: ProviderHealthGroupBy;
   showHealthy: boolean;
+  viewMode: ProviderHealthMatrixViewMode;
+}
+
+export interface ActivityTimelineSettings {
+  range: WidgetRange;
+  viewMode: ActivityTimelineViewMode;
+  useSharedRange: boolean;
 }
 
 export interface RecentActivityFeedSettings {
   limit: 5 | 10;
+  useSharedRange: boolean;
 }
 
 export interface WidgetSettingsMap {
   'attention-center': AttentionCenterSettings;
   'workspace-trends': WorkspaceTrendsSettings;
   'provider-health-matrix': ProviderHealthMatrixSettings;
+  'activity-timeline': ActivityTimelineSettings;
   'recent-activity-feed': RecentActivityFeedSettings;
 }
 
@@ -80,6 +99,12 @@ interface WidgetPolicy {
   maxInstances?: number;
 }
 
+interface WidgetAnalyticsDefinition {
+  supportsSharedRange: boolean;
+  supportedModes: string[];
+  defaultMode: string;
+}
+
 export interface WidgetDefinition extends WidgetPolicy {
   type: WidgetType;
   titleKey: string;
@@ -90,6 +115,7 @@ export interface WidgetDefinition extends WidgetPolicy {
   category: 'overview' | 'charts' | 'lists' | 'tools';
   dataSources: DashboardDataSource[];
   defaultSettings?: WidgetSettings;
+  analytics?: WidgetAnalyticsDefinition;
 }
 
 const SINGLE_INSTANCE_POLICY: WidgetPolicy = {
@@ -159,6 +185,16 @@ export const WIDGET_DEFINITIONS: Record<WidgetType, WidgetDefinition> = {
     minSize: 'sm',
     category: 'charts',
     dataSources: ['activity', 'environments', 'packages'],
+    defaultSettings: {
+      range: '7d',
+      viewMode: 'distribution',
+      useSharedRange: true,
+    },
+    analytics: {
+      supportsSharedRange: true,
+      supportedModes: ['distribution', 'intensity'],
+      defaultMode: 'distribution',
+    },
     ...MULTI_INSTANCE_POLICY,
   },
   'system-info': {
@@ -308,6 +344,13 @@ export const WIDGET_DEFINITIONS: Record<WidgetType, WidgetDefinition> = {
     defaultSettings: {
       range: '7d',
       metric: 'installations',
+      viewMode: 'single',
+      useSharedRange: true,
+    },
+    analytics: {
+      supportsSharedRange: true,
+      supportedModes: ['single', 'comparison'],
+      defaultMode: 'single',
     },
     ...MULTI_INSTANCE_POLICY,
   },
@@ -323,6 +366,12 @@ export const WIDGET_DEFINITIONS: Record<WidgetType, WidgetDefinition> = {
     defaultSettings: {
       groupBy: 'provider',
       showHealthy: true,
+      viewMode: 'status-list',
+    },
+    analytics: {
+      supportsSharedRange: false,
+      supportedModes: ['status-list', 'heatmap'],
+      defaultMode: 'status-list',
     },
     ...MULTI_INSTANCE_POLICY,
   },
@@ -337,6 +386,12 @@ export const WIDGET_DEFINITIONS: Record<WidgetType, WidgetDefinition> = {
     dataSources: ['activity', 'downloads', 'packages', 'toolbox'],
     defaultSettings: {
       limit: 5,
+      useSharedRange: true,
+    },
+    analytics: {
+      supportsSharedRange: true,
+      supportedModes: ['feed'],
+      defaultMode: 'feed',
     },
     ...MULTI_INSTANCE_POLICY,
   },
@@ -357,14 +412,14 @@ export const DEFAULT_WIDGETS: WidgetConfig[] = [
     type: 'provider-health-matrix',
     size: 'md',
     visible: true,
-    settings: { groupBy: 'provider', showHealthy: true },
+    settings: { groupBy: 'provider', showHealthy: true, viewMode: 'status-list' },
   },
   {
     id: 'w-trends',
     type: 'workspace-trends',
     size: 'lg',
     visible: true,
-    settings: { range: '7d', metric: 'installations' },
+    settings: { range: '7d', metric: 'installations', viewMode: 'single', useSharedRange: true },
   },
   { id: 'w-actions', type: 'quick-actions', size: 'full', visible: true },
   { id: 'w-search', type: 'quick-search', size: 'full', visible: true },
@@ -375,7 +430,7 @@ export const DEFAULT_WIDGETS: WidgetConfig[] = [
     type: 'recent-activity-feed',
     size: 'md',
     visible: true,
-    settings: { limit: 5 },
+    settings: { limit: 5, useSharedRange: true },
   },
   { id: 'w-system', type: 'system-info', size: 'md', visible: true },
   { id: 'w-envs', type: 'environment-list', size: 'md', visible: true },
@@ -383,13 +438,26 @@ export const DEFAULT_WIDGETS: WidgetConfig[] = [
   { id: 'w-env-chart', type: 'environment-chart', size: 'md', visible: true },
   { id: 'w-pkg-chart', type: 'package-chart', size: 'md', visible: true },
   { id: 'w-cache', type: 'cache-usage', size: 'md', visible: true },
-  { id: 'w-activity', type: 'activity-timeline', size: 'md', visible: true },
+  {
+    id: 'w-activity',
+    type: 'activity-timeline',
+    size: 'md',
+    visible: true,
+    settings: { range: '7d', viewMode: 'distribution', useSharedRange: true },
+  },
   { id: 'w-downloads', type: 'download-stats', size: 'md', visible: true },
   { id: 'w-wsl', type: 'wsl-status', size: 'md', visible: true },
 ];
 
+export function getDefaultVisualContext(): DashboardVisualContext {
+  return {
+    range: '7d',
+  };
+}
+
 interface DashboardState {
   widgets: WidgetConfig[];
+  visualContext: DashboardVisualContext;
   isCustomizing: boolean;
   isEditMode: boolean;
 
@@ -398,6 +466,7 @@ interface DashboardState {
   addWidget: (type: WidgetType) => void;
   removeWidget: (id: string) => void;
   updateWidget: (id: string, updates: Partial<WidgetConfig>) => void;
+  setVisualContext: (updates: Partial<DashboardVisualContext>) => void;
   reorderWidgets: (oldIndex: number, newIndex: number) => void;
   toggleWidgetVisibility: (id: string) => void;
   setIsCustomizing: (value: boolean) => void;
@@ -407,6 +476,7 @@ interface DashboardState {
 
 type PersistedDashboardState = {
   widgets?: unknown;
+  visualContext?: unknown;
 };
 
 const WIDGET_SIZE_SET = new Set<WidgetSize>(['sm', 'md', 'lg', 'full']);
@@ -448,6 +518,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function normalizeDashboardVisualContext(value: unknown): DashboardVisualContext {
+  const raw = isRecord(value) ? value : {};
+  return {
+    range: raw.range === '30d' ? '30d' : '7d',
+  };
+}
+
 function normalizeWidgetSettings(type: WidgetType, value: unknown): WidgetSettings | undefined {
   const defaultSettings = getDefaultWidgetSettings(type);
   if (!defaultSettings) {
@@ -465,15 +542,25 @@ function normalizeWidgetSettings(type: WidgetType, value: unknown): WidgetSettin
       return {
         range: raw.range === '30d' ? '30d' : '7d',
         metric: raw.metric === 'downloads' || raw.metric === 'updates' ? raw.metric : 'installations',
+        viewMode: raw.viewMode === 'comparison' ? 'comparison' : 'single',
+        useSharedRange: typeof raw.useSharedRange === 'boolean' ? raw.useSharedRange : true,
       };
     case 'provider-health-matrix':
       return {
         groupBy: raw.groupBy === 'environment' ? 'environment' : 'provider',
         showHealthy: typeof raw.showHealthy === 'boolean' ? raw.showHealthy : true,
+        viewMode: raw.viewMode === 'heatmap' ? 'heatmap' : 'status-list',
+      };
+    case 'activity-timeline':
+      return {
+        range: raw.range === '30d' ? '30d' : '7d',
+        viewMode: raw.viewMode === 'intensity' ? 'intensity' : 'distribution',
+        useSharedRange: typeof raw.useSharedRange === 'boolean' ? raw.useSharedRange : true,
       };
     case 'recent-activity-feed':
       return {
         limit: raw.limit === 10 ? 10 : 5,
+        useSharedRange: typeof raw.useSharedRange === 'boolean' ? raw.useSharedRange : true,
       };
     default:
       return defaultSettings;
@@ -658,6 +745,7 @@ export const useDashboardStore = create<DashboardState>()(
   persist(
     (set) => ({
       widgets: getDefaultWidgets(),
+      visualContext: getDefaultVisualContext(),
       isCustomizing: false,
       isEditMode: false,
 
@@ -718,6 +806,14 @@ export const useDashboardStore = create<DashboardState>()(
           }),
         })),
 
+      setVisualContext: (updates) =>
+        set((state) => ({
+          visualContext: normalizeDashboardVisualContext({
+            ...state.visualContext,
+            ...updates,
+          }),
+        })),
+
       reorderWidgets: (oldIndex, newIndex) =>
         set((state) => {
           if (oldIndex < 0 || newIndex < 0 || oldIndex >= state.widgets.length || newIndex >= state.widgets.length) {
@@ -747,12 +843,15 @@ export const useDashboardStore = create<DashboardState>()(
 
       setIsEditMode: (isEditMode) => set({ isEditMode }),
 
-      resetToDefault: () => set({ widgets: getDefaultWidgets() }),
+      resetToDefault: () => set({
+        widgets: getDefaultWidgets(),
+        visualContext: getDefaultVisualContext(),
+      }),
     }),
     {
       name: 'cognia-dashboard',
       storage: createJSONStorage(() => localStorage),
-      version: 4,
+      version: 5,
       migrate: (persistedState, version) => {
         const state = (persistedState ?? {}) as PersistedDashboardState;
         const widgetsSource = version < 2
@@ -761,10 +860,12 @@ export const useDashboardStore = create<DashboardState>()(
 
         return {
           widgets: normalizeDashboardWidgets(widgetsSource),
+          visualContext: normalizeDashboardVisualContext(state.visualContext),
         } as DashboardState;
       },
       partialize: (state) => ({
         widgets: state.widgets,
+        visualContext: state.visualContext,
       }),
     },
   ),

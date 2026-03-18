@@ -25,8 +25,8 @@ The top of the dashboard displays installed runtime environment status:
 Homepage customization is split into two coordinated entry points:
 
 - **Header Edit Mode** — Enables in-grid controls for drag reorder, resize, hide/show, and remove.
-- **Widget Settings Toolbar** — Insight widgets can now adjust lightweight settings such as range, grouping, and item limits directly from the edit toolbar.
-- **Customize Dialog** — Manages widget catalog, category filtering, add actions, configurable widget badges, and reset-to-default.
+- **Widget Settings Toolbar** — Insight widgets can now adjust lightweight settings such as range, view mode, grouping, shared-range override, and item limits directly from the edit toolbar.
+- **Customize Dialog** — Manages widget catalog, category filtering, add actions, configurable widget badges, analytics capability badges, and reset-to-default.
 
 Behavior guarantees:
 
@@ -41,8 +41,10 @@ Behavior guarantees:
 The homepage now includes a second insight layer that aggregates signals from health checks, downloads, install history, and recent tool usage:
 
 - **Attention Center** — Surfaces the highest-priority issues on the homepage and links directly to the affected module.
-- **Workspace Trends** — Shows install/download/update trend lines based on per-widget range and metric settings.
-- **Provider Health Matrix** — Compresses provider or environment health states into a scannable matrix with summary totals.
+- **Shared range controls** — The dashboard header can switch compatible visual widgets between `7d` and `30d` scope without leaving the homepage.
+- **Workspace Trends** — Supports both single-metric and comparison views so installs, downloads, and updates can be read in one frame.
+- **Provider Health Matrix** — Supports a compact status-list view and a heatmap-style scan view for provider or environment health.
+- **Activity Overview** — The former distribution overview can now render an activity-intensity view that summarizes clustered download, package, and toolbox activity.
 - **Recent Activity Feed** — Merges recent package, download, and toolbox activity into a single timeline.
 
 Insight data is loaded on demand:
@@ -96,6 +98,7 @@ Key widget behavior:
 Dashboard layout data is stored in `lib/stores/dashboard.ts` (Zustand):
 
 - Widget order, size, and visibility
+- Shared dashboard visual context such as the current analytics range
 - Widget-specific settings for configurable insight widgets
 - Widget instance-policy helpers shared by store and UI
 - Persisted layout migration and normalization

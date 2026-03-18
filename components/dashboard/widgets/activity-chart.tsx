@@ -18,23 +18,38 @@ import {
   getGradientId,
 } from "@/lib/theme/chart-utils";
 import type { EnvironmentInfo, InstalledPackage } from "@/lib/tauri";
+import type { DashboardActivityTimelineModel } from "@/hooks/use-dashboard-insights";
 import { WidgetEmptyCard } from "@/components/dashboard/widgets/widget-empty-card";
 import {
+  DashboardLegendList,
+  DashboardMetaRow,
   DashboardMetricGrid,
   DashboardMetricItem,
+  DashboardStatusBadge,
 } from "@/components/dashboard/dashboard-primitives";
 
 interface ActivityChartProps {
   environments: EnvironmentInfo[];
   packages: InstalledPackage[];
+  model?: DashboardActivityTimelineModel;
   className?: string;
 }
 
-export function ActivityChart({ environments, packages, className }: ActivityChartProps) {
+export function ActivityChart({ environments, packages, model, className }: ActivityChartProps) {
   const { t } = useLocale();
   const areaGradient = getChartGradientDefinition("area");
 
   const chartData = useMemo(() => {
+    if (model) {
+      return model.points.map((point) => ({
+        name: point.label,
+        downloads: point.downloads,
+        packages: point.packages,
+        toolbox: point.toolbox,
+        total: point.total,
+      }));
+    }
+
     const envsByType = new Map<string, number>();
     environments.forEach((env) => {
       envsByType.set(env.env_type, env.installed_versions.length);
@@ -57,18 +72,33 @@ export function ActivityChart({ environments, packages, className }: ActivityCha
       environments: envsByType.get(label) || 0,
       packages: providerCounts.get(label) || 0,
     }));
-  }, [environments, packages]);
+  }, [environments, model, packages]);
 
-  const chartConfig: ChartConfig = {
-    environments: {
-      label: t("dashboard.widgets.environments"),
-      color: getChartColor(0),
-    },
-    packages: {
-      label: t("dashboard.widgets.packages"),
-      color: getChartColor(1),
-    },
-  };
+  const chartConfig: ChartConfig = model
+    ? {
+        downloads: {
+          label: t("dashboard.widgets.settingsMetric_downloads"),
+          color: getChartColor(0),
+        },
+        packages: {
+          label: t("dashboard.widgets.settingsMetric_installations"),
+          color: getChartColor(1),
+        },
+        toolbox: {
+          label: t("dashboard.widgets.toolboxFavorites"),
+          color: getChartColor(2),
+        },
+      }
+    : {
+        environments: {
+          label: t("dashboard.widgets.environments"),
+          color: getChartColor(0),
+        },
+        packages: {
+          label: t("dashboard.widgets.packages"),
+          color: getChartColor(1),
+        },
+      };
 
   if (chartData.length === 0) {
     return (
@@ -91,52 +121,108 @@ export function ActivityChart({ environments, packages, className }: ActivityCha
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        {model ? (
+          <DashboardMetaRow>
+            <DashboardStatusBadge data-testid="activity-chart-shared-scope" tone={model.isUsingSharedRange ? "success" : "muted"}>
+              {model.isUsingSharedRange
+                ? t("dashboard.widgets.sharedScope")
+                : t("dashboard.widgets.localScope")}
+            </DashboardStatusBadge>
+            <DashboardStatusBadge tone="default">
+              {t(`dashboard.widgets.settingsViewMode_${model.viewMode}`)}
+            </DashboardStatusBadge>
+            {model.missingSources.map((source) => (
+              <DashboardStatusBadge key={source} tone="warning">
+                {t(`dashboard.widgets.missingSources_${source}`)}
+              </DashboardStatusBadge>
+            ))}
+          </DashboardMetaRow>
+        ) : null}
+
         <DashboardMetricGrid>
-          <DashboardMetricItem
-            label={t("dashboard.widgets.environments")}
-            value={chartData.reduce((sum, item) => sum + item.environments, 0)}
-          />
-          <DashboardMetricItem
-            label={t("dashboard.widgets.packages")}
-            value={chartData.reduce((sum, item) => sum + item.packages, 0)}
-          />
+          {model ? (
+            <>
+              <DashboardMetricItem
+                label={t("dashboard.widgets.settingsMetric_downloads")}
+                value={model.totals.downloads}
+              />
+              <DashboardMetricItem
+                label={t("dashboard.widgets.settingsMetric_installations")}
+                value={model.totals.packages}
+              />
+            </>
+          ) : (
+            <>
+              <DashboardMetricItem
+                label={t("dashboard.widgets.environments")}
+                value={chartData.reduce((sum, item) => sum + ("environments" in item ? item.environments : 0), 0)}
+              />
+              <DashboardMetricItem
+                label={t("dashboard.widgets.packages")}
+                value={chartData.reduce((sum, item) => sum + (item.packages ?? 0), 0)}
+              />
+            </>
+          )}
         </DashboardMetricGrid>
+        {model ? (
+          <DashboardLegendList
+            items={[
+              {
+                key: "downloads",
+                label: t("dashboard.widgets.settingsMetric_downloads"),
+                value: model.totals.downloads,
+              },
+              {
+                key: "packages",
+                label: t("dashboard.widgets.settingsMetric_installations"),
+                value: model.totals.packages,
+              },
+              {
+                key: "toolbox",
+                label: t("dashboard.widgets.toolboxFavorites"),
+                value: model.totals.toolbox,
+              },
+            ]}
+          />
+        ) : null}
         <ChartContainer config={chartConfig} className="h-50 w-full aspect-auto">
           <AreaChart data={chartData} margin={{ left: 0, right: 12 }}>
-            <defs>
-              <linearGradient
-                id={getGradientId("actEnv", 0)}
-                x1={areaGradient.x1}
-                y1={areaGradient.y1}
-                x2={areaGradient.x2}
-                y2={areaGradient.y2}
-              >
-                {areaGradient.stops.map((stop, index) => (
-                  <stop
-                    key={`${stop.offset}-${index}`}
-                    offset={stop.offset}
-                    stopColor={getChartColor(0)}
-                    stopOpacity={stop.opacity}
-                  />
-                ))}
-              </linearGradient>
-              <linearGradient
-                id={getGradientId("actPkg", 0)}
-                x1={areaGradient.x1}
-                y1={areaGradient.y1}
-                x2={areaGradient.x2}
-                y2={areaGradient.y2}
-              >
-                {areaGradient.stops.map((stop, index) => (
-                  <stop
-                    key={`${stop.offset}-${index}`}
-                    offset={stop.offset}
-                    stopColor={getChartColor(1)}
-                    stopOpacity={stop.opacity}
-                  />
-                ))}
-              </linearGradient>
-            </defs>
+            {!model ? (
+              <defs>
+                <linearGradient
+                  id={getGradientId("actEnv", 0)}
+                  x1={areaGradient.x1}
+                  y1={areaGradient.y1}
+                  x2={areaGradient.x2}
+                  y2={areaGradient.y2}
+                >
+                  {areaGradient.stops.map((stop, index) => (
+                    <stop
+                      key={`${stop.offset}-${index}`}
+                      offset={stop.offset}
+                      stopColor={getChartColor(0)}
+                      stopOpacity={stop.opacity}
+                    />
+                  ))}
+                </linearGradient>
+                <linearGradient
+                  id={getGradientId("actPkg", 0)}
+                  x1={areaGradient.x1}
+                  y1={areaGradient.y1}
+                  x2={areaGradient.x2}
+                  y2={areaGradient.y2}
+                >
+                  {areaGradient.stops.map((stop, index) => (
+                    <stop
+                      key={`${stop.offset}-${index}`}
+                      offset={stop.offset}
+                      stopColor={getChartColor(1)}
+                      stopOpacity={stop.opacity}
+                    />
+                  ))}
+                </linearGradient>
+              </defs>
+            ) : null}
             <CartesianGrid vertical={false} {...getChartGridStyle()} />
             <XAxis
               dataKey="name"
@@ -152,20 +238,51 @@ export function ActivityChart({ environments, packages, className }: ActivityCha
               tick={getChartAxisTickStyle(11)}
             />
             <ChartTooltip content={<ChartTooltipContent />} />
-            <Area
-              type="monotone"
-              dataKey="environments"
-              stroke={getChartColor(0)}
-              strokeWidth={2.5}
-              fill={`url(#${getGradientId("actEnv", 0)})`}
-            />
-            <Area
-              type="monotone"
-              dataKey="packages"
-              stroke={getChartColor(1)}
-              strokeWidth={2.5}
-              fill={`url(#${getGradientId("actPkg", 0)})`}
-            />
+            {model ? (
+              <>
+                <Area
+                  type="monotone"
+                  dataKey="downloads"
+                  stroke={getChartColor(0)}
+                  strokeWidth={2.5}
+                  fillOpacity={model.viewMode === "intensity" ? 0.25 : 0.15}
+                  fill={getChartColor(0)}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="packages"
+                  stroke={getChartColor(1)}
+                  strokeWidth={2.5}
+                  fillOpacity={model.viewMode === "intensity" ? 0.2 : 0.1}
+                  fill={getChartColor(1)}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="toolbox"
+                  stroke={getChartColor(2)}
+                  strokeWidth={2.5}
+                  fillOpacity={model.viewMode === "intensity" ? 0.15 : 0.05}
+                  fill={getChartColor(2)}
+                />
+              </>
+            ) : (
+              <>
+                <Area
+                  type="monotone"
+                  dataKey="environments"
+                  stroke={getChartColor(0)}
+                  strokeWidth={2.5}
+                  fill={`url(#${getGradientId("actEnv", 0)})`}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="packages"
+                  stroke={getChartColor(1)}
+                  strokeWidth={2.5}
+                  fill={`url(#${getGradientId("actPkg", 0)})`}
+                />
+              </>
+            )}
           </AreaChart>
         </ChartContainer>
       </CardContent>

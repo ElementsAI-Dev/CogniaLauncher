@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useLocale } from "@/components/providers/locale-provider";
 import type {
+  ActivityTimelineSettings,
   AttentionCenterSettings,
   ProviderHealthMatrixSettings,
   RecentActivityFeedSettings,
@@ -104,6 +105,8 @@ export function WidgetSettingsToolbar({
       const settings = (widget.settings as WorkspaceTrendsSettings | undefined) ?? {
         range: "7d",
         metric: "installations",
+        viewMode: "single",
+        useSharedRange: true,
       };
       const nextRange = settings.range === "7d" ? "30d" : "7d";
       const nextMetric =
@@ -112,6 +115,7 @@ export function WidgetSettingsToolbar({
           : settings.metric === "downloads"
             ? "updates"
             : "installations";
+      const nextViewMode = settings.viewMode === "single" ? "comparison" : "single";
 
       return (
         <>
@@ -127,6 +131,20 @@ export function WidgetSettingsToolbar({
             testId={`widget-settings-metric-${widget.id}`}
             onClick={() => onUpdateSettings(widget.id, { ...settings, metric: nextMetric })}
           />
+          <ToolbarPillButton
+            label={t(`dashboard.widgets.settingsViewMode_${settings.viewMode}`)}
+            tooltip={t("dashboard.widgets.toggleTrendViewMode")}
+            testId={`widget-settings-view-mode-${widget.id}`}
+            onClick={() => onUpdateSettings(widget.id, { ...settings, viewMode: nextViewMode })}
+          />
+          <ToolbarPillButton
+            label={settings.useSharedRange
+              ? t("dashboard.widgets.settingsScope_shared")
+              : t("dashboard.widgets.settingsScope_local")}
+            tooltip={t("dashboard.widgets.toggleSharedRange")}
+            testId={`widget-settings-shared-range-${widget.id}`}
+            onClick={() => onUpdateSettings(widget.id, { ...settings, useSharedRange: !settings.useSharedRange })}
+          />
           {renderReset()}
         </>
       );
@@ -135,8 +153,10 @@ export function WidgetSettingsToolbar({
       const settings = (widget.settings as ProviderHealthMatrixSettings | undefined) ?? {
         groupBy: "provider",
         showHealthy: true,
+        viewMode: "status-list",
       };
       const nextGroupBy = settings.groupBy === "provider" ? "environment" : "provider";
+      const nextViewMode = settings.viewMode === "status-list" ? "heatmap" : "status-list";
 
       return (
         <>
@@ -154,12 +174,56 @@ export function WidgetSettingsToolbar({
             testId={`widget-settings-healthy-${widget.id}`}
             onClick={() => onUpdateSettings(widget.id, { ...settings, showHealthy: !settings.showHealthy })}
           />
+          <ToolbarPillButton
+            label={t(`dashboard.widgets.settingsViewMode_${settings.viewMode}`)}
+            tooltip={t("dashboard.widgets.toggleHealthViewMode")}
+            testId={`widget-settings-view-mode-${widget.id}`}
+            onClick={() => onUpdateSettings(widget.id, { ...settings, viewMode: nextViewMode })}
+          />
+          {renderReset()}
+        </>
+      );
+    }
+    case "activity-timeline": {
+      const settings = (widget.settings as ActivityTimelineSettings | undefined) ?? {
+        range: "7d",
+        viewMode: "distribution",
+        useSharedRange: true,
+      };
+      const nextRange = settings.range === "7d" ? "30d" : "7d";
+      const nextViewMode = settings.viewMode === "distribution" ? "intensity" : "distribution";
+
+      return (
+        <>
+          <ToolbarPillButton
+            label={settings.range}
+            tooltip={t("dashboard.widgets.toggleTrendRange")}
+            testId={`widget-settings-range-${widget.id}`}
+            onClick={() => onUpdateSettings(widget.id, { ...settings, range: nextRange })}
+          />
+          <ToolbarPillButton
+            label={t(`dashboard.widgets.settingsViewMode_${settings.viewMode}`)}
+            tooltip={t("dashboard.widgets.toggleActivityViewMode")}
+            testId={`widget-settings-view-mode-${widget.id}`}
+            onClick={() => onUpdateSettings(widget.id, { ...settings, viewMode: nextViewMode })}
+          />
+          <ToolbarPillButton
+            label={settings.useSharedRange
+              ? t("dashboard.widgets.settingsScope_shared")
+              : t("dashboard.widgets.settingsScope_local")}
+            tooltip={t("dashboard.widgets.toggleSharedRange")}
+            testId={`widget-settings-shared-range-${widget.id}`}
+            onClick={() => onUpdateSettings(widget.id, { ...settings, useSharedRange: !settings.useSharedRange })}
+          />
           {renderReset()}
         </>
       );
     }
     case "recent-activity-feed": {
-      const settings = (widget.settings as RecentActivityFeedSettings | undefined) ?? { limit: 5 };
+      const settings = (widget.settings as RecentActivityFeedSettings | undefined) ?? {
+        limit: 5,
+        useSharedRange: true,
+      };
       const nextLimit = settings.limit === 5 ? 10 : 5;
 
       return (
@@ -168,7 +232,15 @@ export function WidgetSettingsToolbar({
             label={t("dashboard.widgets.settingsItemLimit", { count: settings.limit })}
             tooltip={t("dashboard.widgets.toggleActivityLimit")}
             testId={`widget-settings-limit-${widget.id}`}
-            onClick={() => onUpdateSettings(widget.id, { limit: nextLimit })}
+            onClick={() => onUpdateSettings(widget.id, { ...settings, limit: nextLimit })}
+          />
+          <ToolbarPillButton
+            label={settings.useSharedRange
+              ? t("dashboard.widgets.settingsScope_shared")
+              : t("dashboard.widgets.settingsScope_local")}
+            tooltip={t("dashboard.widgets.toggleSharedRange")}
+            testId={`widget-settings-shared-range-${widget.id}`}
+            onClick={() => onUpdateSettings(widget.id, { ...settings, useSharedRange: !settings.useSharedRange })}
           />
           {renderReset()}
         </>

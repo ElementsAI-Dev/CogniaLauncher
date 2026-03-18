@@ -107,4 +107,33 @@ describe("QuickActions", () => {
 
     expect(mockPush).toHaveBeenCalledWith("/cache");
   });
+
+  it("navigates to settings from secondary actions", async () => {
+    const user = userEvent.setup();
+    render(<QuickActions />);
+
+    await user.click(screen.getByRole("button", { name: /more actions/i }));
+    await user.click(screen.getByText("Settings"));
+
+    expect(mockPush).toHaveBeenCalledWith("/settings");
+  });
+
+  it("navigates to logs from secondary actions", async () => {
+    const user = userEvent.setup();
+    render(<QuickActions />);
+
+    await user.click(screen.getByRole("button", { name: /more actions/i }));
+    await user.click(screen.getByText("View Logs"));
+
+    expect(mockPush).toHaveBeenCalledWith("/logs");
+  });
+
+  it("shows a spinning refresh icon while refresh is in progress", () => {
+    render(<QuickActions isRefreshing={true} />);
+
+    const refreshButton = screen.getByRole("button", { name: /refresh all/i });
+    const refreshIcon = refreshButton.querySelector("svg");
+
+    expect(refreshIcon).toHaveClass("animate-spin");
+  });
 });

@@ -9,7 +9,7 @@ jest.mock("@/components/providers/locale-provider", () => ({
 jest.mock("recharts", () => ({
   ResponsiveContainer: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   Area: () => null,
-  AreaChart: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  AreaChart: ({ children }: { children: React.ReactNode }) => <svg>{children}</svg>,
   XAxis: () => null,
   YAxis: () => null,
   CartesianGrid: () => null,
@@ -72,13 +72,54 @@ describe("ActivityChart", () => {
   });
 
   it("renders chart with data", () => {
-    render(<ActivityChart environments={mockEnvironments} packages={mockPackages} />);
+    render(
+      <ActivityChart
+        environments={mockEnvironments}
+        packages={mockPackages}
+        model={{
+          range: "30d",
+          viewMode: "intensity",
+          isUsingSharedRange: true,
+          points: [
+            { label: "2026-03-13", downloads: 1, packages: 2, toolbox: 0, total: 3 },
+            { label: "2026-03-14", downloads: 2, packages: 1, toolbox: 1, total: 4 },
+          ],
+          totals: { downloads: 3, packages: 3, toolbox: 1, total: 7 },
+          isLoading: false,
+          error: null,
+          lastUpdatedAt: "2026-03-14T12:00:00.000Z",
+          missingSources: [],
+          isPartial: false,
+        }}
+      />,
+    );
     expect(screen.getByText("dashboard.widgets.distributionOverview")).toBeInTheDocument();
     expect(screen.getByText("dashboard.widgets.distributionOverviewDesc")).toBeInTheDocument();
+    expect(screen.getByTestId("activity-chart-shared-scope")).toBeInTheDocument();
+    expect(screen.getByText("dashboard.widgets.settingsViewMode_intensity")).toBeInTheDocument();
   });
 
   it("does not show empty state message when data exists", () => {
-    render(<ActivityChart environments={mockEnvironments} packages={mockPackages} />);
+    render(
+      <ActivityChart
+        environments={mockEnvironments}
+        packages={mockPackages}
+        model={{
+          range: "30d",
+          viewMode: "intensity",
+          isUsingSharedRange: true,
+          points: [
+            { label: "2026-03-13", downloads: 1, packages: 2, toolbox: 0, total: 3 },
+          ],
+          totals: { downloads: 1, packages: 2, toolbox: 0, total: 3 },
+          isLoading: false,
+          error: null,
+          lastUpdatedAt: "2026-03-14T12:00:00.000Z",
+          missingSources: [],
+          isPartial: false,
+        }}
+      />,
+    );
     expect(screen.queryByText("dashboard.widgets.noActivity")).not.toBeInTheDocument();
   });
 

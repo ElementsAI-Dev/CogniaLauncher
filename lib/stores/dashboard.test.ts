@@ -5,6 +5,7 @@ import {
   canRemoveWidgetById,
   canToggleWidgetVisibilityById,
   getDefaultWidgets,
+  getDefaultWidgetSettings,
   getWidgetTypeCount,
   normalizeDashboardWidgets,
 } from './dashboard';
@@ -14,9 +15,10 @@ describe('useDashboardStore', () => {
   beforeEach(() => {
     useDashboardStore.setState({
       widgets: getDefaultWidgets(),
+      visualContext: { range: '7d' },
       isCustomizing: false,
       isEditMode: false,
-    });
+    } as never);
     localStorage.clear();
   });
 
@@ -56,11 +58,28 @@ describe('useDashboardStore', () => {
       expect(WIDGET_DEFINITIONS['workspace-trends'].defaultSettings).toEqual({
         range: '7d',
         metric: 'installations',
+        viewMode: 'single',
+        useSharedRange: true,
       });
       expect(WIDGET_DEFINITIONS['provider-health-matrix'].defaultSettings).toEqual({
         groupBy: 'provider',
         showHealthy: true,
+        viewMode: 'status-list',
       });
+    });
+
+    it('declares analytics metadata for advanced visual widgets', () => {
+      expect((WIDGET_DEFINITIONS['workspace-trends'] as unknown as { analytics?: unknown }).analytics).toEqual(
+        expect.objectContaining({
+          supportsSharedRange: true,
+          supportedModes: expect.arrayContaining(['single', 'comparison']),
+        }),
+      );
+      expect((WIDGET_DEFINITIONS['provider-health-matrix'] as unknown as { analytics?: unknown }).analytics).toEqual(
+        expect.objectContaining({
+          supportedModes: expect.arrayContaining(['status-list', 'heatmap']),
+        }),
+      );
     });
   });
 
@@ -85,6 +104,46 @@ describe('useDashboardStore', () => {
       const widgets = useDashboardStore.getState().widgets;
       expect(canRemoveWidgetById(widgets, 'missing')).toBe(false);
       expect(canToggleWidgetVisibilityById(widgets, 'missing')).toBe(false);
+    });
+
+    it('allows toggling a required widget back on when it is already hidden', () => {
+      const originalRequired = WIDGET_DEFINITIONS['welcome'].required;
+      WIDGET_DEFINITIONS['welcome'].required = true;
+      const widgets = getDefaultWidgets().map((widget) =>
+        widget.id === 'w-welcome' ? { ...widget, visible: false } : widget,
+      );
+      try {
+        expect(canToggleWidgetVisibilityById(widgets, 'w-welcome')).toBe(true);
+      } finally {
+        WIDGET_DEFINITIONS['welcome'].required = originalRequired;
+      }
+    });
+
+    it('prevents removing or hiding the last required widget instance', () => {
+      const originalRequired = WIDGET_DEFINITIONS['welcome'].required;
+      WIDGET_DEFINITIONS['welcome'].required = true;
+      const widgets = useDashboardStore.getState().widgets;
+      try {
+        expect(canRemoveWidgetById(widgets, 'w-welcome')).toBe(false);
+        expect(canToggleWidgetVisibilityById(widgets, 'w-welcome')).toBe(false);
+      } finally {
+        WIDGET_DEFINITIONS['welcome'].required = originalRequired;
+      }
+    });
+
+    it('allows removing or hiding required widget types only when duplicates exist', () => {
+      const originalRequired = WIDGET_DEFINITIONS['welcome'].required;
+      WIDGET_DEFINITIONS['welcome'].required = true;
+      const widgets = [
+        ...getDefaultWidgets(),
+        { ...getDefaultWidgets().find((widget) => widget.id === 'w-welcome')!, id: 'w-welcome-2' },
+      ];
+      try {
+        expect(canRemoveWidgetById(widgets, 'w-welcome')).toBe(true);
+        expect(canToggleWidgetVisibilityById(widgets, 'w-welcome')).toBe(true);
+      } finally {
+        WIDGET_DEFINITIONS['welcome'].required = originalRequired;
+      }
     });
   });
 
@@ -140,15 +199,208 @@ describe('useDashboardStore', () => {
       expect(normalized[0].settings).toEqual({
         range: '7d',
         metric: 'installations',
+        viewMode: 'single',
+        useSharedRange: true,
       });
       expect(normalized[1].settings).toEqual({
         groupBy: 'provider',
         showHealthy: true,
+        viewMode: 'status-list',
       });
+    });
+
+    it('preserves explicit true-branch settings for configurable widgets', () => {
+      const normalized = normalizeDashboardWidgets([
+        {
+          id: 'attention',
+          type: 'attention-center',
+          size: 'md',
+          visible: true,
+          settings: { maxItems: 5 },
+        },
+        {
+          id: 'trend',
+          type: 'workspace-trends',
+          size: 'lg',
+          visible: true,
+          settings: { range: '30d', metric: 'downloads', viewMode: 'comparison', useSharedRange: false },
+        },
+        {
+          id: 'matrix',
+          type: 'provider-health-matrix',
+          size: 'md',
+          visible: true,
+          settings: { groupBy: 'environment', showHealthy: false, viewMode: 'heatmap' },
+        },
+        {
+          id: 'activity',
+          type: 'activity-timeline',
+          size: 'md',
+          visible: true,
+          settings: { range: '30d', viewMode: 'intensity', useSharedRange: false },
+        },
+        {
+          id: 'recent',
+          type: 'recent-activity-feed',
+          size: 'md',
+          visible: true,
+          settings: { limit: 10, useSharedRange: false },
+        },
+      ]);
+
+      expect(normalized.find((widget) => widget.id === 'attention')?.settings).toEqual({ maxItems: 5 });
+      expect(normalized.find((widget) => widget.id === 'trend')?.settings).toEqual({
+        range: '30d',
+        metric: 'downloads',
+        viewMode: 'comparison',
+        useSharedRange: false,
+      });
+      expect(normalized.find((widget) => widget.id === 'matrix')?.settings).toEqual({
+        groupBy: 'environment',
+        showHealthy: false,
+        viewMode: 'heatmap',
+      });
+      expect(normalized.find((widget) => widget.id === 'activity')?.settings).toEqual({
+        range: '30d',
+        viewMode: 'intensity',
+        useSharedRange: false,
+      });
+      expect(normalized.find((widget) => widget.id === 'recent')?.settings).toEqual({
+        limit: 10,
+        useSharedRange: false,
+      });
+    });
+
+    it('returns undefined default settings for non-configurable widget types', () => {
+      expect(getDefaultWidgetSettings('quick-search')).toBeUndefined();
+    });
+
+    it('normalizes additional configurable widget settings and restores required widgets', () => {
+      const originalRequired = WIDGET_DEFINITIONS['welcome'].required;
+      WIDGET_DEFINITIONS['welcome'].required = true;
+      const normalized = normalizeDashboardWidgets([
+        {
+          id: 'attention',
+          type: 'attention-center',
+          size: 'md',
+          visible: true,
+          settings: { maxItems: 99 },
+        },
+        {
+          id: 'activity',
+          type: 'activity-timeline',
+          size: 'md',
+          visible: true,
+          settings: { range: '30d', viewMode: 'invalid', useSharedRange: 'nope' },
+        },
+        {
+          id: 'recent',
+          type: 'recent-activity-feed',
+          size: 'md',
+          visible: true,
+          settings: { limit: 99, useSharedRange: false },
+        },
+      ]);
+      try {
+        expect(normalized.find((widget) => widget.id === 'attention')?.settings).toEqual({
+          maxItems: 3,
+        });
+        expect(normalized.find((widget) => widget.id === 'activity')?.settings).toEqual({
+          range: '30d',
+          viewMode: 'distribution',
+          useSharedRange: true,
+        });
+        expect(normalized.find((widget) => widget.id === 'recent')?.settings).toEqual({
+          limit: 5,
+          useSharedRange: false,
+        });
+        expect(normalized.some((widget) => widget.type === 'welcome')).toBe(true);
+      } finally {
+        WIDGET_DEFINITIONS['welcome'].required = originalRequired;
+      }
+    });
+
+    it('handles triple duplicate ids and skips non-object entries during normalization', () => {
+      const normalized = normalizeDashboardWidgets([
+        null,
+        { type: 'environment-chart', size: 'md', visible: true },
+        { id: 'dup', type: 'environment-chart', size: 'md', visible: true },
+        { id: 'dup', type: 'environment-chart', size: 'md', visible: true },
+        { id: 'dup', type: 'environment-chart', size: 'md', visible: true },
+      ] as unknown as WidgetConfig[]);
+
+      expect(normalized.map((widget) => widget.id)).toEqual([
+        'w-environment-chart-restored-2',
+        'dup',
+        'dup-2',
+        'dup-3',
+      ]);
+    });
+
+    it('does not restore a required widget twice when it is already present', () => {
+      const originalRequired = WIDGET_DEFINITIONS['welcome'].required;
+      WIDGET_DEFINITIONS['welcome'].required = true;
+      try {
+        const normalized = normalizeDashboardWidgets([
+          { id: 'w-welcome', type: 'welcome', size: 'full', visible: true },
+          { id: 'custom', type: 'environment-chart', size: 'md', visible: true },
+        ] as WidgetConfig[]);
+
+        expect(normalized.filter((widget) => widget.type === 'welcome')).toHaveLength(1);
+      } finally {
+        WIDGET_DEFINITIONS['welcome'].required = originalRequired;
+      }
+    });
+
+    it('restores required widgets without default entries using generated fallback config', () => {
+      const originalRequired = WIDGET_DEFINITIONS['toolbox-favorites'].required;
+      WIDGET_DEFINITIONS['toolbox-favorites'].required = true;
+      try {
+        const normalized = normalizeDashboardWidgets([
+          { id: 'custom', type: 'environment-chart', size: 'md', visible: true },
+        ] as WidgetConfig[]);
+
+        expect(normalized).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              id: 'w-toolbox-favorites-required',
+              type: 'toolbox-favorites',
+              size: WIDGET_DEFINITIONS['toolbox-favorites'].defaultSize,
+              visible: WIDGET_DEFINITIONS['toolbox-favorites'].defaultVisible,
+            }),
+          ]),
+        );
+      } finally {
+        WIDGET_DEFINITIONS['toolbox-favorites'].required = originalRequired;
+      }
+    });
+
+    it('reuses injected default settings for widget types that are not explicitly normalized', () => {
+      const originalSettings = WIDGET_DEFINITIONS['quick-search'].defaultSettings;
+      WIDGET_DEFINITIONS['quick-search'].defaultSettings = { limit: 5, useSharedRange: true } as never;
+      try {
+        const normalized = normalizeDashboardWidgets([
+          { id: 'search', type: 'quick-search', size: 'full', visible: true, settings: { anything: true } },
+        ] as never);
+
+        expect(normalized[0]?.settings).toEqual({ limit: 5, useSharedRange: true });
+      } finally {
+        WIDGET_DEFINITIONS['quick-search'].defaultSettings = originalSettings;
+      }
     });
   });
 
   describe('actions', () => {
+    it('exposes a default shared visual context', () => {
+      const state = useDashboardStore.getState() as unknown as {
+        visualContext?: { range?: string };
+      };
+
+      expect(state.visualContext).toEqual({
+        range: '7d',
+      });
+    });
+
     it('exposes the canonical insight widgets in the latest default layout', () => {
       const widgets = getDefaultWidgets();
       expect(widgets.map((widget) => widget.type)).toEqual([
@@ -175,10 +427,13 @@ describe('useDashboardStore', () => {
       expect(widgets.find((widget) => widget.id === 'w-trends')?.settings).toEqual({
         range: '7d',
         metric: 'installations',
+        viewMode: 'single',
+        useSharedRange: true,
       });
       expect(widgets.find((widget) => widget.id === 'w-health-matrix')?.settings).toEqual({
         groupBy: 'provider',
         showHealthy: true,
+        viewMode: 'status-list',
       });
     });
 
@@ -191,6 +446,11 @@ describe('useDashboardStore', () => {
       const widgets = useDashboardStore.getState().widgets;
       expect(widgets[0].id).toBe('x');
       expect(widgets[1].id).toBe('x-2');
+    });
+
+    it('setWidgets falls back to default widgets for non-array payloads', () => {
+      useDashboardStore.getState().setWidgets({ broken: true } as never);
+      expect(useDashboardStore.getState().widgets).toEqual(getDefaultWidgets());
     });
 
     it('appends a new multi-instance widget with definition defaults', () => {
@@ -214,6 +474,8 @@ describe('useDashboardStore', () => {
       expect(widget?.settings).toEqual({
         range: '7d',
         metric: 'installations',
+        viewMode: 'single',
+        useSharedRange: true,
       });
     });
 
@@ -243,6 +505,31 @@ describe('useDashboardStore', () => {
       expect(widget?.size).toBe(WIDGET_DEFINITIONS['cache-usage'].defaultSize);
     });
 
+    it('normalizes invalid visibility and visual context updates', () => {
+      useDashboardStore.getState().updateWidget('w-cache', { visible: 'bad' as never });
+      useDashboardStore.getState().setVisualContext({ range: '30d' });
+      expect(useDashboardStore.getState().visualContext).toEqual({ range: '30d' });
+
+      useDashboardStore.getState().setVisualContext({ range: 'invalid' as never });
+      expect(useDashboardStore.getState().visualContext).toEqual({ range: '7d' });
+
+      const widget = useDashboardStore.getState().widgets.find((w) => w.id === 'w-cache');
+      expect(widget?.visible).toBe(true);
+    });
+
+    it('normalizes updated settings when a configurable widget receives malformed state', () => {
+      useDashboardStore.getState().updateWidget('w-trends', {
+        settings: { range: 'invalid', metric: 'updates', viewMode: 'comparison', useSharedRange: false } as never,
+      });
+
+      expect(useDashboardStore.getState().widgets.find((widget) => widget.id === 'w-trends')?.settings).toEqual({
+        range: '7d',
+        metric: 'updates',
+        viewMode: 'comparison',
+        useSharedRange: false,
+      });
+    });
+
     it('moves widget from one position to another', () => {
       const currentIndex = useDashboardStore.getState().widgets.findIndex((widget) => widget.id === 'w-wsl');
       useDashboardStore.getState().reorderWidgets(currentIndex, 0);
@@ -263,6 +550,20 @@ describe('useDashboardStore', () => {
 
       const widget = useDashboardStore.getState().widgets.find((w) => w.id === 'w-stats');
       expect(widget?.visible).toBe(false);
+    });
+
+    it('does not remove or hide required widgets when policy disallows it', () => {
+      const originalRequired = WIDGET_DEFINITIONS['welcome'].required;
+      WIDGET_DEFINITIONS['welcome'].required = true;
+      const before = useDashboardStore.getState().widgets;
+      try {
+        useDashboardStore.getState().removeWidget('w-welcome');
+        useDashboardStore.getState().toggleWidgetVisibility('w-welcome');
+
+        expect(useDashboardStore.getState().widgets).toEqual(before);
+      } finally {
+        WIDGET_DEFINITIONS['welcome'].required = originalRequired;
+      }
     });
 
     it('sets customization and edit mode flags', () => {
@@ -305,6 +606,29 @@ describe('useDashboardStore', () => {
       expect(migrated.widgets.some((w) => w.type === 'welcome')).toBe(true);
     });
 
+    it('treats malformed v1 widget payloads as empty legacy layouts', () => {
+      const persistConfig = (useDashboardStore as unknown as {
+        persist: { getOptions: () => { migrate: (state: unknown, version: number) => unknown } };
+      }).persist.getOptions();
+
+      const migrated = persistConfig.migrate({ widgets: { bad: true } }, 1) as { widgets: WidgetConfig[] };
+      expect(migrated.widgets).toEqual(getDefaultWidgets());
+    });
+
+    it('ignores malformed object entries during v1 migration and rehydrates missing legacy widgets', () => {
+      const persistConfig = (useDashboardStore as unknown as {
+        persist: { getOptions: () => { migrate: (state: unknown, version: number) => unknown } };
+      }).persist.getOptions();
+
+      const migrated = persistConfig.migrate({
+        widgets: [null, { type: 'stats-overview', size: 'full', visible: true }],
+      }, 1) as { widgets: WidgetConfig[] };
+
+      expect(migrated.widgets.some((widget) => widget.type === 'health-check')).toBe(true);
+      expect(migrated.widgets.some((widget) => widget.type === 'updates-available')).toBe(true);
+      expect(migrated.widgets.some((widget) => widget.type === 'welcome')).toBe(true);
+    });
+
     it('normalizes v3 payload during v4 migration', () => {
       const v3Widgets = [
         { id: 'dup', type: 'environment-chart', size: 'md', visible: true },
@@ -343,6 +667,8 @@ describe('useDashboardStore', () => {
       expect(migrated.widgets[0]?.settings).toEqual({
         range: '7d',
         metric: 'installations',
+        viewMode: 'single',
+        useSharedRange: true,
       });
     });
 
@@ -371,6 +697,19 @@ describe('useDashboardStore', () => {
 
       const migrated = persistConfig.migrate({}, 2) as { widgets: WidgetConfig[] };
       expect(migrated.widgets).toEqual(getDefaultWidgets());
+    });
+
+    it('normalizes null persisted state and invalid visual context during migration', () => {
+      const persistConfig = (useDashboardStore as unknown as {
+        persist: { getOptions: () => { migrate: (state: unknown, version: number) => unknown } };
+      }).persist.getOptions();
+
+      const migrated = persistConfig.migrate(null, 5) as {
+        widgets: WidgetConfig[];
+        visualContext: { range: string };
+      };
+      expect(migrated.widgets).toEqual(getDefaultWidgets());
+      expect(migrated.visualContext).toEqual({ range: '7d' });
     });
   });
 });

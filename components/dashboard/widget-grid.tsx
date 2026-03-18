@@ -53,6 +53,7 @@ import { Layers, Package, HardDrive, Activity } from "lucide-react";
 import type { EnvironmentInfo, InstalledPackage, CacheInfo, PlatformInfo, ProviderInfo } from "@/lib/tauri";
 import type {
   DashboardActivityModel,
+  DashboardActivityTimelineModel,
   DashboardAttentionModel,
   DashboardHealthMatrixModel,
   DashboardInsightsResult,
@@ -159,23 +160,32 @@ const EMPTY_ATTENTION_MODEL: DashboardAttentionModel = {
 const EMPTY_ACTIVITY_MODEL: DashboardActivityModel = {
   items: [],
   totalCount: 0,
+  range: "7d",
+  isUsingSharedRange: true,
   isLoading: false,
   error: null,
   lastUpdatedAt: null,
+  missingSources: [],
+  isPartial: false,
 };
 
 const EMPTY_TREND_MODEL: DashboardTrendModel = {
   range: "7d",
   metric: "installations",
+  viewMode: "single",
+  isUsingSharedRange: true,
   points: [],
   isLoading: false,
   error: null,
   lastUpdatedAt: null,
+  missingSources: [],
+  isPartial: false,
 };
 
 const EMPTY_HEALTH_MATRIX_MODEL: DashboardHealthMatrixModel = {
   groupBy: "provider",
   showHealthy: true,
+  viewMode: "status-list",
   cells: [],
   totals: {
     healthy: 0,
@@ -186,6 +196,26 @@ const EMPTY_HEALTH_MATRIX_MODEL: DashboardHealthMatrixModel = {
   isLoading: false,
   error: null,
   lastUpdatedAt: null,
+  missingSources: [],
+  isPartial: false,
+};
+
+const EMPTY_ACTIVITY_TIMELINE_MODEL: DashboardActivityTimelineModel = {
+  range: "7d",
+  viewMode: "distribution",
+  isUsingSharedRange: true,
+  points: [],
+  totals: {
+    downloads: 0,
+    packages: 0,
+    toolbox: 0,
+    total: 0,
+  },
+  isLoading: false,
+  error: null,
+  lastUpdatedAt: null,
+  missingSources: [],
+  isPartial: false,
 };
 
 const WIDGET_RENDERERS: Record<WidgetType, (p: WidgetRenderProps, widget: WidgetConfig) => ReactNode> = {
@@ -194,7 +224,13 @@ const WIDGET_RENDERERS: Record<WidgetType, (p: WidgetRenderProps, widget: Widget
   "environment-chart": (p) => <EnvironmentChart environments={p.environments} />,
   "package-chart": (p) => <PackageChart packages={p.packages} providers={p.providers} />,
   "cache-usage": (p) => <CacheChart cacheInfo={p.cacheInfo} />,
-  "activity-timeline": (p) => <ActivityChart environments={p.environments} packages={p.packages} />,
+  "activity-timeline": (p, widget) => (
+    <ActivityChart
+      environments={p.environments}
+      packages={p.packages}
+      model={p.insights.activityTimeline[widget.id] ?? EMPTY_ACTIVITY_TIMELINE_MODEL}
+    />
+  ),
   "system-info": (p) => (
     <SystemInfoWidget
       platformInfo={p.platformInfo}

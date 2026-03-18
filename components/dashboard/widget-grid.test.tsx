@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { WidgetGrid } from "./widget-grid";
 
 jest.mock("@/components/providers/locale-provider", () => ({
@@ -7,6 +7,14 @@ jest.mock("@/components/providers/locale-provider", () => ({
 
 let mockWidgets: Array<{ id: string; type: string; size: string; visible: boolean }> = [];
 let mockIsEditMode = false;
+let capturedOnDragEnd: ((event: { active: { id: string }; over: { id: string } | null }) => void) | undefined;
+const mockRemoveWidget = jest.fn();
+const mockToggleWidgetVisibility = jest.fn();
+const mockUpdateWidget = jest.fn();
+const mockReorderWidgets = jest.fn();
+const mockCanRemoveWidgetById = jest.fn(() => true);
+const mockCanToggleWidgetVisibilityById = jest.fn(() => true);
+const mockGetDefaultWidgetSettings = jest.fn((type: string) => ({ restored: type }));
 
 jest.mock("@/lib/stores/dashboard", () => ({
   useDashboardStore: (selector: (s: Record<string, unknown>) => unknown) =>
@@ -14,18 +22,28 @@ jest.mock("@/lib/stores/dashboard", () => ({
       widgets: mockWidgets,
       isEditMode: mockIsEditMode,
       addWidget: jest.fn(),
-      removeWidget: jest.fn(),
-      toggleWidgetVisibility: jest.fn(),
-      updateWidget: jest.fn(),
-      reorderWidgets: jest.fn(),
+      removeWidget: (...args: unknown[]) => mockRemoveWidget(...args),
+      toggleWidgetVisibility: (...args: unknown[]) => mockToggleWidgetVisibility(...args),
+      updateWidget: (...args: unknown[]) => mockUpdateWidget(...args),
+      reorderWidgets: (...args: unknown[]) => mockReorderWidgets(...args),
     }),
-  canRemoveWidgetById: () => true,
-  canToggleWidgetVisibilityById: () => true,
+  canRemoveWidgetById: (...args: unknown[]) => mockCanRemoveWidgetById(...args),
+  canToggleWidgetVisibilityById: (...args: unknown[]) => mockCanToggleWidgetVisibilityById(...args),
+  getDefaultWidgetSettings: (...args: unknown[]) => mockGetDefaultWidgetSettings(...args),
   WIDGET_DEFINITIONS: [],
 }));
 
 jest.mock("@dnd-kit/core", () => ({
-  DndContext: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  DndContext: ({
+    children,
+    onDragEnd,
+  }: {
+    children: React.ReactNode;
+    onDragEnd?: (event: { active: { id: string }; over: { id: string } | null }) => void;
+  }) => {
+    capturedOnDragEnd = onDragEnd;
+    return <div>{children}</div>;
+  },
   closestCenter: jest.fn(),
   KeyboardSensor: jest.fn(),
   PointerSensor: jest.fn(),
@@ -49,6 +67,38 @@ jest.mock("@dnd-kit/sortable", () => ({
 
 jest.mock("@dnd-kit/utilities", () => ({
   CSS: { Transform: { toString: () => "" } },
+}));
+
+jest.mock("./widget-wrapper", () => ({
+  WidgetWrapper: ({
+    widget,
+    children,
+    onRemove,
+    onToggleVisibility,
+    onResize,
+    toolbarExtras,
+  }: {
+    widget: { id: string };
+    children: React.ReactNode;
+    onRemove: (id: string) => void;
+    onToggleVisibility: (id: string) => void;
+    onResize: (id: string, size: "sm" | "md" | "lg" | "full") => void;
+    toolbarExtras?: React.ReactNode;
+  }) => (
+    <div data-testid={`widget-wrapper-${widget.id}`}>
+      <button data-testid={`widget-remove-${widget.id}`} onClick={() => onRemove(widget.id)}>
+        remove
+      </button>
+      <button data-testid={`widget-toggle-${widget.id}`} onClick={() => onToggleVisibility(widget.id)}>
+        toggle
+      </button>
+      <button data-testid={`widget-resize-${widget.id}`} onClick={() => onResize(widget.id, "lg")}>
+        resize
+      </button>
+      {toolbarExtras}
+      {children}
+    </div>
+  ),
 }));
 
 // Mock all widget sub-components to simplify rendering
@@ -151,6 +201,7 @@ const defaultProps = {
     recentActivityFeed: {},
     workspaceTrends: {},
     providerHealthMatrix: {},
+    activityTimeline: {},
   },
 };
 
@@ -158,6 +209,10 @@ describe("WidgetGrid", () => {
   beforeEach(() => {
     mockWidgets = [];
     mockIsEditMode = false;
+    capturedOnDragEnd = undefined;
+    jest.clearAllMocks();
+    mockCanRemoveWidgetById.mockReturnValue(true);
+    mockCanToggleWidgetVisibilityById.mockReturnValue(true);
   });
 
   it("renders without crashing with no widgets", () => {
@@ -294,5 +349,109 @@ describe("WidgetGrid", () => {
     expect(screen.getByTestId("quick-search")).toBeInTheDocument();
     expect(screen.getByTestId("health-check")).toBeInTheDocument();
     expect(screen.getByTestId("wsl-status")).toBeInTheDocument();
+  });
+
+  it("wires drag end to reorder widgets with source and target indices", () => {
+    mockWidgets = [
+      { id: "w-a", type: "quick-search", size: "full", visible: true },
+      { id: "w-b", type: "health-check", size: "md", visible: true },
+    ];
+
+    render(<WidgetGrid {...defaultProps} />);
+
+    capturedOnDragEnd?.({
+      active: { id: "w-b" },
+      over: { id: "w-a" },
+    });
+
+    expect(mockReorderWidgets).toHaveBeenCalledWith(1, 0);
+  });
+
+  it("updates widget size when resize wiring is triggered", () => {
+    mockWidgets = [{ id: "w-size", type: "health-check", size: "md", visible: true }];
+
+    render(<WidgetGrid {...defaultProps} />);
+
+    fireEvent.click(screen.getByTestId("widget-resize-w-size"));
+
+    expect(mockUpdateWidget).toHaveBeenCalledWith("w-size", { size: "lg" });
+  });
+
+  it("updates widget settings from toolbar actions", () => {
+    mockWidgets = [
+      {
+        id: "w-trends",
+        type: "workspace-trends",
+        size: "lg",
+        visible: true,
+        settings: {
+          range: "7d",
+          metric: "installations",
+          viewMode: "single",
+          useSharedRange: true,
+        },
+      },
+    ];
+
+    render(<WidgetGrid {...defaultProps} />);
+
+    fireEvent.click(screen.getByTestId("widget-settings-range-w-trends"));
+
+    expect(mockUpdateWidget).toHaveBeenCalledWith("w-trends", {
+      settings: {
+        range: "30d",
+        metric: "installations",
+        viewMode: "single",
+        useSharedRange: true,
+      },
+    });
+  });
+
+  it("resets widget settings through the toolbar using canonical defaults", () => {
+    mockWidgets = [
+      {
+        id: "w-trends",
+        type: "workspace-trends",
+        size: "lg",
+        visible: true,
+        settings: {
+          range: "30d",
+          metric: "downloads",
+          viewMode: "comparison",
+          useSharedRange: false,
+        },
+      },
+    ];
+
+    render(<WidgetGrid {...defaultProps} />);
+
+    fireEvent.click(screen.getByTestId("widget-settings-reset-w-trends"));
+
+    expect(mockGetDefaultWidgetSettings).toHaveBeenCalledWith("workspace-trends");
+    expect(mockUpdateWidget).toHaveBeenCalledWith("w-trends", {
+      settings: { restored: "workspace-trends" },
+    });
+  });
+
+  it("does not remove widgets when policy forbids the operation", () => {
+    mockCanRemoveWidgetById.mockReturnValue(false);
+    mockWidgets = [{ id: "w-guard", type: "health-check", size: "md", visible: true }];
+
+    render(<WidgetGrid {...defaultProps} />);
+
+    fireEvent.click(screen.getByTestId("widget-remove-w-guard"));
+
+    expect(mockRemoveWidget).not.toHaveBeenCalled();
+  });
+
+  it("does not toggle widget visibility when policy forbids the operation", () => {
+    mockCanToggleWidgetVisibilityById.mockReturnValue(false);
+    mockWidgets = [{ id: "w-guard", type: "health-check", size: "md", visible: true }];
+
+    render(<WidgetGrid {...defaultProps} />);
+
+    fireEvent.click(screen.getByTestId("widget-toggle-w-guard"));
+
+    expect(mockToggleWidgetVisibility).not.toHaveBeenCalled();
   });
 });

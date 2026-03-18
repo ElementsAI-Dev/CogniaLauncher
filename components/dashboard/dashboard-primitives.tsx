@@ -135,3 +135,45 @@ export function DashboardStatusBadge({
     />
   );
 }
+
+export function DashboardMetaRow({
+  className,
+  ...props
+}: React.ComponentProps<"div">) {
+  return (
+    <div
+      className={cn("flex flex-wrap items-center gap-2 text-xs text-muted-foreground", className)}
+      {...props}
+    />
+  );
+}
+
+interface DashboardLegendListProps extends React.ComponentProps<"div"> {
+  items: Array<{
+    key: string;
+    label: string;
+    value?: React.ReactNode;
+    tone?: DashboardBadgeTone;
+  }>;
+}
+
+export function DashboardLegendList({
+  className,
+  items,
+  ...props
+}: DashboardLegendListProps) {
+  return (
+    <div className={cn("flex flex-wrap gap-2", className)} {...props}>
+      {items.map((item) => (
+        <div key={item.key} className="flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs">
+          <DashboardStatusBadge tone={item.tone ?? "default"}>
+            {item.label}
+          </DashboardStatusBadge>
+          {item.value !== undefined ? (
+            <span className="font-medium text-foreground">{item.value}</span>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
+}

@@ -2,6 +2,7 @@ import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Layers, Package, Settings, Wrench } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
+import { getDesktopAction } from '@/lib/desktop-actions';
 import {
   getSearchHistory,
   saveSearchHistory,
@@ -12,6 +13,7 @@ import type { SearchResult } from '@/types/dashboard';
 import type { EnvironmentInfo, InstalledPackage } from '@/lib/tauri';
 import { createElement } from 'react';
 import { LanguageIcon } from '@/components/provider-management/provider-icon';
+import { useDesktopActionExecutor } from '@/hooks/use-desktop-action-executor';
 import { useToolbox } from '@/hooks/use-toolbox';
 
 interface UseDashboardSearchParams {
@@ -46,6 +48,7 @@ export function useDashboardSearch({
 }: UseDashboardSearchParams): UseDashboardSearchReturn {
   const router = useRouter();
   const { t } = useLocale();
+  const executeDesktopAction = useDesktopActionExecutor();
 
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -53,30 +56,36 @@ export function useDashboardSearch({
   const { allTools } = useToolbox();
 
   const quickActions: SearchResult[] = useMemo(
-    () => [
-      {
-        type: "action",
-        id: "add-environment",
-        title: t("dashboard.quickActions.addEnvironment"),
-        icon: createElement(Layers, { className: "h-4 w-4" }),
-        href: "/environments",
-      },
-      {
-        type: "action",
-        id: "install-package",
-        title: t("dashboard.quickActions.installPackage"),
-        icon: createElement(Package, { className: "h-4 w-4" }),
-        href: "/packages",
-      },
-      {
-        type: "action",
-        id: "settings",
-        title: t("dashboard.quickActions.openSettings"),
-        icon: createElement(Settings, { className: "h-4 w-4" }),
-        href: "/settings",
-      },
-    ],
-    [t],
+    () => {
+      const openSettingsAction = getDesktopAction("open_settings");
+
+      return [
+        {
+          type: "action",
+          id: "add-environment",
+          title: t("dashboard.quickActions.addEnvironment"),
+          icon: createElement(Layers, { className: "h-4 w-4" }),
+          href: "/environments",
+        },
+        {
+          type: "action",
+          id: "install-package",
+          title: t("dashboard.quickActions.installPackage"),
+          icon: createElement(Package, { className: "h-4 w-4" }),
+          href: "/packages",
+        },
+        {
+          type: "action",
+          id: openSettingsAction.id,
+          title: t(openSettingsAction.titleKey),
+          icon: createElement(Settings, { className: "h-4 w-4" }),
+          action: () => {
+            void executeDesktopAction("open_settings");
+          },
+        },
+      ];
+    },
+    [executeDesktopAction, t],
   );
 
   const envResults = useMemo((): SearchResult[] => {

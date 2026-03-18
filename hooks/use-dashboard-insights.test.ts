@@ -2,13 +2,14 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { useDashboardInsights } from "./use-dashboard-insights";
 
 let mockWidgets: Array<Record<string, unknown>> = [];
+let mockVisualContext: Record<string, unknown> = { range: "7d" };
 const mockUseDownloads = jest.fn();
 const mockGetInstallHistory = jest.fn();
 const mockCheckAll = jest.fn(() => Promise.resolve());
 
 jest.mock("@/lib/stores/dashboard", () => ({
   useDashboardStore: (selector: (state: Record<string, unknown>) => unknown) =>
-    selector({ widgets: mockWidgets }),
+    selector({ widgets: mockWidgets, visualContext: mockVisualContext }),
 }));
 
 jest.mock("@/hooks/use-downloads", () => ({
@@ -131,6 +132,7 @@ describe("useDashboardInsights", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockWidgets = [];
+    mockVisualContext = { range: "7d" };
     mockUseDownloads.mockReturnValue({
       history: [],
       isLoading: false,
@@ -172,23 +174,36 @@ describe("useDashboardInsights", () => {
         type: "workspace-trends",
         visible: true,
         size: "lg",
-        settings: { range: "7d", metric: "downloads" },
+        settings: {
+          range: "7d",
+          metric: "downloads",
+          viewMode: "comparison",
+          useSharedRange: true,
+        },
       },
       {
         id: "w-activity",
         type: "recent-activity-feed",
         visible: true,
         size: "md",
-        settings: { limit: 5 },
+        settings: { limit: 5, useSharedRange: true },
       },
       {
         id: "w-health-matrix",
         type: "provider-health-matrix",
         visible: true,
         size: "md",
-        settings: { groupBy: "provider", showHealthy: true },
+        settings: { groupBy: "provider", showHealthy: true, viewMode: "heatmap" },
+      },
+      {
+        id: "w-activity-timeline",
+        type: "activity-timeline",
+        visible: true,
+        size: "md",
+        settings: { range: "7d", viewMode: "intensity", useSharedRange: true },
       },
     ];
+    mockVisualContext = { range: "30d" };
 
     mockUseDownloads.mockReturnValue({
       history: [
@@ -208,6 +223,15 @@ describe("useDashboardInsights", () => {
           provider: "mirror",
           startedAt: "2026-03-14T11:10:00.000Z",
           completedAt: "2026-03-14T11:12:00.000Z",
+          error: null,
+        },
+        {
+          id: "dl-3",
+          filename: "bun.zip",
+          status: "completed",
+          provider: "mirror",
+          startedAt: "2026-03-03T11:10:00.000Z",
+          completedAt: "2026-03-03T11:12:00.000Z",
           error: null,
         },
       ],
@@ -231,6 +255,16 @@ describe("useDashboardInsights", () => {
         version: "10.0.0",
         action: "update",
         timestamp: "2026-03-13T08:00:00.000Z",
+        provider: "npm",
+        success: true,
+        error_message: null,
+      },
+      {
+        id: "pkg-3",
+        name: "vite",
+        version: "6.0.0",
+        action: "install",
+        timestamp: "2026-03-05T10:00:00.000Z",
         provider: "npm",
         success: true,
         error_message: null,
@@ -273,8 +307,16 @@ describe("useDashboardInsights", () => {
     expect(result.current.recentActivityFeed["w-activity"].items[0]?.description).toBe("checksum mismatch");
     expect(result.current.recentActivityFeed["w-activity"].items[1]?.description).toBe("Translated download completed");
     expect(result.current.workspaceTrends["w-trends"].metric).toBe("downloads");
+    expect(result.current.workspaceTrends["w-trends"].viewMode).toBe("comparison");
+    expect(result.current.workspaceTrends["w-trends"].range).toBe("30d");
     expect(result.current.workspaceTrends["w-trends"].points.length).toBeGreaterThan(0);
+    expect(result.current.workspaceTrends["w-trends"].missingSources).toEqual([]);
+    expect(result.current.workspaceTrends["w-trends"].isPartial).toBe(false);
     expect(result.current.providerHealthMatrix["w-health-matrix"].totals.warning).toBe(1);
+    expect(result.current.providerHealthMatrix["w-health-matrix"].viewMode).toBe("heatmap");
+    expect(result.current.activityTimeline["w-activity-timeline"].viewMode).toBe("intensity");
+    expect(result.current.activityTimeline["w-activity-timeline"].range).toBe("30d");
+    expect(result.current.activityTimeline["w-activity-timeline"].points.length).toBeGreaterThan(0);
   });
 
   it("re-fetches secondary insight data when the refresh key changes", async () => {
@@ -291,14 +333,14 @@ describe("useDashboardInsights", () => {
         type: "recent-activity-feed",
         visible: true,
         size: "md",
-        settings: { limit: 5 },
+        settings: { limit: 5, useSharedRange: true },
       },
       {
         id: "w-health-matrix",
         type: "provider-health-matrix",
         visible: true,
         size: "md",
-        settings: { groupBy: "provider", showHealthy: true },
+        settings: { groupBy: "provider", showHealthy: true, viewMode: "status-list" },
       },
     ];
     mockUseDownloads.mockReturnValue({
@@ -342,5 +384,119 @@ describe("useDashboardInsights", () => {
       expect(mockGetInstallHistory).toHaveBeenCalledTimes(1);
       expect(mockCheckAll).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it("keeps toolbox activity inside the default shared 7-day window", async () => {
+    mockWidgets = [
+      {
+        id: "w-activity",
+        type: "recent-activity-feed",
+        visible: true,
+        size: "md",
+        settings: { limit: 5, useSharedRange: true },
+      },
+      {
+        id: "w-timeline",
+        type: "activity-timeline",
+        visible: true,
+        size: "md",
+        settings: { range: "7d", viewMode: "distribution", useSharedRange: true },
+      },
+    ];
+    mockVisualContext = { range: "7d" };
+    mockUseDownloads.mockReturnValue({
+      history: [],
+      isLoading: false,
+      error: null,
+    });
+    mockGetInstallHistory.mockResolvedValue([]);
+
+    const { result } = renderHook(() =>
+      useDashboardInsights({
+        environments: [],
+        packages: [],
+        now: new Date("2026-03-14T12:00:00.000Z"),
+        t: mockT,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(mockGetInstallHistory).toHaveBeenCalledWith({ limit: 30 });
+    });
+
+    expect(result.current.recentActivityFeed["w-activity"].items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "tool:builtin:uuid-generator",
+          source: "toolbox",
+        }),
+      ]),
+    );
+    expect(result.current.activityTimeline["w-timeline"].totals.toolbox).toBe(1);
+  });
+
+  it("re-aggregates for shared range changes without re-fetching secondary sources", async () => {
+    mockWidgets = [
+      {
+        id: "w-trends",
+        type: "workspace-trends",
+        visible: true,
+        size: "lg",
+        settings: {
+          range: "7d",
+          metric: "installations",
+          viewMode: "comparison",
+          useSharedRange: true,
+        },
+      },
+    ];
+    mockUseDownloads.mockReturnValue({
+      history: [],
+      isLoading: false,
+      error: null,
+    });
+    mockGetInstallHistory.mockResolvedValue([
+      {
+        id: "pkg-1",
+        name: "typescript",
+        version: "5.9.0",
+        action: "install",
+        timestamp: "2026-03-06T10:00:00.000Z",
+        provider: "npm",
+        success: true,
+        error_message: null,
+      },
+    ]);
+
+    const options = {
+      environments: [],
+      now: new Date("2026-03-14T12:00:00.000Z"),
+      t: mockT,
+      refreshKey: 0,
+    };
+
+    const { rerender, result } = renderHook(
+      ({ currentOptions }) => useDashboardInsights(currentOptions),
+      {
+        initialProps: { currentOptions: options },
+      },
+    );
+
+    await waitFor(() => {
+      expect(mockGetInstallHistory).toHaveBeenCalledTimes(1);
+    });
+    expect(result.current.workspaceTrends["w-trends"].range).toBe("7d");
+
+    mockGetInstallHistory.mockClear();
+    mockVisualContext = { range: "30d" };
+
+    rerender({
+      currentOptions: options,
+    });
+
+    await waitFor(() => {
+      expect(result.current.workspaceTrends["w-trends"].range).toBe("30d");
+    });
+    expect(mockGetInstallHistory).not.toHaveBeenCalled();
   });
 });

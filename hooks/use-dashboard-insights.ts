@@ -15,6 +15,7 @@ import type {
   SystemHealthResult,
 } from "@/types/tauri";
 import type {
+  ActivityTimelineSettings,
   AttentionCenterSettings,
   ProviderHealthGroupBy,
   ProviderHealthMatrixSettings,
@@ -56,23 +57,34 @@ export interface DashboardActivityItem {
 export interface DashboardActivityModel {
   items: DashboardActivityItem[];
   totalCount: number;
+  range: WidgetRange;
+  isUsingSharedRange: boolean;
   isLoading: boolean;
   error: string | null;
   lastUpdatedAt: string | null;
+  missingSources: string[];
+  isPartial: boolean;
 }
 
 export interface DashboardTrendPoint {
   label: string;
   value: number;
+  installations?: number;
+  downloads?: number;
+  updates?: number;
 }
 
 export interface DashboardTrendModel {
   range: WidgetRange;
   metric: WorkspaceTrendMetric;
+  viewMode: "single" | "comparison";
+  isUsingSharedRange: boolean;
   points: DashboardTrendPoint[];
   isLoading: boolean;
   error: string | null;
   lastUpdatedAt: string | null;
+  missingSources: string[];
+  isPartial: boolean;
 }
 
 export interface DashboardHealthCell {
@@ -87,11 +99,40 @@ export interface DashboardHealthCell {
 export interface DashboardHealthMatrixModel {
   groupBy: ProviderHealthGroupBy;
   showHealthy: boolean;
+  viewMode: "status-list" | "heatmap";
   cells: DashboardHealthCell[];
   totals: Record<HealthStatus, number>;
   isLoading: boolean;
   error: string | null;
   lastUpdatedAt: string | null;
+  missingSources: string[];
+  isPartial: boolean;
+}
+
+export interface DashboardActivityTimelinePoint {
+  label: string;
+  downloads: number;
+  packages: number;
+  toolbox: number;
+  total: number;
+}
+
+export interface DashboardActivityTimelineModel {
+  range: WidgetRange;
+  viewMode: "distribution" | "intensity";
+  isUsingSharedRange: boolean;
+  points: DashboardActivityTimelinePoint[];
+  totals: {
+    downloads: number;
+    packages: number;
+    toolbox: number;
+    total: number;
+  };
+  isLoading: boolean;
+  error: string | null;
+  lastUpdatedAt: string | null;
+  missingSources: string[];
+  isPartial: boolean;
 }
 
 interface UseDashboardInsightsOptions {
@@ -106,6 +147,7 @@ export interface DashboardInsightsResult {
   recentActivityFeed: Record<string, DashboardActivityModel>;
   workspaceTrends: Record<string, DashboardTrendModel>;
   providerHealthMatrix: Record<string, DashboardHealthMatrixModel>;
+  activityTimeline: Record<string, DashboardActivityTimelineModel>;
 }
 
 interface InstallHistoryState {
@@ -142,6 +184,7 @@ export function useDashboardInsights({
   t,
 }: UseDashboardInsightsOptions): DashboardInsightsResult {
   const widgets = useDashboardStore((state) => state.widgets) as WidgetConfig[];
+  const visualContext = useDashboardStore((state) => state.visualContext) as { range: WidgetRange };
   const visibleWidgets = useMemo(
     () => widgets.filter((widget) => widget.visible),
     [widgets],
@@ -153,10 +196,13 @@ export function useDashboardInsights({
   const needsDownloadHistory = visibleWidgets.some((widget) =>
     widget.type === "attention-center" ||
     widget.type === "workspace-trends" ||
-    widget.type === "recent-activity-feed",
+    widget.type === "recent-activity-feed" ||
+    widget.type === "activity-timeline",
   );
   const needsInstallHistory = visibleWidgets.some((widget) =>
-    widget.type === "workspace-trends" || widget.type === "recent-activity-feed",
+    widget.type === "workspace-trends" ||
+    widget.type === "recent-activity-feed" ||
+    widget.type === "activity-timeline",
   );
 
   const downloads = useDownloads({ enableRuntime: needsDownloadHistory });
@@ -296,15 +342,30 @@ export function useDashboardInsights({
     const entries = visibleWidgets
       .filter((widget) => widget.type === "recent-activity-feed")
       .map((widget) => {
-        const settings = (widget.settings as RecentActivityFeedSettings | undefined) ?? { limit: 5 };
+        const settings = (widget.settings as RecentActivityFeedSettings | undefined) ?? {
+          limit: 5,
+          useSharedRange: true,
+        };
+        const activeRange = settings.useSharedRange ? visualContext.range : "7d";
+        const filteredItems = filterItemsByRange(activityItems, activeRange, now);
+        const missingSources = collectMissingSources({
+          downloadsError: downloads.error,
+          installHistoryError: installHistoryState.error,
+          needsDownloads: true,
+          needsInstallHistory: true,
+        });
         return [
           widget.id,
           {
-            items: activityItems.slice(0, settings.limit),
-            totalCount: activityItems.length,
+            items: filteredItems.slice(0, settings.limit),
+            totalCount: filteredItems.length,
+            range: activeRange,
+            isUsingSharedRange: settings.useSharedRange,
             isLoading: downloads.isLoading || installHistoryState.loading,
             error: downloads.error ?? installHistoryState.error,
-            lastUpdatedAt: latestActivityTimestamp,
+            lastUpdatedAt: getLatestTimestamp(filteredItems.map((item) => item.timestamp)),
+            missingSources,
+            isPartial: missingSources.length > 0 && filteredItems.length > 0,
           } satisfies DashboardActivityModel,
         ] as const;
       });
@@ -316,7 +377,9 @@ export function useDashboardInsights({
     downloads.isLoading,
     installHistoryState.error,
     installHistoryState.loading,
+    now,
     latestActivityTimestamp,
+    visualContext.range,
     visibleWidgets,
   ]);
 
@@ -327,26 +390,41 @@ export function useDashboardInsights({
         const settings = (widget.settings as WorkspaceTrendsSettings | undefined) ?? {
           range: "7d",
           metric: "installations",
+          viewMode: "single",
+          useSharedRange: true,
         };
+        const activeRange = settings.useSharedRange ? visualContext.range : settings.range;
+        const points = buildTrendPoints({
+          range: activeRange,
+          metric: settings.metric,
+          installHistory: installHistoryState.items,
+          downloadHistory: downloads.history,
+          now,
+          viewMode: settings.viewMode,
+        });
+        const missingSources = collectTrendMissingSources({
+          metric: settings.metric,
+          viewMode: settings.viewMode,
+          downloadsError: downloads.error,
+          installHistoryError: installHistoryState.error,
+        });
 
         return [
           widget.id,
           {
-            range: settings.range,
+            range: activeRange,
             metric: settings.metric,
-            points: buildTrendPoints({
-              range: settings.range,
-              metric: settings.metric,
-              installHistory: installHistoryState.items,
-              downloadHistory: downloads.history,
-              now,
-            }),
+            viewMode: settings.viewMode,
+            isUsingSharedRange: settings.useSharedRange,
+            points,
             isLoading: downloads.isLoading || installHistoryState.loading,
             error: downloads.error ?? installHistoryState.error,
             lastUpdatedAt: getLatestTimestamp([
               ...installHistoryState.items.map((entry) => entry.timestamp),
               ...downloads.history.map((record) => record.completedAt),
             ]),
+            missingSources,
+            isPartial: missingSources.length > 0 && points.length > 0,
           } satisfies DashboardTrendModel,
         ] as const;
       });
@@ -360,6 +438,7 @@ export function useDashboardInsights({
     installHistoryState.items,
     installHistoryState.loading,
     now,
+    visualContext.range,
     visibleWidgets,
   ]);
 
@@ -370,19 +449,24 @@ export function useDashboardInsights({
         const settings = (widget.settings as ProviderHealthMatrixSettings | undefined) ?? {
           groupBy: "provider",
           showHealthy: true,
+          viewMode: "status-list",
         };
         const matrix = buildProviderHealthMatrix(systemHealth, settings);
+        const missingSources = healthError ? ["health"] : [];
 
         return [
           widget.id,
           {
             groupBy: settings.groupBy,
             showHealthy: settings.showHealthy,
+            viewMode: settings.viewMode,
             cells: matrix.cells,
             totals: matrix.totals,
             isLoading: healthLoading,
             error: healthError,
             lastUpdatedAt: systemHealth?.checked_at ?? null,
+            missingSources,
+            isPartial: missingSources.length > 0 && matrix.cells.length > 0,
           } satisfies DashboardHealthMatrixModel,
         ] as const;
       });
@@ -390,11 +474,72 @@ export function useDashboardInsights({
     return Object.fromEntries(entries);
   }, [healthError, healthLoading, systemHealth, visibleWidgets]);
 
+  const activityTimeline = useMemo(() => {
+    const entries = visibleWidgets
+      .filter((widget) => widget.type === "activity-timeline")
+      .map((widget) => {
+        const settings = (widget.settings as ActivityTimelineSettings | undefined) ?? {
+          range: "7d",
+          viewMode: "distribution",
+          useSharedRange: true,
+        };
+        const activeRange = settings.useSharedRange ? visualContext.range : settings.range;
+        const points = buildActivityTimelinePoints({
+          range: activeRange,
+          activityItems,
+          now,
+        });
+        const totals = points.reduce(
+          (acc, point) => ({
+            downloads: acc.downloads + point.downloads,
+            packages: acc.packages + point.packages,
+            toolbox: acc.toolbox + point.toolbox,
+            total: acc.total + point.total,
+          }),
+          { downloads: 0, packages: 0, toolbox: 0, total: 0 },
+        );
+        const missingSources = collectMissingSources({
+          downloadsError: downloads.error,
+          installHistoryError: installHistoryState.error,
+          needsDownloads: true,
+          needsInstallHistory: true,
+        });
+
+        return [
+          widget.id,
+          {
+            range: activeRange,
+            viewMode: settings.viewMode,
+            isUsingSharedRange: settings.useSharedRange,
+            points,
+            totals,
+            isLoading: downloads.isLoading || installHistoryState.loading,
+            error: downloads.error ?? installHistoryState.error,
+            lastUpdatedAt: getLatestTimestamp(points.map((point) => point.label)),
+            missingSources,
+            isPartial: missingSources.length > 0 && totals.total > 0,
+          } satisfies DashboardActivityTimelineModel,
+        ] as const;
+      });
+
+    return Object.fromEntries(entries);
+  }, [
+    activityItems,
+    downloads.error,
+    downloads.isLoading,
+    installHistoryState.error,
+    installHistoryState.loading,
+    now,
+    visualContext.range,
+    visibleWidgets,
+  ]);
+
   return {
     attentionCenter,
     recentActivityFeed,
     workspaceTrends,
     providerHealthMatrix,
+    activityTimeline,
   };
 }
 
@@ -533,7 +678,11 @@ function buildRecentActivityItems({
         "dashboard.widgets.insightActivityToolboxRecent",
         "Recently used tool",
       ),
-      timestamp: new Date(now.getTime() - (7 * 24 * 60 * 60 * 1000) - index * 1000).toISOString(),
+      // Toolbox recency only preserves ordering, so anchor synthetic timestamps
+      // inside the default shared range without outranking real near-term events.
+      timestamp: new Date(
+        now.getTime() - (6 * 24 * 60 * 60 * 1000) - index * 1000,
+      ).toISOString(),
       href: "/toolbox",
     })),
   ];
@@ -549,40 +698,88 @@ function buildTrendPoints({
   installHistory,
   downloadHistory,
   now,
+  viewMode,
 }: {
   range: WidgetRange;
   metric: WorkspaceTrendMetric;
   installHistory: InstallHistoryEntry[];
   downloadHistory: DownloadHistoryRecord[];
   now: Date;
+  viewMode: "single" | "comparison";
 }): DashboardTrendPoint[] {
+  const buckets = buildTrendBuckets({
+    range,
+    installHistory,
+    downloadHistory,
+    now,
+  });
+
+  return buckets.map((bucket) => ({
+    label: bucket.label,
+    value: metric === "downloads"
+      ? bucket.downloads
+      : metric === "updates"
+        ? bucket.updates
+        : bucket.installations,
+    installations: viewMode === "comparison" ? bucket.installations : undefined,
+    downloads: viewMode === "comparison" ? bucket.downloads : undefined,
+    updates: viewMode === "comparison" ? bucket.updates : undefined,
+  }));
+}
+
+function buildTrendBuckets({
+  range,
+  installHistory,
+  downloadHistory,
+  now,
+}: {
+  range: WidgetRange;
+  installHistory: InstallHistoryEntry[];
+  downloadHistory: DownloadHistoryRecord[];
+  now: Date;
+}): Array<{
+  label: string;
+  installations: number;
+  downloads: number;
+  updates: number;
+}> {
   const dayCount = range === "30d" ? 30 : 7;
-  const buckets = new Map<string, number>();
+  const buckets = new Map<string, { installations: number; downloads: number; updates: number }>();
 
   for (let offset = dayCount - 1; offset >= 0; offset -= 1) {
     const day = new Date(now);
     day.setUTCHours(0, 0, 0, 0);
     day.setUTCDate(day.getUTCDate() - offset);
-    buckets.set(day.toISOString().slice(0, 10), 0);
+    buckets.set(day.toISOString().slice(0, 10), {
+      installations: 0,
+      downloads: 0,
+      updates: 0,
+    });
   }
 
-  if (metric === "downloads") {
-    for (const record of downloadHistory) {
-      const key = record.completedAt.slice(0, 10);
-      if (!buckets.has(key)) continue;
-      buckets.set(key, (buckets.get(key) ?? 0) + 1);
+  for (const record of downloadHistory) {
+    const key = record.completedAt.slice(0, 10);
+    const bucket = buckets.get(key);
+    if (!bucket) continue;
+    bucket.downloads += 1;
+  }
+
+  for (const entry of installHistory) {
+    const key = entry.timestamp.slice(0, 10);
+    const bucket = buckets.get(key);
+    if (!bucket) continue;
+    if (entry.action === "install") {
+      bucket.installations += 1;
     }
-  } else {
-    const expectedAction = metric === "updates" ? "update" : "install";
-    for (const entry of installHistory) {
-      if (entry.action !== expectedAction) continue;
-      const key = entry.timestamp.slice(0, 10);
-      if (!buckets.has(key)) continue;
-      buckets.set(key, (buckets.get(key) ?? 0) + 1);
+    if (entry.action === "update") {
+      bucket.updates += 1;
     }
   }
 
-  return Array.from(buckets.entries()).map(([label, value]) => ({ label, value }));
+  return Array.from(buckets.entries()).map(([label, value]) => ({
+    label,
+    ...value,
+  }));
 }
 
 function buildProviderHealthMatrix(
@@ -619,6 +816,109 @@ function buildProviderHealthMatrix(
     cells: settings.showHealthy ? items : items.filter((item) => item.status !== "healthy"),
     totals,
   };
+}
+
+function buildActivityTimelinePoints({
+  range,
+  activityItems,
+  now,
+}: {
+  range: WidgetRange;
+  activityItems: DashboardActivityItem[];
+  now: Date;
+}): DashboardActivityTimelinePoint[] {
+  const filteredItems = filterItemsByRange(activityItems, range, now);
+  const dayCount = range === "30d" ? 30 : 7;
+  const buckets = new Map<string, DashboardActivityTimelinePoint>();
+
+  for (let offset = dayCount - 1; offset >= 0; offset -= 1) {
+    const day = new Date(now);
+    day.setUTCHours(0, 0, 0, 0);
+    day.setUTCDate(day.getUTCDate() - offset);
+    const label = day.toISOString().slice(0, 10);
+    buckets.set(label, {
+      label,
+      downloads: 0,
+      packages: 0,
+      toolbox: 0,
+      total: 0,
+    });
+  }
+
+  for (const item of filteredItems) {
+    const bucket = buckets.get(item.timestamp.slice(0, 10));
+    if (!bucket) {
+      continue;
+    }
+
+    if (item.source === "downloads") bucket.downloads += 1;
+    if (item.source === "packages") bucket.packages += 1;
+    if (item.source === "toolbox") bucket.toolbox += 1;
+    bucket.total += 1;
+  }
+
+  return Array.from(buckets.values());
+}
+
+function filterItemsByRange<T extends { timestamp: string }>(
+  items: T[],
+  range: WidgetRange,
+  now: Date,
+): T[] {
+  const cutoff = new Date(now);
+  cutoff.setUTCHours(0, 0, 0, 0);
+  cutoff.setUTCDate(cutoff.getUTCDate() - (range === "30d" ? 29 : 6));
+
+  return items.filter((item) => new Date(item.timestamp).getTime() >= cutoff.getTime());
+}
+
+function collectMissingSources({
+  downloadsError,
+  installHistoryError,
+  needsDownloads,
+  needsInstallHistory,
+}: {
+  downloadsError: string | null;
+  installHistoryError: string | null;
+  needsDownloads: boolean;
+  needsInstallHistory: boolean;
+}): string[] {
+  const missing: string[] = [];
+  if (needsDownloads && downloadsError) {
+    missing.push("downloads");
+  }
+  if (needsInstallHistory && installHistoryError) {
+    missing.push("packages");
+  }
+  return missing;
+}
+
+function collectTrendMissingSources({
+  metric,
+  viewMode,
+  downloadsError,
+  installHistoryError,
+}: {
+  metric: WorkspaceTrendMetric;
+  viewMode: "single" | "comparison";
+  downloadsError: string | null;
+  installHistoryError: string | null;
+}): string[] {
+  if (viewMode === "comparison") {
+    return collectMissingSources({
+      downloadsError,
+      installHistoryError,
+      needsDownloads: true,
+      needsInstallHistory: true,
+    });
+  }
+
+  return collectMissingSources({
+    downloadsError,
+    installHistoryError,
+    needsDownloads: metric === "downloads",
+    needsInstallHistory: metric !== "downloads",
+  });
 }
 
 function toProviderHealthCell(entry: PackageManagerHealthResult): DashboardHealthCell {

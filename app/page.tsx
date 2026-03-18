@@ -55,8 +55,10 @@ export default function DashboardPage() {
   });
   const isCustomizing = useDashboardStore((s) => s.isCustomizing);
   const isEditMode = useDashboardStore((s) => s.isEditMode);
+  const visualContext = useDashboardStore((s) => s.visualContext);
   const setIsCustomizing = useDashboardStore((s) => s.setIsCustomizing);
   const setIsEditMode = useDashboardStore((s) => s.setIsEditMode);
+  const setVisualContext = useDashboardStore((s) => s.setVisualContext);
 
   useEffect(() => {
     if (initialFetchDone.current) return;
@@ -151,6 +153,10 @@ export default function DashboardPage() {
     setIsCustomizing(true);
   }, [isEditMode, setIsCustomizing, setIsEditMode]);
 
+  const handleSetRange = useCallback((range: "7d" | "30d") => {
+    setVisualContext({ range });
+  }, [setVisualContext]);
+
   const handleCustomizeDialogChange = useCallback(
     (open: boolean) => {
       if (open && !isEditMode) {
@@ -227,6 +233,29 @@ export default function DashboardPage() {
               description={t('dashboard.description')}
             />
             <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:items-center sm:justify-start xl:justify-end">
+              <div
+                className="flex items-center gap-1 rounded-full border border-border/70 bg-background/80 p-1"
+                data-testid="dashboard-analytics-controls"
+              >
+                <Button
+                  variant={visualContext.range === "7d" ? "default" : "ghost"}
+                  size="sm"
+                  className="h-7 rounded-full px-2.5 text-xs"
+                  onClick={() => handleSetRange("7d")}
+                  data-testid="dashboard-analytics-range-7d"
+                >
+                  7d
+                </Button>
+                <Button
+                  variant={visualContext.range === "30d" ? "default" : "ghost"}
+                  size="sm"
+                  className="h-7 rounded-full px-2.5 text-xs"
+                  onClick={() => handleSetRange("30d")}
+                  data-testid="dashboard-analytics-range-30d"
+                >
+                  30d
+                </Button>
+              </div>
               <Button
                 variant="outline"
                 size="sm"

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import {
   Command,
   CommandEmpty,
@@ -18,6 +18,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { useLocale } from "@/components/providers/locale-provider";
+import {
+  consumeDashboardQuickSearchFocusRequest,
+  DASHBOARD_QUICK_SEARCH_FOCUS_EVENT,
+} from "@/lib/dashboard-quick-search-focus";
 import { cn } from "@/lib/utils";
 import { useDashboardSearch } from "@/hooks/use-dashboard-search";
 import type { EnvironmentInfo, InstalledPackage } from "@/lib/tauri";
@@ -52,6 +56,35 @@ export function QuickSearch({
     clearHistory,
     handleSelect,
   } = useDashboardSearch({ environments, packages, containerRef, inputRef });
+
+  const focusQuickSearch = useCallback(() => {
+    inputRef.current?.focus();
+    setOpen(true);
+  }, [setOpen]);
+
+  useEffect(() => {
+    const handleFocusRequest = () => {
+      consumeDashboardQuickSearchFocusRequest();
+      requestAnimationFrame(() => {
+        focusQuickSearch();
+      });
+    };
+
+    if (consumeDashboardQuickSearchFocusRequest()) {
+      handleFocusRequest();
+    }
+
+    window.addEventListener(
+      DASHBOARD_QUICK_SEARCH_FOCUS_EVENT,
+      handleFocusRequest,
+    );
+    return () => {
+      window.removeEventListener(
+        DASHBOARD_QUICK_SEARCH_FOCUS_EVENT,
+        handleFocusRequest,
+      );
+    };
+  }, [focusQuickSearch]);
 
   return (
     <div className={cn("relative", className)} ref={containerRef}>

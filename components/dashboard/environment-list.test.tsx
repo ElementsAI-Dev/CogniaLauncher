@@ -1,13 +1,26 @@
 import { render, screen, fireEvent } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { EnvironmentList } from "./environment-list";
 import type { EnvironmentInfo } from "@/lib/tauri";
 
 // Mock next/navigation
 const mockPush = jest.fn();
+const mockSetWorkflowContext = jest.fn();
+const mockGetLogicalEnvType = jest.fn((envType: string) => `${envType}-logical`);
+
 jest.mock("next/navigation", () => ({
   useRouter: () => ({
     push: mockPush,
   }),
+}));
+
+jest.mock("@/lib/stores/environment", () => ({
+  getLogicalEnvType: (...args: Parameters<typeof mockGetLogicalEnvType>) =>
+    mockGetLogicalEnvType(...args),
+  useEnvironmentStore: (selector: (state: { setWorkflowContext: typeof mockSetWorkflowContext }) => unknown) =>
+    selector({
+      setWorkflowContext: mockSetWorkflowContext,
+    }),
 }));
 
 // Mock locale provider
@@ -138,7 +151,14 @@ describe("EnvironmentList", () => {
       fireEvent.click(envItem);
     }
 
-    expect(mockPush).toHaveBeenCalledWith("/environments/node");
+    expect(mockGetLogicalEnvType).toHaveBeenCalledWith("node");
+    expect(mockSetWorkflowContext).toHaveBeenCalledWith({
+      envType: "node-logical",
+      origin: "dashboard",
+      returnHref: "/",
+      updatedAt: expect.any(Number),
+    });
+    expect(mockPush).toHaveBeenCalledWith("/environments/node-logical");
   });
 
   it("shows version badge for current version", () => {
@@ -167,6 +187,64 @@ describe("EnvironmentList", () => {
 
     // Should now show "Show less"
     expect(screen.getByText("Show less")).toBeInTheDocument();
+  });
+
+  it("shows all environments and unavailable details when filter switches to unavailable", async () => {
+    const user = userEvent.setup();
+    render(<EnvironmentList environments={mockEnvironments} />);
+
+    await user.click(screen.getByRole("combobox"));
+    await user.click(screen.getByRole("option", { name: "Unavailable" }));
+
+    expect(screen.getByText("python")).toBeInTheDocument();
+    expect(screen.queryByText("node")).not.toBeInTheDocument();
+    expect(screen.getByText("None")).toBeInTheDocument();
+    expect(screen.queryByText(/0 versions/i)).not.toBeInTheDocument();
+  });
+
+  it("shows no environments empty state when all filter is selected with an empty list", async () => {
+    const user = userEvent.setup();
+    render(<EnvironmentList environments={[]} />);
+
+    await user.click(screen.getByRole("combobox"));
+    await user.click(screen.getByRole("option", { name: "All" }));
+
+    expect(screen.getByText("No environments detected")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /add environment/i }));
+    expect(mockPush).toHaveBeenCalledWith("/environments");
+  });
+
+  it("reveals extra items after expanding the list", async () => {
+    const user = userEvent.setup();
+    const environments = [
+      ...mockEnvironments,
+      {
+        env_type: "go",
+        provider: "gvm",
+        provider_id: "gvm",
+        available: true,
+        current_version: "1.22.0",
+        installed_versions: [
+          {
+            version: "1.22.0",
+            install_path: "/path",
+            size: null,
+            installed_at: null,
+            is_current: true,
+          },
+        ],
+        total_size: 0,
+        version_count: 1,
+      },
+    ] satisfies EnvironmentInfo[];
+
+    render(<EnvironmentList environments={environments} initialLimit={1} />);
+
+    expect(screen.queryByText("go")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /show more/i }));
+
+    expect(screen.getByText("go")).toBeInTheDocument();
   });
 
   it("navigates to environments page when View All is clicked", () => {

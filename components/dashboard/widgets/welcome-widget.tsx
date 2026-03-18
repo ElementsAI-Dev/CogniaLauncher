@@ -17,6 +17,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useOnboardingStore } from '@/lib/stores/onboarding';
 import { DashboardClickableRow } from '@/components/dashboard/dashboard-primitives';
+import { getOnboardingSurfaceState } from '@/lib/onboarding-surface';
 
 interface WelcomeWidgetProps {
   hasEnvironments: boolean;
@@ -27,7 +28,24 @@ interface WelcomeWidgetProps {
 export function WelcomeWidget({ hasEnvironments, hasPackages, className }: WelcomeWidgetProps) {
   const { t } = useLocale();
   const router = useRouter();
-  const { completed: onboardingCompleted, tourCompleted, startTour } = useOnboardingStore();
+  const {
+    completed: onboardingCompleted,
+    skipped: onboardingSkipped,
+    sessionState,
+    canResume,
+    tourCompleted,
+    sessionSummary,
+    startTour,
+  } = useOnboardingStore();
+  const onboardingSurface = getOnboardingSurfaceState({
+    mode: sessionSummary.mode,
+    completed: onboardingCompleted,
+    skipped: onboardingSkipped,
+    sessionState,
+    canResume,
+    tourCompleted,
+    sessionSummary,
+  });
 
   if (hasEnvironments && hasPackages) {
     return (
@@ -78,7 +96,7 @@ export function WelcomeWidget({ hasEnvironments, hasPackages, className }: Welco
             </Button>
           )}
 
-          {!tourCompleted && (
+          {onboardingSurface.showStartTourAction && (
             <Button
               variant="ghost"
               size="sm"
@@ -183,7 +201,7 @@ export function WelcomeWidget({ hasEnvironments, hasPackages, className }: Welco
         </div>
 
         {/* Guided Tour shortcut */}
-        {!tourCompleted && (
+        {onboardingSurface.showStartTourAction && (
           <Button
             variant="outline"
             size="sm"
