@@ -32,6 +32,24 @@ const mockConfigExport = jest.fn();
 const mockConfigImport = jest.fn();
 const mockWindowEffectApply = jest.fn();
 const mockWindowEffectGetSupported = jest.fn();
+const mockTrayIsAutostartEnabled = jest.fn();
+const mockTrayEnableAutostart = jest.fn();
+const mockTrayDisableAutostart = jest.fn();
+const mockTraySetClickBehavior = jest.fn();
+const mockTraySetQuickAction = jest.fn();
+const mockTrayGetAvailableQuickActions = jest.fn();
+const mockTraySetShowNotifications = jest.fn();
+const mockTraySetNotificationLevel = jest.fn();
+const mockTraySetNotificationEvents = jest.fn();
+const mockTrayGetAvailableNotificationEvents = jest.fn();
+const mockListenTrayNotificationEventsChanged = jest.fn();
+const mockTrayGetState = jest.fn();
+const mockTraySetMinimizeToTray = jest.fn();
+const mockTraySetStartMinimized = jest.fn();
+const mockTrayGetAvailableMenuItems = jest.fn();
+const mockTrayGetMenuConfig = jest.fn();
+const mockTraySetMenuConfig = jest.fn();
+const mockTrayResetMenuConfig = jest.fn();
 
 const baseConfig: Record<string, string> = {
   'general.parallel_downloads': '4',
@@ -105,6 +123,24 @@ jest.mock('@/lib/tauri', () => ({
   configImport: (...args: unknown[]) => mockConfigImport(...args),
   windowEffectApply: (...args: unknown[]) => mockWindowEffectApply(...args),
   windowEffectGetSupported: (...args: unknown[]) => mockWindowEffectGetSupported(...args),
+  trayIsAutostartEnabled: (...args: unknown[]) => mockTrayIsAutostartEnabled(...args),
+  trayEnableAutostart: (...args: unknown[]) => mockTrayEnableAutostart(...args),
+  trayDisableAutostart: (...args: unknown[]) => mockTrayDisableAutostart(...args),
+  traySetClickBehavior: (...args: unknown[]) => mockTraySetClickBehavior(...args),
+  traySetQuickAction: (...args: unknown[]) => mockTraySetQuickAction(...args),
+  trayGetAvailableQuickActions: (...args: unknown[]) => mockTrayGetAvailableQuickActions(...args),
+  traySetShowNotifications: (...args: unknown[]) => mockTraySetShowNotifications(...args),
+  traySetNotificationLevel: (...args: unknown[]) => mockTraySetNotificationLevel(...args),
+  traySetNotificationEvents: (...args: unknown[]) => mockTraySetNotificationEvents(...args),
+  trayGetAvailableNotificationEvents: (...args: unknown[]) => mockTrayGetAvailableNotificationEvents(...args),
+  listenTrayNotificationEventsChanged: (...args: unknown[]) => mockListenTrayNotificationEventsChanged(...args),
+  trayGetState: (...args: unknown[]) => mockTrayGetState(...args),
+  traySetMinimizeToTray: (...args: unknown[]) => mockTraySetMinimizeToTray(...args),
+  traySetStartMinimized: (...args: unknown[]) => mockTraySetStartMinimized(...args),
+  trayGetAvailableMenuItems: (...args: unknown[]) => mockTrayGetAvailableMenuItems(...args),
+  trayGetMenuConfig: (...args: unknown[]) => mockTrayGetMenuConfig(...args),
+  traySetMenuConfig: (...args: unknown[]) => mockTraySetMenuConfig(...args),
+  trayResetMenuConfig: (...args: unknown[]) => mockTrayResetMenuConfig(...args),
 }));
 
 jest.mock('sonner', () => ({
@@ -599,6 +635,32 @@ describe('SettingsPage', () => {
     mockConfigImport.mockResolvedValue(undefined);
     mockWindowEffectApply.mockResolvedValue(undefined);
     mockWindowEffectGetSupported.mockResolvedValue(['auto', 'none', 'mica']);
+    mockTrayIsAutostartEnabled.mockResolvedValue(false);
+    mockTrayEnableAutostart.mockResolvedValue(undefined);
+    mockTrayDisableAutostart.mockResolvedValue(undefined);
+    mockTraySetClickBehavior.mockResolvedValue(undefined);
+    mockTraySetQuickAction.mockResolvedValue(undefined);
+    mockTrayGetAvailableQuickActions.mockResolvedValue(['open_settings', 'check_updates']);
+    mockTraySetShowNotifications.mockResolvedValue(undefined);
+    mockTraySetNotificationLevel.mockResolvedValue(undefined);
+    mockTraySetNotificationEvents.mockResolvedValue(undefined);
+    mockTrayGetAvailableNotificationEvents.mockResolvedValue(['updates', 'errors']);
+    mockListenTrayNotificationEventsChanged.mockResolvedValue(() => {});
+    mockTrayGetState.mockResolvedValue({
+      quickAction: 'check_updates',
+      notificationEvents: ['updates', 'errors'],
+    });
+    mockTraySetMinimizeToTray.mockResolvedValue(undefined);
+    mockTraySetStartMinimized.mockResolvedValue(undefined);
+    mockTrayGetAvailableMenuItems.mockResolvedValue(['show_hide', 'settings', 'quit']);
+    mockTrayGetMenuConfig.mockResolvedValue({
+      items: ['show_hide', 'settings', 'quit'],
+      priorityItems: ['settings'],
+    });
+    mockTraySetMenuConfig.mockResolvedValue(undefined);
+    mockTrayResetMenuConfig.mockResolvedValue(undefined);
+    const tauriMock = jest.requireMock('@/lib/tauri') as { isTauri: jest.Mock };
+    tauriMock.isTauri.mockReturnValue(false);
     setupMocks();
     useOnboardingStore.setState({
       mode: null,
@@ -759,6 +821,27 @@ describe('SettingsPage', () => {
     expect(mockApplyPreset).toHaveBeenCalledWith('default');
   });
 
+  it('applies appearance preset through Tauri runtime synchronization', async () => {
+    const tauriMock = jest.requireMock('@/lib/tauri') as {
+      isTauri: jest.Mock;
+    };
+    tauriMock.isTauri.mockReturnValue(true);
+
+    renderWithProviders(<SettingsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /apply preset/i })).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: /apply preset/i }));
+
+    await waitFor(() => {
+      expect(mockApplyPreset).toHaveBeenCalledWith('default');
+      expect(mockUpdateConfigValue).toHaveBeenCalledWith('appearance.theme', 'light');
+      expect(mockWindowEffectApply).toHaveBeenCalledWith('auto');
+    });
+  });
+
   it('resets only appearance group from workbench', async () => {
     renderWithProviders(<SettingsPage />);
 
@@ -885,6 +968,29 @@ describe('SettingsPage', () => {
     expect(toast.success).toHaveBeenCalledWith('Settings exported successfully');
   });
 
+  it('exports backend config through the Tauri path when desktop runtime is available', async () => {
+    const tauriMock = jest.requireMock('@/lib/tauri') as {
+      isTauri: jest.Mock;
+    };
+    tauriMock.isTauri.mockReturnValue(true);
+
+    renderWithProviders(<SettingsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /settings/i })).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: /export/i }));
+    await waitFor(() => {
+      expect(screen.getByText('Export as File')).toBeInTheDocument();
+    });
+    await userEvent.click(screen.getByText('Export as File'));
+
+    await waitFor(() => {
+      expect(mockConfigExport).toHaveBeenCalled();
+    });
+  });
+
   it('copies exported settings to clipboard', async () => {
     const clipboardMock = jest.requireMock('@/lib/clipboard');
     renderWithProviders(<SettingsPage />);
@@ -938,6 +1044,46 @@ describe('SettingsPage', () => {
       expect(mockSetAppSettings).toHaveBeenCalledWith({ checkUpdatesOnStart: false });
     });
     expect(toast.success).toHaveBeenCalledWith('Settings imported successfully');
+  });
+
+  it('imports version 2.0 settings through the Tauri backend path', async () => {
+    const tauriMock = jest.requireMock('@/lib/tauri') as {
+      isTauri: jest.Mock;
+    };
+    const clipboardMock = jest.requireMock('@/lib/clipboard');
+    tauriMock.isTauri.mockReturnValue(true);
+    clipboardMock.readClipboard.mockResolvedValueOnce(
+      JSON.stringify({
+        version: '2.0',
+        backendConfig: '[general]\nparallel_downloads = 8',
+        appSettings: {
+          checkUpdatesOnStart: false,
+        },
+        appearancePresets: [],
+        appearanceActivePresetId: null,
+      }),
+    );
+
+    renderWithProviders(<SettingsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /settings/i })).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: /import/i }));
+    await waitFor(() => {
+      expect(screen.getByText('Import from Clipboard')).toBeInTheDocument();
+    });
+    await userEvent.click(screen.getByText('Import from Clipboard'));
+    await waitFor(() => {
+      expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    });
+    await userEvent.click(screen.getByRole('button', { name: /apply import/i }));
+
+    await waitFor(() => {
+      expect(mockConfigImport).toHaveBeenCalledWith('[general]\nparallel_downloads = 8');
+    });
+    expect(mockSetAppSettings).toHaveBeenCalledWith({ checkUpdatesOnStart: false });
   });
 
   it('imports settings from clipboard and allows preview cancellation', async () => {
