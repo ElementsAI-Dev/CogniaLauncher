@@ -1,4 +1,4 @@
-import { resolveDocPath, getDocContent, getDocContentBilingual, getAllDocSlugs, getDocBasePath, buildSearchIndex } from './content';
+import { resolveDocPath, getDocContent, getDocContentBilingual, getAllDocSlugs, getDocBasePath, buildSearchIndex, getDocPageData, getDocPageDataBilingual } from './content';
 import path from 'path';
 
 // Use real filesystem — these tests run against the actual docs/ directory
@@ -82,6 +82,42 @@ describe('getDocContentBilingual', () => {
     const { zh, en } = getDocContentBilingual(['nonexistent', 'page']);
     expect(zh).toBeNull();
     expect(en).toBeNull();
+  });
+});
+
+describe('getDocPageData', () => {
+  it('returns structured page data for direct markdown files', () => {
+    const doc = getDocPageData(['guide', 'environments'], 'en');
+    expect(doc).toEqual(expect.objectContaining({
+      locale: 'en',
+      sourcePath: 'docs/en/guide/environments.md',
+      content: expect.stringContaining('Environment Management'),
+    }));
+    expect(doc?.lastModified).toEqual(expect.any(String));
+    expect(Number.isNaN(Date.parse(doc!.lastModified ?? ''))).toBe(false);
+  });
+
+  it('returns canonical index.md source path for section pages', () => {
+    const doc = getDocPageData(['getting-started'], 'zh');
+    expect(doc).toEqual(expect.objectContaining({
+      locale: 'zh',
+      sourcePath: 'docs/zh/getting-started/index.md',
+      content: expect.stringContaining('快速开始'),
+    }));
+  });
+});
+
+describe('getDocPageDataBilingual', () => {
+  it('returns structured payloads for both locales', () => {
+    const { zh, en } = getDocPageDataBilingual(['guide']);
+    expect(zh).toEqual(expect.objectContaining({
+      locale: 'zh',
+      sourcePath: 'docs/zh/guide/index.md',
+    }));
+    expect(en).toEqual(expect.objectContaining({
+      locale: 'en',
+      sourcePath: 'docs/en/guide/index.md',
+    }));
   });
 });
 

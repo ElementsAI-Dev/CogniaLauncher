@@ -9,6 +9,7 @@ This section is for contributors who want to participate in CogniaLauncher devel
 - **[Adding Providers](adding-providers.md)** — Implement new package manager integrations
 - **[Adding Commands](adding-commands.md)** — Add Tauri IPC commands
 - **[Git Integration Matrix](git-integration-matrix.md)** — Command → invoke → hook → page/component wiring baseline
+- **[Environment Management Audit Matrix](environment-management-audit-matrix.md)** — Capability map, verification matrix, and coverage scope for environment workflows
 - **[Testing Guide](testing.md)** — Testing strategies and tools
 - **[CI/CD](ci-cd.md)** — Continuous integration and deployment pipeline
 - **[Documentation Quality](docs-quality.md)** — Parity policy, docs validation, and review gates

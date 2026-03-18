@@ -80,7 +80,12 @@ export function useAutoVersionSwitch({
           // Auto-switch to the detected version using local (project-scoped) version
           // to avoid affecting other terminal sessions or projects
           try {
-            await setLocalVersion(env.env_type, installedVersion, projectPath);
+            await setLocalVersion(
+              env.env_type,
+              installedVersion,
+              projectPath,
+              env.provider_id,
+            );
             lastDetectedRef.current[env.env_type] = detectedVersion;
           } catch {
             // Silently fail - don't interrupt user workflow

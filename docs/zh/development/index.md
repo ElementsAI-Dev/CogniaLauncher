@@ -9,6 +9,7 @@
 - **[添加 Provider](adding-providers.md)** — 实现新的包管理器集成
 - **[添加命令](adding-commands.md)** — 添加 Tauri IPC 命令
 - **[Git 接入矩阵](git-integration-matrix.md)** — command → invoke → hook → page/component 链路基线
+- **[环境管理审计矩阵](environment-management-audit-matrix.md)** — 环境工作流的 capability map、验证矩阵与覆盖率范围
 - **[测试指南](testing.md)** — 测试策略与工具
 - **[CI/CD](ci-cd.md)** — 持续集成与部署流水线
 - **[文档质量与同步](docs-quality.md)** — 对齐策略、文档校验与评审门禁

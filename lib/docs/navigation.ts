@@ -63,6 +63,8 @@ export const DOC_NAV: DocNavItem[] = [
       { title: 'Git 集成矩阵', titleEn: 'Git Integration Matrix', slug: 'development/git-integration-matrix' },
       { title: '测试指南', titleEn: 'Testing', slug: 'development/testing' },
       { title: '文档质量与同步', titleEn: 'Documentation Quality', slug: 'development/docs-quality' },
+      { title: '环境管理审计矩阵', titleEn: 'Environment Management Audit Matrix', slug: 'development/environment-management-audit-matrix' },
+      { title: 'EnvVar UI 审计矩阵', titleEn: 'Envvar UI Audit Matrix', slug: 'development/envvar-ui-audit-matrix' },
       { title: 'CI/CD', titleEn: 'CI/CD', slug: 'development/ci-cd' },
     ],
   },

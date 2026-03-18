@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { extractMarkdownHeadings } from "./headings";
+import type { DocPageData } from "@/types/docs";
 
 const DOCS_ROOT = path.join(process.cwd(), "docs");
 
@@ -65,6 +66,46 @@ export function getDocContentBilingual(slug?: string[]): {
   return {
     zh: getDocContent(slug, "zh"),
     en: getDocContent(slug, "en"),
+  };
+}
+
+function toRepoRelativePath(filePath: string): string {
+  return path.relative(process.cwd(), filePath).replace(/\\/g, "/");
+}
+
+function getFileLastModified(filePath: string): string | null {
+  try {
+    return fs.statSync(filePath).mtime.toISOString();
+  } catch {
+    return null;
+  }
+}
+
+export function getDocPageData(
+  slug?: string[],
+  locale: DocLocale = "zh",
+): DocPageData | null {
+  const content = getDocContent(slug, locale);
+  if (!content) {
+    return null;
+  }
+
+  const filePath = resolveDocPath(slug, locale);
+  return {
+    locale,
+    content,
+    sourcePath: toRepoRelativePath(filePath),
+    lastModified: getFileLastModified(filePath),
+  };
+}
+
+export function getDocPageDataBilingual(slug?: string[]): {
+  zh: DocPageData | null;
+  en: DocPageData | null;
+} {
+  return {
+    zh: getDocPageData(slug, "zh"),
+    en: getDocPageData(slug, "en"),
   };
 }
 

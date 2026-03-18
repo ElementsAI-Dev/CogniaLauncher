@@ -34,7 +34,7 @@ export function DocsBreadcrumb({ slug, className }: DocsBreadcrumbProps) {
           const key = crumb.slug ?? `${crumb.title}-${i}`;
 
           return [
-            <BreadcrumbItem key={`${key}-item`} className={cn(isLast ? 'max-w-[220px]' : 'max-w-[170px]')}>
+            <BreadcrumbItem key={`${key}-item`} className={cn(isLast ? 'max-w-55' : 'max-w-42.5')}>
               {isLast ? (
                 <BreadcrumbPage className="truncate font-medium">{title}</BreadcrumbPage>
               ) : (

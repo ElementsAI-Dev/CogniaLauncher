@@ -1,13 +1,20 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { DocsPageClient } from './docs-page-client';
 
+let mockLocale = 'en';
 jest.mock('@/components/providers/locale-provider', () => ({
   useLocale: () => ({
     t: (key: string, params?: Record<string, unknown>) => {
       if (key === 'docs.readingTime') return `${params?.count} min read`;
+      if (key === 'docs.lastUpdated') return 'Last updated';
+      if (key === 'docs.fallbackNotice') {
+        return `Showing ${params?.effectiveLanguage} because the ${params?.requestedLanguage} page is unavailable.`;
+      }
+      if (key === 'docs.languageEnglish') return 'English';
+      if (key === 'docs.languageChinese') return 'Chinese';
       return key;
     },
-    locale: 'en',
+    locale: mockLocale,
   }),
 }));
 
@@ -22,8 +29,8 @@ jest.mock('@/components/docs', () => ({
   DocsToc: ({ mode, className, headings }: { mode?: string; className?: string; headings?: unknown[] }) => (
     <div data-testid={`toc-${mode}`} data-class={className ?? ''} data-headings-count={headings?.length ?? 0} />
   ),
-  DocsNavFooter: ({ prev, next }: { prev?: { slug: string }; next?: { slug: string } }) => (
-    <div data-testid="nav-footer" data-prev={prev?.slug ?? ''} data-next={next?.slug ?? ''} />
+  DocsNavFooter: ({ prev, next, sourcePath }: { prev?: { slug: string }; next?: { slug: string }; sourcePath?: string }) => (
+    <div data-testid="nav-footer" data-prev={prev?.slug ?? ''} data-next={next?.slug ?? ''} data-source-path={sourcePath ?? ''} />
   ),
   DocsBreadcrumb: ({ slug }: { slug: string }) => <div data-testid="breadcrumb">{slug}</div>,
   DocsScrollProgress: () => <div data-testid="scroll-progress" />,
@@ -58,12 +65,28 @@ jest.mock('@/components/ui/scroll-area', () => ({
 }));
 
 describe('DocsPageClient', () => {
+  const createDoc = (
+    locale: 'en' | 'zh',
+    content: string,
+    overrides?: Partial<{ sourcePath: string; lastModified: string | null }>
+  ) => ({
+    locale,
+    content,
+    sourcePath: `docs/${locale}/guide/index.md`,
+    lastModified: '2026-01-15T12:00:00.000Z',
+    ...overrides,
+  });
+
+  beforeEach(() => {
+    mockLocale = 'en';
+  });
+
   afterEach(() => {
     window.location.hash = '';
   });
 
   it('renders all layout sections', () => {
-    render(<DocsPageClient contentZh="# 你好" contentEn="# Hello" slug={['guide']} />);
+    render(<DocsPageClient docZh={createDoc('zh', '# 你好')} docEn={createDoc('en', '# Hello')} slug={['guide']} />);
     expect(screen.getByTestId('sidebar')).toBeInTheDocument();
     expect(screen.getByTestId('mobile-sidebar')).toBeInTheDocument();
     expect(screen.getByTestId('scroll-progress')).toBeInTheDocument();
@@ -76,7 +99,7 @@ describe('DocsPageClient', () => {
   });
 
   it('keeps desktop section order as sidebar -> content -> desktop toc', () => {
-    render(<DocsPageClient contentZh="# A" contentEn="# B" slug={['guide']} />);
+    render(<DocsPageClient docZh={createDoc('zh', '# A')} docEn={createDoc('en', '# B')} slug={['guide']} />);
     const sidebar = screen.getByTestId('sidebar');
     const markdown = screen.getByTestId('markdown');
     const desktopToc = screen.getByTestId('toc-desktop');
@@ -86,59 +109,79 @@ describe('DocsPageClient', () => {
   });
 
   it('passes responsive visibility classes to desktop controls', () => {
-    render(<DocsPageClient contentZh="# A" contentEn="# B" slug={['guide']} />);
+    render(<DocsPageClient docZh={createDoc('zh', '# A')} docEn={createDoc('en', '# B')} slug={['guide']} />);
     expect(screen.getByTestId('sidebar')).toHaveAttribute('data-class', expect.stringContaining('hidden'));
     expect(screen.getByTestId('sidebar')).toHaveAttribute('data-class', expect.stringContaining('lg:block'));
     expect(screen.getByTestId('toc-desktop')).toHaveAttribute('data-class', expect.stringContaining('border-l'));
   });
 
   it('renders English content when locale is en', () => {
-    render(<DocsPageClient contentZh="# 中文" contentEn="# English" slug={['guide']} />);
+    render(<DocsPageClient docZh={createDoc('zh', '# 中文')} docEn={createDoc('en', '# English')} slug={['guide']} />);
     expect(screen.getByTestId('markdown')).toHaveTextContent('# English');
   });
 
-  it('falls back to zh content when en is null', () => {
-    render(<DocsPageClient contentZh="# 中文" contentEn={null} slug={['guide']} />);
+  it('falls back to zh content when en is null and shows a fallback notice', () => {
+    render(<DocsPageClient docZh={createDoc('zh', '# 中文', { sourcePath: 'docs/zh/guide/index.md' })} docEn={null} slug={['guide']} />);
     expect(screen.getByTestId('markdown')).toHaveTextContent('# 中文');
+    expect(screen.getByText('Showing Chinese because the English page is unavailable.')).toBeInTheDocument();
+    expect(screen.getByTestId('nav-footer')).toHaveAttribute('data-source-path', 'docs/zh/guide/index.md');
+  });
+
+  it('does not show a fallback notice when requested locale content exists', () => {
+    render(<DocsPageClient docZh={createDoc('zh', '# 中文')} docEn={createDoc('en', '# English')} slug={['guide']} />);
+    expect(screen.queryByText(/Showing .* page is unavailable/)).not.toBeInTheDocument();
   });
 
   it('renders empty string when both contents are null', () => {
-    render(<DocsPageClient contentZh={null} contentEn={null} slug={['guide']} />);
+    render(<DocsPageClient docZh={null} docEn={null} slug={['guide']} />);
     expect(screen.getByTestId('markdown')).toHaveTextContent('');
   });
 
   it('shows reading time', () => {
-    const { container } = render(<DocsPageClient contentZh="# 内容" contentEn="# Content" slug={['guide']} />);
+    const { container } = render(<DocsPageClient docZh={createDoc('zh', '# 内容')} docEn={createDoc('en', '# Content')} slug={['guide']} />);
     // Reading time is rendered inside a span with Clock icon, text may be split across elements
     expect(container.textContent).toContain('3 min read');
   });
 
+  it('shows last updated metadata for the rendered document', () => {
+    const { container } = render(
+      <DocsPageClient
+        docZh={createDoc('zh', '# 内容')}
+        docEn={createDoc('en', '# Content', { lastModified: '2026-01-15T12:00:00.000Z' })}
+        slug={['guide']}
+      />
+    );
+
+    expect(container.textContent).toContain('Last updated');
+    expect(container.querySelector('time[datetime="2026-01-15T12:00:00.000Z"]')).toBeInTheDocument();
+  });
+
   it('renders DocsHomeCards on index page', () => {
-    render(<DocsPageClient contentZh="# 首页" contentEn="# Home" />);
+    render(<DocsPageClient docZh={createDoc('zh', '# 首页')} docEn={createDoc('en', '# Home')} />);
     expect(screen.getByTestId('home-cards')).toBeInTheDocument();
   });
 
   it('does not render DocsHomeCards on non-index pages', () => {
-    render(<DocsPageClient contentZh="# 指南" contentEn="# Guide" slug={['guide']} />);
+    render(<DocsPageClient docZh={createDoc('zh', '# 指南')} docEn={createDoc('en', '# Guide')} slug={['guide']} />);
     expect(screen.queryByTestId('home-cards')).not.toBeInTheDocument();
   });
 
   it('passes searchIndex to DocsSidebar', () => {
     const index = [{ slug: 'x', pageSlug: 'x', anchorId: 'intro', sectionTitle: 'Intro', locale: 'en', excerpt: 'intro' }];
-    render(<DocsPageClient contentZh="# A" contentEn="# B" slug={['guide']} searchIndex={index} />);
+    render(<DocsPageClient docZh={createDoc('zh', '# A')} docEn={createDoc('en', '# B')} slug={['guide']} searchIndex={index} />);
     expect(screen.getByTestId('sidebar')).toHaveAttribute('data-index-count', '1');
     expect(screen.getByTestId('mobile-sidebar')).toHaveAttribute('data-index-count', '1');
   });
 
   it('passes basePath to MarkdownRenderer', () => {
-    render(<DocsPageClient contentZh="# A" contentEn="# B" slug={['guide', 'sub']} basePath="guide" />);
+    render(<DocsPageClient docZh={createDoc('zh', '# A')} docEn={createDoc('en', '# B')} slug={['guide', 'sub']} basePath="guide" />);
     expect(screen.getByTestId('markdown')).toBeInTheDocument();
   });
 
   it('keeps heading extraction stable for mermaid-heavy content', () => {
     const content = ['# Overview', '```mermaid', 'graph TD', 'A-->B', '```', '## After Diagram'].join('\n');
 
-    render(<DocsPageClient contentZh={content} contentEn={content} slug={['architecture', 'overview']} />);
+    render(<DocsPageClient docZh={createDoc('zh', content)} docEn={createDoc('en', content)} slug={['architecture', 'overview']} />);
 
     expect(screen.getByTestId('markdown')).toHaveTextContent('```mermaid');
     expect(screen.getByTestId('toc-mobile')).toHaveAttribute('data-headings-count', '1');
@@ -146,15 +189,22 @@ describe('DocsPageClient', () => {
   });
 
   it('renders breadcrumb with current slug', () => {
-    render(<DocsPageClient contentZh="# A" contentEn="# B" slug={['architecture', 'frontend']} />);
+    render(<DocsPageClient docZh={createDoc('zh', '# A')} docEn={createDoc('en', '# B')} slug={['architecture', 'frontend']} />);
     expect(screen.getByTestId('breadcrumb')).toHaveTextContent('architecture/frontend');
   });
 
   it('renders nav footer with adjacent docs', () => {
-    render(<DocsPageClient contentZh="# A" contentEn="# B" slug={['guide']} />);
+    render(
+      <DocsPageClient
+        docZh={createDoc('zh', '# A')}
+        docEn={createDoc('en', '# B', { sourcePath: 'docs/en/guide/index.md' })}
+        slug={['guide']}
+      />
+    );
     const footer = screen.getByTestId('nav-footer');
     expect(footer).toHaveAttribute('data-prev', 'prev-page');
     expect(footer).toHaveAttribute('data-next', 'next-page');
+    expect(footer).toHaveAttribute('data-source-path', 'docs/en/guide/index.md');
   });
 
   it('scrolls to hash target on load', () => {
@@ -165,7 +215,7 @@ describe('DocsPageClient', () => {
     document.body.appendChild(target);
     window.location.hash = '#target-heading';
 
-    render(<DocsPageClient contentZh="# A" contentEn="# B" slug={['guide']} />);
+    render(<DocsPageClient docZh={createDoc('zh', '# A')} docEn={createDoc('en', '# B')} slug={['guide']} />);
 
     expect(scrollMock).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
     document.body.removeChild(target);
@@ -178,7 +228,7 @@ describe('DocsPageClient', () => {
     Object.defineProperty(target, 'scrollIntoView', { value: scrollMock, writable: true });
     document.body.appendChild(target);
 
-    render(<DocsPageClient contentZh="# A" contentEn="# B" slug={['guide']} />);
+    render(<DocsPageClient docZh={createDoc('zh', '# A')} docEn={createDoc('en', '# B')} slug={['guide']} />);
     window.location.hash = '#next-heading';
     fireEvent(window, new HashChangeEvent('hashchange'));
 
@@ -190,7 +240,7 @@ describe('DocsPageClient', () => {
     const scrollSpy = jest.spyOn(HTMLElement.prototype, 'scrollIntoView');
     window.location.hash = '#missing-heading';
 
-    render(<DocsPageClient contentZh="# A" contentEn="# B" slug={['guide']} />);
+    render(<DocsPageClient docZh={createDoc('zh', '# A')} docEn={createDoc('en', '# B')} slug={['guide']} />);
 
     expect(scrollSpy).toHaveBeenCalled();
     scrollSpy.mockRestore();

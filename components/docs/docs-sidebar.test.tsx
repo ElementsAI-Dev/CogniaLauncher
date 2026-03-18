@@ -1,3 +1,5 @@
+/// <reference types="@testing-library/jest-dom" />
+
 import React from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import { DocsMobileSidebar, DocsSidebar } from "./docs-sidebar";
@@ -18,13 +20,12 @@ jest.mock("next/navigation", () => ({
 
 jest.mock("next/link", () => {
   const React = jest.requireActual<typeof import("react")>("react");
+  type AnchorProps = React.ComponentPropsWithoutRef<"a"> & {
+    href: string;
+  };
   const MockLink = React.forwardRef<
     HTMLAnchorElement,
-    {
-      children: React.ReactNode;
-      href: string;
-      [key: string]: unknown;
-    }
+    AnchorProps
   >(function MockLink({ children, href, ...props }, ref) {
     return (
       <a ref={ref} href={href} {...props}>
@@ -72,7 +73,7 @@ jest.mock("@/components/ui/collapsible", () => ({
     asChild?: boolean;
     [key: string]: unknown;
   }) => (
-    asChild && React.isValidElement(children)
+    asChild && React.isValidElement<Record<string, unknown>>(children)
       ? React.cloneElement(children, {
           ...(props as Record<string, unknown>),
           "data-testid": "collapsible-trigger",

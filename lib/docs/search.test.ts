@@ -141,6 +141,49 @@ describe('searchDocs', () => {
     expect(installResult?.snippet.toLowerCase()).toContain('platform');
   });
 
+  it('deduplicates slug/anchor pairs by highest score and falls back to page slug for unknown nav entries', () => {
+    const results = searchDocs('fallback', 'en', [
+      {
+        slug: 'unknown-page',
+        pageSlug: 'unknown-page',
+        anchorId: 'dup-anchor',
+        sectionTitle: 'Fallback title',
+        locale: 'en',
+        excerpt: 'fallback excerpt',
+      },
+      {
+        slug: 'unknown-page',
+        pageSlug: 'unknown-page',
+        anchorId: 'dup-anchor',
+        sectionTitle: 'Fallback title',
+        locale: 'en',
+        excerpt: 'fallback excerpt with extra fallback terms',
+      },
+    ]);
+
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({
+      slug: 'unknown-page',
+      title: 'unknown-page',
+      snippet: 'Fallback title',
+    });
+  });
+
+  it('does not emit section hits when neither section title nor excerpt match the query', () => {
+    const results = searchDocs('configuration', 'en', [
+      {
+        slug: 'configuration',
+        pageSlug: 'configuration',
+        anchorId: 'deep-link',
+        sectionTitle: 'Advanced topics',
+        locale: 'en',
+        excerpt: '',
+      },
+    ]);
+
+    expect(results.find((result) => result.anchorId === 'deep-link')).toBeUndefined();
+  });
+
   it('limits results to 15', () => {
     const results = searchDocs('a', 'en', mockSearchIndex);
     expect(results.length).toBeLessThanOrEqual(15);
@@ -150,5 +193,10 @@ describe('searchDocs', () => {
     const results = searchDocs('代理', 'zh', mockSearchIndex);
     expect(results.length).toBeGreaterThan(0);
     expect(results.some((r) => r.slug === 'configuration')).toBe(true);
+  });
+
+  it('matches multi-term queries across title and excerpt text', () => {
+    const results = searchDocs('quick configure', 'en', mockSearchIndex);
+    expect(results.some((result) => result.slug === 'getting-started')).toBe(true);
   });
 });

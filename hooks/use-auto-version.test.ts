@@ -95,7 +95,7 @@ describe('useAutoVersionSwitch', () => {
     );
 
     await waitFor(() => {
-      expect(mockSetLocalVersion).toHaveBeenCalledWith('node', '20.10.0', '/project');
+      expect(mockSetLocalVersion).toHaveBeenCalledWith('node', '20.10.0', '/project', undefined);
     });
   });
 
@@ -137,7 +137,7 @@ describe('useAutoVersionSwitch', () => {
     );
 
     await waitFor(() => {
-      expect(mockSetLocalVersion).toHaveBeenCalledWith('fnm', '20.10.0', '/project');
+      expect(mockSetLocalVersion).toHaveBeenCalledWith('fnm', '20.10.0', '/project', undefined);
     });
     expect(mockGetEnvSettings).toHaveBeenCalledWith('node');
     expect(mockGetEnvSettings).toHaveBeenCalledWith('fnm');
@@ -165,7 +165,7 @@ describe('useAutoVersionSwitch', () => {
     );
 
     await waitFor(() => {
-      expect(mockSetLocalVersion).toHaveBeenCalledWith('fnm', '20.10.0', '/project');
+      expect(mockSetLocalVersion).toHaveBeenCalledWith('fnm', '20.10.0', '/project', undefined);
     });
   });
 

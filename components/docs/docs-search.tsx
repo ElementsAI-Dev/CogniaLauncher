@@ -87,7 +87,7 @@ export function DocsSearch({ className, searchIndex }: DocsSearchProps) {
           </button>
         </PopoverTrigger>
 
-        <PopoverContent align="start" sideOffset={6} className="w-[var(--radix-popover-trigger-width)] p-0">
+        <PopoverContent align="start" sideOffset={6} className="w-(--radix-popover-trigger-width) p-0">
           <Command shouldFilter={false}>
             <CommandInput
               ref={inputRef}
@@ -126,7 +126,7 @@ export function DocsSearch({ className, searchIndex }: DocsSearchProps) {
                             <div className="truncate text-xs text-muted-foreground">{result.snippet}</div>
                           )}
                         </div>
-                        <span className="mt-0.5 max-w-[120px] shrink-0 truncate text-xs text-muted-foreground">
+                        <span className="mt-0.5 max-w-30 shrink-0 truncate text-xs text-muted-foreground">
                           {result.slug}
                         </span>
                       </CommandItem>

@@ -20,6 +20,8 @@ CogniaLauncher 后端提供 289 条 Tauri 命令，跨 21 个模块，通过 IPC
 - `config`：`get`、`set`、`list`、`reset`、`export`、`import`
 - `envvar`：`list`、`get`、`set`、`remove`、`list-persistent`、`list-persistent-typed`、`set-persistent`、`remove-persistent`、`get-path`、`add-path`、`remove-path`、`reorder-path`、`deduplicate-path`、`detect-conflicts`、`list-shell-profiles`、`read-shell-profile`、`expand-path`、`export`、`import`、`preview-import`、`apply-import`、`preview-path-repair`、`apply-path-repair`、`resolve-conflict`、`shell-guidance`
 
+环境变量变更类命令现在会区分运行前可用性与运行后验证结果。`set`、`remove`、`import`、`apply-import`、`deduplicate-path`、`apply-path-repair`、`resolve-conflict` 等命令可能返回 `blocked` 或 `manual_followup_required`，不再把每一次命令调用都默认视为“已经完全生效并验证通过”。
+
 ---
 
 ## 环境管理 (Environment) — 48 条

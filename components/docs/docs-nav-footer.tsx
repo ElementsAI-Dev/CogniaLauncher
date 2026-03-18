@@ -14,9 +14,10 @@ interface DocsNavFooterProps {
   prev?: DocNavLink;
   next?: DocNavLink;
   slug?: string;
+  sourcePath?: string;
 }
 
-export function DocsNavFooter({ prev, next, slug }: DocsNavFooterProps) {
+export function DocsNavFooter({ prev, next, slug, sourcePath }: DocsNavFooterProps) {
   const { t, locale } = useLocale();
 
   const getTitle = (item: { title: string; titleEn?: string }) =>
@@ -27,9 +28,11 @@ export function DocsNavFooter({ prev, next, slug }: DocsNavFooterProps) {
     return arr.length === 0 ? '/docs' : `/docs/${arr.join('/')}`;
   };
 
-  const editUrl = slug
-    ? `${GITHUB_REPO_URL}/edit/main/docs/${locale}/${slug === 'index' ? 'index' : slug}.md`
-    : undefined;
+  const editUrl = sourcePath
+    ? `${GITHUB_REPO_URL}/edit/main/${sourcePath}`
+    : slug
+      ? `${GITHUB_REPO_URL}/edit/main/docs/${locale}/${slug === 'index' ? 'index' : slug}.md`
+      : undefined;
 
   return (
     <footer className="mt-12 space-y-4" aria-label="Page navigation">

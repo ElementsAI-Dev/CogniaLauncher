@@ -20,6 +20,8 @@ Notable options:
 - `config`: `get`, `set`, `list`, `reset`, `export`, `import`
 - `envvar`: `list`, `get`, `set`, `remove`, `list-persistent`, `list-persistent-typed`, `set-persistent`, `remove-persistent`, `get-path`, `add-path`, `remove-path`, `reorder-path`, `deduplicate-path`, `detect-conflicts`, `list-shell-profiles`, `read-shell-profile`, `expand-path`, `export`, `import`, `preview-import`, `apply-import`, `preview-path-repair`, `apply-path-repair`, `resolve-conflict`, `shell-guidance`
 
+Envvar mutation commands now distinguish readiness and verified outcomes. For example, `set`, `remove`, `import`, `apply-import`, `deduplicate-path`, `apply-path-repair`, and `resolve-conflict` can report blocked or manual-follow-up states instead of implying every successful command invocation was fully verified.
+
 ---
 
 ## Environment Management — 48 Commands

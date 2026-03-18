@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { PageHeader } from '@/components/layout/page-header';
 import { useLocale } from '@/components/providers/locale-provider';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   MarkdownRenderer,
   DocsSidebar,
@@ -17,18 +18,31 @@ import { getDocTitle, getAdjacentDocs, arrayToSlug } from '@/lib/docs/navigation
 import { estimateReadingTime } from '@/lib/docs/reading-time';
 import { extractHeadings } from '@/lib/docs/headings';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Clock } from 'lucide-react';
+import { Clock, Info } from 'lucide-react';
 import type { DocSearchEntry } from '@/lib/docs/content';
+import type { Locale } from '@/types/i18n';
+import type { DocPageData } from '@/types/docs';
 
 interface DocsPageClientProps {
-  contentZh: string | null;
-  contentEn: string | null;
+  docZh: DocPageData | null;
+  docEn: DocPageData | null;
   slug?: string[];
   basePath?: string;
   searchIndex?: DocSearchEntry[];
 }
 
-export function DocsPageClient({ contentZh, contentEn, slug, basePath, searchIndex }: DocsPageClientProps) {
+function getLocaleLabel(t: (key: string, params?: Record<string, string | number>) => string, locale: Locale) {
+  return locale === 'en' ? t('docs.languageEnglish') : t('docs.languageChinese');
+}
+
+function formatLastUpdated(lastModified: string, locale: Locale) {
+  return new Intl.DateTimeFormat(locale === 'zh' ? 'zh-CN' : 'en-US', {
+    dateStyle: 'medium',
+    timeZone: 'UTC',
+  }).format(new Date(lastModified));
+}
+
+export function DocsPageClient({ docZh, docEn, slug, basePath, searchIndex }: DocsPageClientProps) {
   const { t, locale } = useLocale();
   const scrollRef = useRef<HTMLDivElement>(null);
   const currentSlug = arrayToSlug(slug);
@@ -37,11 +51,18 @@ export function DocsPageClient({ contentZh, contentEn, slug, basePath, searchInd
   const prev = adjacent.prev?.slug ? { title: adjacent.prev.title, titleEn: adjacent.prev.titleEn, slug: adjacent.prev.slug } : undefined;
   const next = adjacent.next?.slug ? { title: adjacent.next.title, titleEn: adjacent.next.titleEn, slug: adjacent.next.slug } : undefined;
 
-  // Select content based on locale, with fallback to the other language
-  const content = (locale === 'en' ? (contentEn ?? contentZh) : (contentZh ?? contentEn)) ?? '';
+  const localeDoc = locale === 'en' ? docEn : docZh;
+  const fallbackDoc = locale === 'en' ? docZh : docEn;
+  const renderedDoc = localeDoc ?? fallbackDoc;
+  const content = renderedDoc?.content ?? '';
+  const effectiveLocale = renderedDoc?.locale ?? null;
+  const isFallback = !!renderedDoc && effectiveLocale !== locale;
 
   const readingTime = useMemo(() => estimateReadingTime(content), [content]);
   const headings = useMemo(() => extractHeadings(content), [content]);
+  const lastUpdatedText = renderedDoc?.lastModified && effectiveLocale
+    ? formatLastUpdated(renderedDoc.lastModified, effectiveLocale)
+    : null;
 
   const scrollToHashTarget = useCallback(() => {
     const rawHash = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : window.location.hash;
@@ -88,13 +109,32 @@ export function DocsPageClient({ contentZh, contentEn, slug, basePath, searchInd
                 title={title}
                 description={t('docs.description')}
                 actions={
-                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <Clock className="h-3.5 w-3.5" />
-                    {t('docs.readingTime', { count: readingTime })}
-                  </span>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1.5">
+                      <Clock className="h-3.5 w-3.5" />
+                      {t('docs.readingTime', { count: readingTime })}
+                    </span>
+                    {lastUpdatedText && renderedDoc?.lastModified && (
+                      <span className="flex items-center gap-1.5">
+                        <span>{t('docs.lastUpdated')}</span>
+                        <time dateTime={renderedDoc.lastModified}>{lastUpdatedText}</time>
+                      </span>
+                    )}
+                  </div>
                 }
               />
             </header>
+            {isFallback && effectiveLocale && (
+              <Alert className="mt-4">
+                <Info className="h-4 w-4" />
+                <AlertDescription>
+                  {t('docs.fallbackNotice', {
+                    effectiveLanguage: getLocaleLabel(t, effectiveLocale),
+                    requestedLanguage: getLocaleLabel(t, locale),
+                  })}
+                </AlertDescription>
+              </Alert>
+            )}
             <section aria-label={t('docs.toc')}>
               <DocsToc content={content} headings={headings} mode="mobile" />
             </section>
@@ -102,7 +142,7 @@ export function DocsPageClient({ contentZh, contentEn, slug, basePath, searchInd
               <MarkdownRenderer content={content} basePath={basePath} />
             </article>
             {currentSlug === 'index' && <DocsHomeCards />}
-            <DocsNavFooter prev={prev} next={next} slug={currentSlug} />
+            <DocsNavFooter prev={prev} next={next} slug={currentSlug} sourcePath={renderedDoc?.sourcePath} />
           </main>
         </ScrollArea>
       </section>
