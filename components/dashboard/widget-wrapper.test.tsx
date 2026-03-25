@@ -33,6 +33,10 @@ const defaultProps = {
   onRemove: jest.fn(),
   onToggleVisibility: jest.fn(),
   onResize: jest.fn(),
+  presentation: {
+    density: "comfortable" as const,
+    emphasis: "balanced" as const,
+  },
 };
 
 describe("WidgetWrapper", () => {
@@ -212,5 +216,19 @@ describe("WidgetWrapper", () => {
       </WidgetWrapper>,
     );
     expect(container.firstChild).toHaveClass("lg:col-span-2");
+  });
+
+  it("applies presentation attributes for compact emphasis presets", () => {
+    const { container } = render(
+      <WidgetWrapper
+        {...defaultProps}
+        presentation={{ density: "compact", emphasis: "strong" }}
+      >
+        <div>Content</div>
+      </WidgetWrapper>,
+    );
+
+    expect(container.firstChild).toHaveAttribute("data-density", "compact");
+    expect(container.firstChild).toHaveAttribute("data-emphasis", "strong");
   });
 });

@@ -20,6 +20,7 @@ import {
   canRemoveWidgetById,
   canToggleWidgetVisibilityById,
   getDefaultWidgetSettings,
+  type DashboardPresentation,
   type WidgetConfig,
   type WidgetSize,
   type WidgetSettings,
@@ -73,6 +74,7 @@ interface WidgetRenderProps {
   t: (key: string, params?: Record<string, string | number>) => string;
   activeEnvs: number;
   totalVersions: number;
+  presentation: DashboardPresentation;
   feedback: {
     environments: { isLoading: boolean; error: string | null };
     packages: { isLoading: boolean; error: string | null };
@@ -248,6 +250,7 @@ const WIDGET_RENDERERS: Record<WidgetType, (p: WidgetRenderProps, widget: Widget
       isLoading={p.feedback.environments.isLoading}
       error={p.feedback.environments.error}
       onRecover={p.onRefreshAll}
+      presentation={p.presentation}
     />
   ),
   "package-list": (p) => (
@@ -260,7 +263,13 @@ const WIDGET_RENDERERS: Record<WidgetType, (p: WidgetRenderProps, widget: Widget
     />
   ),
   "wsl-status": () => <WslStatusWidget />,
-  "quick-actions": (p) => <QuickActions onRefreshAll={p.onRefreshAll} isRefreshing={p.isRefreshing} />,
+  "quick-actions": (p) => (
+    <QuickActions
+      onRefreshAll={p.onRefreshAll}
+      isRefreshing={p.isRefreshing}
+      presentation={p.presentation}
+    />
+  ),
   "health-check": () => <HealthCheckWidget />,
   "updates-available": () => <UpdatesWidget />,
   "welcome": (p) => <WelcomeWidget hasEnvironments={p.environments.length > 0} hasPackages={p.packages.length > 0} />,

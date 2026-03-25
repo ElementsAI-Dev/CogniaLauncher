@@ -43,6 +43,7 @@ import { useLocale } from "@/components/providers/locale-provider";
 import { cn } from "@/lib/utils";
 import type { EnvironmentInfo } from "@/lib/tauri";
 import { getLogicalEnvType, useEnvironmentStore } from "@/lib/stores/environment";
+import type { DashboardPresentation } from "@/lib/stores/dashboard";
 import type { EnvironmentFilterType } from "@/types/dashboard";
 import {
   DashboardClickableRow,
@@ -57,6 +58,7 @@ interface EnvironmentListProps {
   isLoading?: boolean;
   error?: string | null;
   onRecover?: () => void;
+  presentation?: DashboardPresentation;
 }
 
 export function EnvironmentList({
@@ -66,6 +68,7 @@ export function EnvironmentList({
   isLoading = false,
   error = null,
   onRecover,
+  presentation = { density: "comfortable", emphasis: "balanced" },
 }: EnvironmentListProps) {
   const router = useRouter();
   const { t } = useLocale();
@@ -109,8 +112,15 @@ export function EnvironmentList({
   const extraItems = filteredEnvironments.slice(initialLimit);
 
   return (
-    <Card className={cn(className)}>
-      <CardHeader className="pb-3">
+    <Card
+      className={cn(
+        presentation.emphasis === "strong" && "border-primary/20 shadow-sm",
+        className,
+      )}
+      data-density={presentation.density}
+      data-emphasis={presentation.emphasis}
+    >
+      <CardHeader className={cn("pb-3", presentation.density === "compact" && "pb-2")}>
         <CardTitle className="text-base font-medium">
           {t("dashboard.environmentList.title")}
         </CardTitle>
@@ -199,6 +209,7 @@ export function EnvironmentList({
                   environment={env}
                   onClick={() => handleEnvironmentClick(env.env_type)}
                   t={t}
+                  presentation={presentation}
                 />
               ))}
             </div>
@@ -213,6 +224,7 @@ export function EnvironmentList({
                         environment={env}
                         onClick={() => handleEnvironmentClick(env.env_type)}
                         t={t}
+                        presentation={presentation}
                       />
                     ))}
                   </div>
@@ -250,9 +262,10 @@ interface EnvironmentItemProps {
   environment: EnvironmentInfo;
   onClick: () => void;
   t: (key: string) => string;
+  presentation: DashboardPresentation;
 }
 
-function EnvironmentItem({ environment, onClick, t }: EnvironmentItemProps) {
+function EnvironmentItem({ environment, onClick, t, presentation }: EnvironmentItemProps) {
   const { env_type, provider, current_version, available, installed_versions } =
     environment;
 
@@ -260,11 +273,13 @@ function EnvironmentItem({ environment, onClick, t }: EnvironmentItemProps) {
     <DashboardClickableRow
       onClick={onClick}
       aria-label={env_type}
+      className={cn(presentation.density === "compact" && "px-2.5 py-2.5")}
     >
       <div className="flex items-center gap-3 min-w-0 flex-1">
         <div
           className={cn(
             "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg",
+            presentation.density === "compact" && "h-9 w-9",
             available
               ? "bg-primary/10 text-primary"
               : "bg-muted text-muted-foreground",
@@ -272,7 +287,7 @@ function EnvironmentItem({ environment, onClick, t }: EnvironmentItemProps) {
         >
           <LanguageIcon languageId={env_type} size={24} />
         </div>
-        <div className="text-left min-w-0">
+        <div className={cn("text-left min-w-0", presentation.density === "compact" && "text-sm")}>
           <div className="flex items-center gap-2">
             <span className="font-medium">{env_type}</span>
             {available ? (

@@ -20,24 +20,34 @@ import {
 } from "lucide-react";
 import { useLocale } from "@/components/providers/locale-provider";
 import { cn } from "@/lib/utils";
+import type { DashboardPresentation } from "@/lib/stores/dashboard";
 
 interface QuickActionsProps {
   onRefreshAll?: () => void;
   isRefreshing?: boolean;
   className?: string;
+  presentation?: DashboardPresentation;
 }
 
 export function QuickActions({
   onRefreshAll,
   isRefreshing = false,
   className,
+  presentation = { density: "comfortable", emphasis: "balanced" },
 }: QuickActionsProps) {
   const router = useRouter();
   const { t } = useLocale();
 
   return (
-    <Card className={cn("", className)}>
-      <CardHeader className="pb-3">
+    <Card
+      className={cn(
+        presentation.emphasis === "strong" && "border-primary/20 shadow-sm",
+        className,
+      )}
+      data-density={presentation.density}
+      data-emphasis={presentation.emphasis}
+    >
+      <CardHeader className={cn("pb-3", presentation.density === "compact" && "pb-2")}>
         <CardTitle className="text-base font-medium">
           {t("dashboard.quickActions.title")}
         </CardTitle>
@@ -45,9 +55,12 @@ export function QuickActions({
           {t("dashboard.quickActions.description")}
         </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className={cn(presentation.density === "compact" && "pt-0")}>
         <div
-          className="grid gap-2 sm:grid-cols-2 xl:flex xl:flex-wrap xl:items-center xl:gap-2.5"
+          className={cn(
+            "grid gap-2 sm:grid-cols-2 xl:flex xl:flex-wrap xl:items-center xl:gap-2.5",
+            presentation.density === "compact" && "gap-1.5 xl:gap-2",
+          )}
           role="group"
           aria-label={t("dashboard.quickActions.title")}
         >

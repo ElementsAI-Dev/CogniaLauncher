@@ -24,6 +24,26 @@ export interface DashboardVisualContext {
   range: DashboardVisualRange;
 }
 
+export type DashboardPresentationDensity = 'comfortable' | 'compact';
+export type DashboardPresentationEmphasis = 'balanced' | 'strong';
+
+export interface DashboardPresentation {
+  density: DashboardPresentationDensity;
+  emphasis: DashboardPresentationEmphasis;
+}
+
+export type DashboardStylePresetId = 'balanced-workbench' | 'focus-flow' | 'analytics-deck';
+export type DashboardStyleSelectionId = DashboardStylePresetId | 'custom';
+
+export interface DashboardStylePreset {
+  id: DashboardStylePresetId;
+  titleKey: string;
+  descriptionKey: string;
+  widgets: WidgetConfig[];
+  visualContext: DashboardVisualContext;
+  presentation: DashboardPresentation;
+}
+
 export interface AttentionCenterSettings {
   maxItems: 3 | 5;
 }
@@ -455,9 +475,18 @@ export function getDefaultVisualContext(): DashboardVisualContext {
   };
 }
 
+const DEFAULT_DASHBOARD_PRESENTATION: DashboardPresentation = {
+  density: 'comfortable',
+  emphasis: 'balanced',
+};
+
+export const DEFAULT_DASHBOARD_STYLE_PRESET_ID: DashboardStylePresetId = 'balanced-workbench';
+
 interface DashboardState {
   widgets: WidgetConfig[];
   visualContext: DashboardVisualContext;
+  activeStylePresetId: DashboardStyleSelectionId;
+  presentation: DashboardPresentation;
   isCustomizing: boolean;
   isEditMode: boolean;
 
@@ -471,12 +500,17 @@ interface DashboardState {
   toggleWidgetVisibility: (id: string) => void;
   setIsCustomizing: (value: boolean) => void;
   setIsEditMode: (value: boolean) => void;
+  applyStylePreset: (presetId: DashboardStylePresetId) => void;
+  restoreActiveStylePreset: () => void;
+  hasActiveStylePresetDiverged: () => boolean;
   resetToDefault: () => void;
 }
 
 type PersistedDashboardState = {
   widgets?: unknown;
   visualContext?: unknown;
+  activeStylePresetId?: unknown;
+  presentation?: unknown;
 };
 
 const WIDGET_SIZE_SET = new Set<WidgetSize>(['sm', 'md', 'lg', 'full']);
@@ -494,8 +528,45 @@ function cloneWidget(widget: WidgetConfig): WidgetConfig {
   };
 }
 
+function cloneDashboardPresentation(presentation: DashboardPresentation): DashboardPresentation {
+  return { ...presentation };
+}
+
 export function getDefaultWidgets(): WidgetConfig[] {
   return DEFAULT_WIDGETS.map(cloneWidget);
+}
+
+export function getDefaultDashboardPresentation(): DashboardPresentation {
+  return cloneDashboardPresentation(DEFAULT_DASHBOARD_PRESENTATION);
+}
+
+function withUpdatedWidget(
+  widgets: WidgetConfig[],
+  id: string,
+  updates: Partial<WidgetConfig>,
+): WidgetConfig[] {
+  return widgets.map((widget) => {
+    if (widget.id !== id) {
+      return widget;
+    }
+
+    const next: WidgetConfig = {
+      ...widget,
+      ...updates,
+    };
+
+    if (!isWidgetSize(next.size)) {
+      next.size = getWidgetDefinition(widget.type).defaultSize;
+    }
+
+    if (typeof next.visible !== 'boolean') {
+      next.visible = widget.visible;
+    }
+
+    next.settings = normalizeWidgetSettings(widget.type, next.settings);
+
+    return next;
+  });
 }
 
 function getWidgetDefinition(type: WidgetType): WidgetDefinition {
@@ -522,6 +593,14 @@ function normalizeDashboardVisualContext(value: unknown): DashboardVisualContext
   const raw = isRecord(value) ? value : {};
   return {
     range: raw.range === '30d' ? '30d' : '7d',
+  };
+}
+
+function normalizeDashboardPresentation(value: unknown): DashboardPresentation {
+  const raw = isRecord(value) ? value : {};
+  return {
+    density: raw.density === 'compact' ? 'compact' : 'comfortable',
+    emphasis: raw.emphasis === 'strong' ? 'strong' : 'balanced',
   };
 }
 
@@ -697,6 +776,146 @@ function generateWidgetId(type: WidgetType): string {
   return `w-${type}-${Date.now()}-${widgetCounter}`;
 }
 
+function createSnapshotKey(snapshot: {
+  widgets: WidgetConfig[];
+  visualContext: DashboardVisualContext;
+  presentation: DashboardPresentation;
+}): string {
+  return JSON.stringify({
+    widgets: snapshot.widgets.map((widget) => ({
+      id: widget.id,
+      type: widget.type,
+      size: widget.size,
+      visible: widget.visible,
+      settings: widget.settings,
+    })),
+    visualContext: snapshot.visualContext,
+    presentation: snapshot.presentation,
+  });
+}
+
+function cloneStylePreset(preset: DashboardStylePreset): DashboardStylePreset {
+  return {
+    ...preset,
+    widgets: preset.widgets.map(cloneWidget),
+    visualContext: { ...preset.visualContext },
+    presentation: cloneDashboardPresentation(preset.presentation),
+  };
+}
+
+function buildBalancedWorkbenchPreset(): DashboardStylePreset {
+  return {
+    id: 'balanced-workbench',
+    titleKey: 'dashboard.stylePresets.balancedWorkbench.title',
+    descriptionKey: 'dashboard.stylePresets.balancedWorkbench.description',
+    widgets: getDefaultWidgets(),
+    visualContext: getDefaultVisualContext(),
+    presentation: getDefaultDashboardPresentation(),
+  };
+}
+
+function buildFocusFlowPreset(): DashboardStylePreset {
+  return {
+    id: 'focus-flow',
+    titleKey: 'dashboard.stylePresets.focusFlow.title',
+    descriptionKey: 'dashboard.stylePresets.focusFlow.description',
+    widgets: normalizeDashboardWidgets([
+      { id: 'w-welcome', type: 'welcome', size: 'full', visible: true },
+      { id: 'w-search', type: 'quick-search', size: 'full', visible: true },
+      { id: 'w-actions', type: 'quick-actions', size: 'full', visible: true },
+      { id: 'w-attention', type: 'attention-center', size: 'md', visible: true, settings: { maxItems: 5 } },
+      { id: 'w-recent-activity', type: 'recent-activity-feed', size: 'md', visible: true, settings: { limit: 10, useSharedRange: true } },
+      { id: 'w-envs', type: 'environment-list', size: 'md', visible: true },
+      { id: 'w-pkgs', type: 'package-list', size: 'md', visible: true },
+      { id: 'w-updates', type: 'updates-available', size: 'md', visible: true },
+    ]),
+    visualContext: { range: '7d' },
+    presentation: {
+      density: 'comfortable',
+      emphasis: 'strong',
+    },
+  };
+}
+
+function buildAnalyticsDeckPreset(): DashboardStylePreset {
+  return {
+    id: 'analytics-deck',
+    titleKey: 'dashboard.stylePresets.analyticsDeck.title',
+    descriptionKey: 'dashboard.stylePresets.analyticsDeck.description',
+    widgets: normalizeDashboardWidgets([
+      { id: 'w-trends', type: 'workspace-trends', size: 'full', visible: true, settings: { range: '30d', metric: 'downloads', viewMode: 'comparison', useSharedRange: true } },
+      { id: 'w-health-matrix', type: 'provider-health-matrix', size: 'lg', visible: true, settings: { groupBy: 'provider', showHealthy: true, viewMode: 'heatmap' } },
+      { id: 'w-activity', type: 'activity-timeline', size: 'lg', visible: true, settings: { range: '30d', viewMode: 'intensity', useSharedRange: true } },
+      { id: 'w-recent-activity', type: 'recent-activity-feed', size: 'md', visible: true, settings: { limit: 10, useSharedRange: true } },
+      { id: 'w-downloads', type: 'download-stats', size: 'md', visible: true },
+      { id: 'w-env-chart', type: 'environment-chart', size: 'md', visible: true },
+      { id: 'w-pkg-chart', type: 'package-chart', size: 'md', visible: true },
+      { id: 'w-system', type: 'system-info', size: 'md', visible: true },
+    ]),
+    visualContext: { range: '30d' },
+    presentation: {
+      density: 'compact',
+      emphasis: 'strong',
+    },
+  };
+}
+
+export const DASHBOARD_STYLE_PRESETS: Record<DashboardStylePresetId, DashboardStylePreset> = {
+  'balanced-workbench': buildBalancedWorkbenchPreset(),
+  'focus-flow': buildFocusFlowPreset(),
+  'analytics-deck': buildAnalyticsDeckPreset(),
+};
+
+function isDashboardStylePresetId(value: unknown): value is DashboardStylePresetId {
+  return typeof value === 'string' && value in DASHBOARD_STYLE_PRESETS;
+}
+
+function getStylePresetById(presetId: DashboardStylePresetId): DashboardStylePreset {
+  return cloneStylePreset(DASHBOARD_STYLE_PRESETS[presetId]);
+}
+
+function doesSnapshotMatchPreset(
+  widgets: WidgetConfig[],
+  visualContext: DashboardVisualContext,
+  presentation: DashboardPresentation,
+  presetId: DashboardStylePresetId,
+): boolean {
+  const preset = DASHBOARD_STYLE_PRESETS[presetId];
+  return createSnapshotKey({
+    widgets,
+    visualContext,
+    presentation,
+  }) === createSnapshotKey({
+    widgets: preset.widgets,
+    visualContext: preset.visualContext,
+    presentation: preset.presentation,
+  });
+}
+
+function normalizeDashboardStyleSelection(
+  value: unknown,
+  widgets: WidgetConfig[],
+  visualContext: DashboardVisualContext,
+  presentation: DashboardPresentation,
+): DashboardStyleSelectionId {
+  if (value === 'custom') {
+    return 'custom';
+  }
+
+  if (isDashboardStylePresetId(value)) {
+    return value;
+  }
+
+  return doesSnapshotMatchPreset(
+    widgets,
+    visualContext,
+    presentation,
+    DEFAULT_DASHBOARD_STYLE_PRESET_ID,
+  )
+    ? DEFAULT_DASHBOARD_STYLE_PRESET_ID
+    : 'custom';
+}
+
 export function getWidgetTypeCount(widgets: readonly WidgetConfig[], type: WidgetType): number {
   return widgets.reduce((count, widget) => (widget.type === type ? count + 1 : count), 0);
 }
@@ -743,9 +962,11 @@ export function canToggleWidgetVisibilityById(widgets: readonly WidgetConfig[], 
 
 export const useDashboardStore = create<DashboardState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       widgets: getDefaultWidgets(),
       visualContext: getDefaultVisualContext(),
+      activeStylePresetId: DEFAULT_DASHBOARD_STYLE_PRESET_ID,
+      presentation: getDefaultDashboardPresentation(),
       isCustomizing: false,
       isEditMode: false,
 
@@ -782,28 +1003,7 @@ export const useDashboardStore = create<DashboardState>()(
 
       updateWidget: (id, updates) =>
         set((state) => ({
-          widgets: state.widgets.map((widget) => {
-            if (widget.id !== id) {
-              return widget;
-            }
-
-            const next: WidgetConfig = {
-              ...widget,
-              ...updates,
-            };
-
-            if (!isWidgetSize(next.size)) {
-              next.size = getWidgetDefinition(widget.type).defaultSize;
-            }
-
-            if (typeof next.visible !== 'boolean') {
-              next.visible = widget.visible;
-            }
-
-            next.settings = normalizeWidgetSettings(widget.type, next.settings);
-
-            return next;
-          }),
+          widgets: withUpdatedWidget(state.widgets, id, updates),
         })),
 
       setVisualContext: (updates) =>
@@ -843,29 +1043,90 @@ export const useDashboardStore = create<DashboardState>()(
 
       setIsEditMode: (isEditMode) => set({ isEditMode }),
 
+      applyStylePreset: (presetId) => {
+        const preset = getStylePresetById(presetId);
+        set({
+          widgets: preset.widgets,
+          visualContext: preset.visualContext,
+          activeStylePresetId: preset.id,
+          presentation: preset.presentation,
+        });
+      },
+
+      restoreActiveStylePreset: () => {
+        const state = get();
+        if (state.activeStylePresetId === 'custom') {
+          return;
+        }
+
+        const preset = getStylePresetById(state.activeStylePresetId);
+        set({
+          widgets: preset.widgets,
+          visualContext: preset.visualContext,
+          presentation: preset.presentation,
+        });
+      },
+
+      hasActiveStylePresetDiverged: () => {
+        const state = get();
+        if (state.activeStylePresetId === 'custom') {
+          return false;
+        }
+
+        return !doesSnapshotMatchPreset(
+          state.widgets,
+          state.visualContext,
+          state.presentation,
+          state.activeStylePresetId,
+        );
+      },
+
       resetToDefault: () => set({
         widgets: getDefaultWidgets(),
         visualContext: getDefaultVisualContext(),
+        activeStylePresetId: DEFAULT_DASHBOARD_STYLE_PRESET_ID,
+        presentation: getDefaultDashboardPresentation(),
       }),
     }),
     {
       name: 'cognia-dashboard',
       storage: createJSONStorage(() => localStorage),
-      version: 5,
+      version: 6,
       migrate: (persistedState, version) => {
         const state = (persistedState ?? {}) as PersistedDashboardState;
         const widgetsSource = version < 2
           ? normalizeLegacyWidgetsV1(state.widgets)
           : state.widgets;
 
+        const widgets = normalizeDashboardWidgets(widgetsSource);
+        const visualContext = normalizeDashboardVisualContext(state.visualContext);
+        const presentation = normalizeDashboardPresentation(state.presentation);
+        const hasLegacyDashboardState = version < 6 && (state.widgets !== undefined || state.visualContext !== undefined);
+        const activeStylePresetId = hasLegacyDashboardState
+          ? 'custom'
+          : normalizeDashboardStyleSelection(
+              state.activeStylePresetId,
+              widgets,
+              visualContext,
+              presentation,
+            );
+
         return {
-          widgets: normalizeDashboardWidgets(widgetsSource),
-          visualContext: normalizeDashboardVisualContext(state.visualContext),
+          widgets,
+          visualContext,
+          activeStylePresetId,
+          presentation: activeStylePresetId === 'custom' ? presentation : (
+            isDashboardStylePresetId(activeStylePresetId)
+              ? getStylePresetById(activeStylePresetId).presentation
+              : getDefaultDashboardPresentation()
+          ),
         } as DashboardState;
       },
       partialize: (state) => ({
         widgets: state.widgets,
         visualContext: state.visualContext,
+        activeStylePresetId: state.activeStylePresetId,
+        presentation: state.presentation,
       }),
     },
   ),

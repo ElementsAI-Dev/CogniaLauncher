@@ -1,9 +1,12 @@
 import {
+  DEFAULT_DASHBOARD_STYLE_PRESET_ID,
+  DASHBOARD_STYLE_PRESETS,
   useDashboardStore,
   WIDGET_DEFINITIONS,
   canAddWidgetType,
   canRemoveWidgetById,
   canToggleWidgetVisibilityById,
+  getDefaultDashboardPresentation,
   getDefaultWidgets,
   getDefaultWidgetSettings,
   getWidgetTypeCount,
@@ -16,6 +19,8 @@ describe('useDashboardStore', () => {
     useDashboardStore.setState({
       widgets: getDefaultWidgets(),
       visualContext: { range: '7d' },
+      activeStylePresetId: DEFAULT_DASHBOARD_STYLE_PRESET_ID,
+      presentation: getDefaultDashboardPresentation(),
       isCustomizing: false,
       isEditMode: false,
     } as never);
@@ -391,6 +396,20 @@ describe('useDashboardStore', () => {
   });
 
   describe('actions', () => {
+    it('exposes canonical dashboard style presets and a default preset id', () => {
+      expect(DEFAULT_DASHBOARD_STYLE_PRESET_ID).toBe('balanced-workbench');
+      expect(Object.keys(DASHBOARD_STYLE_PRESETS)).toEqual([
+        'balanced-workbench',
+        'focus-flow',
+        'analytics-deck',
+      ]);
+      expect(DASHBOARD_STYLE_PRESETS['analytics-deck']).toEqual(
+        expect.objectContaining({
+          titleKey: 'dashboard.stylePresets.analyticsDeck.title',
+        }),
+      );
+    });
+
     it('exposes a default shared visual context', () => {
       const state = useDashboardStore.getState() as unknown as {
         visualContext?: { range?: string };
@@ -399,6 +418,18 @@ describe('useDashboardStore', () => {
       expect(state.visualContext).toEqual({
         range: '7d',
       });
+    });
+
+    it('exposes default preset metadata and presentation tokens', () => {
+      const state = useDashboardStore.getState() as unknown as {
+        activeStylePresetId?: string;
+        presentation?: { density?: string; emphasis?: string };
+        hasActiveStylePresetDiverged?: () => boolean;
+      };
+
+      expect(state.activeStylePresetId).toBe(DEFAULT_DASHBOARD_STYLE_PRESET_ID);
+      expect(state.presentation).toEqual(getDefaultDashboardPresentation());
+      expect(state.hasActiveStylePresetDiverged?.()).toBe(false);
     });
 
     it('exposes the canonical insight widgets in the latest default layout', () => {
@@ -574,6 +605,39 @@ describe('useDashboardStore', () => {
       expect(useDashboardStore.getState().isEditMode).toBe(true);
     });
 
+    it('applies a style preset and restores its canonical snapshot', () => {
+      const store = useDashboardStore.getState() as unknown as {
+        activeStylePresetId: string;
+        presentation: { density: string; emphasis: string };
+        applyStylePreset: (presetId: string) => void;
+        hasActiveStylePresetDiverged: () => boolean;
+        restoreActiveStylePreset: () => void;
+        updateWidget: (id: string, updates: Partial<WidgetConfig>) => void;
+      };
+
+      store.applyStylePreset('analytics-deck');
+      const appliedState = useDashboardStore.getState() as unknown as {
+        activeStylePresetId: string;
+        presentation: { density: string; emphasis: string };
+        hasActiveStylePresetDiverged: () => boolean;
+        updateWidget: (id: string, updates: Partial<WidgetConfig>) => void;
+        restoreActiveStylePreset: () => void;
+      };
+
+      expect(appliedState.activeStylePresetId).toBe('analytics-deck');
+      expect(useDashboardStore.getState().widgets).toEqual(DASHBOARD_STYLE_PRESETS['analytics-deck'].widgets);
+      expect(useDashboardStore.getState().visualContext).toEqual(DASHBOARD_STYLE_PRESETS['analytics-deck'].visualContext);
+      expect(appliedState.presentation).toEqual(DASHBOARD_STYLE_PRESETS['analytics-deck'].presentation);
+      expect(appliedState.hasActiveStylePresetDiverged()).toBe(false);
+
+      appliedState.updateWidget('w-trends', { size: 'md' });
+      expect((useDashboardStore.getState() as unknown as { hasActiveStylePresetDiverged: () => boolean }).hasActiveStylePresetDiverged()).toBe(true);
+
+      appliedState.restoreActiveStylePreset();
+      expect(useDashboardStore.getState().widgets).toEqual(DASHBOARD_STYLE_PRESETS['analytics-deck'].widgets);
+      expect((useDashboardStore.getState() as unknown as { hasActiveStylePresetDiverged: () => boolean }).hasActiveStylePresetDiverged()).toBe(false);
+    });
+
     it('resets widgets to canonical defaults', () => {
       useDashboardStore.getState().removeWidget('w-stats');
       useDashboardStore.getState().addWidget('environment-chart');
@@ -584,6 +648,9 @@ describe('useDashboardStore', () => {
       expect(widgets).toEqual(getDefaultWidgets());
       expect(widgets[2].id).toBe('w-attention');
       expect(widgets[4].id).toBe('w-trends');
+      expect((useDashboardStore.getState() as unknown as { activeStylePresetId?: string }).activeStylePresetId).toBe(
+        DEFAULT_DASHBOARD_STYLE_PRESET_ID,
+      );
     });
   });
 
@@ -710,6 +777,45 @@ describe('useDashboardStore', () => {
       };
       expect(migrated.widgets).toEqual(getDefaultWidgets());
       expect(migrated.visualContext).toEqual({ range: '7d' });
+    });
+
+    it('marks legacy customized layouts as custom instead of forcing a preset during migration', () => {
+      const persistConfig = (useDashboardStore as unknown as {
+        persist: { getOptions: () => { migrate: (state: unknown, version: number) => unknown } };
+      }).persist.getOptions();
+
+      const migrated = persistConfig.migrate({
+        widgets: [
+          { id: 'w-stats', type: 'stats-overview', size: 'full', visible: true },
+          { id: 'w-search', type: 'quick-search', size: 'full', visible: true },
+        ],
+        visualContext: { range: '30d' },
+      }, 5) as {
+        activeStylePresetId: string;
+        presentation: { density: string; emphasis: string };
+      };
+
+      expect(migrated.activeStylePresetId).toBe('custom');
+      expect(migrated.presentation).toEqual(getDefaultDashboardPresentation());
+    });
+
+    it('normalizes invalid preset metadata when migrating current payloads', () => {
+      const persistConfig = (useDashboardStore as unknown as {
+        persist: { getOptions: () => { migrate: (state: unknown, version: number) => unknown } };
+      }).persist.getOptions();
+
+      const migrated = persistConfig.migrate({
+        widgets: getDefaultWidgets(),
+        visualContext: { range: '7d' },
+        activeStylePresetId: 'missing-preset',
+        presentation: { density: 'dense', emphasis: 'loud' },
+      }, 6) as {
+        activeStylePresetId: string;
+        presentation: { density: string; emphasis: string };
+      };
+
+      expect(migrated.activeStylePresetId).toBe(DEFAULT_DASHBOARD_STYLE_PRESET_ID);
+      expect(migrated.presentation).toEqual(getDefaultDashboardPresentation());
     });
   });
 });

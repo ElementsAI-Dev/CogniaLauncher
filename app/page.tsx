@@ -5,6 +5,14 @@ import { PageHeader } from '@/components/layout/page-header';
 import { WidgetGrid } from '@/components/dashboard/widget-grid';
 import { CustomizeDialog } from '@/components/dashboard/customize-dialog';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { useEnvironments } from '@/hooks/use-environments';
@@ -12,7 +20,7 @@ import { usePackages } from '@/hooks/use-packages';
 import { useSettings } from '@/hooks/use-settings';
 import { useDashboardInsights } from '@/hooks/use-dashboard-insights';
 import { useLocale } from '@/components/providers/locale-provider';
-import { useDashboardStore } from '@/lib/stores/dashboard';
+import { DASHBOARD_STYLE_PRESETS, useDashboardStore } from '@/lib/stores/dashboard';
 import { DashboardStatusBadge } from '@/components/dashboard/dashboard-primitives';
 import { isTauri } from '@/lib/tauri';
 import {
@@ -20,7 +28,7 @@ import {
   subscribeInvalidation,
   withThrottle,
 } from '@/lib/cache/invalidation';
-import { Settings2, Pencil, Check, CheckCircle2, AlertCircle, X, RefreshCw } from 'lucide-react';
+import { Settings2, Pencil, Check, CheckCircle2, AlertCircle, X, RefreshCw, Sparkles } from 'lucide-react';
 
 export default function DashboardPage() {
   const { environments, fetchEnvironments, loading: envsLoading, error: envsError } = useEnvironments();
@@ -56,9 +64,12 @@ export default function DashboardPage() {
   const isCustomizing = useDashboardStore((s) => s.isCustomizing);
   const isEditMode = useDashboardStore((s) => s.isEditMode);
   const visualContext = useDashboardStore((s) => s.visualContext);
+  const activeStylePresetId = useDashboardStore((s) => s.activeStylePresetId);
+  const hasActiveStylePresetDiverged = useDashboardStore((s) => s.hasActiveStylePresetDiverged);
   const setIsCustomizing = useDashboardStore((s) => s.setIsCustomizing);
   const setIsEditMode = useDashboardStore((s) => s.setIsEditMode);
   const setVisualContext = useDashboardStore((s) => s.setVisualContext);
+  const applyStylePreset = useDashboardStore((s) => s.applyStylePreset);
 
   useEffect(() => {
     if (initialFetchDone.current) return;
@@ -157,6 +168,10 @@ export default function DashboardPage() {
     setVisualContext({ range });
   }, [setVisualContext]);
 
+  const handleApplyStylePreset = useCallback((presetId: keyof typeof DASHBOARD_STYLE_PRESETS) => {
+    applyStylePreset(presetId);
+  }, [applyStylePreset]);
+
   const handleCustomizeDialogChange = useCallback(
     (open: boolean) => {
       if (open && !isEditMode) {
@@ -183,6 +198,10 @@ export default function DashboardPage() {
     : null;
 
   const isLoading = envsLoading || pkgsLoading || settingsLoading;
+  const isPresetDiverged = hasActiveStylePresetDiverged();
+  const activeStylePresetLabel = activeStylePresetId === 'custom'
+    ? t('dashboard.stylePresets.custom.title')
+    : t(DASHBOARD_STYLE_PRESETS[activeStylePresetId].titleKey);
   const sectionStates = [
     {
       id: 'environments',
@@ -256,6 +275,49 @@ export default function DashboardPage() {
                   30d
                 </Button>
               </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full justify-between gap-2 sm:w-auto"
+                    data-testid="dashboard-style-preset-trigger"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Sparkles className="h-4 w-4" />
+                      <span>{activeStylePresetLabel}</span>
+                    </span>
+                    {isPresetDiverged && (
+                      <DashboardStatusBadge tone="warning">
+                        {t('dashboard.stylePresets.diverged')}
+                      </DashboardStatusBadge>
+                    )}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-64">
+                  <DropdownMenuLabel>{t('dashboard.stylePresets.currentLabel')}</DropdownMenuLabel>
+                  {Object.values(DASHBOARD_STYLE_PRESETS).map((preset) => (
+                    <DropdownMenuItem
+                      key={preset.id}
+                      onClick={() => handleApplyStylePreset(preset.id)}
+                      className="flex items-start justify-between gap-3"
+                      data-testid={`dashboard-style-preset-option-${preset.id}`}
+                    >
+                      <div className="min-w-0">
+                        <div className="font-medium">{t(preset.titleKey)}</div>
+                        <div className="text-xs text-muted-foreground">{t(preset.descriptionKey)}</div>
+                      </div>
+                      {activeStylePresetId === preset.id && !isPresetDiverged ? (
+                        <CheckCircle2 className="mt-0.5 h-4 w-4 text-primary" />
+                      ) : null}
+                    </DropdownMenuItem>
+                  ))}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handleOpenCustomize}>
+                    {t('dashboard.stylePresets.customizeShortcut')}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
               <Button
                 variant="outline"
                 size="sm"

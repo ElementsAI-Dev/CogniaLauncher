@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import DashboardPage from "./page";
 import { LocaleProvider } from "@/components/providers/locale-provider";
+import userEvent from "@testing-library/user-event";
 
 // Mock next/navigation
 jest.mock("next/navigation", () => ({
@@ -39,12 +40,15 @@ const mockUseDashboardInsights = jest.fn(() => ({
 const mockSetIsCustomizing = jest.fn();
 const mockSetIsEditMode = jest.fn();
 const mockSetVisualContext = jest.fn();
+const mockApplyStylePreset = jest.fn();
 let mockEnvsError: string | null = null;
 let mockPkgsError: string | null = null;
 let mockSettingsError: string | null = null;
 let mockDashboardIsCustomizing = false;
 let mockDashboardIsEditMode = false;
 let mockDashboardVisualContext = { range: "7d" };
+let mockDashboardActiveStylePresetId = "balanced-workbench";
+let mockDashboardHasPresetDiverged = false;
 
 // Mock hooks used by the dashboard page
 jest.mock("@/hooks/use-environments", () => ({
@@ -140,9 +144,14 @@ jest.mock("@/lib/stores/dashboard", () => {
         isCustomizing: mockDashboardIsCustomizing,
         isEditMode: mockDashboardIsEditMode,
         visualContext: mockDashboardVisualContext,
+        activeStylePresetId: mockDashboardActiveStylePresetId,
+        presentation: { density: "comfortable", emphasis: "balanced" },
         setIsCustomizing: (...args: unknown[]) => mockSetIsCustomizing(...args),
         setIsEditMode: (...args: unknown[]) => mockSetIsEditMode(...args),
         setVisualContext: (...args: unknown[]) => mockSetVisualContext(...args),
+        applyStylePreset: (...args: unknown[]) => mockApplyStylePreset(...args),
+        restoreActiveStylePreset: jest.fn(),
+        hasActiveStylePresetDiverged: () => mockDashboardHasPresetDiverged,
         widgets: [
           { id: 'w-stats', type: 'stats-overview', size: 'full', visible: true },
           { id: 'w-search', type: 'quick-search', size: 'full', visible: true },
@@ -159,6 +168,23 @@ jest.mock("@/lib/stores/dashboard", () => {
         updateWidget: jest.fn(),
       };
       return selector(state);
+    },
+    DASHBOARD_STYLE_PRESETS: {
+      "balanced-workbench": {
+        id: "balanced-workbench",
+        titleKey: "dashboard.stylePresets.balancedWorkbench.title",
+        descriptionKey: "dashboard.stylePresets.balancedWorkbench.description",
+      },
+      "focus-flow": {
+        id: "focus-flow",
+        titleKey: "dashboard.stylePresets.focusFlow.title",
+        descriptionKey: "dashboard.stylePresets.focusFlow.description",
+      },
+      "analytics-deck": {
+        id: "analytics-deck",
+        titleKey: "dashboard.stylePresets.analyticsDeck.title",
+        descriptionKey: "dashboard.stylePresets.analyticsDeck.description",
+      },
     },
   };
 });
@@ -203,6 +229,28 @@ const mockMessages = {
         refreshAll: "Refresh All",
         openSettings: "Settings",
         viewLogs: "View Logs",
+      },
+      stylePresets: {
+        triggerLabel: "Style preset",
+        currentLabel: "Current style",
+        diverged: "Modified from preset",
+        customizeShortcut: "Customize layout",
+        balancedWorkbench: {
+          title: "Balanced Workbench",
+          description: "Balanced dashboard layout",
+        },
+        focusFlow: {
+          title: "Focus Flow",
+          description: "Focus on actions and follow-ups",
+        },
+        analyticsDeck: {
+          title: "Analytics Deck",
+          description: "Analytics-first dashboard",
+        },
+        custom: {
+          title: "Custom layout",
+          description: "User-customized homepage",
+        },
       },
       environmentList: {
         title: "Environments",
@@ -291,6 +339,8 @@ describe("Dashboard Page", () => {
     mockDashboardIsCustomizing = false;
     mockDashboardIsEditMode = false;
     mockDashboardVisualContext = { range: "7d" };
+    mockDashboardActiveStylePresetId = "balanced-workbench";
+    mockDashboardHasPresetDiverged = false;
   });
 
   it("renders the dashboard title", async () => {
@@ -517,6 +567,41 @@ describe("Dashboard Page", () => {
     fireEvent.click(screen.getByTestId("dashboard-analytics-range-30d"));
 
     expect(mockSetVisualContext).toHaveBeenCalledWith({ range: "30d" });
+  });
+
+  it("renders the active dashboard style preset in the header", async () => {
+    renderWithProviders(<DashboardPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("dashboard-style-preset-trigger")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("Balanced Workbench")).toBeInTheDocument();
+  });
+
+  it("applies a dashboard style preset from the quick switch menu", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<DashboardPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("dashboard-style-preset-trigger")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId("dashboard-style-preset-trigger"));
+    await user.click(
+      await screen.findByTestId("dashboard-style-preset-option-analytics-deck"),
+    );
+
+    expect(mockApplyStylePreset).toHaveBeenCalledWith("analytics-deck");
+  });
+
+  it("shows a preset divergence badge when the dashboard differs from the active preset", async () => {
+    mockDashboardHasPresetDiverged = true;
+    renderWithProviders(<DashboardPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Modified from preset")).toBeInTheDocument();
+    });
   });
 
   it("closes customize dialog when turning off edit mode", async () => {

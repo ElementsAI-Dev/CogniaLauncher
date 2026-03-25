@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 import { useLocale } from "@/components/providers/locale-provider";
 import { WIDGET_SIZE_CLASSES } from "@/lib/constants/dashboard";
 import { nextWidgetSize, prevWidgetSize } from "@/lib/dashboard-utils";
-import type { WidgetConfig, WidgetSize } from "@/lib/stores/dashboard";
+import type { DashboardPresentation, WidgetConfig, WidgetSize } from "@/lib/stores/dashboard";
 
 interface WidgetWrapperProps {
   widget: WidgetConfig;
@@ -23,6 +23,7 @@ interface WidgetWrapperProps {
   onRemove: (id: string) => void;
   onToggleVisibility: (id: string) => void;
   onResize: (id: string, size: WidgetSize) => void;
+  presentation?: DashboardPresentation;
   toolbarExtras?: React.ReactNode;
   children: React.ReactNode;
 }
@@ -35,6 +36,7 @@ export function WidgetWrapper({
   onRemove,
   onToggleVisibility,
   onResize,
+  presentation = { density: "comfortable", emphasis: "balanced" },
   toolbarExtras,
   children,
 }: WidgetWrapperProps) {
@@ -64,9 +66,13 @@ export function WidgetWrapper({
       role="listitem"
       aria-label={widget.type}
       aria-roledescription="dashboard widget"
+      data-density={presentation.density}
+      data-emphasis={presentation.emphasis}
       className={cn(
         WIDGET_SIZE_CLASSES[widget.size],
         "relative group/widget transition-all duration-200 *:h-full",
+        presentation.density === "compact" && "rounded-lg",
+        presentation.emphasis === "strong" && "shadow-sm",
         isDragging && "z-50 opacity-80 scale-[1.02] shadow-xl",
         !widget.visible && isEditMode && "opacity-50",
         isEditMode && "rounded-xl ring-1 ring-dashed ring-primary/40",

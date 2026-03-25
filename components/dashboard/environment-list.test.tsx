@@ -269,4 +269,16 @@ describe("EnvironmentList", () => {
     fireEvent.click(screen.getByText("Retry"));
     expect(onRecover).toHaveBeenCalledTimes(1);
   });
+
+  it("applies compact presentation styling attributes", () => {
+    const { container } = render(
+      <EnvironmentList
+        environments={mockEnvironments}
+        presentation={{ density: "compact", emphasis: "strong" }}
+      />,
+    );
+
+    expect(container.firstChild).toHaveAttribute("data-density", "compact");
+    expect(container.firstChild).toHaveAttribute("data-emphasis", "strong");
+  });
 });

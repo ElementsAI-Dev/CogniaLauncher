@@ -40,6 +40,7 @@ import { useLocale } from "@/components/providers/locale-provider";
 import { cn } from "@/lib/utils";
 import {
   useDashboardStore,
+  DASHBOARD_STYLE_PRESETS,
   WIDGET_DEFINITIONS,
   canAddWidgetType,
   getWidgetTypeCount,
@@ -79,6 +80,10 @@ export function CustomizeDialog({ open, onOpenChange }: CustomizeDialogProps) {
   const widgets = useDashboardStore((s) => s.widgets);
   const addWidget = useDashboardStore((s) => s.addWidget);
   const resetToDefault = useDashboardStore((s) => s.resetToDefault);
+  const activeStylePresetId = useDashboardStore((s) => s.activeStylePresetId);
+  const applyStylePreset = useDashboardStore((s) => s.applyStylePreset);
+  const restoreActiveStylePreset = useDashboardStore((s) => s.restoreActiveStylePreset);
+  const hasActiveStylePresetDiverged = useDashboardStore((s) => s.hasActiveStylePresetDiverged);
 
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
 
@@ -109,6 +114,9 @@ export function CustomizeDialog({ open, onOpenChange }: CustomizeDialogProps) {
     onOpenChange(false);
   };
 
+  const presetCards = useMemo(() => Object.values(DASHBOARD_STYLE_PRESETS), []);
+  const isPresetDiverged = hasActiveStylePresetDiverged();
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
@@ -127,6 +135,71 @@ export function CustomizeDialog({ open, onOpenChange }: CustomizeDialogProps) {
             total: widgets.length,
             types: uniqueTypeCount,
           })}
+        </div>
+
+        <div className="space-y-3 rounded-xl border border-border/60 bg-muted/20 p-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium">{t("dashboard.stylePresets.currentLabel")}</p>
+              <p className="text-xs text-muted-foreground">
+                {activeStylePresetId === "custom"
+                  ? t("dashboard.stylePresets.custom.description")
+                  : t(DASHBOARD_STYLE_PRESETS[activeStylePresetId].descriptionKey)}
+              </p>
+            </div>
+            {isPresetDiverged && (
+              <DashboardStatusBadge tone="warning">
+                {t("dashboard.stylePresets.diverged")}
+              </DashboardStatusBadge>
+            )}
+          </div>
+
+          <div className="grid gap-2 sm:grid-cols-3">
+            {presetCards.map((preset) => (
+              <div
+                key={preset.id}
+                className={cn(
+                  "rounded-lg border p-3",
+                  activeStylePresetId === preset.id && !isPresetDiverged
+                    ? "border-primary/60 bg-primary/5"
+                    : "bg-background/60",
+                )}
+                data-testid={`dashboard-style-preset-${preset.id}`}
+              >
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium">{t(preset.titleKey)}</span>
+                    {activeStylePresetId === preset.id && !isPresetDiverged ? (
+                      <DashboardStatusBadge tone="success">
+                        {t("dashboard.stylePresets.active")}
+                      </DashboardStatusBadge>
+                    ) : null}
+                  </div>
+                  <p className="text-xs text-muted-foreground">{t(preset.descriptionKey)}</p>
+                </div>
+                <Button
+                  variant={activeStylePresetId === preset.id ? "outline" : "default"}
+                  size="sm"
+                  className="mt-3 w-full"
+                  onClick={() => applyStylePreset(preset.id)}
+                  data-testid={`dashboard-style-preset-apply-${preset.id}`}
+                >
+                  {t("dashboard.stylePresets.apply")}
+                </Button>
+              </div>
+            ))}
+          </div>
+
+          {isPresetDiverged && activeStylePresetId !== "custom" ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={restoreActiveStylePreset}
+              data-testid="dashboard-style-preset-restore"
+            >
+              {t("dashboard.stylePresets.restoreActive")}
+            </Button>
+          ) : null}
         </div>
 
         <ToggleGroup

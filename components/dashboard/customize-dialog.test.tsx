@@ -16,6 +16,10 @@ jest.mock("@/components/providers/locale-provider", () => ({
 
 const mockAddWidget = jest.fn();
 const mockResetToDefault = jest.fn();
+const mockApplyStylePreset = jest.fn();
+const mockRestoreActiveStylePreset = jest.fn();
+let mockHasPresetDiverged = false;
+let mockActiveStylePresetId = "balanced-workbench";
 
 let mockWidgets: Array<{ id: string; type: string; size: string; visible: boolean }> = [
   { id: "w-1", type: "stats-overview", size: "full", visible: true },
@@ -115,8 +119,29 @@ jest.mock("@/lib/stores/dashboard", () => {
         widgets: mockWidgets,
         addWidget: (...args: unknown[]) => mockAddWidget(...args),
         resetToDefault: (...args: unknown[]) => mockResetToDefault(...args),
+        activeStylePresetId: mockActiveStylePresetId,
+        applyStylePreset: (...args: unknown[]) => mockApplyStylePreset(...args),
+        restoreActiveStylePreset: (...args: unknown[]) => mockRestoreActiveStylePreset(...args),
+        hasActiveStylePresetDiverged: () => mockHasPresetDiverged,
       }),
     WIDGET_DEFINITIONS: mockDefinitions,
+    DASHBOARD_STYLE_PRESETS: {
+      "balanced-workbench": {
+        id: "balanced-workbench",
+        titleKey: "dashboard.stylePresets.balancedWorkbench.title",
+        descriptionKey: "dashboard.stylePresets.balancedWorkbench.description",
+      },
+      "focus-flow": {
+        id: "focus-flow",
+        titleKey: "dashboard.stylePresets.focusFlow.title",
+        descriptionKey: "dashboard.stylePresets.focusFlow.description",
+      },
+      "analytics-deck": {
+        id: "analytics-deck",
+        titleKey: "dashboard.stylePresets.analyticsDeck.title",
+        descriptionKey: "dashboard.stylePresets.analyticsDeck.description",
+      },
+    },
     canAddWidgetType: (
       widgets: Array<{ type: string }>,
       type: string,
@@ -136,6 +161,8 @@ jest.mock("@/lib/stores/dashboard", () => {
 describe("CustomizeDialog", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockHasPresetDiverged = false;
+    mockActiveStylePresetId = "balanced-workbench";
     mockWidgets = [
       { id: "w-1", type: "stats-overview", size: "full", visible: true },
       { id: "w-2", type: "environment-chart", size: "md", visible: true },
@@ -162,6 +189,16 @@ describe("CustomizeDialog", () => {
     );
     expect(screen.getByTestId("dashboard-customize-summary")).toBeInTheDocument();
     expect(screen.getByText("dashboard.widgets.currentLayoutSummary")).toBeInTheDocument();
+  });
+
+  it("renders dashboard style preset cards", () => {
+    render(
+      <CustomizeDialog open={true} onOpenChange={jest.fn()} />,
+    );
+
+    expect(screen.getByTestId("dashboard-style-preset-balanced-workbench")).toBeInTheDocument();
+    expect(screen.getByTestId("dashboard-style-preset-focus-flow")).toBeInTheDocument();
+    expect(screen.getByTestId("dashboard-style-preset-analytics-deck")).toBeInTheDocument();
   });
 
   it("renders all widget definitions with titles and descriptions", () => {
@@ -236,6 +273,29 @@ describe("CustomizeDialog", () => {
 
     expect(mockResetToDefault).toHaveBeenCalledTimes(1);
     expect(mockOnOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("applies a style preset from the dialog", async () => {
+    const user = userEvent.setup();
+    render(
+      <CustomizeDialog open={true} onOpenChange={jest.fn()} />,
+    );
+
+    await user.click(screen.getByTestId("dashboard-style-preset-apply-analytics-deck"));
+
+    expect(mockApplyStylePreset).toHaveBeenCalledWith("analytics-deck");
+  });
+
+  it("shows restore action when the active preset has diverged", async () => {
+    mockHasPresetDiverged = true;
+    const user = userEvent.setup();
+    render(
+      <CustomizeDialog open={true} onOpenChange={jest.fn()} />,
+    );
+
+    expect(screen.getByText("dashboard.stylePresets.diverged")).toBeInTheDocument();
+    await user.click(screen.getByTestId("dashboard-style-preset-restore"));
+    expect(mockRestoreActiveStylePreset).toHaveBeenCalledTimes(1);
   });
 
   it("calls onOpenChange(false) when close button is clicked", async () => {
