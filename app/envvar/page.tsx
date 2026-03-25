@@ -53,9 +53,9 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { AlertCircle, Variable, Route, Terminal, Plus, Upload, Download, RefreshCw } from 'lucide-react';
+import { AlertCircle, Variable, Route, Terminal, Plus, Upload, Download, RefreshCw, History } from 'lucide-react';
 import { toast } from 'sonner';
-import type { EnvVarScope } from '@/types/tauri';
+import type { EnvVarBackupProtectionState, EnvVarScope, EnvVarSnapshotRestorePreview } from '@/types/tauri';
 
 export default function EnvVarPage() {
   const {
@@ -82,6 +82,15 @@ export default function EnvVarPage() {
     supportSnapshot,
     supportLoading,
     supportError,
+    snapshotHistory,
+    snapshotLoading,
+    snapshotError,
+    fetchSnapshotHistory,
+    createSnapshot,
+    getBackupProtection,
+    previewSnapshotRestore,
+    restoreSnapshot,
+    deleteSnapshot,
     setVar,
     removeVar,
     fetchPath,
@@ -121,6 +130,9 @@ export default function EnvVarPage() {
   const [activeAction, setActiveAction] = useState<EnvVarAction | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
+  const [backupProtection, setBackupProtection] = useState<EnvVarBackupProtectionState | null>(null);
+  const [snapshotPreview, setSnapshotPreview] = useState<EnvVarSnapshotRestorePreview | null>(null);
+  const [selectedSnapshotPath, setSelectedSnapshotPath] = useState<string | null>(null);
 
   const refreshVariables = useCallback(async (
     scope: EnvVarScope | 'all',
@@ -172,9 +184,37 @@ export default function EnvVarPage() {
     const timer = setTimeout(() => {
       void refreshVariables('all', { forceRefresh: true });
       void loadSupportSnapshot();
+      void fetchSnapshotHistory();
     }, 0);
     return () => clearTimeout(timer);
-  }, [isDesktop, loadSupportSnapshot, refreshVariables]);
+  }, [fetchSnapshotHistory, isDesktop, loadSupportSnapshot, refreshVariables]);
+
+  useEffect(() => {
+    if (!isDesktop) return;
+    const protectionScope: EnvVarScope = scopeFilter === 'system' ? 'system' : 'user';
+    void getBackupProtection('import_apply', protectionScope).then(setBackupProtection);
+  }, [getBackupProtection, isDesktop, scopeFilter]);
+
+  const handleCreateSnapshot = useCallback(() => {
+    void createSnapshot(['user', 'system'], {
+      creationMode: 'manual',
+      sourceAction: 'manual_snapshot',
+      note: t('envvar.snapshots.manualNote'),
+    });
+  }, [createSnapshot, t]);
+
+  const handlePreviewSnapshot = useCallback((snapshotPath: string) => {
+    setSelectedSnapshotPath(snapshotPath);
+    void previewSnapshotRestore(snapshotPath).then(setSnapshotPreview);
+  }, [previewSnapshotRestore]);
+
+  const handleRestoreSnapshot = useCallback((snapshotPath: string) => {
+    void restoreSnapshot(snapshotPath);
+  }, [restoreSnapshot]);
+
+  const handleDeleteSnapshot = useCallback((snapshotPath: string) => {
+    void deleteSnapshot(snapshotPath);
+  }, [deleteSnapshot]);
 
   const handleTabChange = useCallback((tab: string) => {
     const nextTab = (tab as 'variables' | 'path' | 'shells');
@@ -495,6 +535,105 @@ export default function EnvVarPage() {
             )}
           </div>
         )}
+
+        <Card data-testid="envvar-snapshot-history" className="shrink-0">
+          <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
+            <div className="space-y-1">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <History className="h-4 w-4" />
+                {t('envvar.snapshots.title')}
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">
+                {t('envvar.snapshots.description')}
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleCreateSnapshot}
+              disabled={snapshotLoading}
+            >
+              {t('envvar.snapshots.create')}
+            </Button>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {backupProtection && (
+              <Alert data-testid="envvar-snapshot-protection">
+                <AlertCircle className="h-4 w-4" />
+                <div className="flex w-full items-center justify-between gap-3">
+                  <AlertDescription>{backupProtection.reason}</AlertDescription>
+                  <Badge variant={backupProtection.state === 'blocked' ? 'destructive' : 'secondary'}>
+                    {backupProtection.state}
+                  </Badge>
+                </div>
+              </Alert>
+            )}
+            {snapshotError && (
+              <Alert variant="destructive" data-testid="envvar-snapshot-error">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{snapshotError}</AlertDescription>
+              </Alert>
+            )}
+            {snapshotHistory.length === 0 ? (
+              <p className="text-sm text-muted-foreground">{t('envvar.snapshots.empty')}</p>
+            ) : (
+              <div className="space-y-2">
+                {snapshotHistory.slice(0, 5).map((snapshot) => (
+                  <div
+                    key={snapshot.path}
+                    className="flex items-start justify-between gap-3 rounded-lg border px-3 py-2"
+                  >
+                    <div className="space-y-1">
+                      <div className="text-sm font-medium">{snapshot.name}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {[snapshot.creationMode, snapshot.sourceAction || t('envvar.snapshots.manualSource'), snapshot.scopes.join(', ')].join(' · ')}
+                      </div>
+                      {snapshot.note && (
+                        <div className="text-xs text-muted-foreground">{snapshot.note}</div>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant={snapshot.integrityState === 'valid' ? 'secondary' : 'destructive'}>
+                        {snapshot.integrityState}
+                      </Badge>
+                      <Button variant="ghost" size="sm" onClick={() => handlePreviewSnapshot(snapshot.path)}>
+                        {t('envvar.snapshots.preview')}
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => handleRestoreSnapshot(snapshot.path)}>
+                        {t('envvar.snapshots.restore')}
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => handleDeleteSnapshot(snapshot.path)}>
+                        {t('envvar.snapshots.delete')}
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {snapshotPreview && selectedSnapshotPath && (
+              <div data-testid="envvar-snapshot-preview" className="rounded-lg border border-dashed px-3 py-2">
+                {snapshotPreview.segments.map((segment) => (
+                  <div key={`${selectedSnapshotPath}:${segment.scope}`} className="space-y-1 py-1">
+                    <p className="text-sm text-muted-foreground">
+                      {t('envvar.snapshots.segmentSummary')}
+                      {' · '}
+                      {segment.scope}
+                      {' · '}
+                      +{segment.addedVariables}
+                      {' / '}
+                      ~{segment.changedVariables}
+                      {' / '}
+                      -{segment.removedVariables}
+                    </p>
+                    {segment.skipped && segment.reason && (
+                      <p className="text-xs text-muted-foreground">{segment.reason}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         <Tabs
           value={activeTab}

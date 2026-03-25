@@ -26,4 +26,23 @@ describe('section-utils provider mappings', () => {
   it('reports provider section as affected for canonical provider keys', () => {
     expect(getAffectedSections(['providers.npm.enabled'])).toContain('provider');
   });
+
+  it('returns undefined for keys that do not belong to any section', () => {
+    expect(getSectionForConfigKey('unknown.setting')).toBeUndefined();
+  });
+
+  it('returns no section keys for sections without prefixes', () => {
+    expect(
+      pickSectionKeys(
+        {
+          'system.hostname': 'localhost',
+        },
+        'system',
+      ),
+    ).toEqual([]);
+  });
+
+  it('filters unknown keys out of affected sections', () => {
+    expect(getAffectedSections(['unknown.setting'])).toEqual([]);
+  });
 });

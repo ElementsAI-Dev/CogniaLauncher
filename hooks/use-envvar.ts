@@ -22,6 +22,12 @@ import type {
   PersistentEnvVar,
   EnvVarConflict,
   EnvVarConflictResolutionResult,
+  EnvVarBackupProtectionState,
+  EnvVarSnapshotCreateResult,
+  EnvVarSnapshotCreationMode,
+  EnvVarSnapshotInfo,
+  EnvVarSnapshotRestorePreview,
+  EnvVarSnapshotRestoreResult,
 } from '@/types/tauri';
 
 export type EnvVarDetectionState =
@@ -102,6 +108,9 @@ interface EnvVarState {
   supportSnapshot: EnvVarSupportSnapshot | null;
   supportLoading: boolean;
   supportError: string | null;
+  snapshotHistory: EnvVarSnapshotInfo[];
+  snapshotLoading: boolean;
+  snapshotError: string | null;
 }
 
 function normalizeMutationResult(
@@ -232,6 +241,9 @@ export function useEnvVar() {
     supportSnapshot: null,
     supportLoading: false,
     supportError: null,
+    snapshotHistory: [],
+    snapshotLoading: false,
+    snapshotError: null,
   });
 
   const stateRef = useRef(state);
@@ -457,6 +469,134 @@ export function useEnvVar() {
       const message = formatError(err);
       setState((s) => ({ ...s, supportLoading: false, supportError: message }));
       return null;
+    }
+  }, []);
+
+  const fetchSnapshotHistory = useCallback(async (): Promise<EnvVarSnapshotInfo[]> => {
+    setState((s) => ({ ...s, snapshotLoading: true, snapshotError: null }));
+    try {
+      const snapshotHistory = await tauri.envvarListSnapshots();
+      setState((s) => ({ ...s, snapshotHistory, snapshotLoading: false, snapshotError: null }));
+      return snapshotHistory;
+    } catch (err) {
+      const message = formatError(err);
+      setState((s) => ({ ...s, snapshotLoading: false, snapshotError: message }));
+      return [];
+    }
+  }, []);
+
+  const createSnapshot = useCallback(async (
+    scopes: EnvVarScope[],
+    options?: {
+      sourceAction?: string;
+      note?: string;
+      creationMode?: EnvVarSnapshotCreationMode;
+    },
+  ): Promise<EnvVarSnapshotCreateResult | null> => {
+    setState((s) => ({ ...s, snapshotLoading: true, snapshotError: null }));
+    try {
+      const result = await tauri.envvarCreateSnapshot(
+        scopes,
+        options?.creationMode ?? 'manual',
+        options?.sourceAction,
+        options?.note,
+      );
+      if (result.snapshot) {
+        setState((s) => ({
+          ...s,
+          snapshotHistory: [result.snapshot!, ...s.snapshotHistory.filter((item) => item.path !== result.snapshot!.path)],
+          snapshotLoading: false,
+          snapshotError: result.message ?? null,
+        }));
+      } else {
+        setState((s) => ({ ...s, snapshotLoading: false, snapshotError: result.message ?? null }));
+      }
+      return result;
+    } catch (err) {
+      const message = formatError(err);
+      setState((s) => ({ ...s, snapshotLoading: false, snapshotError: message }));
+      return null;
+    }
+  }, []);
+
+  const getBackupProtection = useCallback(async (
+    action: string,
+    scope: EnvVarScope,
+  ): Promise<EnvVarBackupProtectionState | null> => {
+    try {
+      return await tauri.envvarGetBackupProtection(action, scope);
+    } catch (err) {
+      setError(formatError(err));
+      return null;
+    }
+  }, [setError]);
+
+  const previewSnapshotRestore = useCallback(async (
+    snapshotPath: string,
+    scopes: EnvVarScope[] = [],
+  ): Promise<EnvVarSnapshotRestorePreview | null> => {
+    setState((s) => ({ ...s, snapshotLoading: true, snapshotError: null }));
+    try {
+      const preview = await tauri.envvarPreviewSnapshotRestore(snapshotPath, scopes);
+      setState((s) => ({ ...s, snapshotLoading: false, snapshotError: null }));
+      return preview;
+    } catch (err) {
+      const message = formatError(err);
+      setState((s) => ({ ...s, snapshotLoading: false, snapshotError: message }));
+      return null;
+    }
+  }, []);
+
+  const restoreSnapshot = useCallback(async (
+    snapshotPath: string,
+    scopes: EnvVarScope[] = [],
+  ): Promise<EnvVarSnapshotRestoreResult | null> => {
+    setState((s) => ({ ...s, snapshotLoading: true, snapshotError: null }));
+    try {
+      const result = await tauri.envvarRestoreSnapshot(snapshotPath, scopes);
+      if (result.success) {
+        invalidateDetectionCache('all');
+        await loadDetection('all', { forceRefresh: true });
+        const snapshotHistory = await tauri.envvarListSnapshots();
+        setState((s) => ({
+          ...s,
+          snapshotHistory,
+          snapshotLoading: false,
+          snapshotError: result.message ?? null,
+          shellGuidance: result.shellGuidance,
+        }));
+      } else {
+        setState((s) => ({ ...s, snapshotLoading: false, snapshotError: result.message ?? null }));
+      }
+      return result;
+    } catch (err) {
+      const message = formatError(err);
+      setState((s) => ({ ...s, snapshotLoading: false, snapshotError: message }));
+      return null;
+    }
+  }, [invalidateDetectionCache, loadDetection]);
+
+  const deleteSnapshot = useCallback(async (
+    snapshotPath: string,
+  ): Promise<boolean> => {
+    setState((s) => ({ ...s, snapshotLoading: true, snapshotError: null }));
+    try {
+      const result = await tauri.envvarDeleteSnapshot(snapshotPath);
+      if (result.success) {
+        setState((s) => ({
+          ...s,
+          snapshotHistory: s.snapshotHistory.filter((item) => item.path !== snapshotPath),
+          snapshotLoading: false,
+          snapshotError: null,
+        }));
+        return true;
+      }
+      setState((s) => ({ ...s, snapshotLoading: false, snapshotError: result.error ?? null }));
+      return false;
+    } catch (err) {
+      const message = formatError(err);
+      setState((s) => ({ ...s, snapshotLoading: false, snapshotError: message }));
+      return false;
     }
   }, []);
 
@@ -970,6 +1110,12 @@ export function useEnvVar() {
     ...state,
     fetchAllVars,
     loadSupportSnapshot,
+    fetchSnapshotHistory,
+    createSnapshot,
+    getBackupProtection,
+    previewSnapshotRestore,
+    restoreSnapshot,
+    deleteSnapshot,
     getVar,
     setVar,
     removeVar,

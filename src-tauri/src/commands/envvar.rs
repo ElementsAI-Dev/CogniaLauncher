@@ -1,9 +1,15 @@
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use tauri::State;
 
+use crate::config::Settings;
+use crate::core::backup::{BackupDeleteResult, BackupManifest};
 use crate::error::CogniaError;
+use crate::platform::fs;
+use crate::SharedSettings;
 use crate::platform::env::{
     self, EnvFileFormat, EnvVarScope, EnvVarSensitivityReason, EnvVarValueSummary,
     ShellProfileInfo,
@@ -217,6 +223,123 @@ pub struct EnvVarPathMutationResult {
     pub message: Option<String>,
     pub removed_count: usize,
     pub path_entries: Vec<PathEntryInfo>,
+    pub primary_shell_target: Option<String>,
+    pub shell_guidance: Vec<EnvVarShellGuidance>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EnvVarSnapshotCreationMode {
+    Manual,
+    Automatic,
+}
+
+impl EnvVarSnapshotCreationMode {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Manual => "manual",
+            Self::Automatic => "automatic",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnvVarSnapshotScopePayload {
+    pub scope: EnvVarScope,
+    pub variables: Vec<PersistentEnvVar>,
+    pub path_entries: Vec<String>,
+    pub variable_fingerprint: String,
+    pub path_fingerprint: String,
+    pub restorable: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnvVarSnapshotPayload {
+    pub format_version: u32,
+    pub created_at: String,
+    pub creation_mode: Option<EnvVarSnapshotCreationMode>,
+    pub source_action: Option<String>,
+    pub note: Option<String>,
+    pub scopes: Vec<EnvVarSnapshotScopePayload>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnvVarSnapshotInfo {
+    pub path: String,
+    pub name: String,
+    pub created_at: String,
+    pub creation_mode: EnvVarSnapshotCreationMode,
+    pub source_action: Option<String>,
+    pub note: Option<String>,
+    pub scopes: Vec<EnvVarScope>,
+    pub integrity_state: String,
+    pub snapshot: EnvVarSnapshotPayload,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnvVarBackupProtectionState {
+    pub action: String,
+    pub scope: EnvVarScope,
+    pub state: String,
+    pub reason_code: String,
+    pub reason: String,
+    pub next_steps: Vec<String>,
+    pub snapshot: Option<EnvVarSnapshotInfo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnvVarSnapshotRestorePreviewSegment {
+    pub scope: EnvVarScope,
+    pub changed_variables: usize,
+    pub added_variables: usize,
+    pub removed_variables: usize,
+    pub added_path_entries: usize,
+    pub removed_path_entries: usize,
+    pub skipped: bool,
+    pub reason_code: Option<String>,
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnvVarSnapshotRestorePreview {
+    pub created_at: String,
+    pub segments: Vec<EnvVarSnapshotRestorePreviewSegment>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnvVarSnapshotCreateResult {
+    pub success: bool,
+    pub status: String,
+    pub reason_code: Option<String>,
+    pub message: Option<String>,
+    pub snapshot: Option<EnvVarSnapshotInfo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnvVarSnapshotRestoreSkipped {
+    pub scope: EnvVarScope,
+    pub reason_code: Option<String>,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnvVarSnapshotRestoreResult {
+    pub success: bool,
+    pub verified: bool,
+    pub status: String,
+    pub reason_code: Option<String>,
+    pub message: Option<String>,
+    pub restored_scopes: Vec<EnvVarScope>,
+    pub skipped: Vec<EnvVarSnapshotRestoreSkipped>,
     pub primary_shell_target: Option<String>,
     pub shell_guidance: Vec<EnvVarShellGuidance>,
 }
@@ -1698,10 +1821,780 @@ fn import_error_kind(error: &CogniaError) -> &'static str {
     }
 }
 
+fn envvar_snapshot_dir(settings: &Settings) -> PathBuf {
+    settings.get_state_dir().join("envvar-snapshots")
+}
+
+fn envvar_snapshot_payload_path(snapshot_dir: &Path) -> PathBuf {
+    snapshot_dir.join("envvar-snapshot.json")
+}
+
+fn envvar_snapshot_name_for(created_at: &str) -> String {
+    let normalized = created_at
+        .chars()
+        .filter(|ch| ch.is_ascii_digit())
+        .collect::<String>();
+    format!("envvar-snapshot-{}", normalized)
+}
+
+fn snapshot_scope_signature(scope: &EnvVarSnapshotScopePayload) -> (&str, &str) {
+    (&scope.variable_fingerprint, &scope.path_fingerprint)
+}
+
+fn risky_envvar_action(action: &str, scope: EnvVarScope) -> bool {
+    if scope == EnvVarScope::Process {
+        return false;
+    }
+
+    matches!(
+        action,
+        "set"
+            | "remove"
+            | "import_apply"
+            | "path_add"
+            | "path_remove"
+            | "path_reorder"
+            | "path_deduplicate"
+            | "path_repair_apply"
+            | "resolve_conflict"
+    )
+}
+
+async fn write_backup_manifest(bundle_dir: &Path, manifest: &BackupManifest) -> Result<(), CogniaError> {
+    let manifest_json = serde_json::to_string_pretty(manifest)
+        .map_err(|e| CogniaError::Internal(format!("Failed to serialize snapshot manifest: {}", e)))?;
+    fs::write_file_string(&bundle_dir.join("manifest.json"), &manifest_json).await?;
+    Ok(())
+}
+
+async fn read_envvar_snapshot_payload(snapshot_dir: &Path) -> Result<EnvVarSnapshotPayload, CogniaError> {
+    let payload_path = envvar_snapshot_payload_path(snapshot_dir);
+    let content = fs::read_file_string(&payload_path).await?;
+    serde_json::from_str(&content)
+        .map_err(|e| CogniaError::Parse(format!("Failed to parse envvar snapshot payload: {}", e)))
+}
+
+fn materialize_snapshot_info(
+    path: &Path,
+    manifest: &BackupManifest,
+    snapshot: EnvVarSnapshotPayload,
+    integrity_state: &str,
+) -> EnvVarSnapshotInfo {
+    EnvVarSnapshotInfo {
+        path: path.display().to_string(),
+        name: path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("envvar-snapshot")
+            .to_string(),
+        created_at: manifest.created_at.clone(),
+        creation_mode: snapshot
+            .creation_mode
+            .unwrap_or(if manifest.auto_generated {
+                EnvVarSnapshotCreationMode::Automatic
+            } else {
+                EnvVarSnapshotCreationMode::Manual
+            }),
+        source_action: snapshot.source_action.clone(),
+        note: snapshot.note.clone().or_else(|| manifest.note.clone()),
+        scopes: snapshot.scopes.iter().map(|scope| scope.scope).collect(),
+        integrity_state: integrity_state.to_string(),
+        snapshot,
+    }
+}
+
+pub(crate) async fn write_envvar_snapshot_bundle(
+    settings: &Settings,
+    payload: &EnvVarSnapshotPayload,
+    creation_mode: EnvVarSnapshotCreationMode,
+    source_action: Option<&str>,
+    note: Option<&str>,
+    created_at_override: Option<&str>,
+) -> Result<EnvVarSnapshotInfo, CogniaError> {
+    let created_at = created_at_override
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| Utc::now().to_rfc3339());
+    let snapshot_base = envvar_snapshot_dir(settings);
+    fs::create_dir_all(&snapshot_base).await?;
+
+    let snapshot_name = envvar_snapshot_name_for(&created_at);
+    let mut snapshot_dir = snapshot_base.join(&snapshot_name);
+    if fs::exists(&snapshot_dir).await {
+        let mut suffix = 1usize;
+        loop {
+            let candidate = snapshot_base.join(format!("{snapshot_name}-{suffix}"));
+            if !fs::exists(&candidate).await {
+                snapshot_dir = candidate;
+                break;
+            }
+            suffix += 1;
+        }
+    }
+    fs::create_dir_all(&snapshot_dir).await?;
+
+    let mut materialized = payload.clone();
+    materialized.created_at = created_at.clone();
+    materialized.creation_mode = Some(creation_mode);
+    materialized.source_action = source_action.map(|value| value.to_string());
+    materialized.note = note.map(|value| value.to_string());
+
+    let payload_json = serde_json::to_string_pretty(&materialized).map_err(|e| {
+        CogniaError::Internal(format!("Failed to serialize envvar snapshot payload: {}", e))
+    })?;
+    let payload_path = envvar_snapshot_payload_path(&snapshot_dir);
+    fs::write_file_string(&payload_path, &payload_json).await?;
+    let payload_checksum = fs::calculate_sha256(&payload_path).await?;
+    let payload_size = fs::file_size(&payload_path).await?;
+
+    let mut file_checksums = HashMap::new();
+    file_checksums.insert("envvar-snapshot.json".to_string(), payload_checksum);
+
+    let manifest = BackupManifest {
+        format_version: 1,
+        app_version: env!("CARGO_PKG_VERSION").to_string(),
+        created_at,
+        platform: std::env::consts::OS.to_string(),
+        hostname: sysinfo::System::host_name().unwrap_or_else(|| "unknown".to_string()),
+        contents: vec![],
+        file_checksums,
+        total_size: payload_size,
+        note: materialized.note.clone(),
+        auto_generated: creation_mode == EnvVarSnapshotCreationMode::Automatic,
+    };
+    write_backup_manifest(&snapshot_dir, &manifest).await?;
+
+    Ok(materialize_snapshot_info(
+        &snapshot_dir,
+        &manifest,
+        materialized,
+        "valid",
+    ))
+}
+
+pub(crate) async fn list_envvar_snapshot_bundles(
+    settings: &Settings,
+) -> Result<Vec<EnvVarSnapshotInfo>, CogniaError> {
+    let snapshot_base = envvar_snapshot_dir(settings);
+    if !fs::exists(&snapshot_base).await {
+        return Ok(Vec::new());
+    }
+
+    let mut snapshots = Vec::new();
+    let mut entries = tokio::fs::read_dir(&snapshot_base)
+        .await
+        .map_err(CogniaError::Io)?;
+
+    while let Some(entry) = entries.next_entry().await.map_err(CogniaError::Io)? {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+
+        let validation = crate::core::backup::validate_backup(&path).await?;
+        let Some(manifest) = validation.manifest else {
+            continue;
+        };
+        let snapshot = match read_envvar_snapshot_payload(&path).await {
+            Ok(snapshot) => snapshot,
+            Err(_) => continue,
+        };
+        snapshots.push(materialize_snapshot_info(
+            &path,
+            &manifest,
+            snapshot,
+            if validation.valid { "valid" } else { "invalid" },
+        ));
+    }
+
+    snapshots.sort_by(|left, right| right.created_at.cmp(&left.created_at));
+    Ok(snapshots)
+}
+
+pub(crate) async fn cleanup_envvar_snapshot_bundles(
+    settings: &Settings,
+    max_count: u32,
+    max_age_days: u32,
+) -> Result<u32, CogniaError> {
+    let mut deleted = 0u32;
+    let mut snapshots = list_envvar_snapshot_bundles(settings).await?;
+
+    if max_age_days > 0 {
+        let cutoff = Utc::now() - chrono::Duration::days(max_age_days as i64);
+        for snapshot in snapshots
+            .iter()
+            .filter(|item| item.creation_mode == EnvVarSnapshotCreationMode::Automatic)
+            .filter(|item| item.created_at < cutoff.to_rfc3339())
+        {
+            if crate::core::backup::delete_backup(Path::new(&snapshot.path))
+                .await
+                .unwrap_or(false)
+            {
+                deleted += 1;
+            }
+        }
+        snapshots = list_envvar_snapshot_bundles(settings).await?;
+    }
+
+    if max_count > 0 {
+        let automatic = snapshots
+            .iter()
+            .filter(|item| item.creation_mode == EnvVarSnapshotCreationMode::Automatic)
+            .collect::<Vec<_>>();
+        if automatic.len() > max_count as usize {
+            for snapshot in &automatic[max_count as usize..] {
+                if crate::core::backup::delete_backup(Path::new(&snapshot.path))
+                    .await
+                    .unwrap_or(false)
+                {
+                    deleted += 1;
+                }
+            }
+        }
+    }
+
+    Ok(deleted)
+}
+
+pub(crate) fn build_envvar_backup_protection_state(
+    action: &str,
+    scope: EnvVarScope,
+    current_scope: &EnvVarSnapshotScopePayload,
+    snapshots: &[EnvVarSnapshotInfo],
+) -> EnvVarBackupProtectionState {
+    if !risky_envvar_action(action, scope) {
+        return EnvVarBackupProtectionState {
+            action: action.to_string(),
+            scope,
+            state: "unprotected".to_string(),
+            reason_code: "action_not_protected".to_string(),
+            reason: "This envvar workflow does not require a safety snapshot.".to_string(),
+            next_steps: Vec::new(),
+            snapshot: None,
+        };
+    }
+
+    if !current_scope.restorable {
+        return EnvVarBackupProtectionState {
+            action: action.to_string(),
+            scope,
+            state: "unprotected".to_string(),
+            reason_code: "scope_not_persisted".to_string(),
+            reason: "Process-scope envvar state is transient and cannot be restored as a durable snapshot.".to_string(),
+            next_steps: vec![
+                "Switch to a persistent scope if you need rollback protection.".to_string(),
+            ],
+            snapshot: None,
+        };
+    }
+
+    let matching = snapshots
+        .iter()
+        .filter(|item| item.creation_mode == EnvVarSnapshotCreationMode::Automatic)
+        .filter(|item| item.integrity_state == "valid")
+        .filter(|item| item.source_action.as_deref() == Some(action))
+        .find(|item| {
+            item.snapshot.scopes.iter().any(|scope_payload| {
+                scope_payload.scope == scope
+                    && snapshot_scope_signature(scope_payload) == snapshot_scope_signature(current_scope)
+            })
+        })
+        .cloned();
+
+    if let Some(snapshot) = matching {
+        return EnvVarBackupProtectionState {
+            action: action.to_string(),
+            scope,
+            state: "will_reuse".to_string(),
+            reason_code: "compatible_snapshot_available".to_string(),
+            reason: "A compatible automatic envvar snapshot already protects the current state.".to_string(),
+            next_steps: Vec::new(),
+            snapshot: Some(snapshot),
+        };
+    }
+
+    EnvVarBackupProtectionState {
+        action: action.to_string(),
+        scope,
+        state: "will_create".to_string(),
+        reason_code: "new_snapshot_required".to_string(),
+        reason: "A fresh envvar safety snapshot should be created before this mutation runs.".to_string(),
+        next_steps: vec![
+            "Create a safety snapshot before applying the risky envvar mutation.".to_string(),
+        ],
+        snapshot: None,
+    }
+}
+
+pub(crate) fn build_envvar_snapshot_restore_preview(
+    snapshot: &EnvVarSnapshotPayload,
+    current_scopes: &[EnvVarSnapshotScopePayload],
+    requested_scopes: &[EnvVarScope],
+) -> EnvVarSnapshotRestorePreview {
+    let mut segments = Vec::new();
+
+    for scope in requested_scopes {
+        let Some(target) = snapshot.scopes.iter().find(|item| item.scope == *scope) else {
+            segments.push(EnvVarSnapshotRestorePreviewSegment {
+                scope: *scope,
+                changed_variables: 0,
+                added_variables: 0,
+                removed_variables: 0,
+                added_path_entries: 0,
+                removed_path_entries: 0,
+                skipped: true,
+                reason_code: Some("scope_not_in_snapshot".to_string()),
+                reason: Some("The requested scope is not present in this snapshot.".to_string()),
+            });
+            continue;
+        };
+
+        if !target.restorable {
+            segments.push(EnvVarSnapshotRestorePreviewSegment {
+                scope: *scope,
+                changed_variables: 0,
+                added_variables: 0,
+                removed_variables: 0,
+                added_path_entries: 0,
+                removed_path_entries: 0,
+                skipped: true,
+                reason_code: Some("scope_not_restorable".to_string()),
+                reason: Some("This scope is stored for diagnostics only and is not restorable.".to_string()),
+            });
+            continue;
+        }
+
+        let current = current_scopes.iter().find(|item| item.scope == *scope);
+        let current_var_map = current
+            .map(|value| {
+                value
+                    .variables
+                    .iter()
+                    .map(|entry| (scope_key_signature(&entry.key), entry.value.clone()))
+                    .collect::<HashMap<_, _>>()
+            })
+            .unwrap_or_default();
+        let target_var_map = target
+            .variables
+            .iter()
+            .map(|entry| (scope_key_signature(&entry.key), entry.value.clone()))
+            .collect::<HashMap<_, _>>();
+
+        let added_variables = target_var_map
+            .keys()
+            .filter(|key| !current_var_map.contains_key(*key))
+            .count();
+        let removed_variables = current_var_map
+            .keys()
+            .filter(|key| !target_var_map.contains_key(*key))
+            .count();
+        let changed_variables = target_var_map
+            .iter()
+            .filter(|(key, value)| current_var_map.get(*key).is_some_and(|current| current != *value))
+            .count();
+
+        let current_paths = current
+            .map(|value| value.path_entries.clone())
+            .unwrap_or_default();
+        let current_path_signatures = current_paths
+            .iter()
+            .map(|entry| scope_key_signature(entry))
+            .collect::<HashSet<_>>();
+        let target_path_signatures = target
+            .path_entries
+            .iter()
+            .map(|entry| scope_key_signature(entry))
+            .collect::<HashSet<_>>();
+        let added_path_entries = target_path_signatures
+            .iter()
+            .filter(|entry| !current_path_signatures.contains(*entry))
+            .count();
+        let removed_path_entries = current_path_signatures
+            .iter()
+            .filter(|entry| !target_path_signatures.contains(*entry))
+            .count();
+
+        segments.push(EnvVarSnapshotRestorePreviewSegment {
+            scope: *scope,
+            changed_variables,
+            added_variables,
+            removed_variables,
+            added_path_entries,
+            removed_path_entries,
+            skipped: false,
+            reason_code: None,
+            reason: None,
+        });
+    }
+
+    EnvVarSnapshotRestorePreview {
+        created_at: snapshot.created_at.clone(),
+        segments,
+    }
+}
+
+async fn capture_snapshot_scope_payload(scope: EnvVarScope) -> Result<EnvVarSnapshotScopePayload, CogniaError> {
+    let variables = match scope {
+        EnvVarScope::Process => {
+            let mut values = env::get_all_vars()
+                .into_iter()
+                .map(|(key, value)| PersistentEnvVar {
+                    key,
+                    value,
+                    reg_type: None,
+                })
+                .collect::<Vec<_>>();
+            values.sort_by(|left, right| left.key.cmp(&right.key));
+            values
+        }
+        EnvVarScope::User | EnvVarScope::System => envvar_list_persistent_typed(scope).await?,
+    };
+
+    let path_entries = env::get_persistent_path(scope).await?;
+
+    Ok(EnvVarSnapshotScopePayload {
+        scope,
+        variables,
+        path_entries,
+        variable_fingerprint: scope_snapshot_fingerprint(scope).await?,
+        path_fingerprint: path_snapshot_fingerprint(scope).await?,
+        restorable: scope != EnvVarScope::Process,
+    })
+}
+
+pub(crate) async fn capture_envvar_snapshot_payload(scopes: &[EnvVarScope]) -> Result<EnvVarSnapshotPayload, CogniaError> {
+    let mut requested = scopes.to_vec();
+    if requested.is_empty() {
+        requested = vec![EnvVarScope::User, EnvVarScope::System];
+    }
+    requested.sort_by_key(|scope| match scope {
+        EnvVarScope::Process => 0,
+        EnvVarScope::User => 1,
+        EnvVarScope::System => 2,
+    });
+    requested.dedup();
+
+    let mut captured = Vec::with_capacity(requested.len());
+    for scope in requested {
+        captured.push(capture_snapshot_scope_payload(scope).await?);
+    }
+
+    Ok(EnvVarSnapshotPayload {
+        format_version: 1,
+        created_at: Utc::now().to_rfc3339(),
+        creation_mode: None,
+        source_action: None,
+        note: None,
+        scopes: captured,
+    })
+}
+
+pub(crate) async fn find_envvar_snapshot_by_path(
+    settings: &Settings,
+    snapshot_path: &str,
+) -> Result<EnvVarSnapshotInfo, CogniaError> {
+    let snapshots = list_envvar_snapshot_bundles(settings).await?;
+    snapshots
+        .into_iter()
+        .find(|item| item.path == snapshot_path)
+        .ok_or_else(|| CogniaError::Config(format!("envvar_snapshot_not_found:{snapshot_path}")))
+}
+
+pub(crate) async fn get_envvar_backup_protection_for_settings(
+    settings: &Settings,
+    action: &str,
+    scope: EnvVarScope,
+) -> Result<EnvVarBackupProtectionState, CogniaError> {
+    let current_scope = capture_snapshot_scope_payload(scope).await?;
+    let snapshots = list_envvar_snapshot_bundles(settings).await?;
+
+    let state = build_envvar_backup_protection_state(action, scope, &current_scope, &snapshots);
+    if state.state == "will_create" {
+        fs::create_dir_all(&envvar_snapshot_dir(settings)).await?;
+    }
+    Ok(state)
+}
+
+pub(crate) async fn preview_envvar_snapshot_for_settings(
+    settings: &Settings,
+    snapshot_path: &str,
+    scopes: &[EnvVarScope],
+) -> Result<EnvVarSnapshotRestorePreview, CogniaError> {
+    let snapshot = find_envvar_snapshot_by_path(settings, snapshot_path).await?;
+    let requested_scopes = if scopes.is_empty() {
+        snapshot.scopes.clone()
+    } else {
+        scopes.to_vec()
+    };
+    let current = capture_envvar_snapshot_payload(&requested_scopes).await?;
+    Ok(build_envvar_snapshot_restore_preview(
+        &snapshot.snapshot,
+        &current.scopes,
+        &requested_scopes,
+    ))
+}
+
+pub(crate) async fn restore_envvar_snapshot_for_settings(
+    settings: &Settings,
+    snapshot_path: &str,
+    scopes: &[EnvVarScope],
+) -> Result<EnvVarSnapshotRestoreResult, CogniaError> {
+    let snapshot = find_envvar_snapshot_by_path(settings, snapshot_path).await?;
+    let requested_scopes = if scopes.is_empty() {
+        snapshot.scopes.clone()
+    } else {
+        scopes.to_vec()
+    };
+
+    let mut restored_scopes = Vec::new();
+    let mut skipped = Vec::new();
+    let mut shell_guidance = Vec::new();
+    let mut primary_shell_target = None;
+
+    for scope in requested_scopes {
+        let Some(scope_payload) = snapshot.snapshot.scopes.iter().find(|item| item.scope == scope) else {
+            skipped.push(EnvVarSnapshotRestoreSkipped {
+                scope,
+                reason_code: Some("scope_not_in_snapshot".to_string()),
+                reason: "The requested scope is not present in this snapshot.".to_string(),
+            });
+            continue;
+        };
+
+        if !scope_payload.restorable {
+            skipped.push(EnvVarSnapshotRestoreSkipped {
+                scope,
+                reason_code: Some("scope_not_restorable".to_string()),
+                reason: "This scope is diagnostic-only and cannot be restored.".to_string(),
+            });
+            continue;
+        }
+
+        let current_vars = envvar_list_persistent_typed(scope).await?;
+        let target_map = scope_payload
+            .variables
+            .iter()
+            .map(|item| (scope_key_signature(&item.key), item.clone()))
+            .collect::<HashMap<_, _>>();
+
+        for current in current_vars {
+            if !target_map.contains_key(&scope_key_signature(&current.key)) {
+                env::remove_persistent_var(&current.key, scope).await?;
+            }
+        }
+
+        for variable in &scope_payload.variables {
+            env::set_persistent_var(&variable.key, &variable.value, scope).await?;
+        }
+        env::set_persistent_path(&scope_payload.path_entries, scope).await?;
+
+        let mut scope_verified = true;
+        for variable in &scope_payload.variables {
+            let (verified, _) =
+                env::verify_envvar_value_state(&variable.key, scope, Some(&variable.value)).await?;
+            scope_verified &= verified;
+        }
+        let (path_verified, actual_path) =
+            env::verify_envvar_path_state(scope, &scope_payload.path_entries).await?;
+        scope_verified &= path_verified;
+
+        if scope_verified {
+            restored_scopes.push(scope);
+        } else {
+            skipped.push(EnvVarSnapshotRestoreSkipped {
+                scope,
+                reason_code: Some("post_restore_verification_failed".to_string()),
+                reason: format!(
+                    "Restored state could not be verified for {} (PATH entries: {}).",
+                    scope_to_string(scope),
+                    actual_path.len()
+                ),
+            });
+        }
+
+        if scope == EnvVarScope::User {
+            primary_shell_target = primary_shell_target_for_scope(scope);
+            let variable_pairs = scope_payload
+                .variables
+                .iter()
+                .map(|item| (item.key.clone(), item.value.clone()))
+                .collect::<Vec<_>>();
+            shell_guidance.extend(shell_guidance_for_pairs(
+                &variable_pairs,
+                scope,
+                auto_applied_shell_for_scope(scope).as_deref(),
+                false,
+            ));
+            shell_guidance.extend(shell_guidance_for_path(
+                &scope_payload.path_entries,
+                scope,
+                auto_applied_shell_for_scope(scope).as_deref(),
+                false,
+            ));
+        }
+    }
+
+    let success = !restored_scopes.is_empty();
+    let verified = success && skipped.is_empty();
+    let status = if verified {
+        "verified"
+    } else if success {
+        "partial"
+    } else {
+        "failed"
+    };
+
+    Ok(EnvVarSnapshotRestoreResult {
+        success,
+        verified,
+        status: status.to_string(),
+        reason_code: if verified {
+            None
+        } else if success {
+            Some("partial_restore".to_string())
+        } else {
+            Some("restore_failed".to_string())
+        },
+        message: if skipped.is_empty() {
+            None
+        } else {
+            Some("Some requested envvar scopes were skipped or could not be verified.".to_string())
+        },
+        restored_scopes,
+        skipped,
+        primary_shell_target,
+        shell_guidance,
+    })
+}
+
+#[tauri::command]
+pub async fn envvar_list_snapshots(
+    settings: State<'_, SharedSettings>,
+) -> Result<Vec<EnvVarSnapshotInfo>, String> {
+    let settings = settings.read().await;
+    list_envvar_snapshot_bundles(&settings)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn envvar_create_snapshot(
+    scopes: Vec<EnvVarScope>,
+    creation_mode: Option<EnvVarSnapshotCreationMode>,
+    source_action: Option<String>,
+    note: Option<String>,
+    settings: State<'_, SharedSettings>,
+) -> Result<EnvVarSnapshotCreateResult, String> {
+    let settings = settings.read().await;
+    let payload = capture_envvar_snapshot_payload(&scopes)
+        .await
+        .map_err(|error| error.to_string())?;
+    let creation_mode = creation_mode.unwrap_or(EnvVarSnapshotCreationMode::Manual);
+    match write_envvar_snapshot_bundle(
+        &settings,
+        &payload,
+        creation_mode,
+        source_action.as_deref(),
+        note.as_deref(),
+        None,
+    )
+    .await
+    {
+        Ok(snapshot) => Ok(EnvVarSnapshotCreateResult {
+            success: true,
+            status: "verified".to_string(),
+            reason_code: None,
+            message: None,
+            snapshot: Some(snapshot),
+        }),
+        Err(error) => Ok(EnvVarSnapshotCreateResult {
+            success: false,
+            status: "failed".to_string(),
+            reason_code: Some("snapshot_create_failed".to_string()),
+            message: Some(error.to_string()),
+            snapshot: None,
+        }),
+    }
+}
+
+#[tauri::command]
+pub async fn envvar_get_backup_protection(
+    action: String,
+    scope: EnvVarScope,
+    settings: State<'_, SharedSettings>,
+) -> Result<EnvVarBackupProtectionState, String> {
+    let settings = settings.read().await;
+    get_envvar_backup_protection_for_settings(&settings, &action, scope)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn envvar_preview_snapshot_restore(
+    snapshot_path: String,
+    scopes: Vec<EnvVarScope>,
+    settings: State<'_, SharedSettings>,
+) -> Result<EnvVarSnapshotRestorePreview, String> {
+    let settings = settings.read().await;
+    preview_envvar_snapshot_for_settings(&settings, &snapshot_path, &scopes)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn envvar_restore_snapshot(
+    snapshot_path: String,
+    scopes: Vec<EnvVarScope>,
+    settings: State<'_, SharedSettings>,
+) -> Result<EnvVarSnapshotRestoreResult, String> {
+    let settings = settings.read().await;
+    restore_envvar_snapshot_for_settings(&settings, &snapshot_path, &scopes)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn envvar_delete_snapshot(
+    snapshot_path: String,
+) -> Result<BackupDeleteResult, String> {
+    Ok(crate::core::backup::delete_backup_with_result(Path::new(&snapshot_path)).await)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    fn snapshot_test_settings(root: &Path) -> crate::config::Settings {
+        let mut settings = crate::config::Settings::default();
+        settings.paths.root = Some(root.to_path_buf());
+        settings
+    }
+
+    fn sample_snapshot_payload(
+        scope: EnvVarScope,
+        key: &str,
+        value: &str,
+    ) -> EnvVarSnapshotPayload {
+        EnvVarSnapshotPayload {
+            format_version: 1,
+            created_at: "2026-03-19T00:00:00Z".to_string(),
+            creation_mode: None,
+            source_action: None,
+            note: None,
+            scopes: vec![EnvVarSnapshotScopePayload {
+                scope,
+                variables: vec![PersistentEnvVar {
+                    key: key.to_string(),
+                    value: value.to_string(),
+                    reg_type: None,
+                }],
+                path_entries: vec!["/tmp/bin".to_string()],
+                variable_fingerprint: format!("vars:{scope:?}:{key}:{value}"),
+                path_fingerprint: format!("path:{scope:?}:/tmp/bin"),
+                restorable: scope != EnvVarScope::Process,
+            }],
+        }
+    }
 
     #[test]
     fn import_error_kind_maps_core_error_variants() {
@@ -2050,6 +2943,42 @@ mod tests {
     }
 
     #[cfg(not(windows))]
+    #[test]
+    fn support_snapshot_uses_exact_recovery_action_identity_for_risky_mutations() {
+        let dir = tempdir().expect("temp dir");
+        let home_dir = dir.path().join("home");
+        let bashrc = home_dir.join(".bashrc");
+        std::fs::create_dir_all(bashrc.parent().expect("bashrc parent")).expect("home tree");
+        std::fs::write(&bashrc, "").expect("bashrc");
+        crate::platform::env::configure_env_test_fixture(
+            home_dir,
+            crate::platform::env::ShellType::Bash,
+            dir.path().join("etc-environment"),
+        );
+
+        let snapshot = envvar_get_support_snapshot().expect("support snapshot");
+
+        assert!(snapshot
+            .actions
+            .iter()
+            .any(|item| item.action == "persistent_set" && item.scope == Some(EnvVarScope::User)));
+        assert!(snapshot
+            .actions
+            .iter()
+            .any(|item| item.action == "import_apply" && item.scope == Some(EnvVarScope::User)));
+        assert!(snapshot
+            .actions
+            .iter()
+            .any(|item| item.action == "path_repair_apply" && item.scope == Some(EnvVarScope::User)));
+        assert!(snapshot
+            .actions
+            .iter()
+            .any(|item| item.action == "conflict_resolve" && item.scope == Some(EnvVarScope::User)));
+
+        crate::platform::env::reset_env_test_overrides();
+    }
+
+    #[cfg(not(windows))]
     #[tokio::test]
     async fn user_scope_set_returns_manual_followup_metadata() {
         let dir = tempdir().expect("temp dir");
@@ -2077,5 +3006,260 @@ mod tests {
         assert_eq!(result.reason_code.as_deref(), Some("shell_sync_required"));
 
         crate::platform::env::reset_env_test_overrides();
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn persistent_set_with_recovery_creates_automatic_snapshot_when_protection_requires_it() {
+        let dir = tempdir().expect("temp dir");
+        let settings = snapshot_test_settings(dir.path());
+        let home_dir = dir.path().join("home");
+        let bashrc = home_dir.join(".bashrc");
+        std::fs::create_dir_all(bashrc.parent().expect("bashrc parent")).expect("home tree");
+        std::fs::write(&bashrc, "").expect("bashrc");
+        crate::platform::env::configure_env_test_fixture(
+            home_dir,
+            crate::platform::env::ShellType::Bash,
+            dir.path().join("etc-environment"),
+        );
+
+        let result = envvar_set_persistent_for_settings(
+            &settings,
+            "COGNIA_RECOVERY_CREATE".into(),
+            "after".into(),
+            EnvVarScope::User,
+        )
+        .await
+        .expect("protected set should succeed");
+
+        assert_eq!(result.action.as_deref(), Some("persistent_set"));
+        assert_eq!(result.protection_state.as_deref(), Some("will_create"));
+        let snapshot = result.snapshot.as_ref().expect("automatic snapshot reference");
+        assert_eq!(snapshot.creation_mode, EnvVarSnapshotCreationMode::Automatic);
+        assert_eq!(snapshot.source_action.as_deref(), Some("persistent_set"));
+
+        let listed = list_envvar_snapshot_bundles(&settings)
+            .await
+            .expect("list snapshot bundles");
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].path, snapshot.path);
+
+        crate::platform::env::reset_env_test_overrides();
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn persistent_set_with_recovery_reuses_matching_automatic_snapshot() {
+        let dir = tempdir().expect("temp dir");
+        let settings = snapshot_test_settings(dir.path());
+        let home_dir = dir.path().join("home");
+        let bashrc = home_dir.join(".bashrc");
+        std::fs::create_dir_all(bashrc.parent().expect("bashrc parent")).expect("home tree");
+        std::fs::write(&bashrc, "").expect("bashrc");
+        crate::platform::env::configure_env_test_fixture(
+            home_dir,
+            crate::platform::env::ShellType::Bash,
+            dir.path().join("etc-environment"),
+        );
+
+        env::set_persistent_var("COGNIA_RECOVERY_REUSE", "before", EnvVarScope::User)
+            .await
+            .expect("seed user var");
+        let payload = capture_envvar_snapshot_payload(&[EnvVarScope::User])
+            .await
+            .expect("capture current snapshot payload");
+        let existing = write_envvar_snapshot_bundle(
+            &settings,
+            &payload,
+            EnvVarSnapshotCreationMode::Automatic,
+            Some("persistent_set"),
+            Some("existing auto snapshot"),
+            None,
+        )
+        .await
+        .expect("create reusable snapshot");
+
+        let result = envvar_set_persistent_for_settings(
+            &settings,
+            "COGNIA_RECOVERY_REUSE".into(),
+            "after".into(),
+            EnvVarScope::User,
+        )
+        .await
+        .expect("protected set should succeed");
+
+        assert_eq!(result.action.as_deref(), Some("persistent_set"));
+        assert_eq!(result.protection_state.as_deref(), Some("will_reuse"));
+        assert_eq!(
+            result.snapshot.as_ref().map(|item| item.path.as_str()),
+            Some(existing.path.as_str())
+        );
+
+        let listed = list_envvar_snapshot_bundles(&settings)
+            .await
+            .expect("list snapshot bundles");
+        assert_eq!(listed.len(), 1);
+
+        crate::platform::env::reset_env_test_overrides();
+    }
+
+    #[tokio::test]
+    async fn envvar_snapshot_bundle_roundtrip_preserves_manual_metadata() {
+        let dir = tempdir().expect("tempdir");
+        let settings = snapshot_test_settings(dir.path());
+        let payload = sample_snapshot_payload(EnvVarScope::User, "API_TOKEN", "secret");
+
+        let created = write_envvar_snapshot_bundle(
+            &settings,
+            &payload,
+            EnvVarSnapshotCreationMode::Manual,
+            Some("import_apply"),
+            Some("before risky import"),
+            None,
+        )
+        .await
+        .expect("create snapshot bundle");
+
+        let listed = list_envvar_snapshot_bundles(&settings)
+            .await
+            .expect("list snapshot bundles");
+
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].path, created.path);
+        assert_eq!(listed[0].creation_mode, EnvVarSnapshotCreationMode::Manual);
+        assert_eq!(listed[0].source_action.as_deref(), Some("import_apply"));
+        assert_eq!(listed[0].note.as_deref(), Some("before risky import"));
+        assert_eq!(listed[0].scopes, vec![EnvVarScope::User]);
+        assert_eq!(listed[0].integrity_state, "valid");
+    }
+
+    #[tokio::test]
+    async fn envvar_snapshot_cleanup_preserves_manual_recovery_points() {
+        let dir = tempdir().expect("tempdir");
+        let settings = snapshot_test_settings(dir.path());
+
+        let manual_payload = sample_snapshot_payload(EnvVarScope::User, "KEEP_ME", "1");
+        let auto_old_payload = sample_snapshot_payload(EnvVarScope::User, "OLD_AUTO", "1");
+        let auto_new_payload = sample_snapshot_payload(EnvVarScope::User, "NEW_AUTO", "1");
+
+        let _manual = write_envvar_snapshot_bundle(
+            &settings,
+            &manual_payload,
+            EnvVarSnapshotCreationMode::Manual,
+            Some("set"),
+            Some("manual restore point"),
+            Some("2026-03-18T00:00:00Z"),
+        )
+        .await
+        .expect("manual snapshot");
+        let _old_auto = write_envvar_snapshot_bundle(
+            &settings,
+            &auto_old_payload,
+            EnvVarSnapshotCreationMode::Automatic,
+            Some("path_repair_apply"),
+            Some("old auto"),
+            Some("2026-03-10T00:00:00Z"),
+        )
+        .await
+        .expect("old auto snapshot");
+        let _new_auto = write_envvar_snapshot_bundle(
+            &settings,
+            &auto_new_payload,
+            EnvVarSnapshotCreationMode::Automatic,
+            Some("path_repair_apply"),
+            Some("new auto"),
+            Some("2026-03-19T00:00:00Z"),
+        )
+        .await
+        .expect("new auto snapshot");
+
+        let deleted = cleanup_envvar_snapshot_bundles(&settings, 1, 0)
+            .await
+            .expect("cleanup snapshots");
+        assert_eq!(deleted, 1);
+
+        let listed = list_envvar_snapshot_bundles(&settings)
+            .await
+            .expect("list snapshot bundles");
+        assert_eq!(listed.len(), 2);
+        assert!(listed.iter().any(|item| item.creation_mode == EnvVarSnapshotCreationMode::Manual));
+        assert!(listed.iter().any(|item| item.note.as_deref() == Some("new auto")));
+    }
+
+    #[test]
+    fn backup_protection_reuses_matching_automatic_snapshot() {
+        let scope_payload = EnvVarSnapshotScopePayload {
+            scope: EnvVarScope::User,
+            variables: vec![PersistentEnvVar {
+                key: "API_TOKEN".to_string(),
+                value: "secret".to_string(),
+                reg_type: None,
+            }],
+            path_entries: vec!["/tmp/bin".to_string()],
+            variable_fingerprint: "vars:user:token".to_string(),
+            path_fingerprint: "path:user:/tmp/bin".to_string(),
+            restorable: true,
+        };
+        let snapshot = EnvVarSnapshotInfo {
+            path: "D:/tmp/envvar-snapshot-1".to_string(),
+            name: "envvar-snapshot-1".to_string(),
+            created_at: "2026-03-19T00:00:00Z".to_string(),
+            creation_mode: EnvVarSnapshotCreationMode::Automatic,
+            source_action: Some("path_repair_apply".to_string()),
+            note: Some("auto".to_string()),
+            scopes: vec![EnvVarScope::User],
+            integrity_state: "valid".to_string(),
+            snapshot: EnvVarSnapshotPayload {
+                format_version: 1,
+                created_at: "2026-03-19T00:00:00Z".to_string(),
+                creation_mode: Some(EnvVarSnapshotCreationMode::Automatic),
+                source_action: Some("path_repair_apply".to_string()),
+                note: Some("auto".to_string()),
+                scopes: vec![scope_payload.clone()],
+            },
+        };
+
+        let state = build_envvar_backup_protection_state(
+            "path_repair_apply",
+            EnvVarScope::User,
+            &scope_payload,
+            &[snapshot],
+        );
+
+        assert_eq!(state.state, "will_reuse");
+        assert_eq!(state.reason_code, "compatible_snapshot_available");
+        assert!(state.snapshot.is_some());
+    }
+
+    #[test]
+    fn restore_preview_marks_process_scope_as_unsupported() {
+        let snapshot = EnvVarSnapshotPayload {
+            format_version: 1,
+            created_at: "2026-03-19T00:00:00Z".to_string(),
+            creation_mode: None,
+            source_action: None,
+            note: None,
+            scopes: vec![EnvVarSnapshotScopePayload {
+                scope: EnvVarScope::Process,
+                variables: vec![PersistentEnvVar {
+                    key: "TMP_ONLY".to_string(),
+                    value: "1".to_string(),
+                    reg_type: None,
+                }],
+                path_entries: vec!["/tmp/process".to_string()],
+                variable_fingerprint: "vars:process:tmp".to_string(),
+                path_fingerprint: "path:process:/tmp/process".to_string(),
+                restorable: false,
+            }],
+        };
+
+        let preview = build_envvar_snapshot_restore_preview(&snapshot, &[], &[EnvVarScope::Process]);
+        assert_eq!(preview.segments.len(), 1);
+        assert_eq!(preview.segments[0].scope, EnvVarScope::Process);
+        assert!(preview.segments[0].skipped);
+        assert_eq!(
+            preview.segments[0].reason_code.as_deref(),
+            Some("scope_not_restorable")
+        );
     }
 }

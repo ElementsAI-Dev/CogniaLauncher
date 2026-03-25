@@ -20,6 +20,12 @@ const mockPreviewPathRepair = jest.fn().mockResolvedValue(null);
 const mockApplyPathRepair = jest.fn().mockResolvedValue(null);
 const mockResolveConflict = jest.fn().mockResolvedValue(null);
 const mockRevealVar = jest.fn().mockResolvedValue(null);
+const mockFetchSnapshotHistory = jest.fn().mockResolvedValue([]);
+const mockCreateSnapshot = jest.fn().mockResolvedValue(null);
+const mockGetBackupProtection = jest.fn().mockResolvedValue(null);
+const mockPreviewSnapshotRestore = jest.fn().mockResolvedValue(null);
+const mockRestoreSnapshot = jest.fn().mockResolvedValue(null);
+const mockDeleteSnapshot = jest.fn().mockResolvedValue(true);
 let mockIsTauri = false;
 
 const hookState = {
@@ -66,6 +72,24 @@ const hookState = {
   },
   supportLoading: false,
   supportError: null as string | null,
+  snapshotHistory: [] as Array<{
+    path: string;
+    name: string;
+    createdAt: string;
+    creationMode: string;
+    sourceAction?: string | null;
+    note?: string | null;
+    scopes: string[];
+    integrityState: string;
+  }>,
+  snapshotLoading: false,
+  snapshotError: null as string | null,
+  fetchSnapshotHistory: mockFetchSnapshotHistory,
+  createSnapshot: mockCreateSnapshot,
+  getBackupProtection: mockGetBackupProtection,
+  previewSnapshotRestore: mockPreviewSnapshotRestore,
+  restoreSnapshot: mockRestoreSnapshot,
+  deleteSnapshot: mockDeleteSnapshot,
   loadSupportSnapshot: jest.fn(),
   setVar: mockSetVar,
   removeVar: mockRemoveVar,
@@ -153,8 +177,15 @@ describe('EnvVarPage', () => {
     hookState.supportSnapshot = null;
     hookState.supportLoading = false;
     hookState.supportError = null;
+    hookState.snapshotHistory = [];
+    hookState.snapshotLoading = false;
+    hookState.snapshotError = null;
     mockSetVar.mockResolvedValue(true);
     mockLoadDetection.mockResolvedValue(null);
+    mockGetBackupProtection.mockResolvedValue(null);
+    mockPreviewSnapshotRestore.mockResolvedValue(null);
+    mockRestoreSnapshot.mockResolvedValue(null);
+    mockDeleteSnapshot.mockResolvedValue(true);
     jest.clearAllMocks();
     window.localStorage.clear();
     Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: 1024 });
@@ -199,6 +230,92 @@ describe('EnvVarPage', () => {
     await waitFor(() => {
       expect(mockLoadDetection).toHaveBeenCalled();
     });
+  });
+
+  it('renders snapshot history and manual snapshot entry point on desktop', async () => {
+    mockIsTauri = true;
+    hookState.snapshotHistory = [
+      {
+        path: 'D:/snapshots/envvar-snapshot-1',
+        name: 'envvar-snapshot-1',
+        createdAt: '2026-03-19T00:00:00Z',
+        creationMode: 'manual',
+        sourceAction: 'import_apply',
+        note: 'before import',
+        scopes: ['user', 'system'],
+        integrityState: 'valid',
+      },
+    ];
+
+    render(<EnvVarPage />);
+
+    expect(screen.getByTestId('envvar-snapshot-history')).toBeInTheDocument();
+    expect(screen.getByText('envvar-snapshot-1')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'envvar.snapshots.create' }));
+    expect(mockCreateSnapshot).toHaveBeenCalled();
+  });
+
+  it('renders backup protection summary for risky envvar workflows', async () => {
+    mockIsTauri = true;
+    mockGetBackupProtection.mockResolvedValueOnce({
+      action: 'import_apply',
+      scope: 'user',
+      state: 'will_create',
+      reasonCode: 'new_snapshot_required',
+      reason: 'A fresh envvar safety snapshot should be created before this mutation runs.',
+      nextSteps: [],
+      snapshot: null,
+    });
+
+    render(<EnvVarPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('envvar-snapshot-protection')).toBeInTheDocument();
+    });
+    expect(screen.getByText('A fresh envvar safety snapshot should be created before this mutation runs.')).toBeInTheDocument();
+  });
+
+  it('shows restore preview details for a selected snapshot', async () => {
+    mockIsTauri = true;
+    hookState.snapshotHistory = [
+      {
+        path: 'D:/snapshots/envvar-snapshot-1',
+        name: 'envvar-snapshot-1',
+        createdAt: '2026-03-19T00:00:00Z',
+        creationMode: 'manual',
+        sourceAction: 'import_apply',
+        note: 'before import',
+        scopes: ['user', 'system'],
+        integrityState: 'valid',
+      },
+    ];
+    mockPreviewSnapshotRestore.mockResolvedValueOnce({
+      createdAt: '2026-03-19T00:00:00Z',
+      segments: [
+        {
+          scope: 'user',
+          changedVariables: 2,
+          addedVariables: 1,
+          removedVariables: 0,
+          addedPathEntries: 1,
+          removedPathEntries: 0,
+          skipped: false,
+          reasonCode: null,
+          reason: null,
+        },
+      ],
+    });
+
+    render(<EnvVarPage />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'envvar.snapshots.preview' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('envvar-snapshot-preview')).toBeInTheDocument();
+    });
+    expect(screen.getByText(/envvar\.snapshots\.segmentSummary/)).toBeInTheDocument();
+    expect(mockPreviewSnapshotRestore).toHaveBeenCalledWith('D:/snapshots/envvar-snapshot-1');
   });
 
   it('disables refresh when backend support marks it blocked', async () => {

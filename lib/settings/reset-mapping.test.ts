@@ -57,6 +57,58 @@ describe("reset-mapping", () => {
     expect(next["general.parallel_downloads"]).toBe("Invalid downloads");
   });
 
+  it("returns the original draft when a section has no matching keys", () => {
+    const draft = {
+      "general.parallel_downloads": "8",
+    };
+    const result = applySectionReset({
+      sectionId: "network",
+      draft,
+      baseline: {
+        "general.parallel_downloads": "4",
+      },
+    });
+
+    expect(result.nextDraft).toBe(draft);
+    expect(result.resetKeys).toEqual([]);
+  });
+
+  it("returns the original validation map when reset keys are empty", () => {
+    const errors = {
+      "general.parallel_downloads": "Invalid downloads",
+    };
+
+    const next = clearSectionValidationErrors({
+      errors,
+      resetKeys: [],
+    });
+
+    expect(next).toBe(errors);
+  });
+
+  it("leaves unrelated validation keys untouched when a reset key is missing", () => {
+    const next = clearSectionValidationErrors({
+      errors: {
+        "general.parallel_downloads": "Invalid downloads",
+      },
+      resetKeys: ["network.timeout"],
+    });
+
+    expect(next["general.parallel_downloads"]).toBe("Invalid downloads");
+  });
+
+  it("falls back to an empty string when baseline does not contain a reset key", () => {
+    const result = applySectionReset({
+      sectionId: "network",
+      draft: {
+        "network.timeout": "10",
+      },
+      baseline: {},
+    });
+
+    expect(result.nextDraft["network.timeout"]).toBe("");
+  });
+
   it("derives app settings snapshot from config", () => {
     const appSettings = buildAppSettingsFromConfigSnapshot({
       configSnapshot: {

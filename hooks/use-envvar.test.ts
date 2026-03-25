@@ -30,6 +30,12 @@ const mockEnvvarRemovePersistent = jest.fn();
 const mockEnvvarListProcessSummaries = jest.fn();
 const mockEnvvarListPersistentTypedSummaries = jest.fn();
 const mockEnvvarGetSupportSnapshot = jest.fn();
+const mockEnvvarListSnapshots = jest.fn();
+const mockEnvvarCreateSnapshot = jest.fn();
+const mockEnvvarGetBackupProtection = jest.fn();
+const mockEnvvarPreviewSnapshotRestore = jest.fn();
+const mockEnvvarRestoreSnapshot = jest.fn();
+const mockEnvvarDeleteSnapshot = jest.fn();
 
 jest.mock('@/lib/tauri', () => ({
   envvarListAll: (...args: unknown[]) => mockEnvvarListAll(...args),
@@ -41,6 +47,12 @@ jest.mock('@/lib/tauri', () => ({
   envvarListProcessSummaries: (...args: unknown[]) => mockEnvvarListProcessSummaries(...args),
   envvarListPersistentTypedSummaries: (...args: unknown[]) => mockEnvvarListPersistentTypedSummaries(...args),
   envvarGetSupportSnapshot: (...args: unknown[]) => mockEnvvarGetSupportSnapshot(...args),
+  envvarListSnapshots: (...args: unknown[]) => mockEnvvarListSnapshots(...args),
+  envvarCreateSnapshot: (...args: unknown[]) => mockEnvvarCreateSnapshot(...args),
+  envvarGetBackupProtection: (...args: unknown[]) => mockEnvvarGetBackupProtection(...args),
+  envvarPreviewSnapshotRestore: (...args: unknown[]) => mockEnvvarPreviewSnapshotRestore(...args),
+  envvarRestoreSnapshot: (...args: unknown[]) => mockEnvvarRestoreSnapshot(...args),
+  envvarDeleteSnapshot: (...args: unknown[]) => mockEnvvarDeleteSnapshot(...args),
   envvarGetPath: (...args: unknown[]) => mockEnvvarGetPath(...args),
   envvarAddPathEntry: (...args: unknown[]) => mockEnvvarAddPathEntry(...args),
   envvarRemovePathEntry: (...args: unknown[]) => mockEnvvarRemovePathEntry(...args),
@@ -108,6 +120,7 @@ describe('useEnvVar', () => {
         },
       ],
     });
+    mockEnvvarListSnapshots.mockResolvedValue([]);
   });
 
   it('should initialize with empty state', () => {
@@ -129,6 +142,125 @@ describe('useEnvVar', () => {
     expect(result.current.detectionCanRetry).toBe(false);
     expect(result.current.detectionLastUpdated).toBeNull();
     expect((result.current as unknown as { supportSnapshot?: unknown }).supportSnapshot ?? null).toBeNull();
+    expect((result.current as unknown as { snapshotHistory?: unknown[] }).snapshotHistory ?? []).toEqual([]);
+  });
+
+  it('loads envvar snapshot history and creates manual snapshots', async () => {
+    mockEnvvarListSnapshots.mockResolvedValueOnce([
+      {
+        path: 'D:/snapshots/envvar-snapshot-1',
+        name: 'envvar-snapshot-1',
+        createdAt: '2026-03-19T00:00:00Z',
+        creationMode: 'manual',
+        sourceAction: 'set',
+        note: 'before change',
+        scopes: ['user'],
+        integrityState: 'valid',
+        snapshot: {
+          formatVersion: 1,
+          createdAt: '2026-03-19T00:00:00Z',
+          creationMode: 'manual',
+          sourceAction: 'set',
+          note: 'before change',
+          scopes: [],
+        },
+      },
+    ]);
+    mockEnvvarCreateSnapshot.mockResolvedValueOnce({
+      success: true,
+      status: 'verified',
+      reasonCode: null,
+      message: null,
+      snapshot: {
+        path: 'D:/snapshots/envvar-snapshot-2',
+        name: 'envvar-snapshot-2',
+        createdAt: '2026-03-19T01:00:00Z',
+        creationMode: 'manual',
+        sourceAction: 'import_apply',
+        note: 'manual safety point',
+        scopes: ['user', 'system'],
+        integrityState: 'valid',
+        snapshot: {
+          formatVersion: 1,
+          createdAt: '2026-03-19T01:00:00Z',
+          creationMode: 'manual',
+          sourceAction: 'import_apply',
+          note: 'manual safety point',
+          scopes: [],
+        },
+      },
+    });
+
+    const { result } = renderHook(() => useEnvVar());
+
+    await act(async () => {
+      await (result.current as unknown as {
+        fetchSnapshotHistory: () => Promise<unknown[]>;
+      }).fetchSnapshotHistory();
+    });
+
+    expect((result.current as unknown as { snapshotHistory: unknown[] }).snapshotHistory).toHaveLength(1);
+
+    await act(async () => {
+      await (result.current as unknown as {
+        createSnapshot: (
+          scopes: Array<'user' | 'system'>,
+          options?: { sourceAction?: string; note?: string; creationMode?: 'manual' | 'automatic' },
+        ) => Promise<unknown>;
+      }).createSnapshot(['user', 'system'], {
+        sourceAction: 'import_apply',
+        note: 'manual safety point',
+      });
+    });
+
+    expect(mockEnvvarCreateSnapshot).toHaveBeenCalledWith(
+      ['user', 'system'],
+      'manual',
+      'import_apply',
+      'manual safety point',
+    );
+    expect((result.current as unknown as { snapshotHistory: Array<{ name: string }> }).snapshotHistory[0].name)
+      .toBe('envvar-snapshot-2');
+  });
+
+  it('restores a snapshot and refreshes detection state', async () => {
+    mockEnvvarRestoreSnapshot.mockResolvedValueOnce({
+      success: true,
+      verified: true,
+      status: 'verified',
+      reasonCode: null,
+      message: null,
+      restoredScopes: ['user'],
+      skipped: [],
+      primaryShellTarget: '/home/user/.bashrc',
+      shellGuidance: [
+        {
+          shell: 'bash',
+          configPath: '/home/user/.bashrc',
+          command: 'export API_TOKEN="value"',
+          autoApplied: true,
+          containsSensitiveValue: false,
+          redacted: false,
+        },
+      ],
+    });
+    mockEnvvarListSnapshots.mockResolvedValueOnce([]);
+    mockEnvvarListProcessSummaries.mockResolvedValueOnce([makeSummary('PATH', '/usr/bin', 'process')]);
+
+    const { result } = renderHook(() => useEnvVar());
+
+    await act(async () => {
+      await (result.current as unknown as {
+        restoreSnapshot: (snapshotPath: string, scopes?: Array<'user'>) => Promise<unknown>;
+      }).restoreSnapshot('D:/snapshots/envvar-snapshot-1', ['user']);
+    });
+
+    expect(mockEnvvarRestoreSnapshot).toHaveBeenCalledWith('D:/snapshots/envvar-snapshot-1', ['user']);
+    expect(mockEnvvarListSnapshots).toHaveBeenCalled();
+    expect((result.current as unknown as {
+      shellGuidance: Array<{ shell: string }>;
+      detectionState: string;
+    }).shellGuidance[0].shell).toBe('bash');
   });
 
   it('loads support snapshot and exposes blocked action readiness', async () => {

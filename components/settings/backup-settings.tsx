@@ -94,6 +94,48 @@ type BackupActionOutcome = {
   error?: string | null;
 };
 
+export function describeBackupStatus(status: BackupOperationStatus): string {
+  switch (status) {
+    case "success":
+      return "success";
+    case "partial":
+      return "partial";
+    case "skipped":
+      return "skipped";
+    default:
+      return "failed";
+  }
+}
+
+export function deriveRestoreErrorMessage(
+  result: {
+    error?: string | null;
+    skipped: Array<{ contentType: string; reason: string }>;
+  },
+  hint?: string | null,
+): string {
+  const skippedReason = result.skipped
+    .map((s) => `${s.contentType}: ${s.reason}`)
+    .join(", ");
+  return result.error || hint || skippedReason || "Unknown error";
+}
+
+export function toggleBackupContentSelection(
+  current: BackupContentType[],
+  key: BackupContentType,
+): BackupContentType[] {
+  return current.includes(key)
+    ? current.filter((c) => c !== key)
+    : [...current, key];
+}
+
+export function buildBackupDatabaseInfoMessage(
+  info: { dbSizeHuman: string; walSizeHuman?: string | null; pageCount: number },
+  t: (key: string, params?: Record<string, string | number>) => string,
+): string {
+  return `${t("backup.database.dbSize")}: ${info.dbSizeHuman} | ${t("backup.database.walSize")}: ${info.walSizeHuman || "0 B"} | ${t("backup.database.pageCount")}: ${info.pageCount}`;
+}
+
 export function getBackupActionHint(reasonCode?: string | null): string | null {
   switch (reasonCode) {
     case "operation_in_progress":
@@ -166,22 +208,6 @@ export function BackupSettings({ t }: BackupSettingsProps) {
   // DB info state
   const [dbChecking, setDbChecking] = useState(false);
 
-  const describeStatus = useCallback(
-    (status: BackupOperationStatus) => {
-      switch (status) {
-        case "success":
-          return "success";
-        case "partial":
-          return "partial";
-        case "skipped":
-          return "skipped";
-        default:
-          return "failed";
-      }
-    },
-    [],
-  );
-
   const handleCreateBackup = useCallback(async () => {
     const result = await create(createContents, createNote || undefined);
     const message = getOutcomeMessage(result);
@@ -196,7 +222,7 @@ export function BackupSettings({ t }: BackupSettingsProps) {
     if (result.status === "partial") {
       toast.warning(
         t("backup.backupFailed", {
-          error: `${message} (${describeStatus(result.status)}, ${result.issues?.length ?? 0} issues)`,
+          error: `${message} (${describeBackupStatus(result.status)}, ${result.issues?.length ?? 0} issues)`,
         }),
       );
       setCreateOpen(false);
@@ -204,7 +230,7 @@ export function BackupSettings({ t }: BackupSettingsProps) {
     }
 
     toast.error(t("backup.backupFailed", { error: message }));
-  }, [create, createContents, createNote, describeStatus, t]);
+  }, [create, createContents, createNote, t]);
 
   const handleRestore = useCallback(async () => {
     if (!restoreTarget) return;
@@ -216,8 +242,7 @@ export function BackupSettings({ t }: BackupSettingsProps) {
       return;
     }
 
-    const skippedReason = result.skipped.map((s) => `${s.contentType}: ${s.reason}`).join(", ");
-    const restoreError = result.error || hint || skippedReason || "Unknown error";
+    const restoreError = deriveRestoreErrorMessage(result, hint);
     if (result.status === "partial") {
       toast.warning(t("backup.restoreFailed", { error: restoreError }));
     } else {
@@ -263,22 +288,16 @@ export function BackupSettings({ t }: BackupSettingsProps) {
   const handleDbInfo = useCallback(async () => {
     const info = await getDatabaseInfo();
     if (info) {
-      toast.info(
-        `${t("backup.database.dbSize")}: ${info.dbSizeHuman} | ${t("backup.database.walSize")}: ${info.walSizeHuman || "0 B"} | ${t("backup.database.pageCount")}: ${info.pageCount}`
-      );
+      toast.info(buildBackupDatabaseInfoMessage(info, t));
     }
   }, [getDatabaseInfo, t]);
 
   const toggleCreateContent = useCallback((key: BackupContentType) => {
-    setCreateContents((prev) =>
-      prev.includes(key) ? prev.filter((c) => c !== key) : [...prev, key]
-    );
+    setCreateContents((prev) => toggleBackupContentSelection(prev, key));
   }, []);
 
   const toggleRestoreContent = useCallback((key: BackupContentType) => {
-    setRestoreContents((prev) =>
-      prev.includes(key) ? prev.filter((c) => c !== key) : [...prev, key]
-    );
+    setRestoreContents((prev) => toggleBackupContentSelection(prev, key));
   }, []);
 
   const openRestoreDialog = useCallback((backup: BackupInfo) => {

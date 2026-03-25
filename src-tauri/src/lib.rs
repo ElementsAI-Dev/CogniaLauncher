@@ -704,6 +704,12 @@ pub fn run() {
             commands::shim::path_get_add_command,
             // Environment variable management commands
             commands::envvar::envvar_get_support_snapshot,
+            commands::envvar::envvar_list_snapshots,
+            commands::envvar::envvar_create_snapshot,
+            commands::envvar::envvar_get_backup_protection,
+            commands::envvar::envvar_preview_snapshot_restore,
+            commands::envvar::envvar_restore_snapshot,
+            commands::envvar::envvar_delete_snapshot,
             commands::envvar::envvar_list_all,
             commands::envvar::envvar_list_process_summaries,
             commands::envvar::envvar_get,

@@ -224,6 +224,12 @@ export type {
   EnvVarSummary,
   EnvVarRevealResult,
   EnvVarMutationResult,
+  EnvVarSnapshotCreateResult,
+  EnvVarSnapshotCreationMode,
+  EnvVarSnapshotInfo,
+  EnvVarBackupProtectionState,
+  EnvVarSnapshotRestorePreview,
+  EnvVarSnapshotRestoreResult,
   PathEntryInfo,
   ShellProfileInfo,
   EnvVarImportResult,
@@ -457,6 +463,12 @@ import type {
   EnvVarSummary,
   EnvVarRevealResult,
   EnvVarMutationResult,
+  EnvVarSnapshotCreateResult,
+  EnvVarSnapshotCreationMode,
+  EnvVarSnapshotInfo,
+  EnvVarBackupProtectionState,
+  EnvVarSnapshotRestorePreview,
+  EnvVarSnapshotRestoreResult,
   PathEntryInfo,
   ShellProfileInfo,
   EnvVarImportResult,
@@ -3686,6 +3698,49 @@ export const envvarRemovePersistent = (key: string, scope: EnvVarScope) =>
 
 /** Get PATH entries with existence info */
 export const envvarGetPath = (scope: EnvVarScope) =>
+/** List envvar recovery snapshots */
+export const envvarListSnapshots = () =>
+  invoke<EnvVarSnapshotInfo[]>("envvar_list_snapshots");
+
+/** Create an envvar recovery snapshot */
+export const envvarCreateSnapshot = (
+  scopes: EnvVarScope[],
+  creationMode: EnvVarSnapshotCreationMode = 'manual',
+  sourceAction?: string,
+  note?: string,
+) => invoke<EnvVarSnapshotCreateResult>("envvar_create_snapshot", {
+  scopes,
+  creationMode,
+  sourceAction,
+  note,
+});
+
+/** Preview backup protection state for a risky envvar action */
+export const envvarGetBackupProtection = (action: string, scope: EnvVarScope) =>
+  invoke<EnvVarBackupProtectionState>("envvar_get_backup_protection", { action, scope });
+
+/** Preview restoring an envvar snapshot */
+export const envvarPreviewSnapshotRestore = (
+  snapshotPath: string,
+  scopes: EnvVarScope[] = [],
+) => invoke<EnvVarSnapshotRestorePreview>("envvar_preview_snapshot_restore", {
+  snapshotPath,
+  scopes,
+});
+
+/** Restore envvar state from a snapshot */
+export const envvarRestoreSnapshot = (
+  snapshotPath: string,
+  scopes: EnvVarScope[] = [],
+) => invoke<EnvVarSnapshotRestoreResult>("envvar_restore_snapshot", {
+  snapshotPath,
+  scopes,
+});
+
+/** Delete an envvar snapshot */
+export const envvarDeleteSnapshot = (snapshotPath: string) =>
+  invoke<BackupDeleteResult>("envvar_delete_snapshot", { snapshotPath });
+
   invoke<PathEntryInfo[]>("envvar_get_path", { scope });
 
 /** Add a PATH entry */

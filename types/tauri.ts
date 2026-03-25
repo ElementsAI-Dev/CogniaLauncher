@@ -2672,6 +2672,91 @@ export interface PSProfileInfo {
 
 export interface PSModuleInfo {
   name: string;
+export type EnvVarSnapshotCreationMode = 'manual' | 'automatic';
+
+export interface EnvVarSnapshotScopePayload {
+  scope: EnvVarScope;
+  variables: PersistentEnvVar[];
+  pathEntries: string[];
+  variableFingerprint: string;
+  pathFingerprint: string;
+  restorable: boolean;
+}
+
+export interface EnvVarSnapshotPayload {
+  formatVersion: number;
+  createdAt: string;
+  creationMode?: EnvVarSnapshotCreationMode | null;
+  sourceAction?: string | null;
+  note?: string | null;
+  scopes: EnvVarSnapshotScopePayload[];
+}
+
+export interface EnvVarSnapshotInfo {
+  path: string;
+  name: string;
+  createdAt: string;
+  creationMode: EnvVarSnapshotCreationMode;
+  sourceAction?: string | null;
+  note?: string | null;
+  scopes: EnvVarScope[];
+  integrityState: string;
+  snapshot: EnvVarSnapshotPayload;
+}
+
+export interface EnvVarBackupProtectionState {
+  action: string;
+  scope: EnvVarScope;
+  state: 'will_create' | 'will_reuse' | 'blocked' | 'unprotected';
+  reasonCode: string;
+  reason: string;
+  nextSteps: string[];
+  snapshot?: EnvVarSnapshotInfo | null;
+}
+
+export interface EnvVarSnapshotRestorePreviewSegment {
+  scope: EnvVarScope;
+  changedVariables: number;
+  addedVariables: number;
+  removedVariables: number;
+  addedPathEntries: number;
+  removedPathEntries: number;
+  skipped: boolean;
+  reasonCode?: string | null;
+  reason?: string | null;
+}
+
+export interface EnvVarSnapshotRestorePreview {
+  createdAt: string;
+  segments: EnvVarSnapshotRestorePreviewSegment[];
+}
+
+export interface EnvVarSnapshotCreateResult {
+  success: boolean;
+  status: 'verified' | 'failed';
+  reasonCode?: string | null;
+  message?: string | null;
+  snapshot?: EnvVarSnapshotInfo | null;
+}
+
+export interface EnvVarSnapshotRestoreSkipped {
+  scope: EnvVarScope;
+  reasonCode?: string | null;
+  reason: string;
+}
+
+export interface EnvVarSnapshotRestoreResult {
+  success: boolean;
+  verified: boolean;
+  status: 'verified' | 'partial' | 'failed';
+  reasonCode?: string | null;
+  message?: string | null;
+  restoredScopes: EnvVarScope[];
+  skipped: EnvVarSnapshotRestoreSkipped[];
+  primaryShellTarget?: string | null;
+  shellGuidance: EnvVarShellGuidance[];
+}
+
   version: string;
   moduleType: string;
   path: string;

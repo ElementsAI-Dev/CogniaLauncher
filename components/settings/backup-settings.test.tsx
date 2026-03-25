@@ -4,7 +4,11 @@ import userEvent from "@testing-library/user-event";
 import { toast } from "sonner";
 import {
   BackupSettings,
+  buildBackupDatabaseInfoMessage,
+  describeBackupStatus,
+  deriveRestoreErrorMessage,
   getBackupActionHint,
+  toggleBackupContentSelection,
 } from "./backup-settings";
 
 const mockUseBackup = jest.fn();
@@ -146,6 +150,57 @@ describe("backup-settings reason hints", () => {
     expect(getBackupActionHint("unknown_reason")).toBeNull();
     expect(getBackupActionHint()).toBeNull();
   });
+
+  it("describes backup operation statuses", () => {
+    expect(describeBackupStatus("success")).toBe("success");
+    expect(describeBackupStatus("partial")).toBe("partial");
+    expect(describeBackupStatus("skipped")).toBe("skipped");
+    expect(describeBackupStatus("failed")).toBe("failed");
+  });
+
+  it("derives restore errors from error, hint, skipped reasons, and fallback", () => {
+    expect(
+      deriveRestoreErrorMessage(
+        { error: "boom", skipped: [] },
+        "hint",
+      ),
+    ).toBe("boom");
+    expect(
+      deriveRestoreErrorMessage(
+        { error: null, skipped: [] },
+        "hint",
+      ),
+    ).toBe("hint");
+    expect(
+      deriveRestoreErrorMessage(
+        { error: null, skipped: [{ contentType: "config", reason: "conflict" }] },
+        null,
+      ),
+    ).toBe("config: conflict");
+    expect(
+      deriveRestoreErrorMessage(
+        { error: null, skipped: [] },
+        null,
+      ),
+    ).toBe("Unknown error");
+  });
+
+  it("toggles backup content selection in both directions", () => {
+    expect(toggleBackupContentSelection(["config"], "config")).toEqual([]);
+    expect(toggleBackupContentSelection(["config"], "cache_database")).toEqual([
+      "config",
+      "cache_database",
+    ]);
+  });
+
+  it("builds database info messages with a WAL size fallback", () => {
+    expect(
+      buildBackupDatabaseInfoMessage(
+        { dbSizeHuman: "10 MB", walSizeHuman: null, pageCount: 12 },
+        mockT,
+      ),
+    ).toContain("WAL Size: 0 B");
+  });
 });
 
 describe("BackupSettings", () => {
@@ -196,6 +251,50 @@ describe("BackupSettings", () => {
         status: "partial",
         durationMs: 42,
         issues: [{ message: "config missing" }],
+        error: null,
+      }),
+    });
+    mockUseBackup.mockReturnValue(backupHook);
+
+    render(<BackupSettings t={mockT} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Create Backup" }));
+    const createDialog = await screen.findByRole("dialog");
+    await userEvent.click(within(createDialog).getByRole("button", { name: "Create Backup" }));
+
+    await waitFor(() => {
+      expect(toast.warning).toHaveBeenCalledWith("Backup failed");
+    });
+  });
+
+  it("shows an error when backup creation returns a non-partial failure status", async () => {
+    const backupHook = createBackupMock({
+      create: jest.fn().mockResolvedValue({
+        status: "skipped",
+        durationMs: 42,
+        issues: [],
+        error: "blocked",
+      }),
+    });
+    mockUseBackup.mockReturnValue(backupHook);
+
+    render(<BackupSettings t={mockT} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Create Backup" }));
+    const createDialog = await screen.findByRole("dialog");
+    await userEvent.click(within(createDialog).getByRole("button", { name: "Create Backup" }));
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith("Backup failed");
+    });
+  });
+
+  it("handles partial backup creation when issue details are omitted", async () => {
+    const backupHook = createBackupMock({
+      create: jest.fn().mockResolvedValue({
+        status: "partial",
+        durationMs: 42,
+        issues: undefined,
         error: null,
       }),
     });
@@ -322,6 +421,40 @@ describe("BackupSettings", () => {
 
   });
 
+  it("surfaces restore errors when the restore result is not partial", async () => {
+    const backupHook = createBackupMock({
+      backups: [
+        {
+          path: "/tmp/backup-error",
+          name: "backup-error",
+          sizeHuman: "8 MB",
+          manifest: {
+            createdAt: "2026-03-18T12:00:00.000Z",
+            appVersion: "1.0.0",
+            contents: ["config"],
+            note: null,
+          },
+        },
+      ],
+      restore: jest.fn().mockResolvedValue({
+        status: "error",
+        skipped: [],
+        error: null,
+      }),
+    });
+    mockUseBackup.mockReturnValue(backupHook);
+
+    render(<BackupSettings t={mockT} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Restore" }));
+    const restoreDialog = await screen.findByRole("alertdialog");
+    await userEvent.click(within(restoreDialog).getByRole("button", { name: "Restore" }));
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith("Restore failed");
+    });
+  });
+
   it("allows toggling create and restore content selections and deleting backups", async () => {
     const backupHook = createBackupMock({
       backups: [
@@ -444,5 +577,47 @@ describe("BackupSettings", () => {
       expect(backupHook.validate).toHaveBeenCalledWith("/tmp/backup-5");
     });
     expect(screen.queryByText("Validation passed")).not.toBeInTheDocument();
+  });
+
+  it("does not open the validation dialog when validation returns null", async () => {
+    const backupHook = createBackupMock({
+      backups: [
+        {
+          path: "/tmp/backup-null",
+          name: "backup-null",
+          sizeHuman: "4 MB",
+          manifest: {
+            createdAt: "2026-03-18T12:00:00.000Z",
+            appVersion: "1.0.0",
+            contents: ["config"],
+            note: null,
+          },
+        },
+      ],
+      validate: jest.fn().mockResolvedValue(null),
+    });
+    mockUseBackup.mockReturnValue(backupHook);
+
+    render(<BackupSettings t={mockT} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Validate" }));
+    await waitFor(() => {
+      expect(backupHook.validate).toHaveBeenCalledWith("/tmp/backup-null");
+    });
+
+    expect(screen.queryByText("Validation passed")).not.toBeInTheDocument();
+    expect(screen.queryByText("Validation failed")).not.toBeInTheDocument();
+  });
+
+  it("shows creating state on the primary action button", () => {
+    mockUseBackup.mockReturnValue(
+      createBackupMock({
+        creating: true,
+      }),
+    );
+
+    render(<BackupSettings t={mockT} />);
+
+    expect(screen.getByRole("button", { name: "Creating..." })).toBeDisabled();
   });
 });
