@@ -10,18 +10,19 @@ import {
   EmptyContent,
 } from "@/components/ui/empty";
 import { Server, SearchX, FilterX } from "lucide-react";
+import { useLocale } from "@/components/providers/locale-provider";
 
 export interface ProviderEmptyStateProps {
   hasFilters: boolean;
   onClearFilters: () => void;
-  t: (key: string) => string;
 }
 
 export function ProviderEmptyState({
   hasFilters,
   onClearFilters,
-  t,
 }: ProviderEmptyStateProps) {
+  const { t } = useLocale();
+
   if (hasFilters) {
     return (
       <Empty className="border-dashed border">

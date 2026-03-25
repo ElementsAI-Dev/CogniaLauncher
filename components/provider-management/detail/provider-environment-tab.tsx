@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { useLocale } from "@/components/providers/locale-provider";
 import {
   Card,
   CardContent,
@@ -62,7 +63,6 @@ interface ProviderEnvironmentTabProps {
   availableVersions: VersionInfo[];
   loadingEnvironment: boolean;
   onRefreshEnvironment: () => Promise<void>;
-  t: (key: string, params?: Record<string, string | number>) => string;
 }
 
 export function ProviderEnvironmentTab({
@@ -72,8 +72,8 @@ export function ProviderEnvironmentTab({
   availableVersions,
   loadingEnvironment,
   onRefreshEnvironment,
-  t,
 }: ProviderEnvironmentTabProps) {
+  const { t } = useLocale();
   const [installingVersion, setInstallingVersion] = useState<string | null>(null);
   const [uninstallingVersion, setUninstallingVersion] = useState<string | null>(null);
   const [settingGlobal, setSettingGlobal] = useState<string | null>(null);

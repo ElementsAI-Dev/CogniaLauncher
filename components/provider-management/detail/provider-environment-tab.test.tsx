@@ -30,39 +30,25 @@ jest.mock("sonner", () => ({
   toast: { success: jest.fn(), error: jest.fn() },
 }));
 
-const mockT = (key: string) => {
-  const translations: Record<string, string> = {
-    "providerDetail.environmentOverview": "Environment Overview",
-    "providers.refresh": "Refresh",
-    "providerDetail.noEnvironmentData": "No environment data",
-    "providerDetail.envType": "Type",
-    "providerDetail.envCurrentVersion": "Current Version",
-    "providerDetail.installedVersionsCount": "Installed Versions",
-    "providerDetail.providerName": "Provider",
-    "providerDetail.none": "None",
-    "providerDetail.installedVersions": "Installed Versions",
-    "providerDetail.version": "Version",
-    "providerDetail.installPath": "Path",
-    "providerDetail.size": "Size",
-    "providerDetail.installedAt": "Installed At",
-    "providerDetail.actions": "Actions",
-    "providerDetail.current": "Current",
-    "providerDetail.setAsGlobal": "Set as Global",
-    "providerDetail.uninstallVersion": "Uninstall",
-    "providerDetail.availableVersions": "Available Versions",
-    "providerDetail.availableVersionsDesc": "Versions available for install",
-    "providerDetail.noAvailableVersions": "No available versions",
-    "providerDetail.installed": "Installed",
-    "providerDetail.deprecated": "Deprecated",
-    "providerDetail.yanked": "Yanked",
-    "providerDetail.installVersion": "Install",
-    "providerDetail.releaseDate": "Release Date",
-    "providerDetail.status": "Status",
-    "providerDetail.filterVersions": "Filter versions...",
-    "providerDetail.noMatchingVersions": "No matching versions",
-  };
-  return translations[key] || key;
-};
+jest.mock('@/components/providers/locale-provider', () => ({
+  useLocale: () => ({
+    t: (key: string) => {
+      const translations: Record<string, string> = {
+        "providerDetail.noEnvironmentData": "No environment data",
+        "providerDetail.environmentOverview": "Environment Overview",
+        "providerDetail.none": "None",
+        "providerDetail.availableVersions": "Available Versions",
+        "providerDetail.noAvailableVersions": "No available versions",
+        "providerDetail.refresh": "Refresh",
+        "providers.refresh": "Refresh",
+        "providerDetail.current": "Current",
+        "providerDetail.installed": "Installed",
+        "providerDetail.deprecated": "Deprecated",
+      };
+      return translations[key] ?? key;
+    },
+  }),
+}));
 
 const envInfo: EnvironmentInfo = {
   env_type: "node",
@@ -99,7 +85,6 @@ describe("ProviderEnvironmentTab", () => {
     availableVersions: [] as VersionInfo[],
     loadingEnvironment: false,
     onRefreshEnvironment: jest.fn(() => Promise.resolve()),
-    t: mockT,
   };
 
   beforeEach(() => jest.clearAllMocks());

@@ -270,6 +270,13 @@ describe('useProviderDetail', () => {
     mockPackageInstall.mockResolvedValue(undefined);
     mockFetchSharedInstalledPackages.mockResolvedValue([]);
     mockGetInstallHistory.mockResolvedValue([]);
+    mockRunUpdateCheck.mockResolvedValue({
+      updates: [],
+      total_checked: 0,
+      total_providers: 1,
+      errors: [],
+    });
+    mockGetPinnedPackages.mockResolvedValue([]);
 
     const { result } = renderHook(() => useProviderDetail(PROVIDER_ID));
 
@@ -279,6 +286,11 @@ describe('useProviderDetail', () => {
 
     expect(mockPackageInstall).toHaveBeenCalledWith(['npm:express@4.18.0']);
     expect(mockGetInstallHistory).toHaveBeenCalledWith({ limit: 200, provider: PROVIDER_ID });
+    expect(mockRunUpdateCheck).toHaveBeenCalledWith({
+      providerId: PROVIDER_ID,
+      syncStore: false,
+    });
+    expect(mockGetPinnedPackages).toHaveBeenCalled();
   });
 
   it('should install package without version', async () => {
@@ -371,6 +383,14 @@ describe('useProviderDetail', () => {
     mockPackagePin.mockResolvedValue(undefined);
     mockPackageUnpin.mockResolvedValue(undefined);
     mockGetPinnedPackages.mockResolvedValue([['express', '4.18.0']]);
+    mockFetchSharedInstalledPackages.mockResolvedValue([]);
+    mockGetInstallHistory.mockResolvedValue([]);
+    mockRunUpdateCheck.mockResolvedValue({
+      updates: [],
+      total_checked: 0,
+      total_providers: 1,
+      errors: [],
+    });
 
     const { result } = renderHook(() => useProviderDetail(PROVIDER_ID));
 
@@ -380,6 +400,12 @@ describe('useProviderDetail', () => {
 
     expect(mockPackagePin).toHaveBeenCalledWith('express', '4.18.0');
     expect(result.current.pinnedPackages).toEqual([['express', '4.18.0']]);
+    expect(mockFetchSharedInstalledPackages).toHaveBeenCalled();
+    expect(mockGetInstallHistory).toHaveBeenCalledWith({ limit: 200, provider: PROVIDER_ID });
+    expect(mockRunUpdateCheck).toHaveBeenCalledWith({
+      providerId: PROVIDER_ID,
+      syncStore: false,
+    });
 
     mockGetPinnedPackages.mockResolvedValue([]);
 

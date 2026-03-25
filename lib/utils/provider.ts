@@ -121,6 +121,23 @@ export function getProviderStatusReason(
   return normalized.reason ?? normalized.reason_code ?? normalized.scope_reason ?? null;
 }
 
+/**
+ * Derive a unified status state from either a ProviderStatusInfo or a boolean availability flag.
+ * Consolidates the duplicated pattern found in detail header and overview tab.
+ */
+export function deriveProviderStatusState(
+  statusInfo: ProviderStatusInfo | null | undefined,
+  isAvailable: boolean | null,
+): ProviderStatusState {
+  if (statusInfo) {
+    return getProviderStatusState(statusInfo);
+  }
+  if (isAvailable === null) {
+    return 'unknown';
+  }
+  return isAvailable ? 'available' : 'unavailable';
+}
+
 export function getProviderStatusSortValue(
   status: ProviderStatusLike,
 ): number {

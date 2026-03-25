@@ -18,6 +18,17 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
   Search,
   RefreshCw,
   Activity,
@@ -27,6 +38,7 @@ import {
   Power,
   PowerOff,
 } from "lucide-react";
+import { useLocale } from "@/components/providers/locale-provider";
 import type {
   CategoryFilter,
   StatusFilter,
@@ -55,7 +67,7 @@ export interface ProviderToolbarProps {
   isLoading: boolean;
   isCheckingStatus: boolean;
   providerCount?: number;
-  t: (key: string) => string;
+  totalCount?: number;
 }
 
 export function ProviderToolbar({
@@ -78,8 +90,10 @@ export function ProviderToolbar({
   isLoading,
   isCheckingStatus,
   providerCount,
-  t,
+  totalCount,
 }: ProviderToolbarProps) {
+  const { t } = useLocale();
+
   // Debounced search
   const [localSearch, setLocalSearch] = useState(searchQuery);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -127,42 +141,76 @@ export function ProviderToolbar({
         </div>
         <div className="flex items-center gap-2">
           {onEnableAll && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={onEnableAll}
-                  disabled={isLoading}
-                  className="gap-1"
-                >
-                  <Power className="h-4 w-4" />
-                  {t("providers.enableAll")}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>{t("providers.enableAll")}</p>
-              </TooltipContent>
-            </Tooltip>
+            <AlertDialog>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={isLoading}
+                      className="gap-1"
+                    >
+                      <Power className="h-4 w-4" />
+                      {t("providers.enableAll")}
+                    </Button>
+                  </AlertDialogTrigger>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{t("providers.enableAll")}</p>
+                </TooltipContent>
+              </Tooltip>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>{t("providers.enableAll")}</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    {t("providers.enableAllConfirm", { count: totalCount ?? providerCount ?? 0 })}
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+                  <AlertDialogAction onClick={onEnableAll}>
+                    {t("common.confirm")}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           )}
           {onDisableAll && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={onDisableAll}
-                  disabled={isLoading}
-                  className="gap-1"
-                >
-                  <PowerOff className="h-4 w-4" />
-                  {t("providers.disableAll")}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>{t("providers.disableAll")}</p>
-              </TooltipContent>
-            </Tooltip>
+            <AlertDialog>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={isLoading}
+                      className="gap-1"
+                    >
+                      <PowerOff className="h-4 w-4" />
+                      {t("providers.disableAll")}
+                    </Button>
+                  </AlertDialogTrigger>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{t("providers.disableAll")}</p>
+                </TooltipContent>
+              </Tooltip>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>{t("providers.disableAll")}</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    {t("providers.disableAllConfirm", { count: totalCount ?? providerCount ?? 0 })}
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+                  <AlertDialogAction onClick={onDisableAll}>
+                    {t("common.confirm")}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           )}
           <Tooltip>
             <TooltipTrigger asChild>

@@ -8,27 +8,20 @@ jest.mock("../provider-icon", () => ({
   ),
 }));
 
-const mockT = (key: string) => {
-  const translations: Record<string, string> = {
-    "providerDetail.quickStats": "Quick Stats",
-    "providerDetail.installedPackages": "Installed Packages",
-    "providerDetail.availableUpdates": "Available Updates",
-    "providers.priority": "Priority",
-    "providerDetail.status": "Status",
-    "providerDetail.systemInfo": "System Info",
-    "providerDetail.detectedVersion": "Detected Version",
-    "providerDetail.executablePath": "Executable Path",
-    "providerDetail.noSystemInfo": "No system information available",
-    "providerDetail.installInstructions": "Install Instructions",
-    "providers.capabilities": "Capabilities",
-    "providers.platforms": "Platforms",
-    "providerDetail.environmentInfo": "Environment Info",
-    "providerDetail.envType": "Type",
-    "providerDetail.envDescription": "Description",
-    "providerDetail.environmentHint": "Environment hint",
-  };
-  return translations[key] || key;
-};
+jest.mock('@/components/providers/locale-provider', () => ({
+  useLocale: () => ({
+    t: (key: string) => {
+      const translations: Record<string, string> = {
+        "providerDetail.quickStats": "providerDetail.quickStats",
+        "providerDetail.noSystemInfo": "providerDetail.noSystemInfo",
+        "providers.capabilities": "providers.capabilities",
+        "providers.platforms": "providers.platforms",
+        "providers.priority": "providers.priority",
+      };
+      return translations[key] ?? key;
+    },
+  }),
+}));
 
 const baseProvider: ProviderInfo = {
   id: "npm",
@@ -48,7 +41,8 @@ describe("ProviderOverviewTab", () => {
     environmentProviderInfo: null as EnvironmentProviderInfo | null,
     installedCount: 0,
     updatesCount: 0,
-    t: mockT,
+    isSavingPriority: false,
+    onPrioritySave: jest.fn(),
   };
 
   it("renders without crashing", () => {
@@ -60,17 +54,17 @@ describe("ProviderOverviewTab", () => {
     render(<ProviderOverviewTab {...defaultProps} installedCount={15} updatesCount={3} />);
     expect(screen.getByText("15")).toBeInTheDocument();
     expect(screen.getByText("3")).toBeInTheDocument();
-    expect(screen.getByText("Quick Stats")).toBeInTheDocument();
+    expect(screen.getByText("providerDetail.quickStats")).toBeInTheDocument();
   });
 
   it("renders provider priority in stats", () => {
     render(<ProviderOverviewTab {...defaultProps} />);
-    expect(screen.getByText("100")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("100")).toBeInTheDocument();
   });
 
   it("shows check icon when available", () => {
     render(<ProviderOverviewTab {...defaultProps} isAvailable={true} />);
-    expect(screen.getByText("Status")).toBeInTheDocument();
+    expect(screen.getByText("providerDetail.status")).toBeInTheDocument();
   });
 
   it("shows dash when availability is null", () => {
@@ -96,7 +90,7 @@ describe("ProviderOverviewTab", () => {
 
   it("shows no system info message when health result is null", () => {
     render(<ProviderOverviewTab {...defaultProps} healthResult={null} />);
-    expect(screen.getByText("No system information available")).toBeInTheDocument();
+    expect(screen.getByText("providerDetail.noSystemInfo")).toBeInTheDocument();
   });
 
   it("shows install instructions when unavailable and health result has instructions", () => {
@@ -116,12 +110,12 @@ describe("ProviderOverviewTab", () => {
 
   it("renders capabilities as badges", () => {
     render(<ProviderOverviewTab {...defaultProps} />);
-    expect(screen.getByText("Capabilities")).toBeInTheDocument();
+    expect(screen.getByText("providers.capabilities")).toBeInTheDocument();
   });
 
   it("renders platform icons", () => {
     render(<ProviderOverviewTab {...defaultProps} />);
-    expect(screen.getByText("Platforms")).toBeInTheDocument();
+    expect(screen.getByText("providers.platforms")).toBeInTheDocument();
     expect(screen.getByText("windows")).toBeInTheDocument();
     expect(screen.getByText("linux")).toBeInTheDocument();
     expect(screen.getByText("macos")).toBeInTheDocument();
@@ -129,7 +123,7 @@ describe("ProviderOverviewTab", () => {
 
   it("does not render environment info when null", () => {
     render(<ProviderOverviewTab {...defaultProps} environmentProviderInfo={null} />);
-    expect(screen.queryByText("Environment Info")).not.toBeInTheDocument();
+    expect(screen.queryByText("providerDetail.environmentInfo")).not.toBeInTheDocument();
   });
 
   it("renders environment info when provided", () => {
@@ -140,7 +134,7 @@ describe("ProviderOverviewTab", () => {
       description: "Manages Node.js versions",
     };
     render(<ProviderOverviewTab {...defaultProps} environmentProviderInfo={envInfo} />);
-    expect(screen.getByText("Environment Info")).toBeInTheDocument();
+    expect(screen.getByText("providerDetail.environmentInfo")).toBeInTheDocument();
     expect(screen.getByText("node")).toBeInTheDocument();
     expect(screen.getByText("Manages Node.js versions")).toBeInTheDocument();
   });

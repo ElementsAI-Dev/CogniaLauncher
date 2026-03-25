@@ -14,13 +14,14 @@ import {
   getProviderStatusTextKey,
   type ProviderStatusLike,
 } from "@/lib/utils/provider";
+import { useLocale } from "@/components/providers/locale-provider";
 
 interface ProviderStatusBadgeProps {
   status: ProviderStatusLike;
-  t: (key: string, params?: Record<string, string | number>) => string;
 }
 
-export function ProviderStatusBadge({ status, t }: ProviderStatusBadgeProps) {
+export function ProviderStatusBadge({ status }: ProviderStatusBadgeProps) {
+  const { t } = useLocale();
   const state = getProviderStatusState(status);
   const reason = getProviderStatusReason(status);
 

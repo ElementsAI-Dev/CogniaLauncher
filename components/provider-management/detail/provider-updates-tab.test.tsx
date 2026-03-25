@@ -17,23 +17,7 @@ jest.mock("sonner", () => ({
   toast: { success: jest.fn(), error: jest.fn() },
 }));
 
-const mockT = (key: string) => {
-  const translations: Record<string, string> = {
-    "providerDetail.updates": "Updates",
-    "providerDetail.updatesDesc": "Available updates",
-    "providerDetail.checkUpdates": "Check Updates",
-    "providerDetail.checkUpdatesDesc": "Check for updates",
-    "providerDetail.noUpdates": "All up to date",
-    "providerDetail.noUpdatesDesc": "No updates available",
-    "providerDetail.updateAll": "Update All",
-    "providerDetail.packageName": "Package",
-    "providerDetail.currentVersion": "Current",
-    "providerDetail.latestVersion": "Latest",
-    "providerDetail.actions": "Actions",
-    "providerDetail.updatePackage": "Update",
-  };
-  return translations[key] || key;
-};
+jest.mock('@/components/providers/locale-provider', () => ({ useLocale: () => ({ t: (key: string) => key }) }));
 
 const sampleUpdates: UpdateInfo[] = [
   { name: "lodash", current_version: "4.17.20", latest_version: "4.17.21", provider: "npm" },
@@ -47,7 +31,6 @@ describe("ProviderUpdatesTab", () => {
     onCheckUpdates: jest.fn(() => Promise.resolve([] as UpdateInfo[])),
     onUpdatePackage: jest.fn(() => Promise.resolve()),
     onUpdateAllPackages: jest.fn(() => Promise.resolve()),
-    t: mockT,
   };
 
   beforeEach(() => jest.clearAllMocks());
@@ -59,13 +42,13 @@ describe("ProviderUpdatesTab", () => {
 
   it("shows empty state when no updates", () => {
     render(<ProviderUpdatesTab {...defaultProps} />);
-    expect(screen.getByText("All up to date")).toBeInTheDocument();
-    expect(screen.getByText("No updates available")).toBeInTheDocument();
+    expect(screen.getByText("providerDetail.noUpdates")).toBeInTheDocument();
+    expect(screen.getByText("providerDetail.noUpdatesDesc")).toBeInTheDocument();
   });
 
   it("shows loading skeleton when loading", () => {
     render(<ProviderUpdatesTab {...defaultProps} loadingUpdates={true} />);
-    expect(screen.queryByText("All up to date")).not.toBeInTheDocument();
+    expect(screen.queryByText("providerDetail.noUpdates")).not.toBeInTheDocument();
   });
 
   it("renders update entries in a table", () => {
@@ -83,25 +66,25 @@ describe("ProviderUpdatesTab", () => {
 
   it("shows Update All button when updates exist", () => {
     render(<ProviderUpdatesTab {...defaultProps} availableUpdates={sampleUpdates} />);
-    expect(screen.getByText("Update All")).toBeInTheDocument();
+    expect(screen.getByText("providerDetail.updateAll")).toBeInTheDocument();
   });
 
   it("does not show Update All button when no updates", () => {
     render(<ProviderUpdatesTab {...defaultProps} />);
-    expect(screen.queryByText("Update All")).not.toBeInTheDocument();
+    expect(screen.queryByText("providerDetail.updateAll")).not.toBeInTheDocument();
   });
 
   it("calls onCheckUpdates when check button clicked", async () => {
     const user = userEvent.setup();
     render(<ProviderUpdatesTab {...defaultProps} />);
-    const checkBtn = screen.getByText("Check Updates").closest("button")!;
+    const checkBtn = screen.getByText("providerDetail.checkUpdates").closest("button")!;
     await user.click(checkBtn);
     expect(defaultProps.onCheckUpdates).toHaveBeenCalled();
   });
 
   it("disables check updates button when loading", () => {
     render(<ProviderUpdatesTab {...defaultProps} loadingUpdates={true} />);
-    const checkBtn = screen.getByText("Check Updates").closest("button")!;
+    const checkBtn = screen.getByText("providerDetail.checkUpdates").closest("button")!;
     expect(checkBtn).toBeDisabled();
   });
 });

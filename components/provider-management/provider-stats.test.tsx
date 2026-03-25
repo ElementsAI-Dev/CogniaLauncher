@@ -1,19 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { ProviderStats } from "./provider-stats";
 
-const mockT = (key: string) => {
-  const translations: Record<string, string> = {
-    "providers.statsTotal": "Total",
-    "providers.statsEnabled": "Enabled",
-    "providers.statsDisabled": "Disabled",
-    "providers.statsAvailable": "Available",
-    "providers.statsUnavailable": "Unavailable",
-    "providers.statsEnvironment": "Environment",
-    "providers.statsPackage": "Package",
-    "providers.statsSystem": "System",
-  };
-  return translations[key] || key;
-};
+jest.mock('@/components/providers/locale-provider', () => ({ useLocale: () => ({ t: (key: string) => key }) }));
 
 describe("ProviderStats", () => {
   const defaultProps = {
@@ -21,40 +9,39 @@ describe("ProviderStats", () => {
     enabled: 8,
     available: 6,
     unavailable: 2,
-    t: mockT,
   };
 
   it("renders total count", () => {
     render(<ProviderStats {...defaultProps} />);
 
-    expect(screen.getByText("Total:")).toBeInTheDocument();
+    expect(screen.getByText("providers.statsTotal:")).toBeInTheDocument();
     expect(screen.getByText("10")).toBeInTheDocument();
   });
 
   it("renders enabled count", () => {
     render(<ProviderStats {...defaultProps} />);
 
-    expect(screen.getByText("Enabled:")).toBeInTheDocument();
+    expect(screen.getByText("providers.statsEnabled:")).toBeInTheDocument();
     expect(screen.getByText("8")).toBeInTheDocument();
   });
 
   it("renders disabled count (total - enabled)", () => {
     render(<ProviderStats {...defaultProps} />);
 
-    expect(screen.getAllByText(/Disabled/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/providers\.statsDisabled/).length).toBeGreaterThan(0);
   });
 
   it("renders available count", () => {
     render(<ProviderStats {...defaultProps} />);
 
-    expect(screen.getByText("Available:")).toBeInTheDocument();
+    expect(screen.getByText("providers.statsAvailable:")).toBeInTheDocument();
     expect(screen.getByText("6")).toBeInTheDocument();
   });
 
   it("renders unavailable count", () => {
     render(<ProviderStats {...defaultProps} />);
 
-    expect(screen.getByText("Unavailable:")).toBeInTheDocument();
+    expect(screen.getByText("providers.statsUnavailable:")).toBeInTheDocument();
   });
 
   it("renders with zero values", () => {
@@ -64,7 +51,7 @@ describe("ProviderStats", () => {
         enabled={0}
         available={0}
         unavailable={0}
-        t={mockT}
+
       />,
     );
 
@@ -78,7 +65,7 @@ describe("ProviderStats", () => {
         enabled={3}
         available={2}
         unavailable={1}
-        t={mockT}
+
       />,
     );
 
@@ -91,7 +78,7 @@ describe("ProviderStats", () => {
       <ProviderStats {...defaultProps} environmentCount={4} />,
     );
 
-    expect(screen.getByText("Environment:")).toBeInTheDocument();
+    expect(screen.getByText("providers.statsEnvironment:")).toBeInTheDocument();
     expect(screen.getByText("4")).toBeInTheDocument();
   });
 
@@ -100,7 +87,7 @@ describe("ProviderStats", () => {
       <ProviderStats {...defaultProps} packageCount={5} />,
     );
 
-    expect(screen.getByText("Package:")).toBeInTheDocument();
+    expect(screen.getByText("providers.statsPackage:")).toBeInTheDocument();
     expect(screen.getByText("5")).toBeInTheDocument();
   });
 
@@ -109,7 +96,7 @@ describe("ProviderStats", () => {
       <ProviderStats {...defaultProps} systemCount={3} />,
     );
 
-    expect(screen.getByText("System:")).toBeInTheDocument();
+    expect(screen.getByText("providers.statsSystem:")).toBeInTheDocument();
     expect(screen.getByText("3")).toBeInTheDocument();
   });
 
@@ -123,17 +110,17 @@ describe("ProviderStats", () => {
       />,
     );
 
-    expect(screen.getByText("Environment:")).toBeInTheDocument();
-    expect(screen.getByText("Package:")).toBeInTheDocument();
-    expect(screen.getByText("System:")).toBeInTheDocument();
+    expect(screen.getByText("providers.statsEnvironment:")).toBeInTheDocument();
+    expect(screen.getByText("providers.statsPackage:")).toBeInTheDocument();
+    expect(screen.getByText("providers.statsSystem:")).toBeInTheDocument();
   });
 
   it("does not render category section when no counts provided", () => {
     render(<ProviderStats {...defaultProps} />);
 
-    expect(screen.queryByText("Environment:")).not.toBeInTheDocument();
-    expect(screen.queryByText("Package:")).not.toBeInTheDocument();
-    expect(screen.queryByText("System:")).not.toBeInTheDocument();
+    expect(screen.queryByText("providers.statsEnvironment:")).not.toBeInTheDocument();
+    expect(screen.queryByText("providers.statsPackage:")).not.toBeInTheDocument();
+    expect(screen.queryByText("providers.statsSystem:")).not.toBeInTheDocument();
   });
 
   it("renders disabled as total minus enabled", () => {
@@ -143,11 +130,11 @@ describe("ProviderStats", () => {
         enabled={7}
         available={5}
         unavailable={3}
-        t={mockT}
+
       />,
     );
 
     // disabled = 10 - 7 = 3, but 3 is also unavailable count
-    expect(screen.getByText("Disabled:")).toBeInTheDocument();
+    expect(screen.getByText("providers.statsDisabled:")).toBeInTheDocument();
   });
 });

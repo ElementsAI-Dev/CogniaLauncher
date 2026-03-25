@@ -9,6 +9,22 @@ global.ResizeObserver = global.ResizeObserver || class ResizeObserver {
   disconnect() {}
 };
 
+let currentSearchParams = new URLSearchParams();
+const mockReplace = jest.fn();
+
+function applyLatestReplaceToSearchParams() {
+  const latestUrl = mockReplace.mock.calls.at(-1)?.[0] as string | undefined;
+  if (!latestUrl) return;
+  const [, query = ''] = latestUrl.split('?');
+  currentSearchParams = new URLSearchParams(query);
+}
+
+jest.mock('next/navigation', () => ({
+  usePathname: () => '/providers',
+  useRouter: () => ({ replace: mockReplace, push: jest.fn(), back: jest.fn() }),
+  useSearchParams: () => currentSearchParams,
+}));
+
 const mockFetchProviders = jest.fn();
 const mockProviderCheck = jest.fn().mockResolvedValue(true);
 const mockProviderStatus = jest.fn().mockResolvedValue({
@@ -85,6 +101,15 @@ const mockProviders = [
     is_environment_provider: false,
     enabled: true,
   },
+  {
+    id: 'winget',
+    display_name: 'WinGet',
+    capabilities: ['install', 'uninstall', 'search', 'update'],
+    platforms: ['windows'],
+    priority: 95,
+    is_environment_provider: false,
+    enabled: true,
+  },
 ];
 
 jest.mock('@/hooks/use-packages', () => ({
@@ -114,6 +139,7 @@ jest.mock('@/components/providers/locale-provider', () => ({
         'providers.filterUnavailable': 'Unavailable',
         'providers.filterEnabled': 'Enabled',
         'providers.filterDisabled': 'Disabled',
+        'providers.platformAll': 'All Platforms',
         'providers.statusAvailable': 'Available',
         'providers.statusUnavailable': 'Unavailable',
         'providers.statusTimeout': 'Timeout',
@@ -162,6 +188,20 @@ jest.mock('@/components/providers/locale-provider', () => ({
         'providers.infoPowershellDesc': 'PSGallery',
         'providers.infoCustom': 'Custom Source Providers',
         'providers.infoCustomDesc': 'GitHub',
+        'providers.infoWsl': 'WSL Providers',
+        'providers.infoWslDesc': 'WSL',
+        'providers.enableAll': 'Enable All',
+        'providers.disableAll': 'Disable All',
+        'providers.enableAllConfirm': 'This will enable all {count} providers. Continue?',
+        'providers.disableAllConfirm': 'This will disable all {count} providers. Continue?',
+        'providers.refreshDesc': 'Refresh provider list',
+        'providers.checkStatusDesc': 'Check provider status',
+        'providers.moreActions': 'More actions',
+        'providers.copyId': 'Copy ID',
+        'providers.idCopied': 'ID copied',
+        'common.cancel': 'Cancel',
+        'common.confirm': 'Confirm',
+        'providerDetail.viewDetails': 'View Details',
       };
       return translations[key] || key;
     },
@@ -187,6 +227,7 @@ jest.mock('sonner', () => ({
 describe('ProvidersPage', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    currentSearchParams = new URLSearchParams();
   });
 
   it('renders page title and description', () => {
@@ -221,8 +262,8 @@ describe('ProvidersPage', () => {
     await user.type(searchInput, 'npm');
 
     await waitFor(() => {
-      expect(screen.getAllByText('npm').length).toBeGreaterThan(0);
-      expect(screen.queryByText('APT')).not.toBeInTheDocument();
+      expect(screen.getAllByTitle('npm').length).toBeGreaterThan(0);
+      expect(screen.queryByTitle('APT')).not.toBeInTheDocument();
     });
   });
 
@@ -234,8 +275,8 @@ describe('ProvidersPage', () => {
     await user.click(environmentTab);
 
     await waitFor(() => {
-      expect(screen.getByText('Node Version Manager')).toBeInTheDocument();
-      expect(screen.queryByText('npm')).not.toBeInTheDocument();
+      expect(screen.getByTitle('Node Version Manager')).toBeInTheDocument();
+      expect(screen.queryByTitle('npm')).not.toBeInTheDocument();
     });
   });
 
@@ -247,8 +288,8 @@ describe('ProvidersPage', () => {
     await user.click(systemTab);
 
     await waitFor(() => {
-      expect(screen.getByText('APT')).toBeInTheDocument();
-      expect(screen.queryByText('npm')).not.toBeInTheDocument();
+      expect(screen.getByTitle('APT')).toBeInTheDocument();
+      expect(screen.queryByTitle('npm')).not.toBeInTheDocument();
     });
   });
 
@@ -260,20 +301,26 @@ describe('ProvidersPage', () => {
     await user.click(packageTab);
 
     await waitFor(() => {
-      expect(screen.getAllByText('npm').length).toBeGreaterThan(0);
-      expect(screen.getAllByText('pip').length).toBeGreaterThan(0);
-      expect(screen.getByText('Cargo')).toBeInTheDocument();
-      expect(screen.queryByText('Node Version Manager')).not.toBeInTheDocument();
-      expect(screen.queryByText('APT')).not.toBeInTheDocument();
+      expect(screen.getAllByTitle('npm').length).toBeGreaterThan(0);
+      expect(screen.getAllByTitle('pip').length).toBeGreaterThan(0);
+      expect(screen.getByTitle('Cargo')).toBeInTheDocument();
+      expect(screen.queryByTitle('Node Version Manager')).not.toBeInTheDocument();
+      expect(screen.queryByTitle('APT')).not.toBeInTheDocument();
     });
   });
 
   it('shows empty state when no providers match filters', async () => {
     const user = userEvent.setup();
-    render(<ProvidersPage />);
+    const { rerender } = render(<ProvidersPage />);
 
     const searchInput = screen.getByPlaceholderText('Search providers...');
     await user.type(searchInput, 'nonexistent');
+
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalled();
+    });
+    applyLatestReplaceToSearchParams();
+    rerender(<ProvidersPage />);
 
     await waitFor(() => {
       expect(screen.getByText('No providers match your filters')).toBeInTheDocument();
@@ -283,16 +330,28 @@ describe('ProvidersPage', () => {
 
   it('clears filters when clear button is clicked', async () => {
     const user = userEvent.setup();
-    render(<ProvidersPage />);
+    const { rerender } = render(<ProvidersPage />);
 
     const searchInput = screen.getByPlaceholderText('Search providers...');
     await user.type(searchInput, 'nonexistent');
+
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalled();
+    });
+    applyLatestReplaceToSearchParams();
+    rerender(<ProvidersPage />);
 
     await waitFor(() => {
       expect(screen.getByText('Clear Filters')).toBeInTheDocument();
     });
 
     await user.click(screen.getByText('Clear Filters'));
+
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalled();
+    });
+    applyLatestReplaceToSearchParams();
+    rerender(<ProvidersPage />);
 
     await waitFor(() => {
       expect(screen.getAllByText('npm').length).toBeGreaterThan(0);
@@ -334,10 +393,12 @@ describe('ProvidersPage', () => {
     });
   });
 
-  it('renders provider information card', () => {
+  it('renders collapsible provider information card', () => {
     render(<ProvidersPage />);
 
+    // Card header is always visible
     expect(screen.getByText('Provider Information')).toBeInTheDocument();
+    // Default state is open (no localStorage value set)
     expect(screen.getByText('Environment Providers')).toBeInTheDocument();
   });
 
@@ -348,11 +409,20 @@ describe('ProvidersPage', () => {
     expect(badges.length).toBeGreaterThan(0);
   });
 
-  it('renders provider statistics', () => {
+  it('renders provider statistics after status check', async () => {
+    const user = userEvent.setup();
     render(<ProvidersPage />);
 
-    expect(screen.getAllByText(/Total/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/Enabled/).length).toBeGreaterThan(0);
+    // Stats are hidden until status data is available
+    expect(screen.queryByText('providers.statsTotal')).not.toBeInTheDocument();
+
+    // Trigger status check to populate stats
+    const checkButton = screen.getByText('Check Status');
+    await user.click(checkButton);
+
+    await waitFor(() => {
+      expect(screen.getAllByText(/Total/).length).toBeGreaterThan(0);
+    });
   });
 
   it('renders view toggle buttons', () => {
@@ -386,5 +456,30 @@ describe('ProvidersPage', () => {
 
     const statusSelects = screen.getAllByRole('combobox');
     expect(statusSelects.length).toBeGreaterThan(0);
+  });
+
+  it('restores search and platform filters from query params on initial render', async () => {
+    currentSearchParams = new URLSearchParams('search=win&platform=windows&view=list');
+
+    render(<ProvidersPage />);
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText('Search providers...')).toHaveValue('win');
+      expect(screen.getByText('WinGet')).toBeInTheDocument();
+      expect(screen.queryByText('APT')).not.toBeInTheDocument();
+      expect(screen.queryByText('Node Version Manager')).not.toBeInTheDocument();
+    });
+  });
+
+  it('preserves provider management context in detail links', async () => {
+    currentSearchParams = new URLSearchParams('search=win&platform=windows');
+
+    render(<ProvidersPage />);
+
+    const detailsLink = await screen.findByRole('link', { name: 'View Details' });
+    expect(detailsLink).toHaveAttribute(
+      'href',
+      '/providers/winget?from=%2Fproviders%3Fsearch%3Dwin%26platform%3Dwindows',
+    );
   });
 });

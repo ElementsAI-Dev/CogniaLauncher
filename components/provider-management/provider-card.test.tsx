@@ -3,19 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { ProviderCard } from "./provider-card";
 import type { ProviderInfo } from "@/lib/tauri";
 
-const mockT = (key: string) => {
-  const translations: Record<string, string> = {
-    "providers.filterEnvironment": "Environment",
-    "providers.statusAvailable": "Available",
-    "providers.statusUnavailable": "Unavailable",
-    "providers.platforms": "Supported Platforms",
-    "providers.capabilities": "Capabilities",
-    "providers.enabled": "Enabled",
-    "providers.checkStatus": "Check Status",
-    "providers.priority": "Priority",
-  };
-  return translations[key] || key;
-};
+jest.mock('@/components/providers/locale-provider', () => ({ useLocale: () => ({ t: (key: string) => key }) }));
 
 const mockProvider: ProviderInfo = {
   id: "npm",
@@ -52,15 +40,14 @@ describe("ProviderCard", () => {
         isToggling={false}
         onToggle={mockOnToggle}
         onCheckStatus={mockOnCheckStatus}
-        t={mockT}
       />,
     );
 
     expect(screen.getAllByText("npm").length).toBeGreaterThan(0);
-    expect(screen.getByText("Supported Platforms")).toBeInTheDocument();
-    expect(screen.getByText("Capabilities")).toBeInTheDocument();
+    expect(screen.getByText("providers.platforms")).toBeInTheDocument();
+    expect(screen.getByText("providers.capabilities")).toBeInTheDocument();
     expect(screen.getByText("install")).toBeInTheDocument();
-    expect(screen.getByText("Priority: 100")).toBeInTheDocument();
+    expect(screen.getByText("providers.priority: 100")).toBeInTheDocument();
   });
 
   it("shows environment badge for environment providers", () => {
@@ -70,11 +57,10 @@ describe("ProviderCard", () => {
         isToggling={false}
         onToggle={mockOnToggle}
         onCheckStatus={mockOnCheckStatus}
-        t={mockT}
       />,
     );
 
-    expect(screen.getByText("Environment")).toBeInTheDocument();
+    expect(screen.getByText("providers.filterEnvironment")).toBeInTheDocument();
     expect(screen.getByText("Node Version Manager")).toBeInTheDocument();
   });
 
@@ -86,11 +72,10 @@ describe("ProviderCard", () => {
         isToggling={false}
         onToggle={mockOnToggle}
         onCheckStatus={mockOnCheckStatus}
-        t={mockT}
       />,
     );
 
-    expect(screen.getByText("Available")).toBeInTheDocument();
+    expect(screen.getByText("providers.statusAvailable")).toBeInTheDocument();
   });
 
   it("shows unavailable status when not available", () => {
@@ -101,11 +86,10 @@ describe("ProviderCard", () => {
         isToggling={false}
         onToggle={mockOnToggle}
         onCheckStatus={mockOnCheckStatus}
-        t={mockT}
       />,
     );
 
-    expect(screen.getByText("Unavailable")).toBeInTheDocument();
+    expect(screen.getByText("providers.statusUnavailable")).toBeInTheDocument();
   });
 
   it("calls onToggle when switch is clicked", async () => {
@@ -116,7 +100,6 @@ describe("ProviderCard", () => {
         isToggling={false}
         onToggle={mockOnToggle}
         onCheckStatus={mockOnCheckStatus}
-        t={mockT}
       />,
     );
 
@@ -133,7 +116,6 @@ describe("ProviderCard", () => {
         isToggling={true}
         onToggle={mockOnToggle}
         onCheckStatus={mockOnCheckStatus}
-        t={mockT}
       />,
     );
 
@@ -149,7 +131,6 @@ describe("ProviderCard", () => {
         isToggling={false}
         onToggle={mockOnToggle}
         onCheckStatus={mockOnCheckStatus}
-        t={mockT}
       />,
     );
 
@@ -158,7 +139,7 @@ describe("ProviderCard", () => {
     await user.click(menuTrigger);
 
     // Click the check status menu item
-    const checkItem = await screen.findByText("Check Status");
+    const checkItem = await screen.findByText("providers.checkStatus");
     await user.click(checkItem);
 
     await waitFor(() => {
@@ -173,7 +154,6 @@ describe("ProviderCard", () => {
         isToggling={false}
         onToggle={mockOnToggle}
         onCheckStatus={mockOnCheckStatus}
-        t={mockT}
       />,
     );
 
@@ -189,7 +169,6 @@ describe("ProviderCard", () => {
         isToggling={false}
         onToggle={mockOnToggle}
         onCheckStatus={mockOnCheckStatus}
-        t={mockT}
       />,
     );
 
@@ -208,7 +187,6 @@ describe("ProviderCard", () => {
         isToggling={false}
         onToggle={mockOnToggle}
         onCheckStatus={mockOnCheckStatus}
-        t={mockT}
       />,
     );
 

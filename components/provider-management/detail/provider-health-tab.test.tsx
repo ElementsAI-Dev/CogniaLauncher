@@ -12,29 +12,26 @@ jest.mock("sonner", () => ({
   toast: { success: jest.fn(), error: jest.fn() },
 }));
 
-const mockT = (key: string) => {
-  const translations: Record<string, string> = {
-    "providerDetail.healthCheck": "Health Check",
-    "providerDetail.healthCheckDesc": "Run health check description",
-    "providerDetail.runCheck": "Run Check",
-    "providerDetail.noHealthData": "No health data",
-    "providerDetail.noHealthDataDesc": "Run a check to see status",
-    "providerDetail.copyDiagnostics": "Copy Diagnostics",
-    "providerDetail.diagnosticsCopied": "Diagnostics copied",
-    "providerDetail.detectedVersion": "Detected Version",
-    "providerDetail.executablePath": "Executable Path",
-    "providerDetail.issues": "Issues",
-    "providerDetail.noIssues": "No issues found",
-    "providerDetail.installInstructions": "Install Instructions",
-    "providerDetail.copyFixCommands": "Copy Fix Commands",
-    "providerDetail.fixCommandsCopied": "Fix commands copied",
-    "providerDetail.copyCommand": "Copy Command",
-    "providerDetail.healthStatus.healthy": "Healthy",
-    "providerDetail.healthStatus.warning": "Warning",
-    "providerDetail.healthStatus.error": "Error",
-  };
-  return translations[key] || key;
-};
+jest.mock('@/components/providers/locale-provider', () => ({
+  useLocale: () => ({
+    t: (key: string, params?: Record<string, string | number>) => {
+      const translations: Record<string, string> = {
+        "providerDetail.noHealthData": "providerDetail.noHealthData",
+        "providerDetail.noHealthDataDesc": "providerDetail.noHealthDataDesc",
+        "providerDetail.copyDiagnostics": "Copy Diagnostics",
+        "providerDetail.runCheck": "Run Check",
+        "providerDetail.issues": "Issues",
+        "providerDetail.copyFixCommands": `Copy Fix Commands${params?.count ? ` (${params.count})` : ""}`,
+        "providerDetail.healthStatus.healthy": "providerDetail.healthStatus.healthy",
+        "providerDetail.healthStatus.warning": "Warning",
+        "providerDetail.healthStatus.error": "Error",
+        "providerDetail.diagnosticsCopied": "providerDetail.diagnosticsCopied",
+        "providerDetail.fixCommandsCopied": "providerDetail.fixCommandsCopied",
+      };
+      return translations[key] ?? key;
+    },
+  }),
+}));
 
 const healthyResult: PackageManagerHealthResult = {
   provider_id: "npm",
@@ -94,7 +91,6 @@ describe("ProviderHealthTab", () => {
     healthResult: null as PackageManagerHealthResult | null,
     loadingHealth: false,
     onRunHealthCheck: jest.fn(() => Promise.resolve(null)),
-    t: mockT,
   };
 
   beforeEach(() => {
@@ -108,27 +104,27 @@ describe("ProviderHealthTab", () => {
 
   it("shows no health data message when result is null", () => {
     render(<ProviderHealthTab {...defaultProps} />);
-    expect(screen.getByText("No health data")).toBeInTheDocument();
-    expect(screen.getByText("Run a check to see status")).toBeInTheDocument();
+    expect(screen.getByText("providerDetail.noHealthData")).toBeInTheDocument();
+    expect(screen.getByText("providerDetail.noHealthDataDesc")).toBeInTheDocument();
   });
 
   it("shows loading skeleton when loading with no result", () => {
     render(<ProviderHealthTab {...defaultProps} loadingHealth={true} />);
     // Skeleton elements render, no health data text should not appear
-    expect(screen.queryByText("No health data")).not.toBeInTheDocument();
+    expect(screen.queryByText("providerDetail.noHealthData")).not.toBeInTheDocument();
   });
 
   it("renders healthy status correctly", () => {
     render(<ProviderHealthTab {...defaultProps} healthResult={healthyResult} />);
     expect(screen.getByText("npm")).toBeInTheDocument();
-    expect(screen.getByText("Healthy")).toBeInTheDocument();
+    expect(screen.getByText("providerDetail.healthStatus.healthy")).toBeInTheDocument();
     expect(screen.getByText("10.2.0")).toBeInTheDocument();
     expect(screen.getByText("/usr/bin/npm")).toBeInTheDocument();
   });
 
   it("shows no issues message for healthy result", () => {
     render(<ProviderHealthTab {...defaultProps} healthResult={healthyResult} />);
-    expect(screen.getByText("No issues found")).toBeInTheDocument();
+    expect(screen.getByText("providerDetail.noIssues")).toBeInTheDocument();
   });
 
   it("renders issues for warning result", () => {

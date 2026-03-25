@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { ProviderDetailPageClient } from "./provider-detail-page";
 import { useProviderDetail } from "@/hooks/use-provider-detail";
 
@@ -8,6 +9,7 @@ jest.mock("@/components/providers/locale-provider", () => ({
 
 jest.mock("next/navigation", () => ({
   useRouter: () => ({ push: jest.fn(), back: jest.fn() }),
+  useSearchParams: () => ({ get: () => null }),
 }));
 
 jest.mock("@/hooks/use-provider-detail");
@@ -38,24 +40,37 @@ const baseHookReturn = {
   loadingUpdates: false,
   healthResult: null,
   loadingHealth: false,
+  activeRemediationId: null,
   installHistory: [],
   loadingHistory: false,
+  historyError: null,
   environmentInfo: null,
   environmentProviderInfo: null,
   availableVersions: [],
   loadingEnvironment: false,
+  pinnedPackages: [],
   initialize: jest.fn(),
   refreshAll: jest.fn(),
+  refreshPackageSurface: jest.fn(),
   checkAvailability: jest.fn(),
   toggleProvider: jest.fn(),
+  setProviderPriority: jest.fn(),
   fetchInstalledPackages: jest.fn(),
   searchPackages: jest.fn(),
   installPackage: jest.fn(),
   uninstallPackage: jest.fn(),
+  batchUninstallPackages: jest.fn(),
+  fetchPackageHistory: jest.fn(),
+  pinPackage: jest.fn(),
+  unpinPackage: jest.fn(),
+  rollbackPackage: jest.fn(),
+  rollbackToLastVersion: jest.fn(),
   checkUpdates: jest.fn(),
   updatePackage: jest.fn(),
   updateAllPackages: jest.fn(),
   runHealthCheck: jest.fn(),
+  previewHealthRemediation: jest.fn(),
+  applyHealthRemediation: jest.fn(),
   fetchHistory: jest.fn(),
   fetchEnvironmentInfo: jest.fn(),
 };
@@ -157,5 +172,42 @@ describe("ProviderDetailPage", () => {
     expect(screen.getByText("Some error occurred")).toBeInTheDocument();
     // Also has the tabs (provider still rendered)
     expect(screen.getByText("providerDetail.tabOverview")).toBeInTheDocument();
+  });
+
+  it("wires advanced package actions into the packages tab", async () => {
+    const user = userEvent.setup();
+
+    mockUseProviderDetail.mockReturnValue({
+      ...baseHookReturn,
+      provider: loadedProvider,
+      installedPackages: [
+        {
+          name: "lodash",
+          version: "4.17.21",
+          provider: "npm",
+          install_path: "/node_modules/lodash",
+          installed_at: "2024-01-01T00:00:00Z",
+          is_global: false,
+        },
+      ],
+      pinnedPackages: [["lodash", "4.17.21"]],
+    } as never);
+
+    render(<ProviderDetailPageClient providerId="npm" />);
+    await user.click(screen.getByRole("tab", { name: /providerDetail\.tabPackages/ }));
+
+    expect(screen.getByText("providerDetail.pinned")).toBeInTheDocument();
+    expect(screen.getByLabelText("providerDetail.selectAll")).toBeInTheDocument();
+
+    const moreButtons = screen
+      .getAllByRole("button")
+      .filter((button) => button.querySelector(".lucide-ellipsis"));
+    expect(moreButtons.length).toBeGreaterThan(0);
+
+    await user.click(moreButtons[0]);
+
+    expect(await screen.findByText("providerDetail.unpinPackage")).toBeInTheDocument();
+    expect(await screen.findByText("providerDetail.rollbackPackage")).toBeInTheDocument();
+    expect(await screen.findByText("providerDetail.packageDetails")).toBeInTheDocument();
   });
 });

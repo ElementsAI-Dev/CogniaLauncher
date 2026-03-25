@@ -9,31 +9,7 @@ global.ResizeObserver = class ResizeObserver {
   disconnect() {}
 };
 
-const mockT = (key: string) => {
-  const translations: Record<string, string> = {
-    "providers.search": "Search providers...",
-    "providers.refresh": "Refresh",
-    "providers.checkStatus": "Check Status",
-    "providers.checking": "Checking...",
-    "providers.filterAll": "All",
-    "providers.filterEnvironment": "Environment",
-    "providers.filterPackage": "Package Manager",
-    "providers.filterSystem": "System",
-    "providers.filterAvailable": "Available",
-    "providers.filterUnavailable": "Unavailable",
-    "providers.filterEnabled": "Enabled",
-    "providers.filterDisabled": "Disabled",
-    "providers.sortBy": "Sort by",
-    "providers.sortNameAsc": "Name (A-Z)",
-    "providers.sortNameDesc": "Name (Z-A)",
-    "providers.sortPriorityAsc": "Priority (Low-High)",
-    "providers.sortPriorityDesc": "Priority (High-Low)",
-    "providers.sortStatus": "Status",
-    "providers.viewGrid": "Grid view",
-    "providers.viewList": "List view",
-  };
-  return translations[key] || key;
-};
+jest.mock('@/components/providers/locale-provider', () => ({ useLocale: () => ({ t: (key: string) => key }) }));
 
 describe("ProviderToolbar", () => {
   const defaultProps = {
@@ -51,7 +27,6 @@ describe("ProviderToolbar", () => {
     onCheckAllStatus: jest.fn(),
     isLoading: false,
     isCheckingStatus: false,
-    t: mockT,
   };
 
   beforeEach(() => {
@@ -62,28 +37,28 @@ describe("ProviderToolbar", () => {
     render(<ProviderToolbar {...defaultProps} />);
 
     expect(
-      screen.getByPlaceholderText("Search providers..."),
+      screen.getByPlaceholderText("providers.search"),
     ).toBeInTheDocument();
   });
 
   it("renders action buttons", () => {
     render(<ProviderToolbar {...defaultProps} />);
 
-    expect(screen.getByText("Refresh")).toBeInTheDocument();
-    expect(screen.getByText("Check Status")).toBeInTheDocument();
+    expect(screen.getByText("providers.refresh")).toBeInTheDocument();
+    expect(screen.getByText("providers.checkStatus")).toBeInTheDocument();
   });
 
   it("renders category filter tabs", () => {
     render(<ProviderToolbar {...defaultProps} />);
 
-    expect(screen.getByRole("tab", { name: "All" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "providers.filterAll" })).toBeInTheDocument();
     expect(
-      screen.getByRole("tab", { name: "Environment" }),
+      screen.getByRole("tab", { name: "providers.filterEnvironment" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("tab", { name: "Package Manager" }),
+      screen.getByRole("tab", { name: "providers.filterPackage" }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "System" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "providers.filterSystem" })).toBeInTheDocument();
   });
 
   it("calls onSearchChange when search input changes", async () => {
@@ -91,7 +66,7 @@ describe("ProviderToolbar", () => {
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
     render(<ProviderToolbar {...defaultProps} />);
 
-    const searchInput = screen.getByPlaceholderText("Search providers...");
+    const searchInput = screen.getByPlaceholderText("providers.search");
     await user.type(searchInput, "npm");
 
     // Advance past the 300ms debounce
@@ -105,7 +80,7 @@ describe("ProviderToolbar", () => {
     const user = userEvent.setup();
     render(<ProviderToolbar {...defaultProps} />);
 
-    const refreshButton = screen.getByText("Refresh");
+    const refreshButton = screen.getByText("providers.refresh");
     await user.click(refreshButton);
 
     expect(defaultProps.onRefresh).toHaveBeenCalled();
@@ -115,7 +90,7 @@ describe("ProviderToolbar", () => {
     const user = userEvent.setup();
     render(<ProviderToolbar {...defaultProps} />);
 
-    const checkButton = screen.getByText("Check Status");
+    const checkButton = screen.getByText("providers.checkStatus");
     await user.click(checkButton);
 
     expect(defaultProps.onCheckAllStatus).toHaveBeenCalled();
@@ -124,15 +99,15 @@ describe("ProviderToolbar", () => {
   it("disables refresh button when loading", () => {
     render(<ProviderToolbar {...defaultProps} isLoading={true} />);
 
-    const refreshButton = screen.getByText("Refresh").closest("button");
+    const refreshButton = screen.getByText("providers.refresh").closest("button");
     expect(refreshButton).toBeDisabled();
   });
 
   it("disables check status button when checking", () => {
     render(<ProviderToolbar {...defaultProps} isCheckingStatus={true} />);
 
-    expect(screen.getByText("Checking...")).toBeInTheDocument();
-    const checkButton = screen.getByText("Checking...").closest("button");
+    expect(screen.getByText("providers.checking")).toBeInTheDocument();
+    const checkButton = screen.getByText("providers.checking").closest("button");
     expect(checkButton).toBeDisabled();
   });
 
@@ -140,7 +115,7 @@ describe("ProviderToolbar", () => {
     const user = userEvent.setup();
     render(<ProviderToolbar {...defaultProps} />);
 
-    const environmentTab = screen.getByRole("tab", { name: "Environment" });
+    const environmentTab = screen.getByRole("tab", { name: "providers.filterEnvironment" });
     await user.click(environmentTab);
 
     expect(defaultProps.onCategoryChange).toHaveBeenCalledWith("environment");
@@ -149,29 +124,29 @@ describe("ProviderToolbar", () => {
   it("renders with current search query value", () => {
     render(<ProviderToolbar {...defaultProps} searchQuery="test query" />);
 
-    const searchInput = screen.getByPlaceholderText("Search providers...");
+    const searchInput = screen.getByPlaceholderText("providers.search");
     expect(searchInput).toHaveValue("test query");
   });
 
   it("highlights active category tab", () => {
     render(<ProviderToolbar {...defaultProps} categoryFilter="environment" />);
 
-    const environmentTab = screen.getByRole("tab", { name: "Environment" });
+    const environmentTab = screen.getByRole("tab", { name: "providers.filterEnvironment" });
     expect(environmentTab).toHaveAttribute("data-state", "active");
   });
 
   it("renders view toggle buttons", () => {
     render(<ProviderToolbar {...defaultProps} />);
 
-    expect(screen.getByLabelText("Grid view")).toBeInTheDocument();
-    expect(screen.getByLabelText("List view")).toBeInTheDocument();
+    expect(screen.getByLabelText("providers.viewGrid")).toBeInTheDocument();
+    expect(screen.getByLabelText("providers.viewList")).toBeInTheDocument();
   });
 
   it("calls onViewModeChange when view toggle is clicked", async () => {
     const user = userEvent.setup();
     render(<ProviderToolbar {...defaultProps} />);
 
-    const listButton = screen.getByLabelText("List view");
+    const listButton = screen.getByLabelText("providers.viewList");
     await user.click(listButton);
 
     expect(defaultProps.onViewModeChange).toHaveBeenCalledWith("list");
@@ -185,8 +160,8 @@ describe("ProviderToolbar", () => {
     const toggleGroup = container.querySelector('[data-slot="toggle-group"]');
     expect(toggleGroup).toBeInTheDocument();
 
-    const listButton = screen.getByLabelText("List view");
-    const gridButton = screen.getByLabelText("Grid view");
+    const listButton = screen.getByLabelText("providers.viewList");
+    const gridButton = screen.getByLabelText("providers.viewGrid");
     expect(listButton).toBeInTheDocument();
     expect(gridButton).toBeInTheDocument();
   });
@@ -194,7 +169,7 @@ describe("ProviderToolbar", () => {
   it("renders sort dropdown with current value", () => {
     render(<ProviderToolbar {...defaultProps} />);
 
-    expect(screen.getByText("Name (A-Z)")).toBeInTheDocument();
+    expect(screen.getByText("providers.sortNameAsc")).toBeInTheDocument();
   });
 
   it("renders sort and status filter dropdowns", () => {

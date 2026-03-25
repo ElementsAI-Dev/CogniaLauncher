@@ -235,7 +235,7 @@ export function ProviderStatusBadge({
                           {provider.id}
                         </span>
                         {status && (
-                          <ManagementProviderStatusBadge status={status} t={t} />
+                          <ManagementProviderStatusBadge status={status} />
                         )}
                       </div>
                     </div>

@@ -3,6 +3,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { CheckCircle2, XCircle, Power, PowerOff, Layers, Package, Monitor } from "lucide-react";
+import { useLocale } from "@/components/providers/locale-provider";
 
 export interface ProviderStatsProps {
   total: number;
@@ -12,7 +13,6 @@ export interface ProviderStatsProps {
   environmentCount?: number;
   packageCount?: number;
   systemCount?: number;
-  t: (key: string) => string;
 }
 
 export function ProviderStats({
@@ -23,8 +23,8 @@ export function ProviderStats({
   environmentCount,
   packageCount,
   systemCount,
-  t,
 }: ProviderStatsProps) {
+  const { t } = useLocale();
   const disabled = total - enabled;
   const showCategories = environmentCount !== undefined || packageCount !== undefined || systemCount !== undefined;
 

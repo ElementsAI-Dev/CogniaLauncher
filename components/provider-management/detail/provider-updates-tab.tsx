@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { useLocale } from "@/components/providers/locale-provider";
 import {
   Card,
   CardContent,
@@ -49,7 +50,6 @@ interface ProviderUpdatesTabProps {
   onCheckUpdates: () => Promise<UpdateInfo[]>;
   onUpdatePackage: (name: string) => Promise<unknown>;
   onUpdateAllPackages: (packageNames: string[]) => Promise<unknown>;
-  t: (key: string, params?: Record<string, string | number>) => string;
 }
 
 export function ProviderUpdatesTab({
@@ -58,8 +58,8 @@ export function ProviderUpdatesTab({
   onCheckUpdates,
   onUpdatePackage,
   onUpdateAllPackages,
-  t,
 }: ProviderUpdatesTabProps) {
+  const { t } = useLocale();
   const [updatingPackages, setUpdatingPackages] = useState<Set<string>>(new Set());
   const [isUpdatingAll, setIsUpdatingAll] = useState(false);
 

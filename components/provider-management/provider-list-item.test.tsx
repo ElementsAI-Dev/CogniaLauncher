@@ -2,18 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ProviderListItem } from "./provider-list-item";
 
-const mockT = (key: string) => {
-  const translations: Record<string, string> = {
-    "providers.filterEnvironment": "Environment",
-    "providers.priority": "Priority",
-    "providers.capabilities": "Capabilities",
-    "providers.statusAvailable": "Available",
-    "providers.statusUnavailable": "Unavailable",
-    "providers.checkStatus": "Check Status",
-    "providers.enabled": "Enabled",
-  };
-  return translations[key] || key;
-};
+jest.mock('@/components/providers/locale-provider', () => ({ useLocale: () => ({ t: (key: string) => key }) }));
 
 const mockProvider = {
   id: "npm",
@@ -41,7 +30,6 @@ describe("ProviderListItem", () => {
     isToggling: false,
     onToggle: jest.fn(),
     onCheckStatus: jest.fn().mockResolvedValue(true),
-    t: mockT,
   };
 
   beforeEach(() => {
@@ -58,7 +46,7 @@ describe("ProviderListItem", () => {
   it("renders provider priority", () => {
     render(<ProviderListItem {...defaultProps} />);
 
-    expect(screen.getByText(/Priority: 100/)).toBeInTheDocument();
+    expect(screen.getByText(/providers\.priority: 100/)).toBeInTheDocument();
   });
 
   it("renders capabilities", () => {
@@ -74,13 +62,13 @@ describe("ProviderListItem", () => {
       <ProviderListItem {...defaultProps} provider={mockEnvironmentProvider} />,
     );
 
-    expect(screen.getByText("Environment")).toBeInTheDocument();
+    expect(screen.getByText("providers.filterEnvironment")).toBeInTheDocument();
   });
 
   it("does not render environment badge for non-environment providers", () => {
     render(<ProviderListItem {...defaultProps} />);
 
-    expect(screen.queryByText("Environment")).not.toBeInTheDocument();
+    expect(screen.queryByText("providers.filterEnvironment")).not.toBeInTheDocument();
   });
 
   it("renders switch for enabling/disabling", () => {
@@ -104,13 +92,13 @@ describe("ProviderListItem", () => {
   it("renders available badge when isAvailable is true", () => {
     render(<ProviderListItem {...defaultProps} isAvailable={true} />);
 
-    expect(screen.getByText("Available")).toBeInTheDocument();
+    expect(screen.getByText("providers.statusAvailable")).toBeInTheDocument();
   });
 
   it("renders unavailable badge when isAvailable is false", () => {
     render(<ProviderListItem {...defaultProps} isAvailable={false} />);
 
-    expect(screen.getByText("Unavailable")).toBeInTheDocument();
+    expect(screen.getByText("providers.statusUnavailable")).toBeInTheDocument();
   });
 
   it("calls onCheckStatus when check menu item is clicked", async () => {
@@ -126,7 +114,7 @@ describe("ProviderListItem", () => {
     await user.click(menuTrigger!);
 
     // Click the check status menu item
-    const checkItem = await screen.findByText("Check Status");
+    const checkItem = await screen.findByText("providers.checkStatus");
     await user.click(checkItem);
 
     await waitFor(() => {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { useLocale } from "@/components/providers/locale-provider";
 import {
   Card,
   CardContent,
@@ -85,9 +86,8 @@ interface ProviderPackagesTabProps {
   onPinPackage?: (name: string) => Promise<void>;
   onUnpinPackage?: (name: string) => Promise<void>;
   onRollbackPackage?: (name: string) => Promise<void>;
-  onBatchUninstall?: (names: string[]) => Promise<void>;
+  onBatchUninstall?: (names: string[]) => Promise<unknown>;
   onViewPackageDetails?: (name: string) => void;
-  t: (key: string, params?: Record<string, string | number>) => string;
 }
 
 export function ProviderPackagesTab({
@@ -107,8 +107,8 @@ export function ProviderPackagesTab({
   onRollbackPackage,
   onBatchUninstall,
   onViewPackageDetails,
-  t,
 }: ProviderPackagesTabProps) {
+  const { t } = useLocale();
   const [localSearchQuery, setLocalSearchQuery] = useState(searchQuery);
   const [installingPackages, setInstallingPackages] = useState<Set<string>>(new Set());
   const [uninstallingPackages, setUninstallingPackages] = useState<Set<string>>(new Set());

@@ -1,36 +1,20 @@
 "use client";
 
-import { writeClipboard } from '@/lib/clipboard';
-import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
-import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import {
-  Loader2,
-  Activity,
-  ExternalLink,
-  MoreHorizontal,
-  Copy,
-} from "lucide-react";
 import type { ProviderInfo, ProviderStatusInfo } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
-import { toast } from "sonner";
 import { getCapabilityLabel } from "@/lib/constants/provider-capability";
+import { useLocale } from "@/components/providers/locale-provider";
 import { useProviderStatus } from "@/hooks/use-provider-status";
 import { ProviderIcon, PlatformIcon } from "./provider-icon";
 import { ProviderStatusBadge } from "./provider-status-badge";
+import { ProviderActionsMenu } from "./provider-actions-menu";
+import { ProviderToggle } from "./provider-toggle";
 
 export interface ProviderListItemProps {
   provider: ProviderInfo;
@@ -38,9 +22,9 @@ export interface ProviderListItemProps {
   isAvailable?: boolean;
   version?: string | null;
   isToggling: boolean;
+  detailHref?: string;
   onToggle: (providerId: string, enabled: boolean) => void;
   onCheckStatus: (providerId: string) => Promise<ProviderStatusInfo | boolean>;
-  t: (key: string) => string;
 }
 
 export function ProviderListItem({
@@ -49,10 +33,11 @@ export function ProviderListItem({
   isAvailable,
   version,
   isToggling,
+  detailHref = `/providers/${provider.id}`,
   onToggle,
   onCheckStatus,
-  t,
 }: ProviderListItemProps) {
+  const { t } = useLocale();
   const { isChecking, statusInfo: resolvedStatus, handleCheckStatus } =
     useProviderStatus(provider.id, statusInfo ?? isAvailable, onCheckStatus);
 
@@ -111,50 +96,23 @@ export function ProviderListItem({
       </div>
 
       <div className="flex items-center gap-3 flex-shrink-0">
-        <ProviderStatusBadge status={resolvedStatus} t={t} />
+        <ProviderStatusBadge status={resolvedStatus} />
 
-        <div className="flex items-center gap-2">
-          {isToggling && (
-            <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
-          )}
-          <Switch
-            id={`enabled-list-${provider.id}`}
-            checked={provider.enabled}
-            onCheckedChange={(checked) => onToggle(provider.id, checked)}
-            disabled={isToggling}
-          />
-        </div>
+        <ProviderToggle
+          providerId={provider.id}
+          enabled={provider.enabled}
+          isToggling={isToggling}
+          onToggle={onToggle}
+          idSuffix={`list-${provider.id}`}
+        />
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-              <MoreHorizontal className="h-4 w-4" />
-              <span className="sr-only">{t("providers.moreActions")}</span>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={handleCheckStatus} disabled={isChecking}>
-              <Activity className="h-4 w-4 mr-2" />
-              {t("providers.checkStatus")}
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() => {
-                writeClipboard(provider.id);
-                toast.success(t("providers.idCopied"));
-              }}
-            >
-              <Copy className="h-4 w-4 mr-2" />
-              {t("providers.copyId")}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem asChild>
-              <Link href={`/providers/${provider.id}`}>
-                <ExternalLink className="h-4 w-4 mr-2" />
-                {t("providerDetail.viewDetails")}
-              </Link>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <ProviderActionsMenu
+          providerId={provider.id}
+          detailHref={detailHref}
+          isChecking={isChecking}
+          onCheckStatus={handleCheckStatus}
+          triggerSize="default"
+        />
       </div>
     </div>
   );

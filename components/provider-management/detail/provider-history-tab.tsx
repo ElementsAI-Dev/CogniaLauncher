@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
+import { useLocale } from "@/components/providers/locale-provider";
 import {
   Card,
   CardContent,
@@ -76,7 +77,6 @@ interface ProviderHistoryTabProps {
   loadingHistory: boolean;
   historyError?: string | null;
   onRefreshHistory: () => Promise<unknown>;
-  t: (key: string, params?: Record<string, string | number>) => string;
 }
 
 function getActionIcon(action: string) {
@@ -101,8 +101,8 @@ export function ProviderHistoryTab({
   loadingHistory,
   historyError,
   onRefreshHistory,
-  t,
 }: ProviderHistoryTabProps) {
+  const { t } = useLocale();
   const [searchQuery, setSearchQuery] = useState("");
   const [actionFilter, setActionFilter] = useState("all");
   const [resultFilter, setResultFilter] = useState("all");

@@ -13,21 +13,7 @@ jest.mock("../provider-icon", () => ({
   ),
 }));
 
-const mockT = (key: string) => {
-  const translations: Record<string, string> = {
-    "providers.statusAvailable": "Available",
-    "providers.statusUnavailable": "Unavailable",
-    "providers.statusUnsupported": "Unsupported",
-    "providers.priority": "Priority",
-    "providerDetail.savePriority": "Save Priority",
-    "providers.filterEnvironment": "Environment",
-    "providers.checkStatus": "Check Status",
-    "providers.checkStatusDesc": "Check provider status",
-    "providers.refresh": "Refresh",
-    "providers.enabled": "Enabled",
-  };
-  return translations[key] || key;
-};
+jest.mock('@/components/providers/locale-provider', () => ({ useLocale: () => ({ t: (key: string) => key }) }));
 
 const defaultProps = {
   provider: {
@@ -43,12 +29,10 @@ const defaultProps = {
   statusInfo: null,
   isToggling: false,
   isCheckingStatus: false,
-  isSavingPriority: false,
+  providersHref: "/providers",
   onToggle: jest.fn(),
   onCheckStatus: jest.fn(),
   onRefresh: jest.fn(),
-  onPrioritySave: jest.fn(),
-  t: mockT,
 };
 
 describe("ProviderDetailHeader", () => {
@@ -74,18 +58,18 @@ describe("ProviderDetailHeader", () => {
 
   it("shows Available badge when isAvailable is true", () => {
     render(<ProviderDetailHeader {...defaultProps} isAvailable={true} />);
-    expect(screen.getByText("Available")).toBeInTheDocument();
+    expect(screen.getByText("providers.statusAvailable")).toBeInTheDocument();
   });
 
   it("shows Unavailable badge when isAvailable is false", () => {
     render(<ProviderDetailHeader {...defaultProps} isAvailable={false} />);
-    expect(screen.getByText("Unavailable")).toBeInTheDocument();
+    expect(screen.getByText("providers.statusUnavailable")).toBeInTheDocument();
   });
 
   it("does not show availability badge when isAvailable is null", () => {
     render(<ProviderDetailHeader {...defaultProps} isAvailable={null} />);
-    expect(screen.queryByText("Available")).not.toBeInTheDocument();
-    expect(screen.queryByText("Unavailable")).not.toBeInTheDocument();
+    expect(screen.queryByText("providers.statusAvailable")).not.toBeInTheDocument();
+    expect(screen.queryByText("providers.statusUnavailable")).not.toBeInTheDocument();
   });
 
   it("shows environment badge for environment providers", () => {
@@ -94,12 +78,12 @@ describe("ProviderDetailHeader", () => {
       is_environment_provider: true,
     };
     render(<ProviderDetailHeader {...defaultProps} provider={envProvider} />);
-    expect(screen.getByText("Environment")).toBeInTheDocument();
+    expect(screen.getByText("providers.filterEnvironment")).toBeInTheDocument();
   });
 
   it("does not show environment badge for non-environment providers", () => {
     render(<ProviderDetailHeader {...defaultProps} />);
-    expect(screen.queryByText("Environment")).not.toBeInTheDocument();
+    expect(screen.queryByText("providers.filterEnvironment")).not.toBeInTheDocument();
   });
 
   it("navigates back to providers on back button click", () => {
@@ -108,10 +92,25 @@ describe("ProviderDetailHeader", () => {
     expect(providersLink).toHaveAttribute("href", "/providers");
   });
 
+  it("uses preserved provider-list context for the back link when provided", () => {
+    render(
+      <ProviderDetailHeader
+        {...defaultProps}
+        providersHref="/providers?search=win&platform=windows&view=list"
+      />,
+    );
+
+    const providersLink = screen.getByRole("link", { name: "nav.providers" });
+    expect(providersLink).toHaveAttribute(
+      "href",
+      "/providers?search=win&platform=windows&view=list",
+    );
+  });
+
   it("calls onCheckStatus when check status button is clicked", async () => {
     const user = userEvent.setup();
     render(<ProviderDetailHeader {...defaultProps} />);
-    const checkButton = screen.getByText("Check Status").closest("button")!;
+    const checkButton = screen.getByText("providers.checkStatus").closest("button")!;
     await user.click(checkButton);
     expect(defaultProps.onCheckStatus).toHaveBeenCalled();
   });
@@ -119,7 +118,7 @@ describe("ProviderDetailHeader", () => {
   it("calls onRefresh when refresh button is clicked", async () => {
     const user = userEvent.setup();
     render(<ProviderDetailHeader {...defaultProps} />);
-    const refreshButton = screen.getByText("Refresh").closest("button")!;
+    const refreshButton = screen.getByText("providers.refresh").closest("button")!;
     await user.click(refreshButton);
     expect(defaultProps.onRefresh).toHaveBeenCalled();
   });
@@ -145,7 +144,7 @@ describe("ProviderDetailHeader", () => {
 
   it("disables check status button when isCheckingStatus is true", () => {
     render(<ProviderDetailHeader {...defaultProps} isCheckingStatus={true} />);
-    const checkButton = screen.getByText("Check Status").closest("button")!;
+    const checkButton = screen.getByText("providers.checkStatus").closest("button")!;
     expect(checkButton).toBeDisabled();
   });
 
@@ -172,43 +171,7 @@ describe("ProviderDetailHeader", () => {
       />,
     );
 
-    expect(screen.getByText('Unsupported')).toBeInTheDocument();
+    expect(screen.getByText('providers.statusUnsupported')).toBeInTheDocument();
   });
 
-  it("submits provider priority changes", async () => {
-    const user = userEvent.setup();
-    const onPrioritySave = jest.fn();
-    render(
-      <ProviderDetailHeader
-        {...defaultProps}
-        onPrioritySave={onPrioritySave}
-      />,
-    );
-
-    const input = screen.getByLabelText('Priority');
-    await user.clear(input);
-    await user.type(input, '120');
-    await user.click(screen.getByRole('button', { name: 'Save Priority' }));
-
-    expect(onPrioritySave).toHaveBeenCalledWith(120);
-  });
-
-  it("resets priority draft when provider priority changes", async () => {
-    const user = userEvent.setup();
-    const { rerender } = render(<ProviderDetailHeader {...defaultProps} />);
-
-    const input = screen.getByLabelText("Priority");
-    await user.clear(input);
-    await user.type(input, "120");
-    expect(screen.getByLabelText("Priority")).toHaveValue("120");
-
-    rerender(
-      <ProviderDetailHeader
-        {...defaultProps}
-        provider={{ ...defaultProps.provider, priority: 80 }}
-      />,
-    );
-
-    expect(screen.getByLabelText("Priority")).toHaveValue("80");
-  });
 });

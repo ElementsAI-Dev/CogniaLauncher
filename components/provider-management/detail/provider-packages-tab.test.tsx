@@ -13,35 +13,7 @@ jest.mock("sonner", () => ({
   toast: { success: jest.fn(), error: jest.fn() },
 }));
 
-const mockT = (key: string) => {
-  const translations: Record<string, string> = {
-    "providerDetail.searchPackages": "Search Packages",
-    "providerDetail.searchPackagesDesc": "Search for packages",
-    "providerDetail.searchPlaceholder": "Search...",
-    "providerDetail.search": "Search",
-    "providerDetail.installedPackages": "Installed Packages",
-    "providerDetail.installedPackagesDesc": "Packages installed via npm",
-    "providerDetail.noInstalledPackages": "No packages installed",
-    "providerDetail.noSearchResults": "No results found",
-    "providerDetail.packageName": "Package",
-    "providerDetail.version": "Version",
-    "providerDetail.latestVersion": "Latest",
-    "providerDetail.packageDescription": "Description",
-    "providerDetail.actions": "Actions",
-    "providerDetail.installPackage": "Install",
-    "providerDetail.uninstallPackage": "Uninstall",
-    "providerDetail.installed": "Installed",
-    "providerDetail.installPath": "Path",
-    "providerDetail.installedAt": "Installed At",
-    "providers.refresh": "Refresh",
-    "providerDetail.global": "Global",
-    "providerDetail.filterInstalled": "Filter installed...",
-    "providerDetail.confirmUninstall": "Confirm Uninstall",
-    "providerDetail.cancel": "Cancel",
-    "providerDetail.confirm": "Confirm",
-  };
-  return translations[key] || key;
-};
+jest.mock('@/components/providers/locale-provider', () => ({ useLocale: () => ({ t: (key: string) => key }) }));
 
 const installedPkgs: InstalledPackage[] = [
   { name: "lodash", version: "4.17.21", provider: "npm", install_path: "/node_modules/lodash", installed_at: "2024-01-01T00:00:00Z", is_global: false },
@@ -65,7 +37,6 @@ describe("ProviderPackagesTab", () => {
     onInstallPackage: jest.fn(() => Promise.resolve()),
     onUninstallPackage: jest.fn(() => Promise.resolve()),
     onRefreshPackages: jest.fn(() => Promise.resolve([] as InstalledPackage[])),
-    t: mockT,
   };
 
   beforeEach(() => jest.clearAllMocks());
@@ -77,12 +48,12 @@ describe("ProviderPackagesTab", () => {
 
   it("shows empty state when no installed packages", () => {
     render(<ProviderPackagesTab {...defaultProps} />);
-    expect(screen.getByText("No packages installed")).toBeInTheDocument();
+    expect(screen.getByText("providerDetail.noInstalledPackages")).toBeInTheDocument();
   });
 
   it("shows loading skeleton when loading packages", () => {
     render(<ProviderPackagesTab {...defaultProps} loadingPackages={true} />);
-    expect(screen.queryByText("No packages installed")).not.toBeInTheDocument();
+    expect(screen.queryByText("providerDetail.noInstalledPackages")).not.toBeInTheDocument();
   });
 
   it("renders installed packages in a table", () => {
@@ -101,7 +72,7 @@ describe("ProviderPackagesTab", () => {
 
   it("shows Global badge for global packages", () => {
     render(<ProviderPackagesTab {...defaultProps} installedPackages={installedPkgs} />);
-    expect(screen.getByText("Global")).toBeInTheDocument();
+    expect(screen.getByText("providerDetail.global")).toBeInTheDocument();
   });
 
   it("shows installed count badge", () => {
@@ -131,32 +102,32 @@ describe("ProviderPackagesTab", () => {
       />,
     );
     // "Installed" badge in search results for lodash
-    expect(screen.getAllByText("Installed").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("providerDetail.installed").length).toBeGreaterThan(0);
   });
 
   it("shows no search results message", () => {
     render(<ProviderPackagesTab {...defaultProps} searchQuery="nonexistent" searchResults={[]} />);
-    expect(screen.getByText("No results found")).toBeInTheDocument();
+    expect(screen.getByText("providerDetail.noSearchResults")).toBeInTheDocument();
   });
 
   it("renders search input and button", () => {
     render(<ProviderPackagesTab {...defaultProps} />);
-    expect(screen.getByPlaceholderText("Search...")).toBeInTheDocument();
-    expect(screen.getByText("Search")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("providerDetail.searchPlaceholder")).toBeInTheDocument();
+    expect(screen.getByText("providerDetail.search")).toBeInTheDocument();
   });
 
   it("disables search button when input is empty", () => {
     render(<ProviderPackagesTab {...defaultProps} />);
-    const searchBtn = screen.getByText("Search").closest("button")!;
+    const searchBtn = screen.getByText("providerDetail.search").closest("button")!;
     expect(searchBtn).toBeDisabled();
   });
 
   it("calls onSearchPackages when search button clicked with input", async () => {
     const user = userEvent.setup();
     render(<ProviderPackagesTab {...defaultProps} />);
-    const input = screen.getByPlaceholderText("Search...");
+    const input = screen.getByPlaceholderText("providerDetail.searchPlaceholder");
     await user.type(input, "axios");
-    const searchBtn = screen.getByText("Search").closest("button")!;
+    const searchBtn = screen.getByText("providerDetail.search").closest("button")!;
     await user.click(searchBtn);
     expect(defaultProps.onSearchPackages).toHaveBeenCalledWith("axios");
   });
@@ -164,7 +135,7 @@ describe("ProviderPackagesTab", () => {
   it("calls onRefreshPackages when refresh button clicked", async () => {
     const user = userEvent.setup();
     render(<ProviderPackagesTab {...defaultProps} installedPackages={installedPkgs} />);
-    const refreshBtn = screen.getByText("Refresh").closest("button")!;
+    const refreshBtn = screen.getByText("providers.refresh").closest("button")!;
     await user.click(refreshBtn);
     expect(defaultProps.onRefreshPackages).toHaveBeenCalled();
   });
@@ -172,7 +143,7 @@ describe("ProviderPackagesTab", () => {
   it("triggers search on Enter key press", async () => {
     const user = userEvent.setup();
     render(<ProviderPackagesTab {...defaultProps} />);
-    const input = screen.getByPlaceholderText("Search...");
+    const input = screen.getByPlaceholderText("providerDetail.searchPlaceholder");
     await user.type(input, "axios{Enter}");
     expect(defaultProps.onSearchPackages).toHaveBeenCalledWith("axios");
   });
@@ -187,7 +158,7 @@ describe("ProviderPackagesTab", () => {
       is_global: false,
     }));
     render(<ProviderPackagesTab {...defaultProps} installedPackages={manyPkgs} />);
-    expect(screen.getByPlaceholderText("Filter installed...")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("providerDetail.filterInstalled")).toBeInTheDocument();
   });
 
   it("shows uninstall confirmation dialog when uninstall button clicked", async () => {
@@ -199,7 +170,7 @@ describe("ProviderPackagesTab", () => {
     );
     expect(trashButtons.length).toBeGreaterThan(0);
     await user.click(trashButtons[0]);
-    expect(screen.getByText("Confirm Uninstall")).toBeInTheDocument();
+    expect(screen.getByText("providerDetail.confirmUninstall")).toBeInTheDocument();
   });
 
   it("shows loading search skeleton when loadingSearch is true", () => {

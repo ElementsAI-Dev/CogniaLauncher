@@ -1,6 +1,5 @@
 "use client";
 
-import { writeClipboard } from '@/lib/clipboard';
 import Link from "next/link";
 import {
   Card,
@@ -10,33 +9,26 @@ import {
   CardDescription,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Loader2, Activity, ExternalLink, MoreHorizontal, Copy } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 import type { ProviderInfo, ProviderStatusInfo } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
-import { toast } from "sonner";
 import {
   getCapabilityColor,
   getCapabilityLabel,
 } from "@/lib/constants/provider-capability";
+import { useLocale } from "@/components/providers/locale-provider";
 import { useProviderStatus } from "@/hooks/use-provider-status";
 import { ProviderIcon, PlatformIcon } from "./provider-icon";
 import { ProviderStatusBadge } from "./provider-status-badge";
+import { ProviderActionsMenu } from "./provider-actions-menu";
+import { ProviderToggle } from "./provider-toggle";
 
 export interface ProviderCardProps {
   provider: ProviderInfo;
@@ -44,9 +36,9 @@ export interface ProviderCardProps {
   isAvailable?: boolean;
   version?: string | null;
   isToggling: boolean;
+  detailHref?: string;
   onToggle: (providerId: string, enabled: boolean) => void;
   onCheckStatus: (providerId: string) => Promise<ProviderStatusInfo | boolean>;
-  t: (key: string, params?: Record<string, string | number>) => string;
 }
 
 export function ProviderCard({
@@ -55,10 +47,11 @@ export function ProviderCard({
   isAvailable,
   version,
   isToggling,
+  detailHref = `/providers/${provider.id}`,
   onToggle,
   onCheckStatus,
-  t,
 }: ProviderCardProps) {
+  const { t } = useLocale();
   const { isChecking, statusInfo: resolvedStatus, handleCheckStatus } =
     useProviderStatus(provider.id, statusInfo ?? isAvailable, onCheckStatus);
 
@@ -91,37 +84,14 @@ export function ProviderCard({
                 {t("providers.filterEnvironment")}
               </Badge>
             )}
-            <ProviderStatusBadge status={resolvedStatus} t={t} />
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
-                  <MoreHorizontal className="h-4 w-4" />
-                  <span className="sr-only">{t("providers.moreActions")}</span>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={handleCheckStatus} disabled={isChecking}>
-                  <Activity className="h-4 w-4 mr-2" />
-                  {t("providers.checkStatus")}
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => {
-                    writeClipboard(provider.id);
-                    toast.success(t("providers.idCopied"));
-                  }}
-                >
-                  <Copy className="h-4 w-4 mr-2" />
-                  {t("providers.copyId")}
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem asChild>
-                  <Link href={`/providers/${provider.id}`}>
-                    <ExternalLink className="h-4 w-4 mr-2" />
-                    {t("providerDetail.viewDetails")}
-                  </Link>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <ProviderStatusBadge status={resolvedStatus} />
+            <ProviderActionsMenu
+              providerId={provider.id}
+              detailHref={detailHref}
+              isChecking={isChecking}
+              onCheckStatus={handleCheckStatus}
+              triggerSize="sm"
+            />
           </div>
         </div>
       </CardHeader>
@@ -166,22 +136,11 @@ export function ProviderCard({
 
         <Separator className="my-3" />
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Label
-              htmlFor={`enabled-${provider.id}`}
-              className="text-sm font-medium"
-            >
-              {t("providers.enabled")}
-            </Label>
-            {isToggling && (
-              <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
-            )}
-          </div>
-          <Switch
-            id={`enabled-${provider.id}`}
-            checked={provider.enabled}
-            onCheckedChange={(checked) => onToggle(provider.id, checked)}
-            disabled={isToggling}
+          <ProviderToggle
+            providerId={provider.id}
+            enabled={provider.enabled}
+            isToggling={isToggling}
+            onToggle={onToggle}
           />
         </div>
 
@@ -198,7 +157,7 @@ export function ProviderCard({
             )}
           </div>
           <Link
-            href={`/providers/${provider.id}`}
+            href={detailHref}
             className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
           >
             {t("providerDetail.viewDetails")}

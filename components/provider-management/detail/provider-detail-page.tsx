@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -54,19 +54,24 @@ export function ProviderDetailPageClient({ providerId }: ProviderDetailPageClien
     installHistory,
     loadingHistory,
     historyError,
+    pinnedPackages,
     environmentInfo,
     environmentProviderInfo,
     availableVersions,
     loadingEnvironment,
     initialize,
     refreshAll,
+    refreshPackageSurface,
     checkAvailability,
     toggleProvider,
     setProviderPriority,
-    fetchInstalledPackages,
     searchPackages,
     installPackage,
     uninstallPackage,
+    batchUninstallPackages,
+    pinPackage,
+    unpinPackage,
+    rollbackToLastVersion,
     checkUpdates,
     updatePackage,
     updateAllPackages,
@@ -78,6 +83,7 @@ export function ProviderDetailPageClient({ providerId }: ProviderDetailPageClien
   } = useProviderDetail(providerId);
 
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [isToggling, setIsToggling] = useState(false);
   const [isCheckingStatus, setIsCheckingStatus] = useState(false);
   const [isSavingPriority, setIsSavingPriority] = useState(false);
@@ -143,6 +149,11 @@ export function ProviderDetailPageClient({ providerId }: ProviderDetailPageClien
     router.push(`/packages/detail?name=${encodeURIComponent(name)}&provider=${encodeURIComponent(providerId)}`);
   }, [router, providerId]);
 
+  const providersHref = (() => {
+    const from = searchParams.get('from');
+    return from && from.startsWith('/providers') ? from : '/providers';
+  })();
+
   // Loading state
   if (loading && !provider) {
     return <PageLoadingSkeleton variant="detail" />;
@@ -172,12 +183,10 @@ export function ProviderDetailPageClient({ providerId }: ProviderDetailPageClien
         statusInfo={providerStatusInfo}
         isToggling={isToggling}
         isCheckingStatus={isCheckingStatus}
-        isSavingPriority={isSavingPriority}
+        providersHref={providersHref}
         onToggle={handleToggle}
         onCheckStatus={handleCheckStatus}
         onRefresh={handleRefresh}
-        onPrioritySave={handlePrioritySave}
-        t={t}
       />
 
       {error && (
@@ -241,7 +250,8 @@ export function ProviderDetailPageClient({ providerId }: ProviderDetailPageClien
             environmentProviderInfo={environmentProviderInfo}
             installedCount={installedPackages.length}
             updatesCount={availableUpdates.length}
-            t={t}
+            isSavingPriority={isSavingPriority}
+            onPrioritySave={handlePrioritySave}
           />
         </TabsContent>
 
@@ -253,12 +263,16 @@ export function ProviderDetailPageClient({ providerId }: ProviderDetailPageClien
             searchQuery={searchQuery}
             loadingPackages={loadingPackages}
             loadingSearch={loadingSearch}
+            pinnedPackages={pinnedPackages.map(([name]) => name)}
             onSearchPackages={searchPackages}
             onInstallPackage={installPackage}
             onUninstallPackage={uninstallPackage}
-            onRefreshPackages={fetchInstalledPackages}
+            onBatchUninstall={batchUninstallPackages}
+            onPinPackage={pinPackage}
+            onUnpinPackage={unpinPackage}
+            onRollbackPackage={rollbackToLastVersion}
+            onRefreshPackages={refreshPackageSurface}
             onViewPackageDetails={handleViewPackageDetails}
-            t={t}
           />
         </TabsContent>
 
@@ -269,7 +283,6 @@ export function ProviderDetailPageClient({ providerId }: ProviderDetailPageClien
             onCheckUpdates={checkUpdates}
             onUpdatePackage={updatePackage}
             onUpdateAllPackages={updateAllPackages}
-            t={t}
           />
         </TabsContent>
 
@@ -281,7 +294,6 @@ export function ProviderDetailPageClient({ providerId }: ProviderDetailPageClien
             onPreviewRemediation={previewHealthRemediation}
             onApplyRemediation={applyHealthRemediation}
             activeRemediationId={activeRemediationId}
-            t={t}
           />
         </TabsContent>
 
@@ -291,7 +303,6 @@ export function ProviderDetailPageClient({ providerId }: ProviderDetailPageClien
             loadingHistory={loadingHistory}
             historyError={historyError}
             onRefreshHistory={fetchHistory}
-            t={t}
           />
         </TabsContent>
 
@@ -304,7 +315,6 @@ export function ProviderDetailPageClient({ providerId }: ProviderDetailPageClien
               availableVersions={availableVersions}
               loadingEnvironment={loadingEnvironment}
               onRefreshEnvironment={fetchEnvironmentInfo}
-              t={t}
             />
           </TabsContent>
         )}

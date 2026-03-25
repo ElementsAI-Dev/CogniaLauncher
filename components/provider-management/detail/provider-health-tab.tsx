@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback } from "react";
+import { useLocale } from "@/components/providers/locale-provider";
 import { writeClipboard } from '@/lib/clipboard';
 import {
   Card,
@@ -53,7 +54,6 @@ interface ProviderHealthTabProps {
   onPreviewRemediation?: (issue: Pick<HealthIssue, "remediation_id">) => Promise<HealthRemediationResult | null>;
   onApplyRemediation?: (issue: Pick<HealthIssue, "remediation_id">) => Promise<HealthRemediationResult | null>;
   activeRemediationId?: string | null;
-  t: (key: string, params?: Record<string, string | number>) => string;
 }
 
 function renderStatusIcon(status: HealthStatus) {
@@ -68,8 +68,8 @@ export function ProviderHealthTab({
   onPreviewRemediation,
   onApplyRemediation,
   activeRemediationId,
-  t,
 }: ProviderHealthTabProps) {
+  const { t } = useLocale();
   const copyDiagnostics = useCallback(() => {
     if (!healthResult) return;
     const lines = [

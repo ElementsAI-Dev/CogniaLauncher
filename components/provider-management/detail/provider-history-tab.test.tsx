@@ -10,30 +10,21 @@ global.ResizeObserver = class ResizeObserver {
   disconnect() {}
 };
 
-const mockT = (key: string) => {
-  const translations: Record<string, string> = {
-    "providerDetail.history": "History",
-    "providerDetail.historyDesc": "Installation history",
-    "providers.refresh": "Refresh",
-    "providerDetail.noHistory": "No history",
-    "providerDetail.noHistoryDesc": "No operations have been recorded",
-    "providerDetail.searchHistory": "Search history...",
-    "providerDetail.action": "Action",
-    "providerDetail.packageName": "Package",
-    "providerDetail.version": "Version",
-    "providerDetail.result": "Result",
-    "providerDetail.timestamp": "Time",
-    "providerDetail.success": "Success",
-    "providerDetail.failed": "Failed",
-    "providerDetail.filterByAction": "Filter by action",
-    "providerDetail.allActions": "All Actions",
-    "providerDetail.filterByResult": "Filter by result",
-    "providerDetail.allResults": "All Results",
-    "providerDetail.noSearchResults": "No matching results",
-    "providerDetail.errorDetails": "Click for details",
-  };
-  return translations[key] || key;
-};
+jest.mock('@/components/providers/locale-provider', () => ({
+  useLocale: () => ({
+    t: (key: string) => {
+      const translations: Record<string, string> = {
+        "providerDetail.noHistory": "No history",
+        "providerDetail.noHistoryDesc": "No operations have been recorded",
+        "providerDetail.success": "Success",
+        "providerDetail.failed": "Failed",
+        "providers.refresh": "Refresh",
+        "providerDetail.searchHistory": "Search history...",
+      };
+      return translations[key] ?? key;
+    },
+  }),
+}));
 
 const makeEntry = (overrides: Partial<InstallHistoryEntry> = {}): InstallHistoryEntry => ({
   id: "1",
@@ -52,7 +43,6 @@ describe("ProviderHistoryTab", () => {
     installHistory: [] as InstallHistoryEntry[],
     loadingHistory: false,
     onRefreshHistory: jest.fn(() => Promise.resolve([])),
-    t: mockT,
   };
 
   beforeEach(() => {

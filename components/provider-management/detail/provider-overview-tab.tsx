@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   Card,
   CardContent,
@@ -8,6 +9,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -17,6 +20,7 @@ import {
   Cpu,
   Zap,
   Shield,
+  Loader2,
 } from "lucide-react";
 import type {
   ProviderInfo,
@@ -27,9 +31,10 @@ import type {
 import { cn } from "@/lib/utils";
 import { getCapabilityColor, getCapabilityLabel } from "@/lib/constants/provider-capability";
 import {
-  getProviderStatusState,
+  deriveProviderStatusState,
   getProviderStatusTextKey,
 } from "@/lib/utils/provider";
+import { useLocale } from "@/components/providers/locale-provider";
 import { PlatformIcon } from "../provider-icon";
 
 interface ProviderOverviewTabProps {
@@ -40,7 +45,8 @@ interface ProviderOverviewTabProps {
   environmentProviderInfo: EnvironmentProviderInfo | null;
   installedCount: number;
   updatesCount: number;
-  t: (key: string, params?: Record<string, string | number>) => string;
+  isSavingPriority?: boolean;
+  onPrioritySave?: (priority: number) => void;
 }
 
 export function ProviderOverviewTab({
@@ -51,15 +57,12 @@ export function ProviderOverviewTab({
   environmentProviderInfo,
   installedCount,
   updatesCount,
-  t,
+  isSavingPriority = false,
+  onPrioritySave,
 }: ProviderOverviewTabProps) {
-  const statusState = providerStatusInfo
-    ? getProviderStatusState(providerStatusInfo)
-    : isAvailable === null
-      ? 'unknown'
-      : isAvailable
-        ? 'available'
-        : 'unavailable';
+  const { t } = useLocale();
+  const statusState = deriveProviderStatusState(providerStatusInfo, isAvailable);
+  const [priorityValue, setPriorityValue] = useState(String(provider.priority));
 
   return (
     <div className="grid gap-4 grid-cols-1 md:grid-cols-2">
@@ -86,10 +89,46 @@ export function ProviderOverviewTab({
               </p>
             </div>
             <div className="space-y-1">
-              <p className="text-2xl font-bold">{provider.priority}</p>
-              <p className="text-xs text-muted-foreground">
-                {t("providers.priority")}
-              </p>
+              {onPrioritySave ? (
+                <div className="flex items-end gap-2">
+                  <div className="space-y-1">
+                    <Label htmlFor="provider-priority" className="text-xs text-muted-foreground">
+                      {t("providers.priority")}
+                    </Label>
+                    <Input
+                      id="provider-priority"
+                      aria-label={t("providers.priority")}
+                      className="w-20 h-8"
+                      inputMode="numeric"
+                      value={priorityValue}
+                      onChange={(e) => setPriorityValue(e.target.value)}
+                    />
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8"
+                    onClick={() => onPrioritySave(Number(priorityValue))}
+                    disabled={
+                      isSavingPriority ||
+                      priorityValue.trim() === "" ||
+                      Number.isNaN(Number(priorityValue))
+                    }
+                  >
+                    {isSavingPriority && (
+                      <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                    )}
+                    {t("providerDetail.savePriority")}
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  <p className="text-2xl font-bold">{provider.priority}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {t("providers.priority")}
+                  </p>
+                </>
+              )}
             </div>
             <div className="space-y-1">
               <div className="flex items-center gap-1">
