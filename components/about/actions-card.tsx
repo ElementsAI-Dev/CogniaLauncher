@@ -3,7 +3,11 @@
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { openExternal } from "@/lib/tauri";
-import { ABOUT_BRANDED_EXTERNAL_LINKS } from "@/lib/constants/about";
+import {
+  ABOUT_SUPPORT_RESOURCES,
+  type AboutSupportResource,
+  type AboutSupportResourceIcon,
+} from "@/lib/constants/about";
 import {
   Settings,
   RefreshCw,
@@ -34,9 +38,49 @@ export function ActionsCard({
   t,
 }: ActionsCardProps) {
   const { openDialog } = useFeedbackStore();
-  const githubLink = ABOUT_BRANDED_EXTERNAL_LINKS.find((link) => link.id === "github");
-  const handleOpen = (url: string) => () => {
-    void openExternal(url);
+
+  const iconMap: Record<AboutSupportResourceIcon, typeof RefreshCw> = {
+    refresh: RefreshCw,
+    "file-text": FileText,
+    "clipboard-list": ClipboardList,
+    "book-open": BookOpen,
+    bug: Bug,
+    "message-square-plus": MessageSquarePlus,
+  };
+
+  const resolveLabel = (resource: AboutSupportResource) =>
+    resource.displayLabel ?? t(resource.labelKey);
+
+  const resolveDescription = (resource: AboutSupportResource) =>
+    !isDesktop && resource.webDescriptionKey
+      ? t(resource.webDescriptionKey)
+      : t(resource.descriptionKey);
+
+  const handleResourceAction = (resource: AboutSupportResource) => {
+    switch (resource.action) {
+      case "check_updates":
+        onCheckUpdate();
+        return;
+      case "open_changelog":
+        onOpenChangelog();
+        return;
+      case "export_diagnostics":
+        onExportDiagnostics();
+        return;
+      case "report_bug":
+        openDialog({ category: "bug" });
+        return;
+      case "feature_request":
+        openDialog({ category: "feature" });
+        return;
+      case "open_external":
+        if (resource.url) {
+          void openExternal(resource.url);
+        }
+        return;
+      default:
+        return;
+    }
   };
 
   return (
@@ -53,87 +97,59 @@ export function ActionsCard({
       </CardHeader>
 
       <CardContent className="space-y-3">
-        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-          {/* Check for Updates */}
-          <Button
-            variant="default"
-            onClick={onCheckUpdate}
-            disabled={loading}
-            className="justify-start"
-          >
-            <RefreshCw
-              className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`}
-              aria-hidden="true"
-            />
-            {t("about.checkForUpdates")}
-          </Button>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {ABOUT_SUPPORT_RESOURCES.map((resource) => {
+            const label = resolveLabel(resource);
+            const description = resolveDescription(resource);
+            const LucideIcon = resource.icon ? iconMap[resource.icon] : null;
 
-          {/* Changelog */}
-          <Button variant="outline" onClick={onOpenChangelog} className="justify-start">
-            <FileText className="h-4 w-4 mr-2" aria-hidden="true" />
-            {t("about.changelog")}
-          </Button>
-
-          {/* Export Diagnostics — works in both desktop (ZIP) and web (JSON) */}
-          <Button
-            variant="outline"
-            onClick={onExportDiagnostics}
-            title={!isDesktop ? t("diagnostic.webLimited") : undefined}
-            className="justify-start"
-          >
-            <ClipboardList className="h-4 w-4 mr-2" aria-hidden="true" />
-            {t("about.exportDiagnostics")}
-          </Button>
-
-          {/* GitHub */}
-          {githubLink ? (
-            <Button
-              variant="outline"
-              onClick={handleOpen(githubLink.url)}
-              aria-label={`${githubLink.label} - ${t("about.openInNewTab")}`}
-              className="justify-start"
-            >
-              <AboutBrandIcon
-                asset={githubLink.icon}
-                size={16}
-                className="mr-2 h-4 w-4"
-              />
-              {githubLink.label}
-            </Button>
-          ) : null}
-
-          {/* Documentation */}
-          <Button
-            variant="outline"
-            onClick={handleOpen("https://cognia.dev/docs")}
-            aria-label={`${t("about.documentation")} - ${t("about.openInNewTab")}`}
-            className="justify-start"
-          >
-            <BookOpen className="h-4 w-4 mr-2" aria-hidden="true" />
-            {t("about.documentation")}
-          </Button>
-
-          {/* Report Bug */}
-          <Button
-            variant="outline"
-            onClick={() => openDialog({ category: "bug" })}
-            aria-label={t("about.reportBug")}
-            className="justify-start"
-          >
-            <Bug className="h-4 w-4 mr-2" aria-hidden="true" />
-            {t("about.reportBug")}
-          </Button>
-
-          {/* Feature Request */}
-          <Button
-            variant="outline"
-            onClick={() => openDialog({ category: "feature" })}
-            aria-label={t("about.featureRequest")}
-            className="justify-start"
-          >
-            <MessageSquarePlus className="h-4 w-4 mr-2" aria-hidden="true" />
-            {t("about.featureRequest")}
-          </Button>
+            return (
+              <Button
+                key={resource.id}
+                variant={resource.id === "check_updates" ? "default" : "outline"}
+                onClick={() => handleResourceAction(resource)}
+                disabled={resource.id === "check_updates" ? loading : undefined}
+                title={
+                  resource.id === "export_diagnostics" && !isDesktop
+                    ? t("diagnostic.webLimited")
+                    : undefined
+                }
+                aria-label={
+                  resource.external
+                    ? `${label} - ${t("about.openInNewTab")}`
+                    : label
+                }
+                className="h-auto justify-start px-3 py-3 text-left whitespace-normal"
+              >
+                <div className="flex w-full items-start gap-3">
+                  <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-background/80">
+                    {resource.brandIcon ? (
+                      <AboutBrandIcon
+                        asset={resource.brandIcon}
+                        size={16}
+                        className="h-4 w-4"
+                      />
+                    ) : LucideIcon ? (
+                      <LucideIcon
+                        className={`h-4 w-4 ${
+                          resource.id === "check_updates" && loading
+                            ? "animate-spin"
+                            : ""
+                        }`}
+                        aria-hidden="true"
+                      />
+                    ) : null}
+                  </div>
+                  <div className="flex min-w-0 flex-col gap-1">
+                    <span className="text-sm font-medium leading-none">{label}</span>
+                    <span className="text-xs leading-5 text-muted-foreground">
+                      {description}
+                    </span>
+                  </div>
+                </div>
+              </Button>
+            );
+          })}
         </div>
       </CardContent>
     </Card>

@@ -16,6 +16,7 @@ import {
   AboutSupportOverviewCard,
   SystemInfoCard,
   AboutInsightsCard,
+  AboutProductContextCard,
   BuildDepsCard,
   LicenseCard,
   ActionsCard,
@@ -191,6 +192,9 @@ export default function AboutPage() {
         <h2 id="about-reference-heading" className="sr-only">
           {t("about.buildDependencies")} / {t("about.licenseCertificates")} / {t("about.actions")}
         </h2>
+        <section aria-label={t("about.productContextTitle")}>
+          <AboutProductContextCard isDesktop={isDesktop} t={t} />
+        </section>
         <div
           className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start"
           data-testid="about-reference-grid"

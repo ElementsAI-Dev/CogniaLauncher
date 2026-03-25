@@ -25,11 +25,19 @@ const mockT = (key: string) => {
     "about.actions": "Actions",
     "about.actionsDesc": "Quick links and common operations",
     "about.checkForUpdates": "Check for Updates",
+    "about.checkForUpdatesDesc": "Re-run update detection and confirm whether a newer desktop build is available.",
     "about.changelog": "Changelog",
+    "about.changelogDescription": "Review recent releases before you update or file feedback.",
     "about.documentation": "Documentation",
+    "about.documentationDesc": "Read guides, workflows, and reference docs for supported tools.",
     "about.reportBug": "Report Bug",
+    "about.reportBugDesc": "Open the feedback flow for crashes, regressions, or broken workflows.",
     "about.featureRequest": "Feature Request",
+    "about.featureRequestDesc": "Suggest new workflows, integrations, or UI improvements.",
     "about.exportDiagnostics": "Export Diagnostics",
+    "about.exportDiagnosticsDescDesktop": "Export a fuller diagnostics bundle with logs and configuration before reporting an issue.",
+    "about.exportDiagnosticsDescWeb": "Download a limited browser-side report. Use the desktop app when support needs logs or config details.",
+    "about.repositoryDesc": "Browse the source repository, releases, and issue history.",
     "about.updateDesktopOnly": "Desktop only",
     "about.openInNewTab": "opens in new tab",
   };
@@ -63,6 +71,25 @@ describe("ActionsCard", () => {
     expect(screen.getByText("Documentation")).toBeInTheDocument();
     expect(screen.getByText("Report Bug")).toBeInTheDocument();
     expect(screen.getByText("Feature Request")).toBeInTheDocument();
+  });
+
+  it("renders descriptive support copy for repository and documentation resources", () => {
+    render(<ActionsCard {...defaultProps} />);
+    expect(
+      screen.getByText("Browse the source repository, releases, and issue history."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Read guides, workflows, and reference docs for supported tools."),
+    ).toBeInTheDocument();
+  });
+
+  it("renders desktop diagnostics expectations in desktop mode", () => {
+    render(<ActionsCard {...defaultProps} />);
+    expect(
+      screen.getByText(
+        "Export a fuller diagnostics bundle with logs and configuration before reporting an issue.",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("calls onCheckUpdate when Check for Updates is clicked", async () => {
@@ -103,6 +130,15 @@ describe("ActionsCard", () => {
     const btn = screen.getByText("Export Diagnostics").closest("button");
     expect(btn).toBeEnabled();
     expect(btn).toHaveAttribute("title");
+  });
+
+  it("renders web-specific diagnostics expectations in web mode", () => {
+    render(<ActionsCard {...defaultProps} isDesktop={false} />);
+    expect(
+      screen.getByText(
+        "Download a limited browser-side report. Use the desktop app when support needs logs or config details.",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("calls onExportDiagnostics in web mode", async () => {

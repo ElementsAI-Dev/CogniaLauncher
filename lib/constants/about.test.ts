@@ -1,6 +1,9 @@
 import {
   BUILD_DEPENDENCIES,
   ABOUT_BRANDED_EXTERNAL_LINKS,
+  ABOUT_PRODUCT_HIGHLIGHTS,
+  ABOUT_SUPPORT_RESOURCES,
+  ABOUT_DIAGNOSTIC_GUIDANCE,
   getChangelog,
   type BuildDependency,
   type ChangelogEntry,
@@ -64,6 +67,61 @@ describe('ABOUT_BRANDED_EXTERNAL_LINKS', () => {
       expect(['brands', 'languages', 'providers']).toContain(link.icon.category);
       expect(link.icon.name.length).toBeGreaterThan(0);
     });
+  });
+});
+
+describe('ABOUT_PRODUCT_HIGHLIGHTS', () => {
+  it('contains structured product overview entries', () => {
+    expect(Array.isArray(ABOUT_PRODUCT_HIGHLIGHTS)).toBe(true);
+    expect(ABOUT_PRODUCT_HIGHLIGHTS.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('uses translation keys for titles and descriptions', () => {
+    ABOUT_PRODUCT_HIGHLIGHTS.forEach((item) => {
+      expect(item.titleKey).toMatch(/^about\./);
+      expect(item.descriptionKey).toMatch(/^about\./);
+    });
+  });
+});
+
+describe('ABOUT_SUPPORT_RESOURCES', () => {
+  it('contains structured support resources with descriptors', () => {
+    expect(Array.isArray(ABOUT_SUPPORT_RESOURCES)).toBe(true);
+    expect(ABOUT_SUPPORT_RESOURCES.length).toBeGreaterThanOrEqual(6);
+  });
+
+  it('includes repository, docs, diagnostics, and feedback resources', () => {
+    const ids = ABOUT_SUPPORT_RESOURCES.map((resource) => resource.id);
+    expect(ids).toContain('github');
+    expect(ids).toContain('documentation');
+    expect(ids).toContain('export_diagnostics');
+    expect(ids).toContain('report_bug');
+    expect(ids).toContain('feature_request');
+  });
+
+  it('requires a translation-backed descriptor for each resource', () => {
+    ABOUT_SUPPORT_RESOURCES.forEach((resource) => {
+      expect(resource.labelKey).toMatch(/^about\./);
+      expect(resource.descriptionKey).toMatch(/^about\./);
+    });
+  });
+
+  it('stores runtime-aware copy for diagnostics export guidance', () => {
+    const diagnostics = ABOUT_SUPPORT_RESOURCES.find(
+      (resource) => resource.id === 'export_diagnostics',
+    );
+
+    expect(diagnostics).toBeDefined();
+    expect(diagnostics?.descriptionKey).toMatch(/^about\./);
+    expect(diagnostics?.webDescriptionKey).toMatch(/^about\./);
+  });
+});
+
+describe('ABOUT_DIAGNOSTIC_GUIDANCE', () => {
+  it('defines desktop and web support expectations', () => {
+    expect(ABOUT_DIAGNOSTIC_GUIDANCE.desktopDescriptionKey).toMatch(/^about\./);
+    expect(ABOUT_DIAGNOSTIC_GUIDANCE.webDescriptionKey).toMatch(/^about\./);
+    expect(ABOUT_DIAGNOSTIC_GUIDANCE.followUpDescriptionKey).toMatch(/^about\./);
   });
 });
 

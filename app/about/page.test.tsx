@@ -177,6 +177,18 @@ const mockMessages = {
       supportSectionNetworks: "Networks",
       supportSectionCache: "Cache",
       supportSectionHomeDir: "Home Directory",
+      productContextTitle: "Product Context",
+      productContextDesc: "What CogniaLauncher covers and where to go next.",
+      productHighlightEnvironmentsTitle: "Environment & Runtime Management",
+      productHighlightEnvironmentsDesc: "Manage language runtimes, versions, and setup workflows from one place.",
+      productHighlightProvidersTitle: "Providers & Package Workflows",
+      productHighlightProvidersDesc: "Work across package managers and providers without switching tools.",
+      productHighlightSupportTitle: "Diagnostics & Support",
+      productHighlightSupportDesc: "Collect diagnostics, inspect system state, and prepare higher-signal feedback.",
+      diagnosticsExpectationTitle: "Diagnostics Expectations",
+      diagnosticsExpectationDesktop: "Desktop mode can export a fuller diagnostics bundle with logs, configuration, and runtime context.",
+      diagnosticsExpectationWeb: "Web mode exports a limited report and should defer log-heavy support work to the desktop app.",
+      diagnosticsExpectationFollowUp: "Export diagnostics before opening a bug report so support receives the current runtime state.",
       versionInfo: "Version Information",
       currentVersion: "Current Version",
       latestVersion: "Latest Version",
@@ -237,11 +249,18 @@ const mockMessages = {
       copyrightDesc: "All rights reserved",
       actions: "Actions",
       checkForUpdates: "Check for Updates",
+      checkForUpdatesDesc: "Re-run update detection and confirm whether a newer desktop build is available.",
       documentation: "Documentation",
+      documentationDesc: "Read guides, workflows, and reference docs for supported tools.",
       reportBug: "Report Bug",
+      reportBugDesc: "Open the feedback flow for crashes, regressions, or broken workflows.",
       featureRequest: "Feature Request",
+      featureRequestDesc: "Suggest new workflows, integrations, or UI improvements.",
       changelog: "Changelog",
       changelogDescription: "View all version updates",
+      exportDiagnosticsDescDesktop: "Export a fuller diagnostics bundle with logs and configuration before reporting an issue.",
+      exportDiagnosticsDescWeb: "Download a limited browser-side report. Use the desktop app when support needs logs or config details.",
+      repositoryDesc: "Browse the source repository, releases, and issue history.",
       changelogAdded: "Added",
       changelogChanged: "Changed",
       changelogFixed: "Fixed",
@@ -267,6 +286,8 @@ const mockMessages = {
       title: "关于",
       pageTitle: "关于 CogniaLauncher",
       pageDescription: "跨平台环境和包管理器",
+      productContextTitle: "产品上下文",
+      productContextDesc: "说明 CogniaLauncher 覆盖什么，以及下一步可以去哪里。",
     },
   },
 };
@@ -341,9 +362,26 @@ describe("About Page", () => {
       await waitFor(() => {
         expect(screen.getByText("System Information")).toBeInTheDocument();
         expect(screen.getByText("Runtime Insights")).toBeInTheDocument();
+        expect(screen.getByText("Product Context")).toBeInTheDocument();
         expect(screen.getByText("Build Dependencies")).toBeInTheDocument();
         expect(screen.getByText("Actions")).toBeInTheDocument();
         expect(screen.getAllByText("Support Overview").length).toBeGreaterThanOrEqual(1);
+      });
+    });
+
+    it("renders product context and support guidance in the reference stage of the page", async () => {
+      renderWithProviders(<AboutPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Product Context")).toBeInTheDocument();
+        expect(
+          screen.getByText("What CogniaLauncher covers and where to go next."),
+        ).toBeInTheDocument();
+        expect(
+          screen.getByText(
+            "Desktop mode can export a fuller diagnostics bundle with logs, configuration, and runtime context.",
+          ),
+        ).toBeInTheDocument();
       });
     });
 

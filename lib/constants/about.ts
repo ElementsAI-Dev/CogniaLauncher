@@ -79,6 +79,142 @@ export const ABOUT_BRANDED_EXTERNAL_LINKS: AboutBrandedExternalLink[] = [
   },
 ];
 
+export interface AboutProductHighlight {
+  id: 'environments' | 'providers' | 'support';
+  titleKey: string;
+  descriptionKey: string;
+}
+
+export const ABOUT_PRODUCT_HIGHLIGHTS: AboutProductHighlight[] = [
+  {
+    id: 'environments',
+    titleKey: 'about.productHighlightEnvironmentsTitle',
+    descriptionKey: 'about.productHighlightEnvironmentsDesc',
+  },
+  {
+    id: 'providers',
+    titleKey: 'about.productHighlightProvidersTitle',
+    descriptionKey: 'about.productHighlightProvidersDesc',
+  },
+  {
+    id: 'support',
+    titleKey: 'about.productHighlightSupportTitle',
+    descriptionKey: 'about.productHighlightSupportDesc',
+  },
+];
+
+export interface AboutDiagnosticGuidance {
+  titleKey: string;
+  desktopDescriptionKey: string;
+  webDescriptionKey: string;
+  followUpDescriptionKey: string;
+}
+
+export const ABOUT_DIAGNOSTIC_GUIDANCE: AboutDiagnosticGuidance = {
+  titleKey: 'about.diagnosticsExpectationTitle',
+  desktopDescriptionKey: 'about.diagnosticsExpectationDesktop',
+  webDescriptionKey: 'about.diagnosticsExpectationWeb',
+  followUpDescriptionKey: 'about.diagnosticsExpectationFollowUp',
+};
+
+export type AboutSupportResourceAction =
+  | 'check_updates'
+  | 'open_changelog'
+  | 'export_diagnostics'
+  | 'open_external'
+  | 'report_bug'
+  | 'feature_request';
+
+export type AboutSupportResourceIcon =
+  | 'refresh'
+  | 'file-text'
+  | 'clipboard-list'
+  | 'book-open'
+  | 'bug'
+  | 'message-square-plus';
+
+export interface AboutSupportResource {
+  id:
+    | 'check_updates'
+    | 'changelog'
+    | 'export_diagnostics'
+    | 'github'
+    | 'documentation'
+    | 'report_bug'
+    | 'feature_request';
+  action: AboutSupportResourceAction;
+  labelKey: string;
+  descriptionKey: string;
+  webDescriptionKey?: string;
+  displayLabel?: string;
+  url?: string;
+  external?: boolean;
+  icon?: AboutSupportResourceIcon;
+  brandIcon?: AboutBrandAsset;
+}
+
+const githubAboutLink = ABOUT_BRANDED_EXTERNAL_LINKS.find(
+  (link) => link.id === 'github',
+);
+
+export const ABOUT_SUPPORT_RESOURCES: AboutSupportResource[] = [
+  {
+    id: 'check_updates',
+    action: 'check_updates',
+    labelKey: 'about.checkForUpdates',
+    descriptionKey: 'about.checkForUpdatesDesc',
+    icon: 'refresh',
+  },
+  {
+    id: 'changelog',
+    action: 'open_changelog',
+    labelKey: 'about.changelog',
+    descriptionKey: 'about.changelogDescription',
+    icon: 'file-text',
+  },
+  {
+    id: 'export_diagnostics',
+    action: 'export_diagnostics',
+    labelKey: 'about.exportDiagnostics',
+    descriptionKey: 'about.exportDiagnosticsDescDesktop',
+    webDescriptionKey: 'about.exportDiagnosticsDescWeb',
+    icon: 'clipboard-list',
+  },
+  {
+    id: 'github',
+    action: 'open_external',
+    labelKey: 'about.repository',
+    displayLabel: githubAboutLink?.label ?? 'GitHub',
+    descriptionKey: 'about.repositoryDesc',
+    url: githubAboutLink?.url,
+    external: true,
+    brandIcon: githubAboutLink?.icon,
+  },
+  {
+    id: 'documentation',
+    action: 'open_external',
+    labelKey: 'about.documentation',
+    descriptionKey: 'about.documentationDesc',
+    url: 'https://cognia.dev/docs',
+    external: true,
+    icon: 'book-open',
+  },
+  {
+    id: 'report_bug',
+    action: 'report_bug',
+    labelKey: 'about.reportBug',
+    descriptionKey: 'about.reportBugDesc',
+    icon: 'bug',
+  },
+  {
+    id: 'feature_request',
+    action: 'feature_request',
+    labelKey: 'about.featureRequest',
+    descriptionKey: 'about.featureRequestDesc',
+    icon: 'message-square-plus',
+  },
+];
+
 export type ChangelogChangeType =
   | 'added'
   | 'changed'
