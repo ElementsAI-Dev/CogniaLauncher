@@ -367,6 +367,141 @@ describe('scripts/plugins lib helpers', () => {
     }
   });
 
+  it('rejects ink authoring usage paths that omit a launch command', () => {
+    expect(() =>
+      pluginLib.validateSdkUsageInventoryShape(
+        {
+          schemaVersion: 1,
+          capabilities: [
+            {
+              id: 'env',
+              permissionGuidance: ['env_read'],
+              hostPrerequisites: [],
+              usagePaths: [
+                {
+                  type: 'official-example',
+                  surface: 'ink-authoring',
+                  path: 'plugin-sdk-ts/examples/hello-world',
+                  displayName: 'Hello Ink Preview',
+                  requiredPermissions: [],
+                },
+              ],
+            },
+          ],
+        },
+        {
+          officialCapabilities: ['env'],
+          catalog,
+          sdkCapabilityMatrix: {
+            schemaVersion: 1,
+            requiredPluginIds: [],
+            supportedSdkCapabilities: ['env'],
+            plugins: [],
+          },
+          extensionPointMatrix: {
+            schemaVersion: 1,
+            pluginPoints: [],
+          },
+          repoRoot: process.cwd(),
+        },
+      ),
+    ).toThrow("ink-authoring usage path must declare a non-empty launchCommand");
+  });
+
+  it('accepts built-in ink authoring paths nested under the plugin directory with a narrower permission set', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'builtin-sdk-usage-authoring-'));
+
+    try {
+      const pluginRoot = path.join(tempRoot, 'plugins', 'typescript', 'alpha');
+      fs.mkdirSync(path.join(pluginRoot, 'authoring'), { recursive: true });
+      fs.writeFileSync(
+        path.join(pluginRoot, 'plugin.toml'),
+        [
+          '[plugin]',
+          'id = "com.example.alpha"',
+          'name = "Alpha"',
+          'version = "1.0.0"',
+          '',
+          '[[tools]]',
+          'id = "alpha-tool"',
+          'name_en = "Alpha Tool"',
+          'description_en = "Alpha"',
+          'entry = "alpha_entry"',
+          '',
+          '[permissions]',
+          'env_read = true',
+          'notification = true',
+        ].join('\n'),
+        'utf8',
+      );
+      fs.mkdirSync(path.join(pluginRoot, 'src'), { recursive: true });
+      fs.writeFileSync(
+        path.join(pluginRoot, 'src', 'index.ts'),
+        'export function alpha_entry() { return 0; }\n',
+        'utf8',
+      );
+      fs.writeFileSync(
+        path.join(pluginRoot, 'authoring', 'ink.tsx'),
+        'export {};\n',
+        'utf8',
+      );
+
+      expect(() =>
+        pluginLib.validateSdkUsageInventoryShape(
+          {
+            schemaVersion: 1,
+            capabilities: [
+              {
+                id: 'env',
+                permissionGuidance: ['env_read', 'notification'],
+                hostPrerequisites: [],
+                usagePaths: [
+                  {
+                    type: 'builtin-plugin',
+                    pluginId: 'com.example.alpha',
+                    surface: 'ink-authoring',
+                    displayName: 'Alpha Ink Preview',
+                    launchCommand: 'pnpm authoring:ink',
+                    path: 'plugins/typescript/alpha/authoring/ink.tsx',
+                    entrypoints: ['alpha_entry'],
+                    requiredPermissions: ['env_read'],
+                    localPrerequisites: ['Node.js 20+'],
+                  },
+                ],
+              },
+            ],
+          },
+          {
+            officialCapabilities: ['env'],
+            catalog: {
+              plugins: [catalog.plugins[0]],
+            },
+            sdkCapabilityMatrix: {
+              schemaVersion: 1,
+              requiredPluginIds: [],
+              supportedSdkCapabilities: ['env'],
+              plugins: [
+                {
+                  id: 'com.example.alpha',
+                  sdkCapabilities: ['env'],
+                  expectedPermissions: ['env_read', 'notification'],
+                  primaryEntrypoints: ['alpha_entry'],
+                },
+              ],
+            },
+            extensionPointMatrix: {
+              schemaVersion: 1,
+              pluginPoints: [],
+            },
+            repoRoot: tempRoot,
+          },
+        ),
+      ).not.toThrow();
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   it('builds direct jest args for TypeScript plugin tests so runInBand stays a real option', () => {
     expect(
       pluginLib.buildTypeScriptPluginTestCommand({

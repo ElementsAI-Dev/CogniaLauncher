@@ -14,10 +14,14 @@ type RawSdkUsageInventoryEntry = {
   };
   usagePaths?: Array<{
     type: PluginSdkUsagePath['type'];
+    surface?: PluginSdkUsagePath['surface'];
     path: string;
     pluginId?: string;
+    displayName?: string;
+    launchCommand?: string;
     entrypoints?: string[];
     requiredPermissions?: string[];
+    localPrerequisites?: string[];
     pluginPointIds?: string[];
   }>;
 };
@@ -92,10 +96,14 @@ function unique(values: Array<string | undefined | null>): string[] {
 function normalizeUsagePath(path: RawSdkUsagePath): PluginSdkUsagePath {
   return {
     type: path.type,
+    surface: path.surface === 'ink-authoring' ? 'ink-authoring' : 'runtime',
     path: path.path,
     pluginId: path.pluginId,
+    displayName: path.displayName?.trim() || undefined,
+    launchCommand: path.launchCommand?.trim() || undefined,
     entrypoints: unique(path.entrypoints ?? []),
     requiredPermissions: unique(path.requiredPermissions ?? []),
+    localPrerequisites: unique(path.localPrerequisites ?? []),
     pluginPointIds: unique(path.pluginPointIds ?? []),
   };
 }

@@ -252,6 +252,7 @@ describe('ToolDetailPageClient', () => {
 
     expect(screen.getByText('toolbox.plugin.declaredCapabilities')).toBeInTheDocument();
     expect(screen.getByText('toolbox.plugin.grantedCapabilities')).toBeInTheDocument();
+    expect(screen.getByText('SDK capability coverage')).toBeInTheDocument();
     expect(screen.getAllByText('process.exec').length).toBeGreaterThan(0);
     expect(screen.getByText('deprecated capability use new one')).toBeInTheDocument();
     expect(screen.getByText('Missing permissions: process_exec')).toBeInTheDocument();

@@ -101,9 +101,21 @@
         {
           "type": "builtin-plugin",
           "pluginId": "com.cognia.builtin.env-provider-audit",
+          "surface": "runtime",
           "path": "plugins/typescript/env-provider-audit",
           "entrypoints": ["env_provider_audit"],
           "requiredPermissions": ["env_read", "notification"]
+        },
+        {
+          "type": "builtin-plugin",
+          "pluginId": "com.cognia.builtin.env-provider-audit",
+          "surface": "ink-authoring",
+          "displayName": "Environment Audit Ink Preview",
+          "launchCommand": "pnpm --dir plugins/typescript/env-provider-audit authoring:ink",
+          "path": "plugins/typescript/env-provider-audit/authoring/ink.tsx",
+          "entrypoints": ["env_provider_audit"],
+          "requiredPermissions": ["env_read"],
+          "localPrerequisites": ["Node.js 20+", "pnpm install"]
         }
       ]
     },
@@ -205,9 +217,20 @@
       "usagePaths": [
         {
           "type": "official-example",
+          "surface": "runtime",
           "path": "plugin-sdk-ts/examples/hello-world",
           "entrypoints": ["hello", "env_check"],
           "requiredPermissions": []
+        },
+        {
+          "type": "official-example",
+          "surface": "ink-authoring",
+          "displayName": "Hello World Ink Preview",
+          "launchCommand": "pnpm --dir plugin-sdk-ts/examples/hello-world authoring:ink",
+          "path": "plugin-sdk-ts/examples/hello-world/authoring/ink.tsx",
+          "entrypoints": ["hello"],
+          "requiredPermissions": [],
+          "localPrerequisites": ["Node.js 20+", "pnpm install"]
         }
       ]
     },
@@ -275,9 +298,21 @@
         {
           "type": "builtin-plugin",
           "pluginId": "com.cognia.builtin.pkg-update-advisor",
+          "surface": "runtime",
           "path": "plugins/typescript/pkg-update-advisor",
           "entrypoints": ["pkg_update_advisor"],
           "requiredPermissions": ["pkg_search", "clipboard", "notification"]
+        },
+        {
+          "type": "builtin-plugin",
+          "pluginId": "com.cognia.builtin.pkg-update-advisor",
+          "surface": "ink-authoring",
+          "displayName": "Package Update Ink Preview",
+          "launchCommand": "pnpm --dir plugins/typescript/pkg-update-advisor authoring:ink",
+          "path": "plugins/typescript/pkg-update-advisor/authoring/ink.tsx",
+          "entrypoints": ["pkg_update_advisor"],
+          "requiredPermissions": ["pkg_search"],
+          "localPrerequisites": ["Node.js 20+", "pnpm install"]
         }
       ]
     },
@@ -292,9 +327,20 @@
       "usagePaths": [
         {
           "type": "official-example",
+          "surface": "runtime",
           "path": "plugin-sdk-ts/examples/hello-world",
           "entrypoints": ["hello", "capability_snapshot"],
           "requiredPermissions": []
+        },
+        {
+          "type": "official-example",
+          "surface": "ink-authoring",
+          "displayName": "Hello World Ink Preview",
+          "launchCommand": "pnpm --dir plugin-sdk-ts/examples/hello-world authoring:ink",
+          "path": "plugin-sdk-ts/examples/hello-world/authoring/ink.tsx",
+          "entrypoints": ["hello"],
+          "requiredPermissions": [],
+          "localPrerequisites": ["Node.js 20+", "pnpm install"]
         }
       ]
     },

@@ -48,3 +48,15 @@ All fields are optional. Empty input auto-selects installed packages for the sel
 ```bash
 pnpm --filter cognia-builtin-pkg-update-advisor-plugin build
 ```
+
+## Ink Authoring Preview
+
+Use the maintained local Ink companion to preview the advisor summary without
+changing the production WASM entrypoint:
+
+```bash
+pnpm --dir plugins/typescript/pkg-update-advisor authoring:ink
+```
+
+This preview remains authoring-only and keeps the runtime manifest and
+permissions unchanged.

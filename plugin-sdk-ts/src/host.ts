@@ -5,8 +5,31 @@
  * Memory.fromString / Memory.find / I64 offsets directly.
  */
 
-// @ts-expect-error — Host.getFunctions() is provided by the Extism JS runtime
-const _fns: Record<string, (ptr: I64) => I64> = Host.getFunctions();
+type ExtismHostFunctions = Record<string, (ptr: I64) => I64>;
+
+type ExtismHostGlobal = {
+  Host?: {
+    getFunctions?: () => ExtismHostFunctions;
+  };
+};
+
+let cachedFns: ExtismHostFunctions | null = null;
+
+function getHostFunctions(): ExtismHostFunctions {
+  if (cachedFns) {
+    return cachedFns;
+  }
+
+  const hostRef = (globalThis as unknown as ExtismHostGlobal).Host;
+  if (!hostRef?.getFunctions) {
+    throw new Error(
+      'Extism Host runtime is not available. Import authoring helpers from the SDK without calling host-backed modules outside plugin execution.',
+    );
+  }
+
+  cachedFns = hostRef.getFunctions();
+  return cachedFns;
+}
 
 /**
  * Call a Cognia host function by name.
@@ -19,7 +42,7 @@ const _fns: Record<string, (ptr: I64) => I64> = Host.getFunctions();
  * @returns The JSON string returned by the host function.
  */
 export function callHost(fnName: string, input: string): string {
-  const fn = _fns[fnName];
+  const fn = getHostFunctions()[fnName];
   if (!fn) {
     throw new Error(`Host function '${fnName}' is not available`);
   }

@@ -623,6 +623,7 @@ describe('usePlugins', () => {
         schemaPreset: 'multi-step-flow' as const,
         includeValidationGuidance: true,
         includeStarterTests: false,
+        includeInkCompanion: true,
       },
       permissions: {
         uiFeedback: true,

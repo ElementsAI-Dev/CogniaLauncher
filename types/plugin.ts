@@ -143,6 +143,7 @@ export interface PluginInfo {
   pluginPoints?: PluginPointInventoryEntry[];
   deprecationWarnings?: PluginDeprecationNotice[];
   sdkCapabilityCoverage?: PluginSdkCapabilityCoverage[];
+  marketplaceAcquisition?: PluginMarketplaceAcquisitionRecord;
 }
 
 export interface PluginUpdateInfo {
@@ -184,6 +185,21 @@ export interface PluginMarketplaceActionResult {
   error: PluginMarketplaceActionError | null;
 }
 
+export type PluginMarketplaceAcquisitionOutcome = 'succeeded' | 'failed';
+
+export interface PluginMarketplaceAcquisitionRecord {
+  pluginId: string;
+  listingId: string;
+  storeId: string;
+  action: PluginMarketplaceActionType;
+  phase: PluginMarketplaceActionPhase;
+  outcome: PluginMarketplaceAcquisitionOutcome;
+  downloadTaskId: string | null;
+  sourceLabel: string | null;
+  message: string | null;
+  timestamp: number;
+}
+
 export interface PluginHealth {
   consecutiveFailures: number;
   totalCalls: number;
@@ -215,12 +231,18 @@ export type PluginSdkUsagePathType =
   | 'official-example'
   | 'scaffold-workflow';
 
+export type PluginSdkUsageSurface = 'runtime' | 'ink-authoring';
+
 export interface PluginSdkUsagePath {
   type: PluginSdkUsagePathType;
+  surface: PluginSdkUsageSurface;
   path: string;
   pluginId?: string;
+  displayName?: string;
+  launchCommand?: string;
   entrypoints: string[];
   requiredPermissions: string[];
+  localPrerequisites?: string[];
   pluginPointIds?: string[];
 }
 
@@ -337,6 +359,7 @@ export interface ScaffoldTemplateOptions {
   schemaPreset?: ScaffoldSchemaPreset;
   includeValidationGuidance?: boolean;
   includeStarterTests?: boolean;
+  includeInkCompanion?: boolean;
 }
 
 export interface ScaffoldPermissions {

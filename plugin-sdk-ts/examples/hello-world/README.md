@@ -58,6 +58,18 @@ Build output now includes phase markers:
 - `[build][hello-world][bundle]`
 - `[build][hello-world][wasm-compile]`
 
+## Ink Authoring Preview
+
+The maintained authoring companion uses the SDK Ink helpers to preview the
+`hello` workflow without changing the production WASM entrypoints.
+
+```bash
+pnpm authoring:ink -- Trainer
+```
+
+This preview is local-authoring only. It does not change `plugin.toml`,
+`plugin.d.ts`, or the runtime tool contract used by Launcher.
+
 ## Troubleshooting
 
 - `BUNDLE_SCRIPT_NOT_FOUND`: `esbuild.config.mjs` is missing or renamed.

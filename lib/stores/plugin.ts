@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type {
   PluginInfo,
+  PluginMarketplaceAcquisitionRecord,
   PluginToolInfo,
   PluginHealth,
   PluginPermissionMode,
@@ -28,6 +29,7 @@ interface PluginState {
   marketplaceSyncState: ToolboxMarketplaceSyncState;
   marketplaceLastSyncedAt: string | null;
   marketplaceLastError: string | null;
+  marketplaceAcquisitions: Record<string, PluginMarketplaceAcquisitionRecord>;
 
   setInstalledPlugins: (plugins: PluginInfo[]) => void;
   setPluginTools: (tools: PluginToolInfo[]) => void;
@@ -47,6 +49,8 @@ interface PluginState {
   setMarketplaceSyncState: (state: ToolboxMarketplaceSyncState) => void;
   setMarketplaceLastSyncedAt: (timestamp: string | null) => void;
   setMarketplaceLastError: (error: string | null) => void;
+  setMarketplaceAcquisition: (pluginId: string, acquisition: PluginMarketplaceAcquisitionRecord) => void;
+  clearMarketplaceAcquisition: (pluginId: string) => void;
 }
 
 export const usePluginStore = create<PluginState>()(
@@ -65,6 +69,7 @@ export const usePluginStore = create<PluginState>()(
       marketplaceSyncState: 'idle',
       marketplaceLastSyncedAt: null,
       marketplaceLastError: null,
+      marketplaceAcquisitions: {},
 
       setInstalledPlugins: (installedPlugins) => set({ installedPlugins }),
       setPluginTools: (pluginTools) => set({ pluginTools }),
@@ -112,11 +117,25 @@ export const usePluginStore = create<PluginState>()(
       setMarketplaceSyncState: (marketplaceSyncState) => set({ marketplaceSyncState }),
       setMarketplaceLastSyncedAt: (marketplaceLastSyncedAt) => set({ marketplaceLastSyncedAt }),
       setMarketplaceLastError: (marketplaceLastError) => set({ marketplaceLastError }),
+      setMarketplaceAcquisition: (pluginId, acquisition) =>
+        set((state) => ({
+          marketplaceAcquisitions: {
+            ...state.marketplaceAcquisitions,
+            [pluginId]: acquisition,
+          },
+        })),
+      clearMarketplaceAcquisition: (pluginId) =>
+        set((state) => {
+          if (!(pluginId in state.marketplaceAcquisitions)) return state;
+          const next = { ...state.marketplaceAcquisitions };
+          delete next[pluginId];
+          return { marketplaceAcquisitions: next };
+        }),
     }),
     {
       name: 'cognia-plugins',
       storage: createJSONStorage(() => localStorage),
-      version: 3,
+      version: 4,
       migrate: (persisted) => {
         const state = (persisted ?? {}) as Partial<PluginState>;
         return {
@@ -133,6 +152,7 @@ export const usePluginStore = create<PluginState>()(
           marketplaceSyncState: state.marketplaceSyncState ?? 'idle',
           marketplaceLastSyncedAt: state.marketplaceLastSyncedAt ?? null,
           marketplaceLastError: state.marketplaceLastError ?? null,
+          marketplaceAcquisitions: state.marketplaceAcquisitions ?? {},
         } as PluginState;
       },
       partialize: (state) => ({
@@ -144,6 +164,7 @@ export const usePluginStore = create<PluginState>()(
         marketplaceSyncState: state.marketplaceSyncState,
         marketplaceLastSyncedAt: state.marketplaceLastSyncedAt,
         marketplaceLastError: state.marketplaceLastError,
+        marketplaceAcquisitions: state.marketplaceAcquisitions,
       }),
     },
   ),

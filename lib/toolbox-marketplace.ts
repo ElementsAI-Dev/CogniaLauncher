@@ -157,6 +157,7 @@ export function buildMarketplaceListings(
     installedPlugins: PluginInfo[];
     pendingUpdates: PluginUpdateInfo[];
     isDesktop: boolean;
+    marketplaceAcquisitions?: Record<string, PluginInfo['marketplaceAcquisition']>;
   },
 ): ToolboxMarketplaceResolvedListing[] {
   const installedByPluginId = new Map(options.installedPlugins.map((plugin) => [plugin.id, plugin]));
@@ -165,6 +166,7 @@ export function buildMarketplaceListings(
   return catalog.listings.map((listing) => {
     const installedPlugin = installedByPluginId.get(listing.pluginId) ?? null;
     const pendingUpdate = updatesByPluginId.get(listing.pluginId) ?? null;
+    const acquisition = options.marketplaceAcquisitions?.[listing.pluginId] ?? null;
     const hostCompatible =
       !listing.minimumHostVersion || compareVersions(APP_VERSION, listing.minimumHostVersion) >= 0;
     const contractCompatible =
@@ -204,6 +206,9 @@ export function buildMarketplaceListings(
       compatible,
       installedPlugin,
       pendingUpdate,
+      acquisition,
+      provenanceState: acquisition ? 'resolved' : 'resolved',
+      provenanceReason: null,
     };
   });
 }

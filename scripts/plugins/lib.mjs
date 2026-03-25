@@ -38,6 +38,7 @@ export const DEFAULT_SUPPORTED_SDK_CAPABILITIES = [
   'wsl',
 ];
 export const SDK_USAGE_PATH_TYPES = ['builtin-plugin', 'official-example', 'scaffold-workflow'];
+export const SDK_USAGE_SURFACES = ['runtime', 'ink-authoring'];
 
 export function readCatalog() {
   const raw = readFileSync(CATALOG_PATH, 'utf8');
@@ -254,6 +255,7 @@ export function validateSdkUsageInventoryShape(inventory, context = {}) {
       }
 
       const usageType = typeof usagePath.type === 'string' ? usagePath.type.trim() : '';
+      const usageSurface = typeof usagePath.surface === 'string' ? usagePath.surface.trim() : 'runtime';
       const usageRefPath = typeof usagePath.path === 'string' ? usagePath.path.trim() : '';
       if (!SDK_USAGE_PATH_TYPES.includes(usageType)) {
         errors.push(
@@ -261,9 +263,40 @@ export function validateSdkUsageInventoryShape(inventory, context = {}) {
         );
         continue;
       }
+      if (!SDK_USAGE_SURFACES.includes(usageSurface)) {
+        errors.push(
+          `capabilities[${capabilityId}].usagePaths[${usageIndex}] has unsupported surface '${usageSurface || '<missing>'}'.`,
+        );
+        continue;
+      }
       if (!usageRefPath) {
         errors.push(`capabilities[${capabilityId}].usagePaths[${usageIndex}] missing non-empty path.`);
         continue;
+      }
+
+      const displayName = typeof usagePath.displayName === 'string'
+        ? usagePath.displayName.trim()
+        : '';
+      const launchCommand = typeof usagePath.launchCommand === 'string'
+        ? usagePath.launchCommand.trim()
+        : '';
+      const localPrerequisites = ensureStringArray(
+        usagePath.localPrerequisites ?? [],
+        `capabilities[${capabilityId}].usagePaths[${usageIndex}].localPrerequisites`,
+      );
+      void localPrerequisites;
+
+      if (usageSurface === 'ink-authoring') {
+        if (!displayName) {
+          errors.push(
+            `${capabilityId} ink-authoring usage path must declare a non-empty displayName.`,
+          );
+        }
+        if (!launchCommand) {
+          errors.push(
+            `${capabilityId} ink-authoring usage path must declare a non-empty launchCommand.`,
+          );
+        }
       }
 
       const resolvedUsagePath = resolveRepoPath(usageRefPath, context);
@@ -313,7 +346,11 @@ export function validateSdkUsageInventoryShape(inventory, context = {}) {
         }
 
         const expectedPluginPath = path.join('plugins', catalogPlugin.pluginDir).replace(/\\/g, '/');
-        if (usageRefPath.replace(/\\/g, '/') !== expectedPluginPath) {
+        const normalizedUsageRefPath = usageRefPath.replace(/\\/g, '/');
+        const builtInPathValid = usageSurface === 'ink-authoring'
+          ? normalizedUsageRefPath.startsWith(`${expectedPluginPath}/`)
+          : normalizedUsageRefPath === expectedPluginPath;
+        if (!builtInPathValid) {
           errors.push(
             `${pluginId} usage path must match catalog pluginDir (${expectedPluginPath}), received ${usageRefPath}.`,
           );
@@ -327,10 +364,18 @@ export function validateSdkUsageInventoryShape(inventory, context = {}) {
         if (!(matrixEntry.sdkCapabilities ?? []).includes(capabilityId)) {
           errors.push(`${pluginId} built-in usage path is missing capability '${capabilityId}' in sdk-capability-matrix.`);
         }
-        if (!equalStringSets(requiredPermissions, ensureStringArray(
+        const expectedPermissions = ensureStringArray(
           matrixEntry.expectedPermissions ?? [],
           `plugins[${pluginId}].expectedPermissions`,
-        ))) {
+        );
+        if (usageSurface === 'ink-authoring') {
+          const undeclaredPermissions = requiredPermissions.filter(
+            (permission) => !expectedPermissions.includes(permission),
+          );
+          if (undeclaredPermissions.length > 0) {
+            errors.push(`${pluginId} ink-authoring permissions exceed sdk-capability-matrix expectedPermissions.`);
+          }
+        } else if (!equalStringSets(requiredPermissions, expectedPermissions)) {
           errors.push(`${pluginId} usage path permissions drift from sdk-capability-matrix expectedPermissions.`);
         }
         if (entrypoints.length > 0 && !equalStringSets(entrypoints, ensureStringArray(

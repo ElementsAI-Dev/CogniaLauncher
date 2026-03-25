@@ -96,6 +96,7 @@ function buildMarketplaceActionProgress(
 export function useToolboxMarketplace(overrides?: Partial<ToolboxMarketplaceFilters>) {
   const installedPlugins = usePluginStore((state) => state.installedPlugins);
   const pendingUpdates = usePluginStore((state) => state.pendingUpdates);
+  const marketplaceAcquisitions = usePluginStore((state) => state.marketplaceAcquisitions);
   const marketplaceCatalog = usePluginStore((state) => state.marketplaceCatalog);
   const marketplaceCatalogSource = usePluginStore((state) => state.marketplaceCatalogSource);
   const marketplaceSyncState = usePluginStore((state) => state.marketplaceSyncState);
@@ -106,6 +107,7 @@ export function useToolboxMarketplace(overrides?: Partial<ToolboxMarketplaceFilt
   const setMarketplaceSyncState = usePluginStore((state) => state.setMarketplaceSyncState);
   const setMarketplaceLastSyncedAt = usePluginStore((state) => state.setMarketplaceLastSyncedAt);
   const setMarketplaceLastError = usePluginStore((state) => state.setMarketplaceLastError);
+  const setMarketplaceAcquisition = usePluginStore((state) => state.setMarketplaceAcquisition);
   const continuationHint = useToolboxStore((state) => state.continuationHint);
   const setContinuationHint = useToolboxStore((state) => state.setContinuationHint);
   const {
@@ -170,8 +172,9 @@ export function useToolboxMarketplace(overrides?: Partial<ToolboxMarketplaceFilt
         installedPlugins,
         pendingUpdates,
         isDesktop,
+        marketplaceAcquisitions,
       }),
-    [catalog, installedPlugins, isDesktop, pendingUpdates],
+    [catalog, installedPlugins, isDesktop, marketplaceAcquisitions, pendingUpdates],
   );
 
   const filteredListings = useMemo(
@@ -225,11 +228,31 @@ export function useToolboxMarketplace(overrides?: Partial<ToolboxMarketplaceFilt
         listingId: listing.id,
         pluginId: listing.pluginId,
         toolId: listing.tools[0] ? `plugin:${listing.pluginId}:${listing.tools[0].toolId}` : null,
+        sourceLabel: listing.publisher?.name ?? 'Marketplace',
         timestamp: Date.now(),
       });
     },
     [setContinuationHint],
   );
+
+  const recordMarketplaceAcquisition = useCallback((
+    listing: ToolboxMarketplaceListing,
+    result: PluginMarketplaceActionResult,
+    outcome: 'succeeded' | 'failed',
+  ) => {
+    setMarketplaceAcquisition(listing.pluginId, {
+      pluginId: result.pluginId ?? listing.pluginId,
+      listingId: listing.id,
+      storeId: listing.source.storeId,
+      action: result.action,
+      phase: result.phase ?? (result.ok ? 'completed' : 'failed'),
+      outcome,
+      downloadTaskId: result.downloadTaskId ?? null,
+      sourceLabel: listing.publisher?.name ?? 'Marketplace',
+      message: result.error?.message ?? null,
+      timestamp: Date.now(),
+    });
+  }, [setMarketplaceAcquisition]);
 
   const clearMarketplaceActionError = useCallback(() => {
     setLastActionError(null);
@@ -332,12 +355,22 @@ export function useToolboxMarketplace(overrides?: Partial<ToolboxMarketplaceFilt
       );
 
       if (result.ok && result.pluginId) {
+        recordMarketplaceAcquisition(listing, result, 'succeeded');
         setLastActionError(null);
         recordContinuation(listing, 'marketplace-install');
         await refreshCatalog();
         return result.pluginId;
       }
 
+      recordMarketplaceAcquisition(
+        listing,
+        {
+          ...result,
+          action: 'install',
+          phase: result.phase ?? 'failed',
+        },
+        'failed',
+      );
       setLastActionError(
         buildMarketplaceActionError('marketplace-install', listing, {
           category: result.error?.category ?? 'install_execution_failed',
@@ -360,6 +393,7 @@ export function useToolboxMarketplace(overrides?: Partial<ToolboxMarketplaceFilt
       installMarketplacePlugin,
       installMarketplacePluginWithResult,
       isDesktop,
+      recordMarketplaceAcquisition,
       recordContinuation,
       refreshCatalog,
     ],
@@ -439,12 +473,32 @@ export function useToolboxMarketplace(overrides?: Partial<ToolboxMarketplaceFilt
       );
 
       if (result.ok) {
+        recordMarketplaceAcquisition(
+          listing,
+          {
+            ...result,
+            action: 'update',
+            pluginId: result.pluginId ?? listing.pluginId,
+            phase: result.phase ?? 'completed',
+          },
+          'succeeded',
+        );
         setLastActionError(null);
         recordContinuation(listing, 'marketplace-update');
         await refreshCatalog();
         return;
       }
 
+      recordMarketplaceAcquisition(
+        listing,
+        {
+          ...result,
+          action: 'update',
+          pluginId: result.pluginId ?? listing.pluginId,
+          phase: result.phase ?? 'failed',
+        },
+        'failed',
+      );
       setLastActionError(
         buildMarketplaceActionError('marketplace-update', listing, {
           category: result.error?.category ?? 'install_execution_failed',
@@ -464,6 +518,7 @@ export function useToolboxMarketplace(overrides?: Partial<ToolboxMarketplaceFilt
     [
       installMarketplacePlugin,
       installMarketplacePluginWithResult,
+      recordMarketplaceAcquisition,
       recordContinuation,
       refreshCatalog,
       updatePlugin,

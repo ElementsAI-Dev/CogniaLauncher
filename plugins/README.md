@@ -88,6 +88,15 @@ The repository now tracks full stable SDK capability coverage in `plugins/sdk-us
   - `plugins/sdk-capability-matrix.json`
   - referenced built-in/example assets
 
+Maintained usage paths may now describe both:
+
+- `runtime` surfaces: the production Launcher/WASM workflow.
+- `ink-authoring` surfaces: local terminal authoring companions with explicit
+  `launchCommand` and `localPrerequisites`.
+
+Keep those surfaces distinct in docs and inventory so contributors can tell
+which path is safe for production runtime and which one is for local preview.
+
 ## Runtime Sync Behavior
 
 At app startup, built-ins from this catalog are synced into runtime plugin storage:

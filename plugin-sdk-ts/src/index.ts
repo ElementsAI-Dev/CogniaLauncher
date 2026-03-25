@@ -46,6 +46,11 @@ export * as ui from './ui';
 export * as wsl from './wsl';
 
 export * from './types';
+export {
+  buildInkAuthoringSnapshot,
+  createHeadlessInkHarness,
+  createInkAuthoringHostAdapter,
+} from './ink';
 
 /**
  * Convenience namespace: `import { cognia } from '@cognia/plugin-sdk';`

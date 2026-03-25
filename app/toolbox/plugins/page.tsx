@@ -312,6 +312,7 @@ export default function PluginsPage() {
     schemaPreset: "basic-form" as ScaffoldSchemaPreset,
     includeValidationGuidance: true,
     includeStarterTests: false,
+    includeInkCompanion: false,
     language: "typescript" as PluginLanguage,
     toolExtensionPoint: "tool-text" as ToolExtensionPointId,
     includeEventListener: false,
@@ -588,6 +589,10 @@ export default function PluginsPage() {
           schemaPreset: scaffoldForm.schemaPreset,
           includeValidationGuidance: scaffoldForm.includeValidationGuidance,
           includeStarterTests: scaffoldForm.includeStarterTests,
+          includeInkCompanion:
+            scaffoldForm.language === "typescript"
+              ? scaffoldForm.includeInkCompanion
+              : false,
         },
         language: scaffoldForm.language,
         permissions: {
@@ -1699,6 +1704,26 @@ export default function PluginsPage() {
                         }
                       />
                     </div>
+                    {scaffoldForm.language === "typescript" && (
+                      <div className="flex items-center justify-between rounded-md border p-2">
+                        <Label
+                          htmlFor="scaffold-include-ink-companion"
+                          className="text-xs cursor-pointer"
+                        >
+                          {t("toolbox.plugin.scaffoldIncludeInkCompanion")}
+                        </Label>
+                        <Switch
+                          id="scaffold-include-ink-companion"
+                          checked={scaffoldForm.includeInkCompanion}
+                          onCheckedChange={(checked) =>
+                            setScaffoldForm((p) => ({
+                              ...p,
+                              includeInkCompanion: checked,
+                            }))
+                          }
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -2781,6 +2806,25 @@ function PluginCard({
                 {marketplaceListing.releaseNotes}
               </p>
             )}
+            {plugin.marketplaceAcquisition && (
+              <p className="mt-1 text-blue-800/90 dark:text-blue-200/90">
+                {`Last marketplace action: ${plugin.marketplaceAcquisition.action} (${plugin.marketplaceAcquisition.outcome})`}
+              </p>
+            )}
+          </div>
+        )}
+        {!marketplaceListing && plugin.marketplaceAcquisition && (
+          <div className="mb-3 rounded-md border border-amber-300/60 bg-amber-50/70 px-2 py-1.5 text-xs text-amber-900 dark:border-amber-700/40 dark:bg-amber-950/30 dark:text-amber-200">
+            <p className="font-medium">
+              {plugin.marketplaceAcquisition.sourceLabel ??
+                t("toolbox.marketplace.title")}
+            </p>
+            <p className="mt-1">
+              Marketplace listing unavailable. Using last known acquisition context.
+            </p>
+            <p className="mt-1">
+              {`Last marketplace action: ${plugin.marketplaceAcquisition.action} (${plugin.marketplaceAcquisition.outcome})`}
+            </p>
           </div>
         )}
         <Separator className="mb-3" />

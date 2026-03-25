@@ -1,5 +1,6 @@
 import type {
   PluginInfo,
+  PluginMarketplaceAcquisitionRecord,
   PluginMarketplaceActionPhase,
   PluginUpdateInfo,
 } from '@/types/plugin';
@@ -91,6 +92,9 @@ export interface ToolboxMarketplaceResolvedListing extends ToolboxMarketplaceLis
   compatible: boolean;
   installedPlugin: PluginInfo | null;
   pendingUpdate: PluginUpdateInfo | null;
+  acquisition: PluginMarketplaceAcquisitionRecord | null;
+  provenanceState: 'resolved' | 'degraded';
+  provenanceReason: string | null;
 }
 
 export interface ToolboxMarketplaceFilters {
@@ -135,5 +139,6 @@ export interface ToolboxContinuationHint {
   listingId: string;
   pluginId: string;
   toolId: string | null;
+  sourceLabel?: string | null;
   timestamp: number;
 }

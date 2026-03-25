@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import PluginsPage from './page';
 
 let mockIsDesktop = true;
@@ -323,6 +323,7 @@ describe('PluginsPage plugin bootstrap', () => {
     render(<PluginsPage />);
 
     expect(screen.getByPlaceholderText('toolbox.plugin.scaffoldNamePlaceholder')).toBeInTheDocument();
+    expect(screen.getByLabelText('toolbox.plugin.scaffoldOutputDir')).toBeInTheDocument();
   });
 
   it('ignores unsupported action intents and keeps default page usable', () => {
@@ -504,6 +505,7 @@ describe('PluginsPage plugin bootstrap', () => {
           schemaPreset: 'basic-form',
           includeValidationGuidance: true,
           includeStarterTests: false,
+          includeInkCompanion: false,
         }),
       }),
     );
@@ -683,6 +685,11 @@ describe('PluginsPage plugin bootstrap', () => {
     });
     fireEvent.click(screen.getByLabelText('toolbox.plugin.scaffoldExtensionEventListener'));
     fireEvent.click(screen.getByLabelText('toolbox.plugin.scaffoldExtensionSettingsSchema'));
+    fireEvent.click(
+      within(
+        screen.getByText('toolbox.plugin.scaffoldIncludeInkCompanion').closest('div')!,
+      ).getByRole('checkbox'),
+    );
     fireEvent.click(screen.getByLabelText('toolbox.plugin.permUiFeedback'));
     fireEvent.click(screen.getByLabelText('toolbox.plugin.permUiDialog'));
     fireEvent.change(screen.getByLabelText('toolbox.plugin.scaffoldHttpDomains'), {
@@ -703,6 +710,9 @@ describe('PluginsPage plugin bootstrap', () => {
             uiFeedback: true,
             uiDialog: true,
             http: ['localhost', 'api.example.com'],
+          }),
+          templateOptions: expect.objectContaining({
+            includeInkCompanion: true,
           }),
         }),
       );

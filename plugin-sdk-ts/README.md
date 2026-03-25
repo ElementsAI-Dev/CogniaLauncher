@@ -87,6 +87,41 @@ Scaffolded projects should be validated before import:
 - `missingArtifactPath` reports where `plugin.wasm` is expected.
 - After build output exists and manifest checks pass, import can proceed.
 
+### Ink Authoring Helpers
+
+The SDK now exposes named Ink authoring helpers for local companions. These
+helpers are for preview/testing workflows outside the Extism runtime and do not
+change production plugin entrypoints.
+
+Typical authoring flow:
+
+```ts
+import {
+  buildInkAuthoringSnapshot,
+  createInkAuthoringHostAdapter,
+} from '@cognia/plugin-sdk';
+
+const adapter = createInkAuthoringHostAdapter({
+  pluginId: 'com.example.preview',
+  services: {},
+  prerequisites: [
+    { id: 'node', label: 'Node.js 20+', satisfied: true },
+  ],
+});
+
+const snapshot = buildInkAuthoringSnapshot({
+  pluginId: adapter.pluginId,
+  workflowId: 'preview',
+  title: 'Preview',
+  summary: 'Authoring-only preview',
+  preview: { ok: true },
+  prerequisites: adapter.prerequisites,
+});
+```
+
+For maintained examples and built-ins, pair these helpers with an `authoring:ink`
+script that launches a local Ink companion through `tsx`.
+
 ### tsconfig.json
 
 ```json
@@ -386,6 +421,7 @@ Governance source:
 
 - `plugins/sdk-capability-matrix.json` defines required plugin IDs, expected permissions, and primary entrypoints used by built-in validation.
 - `plugins/sdk-usage-inventory.json` defines the full stable SDK capability inventory, permission guidance, maintained usage paths, and toolbox/runtime prerequisite hints.
+- `plugins/sdk-usage-inventory.json` can now distinguish `runtime` paths from `ink-authoring` companion paths, including launch commands and local prerequisites.
 - `plugins/extension-point-matrix.json` defines officially supported plugin points, prerequisites, SDK coverage, and scaffold support.
 
 ## Host Contract Compatibility

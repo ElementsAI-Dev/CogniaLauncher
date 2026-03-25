@@ -1,6 +1,7 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import ToolboxPage from './page';
+import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts';
 
 let mockIsDesktop = true;
 let mockFetchPlugins = jest.fn();
@@ -184,6 +185,21 @@ describe('ToolboxPage plugin bootstrap', () => {
     mockToolboxState = createToolboxState({ isDesktop: false });
     render(<ToolboxPage />);
     expect(mockFetchPlugins).not.toHaveBeenCalled();
+  });
+
+  it('registers the search shortcut with locale-driven description metadata', () => {
+    render(<ToolboxPage />);
+
+    expect(useKeyboardShortcuts).toHaveBeenCalledWith(
+      expect.objectContaining({
+        shortcuts: expect.arrayContaining([
+          expect.objectContaining({
+            key: '/',
+            description: 'Focus search',
+          }),
+        ]),
+      }),
+    );
   });
 
   it('keeps page container non-scrollable and list container scrollable', () => {

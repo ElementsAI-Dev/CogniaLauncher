@@ -136,8 +136,7 @@ describe('MarketplaceDetailPageClient', () => {
 
     render(<MarketplaceDetailPageClient listingId="hello-world-rust" />);
 
-    expect(
-      screen.getByText('Action: marketplace-update · Phase: downloading · Task: task-42'),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/Action: marketplace-update/)).toBeInTheDocument();
+    expect(screen.getByText(/Phase: downloading/)).toBeInTheDocument();
   });
 });

@@ -46,3 +46,15 @@ All fields are optional. Empty input uses safe defaults.
 ```bash
 pnpm --filter cognia-builtin-env-provider-audit-plugin build
 ```
+
+## Ink Authoring Preview
+
+Use the maintained local Ink companion to preview the audit workflow with the
+same shared audit core used by the production plugin:
+
+```bash
+pnpm --dir plugins/typescript/env-provider-audit authoring:ink
+```
+
+This preview does not modify the built-in manifest, exported WASM entrypoint, or
+runtime permission contract.

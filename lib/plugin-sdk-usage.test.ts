@@ -10,12 +10,13 @@ describe('plugin-sdk-usage', () => {
       capabilityId: 'env',
       desktopOnly: true,
       permissionGuidance: expect.arrayContaining(['env_read']),
-      usagePaths: [
+      usagePaths: expect.arrayContaining([
         expect.objectContaining({
+          surface: 'runtime',
           pluginId: 'com.cognia.builtin.env-provider-audit',
           entrypoints: ['env_provider_audit'],
         }),
-      ],
+      ]),
     });
     expect(getSdkUsageInventoryEntry('missing-capability')).toBeNull();
   });
@@ -122,9 +123,13 @@ describe('plugin-sdk-usage', () => {
           usagePaths: [
             {
               type: 'official-example',
+              surface: 'ink-authoring',
               path: 'plugin-sdk-ts/examples/custom',
+              displayName: 'Custom Ink Preview',
+              launchCommand: 'pnpm authoring:ink',
               entrypoints: [' run ', '', 'run'],
               requiredPermissions: [' env_read ', '', 'env_read'],
+              localPrerequisites: [' node>=20 ', '', 'node>=20'],
               pluginPointIds: [' point.a ', '', 'point.a'],
             },
           ],
@@ -140,10 +145,14 @@ describe('plugin-sdk-usage', () => {
       usagePaths: [
         {
           type: 'official-example',
+          surface: 'ink-authoring',
           path: 'plugin-sdk-ts/examples/custom',
+          displayName: 'Custom Ink Preview',
+          launchCommand: 'pnpm authoring:ink',
           pluginId: undefined,
           entrypoints: ['run'],
           requiredPermissions: ['env_read'],
+          localPrerequisites: ['node>=20'],
           pluginPointIds: ['point.a'],
         },
       ],
@@ -163,10 +172,14 @@ describe('plugin-sdk-usage', () => {
         usagePaths: [
           {
             type: 'official-example',
+            surface: 'ink-authoring',
             path: 'plugin-sdk-ts/examples/custom',
+            displayName: 'Custom Ink Preview',
+            launchCommand: 'pnpm authoring:ink',
             pluginId: undefined,
             entrypoints: ['run'],
             requiredPermissions: ['env_read'],
+            localPrerequisites: ['node>=20'],
             pluginPointIds: ['point.a'],
           },
         ],

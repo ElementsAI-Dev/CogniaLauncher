@@ -96,4 +96,74 @@ describe("MarketplaceListingCard", () => {
       screen.getByText("toolbox.marketplace.installCount"),
     ).toBeInTheDocument();
   });
+
+  it("uses locale-driven busy labels for marketplace actions", () => {
+    const listing: ToolboxMarketplaceResolvedListing = {
+      id: "demo-listing",
+      pluginId: "com.example.demo",
+      name: "Demo Listing",
+      description: "Demo plugin description.",
+      version: "1.2.3",
+      category: "developer",
+      featured: false,
+      authors: ["Example"],
+      updatedAt: "2026-03-06T00:00:00.000Z",
+      installCount: 10,
+      publisher: null,
+      support: {
+        homepageUrl: null,
+        documentationUrl: null,
+        issuesUrl: null,
+      },
+      highlights: [],
+      gallery: [],
+      releaseNotes: null,
+      minimumHostVersion: "0.1.0",
+      toolContractVersion: "1.0.0",
+      source: {
+        type: "store",
+        storeId: "demo-listing",
+        pluginDir: "marketplace/demo-listing",
+        artifact: "plugin.wasm",
+        checksumSha256: "abc",
+        downloadUrl: null,
+        mirrorUrls: [],
+        sizeBytes: null,
+      },
+      permissions: [],
+      capabilities: [],
+      tools: [
+        {
+          toolId: "demo",
+          name: "Demo Tool",
+          description: "Runs the demo flow.",
+          category: "developer",
+          uiMode: "text",
+        },
+      ],
+      desktopOnly: true,
+      installState: "update-available",
+      blockedReason: null,
+      compatible: true,
+      installedPlugin: null,
+      pendingUpdate: {
+        pluginId: "com.example.demo",
+        currentVersion: "1.0.0",
+        latestVersion: "1.2.3",
+        downloadUrl: "https://example.invalid",
+        changelog: null,
+      },
+    };
+
+    render(
+      <MarketplaceListingCard
+        listing={listing}
+        busy={true}
+        onInstall={jest.fn()}
+        onUpdate={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Working...")).toBeInTheDocument();
+  });
 });

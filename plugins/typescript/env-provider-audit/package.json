@@ -6,13 +6,17 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "bundle": "node esbuild.config.mjs",
-    "setup:toolchain": "node scripts/build.mjs --setup-only"
+    "setup:toolchain": "node scripts/build.mjs --setup-only",
+    "authoring:ink": "pnpm exec tsx authoring/ink.tsx"
   },
   "dependencies": {
     "@cognia/plugin-sdk": "workspace:*"
   },
   "devDependencies": {
     "@extism/js-pdk": "^1.1.1",
-    "esbuild": "^0.20.0"
+    "esbuild": "^0.20.0",
+    "ink": "6.8.0",
+    "ink-testing-library": "4.0.0",
+    "tsx": "4.21.0"
   }
 }

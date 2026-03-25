@@ -53,6 +53,10 @@ fn default_include_validation_guidance() -> bool {
     true
 }
 
+fn default_include_ink_companion() -> bool {
+    false
+}
+
 fn default_lifecycle_profile() -> ScaffoldLifecycleProfile {
     ScaffoldLifecycleProfile::External
 }
@@ -110,6 +114,8 @@ pub struct ScaffoldTemplateOptions {
     pub include_validation_guidance: bool,
     #[serde(default)]
     pub include_starter_tests: bool,
+    #[serde(default = "default_include_ink_companion")]
+    pub include_ink_companion: bool,
 }
 
 impl Default for ScaffoldTemplateOptions {
@@ -120,6 +126,7 @@ impl Default for ScaffoldTemplateOptions {
             schema_preset: ScaffoldSchemaPreset::default(),
             include_validation_guidance: default_include_validation_guidance(),
             include_starter_tests: false,
+            include_ink_companion: default_include_ink_companion(),
         }
     }
 }
@@ -577,6 +584,14 @@ fn validate_scaffold_config(config: &ScaffoldConfig) -> CogniaResult<()> {
         ));
     }
 
+    if config.template_options.include_ink_companion
+        && !matches!(config.language, PluginLanguage::TypeScript)
+    {
+        return Err(CogniaError::Plugin(
+            "Ink companion scaffolds currently support TypeScript only".to_string(),
+        ));
+    }
+
     if matches!(config.lifecycle_profile, ScaffoldLifecycleProfile::BuiltIn) {
         let output_dir = config.output_dir.trim().replace('\\', "/");
         if output_dir.ends_with("/rust") || output_dir.ends_with("/typescript") {
@@ -694,6 +709,12 @@ fn build_scaffold_handoff(config: &ScaffoldConfig, plugin_dir: &Path) -> Scaffol
                 .to_string(),
         );
     }
+    if config.template_options.include_ink_companion {
+        extension_point_steps.push(format!(
+            "Run {} to launch the local Ink authoring companion and verify the preview workflow.",
+            ink_companion_command(config)
+        ));
+    }
     match config.lifecycle_profile {
         ScaffoldLifecycleProfile::External => ScaffoldHandoff {
             profile: ScaffoldLifecycleProfile::External,
@@ -769,6 +790,11 @@ fn build_commands_for_language(language: &PluginLanguage) -> Vec<String> {
             "pnpm build".to_string(),
         ],
     }
+}
+
+fn ink_companion_command(config: &ScaffoldConfig) -> &'static str {
+    let _ = config;
+    "pnpm authoring:ink"
 }
 
 fn generate_lifecycle_manifest(config: &ScaffoldConfig, handoff: &ScaffoldHandoff) -> String {
@@ -2096,6 +2122,37 @@ async fn generate_ts_project(
             serde_json::Value::String("node --test tests/contract-validation.test.js".to_string()),
         );
     }
+    if config.template_options.include_ink_companion {
+        scripts.insert(
+            "authoring:ink".to_string(),
+            serde_json::Value::String("pnpm exec tsx authoring/ink.tsx".to_string()),
+        );
+    }
+
+    let mut dev_dependencies = serde_json::Map::from_iter([
+        (
+            "@extism/js-pdk".to_string(),
+            serde_json::Value::String("^1.1.1".to_string()),
+        ),
+        (
+            "esbuild".to_string(),
+            serde_json::Value::String("^0.20.0".to_string()),
+        ),
+    ]);
+    if config.template_options.include_ink_companion {
+        dev_dependencies.insert(
+            "ink".to_string(),
+            serde_json::Value::String("^6.8.0".to_string()),
+        );
+        dev_dependencies.insert(
+            "ink-testing-library".to_string(),
+            serde_json::Value::String("^4.0.0".to_string()),
+        );
+        dev_dependencies.insert(
+            "tsx".to_string(),
+            serde_json::Value::String("^4.21.0".to_string()),
+        );
+    }
 
     let package_json = serde_json::json!({
         "name": generated_typescript_package_name(config),
@@ -2107,10 +2164,7 @@ async fn generate_ts_project(
         "dependencies": {
             "@cognia/plugin-sdk": "workspace:*"
         },
-        "devDependencies": {
-            "@extism/js-pdk": "^1.1.1",
-            "esbuild": "^0.20.0"
-        }
+        "devDependencies": serde_json::Value::Object(dev_dependencies)
     });
     tokio::fs::write(
         plugin_dir.join("package.json"),
@@ -2132,7 +2186,7 @@ async fn generate_ts_project(
             "skipLibCheck": true,
             "noEmit": true
         },
-        "include": ["src/**/*.ts", "plugin.d.ts", "node_modules/@cognia/plugin-sdk/cognia.d.ts"]
+        "include": ["src/**/*.ts", "authoring/**/*.ts", "authoring/**/*.tsx", "plugin.d.ts", "node_modules/@cognia/plugin-sdk/cognia.d.ts"]
     });
     tokio::fs::write(
         plugin_dir.join("tsconfig.json"),
@@ -2339,6 +2393,10 @@ function {entry}(): number {{
         files.push("src/index.test.ts".to_string());
     }
 
+    if config.template_options.include_ink_companion {
+        files.extend(generate_ts_ink_authoring_files(config, plugin_dir).await?);
+    }
+
     if has_extension_point(config, "tool-iframe-ui") {
         let ui_dir = plugin_dir.join("ui");
         tokio::fs::create_dir_all(&ui_dir)
@@ -2406,6 +2464,113 @@ describe('generated scaffold exports', () => {{
 "#,
         export_checks = export_checks.join("\n"),
     )
+}
+
+async fn generate_ts_ink_authoring_files(
+    config: &ScaffoldConfig,
+    plugin_dir: &Path,
+) -> CogniaResult<Vec<String>> {
+    let mut files = Vec::new();
+    let authoring_dir = plugin_dir.join("authoring");
+    tokio::fs::create_dir_all(&authoring_dir)
+        .await
+        .map_err(|e| CogniaError::Plugin(format!("Failed to create authoring dir: {}", e)))?;
+
+    tokio::fs::write(
+        authoring_dir.join("sample-context.ts"),
+        generate_ts_ink_sample_context(config),
+    )
+    .await
+    .map_err(|e| {
+        CogniaError::Plugin(format!("Failed to write authoring/sample-context.ts: {}", e))
+    })?;
+    files.push("authoring/sample-context.ts".to_string());
+
+    tokio::fs::write(
+        authoring_dir.join("ink-app.tsx"),
+        generate_ts_ink_app(config),
+    )
+    .await
+    .map_err(|e| CogniaError::Plugin(format!("Failed to write authoring/ink-app.tsx: {}", e)))?;
+    files.push("authoring/ink-app.tsx".to_string());
+
+    tokio::fs::write(authoring_dir.join("ink.tsx"), generate_ts_ink_entry())
+        .await
+        .map_err(|e| CogniaError::Plugin(format!("Failed to write authoring/ink.tsx: {}", e)))?;
+    files.push("authoring/ink.tsx".to_string());
+
+    Ok(files)
+}
+
+fn generate_ts_ink_sample_context(config: &ScaffoldConfig) -> String {
+    format!(
+        r#"export const samplePreviewInput = {{
+  rawInput: '',
+  toolId: '{}',
+}};
+"#,
+        config.id
+    )
+}
+
+fn generate_ts_ink_app(config: &ScaffoldConfig) -> String {
+    let plugin_id = &config.id;
+    let name = &config.name;
+    format!(
+        r#"import React from 'react';
+import {{ Box, Text }} from 'ink';
+import {{ buildInkAuthoringSnapshot, createInkAuthoringHostAdapter }} from '@cognia/plugin-sdk';
+
+import {{ samplePreviewInput }} from './sample-context';
+
+export function createScaffoldInkSnapshot() {{
+  const adapter = createInkAuthoringHostAdapter({{
+    pluginId: '{plugin_id}',
+    services: samplePreviewInput,
+    prerequisites: [
+      {{ id: 'node', label: 'Node.js 20+', satisfied: true }},
+      {{ id: 'ink', label: 'Ink authoring dependencies', satisfied: true }},
+    ],
+  }});
+
+  return buildInkAuthoringSnapshot({{
+    pluginId: adapter.pluginId,
+    workflowId: 'scaffold-ink-preview',
+    title: '{name} Ink Preview',
+    summary: 'Preview the scaffolded workflow without changing the production plugin entrypoint.',
+    prerequisites: adapter.prerequisites,
+    preview: {{
+      toolId: samplePreviewInput.toolId,
+      platform: adapter.platform.os,
+      note: 'Replace this sample authoring preview with your real workflow.',
+    }},
+  }});
+}}
+
+export function ScaffoldInkApp(props: {{ snapshot: ReturnType<typeof createScaffoldInkSnapshot> }}) {{
+  const {{ snapshot }} = props;
+  return (
+    <Box flexDirection="column" padding={{1}}>
+      <Text bold>{{snapshot.title}}</Text>
+      <Text>{{snapshot.summary}}</Text>
+      <Text>Tool: {{snapshot.preview.toolId}}</Text>
+      <Text>Platform: {{snapshot.preview.platform}}</Text>
+      <Text>{{snapshot.preview.note}}</Text>
+    </Box>
+  );
+}}
+"#
+    )
+}
+
+fn generate_ts_ink_entry() -> &'static str {
+    r#"import React from 'react';
+import { render } from 'ink';
+
+import { ScaffoldInkApp, createScaffoldInkSnapshot } from './ink-app';
+
+render(<ScaffoldInkApp snapshot={createScaffoldInkSnapshot()} />);
+"#
 }
 
 fn generate_wasm_build_script(with_bundle: bool, with_interface: bool) -> String {
@@ -2512,6 +2677,27 @@ EXTISM_JS_PATH=/path/to/extism-js BINARYEN_BIN=/path/to/binaryen/bin pnpm build
     } else {
         String::new()
     };
+    let ink_authoring_section = if config.template_options.include_ink_companion {
+        format!(
+            r#"
+## Ink Authoring Companion
+
+Use the generated local Ink companion to preview the scaffolded workflow:
+
+```bash
+{}
+```
+
+Generated authoring assets:
+- `authoring/ink-app.tsx`
+- `authoring/ink.tsx`
+- `authoring/sample-context.ts`
+"#,
+            ink_companion_command(config)
+        )
+    } else {
+        String::new()
+    };
 
     let development_section = format!(
         r#"
@@ -2522,6 +2708,7 @@ EXTISM_JS_PATH=/path/to/extism-js BINARYEN_BIN=/path/to/binaryen/bin pnpm build
 - Unified contract samples: {}
 - Validation guide: {}
 - Starter contract tests: {}
+- Ink authoring companion: {}
 - Contract test command: {}
 "#,
         if config.include_vscode {
@@ -2548,6 +2735,11 @@ EXTISM_JS_PATH=/path/to/extism-js BINARYEN_BIN=/path/to/binaryen/bin pnpm build
         },
         if config.template_options.include_starter_tests {
             "included (`tests/`)"
+        } else {
+            "not included"
+        },
+        if config.template_options.include_ink_companion {
+            "included (`authoring/` + `pnpm authoring:ink`)"
         } else {
             "not included"
         },
@@ -2642,6 +2834,7 @@ Translation files are in the `locales/` directory:
 {lifecycle_section}
 {project_links_section}
 {development_section}
+{ink_authoring_section}
 "#,
         name = config.name,
         desc = config.description,
@@ -2650,6 +2843,7 @@ Translation files are in the `locales/` directory:
         lifecycle_section = lifecycle_section,
         project_links_section = project_links_section,
         development_section = development_section,
+        ink_authoring_section = ink_authoring_section,
     )
 }
 
@@ -2810,6 +3004,7 @@ mod tests {
         ));
         assert!(config.template_options.include_validation_guidance);
         assert!(!config.template_options.include_starter_tests);
+        assert!(!config.template_options.include_ink_companion);
     }
 
     #[test]
@@ -2972,7 +3167,8 @@ mod tests {
             "contractTemplate":"advanced",
             "schemaPreset":"multi-step-flow",
             "includeValidationGuidance":true,
-            "includeStarterTests":true
+            "includeStarterTests":true,
+            "includeInkCompanion":true
           }
         }"#;
         let config: ScaffoldConfig = serde_json::from_str(json).unwrap();
@@ -2985,6 +3181,7 @@ mod tests {
             ScaffoldSchemaPreset::MultiStepFlow
         ));
         assert!(config.template_options.include_starter_tests);
+        assert!(config.template_options.include_ink_companion);
     }
 
     #[test]
@@ -3061,6 +3258,20 @@ mod tests {
         };
         let result = validate_scaffold_config(&config);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_scaffold_config_rejects_ink_companion_for_non_typescript() {
+        let mut config = base_scaffold_config("/tmp");
+        config.language = PluginLanguage::Rust;
+        config.template_options.include_ink_companion = true;
+
+        let result = validate_scaffold_config(&config);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Ink companion scaffolds currently support TypeScript only"));
     }
 
     #[test]
@@ -3319,6 +3530,38 @@ mod tests {
             .files_created
             .iter()
             .all(|path| !path.starts_with("contracts/")));
+
+        let _ = fs::remove_dir_all(&output_root);
+    }
+
+    #[tokio::test]
+    async fn test_scaffold_plugin_generates_typescript_ink_companion_assets() {
+        let output_root = unique_temp_path("cognia_scaffold_matrix_ink");
+        fs::create_dir_all(&output_root).expect("create output root");
+
+        let mut config = base_scaffold_config(output_root.to_string_lossy().as_ref());
+        config.id = "com.example.matrix.ink".to_string();
+        config.template_options.include_ink_companion = true;
+
+        let result = scaffold_plugin(&config).await.expect("scaffold plugin");
+        let plugin_dir = PathBuf::from(&result.plugin_dir);
+
+        assert!(plugin_dir.join("authoring").join("ink-app.tsx").exists());
+        assert!(plugin_dir.join("authoring").join("ink.tsx").exists());
+        assert!(plugin_dir.join("authoring").join("sample-context.ts").exists());
+
+        let package_json =
+            fs::read_to_string(plugin_dir.join("package.json")).expect("read package.json");
+        assert!(package_json.contains("\"authoring:ink\""));
+        assert!(package_json.contains("\"ink\""));
+        assert!(result
+            .handoff
+            .next_steps
+            .iter()
+            .any(|step| step.contains("pnpm authoring:ink")));
+
+        let readme = fs::read_to_string(plugin_dir.join("README.md")).expect("read README");
+        assert!(readme.contains("Ink Authoring Companion"));
 
         let _ = fs::remove_dir_all(&output_root);
     }

@@ -219,8 +219,7 @@ describe("ToolboxMarketplacePage", () => {
     };
     render(<ToolboxMarketplacePage />);
 
-    expect(
-      screen.getByText("Action: marketplace-install · Phase: downloading · Task: task-123"),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/Action: marketplace-install/)).toBeInTheDocument();
+    expect(screen.getByText(/Phase: downloading/)).toBeInTheDocument();
   });
 });

@@ -122,6 +122,19 @@ const pendingUpdate: PluginUpdateInfo = {
   changelog: null,
 };
 
+const acquisition = {
+  pluginId: "com.cognia.hello-world",
+  listingId: "hello-world-rust",
+  storeId: "store.hello-world-rust",
+  action: "install" as const,
+  phase: "completed" as const,
+  outcome: "succeeded" as const,
+  downloadTaskId: "task-123",
+  sourceLabel: "CogniaLauncher Team",
+  message: null,
+  timestamp: 123,
+};
+
 describe("toolbox marketplace helpers", () => {
   it("normalizes catalog metadata and keeps listing order stable", () => {
     const catalog = normalizeMarketplaceCatalog(rawCatalog);
@@ -275,10 +288,15 @@ describe("toolbox marketplace helpers", () => {
       installedPlugins: [installedPlugin],
       pendingUpdates: [pendingUpdate],
       isDesktop: true,
+      marketplaceAcquisitions: {
+        "com.cognia.hello-world": acquisition,
+      },
     });
 
     expect(listings[0].installState).toBe("update-available");
     expect(listings[0].installedPlugin?.id).toBe("com.cognia.hello-world");
+    expect(listings[0].acquisition).toEqual(acquisition);
+    expect(listings[0].provenanceState).toBe("resolved");
     expect(listings[1].installState).toBe("blocked");
     expect(listings[1].blockedReason).toBeTruthy();
   });

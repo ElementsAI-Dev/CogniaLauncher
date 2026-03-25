@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { usePluginStore } from "@/lib/stores/plugin";
 import { useToolboxStore } from "@/lib/stores/toolbox";
 import {
@@ -283,7 +283,7 @@ function buildPluginPreviewReadyState(
 }
 
 export function usePlugins() {
-  const plugins = usePluginStore((state) => state.installedPlugins);
+  const installedPlugins = usePluginStore((state) => state.installedPlugins);
   const pluginTools = usePluginStore((state) => state.pluginTools);
   const loading = usePluginStore((state) => state.loading);
   const error = usePluginStore((state) => state.error);
@@ -291,6 +291,9 @@ export function usePlugins() {
   const permissionMode = usePluginStore((state) => state.permissionMode);
   const permissionStates = usePluginStore((state) => state.permissionStates);
   const pendingUpdates = usePluginStore((state) => state.pendingUpdates);
+  const marketplaceAcquisitions = usePluginStore(
+    (state) => state.marketplaceAcquisitions,
+  );
   const setContinuationHint = useToolboxStore(
     (state) => state.setContinuationHint,
   );
@@ -316,6 +319,18 @@ export function usePlugins() {
     (state) => state.setPluginPermissionState,
   );
   const setPendingUpdates = usePluginStore((state) => state.setPendingUpdates);
+  const clearMarketplaceAcquisition = usePluginStore(
+    (state) => state.clearMarketplaceAcquisition,
+  );
+
+  const plugins = useMemo(
+    () =>
+      installedPlugins.map((plugin) => ({
+        ...plugin,
+        marketplaceAcquisition: marketplaceAcquisitions[plugin.id],
+      })),
+    [installedPlugins, marketplaceAcquisitions],
+  );
 
   const fetchPluginsInFlightRef = useRef<Promise<void> | null>(null);
 
@@ -349,6 +364,8 @@ export function usePlugins() {
           plugin.enabled === false || !primaryTool
             ? null
             : `plugin:${pluginId}:${primaryTool.toolId}`,
+        sourceLabel:
+          state.marketplaceAcquisitions[pluginId]?.sourceLabel ?? "Marketplace",
         timestamp: Date.now(),
       });
     },
@@ -428,6 +445,8 @@ export function usePlugins() {
             deprecationWarnings:
               deprecations.length > 0 ? deprecations : undefined,
             sdkCapabilityCoverage: mergePluginCapabilityCoverage(pluginTools),
+            marketplaceAcquisition:
+              usePluginStore.getState().marketplaceAcquisitions[plugin.id],
           };
         });
 
@@ -630,6 +649,7 @@ export function usePlugins() {
           .installedPlugins.find((entry) => entry.id === pluginId);
         await pluginUninstall(pluginId);
         removePlugin(pluginId);
+        clearMarketplaceAcquisition(pluginId);
         if (plugin?.source.type === "store") {
           clearContinuationHint();
         }
@@ -638,7 +658,7 @@ export function usePlugins() {
         toast.error(`Uninstall failed: ${(e as Error).message ?? String(e)}`);
       }
     },
-    [clearContinuationHint, removePlugin],
+    [clearContinuationHint, clearMarketplaceAcquisition, removePlugin],
   );
 
   const enablePlugin = useCallback(
