@@ -353,4 +353,30 @@ describe("DownloadHistoryPanel", () => {
 
     expect(onReuseRecord).toHaveBeenCalledWith(record);
   });
+
+  it("shows install-aware action for completed installer records", () => {
+    const record = makeRecord({
+      id: "rec-installer",
+      artifactProfile: {
+        artifactKind: "installer",
+        sourceKind: "direct_url",
+        platform: "windows",
+        arch: "x64",
+        installIntent: "open_installer",
+        suggestedFollowUps: ["install"],
+      },
+    });
+
+    render(
+      <DownloadHistoryPanel
+        {...defaultProps}
+        history={[record]}
+        destinationAvailability={{ [record.id]: true }}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "downloads.actions.install" }),
+    ).toBeInTheDocument();
+  });
 });

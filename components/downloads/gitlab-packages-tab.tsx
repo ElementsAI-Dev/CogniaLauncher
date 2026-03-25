@@ -8,6 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Label } from "@/components/ui/label";
+import { createArtifactProfilePreview } from "@/lib/downloads";
 import { formatBytes } from "@/lib/utils";
 import { selectableCheckboxRowClass, SelectableCardButton } from "./selectable-list-patterns";
 import type { GitLabPackageInfo, GitLabPackageFileInfo } from "@/types/gitlab";
@@ -134,6 +135,10 @@ export function GitLabPackagesTab({
           <div className="p-2 space-y-1">
             {packageFiles.map((file) => {
               const checked = selectedPackageFileIds.has(file.id);
+              const profile = createArtifactProfilePreview({
+                fileName: file.fileName,
+                sourceKind: "gitlab_package_file",
+              });
               return (
                 <label
                   key={file.id}
@@ -153,6 +158,9 @@ export function GitLabPackagesTab({
                       {formatBytes(file.size)}
                     </div>
                   </div>
+                  <Badge variant="outline" className="text-xs">
+                    {t(`downloads.artifactKind.${profile.artifactKind}`)}
+                  </Badge>
                 </label>
               );
             })}

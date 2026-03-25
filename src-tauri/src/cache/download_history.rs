@@ -1,5 +1,6 @@
 //! Download history tracking
 
+use crate::download::{ArtifactProfile, InstallIntent, SourceDescriptor};
 use crate::error::{CogniaError, CogniaResult};
 use crate::platform::{
     disk::{format_duration, format_size},
@@ -45,6 +46,15 @@ pub struct DownloadRecord {
     pub provider: Option<String>,
     /// Additional metadata
     pub metadata: std::collections::HashMap<String, String>,
+    /// Stable install context carried from the download task
+    #[serde(default)]
+    pub install_intent: Option<InstallIntent>,
+    /// Descriptor for how the download was selected
+    #[serde(default)]
+    pub source_descriptor: Option<SourceDescriptor>,
+    /// Resolved artifact profile for later follow-up actions
+    #[serde(default)]
+    pub artifact_profile: Option<ArtifactProfile>,
 }
 
 /// Download completion status
@@ -86,6 +96,9 @@ impl DownloadRecord {
             error: None,
             provider,
             metadata: std::collections::HashMap::new(),
+            install_intent: None,
+            source_descriptor: None,
+            artifact_profile: None,
         }
     }
 
@@ -116,6 +129,9 @@ impl DownloadRecord {
             error: Some(error),
             provider,
             metadata: std::collections::HashMap::new(),
+            install_intent: None,
+            source_descriptor: None,
+            artifact_profile: None,
         }
     }
 
@@ -151,7 +167,24 @@ impl DownloadRecord {
             error: None,
             provider,
             metadata: std::collections::HashMap::new(),
+            install_intent: None,
+            source_descriptor: None,
+            artifact_profile: None,
         }
+    }
+
+    pub fn with_context(
+        mut self,
+        source_descriptor: Option<SourceDescriptor>,
+        artifact_profile: Option<ArtifactProfile>,
+        install_intent: Option<InstallIntent>,
+        metadata: std::collections::HashMap<String, String>,
+    ) -> Self {
+        self.source_descriptor = source_descriptor;
+        self.artifact_profile = artifact_profile;
+        self.install_intent = install_intent;
+        self.metadata = metadata;
+        self
     }
 
     /// Format size as human-readable string
@@ -798,5 +831,50 @@ mod tests {
         }
 
         assert!(history.len() <= MAX_HISTORY_RECORDS);
+    }
+
+    #[tokio::test]
+    async fn test_download_history_persists_install_context() {
+        let temp_dir = tempdir().unwrap();
+        let mut history = DownloadHistory::open(temp_dir.path()).await.unwrap();
+
+        let record = DownloadRecord::completed(
+            "https://example.com/tool.msi".to_string(),
+            "tool.msi".to_string(),
+            PathBuf::from("/tmp/tool.msi"),
+            2048,
+            None,
+            Utc::now(),
+            Some("github".to_string()),
+        )
+        .with_context(
+            Some(crate::download::task::SourceDescriptor {
+                kind: crate::download::task::SourceKind::GithubWorkflowArtifact,
+                provider: Some("github".to_string()),
+                label: Some("owner/repo workflow".to_string()),
+                repo: Some("owner/repo".to_string()),
+                workflow_run_id: Some("42".to_string()),
+                artifact_id: Some("77".to_string()),
+                ..Default::default()
+            }),
+            Some(crate::download::task::ArtifactProfile {
+                artifact_kind: crate::download::task::ArtifactKind::Installer,
+                source_kind: crate::download::task::SourceKind::GithubWorkflowArtifact,
+                platform: crate::download::task::ArtifactPlatform::Windows,
+                arch: crate::download::task::ArtifactArch::X64,
+                install_intent: crate::download::task::InstallIntent::OpenInstaller,
+                suggested_follow_ups: vec![crate::download::task::FollowUpAction::Install],
+            }),
+            Some(crate::download::task::InstallIntent::OpenInstaller),
+            std::collections::HashMap::new(),
+        );
+
+        history.add(record).await.unwrap();
+
+        let reopened = DownloadHistory::open(temp_dir.path()).await.unwrap();
+        let persisted = reopened.list().into_iter().next().unwrap();
+        assert!(persisted.install_intent.is_some());
+        assert!(persisted.source_descriptor.is_some());
+        assert!(persisted.artifact_profile.is_some());
     }
 }

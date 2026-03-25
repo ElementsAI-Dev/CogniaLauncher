@@ -20,6 +20,7 @@ const mockUseGitHubDownloads = {
   loading: false,
   error: null as string | null,
   releases: [] as import("@/types/github").GitHubReleaseInfo[],
+  workflowArtifacts: [] as import("@/types/github").GitHubWorkflowArtifactInfo[],
   tokenStatus: null,
   vaultStatus: null,
   vaultPassword: "",
@@ -30,6 +31,7 @@ const mockUseGitHubDownloads = {
   validateAndFetch: jest.fn(),
   downloadAsset: jest.fn(),
   downloadSource: jest.fn(),
+  downloadWorkflowArtifact: jest.fn(),
   saveToken: jest.fn(),
   clearSavedToken: jest.fn(),
   reset: jest.fn(),
@@ -68,6 +70,7 @@ function resetMocks() {
   mockUseGitHubDownloads.repoInfo = null;
   mockUseGitHubDownloads.isValid = false;
   mockUseGitHubDownloads.releases = [];
+  mockUseGitHubDownloads.workflowArtifacts = [];
   mockUseGitHubDownloads.branches = [];
   mockUseGitHubDownloads.tags = [];
   mockUseGitHubDownloads.error = null;
@@ -105,6 +108,21 @@ const testRelease = {
   prerelease: false,
   draft: false,
   assets: [testAsset],
+};
+
+const testWorkflowArtifact = {
+  id: 99,
+  name: "build-output.zip",
+  sizeInBytes: 2048,
+  sizeHuman: "2 KB",
+  archiveDownloadUrl: "https://example.com/workflows/99.zip",
+  expired: false,
+  createdAt: "2026-03-19T00:00:00Z",
+  expiresAt: null,
+  workflowRunId: 123,
+  workflowRunNumber: 88,
+  workflowRunBranch: "main",
+  workflowRunHeadSha: "abcdef123456",
 };
 
 describe("GitHubDownloadDialog", () => {
@@ -340,6 +358,20 @@ describe("GitHubDownloadDialog", () => {
     });
 
     expect(screen.getByText("downloads.github.destination")).toBeInTheDocument();
+  });
+
+  it("shows workflow tab and artifact selection when workflow artifacts are available", () => {
+    renderDialog({
+      parsedRepo: { owner: "test", repo: "repo", fullName: "test/repo" },
+      isValid: true,
+      sourceType: "workflow",
+      workflowArtifacts: [testWorkflowArtifact],
+    });
+
+    expect(screen.getByText("downloads.github.workflowArtifacts")).toBeInTheDocument();
+
+    expect(screen.getByText("build-output.zip")).toBeInTheDocument();
+    expect(screen.getByText("2 KB")).toBeInTheDocument();
   });
 
   it("disables download button when no selection", () => {

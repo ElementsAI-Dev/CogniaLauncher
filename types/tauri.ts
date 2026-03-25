@@ -1271,6 +1271,77 @@ export interface DownloadTask {
   progress: DownloadProgress;
   error: string | null;
   provider: string | null;
+export type DownloadSourceKind =
+  | 'direct_url'
+  | 'batch_item'
+  | 'github_release_asset'
+  | 'github_source_archive'
+  | 'github_workflow_artifact'
+  | 'gitlab_release_asset'
+  | 'gitlab_source_archive'
+  | 'gitlab_pipeline_artifact'
+  | 'gitlab_package_file'
+  | 'unknown';
+
+export type DownloadArtifactKind =
+  | 'archive'
+  | 'installer'
+  | 'package_file'
+  | 'portable_binary'
+  | 'ci_artifact'
+  | 'source_archive'
+  | 'unknown';
+
+export type DownloadArtifactPlatform =
+  | 'windows'
+  | 'macos'
+  | 'linux'
+  | 'universal'
+  | 'unknown';
+
+export type DownloadArtifactArch =
+  | 'x64'
+  | 'arm64'
+  | 'x86'
+  | 'universal'
+  | 'unknown';
+
+export type DownloadInstallIntent =
+  | 'none'
+  | 'open_installer'
+  | 'extract_then_continue';
+
+export type DownloadSuggestedFollowUp =
+  | 'install'
+  | 'extract'
+  | 'open'
+  | 'reveal'
+  | 'reuse';
+
+export interface DownloadSourceDescriptor {
+  kind: DownloadSourceKind;
+  provider?: string | null;
+  label?: string | null;
+  repo?: string | null;
+  releaseTag?: string | null;
+  refName?: string | null;
+  workflowRunId?: string | null;
+  artifactId?: string | null;
+  pipelineId?: string | null;
+  jobId?: string | null;
+  packageId?: string | null;
+  packageFileId?: string | null;
+}
+
+export interface DownloadArtifactProfile {
+  artifactKind: DownloadArtifactKind;
+  sourceKind: DownloadSourceKind;
+  platform: DownloadArtifactPlatform;
+  arch: DownloadArtifactArch;
+  installIntent: DownloadInstallIntent;
+  suggestedFollowUps: DownloadSuggestedFollowUp[];
+}
+
   createdAt: string;
   startedAt: string | null;
   completedAt: string | null;
@@ -1299,6 +1370,9 @@ export interface DownloadQueueStats {
   paused: number;
   completed: number;
   failed: number;
+  installIntent?: DownloadInstallIntent;
+  sourceDescriptor?: DownloadSourceDescriptor | null;
+  artifactProfile?: DownloadArtifactProfile | null;
   cancelled: number;
   totalBytes: number;
   downloadedBytes: number;
@@ -1333,6 +1407,10 @@ export interface DownloadHistoryStats {
   cancelledCount: number;
   totalBytes: number;
   totalBytesHuman: string;
+  metadata?: Record<string, string>;
+  installIntent?: DownloadInstallIntent;
+  sourceDescriptor?: DownloadSourceDescriptor | null;
+  artifactProfile?: DownloadArtifactProfile | null;
   averageSpeed: number;
   averageSpeedHuman: string;
   successRate: number;
@@ -1360,7 +1438,7 @@ export interface DownloadRequest {
   extractDest?: string;
   segments?: number;
   mirrorUrls?: string[];
-  postAction?: 'none' | 'open_file' | 'reveal_in_folder';
+  postAction?: 'none' | 'open_file' | 'reveal_in_folder' | 'install';
   deleteAfterExtract?: boolean;
   autoRename?: boolean;
   tags?: string[];
@@ -1373,6 +1451,9 @@ export interface VerifyResult {
   error: string | null;
 }
 
+  installIntent?: DownloadInstallIntent;
+  sourceDescriptor?: DownloadSourceDescriptor;
+  artifactProfile?: DownloadArtifactProfile;
 export interface DownloadShutdownOutcome {
   paused: number;
   fallbackCancelled: number;

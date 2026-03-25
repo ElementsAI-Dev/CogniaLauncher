@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -26,6 +27,7 @@ import { DestinationPicker } from "./destination-picker";
 import type { DownloadRequest } from "@/lib/stores/download";
 import { isTauri } from "@/lib/tauri";
 import {
+  createArtifactProfilePreview,
   createDownloadRequestDraft,
   inferNameFromUrl,
   isValidUrl,
@@ -73,23 +75,43 @@ export function AddDownloadDialog({
   const { t } = useLocale();
   const [form, setForm] = useState(DEFAULT_DOWNLOAD_FORM);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [preservedDraftContext, setPreservedDraftContext] = useState<
+    Pick<DownloadRequest, "sourceDescriptor" | "artifactProfile" | "installIntent">
+  >({
+    sourceDescriptor: undefined,
+    artifactProfile: undefined,
+    installIntent: undefined,
+  });
   const nameManuallyEdited = useRef(false);
 
   useEffect(() => {
     if (!open) {
       setForm(DEFAULT_DOWNLOAD_FORM);
+      setPreservedDraftContext({
+        sourceDescriptor: undefined,
+        artifactProfile: undefined,
+        installIntent: undefined,
+      });
       nameManuallyEdited.current = false;
     } else if (initialRequest || initialUrl) {
       setForm(buildFormFromRequest(initialRequest, initialUrl));
+      setPreservedDraftContext({
+        sourceDescriptor: initialRequest?.sourceDescriptor,
+        artifactProfile: initialRequest?.artifactProfile,
+        installIntent: initialRequest?.installIntent,
+      });
     }
   }, [initialRequest, initialUrl, open]);
 
   useEffect(() => {
-    if (!nameManuallyEdited.current && !form.name.trim() && form.url.trim()) {
-      setForm((prev) => ({
-        ...prev,
-        name: inferNameFromUrl(prev.url),
-      }));
+    if (!nameManuallyEdited.current && form.url.trim()) {
+      const inferredName = inferNameFromUrl(form.url);
+      if (form.name !== inferredName) {
+        setForm((prev) => ({
+          ...prev,
+          name: inferNameFromUrl(prev.url),
+        }));
+      }
     }
   }, [form.url, form.name]);
 
@@ -97,6 +119,23 @@ export function AddDownloadDialog({
   const urlValid = !urlTrimmed || isValidUrl(urlTrimmed);
   const isValid =
     urlTrimmed && urlValid && form.destination.trim() && form.name.trim();
+  const previewProfile = useMemo(() => {
+    const sourceKind = preservedDraftContext.sourceDescriptor?.kind ?? "direct_url";
+    if (preservedDraftContext.artifactProfile) {
+      return preservedDraftContext.artifactProfile;
+    }
+    if (!urlTrimmed) return null;
+    return createArtifactProfilePreview({
+      fileName: form.name.trim() || inferNameFromUrl(urlTrimmed),
+      url: urlTrimmed,
+      sourceKind,
+    });
+  }, [
+    form.name,
+    preservedDraftContext.artifactProfile,
+    preservedDraftContext.sourceDescriptor,
+    urlTrimmed,
+  ]);
 
   const handleSubmit = async () => {
     if (!isValid) return;
@@ -105,21 +144,24 @@ export function AddDownloadDialog({
     try {
       await onSubmit(
         createDownloadRequestDraft({
-        url: form.url.trim(),
-        destination: form.destination.trim(),
-        name: form.name.trim(),
-        checksum: form.checksum,
-        priority: form.priority ? Number(form.priority) : undefined,
-        provider: form.provider,
-        autoExtract: form.autoExtract,
-        extractDest: form.extractDest,
-        deleteAfterExtract: form.deleteAfterExtract,
-        autoRename: form.autoRename,
-        tags: form.tags.split(","),
-        segments: form.segments !== "1" ? Number(form.segments) : undefined,
-        mirrorUrls: form.mirrorUrls,
-        postAction: form.postAction as DownloadRequest['postAction'],
-      })
+          url: form.url.trim(),
+          destination: form.destination.trim(),
+          name: form.name.trim(),
+          checksum: form.checksum,
+          priority: form.priority ? Number(form.priority) : undefined,
+          provider: form.provider,
+          autoExtract: form.autoExtract,
+          extractDest: form.extractDest,
+          deleteAfterExtract: form.deleteAfterExtract,
+          autoRename: form.autoRename,
+          tags: form.tags.split(","),
+          segments: form.segments !== "1" ? Number(form.segments) : undefined,
+          mirrorUrls: form.mirrorUrls,
+          postAction: form.postAction as DownloadRequest['postAction'],
+          sourceDescriptor: preservedDraftContext.sourceDescriptor,
+          artifactProfile: preservedDraftContext.artifactProfile,
+          installIntent: preservedDraftContext.installIntent,
+        })
       );
       onOpenChange(false);
     } finally {
@@ -154,6 +196,24 @@ export function AddDownloadDialog({
               <p className="text-xs text-destructive">
                 {t('downloads.validation.invalidUrl')}
               </p>
+            )}
+            {previewProfile && (
+              <div className="flex flex-wrap gap-2 pt-1">
+                <Badge variant="outline">
+                  {t(`downloads.artifactKind.${previewProfile.artifactKind}`)}
+                </Badge>
+                {previewProfile.installIntent !== "none" && (
+                  <Badge variant="secondary">
+                    {t(`downloads.installIntent.${previewProfile.installIntent}`)}
+                  </Badge>
+                )}
+                {previewProfile.platform !== "unknown" && (
+                  <Badge variant="secondary">{previewProfile.platform}</Badge>
+                )}
+                {previewProfile.arch !== "unknown" && (
+                  <Badge variant="secondary">{previewProfile.arch}</Badge>
+                )}
+              </div>
             )}
           </div>
 

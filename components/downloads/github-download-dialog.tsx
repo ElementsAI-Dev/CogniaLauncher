@@ -32,7 +32,10 @@ import {
 } from "@/hooks/use-asset-matcher";
 import { isTauri } from "@/lib/tauri";
 import { GITHUB_ARCHIVE_FORMATS } from "@/lib/constants/downloads";
-import { runDownloadPreflightWithUi } from "@/lib/downloads";
+import {
+  createArtifactProfilePreview,
+  runDownloadPreflightWithUi,
+} from "@/lib/downloads";
 import { toast } from "sonner";
 import { RepoValidationInput } from "./repo-validation-input";
 import { DestinationPicker } from "./destination-picker";
@@ -93,6 +96,7 @@ export function GitHubDownloadDialog({
     branches,
     tags,
     releases,
+    workflowArtifacts,
     loading,
     error,
     tokenStatus,
@@ -105,6 +109,7 @@ export function GitHubDownloadDialog({
     validateAndFetch,
     downloadAsset,
     downloadSource,
+    downloadWorkflowArtifact,
     saveToken,
     clearSavedToken,
     reset,
@@ -118,6 +123,7 @@ export function GitHubDownloadDialog({
   const [selectedAssets, setSelectedAssets] = useState<GitHubAssetInfo[]>([]);
   const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
+  const [selectedWorkflowArtifactId, setSelectedWorkflowArtifactId] = useState<number | null>(null);
   const [archiveFormat, setArchiveFormat] =
     useState<GitHubArchiveFormat>("zip");
   const [isDownloading, setIsDownloading] = useState(false);
@@ -131,6 +137,10 @@ export function GitHubDownloadDialog({
     return parseAssets(currentRelease.assets);
   }, [currentRelease, parseAssets]);
 
+  const selectedWorkflowArtifact = useMemo(() => {
+    return workflowArtifacts.find((artifact) => artifact.id === selectedWorkflowArtifactId) ?? null;
+  }, [workflowArtifacts, selectedWorkflowArtifactId]);
+
   const handleClose = useCallback(() => {
     reset();
     setDestination("");
@@ -138,6 +148,7 @@ export function GitHubDownloadDialog({
     setSelectedAssets([]);
     setSelectedBranch(null);
     setSelectedTag(null);
+    setSelectedWorkflowArtifactId(null);
     onOpenChange(false);
   }, [reset, onOpenChange]);
 
@@ -266,6 +277,17 @@ export function GitHubDownloadDialog({
         );
         onDownloadStarted?.(taskId);
         toast.success(t("downloads.github.sourceAdded"));
+      } else if (sourceType === "workflow" && selectedWorkflowArtifact) {
+        const preflightOk = await ensurePreflight(selectedWorkflowArtifact.sizeInBytes);
+        if (!preflightOk) {
+          return;
+        }
+        const taskId = await downloadWorkflowArtifact(
+          selectedWorkflowArtifact,
+          destination,
+        );
+        onDownloadStarted?.(taskId);
+        toast.success(t("downloads.github.assetsAdded", { count: 1 }));
       } else {
         toast.error(t("downloads.github.noSelection"));
         return;
@@ -283,9 +305,11 @@ export function GitHubDownloadDialog({
     selectedAssets,
     selectedBranch,
     selectedTag,
+    selectedWorkflowArtifact,
     archiveFormat,
     downloadAsset,
     downloadSource,
+    downloadWorkflowArtifact,
     checkDiskSpace,
     onDownloadStarted,
     handleClose,
@@ -296,7 +320,8 @@ export function GitHubDownloadDialog({
     destination.trim() &&
     ((sourceType === "release" && selectedAssets.length > 0) ||
       (sourceType === "branch" && selectedBranch) ||
-      (sourceType === "tag" && selectedTag));
+      (sourceType === "tag" && selectedTag) ||
+      (sourceType === "workflow" && selectedWorkflowArtifact));
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -394,7 +419,7 @@ export function GitHubDownloadDialog({
               onValueChange={(v) => setSourceType(v as GitHubSourceType)}
               className="flex-1 flex flex-col overflow-hidden"
             >
-              <TabsList className="grid h-auto w-full grid-cols-1 sm:grid-cols-3">
+              <TabsList className="grid h-auto w-full grid-cols-2 sm:grid-cols-4">
                 <TabsTrigger value="release" className="gap-2">
                   <Package className="h-4 w-4" />
                   {t("downloads.github.releases")}
@@ -414,6 +439,13 @@ export function GitHubDownloadDialog({
                   {t("downloads.github.tags")}
                   <Badge variant="secondary" className="ml-1">
                     {tags.length}
+                  </Badge>
+                </TabsTrigger>
+                <TabsTrigger value="workflow" className="gap-2">
+                  <FileArchive className="h-4 w-4" />
+                  {t("downloads.github.workflowArtifacts")}
+                  <Badge variant="secondary" className="ml-1">
+                    {workflowArtifacts.length}
                   </Badge>
                 </TabsTrigger>
               </TabsList>
@@ -679,6 +711,57 @@ export function GitHubDownloadDialog({
                         label={t("downloads.github.format")}
                       />
                     )}
+                  </TabsContent>
+
+                  <TabsContent
+                    value="workflow"
+                    className="flex-1 overflow-hidden mt-2"
+                  >
+                    <ScrollArea className="h-50 border rounded-md">
+                      {workflowArtifacts.length === 0 ? (
+                        <div className="p-4 text-center text-muted-foreground">
+                          {t("downloads.github.noWorkflowArtifacts")}
+                        </div>
+                      ) : (
+                        <div className="p-2 space-y-1">
+                          {workflowArtifacts.map((artifact) => (
+                            (() => {
+                              const profile = createArtifactProfilePreview({
+                                fileName: artifact.name,
+                                sourceKind: "github_workflow_artifact",
+                              });
+                              return (
+                            <SelectableCardButton
+                              key={artifact.id}
+                              selected={selectedWorkflowArtifactId === artifact.id}
+                              onClick={() => setSelectedWorkflowArtifactId(artifact.id)}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="min-w-0">
+                                  <div className="font-medium truncate">{artifact.name}</div>
+                                <div className="text-xs text-muted-foreground flex flex-wrap gap-2">
+                                  {artifact.workflowRunNumber != null && (
+                                    <span>#{artifact.workflowRunNumber}</span>
+                                  )}
+                                  {artifact.workflowRunBranch && (
+                                    <span>{artifact.workflowRunBranch}</span>
+                                  )}
+                                </div>
+                              </div>
+                                <div className="flex items-center gap-2 text-xs text-muted-foreground shrink-0">
+                                  <Badge variant="outline" className="text-xs">
+                                    {t(`downloads.artifactKind.${profile.artifactKind}`)}
+                                  </Badge>
+                                  {artifact.sizeHuman}
+                                </div>
+                              </div>
+                            </SelectableCardButton>
+                              );
+                            })()
+                          ))}
+                        </div>
+                      )}
+                    </ScrollArea>
                   </TabsContent>
                 </>
               )}

@@ -63,6 +63,116 @@ pub enum PostAction {
     RevealInFolder,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SourceKind {
+    DirectUrl,
+    BatchItem,
+    GithubReleaseAsset,
+    GithubSourceArchive,
+    GithubWorkflowArtifact,
+    GitlabReleaseAsset,
+    GitlabSourceArchive,
+    GitlabPipelineArtifact,
+    GitlabPackageFile,
+    #[default]
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ArtifactKind {
+    Archive,
+    Installer,
+    PackageFile,
+    PortableBinary,
+    CiArtifact,
+    SourceArchive,
+    #[default]
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ArtifactPlatform {
+    Windows,
+    Macos,
+    Linux,
+    Universal,
+    #[default]
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ArtifactArch {
+    X64,
+    Arm64,
+    X86,
+    Universal,
+    #[default]
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InstallIntent {
+    #[default]
+    None,
+    OpenInstaller,
+    ExtractThenContinue,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FollowUpAction {
+    Install,
+    Extract,
+    Open,
+    Reveal,
+    Reuse,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceDescriptor {
+    pub kind: SourceKind,
+    #[serde(default)]
+    pub provider: Option<String>,
+    #[serde(default)]
+    pub label: Option<String>,
+    #[serde(default)]
+    pub repo: Option<String>,
+    #[serde(default)]
+    pub release_tag: Option<String>,
+    #[serde(default)]
+    pub ref_name: Option<String>,
+    #[serde(default)]
+    pub workflow_run_id: Option<String>,
+    #[serde(default)]
+    pub artifact_id: Option<String>,
+    #[serde(default)]
+    pub pipeline_id: Option<String>,
+    #[serde(default)]
+    pub job_id: Option<String>,
+    #[serde(default)]
+    pub package_id: Option<String>,
+    #[serde(default)]
+    pub package_file_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArtifactProfile {
+    pub artifact_kind: ArtifactKind,
+    pub source_kind: SourceKind,
+    pub platform: ArtifactPlatform,
+    pub arch: ArtifactArch,
+    pub install_intent: InstallIntent,
+    #[serde(default)]
+    pub suggested_follow_ups: Vec<FollowUpAction>,
+}
+
 /// Configuration for a download task
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -258,6 +368,15 @@ pub struct DownloadTask {
     /// User-defined tags for categorization and filtering
     #[serde(default)]
     pub tags: Vec<String>,
+    /// Suggested installation or follow-up intent for the downloaded artifact
+    #[serde(default)]
+    pub install_intent: Option<InstallIntent>,
+    /// Stable descriptor of where this download came from
+    #[serde(default)]
+    pub source_descriptor: Option<SourceDescriptor>,
+    /// Resolved artifact profile used by UI follow-up actions
+    #[serde(default)]
+    pub artifact_profile: Option<ArtifactProfile>,
 }
 
 impl DownloadTask {
@@ -286,6 +405,9 @@ impl DownloadTask {
             server_filename: None,
             mirror_urls: Vec::new(),
             tags: Vec::new(),
+            install_intent: None,
+            source_descriptor: None,
+            artifact_profile: None,
         }
     }
 

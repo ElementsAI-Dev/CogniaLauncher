@@ -43,6 +43,16 @@ const mockMessages = {
       dialogError: "Failed to open dialog",
       tags: "Tags",
       tagsPlaceholder: "comma,separated,tags",
+      artifactKind: {
+        archive: "Archive",
+        installer: "Installer",
+        ci_artifact: "CI Artifact",
+        unknown: "Unknown",
+      },
+      installIntent: {
+        open_installer: "Open Installer",
+        extract_then_continue: "Extract Then Continue",
+      },
       settings: {
         autoExtract: "Auto Extract",
         autoRename: "Auto Rename",
@@ -239,6 +249,22 @@ describe("AddDownloadDialog", () => {
     );
   });
 
+  it("shows artifact preview badges for direct URL drafts", async () => {
+    render(
+      <TestWrapper>
+        <AddDownloadDialog {...defaultProps} />
+      </TestWrapper>,
+    );
+
+    await userEvent.type(
+      screen.getByLabelText("URL"),
+      "https://example.com/installer.msi",
+    );
+
+    expect(screen.getByText("Installer")).toBeInTheDocument();
+    expect(screen.getByText("Open Installer")).toBeInTheDocument();
+  });
+
   it("calls onOpenChange when cancel is clicked", async () => {
     const onOpenChange = jest.fn();
     render(
@@ -281,5 +307,56 @@ describe("AddDownloadDialog", () => {
     expect(screen.getByPlaceholderText("/path/to/extracted")).toHaveValue(
       "/downloads/history",
     );
+  });
+
+  it("preserves install-aware hidden draft context on submit", async () => {
+    const onSubmit = jest.fn().mockResolvedValue(undefined);
+    render(
+      <TestWrapper>
+        <AddDownloadDialog
+          {...defaultProps}
+          onSubmit={onSubmit}
+          initialRequest={{
+            url: "https://example.com/history.zip",
+            destination: "/downloads/history.zip",
+            name: "history.zip",
+            sourceDescriptor: {
+              kind: "github_workflow_artifact",
+              provider: "github",
+              repo: "owner/repo",
+              workflowRunId: "42",
+              artifactId: "88",
+            },
+            artifactProfile: {
+              artifactKind: "ci_artifact",
+              sourceKind: "github_workflow_artifact",
+              platform: "windows",
+              arch: "x64",
+              installIntent: "extract_then_continue",
+              suggestedFollowUps: ["extract"],
+            },
+            installIntent: "extract_then_continue",
+          }}
+        />
+      </TestWrapper>,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Add" }));
+
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          installIntent: "extract_then_continue",
+          sourceDescriptor: expect.objectContaining({
+            kind: "github_workflow_artifact",
+            workflowRunId: "42",
+            artifactId: "88",
+          }),
+          artifactProfile: expect.objectContaining({
+            artifactKind: "ci_artifact",
+          }),
+        }),
+      );
+    });
   });
 });

@@ -6,6 +6,7 @@ import type {
   GitHubTagInfo,
   GitHubReleaseInfo,
   GitHubAssetInfo,
+  GitHubWorkflowArtifactInfo,
   GitHubParsedRepo,
   GitHubRepoInfoResponse,
   GitHubSourceType,
@@ -26,6 +27,7 @@ interface UseGitHubDownloadsReturn {
   branches: GitHubBranchInfo[];
   tags: GitHubTagInfo[];
   releases: GitHubReleaseInfo[];
+  workflowArtifacts: GitHubWorkflowArtifactInfo[];
   loading: boolean;
   error: string | null;
   tokenLoading: boolean;
@@ -39,6 +41,10 @@ interface UseGitHubDownloadsReturn {
   validateAndFetch: () => Promise<void>;
   downloadAsset: (asset: GitHubAssetInfo, destination: string) => Promise<string>;
   downloadSource: (refName: string, format: GitHubArchiveFormat, destination: string) => Promise<string>;
+  downloadWorkflowArtifact: (
+    artifact: GitHubWorkflowArtifactInfo,
+    destination: string
+  ) => Promise<string>;
   saveToken: () => Promise<void>;
   clearSavedToken: () => Promise<void>;
   reset: () => void;
@@ -55,6 +61,7 @@ export function useGitHubDownloads(): UseGitHubDownloadsReturn {
   const [branches, setBranches] = useState<GitHubBranchInfo[]>([]);
   const [tags, setTags] = useState<GitHubTagInfo[]>([]);
   const [releases, setReleases] = useState<GitHubReleaseInfo[]>([]);
+  const [workflowArtifacts, setWorkflowArtifacts] = useState<GitHubWorkflowArtifactInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tokenLoading, setTokenLoading] = useState(true);
@@ -73,6 +80,7 @@ export function useGitHubDownloads(): UseGitHubDownloadsReturn {
     setBranches([]);
     setTags([]);
     setReleases([]);
+    setWorkflowArtifacts([]);
     setError(null);
   }, []);
 
@@ -136,16 +144,18 @@ export function useGitHubDownloads(): UseGitHubDownloadsReturn {
 
       setLoading(true);
 
-      const [releasesData, branchesData, tagsData, info] = await Promise.all([
+      const [releasesData, branchesData, tagsData, workflowArtifactsData, info] = await Promise.all([
         tauri.githubListReleases(parsed.fullName, authToken).catch(() => []),
         tauri.githubListBranches(parsed.fullName, authToken).catch(() => []),
         tauri.githubListTags(parsed.fullName, authToken).catch(() => []),
+        tauri.githubListWorkflowArtifacts(parsed.fullName, authToken).catch(() => []),
         tauri.githubGetRepoInfo(parsed.fullName, authToken).catch(() => null),
       ]);
 
       setReleases(releasesData);
       setBranches(branchesData);
       setTags(tagsData);
+      setWorkflowArtifacts(workflowArtifactsData);
       setRepoInfo(info);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -187,6 +197,28 @@ export function useGitHubDownloads(): UseGitHubDownloadsReturn {
       return tauri.githubDownloadSource(parsedRepo.fullName, refName, format, destination, authToken);
     },
     [parsedRepo, token]
+  );
+
+  const downloadWorkflowArtifact = useCallback(
+    async (
+      artifact: GitHubWorkflowArtifactInfo,
+      destination: string,
+    ): Promise<string> => {
+      if (!isTauri() || !parsedRepo) {
+        throw new Error('Not available');
+      }
+
+      const tauri = await import('@/lib/tauri');
+      const authToken = token.trim() || undefined;
+      return tauri.githubDownloadWorkflowArtifact(
+        parsedRepo.fullName,
+        artifact.id,
+        artifact.name,
+        destination,
+        authToken,
+      );
+    },
+    [parsedRepo, token],
   );
 
   const saveToken = useCallback(async () => {
@@ -247,6 +279,7 @@ export function useGitHubDownloads(): UseGitHubDownloadsReturn {
       setBranches([]);
       setTags([]);
       setReleases([]);
+      setWorkflowArtifacts([]);
     }
   }, [repoInput]);
 
@@ -264,6 +297,7 @@ export function useGitHubDownloads(): UseGitHubDownloadsReturn {
     branches,
     tags,
     releases,
+    workflowArtifacts,
     loading,
     error,
     tokenLoading,
@@ -277,6 +311,7 @@ export function useGitHubDownloads(): UseGitHubDownloadsReturn {
     validateAndFetch,
     downloadAsset,
     downloadSource,
+    downloadWorkflowArtifact,
     saveToken,
     clearSavedToken,
     reset,

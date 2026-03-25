@@ -9,6 +9,8 @@ const mockGithubListTags = jest.fn();
 const mockGithubGetRepoInfo = jest.fn();
 const mockGithubDownloadAsset = jest.fn();
 const mockGithubDownloadSource = jest.fn();
+const mockGithubListWorkflowArtifacts = jest.fn();
+const mockGithubDownloadWorkflowArtifact = jest.fn();
 const mockGithubGetToken = jest.fn();
 const mockGithubSetToken = jest.fn();
 const mockGithubClearToken = jest.fn();
@@ -28,6 +30,8 @@ jest.mock('@/lib/tauri', () => ({
   githubGetRepoInfo: (...args: unknown[]) => mockGithubGetRepoInfo(...args),
   githubDownloadAsset: (...args: unknown[]) => mockGithubDownloadAsset(...args),
   githubDownloadSource: (...args: unknown[]) => mockGithubDownloadSource(...args),
+  githubListWorkflowArtifacts: (...args: unknown[]) => mockGithubListWorkflowArtifacts(...args),
+  githubDownloadWorkflowArtifact: (...args: unknown[]) => mockGithubDownloadWorkflowArtifact(...args),
   githubGetToken: (...args: unknown[]) => mockGithubGetToken(...args),
   githubSetToken: (...args: unknown[]) => mockGithubSetToken(...args),
   githubClearToken: (...args: unknown[]) => mockGithubClearToken(...args),
@@ -73,6 +77,7 @@ describe('useGitHubDownloads', () => {
     expect(result.current.branches).toEqual([]);
     expect(result.current.tags).toEqual([]);
     expect(result.current.releases).toEqual([]);
+    expect(result.current.workflowArtifacts).toEqual([]);
     expect(result.current.loading).toBe(false);
     expect(result.current.error).toBeNull();
     expect(result.current.tokenStatus).toBeNull();
@@ -144,12 +149,14 @@ describe('useGitHubDownloads', () => {
     const branches = [{ name: 'main' }];
     const tags = [{ name: 'v18.0.0' }];
     const repoInfo = { name: 'react', stars: 200000 };
+    const workflowArtifacts = [{ id: 7, name: 'build.zip' }];
 
     mockGithubParseUrl.mockResolvedValue(parsed);
     mockGithubValidateRepo.mockResolvedValue(true);
     mockGithubListReleases.mockResolvedValue(releases);
     mockGithubListBranches.mockResolvedValue(branches);
     mockGithubListTags.mockResolvedValue(tags);
+    mockGithubListWorkflowArtifacts.mockResolvedValue(workflowArtifacts);
     mockGithubGetRepoInfo.mockResolvedValue(repoInfo);
 
     const { result } = renderHook(() => useGitHubDownloads());
@@ -167,6 +174,7 @@ describe('useGitHubDownloads', () => {
     expect(result.current.releases).toEqual(releases);
     expect(result.current.branches).toEqual(branches);
     expect(result.current.tags).toEqual(tags);
+    expect(result.current.workflowArtifacts).toEqual(workflowArtifacts);
     expect(result.current.repoInfo).toEqual(repoInfo);
     expect(result.current.isValidating).toBe(false);
     expect(result.current.loading).toBe(false);
@@ -295,6 +303,7 @@ describe('useGitHubDownloads', () => {
     mockGithubListReleases.mockResolvedValue([]);
     mockGithubListBranches.mockResolvedValue([]);
     mockGithubListTags.mockResolvedValue([]);
+    mockGithubListWorkflowArtifacts.mockResolvedValue([]);
     mockGithubGetRepoInfo.mockResolvedValue(null);
     mockGithubDownloadSource.mockResolvedValue('/downloads/source.tar.gz');
 
@@ -314,6 +323,42 @@ describe('useGitHubDownloads', () => {
     });
 
     expect(path).toBe('/downloads/source.tar.gz');
+  });
+
+  it('should download workflow artifact', async () => {
+    mockGithubParseUrl.mockResolvedValue({ fullName: 'a/b' });
+    mockGithubValidateRepo.mockResolvedValue(true);
+    mockGithubListReleases.mockResolvedValue([]);
+    mockGithubListBranches.mockResolvedValue([]);
+    mockGithubListTags.mockResolvedValue([]);
+    mockGithubListWorkflowArtifacts.mockResolvedValue([]);
+    mockGithubGetRepoInfo.mockResolvedValue(null);
+    mockGithubDownloadWorkflowArtifact.mockResolvedValue('/downloads/build.zip');
+
+    const { result } = renderHook(() => useGitHubDownloads());
+
+    act(() => {
+      result.current.setRepoInput('a/b');
+    });
+
+    await act(async () => {
+      await result.current.validateAndFetch();
+    });
+
+    const artifact = { id: 11, name: 'build.zip', archiveDownloadUrl: 'https://example.com/build.zip' };
+    let path;
+    await act(async () => {
+      path = await result.current.downloadWorkflowArtifact(artifact as never, '/downloads');
+    });
+
+    expect(path).toBe('/downloads/build.zip');
+    expect(mockGithubDownloadWorkflowArtifact).toHaveBeenCalledWith(
+      'a/b',
+      11,
+      'build.zip',
+      '/downloads',
+      undefined,
+    );
   });
 
   it('should save token', async () => {

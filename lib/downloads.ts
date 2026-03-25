@@ -1,7 +1,15 @@
 import { PRIORITY_OPTIONS } from "@/lib/constants/downloads";
 import type {
   DownloadHistoryRecord,
+  DownloadArtifactArch,
+  DownloadArtifactKind,
+  DownloadArtifactPlatform,
+  DownloadArtifactProfile,
+  DownloadInstallIntent,
   DownloadRequest,
+  DownloadSourceDescriptor,
+  DownloadSourceKind,
+  DownloadSuggestedFollowUp,
   DownloadTask,
 } from "@/types/tauri";
 
@@ -23,6 +31,23 @@ export interface DownloadFailureInput {
 export interface DownloadFailureInfo {
   failureClass: DownloadFailureClass;
   retryable: boolean;
+}
+
+export interface ArtifactProfilePreviewInput {
+  fileName?: string | null;
+  url?: string | null;
+  sourceKind: DownloadSourceKind;
+}
+
+export interface DownloadFollowUpAction {
+  kind: DownloadSuggestedFollowUp;
+  enabled: boolean;
+}
+
+export interface DownloadFollowUpContext {
+  status: DownloadTask["state"] | DownloadHistoryRecord["status"];
+  destinationAvailable: boolean;
+  artifactProfile?: DownloadArtifactProfile | null;
 }
 
 export interface DownloadPreflightInput {
@@ -99,11 +124,180 @@ function normalizeStringList(values?: string[] | null): string[] | undefined {
   return normalized.length > 0 ? normalized : undefined;
 }
 
+function normalizeSourceDescriptor(
+  descriptor?: DownloadSourceDescriptor | null
+): DownloadSourceDescriptor | undefined {
+  if (!descriptor) return undefined;
+
+  const normalized: DownloadSourceDescriptor = {
+    kind: descriptor.kind,
+  };
+
+  const stringKeys: Array<keyof DownloadSourceDescriptor> = [
+    "provider",
+    "label",
+    "repo",
+    "releaseTag",
+    "refName",
+    "workflowRunId",
+    "artifactId",
+    "pipelineId",
+    "jobId",
+    "packageId",
+    "packageFileId",
+  ];
+
+  for (const key of stringKeys) {
+    const value = descriptor[key];
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (trimmed) {
+        normalized[key] = trimmed;
+      }
+    }
+  }
+
+  return normalized;
+}
+
+function normalizeArtifactProfile(
+  profile?: DownloadArtifactProfile | null
+): DownloadArtifactProfile | undefined {
+  if (!profile) return undefined;
+  return {
+    artifactKind: profile.artifactKind,
+    sourceKind: profile.sourceKind,
+    platform: profile.platform,
+    arch: profile.arch,
+    installIntent: profile.installIntent,
+    suggestedFollowUps: [...profile.suggestedFollowUps],
+  };
+}
+
+function compactRequest<T extends Record<string, unknown>>(value: T): T {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, item]) => item !== undefined)
+  ) as T;
+}
+
+function detectArtifactPlatform(fileName: string): DownloadArtifactPlatform {
+  if (/(?:^|[-_.])(windows|win)(?:[-_.]|$)/i.test(fileName)) return "windows";
+  if (/(?:^|[-_.])(macos|darwin|osx|apple)(?:[-_.]|$)/i.test(fileName)) return "macos";
+  if (/(?:^|[-_.])linux(?:[-_.]|$)/i.test(fileName)) return "linux";
+  return "unknown";
+}
+
+function detectArtifactArch(fileName: string): DownloadArtifactArch {
+  if (/(?:^|[-_.])(aarch64|arm64)(?:[-_.]|$)/i.test(fileName)) return "arm64";
+  if (/(?:^|[-_.])(x86_64|x64|amd64)(?:[-_.]|$)/i.test(fileName)) return "x64";
+  if (/(?:^|[-_.])(x86|i386|i686|386)(?:[-_.]|$)/i.test(fileName)) return "x86";
+  return "unknown";
+}
+
+function inferArtifactKind(
+  fileName: string,
+  sourceKind: DownloadSourceKind
+): DownloadArtifactKind {
+  const lower = fileName.toLowerCase();
+  if (sourceKind === "github_workflow_artifact" || sourceKind === "gitlab_pipeline_artifact") {
+    return "ci_artifact";
+  }
+  if (lower.endsWith(".tar.gz") || lower.endsWith(".tgz") || lower.endsWith(".zip")
+    || lower.endsWith(".tar.xz") || lower.endsWith(".txz") || lower.endsWith(".tar.bz2")
+    || lower.endsWith(".tbz2") || lower.endsWith(".tar.zst") || lower.endsWith(".tzst")
+    || lower.endsWith(".7z")) {
+    return sourceKind === "github_source_archive" || sourceKind === "gitlab_source_archive"
+      ? "source_archive"
+      : "archive";
+  }
+  if (lower.endsWith(".exe") || lower.endsWith(".msi") || lower.endsWith(".pkg") || lower.endsWith(".dmg")) {
+    return "installer";
+  }
+  if (lower.endsWith(".deb") || lower.endsWith(".rpm") || lower.endsWith(".appimage")) {
+    return "package_file";
+  }
+  if (lower.endsWith(".bin")) {
+    return "portable_binary";
+  }
+  return "unknown";
+}
+
+function inferInstallIntent(kind: DownloadArtifactKind): DownloadInstallIntent {
+  switch (kind) {
+    case "installer":
+      return "open_installer";
+    case "archive":
+    case "ci_artifact":
+    case "source_archive":
+      return "extract_then_continue";
+    default:
+      return "none";
+  }
+}
+
+function inferSuggestedFollowUps(
+  kind: DownloadArtifactKind,
+  intent: DownloadInstallIntent
+): DownloadSuggestedFollowUp[] {
+  if (intent === "open_installer") {
+    return ["install", "open", "reveal"];
+  }
+  if (intent === "extract_then_continue") {
+    return ["extract", "open", "reveal"];
+  }
+  return ["open", "reveal"];
+}
+
+export function createArtifactProfilePreview(
+  input: ArtifactProfilePreviewInput
+): DownloadArtifactProfile {
+  const fileName = (input.fileName ?? input.url ?? "").trim();
+  const artifactKind = inferArtifactKind(fileName, input.sourceKind);
+  const installIntent = inferInstallIntent(artifactKind);
+
+  return {
+    artifactKind,
+    sourceKind: input.sourceKind,
+    platform: detectArtifactPlatform(fileName),
+    arch: detectArtifactArch(fileName),
+    installIntent,
+    suggestedFollowUps: inferSuggestedFollowUps(artifactKind, installIntent),
+  };
+}
+
+function resolveArtifactProfile(
+  request: Partial<DownloadRequest> & Pick<DownloadRequest, "url" | "destination">
+): DownloadArtifactProfile | undefined {
+  const normalized = normalizeArtifactProfile(request.artifactProfile);
+  if (normalized) return normalized;
+
+  const sourceKind = request.sourceDescriptor?.kind;
+  if (!sourceKind) return undefined;
+
+  return createArtifactProfilePreview({
+    fileName: request.name ?? inferNameFromUrl(request.url),
+    url: request.url,
+    sourceKind,
+  });
+}
+
 export function createDownloadRequestDraft(
   request: Pick<DownloadRequest, "url" | "destination"> &
     Partial<DownloadRequest> & { name?: string }
 ): DownloadRequest {
-  return {
+  const sourceDescriptor = normalizeSourceDescriptor(request.sourceDescriptor);
+  const effectiveSourceDescriptor =
+    sourceDescriptor ??
+    ({
+      kind: "direct_url",
+    } satisfies DownloadSourceDescriptor);
+  const artifactProfile = resolveArtifactProfile({
+    ...request,
+    sourceDescriptor: effectiveSourceDescriptor,
+  });
+  const installIntent = request.installIntent ?? artifactProfile?.installIntent;
+
+  return compactRequest({
     url: request.url.trim(),
     destination: request.destination.trim(),
     name: normalizeOptionalString(request.name) ?? inferNameFromUrl(request.url),
@@ -128,7 +322,10 @@ export function createDownloadRequestDraft(
     deleteAfterExtract: request.deleteAfterExtract || undefined,
     autoRename: request.autoRename || undefined,
     tags: normalizeStringList(request.tags),
-  };
+    installIntent,
+    sourceDescriptor: effectiveSourceDescriptor,
+    artifactProfile,
+  });
 }
 
 export function createHistoryDownloadDraft(
@@ -139,7 +336,40 @@ export function createHistoryDownloadDraft(
     destination: record.destination,
     name: record.filename,
     provider: record.provider ?? undefined,
+    sourceDescriptor: record.sourceDescriptor ?? undefined,
+    artifactProfile: record.artifactProfile ?? undefined,
+    installIntent: record.installIntent ?? undefined,
   });
+}
+
+export function getDownloadFollowUpActions(
+  context: DownloadFollowUpContext
+): DownloadFollowUpAction[] {
+  if (context.status !== "completed" || !context.destinationAvailable) {
+    return [{ kind: "reuse", enabled: true }];
+  }
+
+  const profile = context.artifactProfile;
+  if (!profile) {
+    return [
+      { kind: "open", enabled: true },
+      { kind: "reveal", enabled: true },
+    ];
+  }
+
+  const actions = profile.suggestedFollowUps.map<DownloadFollowUpAction>((kind) => ({
+    kind,
+    enabled: true,
+  }));
+
+  if (!actions.some((action) => action.kind === "open")) {
+    actions.push({ kind: "open", enabled: true });
+  }
+  if (!actions.some((action) => action.kind === "reveal")) {
+    actions.push({ kind: "reveal", enabled: true });
+  }
+
+  return actions;
 }
 
 /**

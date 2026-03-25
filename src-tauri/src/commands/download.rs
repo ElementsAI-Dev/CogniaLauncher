@@ -8,7 +8,7 @@ use crate::download::{
     DownloadConfig, DownloadEvent, DownloadManager, DownloadManagerConfig, DownloadState,
     DownloadTask, ShutdownOutcome,
 };
-use crate::platform::disk::{self, format_size, DiskSpace};
+use crate::platform::disk::{self, DiskSpace, format_size};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -53,6 +53,9 @@ pub struct DownloadTaskInfo {
     pub auto_rename: bool,
     pub recoverable: Option<bool>,
     pub failure_reason_code: Option<String>,
+    pub install_intent: Option<crate::download::InstallIntent>,
+    pub source_descriptor: Option<crate::download::SourceDescriptor>,
+    pub artifact_profile: Option<crate::download::ArtifactProfile>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -121,6 +124,9 @@ impl From<&DownloadTask> for DownloadTaskInfo {
                 _ => None,
             },
             failure_reason_code: task.failure_reason_code.clone(),
+            install_intent: task.install_intent,
+            source_descriptor: task.source_descriptor.clone(),
+            artifact_profile: task.artifact_profile.clone(),
         }
     }
 }
@@ -171,6 +177,12 @@ pub struct DownloadRequest {
     pub auto_rename: Option<bool>,
     #[serde(default)]
     pub tags: Option<Vec<String>>,
+    #[serde(default)]
+    pub install_intent: Option<crate::download::InstallIntent>,
+    #[serde(default)]
+    pub source_descriptor: Option<crate::download::SourceDescriptor>,
+    #[serde(default)]
+    pub artifact_profile: Option<crate::download::ArtifactProfile>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -185,6 +197,9 @@ pub struct DownloadRequestPreset {
     pub delete_after_extract: Option<bool>,
     pub auto_rename: Option<bool>,
     pub tags: Option<Vec<String>>,
+    pub install_intent: Option<crate::download::InstallIntent>,
+    pub source_descriptor: Option<crate::download::SourceDescriptor>,
+    pub artifact_profile: Option<crate::download::ArtifactProfile>,
 }
 
 pub(crate) fn build_download_request_preset(
@@ -214,6 +229,9 @@ pub(crate) fn build_download_request_preset(
         delete_after_extract: preset.delete_after_extract,
         auto_rename: preset.auto_rename,
         tags: preset.tags.filter(|tags| !tags.is_empty()),
+        install_intent: preset.install_intent,
+        source_descriptor: preset.source_descriptor,
+        artifact_profile: preset.artifact_profile,
     }
 }
 
@@ -394,6 +412,12 @@ pub async fn setup_download_manager(
                             task.expected_checksum.clone(),
                             task.started_at.unwrap_or(task.created_at),
                             task.provider.clone(),
+                        )
+                        .with_context(
+                            task.source_descriptor.clone(),
+                            task.artifact_profile.clone(),
+                            task.install_intent,
+                            task.metadata.clone(),
                         );
                         let dest = task.destination.clone();
                         let checksum = task.expected_checksum.clone();
@@ -448,6 +472,12 @@ pub async fn setup_download_manager(
                             task.started_at.unwrap_or(task.created_at),
                             error.clone(),
                             task.provider.clone(),
+                        )
+                        .with_context(
+                            task.source_descriptor.clone(),
+                            task.artifact_profile.clone(),
+                            task.install_intent,
+                            task.metadata.clone(),
                         );
                         drop(mgr);
                         if let Ok(mut history) = DownloadHistory::open(&cache_dir_clone).await {
@@ -467,6 +497,12 @@ pub async fn setup_download_manager(
                             task.progress.downloaded_bytes,
                             task.started_at.unwrap_or(task.created_at),
                             task.provider.clone(),
+                        )
+                        .with_context(
+                            task.source_descriptor.clone(),
+                            task.artifact_profile.clone(),
+                            task.install_intent,
+                            task.metadata.clone(),
                         );
                         drop(mgr);
                         if let Ok(mut history) = DownloadHistory::open(&cache_dir_clone).await {
@@ -531,6 +567,12 @@ pub async fn download_add(
                                         request.checksum.clone(),
                                         chrono::Utc::now(),
                                         request.provider.clone(),
+                                    )
+                                    .with_context(
+                                        request.source_descriptor.clone(),
+                                        request.artifact_profile.clone(),
+                                        request.install_intent,
+                                        std::collections::HashMap::new(),
                                     );
                                     if let Err(error) = history.add(record).await {
                                         log::warn!(
@@ -633,6 +675,9 @@ pub async fn download_add(
             task.tags = tags;
         }
     }
+    task.install_intent = request.install_intent;
+    task.source_descriptor = request.source_descriptor;
+    task.artifact_profile = request.artifact_profile;
     // Auto-tag based on provider
     if let Some(ref provider) = task.provider {
         let auto_tag = if provider.contains("github") {
@@ -1055,6 +1100,10 @@ pub struct HistoryRecordInfo {
     pub status: String,
     pub error: Option<String>,
     pub provider: Option<String>,
+    pub metadata: std::collections::HashMap<String, String>,
+    pub install_intent: Option<crate::download::InstallIntent>,
+    pub source_descriptor: Option<crate::download::SourceDescriptor>,
+    pub artifact_profile: Option<crate::download::ArtifactProfile>,
 }
 
 impl From<&DownloadRecord> for HistoryRecordInfo {
@@ -1080,6 +1129,10 @@ impl From<&DownloadRecord> for HistoryRecordInfo {
             },
             error: record.error.clone(),
             provider: record.provider.clone(),
+            metadata: record.metadata.clone(),
+            install_intent: record.install_intent,
+            source_descriptor: record.source_descriptor.clone(),
+            artifact_profile: record.artifact_profile.clone(),
         }
     }
 }
@@ -1388,6 +1441,39 @@ mod tests {
     }
 
     #[test]
+    fn test_download_task_info_includes_install_context() {
+        let mut task = DownloadTask::new(
+            "https://example.com/tool.msi".to_string(),
+            PathBuf::from("/tmp/tool.msi"),
+            "tool.msi".to_string(),
+        );
+        task.install_intent = Some(crate::download::task::InstallIntent::OpenInstaller);
+        task.source_descriptor = Some(crate::download::task::SourceDescriptor {
+            kind: crate::download::task::SourceKind::GithubWorkflowArtifact,
+            provider: Some("github".to_string()),
+            label: Some("owner/repo workflow".to_string()),
+            repo: Some("owner/repo".to_string()),
+            workflow_run_id: Some("99".to_string()),
+            artifact_id: Some("123".to_string()),
+            ..Default::default()
+        });
+        task.artifact_profile = Some(crate::download::task::ArtifactProfile {
+            artifact_kind: crate::download::task::ArtifactKind::Installer,
+            source_kind: crate::download::task::SourceKind::GithubWorkflowArtifact,
+            platform: crate::download::task::ArtifactPlatform::Windows,
+            arch: crate::download::task::ArtifactArch::X64,
+            install_intent: crate::download::task::InstallIntent::OpenInstaller,
+            suggested_follow_ups: vec![crate::download::task::FollowUpAction::Install],
+        });
+
+        let info = DownloadTaskInfo::from(&task);
+
+        assert!(info.install_intent.is_some());
+        assert!(info.source_descriptor.is_some());
+        assert!(info.artifact_profile.is_some());
+    }
+
+    #[test]
     fn test_verify_result_valid() {
         let result = VerifyResult {
             valid: true,
@@ -1445,6 +1531,9 @@ mod tests {
             error: None,
             provider: Some("github".to_string()),
             metadata: std::collections::HashMap::new(),
+            install_intent: None,
+            source_descriptor: None,
+            artifact_profile: None,
         };
 
         let info = HistoryRecordInfo::from(&record);
@@ -1480,6 +1569,9 @@ mod tests {
             error: Some("Network error".to_string()),
             provider: None,
             metadata: std::collections::HashMap::new(),
+            install_intent: None,
+            source_descriptor: None,
+            artifact_profile: None,
         };
 
         let info = HistoryRecordInfo::from(&record);
@@ -1505,6 +1597,9 @@ mod tests {
             error: None,
             provider: None,
             metadata: std::collections::HashMap::new(),
+            install_intent: None,
+            source_descriptor: None,
+            artifact_profile: None,
         };
 
         let info = HistoryRecordInfo::from(&record);

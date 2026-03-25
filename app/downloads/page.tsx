@@ -666,7 +666,13 @@ export default function DownloadsPage() {
             onClearHistory={async (days) => void clearHistory(days)}
             onRemoveRecord={async (id) => void removeHistoryRecord(id)}
             onOpenRecord={async (record) => void openFile(record.destination)}
+            onInstallRecord={async (record) => void openFile(record.destination)}
             onRevealRecord={async (record) => void revealFile(record.destination)}
+            onExtractRecord={async (record) => {
+              const destinationDir =
+                record.destination.replace(/[\\/][^\\/]+$/, "") || record.destination;
+              void extractArchive(record.destination, destinationDir);
+            }}
             onReuseRecord={async (record) => {
               setInitialRequest(createHistoryDownloadDraft(record));
               setAddDialogOpen(true);

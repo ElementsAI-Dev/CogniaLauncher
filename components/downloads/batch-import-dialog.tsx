@@ -77,6 +77,9 @@ export function BatchImportDialog({
           url: p.url,
           destination: joinDestinationPath(destination, p.name),
           name: p.name,
+          sourceDescriptor: {
+            kind: "batch_item",
+          },
           })
         );
       await onSubmit(requests);

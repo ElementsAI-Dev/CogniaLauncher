@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { createArtifactProfilePreview } from "@/lib/downloads";
 import { Calendar, FileArchive } from "lucide-react";
 import {
   SelectableCardButton,
@@ -107,6 +108,10 @@ export function GitLabReleasesTab({
                 const isSelected = !!selectedAssets.find(
                   (a) => a.id === asset.id,
                 );
+                const profile = createArtifactProfilePreview({
+                  fileName: asset.name,
+                  sourceKind: "gitlab_release_asset",
+                });
                 return (
                   <label
                     key={asset.id}
@@ -134,6 +139,9 @@ export function GitLabReleasesTab({
                         {asset.linkType}
                       </Badge>
                     )}
+                    <Badge variant="secondary" className="text-xs ml-2">
+                      {t(`downloads.artifactKind.${profile.artifactKind}`)}
+                    </Badge>
                   </label>
                 );
               })}

@@ -1,20 +1,20 @@
 //! GitHub repository commands for download integration
 
+use crate::SharedSecretVault;
 use crate::commands::secrets::{
-    provider_secret_clear_internal, provider_secret_save_internal, provider_secret_status_internal,
-    resolve_provider_secret, ProviderSecretStatus,
+    ProviderSecretStatus, provider_secret_clear_internal, provider_secret_save_internal,
+    provider_secret_status_internal, resolve_provider_secret,
 };
 use crate::platform::disk::format_size;
 use crate::provider::github::{
-    GitHubAsset, GitHubBranch, GitHubProvider, GitHubRelease, GitHubTag,
+    GitHubAsset, GitHubBranch, GitHubProvider, GitHubRelease, GitHubTag, GitHubWorkflowArtifact,
 };
-use crate::SharedSecretVault;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use super::download::{
-    build_download_request_preset, download_add, DownloadRequest, DownloadRequestPreset,
-    SharedDownloadManager, SharedSettings,
+    DownloadRequest, DownloadRequestPreset, SharedDownloadManager, SharedSettings,
+    build_download_request_preset, download_add,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -111,6 +111,51 @@ impl From<GitHubAsset> for AssetInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct WorkflowArtifactInfo {
+    pub id: u64,
+    pub name: String,
+    pub size_in_bytes: u64,
+    pub size_human: String,
+    pub archive_download_url: String,
+    pub expired: bool,
+    pub created_at: Option<String>,
+    pub expires_at: Option<String>,
+    pub workflow_run_id: Option<u64>,
+    pub workflow_run_number: Option<u64>,
+    pub workflow_run_branch: Option<String>,
+    pub workflow_run_head_sha: Option<String>,
+}
+
+impl From<GitHubWorkflowArtifact> for WorkflowArtifactInfo {
+    fn from(artifact: GitHubWorkflowArtifact) -> Self {
+        Self {
+            id: artifact.id,
+            name: artifact.name,
+            size_in_bytes: artifact.size_in_bytes,
+            size_human: format_size(artifact.size_in_bytes),
+            archive_download_url: artifact.archive_download_url,
+            expired: artifact.expired,
+            created_at: artifact.created_at,
+            expires_at: artifact.expires_at,
+            workflow_run_id: artifact.workflow_run.as_ref().map(|run| run.id),
+            workflow_run_number: artifact
+                .workflow_run
+                .as_ref()
+                .and_then(|run| run.run_number),
+            workflow_run_branch: artifact
+                .workflow_run
+                .as_ref()
+                .and_then(|run| run.head_branch.clone()),
+            workflow_run_head_sha: artifact
+                .workflow_run
+                .as_ref()
+                .and_then(|run| run.head_sha.clone()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ParsedRepo {
     pub owner: String,
     pub repo: String,
@@ -148,6 +193,8 @@ fn build_github_download_request(
     file_name: String,
     provider: String,
     headers: std::collections::HashMap<String, String>,
+    source_descriptor: crate::download::SourceDescriptor,
+    artifact_profile: crate::download::ArtifactProfile,
 ) -> DownloadRequest {
     build_download_request_preset(
         url,
@@ -156,9 +203,108 @@ fn build_github_download_request(
         DownloadRequestPreset {
             provider: Some(provider),
             headers: Some(headers),
+            install_intent: Some(artifact_profile.install_intent),
+            source_descriptor: Some(source_descriptor),
+            artifact_profile: Some(artifact_profile),
             ..DownloadRequestPreset::default()
         },
     )
+}
+
+fn infer_artifact_profile(
+    file_name: &str,
+    source_kind: crate::download::SourceKind,
+) -> crate::download::ArtifactProfile {
+    let lower = file_name.to_ascii_lowercase();
+    let artifact_kind = match source_kind {
+        crate::download::SourceKind::GithubWorkflowArtifact => {
+            crate::download::ArtifactKind::CiArtifact
+        }
+        crate::download::SourceKind::GithubSourceArchive => {
+            crate::download::ArtifactKind::SourceArchive
+        }
+        _ if lower.ends_with(".tar.gz")
+            || lower.ends_with(".tgz")
+            || lower.ends_with(".zip")
+            || lower.ends_with(".tar.xz")
+            || lower.ends_with(".txz")
+            || lower.ends_with(".tar.bz2")
+            || lower.ends_with(".tbz2")
+            || lower.ends_with(".tar.zst")
+            || lower.ends_with(".tzst")
+            || lower.ends_with(".7z") =>
+        {
+            crate::download::ArtifactKind::Archive
+        }
+        _ if lower.ends_with(".exe")
+            || lower.ends_with(".msi")
+            || lower.ends_with(".pkg")
+            || lower.ends_with(".dmg") =>
+        {
+            crate::download::ArtifactKind::Installer
+        }
+        _ if lower.ends_with(".deb") || lower.ends_with(".rpm") || lower.ends_with(".appimage") => {
+            crate::download::ArtifactKind::PackageFile
+        }
+        _ if lower.ends_with(".bin") => crate::download::ArtifactKind::PortableBinary,
+        _ => crate::download::ArtifactKind::Unknown,
+    };
+
+    let install_intent = match artifact_kind {
+        crate::download::ArtifactKind::Installer => crate::download::InstallIntent::OpenInstaller,
+        crate::download::ArtifactKind::Archive
+        | crate::download::ArtifactKind::CiArtifact
+        | crate::download::ArtifactKind::SourceArchive => {
+            crate::download::InstallIntent::ExtractThenContinue
+        }
+        _ => crate::download::InstallIntent::None,
+    };
+
+    let suggested_follow_ups = match install_intent {
+        crate::download::InstallIntent::OpenInstaller => vec![
+            crate::download::FollowUpAction::Install,
+            crate::download::FollowUpAction::Open,
+            crate::download::FollowUpAction::Reveal,
+        ],
+        crate::download::InstallIntent::ExtractThenContinue => vec![
+            crate::download::FollowUpAction::Extract,
+            crate::download::FollowUpAction::Open,
+            crate::download::FollowUpAction::Reveal,
+        ],
+        crate::download::InstallIntent::None => vec![
+            crate::download::FollowUpAction::Open,
+            crate::download::FollowUpAction::Reveal,
+        ],
+    };
+
+    let platform = if lower.contains("windows") || lower.contains("win") {
+        crate::download::ArtifactPlatform::Windows
+    } else if lower.contains("darwin") || lower.contains("macos") || lower.contains("osx") {
+        crate::download::ArtifactPlatform::Macos
+    } else if lower.contains("linux") {
+        crate::download::ArtifactPlatform::Linux
+    } else {
+        crate::download::ArtifactPlatform::Unknown
+    };
+
+    let arch = if lower.contains("arm64") || lower.contains("aarch64") {
+        crate::download::ArtifactArch::Arm64
+    } else if lower.contains("x64") || lower.contains("x86_64") || lower.contains("amd64") {
+        crate::download::ArtifactArch::X64
+    } else if lower.contains("x86") || lower.contains("i386") || lower.contains("i686") {
+        crate::download::ArtifactArch::X86
+    } else {
+        crate::download::ArtifactArch::Unknown
+    };
+
+    crate::download::ArtifactProfile {
+        artifact_kind,
+        source_kind,
+        platform,
+        arch,
+        install_intent,
+        suggested_follow_ups,
+    }
 }
 
 #[tauri::command]
@@ -214,6 +360,25 @@ pub async fn github_list_releases(
 }
 
 #[tauri::command]
+pub async fn github_list_workflow_artifacts(
+    repo: String,
+    token: Option<String>,
+    vault: State<'_, SharedSecretVault>,
+) -> Result<Vec<WorkflowArtifactInfo>, String> {
+    let provider = make_github_provider(token, &vault).await;
+    provider
+        .list_workflow_artifacts(&repo)
+        .await
+        .map(|artifacts| {
+            artifacts
+                .into_iter()
+                .map(WorkflowArtifactInfo::from)
+                .collect()
+        })
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn github_get_release_assets(
     repo: String,
     tag: String,
@@ -250,12 +415,24 @@ pub async fn github_download_asset(
     };
 
     let headers = provider.get_download_headers();
+    let source_descriptor = crate::download::SourceDescriptor {
+        kind: crate::download::SourceKind::GithubReleaseAsset,
+        provider: Some("github".to_string()),
+        label: Some(format!("{}#{}", repo, asset_name)),
+        repo: Some(repo.clone()),
+        artifact_id: Some(asset_id.to_string()),
+        ..Default::default()
+    };
+    let artifact_profile =
+        infer_artifact_profile(&asset_name, crate::download::SourceKind::GithubReleaseAsset);
     let request = build_github_download_request(
         download_url,
         &destination,
         asset_name,
         format!("github:{}", repo),
         headers,
+        source_descriptor,
+        artifact_profile,
     );
     download_add(request, manager, settings).await
 }
@@ -283,12 +460,62 @@ pub async fn github_download_source(
     );
 
     let headers = provider.get_source_download_headers();
+    let source_descriptor = crate::download::SourceDescriptor {
+        kind: crate::download::SourceKind::GithubSourceArchive,
+        provider: Some("github".to_string()),
+        label: Some(format!("{}@{}", repo, ref_name)),
+        repo: Some(repo.clone()),
+        ref_name: Some(ref_name.clone()),
+        ..Default::default()
+    };
+    let artifact_profile =
+        infer_artifact_profile(&file_name, crate::download::SourceKind::GithubSourceArchive);
     let request = build_github_download_request(
         url,
         &destination,
         file_name,
         format!("github:{}", repo),
         headers,
+        source_descriptor,
+        artifact_profile,
+    );
+    download_add(request, manager, settings).await
+}
+
+#[tauri::command]
+pub async fn github_download_workflow_artifact(
+    repo: String,
+    artifact_id: u64,
+    artifact_name: String,
+    destination: String,
+    token: Option<String>,
+    vault: State<'_, SharedSecretVault>,
+    manager: State<'_, SharedDownloadManager>,
+    settings: State<'_, SharedSettings>,
+) -> Result<String, String> {
+    let provider = make_github_provider(token, &vault).await;
+    let url = provider.get_workflow_artifact_download_url(&repo, artifact_id);
+    let headers = provider.get_source_download_headers();
+    let source_descriptor = crate::download::SourceDescriptor {
+        kind: crate::download::SourceKind::GithubWorkflowArtifact,
+        provider: Some("github".to_string()),
+        label: Some(format!("{} workflow artifact {}", repo, artifact_name)),
+        repo: Some(repo.clone()),
+        artifact_id: Some(artifact_id.to_string()),
+        ..Default::default()
+    };
+    let artifact_profile = infer_artifact_profile(
+        &artifact_name,
+        crate::download::SourceKind::GithubWorkflowArtifact,
+    );
+    let request = build_github_download_request(
+        url,
+        &destination,
+        artifact_name,
+        format!("github:{}", repo),
+        headers,
+        source_descriptor,
+        artifact_profile,
     );
     download_add(request, manager, settings).await
 }
@@ -368,7 +595,7 @@ pub async fn github_validate_token(token: String) -> Result<bool, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::build_github_download_request;
+    use super::{build_github_download_request, infer_artifact_profile};
     use std::collections::HashMap;
 
     #[test]
@@ -383,6 +610,15 @@ mod tests {
             "asset.zip".to_string(),
             "github:a/b".to_string(),
             headers.clone(),
+            crate::download::SourceDescriptor {
+                kind: crate::download::SourceKind::GithubReleaseAsset,
+                provider: Some("github".to_string()),
+                label: Some("a/b#asset.zip".to_string()),
+                repo: Some("a/b".to_string()),
+                artifact_id: Some("1".to_string()),
+                ..Default::default()
+            },
+            infer_artifact_profile("asset.zip", crate::download::SourceKind::GithubReleaseAsset),
         );
 
         assert_eq!(
@@ -397,5 +633,8 @@ mod tests {
         assert!(request.delete_after_extract.is_none());
         assert!(request.auto_rename.is_none());
         assert!(request.tags.is_none());
+        assert!(request.source_descriptor.is_some());
+        assert!(request.artifact_profile.is_some());
+        assert!(request.install_intent.is_some());
     }
 }

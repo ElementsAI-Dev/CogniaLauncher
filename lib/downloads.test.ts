@@ -9,6 +9,8 @@ import {
   runDownloadPreflightWithUi,
   createDownloadRequestDraft,
   createHistoryDownloadDraft,
+  createArtifactProfilePreview,
+  getDownloadFollowUpActions,
 } from './downloads';
 
 describe('isValidUrl', () => {
@@ -108,6 +110,22 @@ describe('createDownloadRequestDraft', () => {
         destination: ' /downloads/archive.zip ',
         name: ' archive.zip ',
         provider: ' github:owner/repo ',
+        sourceDescriptor: {
+          kind: 'github_release_asset',
+          provider: 'github',
+          label: 'owner/repo@v1.0.0',
+          repo: 'owner/repo',
+          releaseTag: 'v1.0.0',
+          artifactId: '42',
+        },
+        artifactProfile: {
+          artifactKind: 'archive',
+          sourceKind: 'github_release_asset',
+          platform: 'windows',
+          arch: 'x64',
+          installIntent: 'extract_then_continue',
+          suggestedFollowUps: ['extract', 'open'],
+        },
         tags: [' release ', 'github', ''],
         mirrorUrls: [' https://mirror.example.com/archive.zip ', ''],
         postAction: 'none',
@@ -118,6 +136,23 @@ describe('createDownloadRequestDraft', () => {
       destination: '/downloads/archive.zip',
       name: 'archive.zip',
       provider: 'github:owner/repo',
+      installIntent: 'extract_then_continue',
+      sourceDescriptor: {
+        kind: 'github_release_asset',
+        provider: 'github',
+        label: 'owner/repo@v1.0.0',
+        repo: 'owner/repo',
+        releaseTag: 'v1.0.0',
+        artifactId: '42',
+      },
+      artifactProfile: {
+        artifactKind: 'archive',
+        sourceKind: 'github_release_asset',
+        platform: 'windows',
+        arch: 'x64',
+        installIntent: 'extract_then_continue',
+        suggestedFollowUps: ['extract', 'open'],
+      },
       tags: ['release', 'github'],
       mirrorUrls: ['https://mirror.example.com/archive.zip'],
     });
@@ -135,6 +170,7 @@ describe('createDownloadRequestDraft', () => {
         postAction: 'install',
         deleteAfterExtract: true,
         autoRename: true,
+        installIntent: 'open_installer',
       } as never)
     ).toEqual({
       url: 'https://example.com/archive.zip',
@@ -147,6 +183,18 @@ describe('createDownloadRequestDraft', () => {
       postAction: 'install',
       deleteAfterExtract: true,
       autoRename: true,
+      installIntent: 'open_installer',
+      sourceDescriptor: {
+        kind: 'direct_url',
+      },
+      artifactProfile: {
+        artifactKind: 'archive',
+        sourceKind: 'direct_url',
+        platform: 'unknown',
+        arch: 'unknown',
+        installIntent: 'extract_then_continue',
+        suggestedFollowUps: ['extract', 'open', 'reveal'],
+      },
     });
   });
 });
@@ -171,13 +219,122 @@ describe('createHistoryDownloadDraft', () => {
         status: 'failed',
         error: 'network',
         provider: 'github:owner/repo',
+        sourceDescriptor: {
+          kind: 'github_workflow_artifact',
+          provider: 'github',
+          label: 'owner/repo workflow build',
+          repo: 'owner/repo',
+          workflowRunId: '99',
+          artifactId: '123',
+        },
+        artifactProfile: {
+          artifactKind: 'ci_artifact',
+          sourceKind: 'github_workflow_artifact',
+          platform: 'windows',
+          arch: 'x64',
+          installIntent: 'extract_then_continue',
+          suggestedFollowUps: ['extract'],
+        },
       })
     ).toEqual({
       url: 'https://example.com/file.zip',
       destination: '/downloads/file.zip',
       name: 'file.zip',
       provider: 'github:owner/repo',
+      installIntent: 'extract_then_continue',
+      sourceDescriptor: {
+        kind: 'github_workflow_artifact',
+        provider: 'github',
+        label: 'owner/repo workflow build',
+        repo: 'owner/repo',
+        workflowRunId: '99',
+        artifactId: '123',
+      },
+      artifactProfile: {
+        artifactKind: 'ci_artifact',
+        sourceKind: 'github_workflow_artifact',
+        platform: 'windows',
+        arch: 'x64',
+        installIntent: 'extract_then_continue',
+        suggestedFollowUps: ['extract'],
+      },
     });
+  });
+});
+
+describe('createArtifactProfilePreview', () => {
+  it('classifies installer artifacts and suggests install follow-up', () => {
+    expect(
+      createArtifactProfilePreview({
+        fileName: 'tool-windows-x64.msi',
+        sourceKind: 'github_release_asset',
+      }),
+    ).toEqual({
+      artifactKind: 'installer',
+      sourceKind: 'github_release_asset',
+      platform: 'windows',
+      arch: 'x64',
+      installIntent: 'open_installer',
+      suggestedFollowUps: ['install', 'open', 'reveal'],
+    });
+  });
+
+  it('classifies CI artifacts as extract-first even without a special extension', () => {
+    expect(
+      createArtifactProfilePreview({
+        fileName: 'build-output.zip',
+        sourceKind: 'github_workflow_artifact',
+      }),
+    ).toEqual({
+      artifactKind: 'ci_artifact',
+      sourceKind: 'github_workflow_artifact',
+      platform: 'unknown',
+      arch: 'unknown',
+      installIntent: 'extract_then_continue',
+      suggestedFollowUps: ['extract', 'open', 'reveal'],
+    });
+  });
+});
+
+describe('getDownloadFollowUpActions', () => {
+  it('returns install-aware actions for completed installer downloads', () => {
+    expect(
+      getDownloadFollowUpActions({
+        status: 'completed',
+        destinationAvailable: true,
+        artifactProfile: {
+          artifactKind: 'installer',
+          sourceKind: 'direct_url',
+          platform: 'windows',
+          arch: 'x64',
+          installIntent: 'open_installer',
+          suggestedFollowUps: ['install'],
+        },
+      }),
+    ).toEqual([
+      expect.objectContaining({ kind: 'install', enabled: true }),
+      expect.objectContaining({ kind: 'open', enabled: true }),
+      expect.objectContaining({ kind: 'reveal', enabled: true }),
+    ]);
+  });
+
+  it('falls back to reuse when destination is missing or record is not completed', () => {
+    expect(
+      getDownloadFollowUpActions({
+        status: 'failed',
+        destinationAvailable: false,
+        artifactProfile: {
+          artifactKind: 'archive',
+          sourceKind: 'github_workflow_artifact',
+          platform: 'windows',
+          arch: 'x64',
+          installIntent: 'extract_then_continue',
+          suggestedFollowUps: ['extract'],
+        },
+      }),
+    ).toEqual([
+      expect.objectContaining({ kind: 'reuse', enabled: true }),
+    ]);
   });
 });
 

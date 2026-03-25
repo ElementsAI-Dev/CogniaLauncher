@@ -41,14 +41,16 @@ import {
   CheckCircle2,
   ExternalLink,
   FileDown,
+  FileArchive,
   FolderOpen,
   Gauge,
   History,
+  Package,
   RotateCcw,
   Timer,
   Trash2,
 } from "lucide-react";
-import { getStateBadgeVariant } from "@/lib/downloads";
+import { getDownloadFollowUpActions, getStateBadgeVariant } from "@/lib/downloads";
 import type { HistoryRecord, HistoryStats } from "@/lib/stores/download";
 
 interface DownloadHistoryPanelProps {
@@ -61,6 +63,8 @@ interface DownloadHistoryPanelProps {
   onOpenRecord?: (record: HistoryRecord) => void | Promise<void>;
   onRevealRecord?: (record: HistoryRecord) => void | Promise<void>;
   onReuseRecord?: (record: HistoryRecord) => void | Promise<void>;
+  onInstallRecord?: (record: HistoryRecord) => void | Promise<void>;
+  onExtractRecord?: (record: HistoryRecord) => void | Promise<void>;
   destinationAvailability?: Record<string, boolean>;
   t: (key: string, params?: Record<string, string | number>) => string;
 }
@@ -75,6 +79,8 @@ export function DownloadHistoryPanel({
   onOpenRecord,
   onRevealRecord,
   onReuseRecord,
+  onInstallRecord,
+  onExtractRecord,
   destinationAvailability = {},
   t,
 }: DownloadHistoryPanelProps) {
@@ -287,61 +293,113 @@ export function DownloadHistoryPanel({
                     <TableCell>{record.sizeHuman}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
-                        {record.status === "completed" &&
-                          destinationAvailability[record.id] &&
-                          onOpenRecord && (
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8"
-                                  onClick={() => onOpenRecord(record)}
-                                  aria-label={t("downloads.actions.open")}
-                                  title={t("downloads.actions.open")}
-                                >
-                                  <ExternalLink className="h-4 w-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>{t("downloads.actions.open")}</TooltipContent>
-                            </Tooltip>
-                          )}
-                        {record.status === "completed" &&
-                          destinationAvailability[record.id] &&
-                          onRevealRecord && (
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8"
-                                  onClick={() => onRevealRecord(record)}
-                                  aria-label={t("downloads.actions.reveal")}
-                                  title={t("downloads.actions.reveal")}
-                                >
-                                  <FolderOpen className="h-4 w-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>{t("downloads.actions.reveal")}</TooltipContent>
-                            </Tooltip>
-                          )}
-                        {onReuseRecord && (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8"
-                                onClick={() => onReuseRecord(record)}
-                                aria-label={t("downloads.historyPanel.reuse")}
-                                title={t("downloads.historyPanel.reuse")}
-                              >
-                                <RotateCcw className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>{t("downloads.historyPanel.reuse")}</TooltipContent>
-                          </Tooltip>
-                        )}
+                        {getDownloadFollowUpActions({
+                          status: record.status,
+                          destinationAvailable: destinationAvailability[record.id] ?? false,
+                          artifactProfile: record.artifactProfile,
+                        }).map((action) => {
+                          if (action.kind === "install" && (onInstallRecord || onOpenRecord)) {
+                            return (
+                              <Tooltip key={`${record.id}-install`}>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                    onClick={() => (onInstallRecord ?? onOpenRecord)?.(record)}
+                                    aria-label={t("downloads.actions.install")}
+                                    title={t("downloads.actions.install")}
+                                  >
+                                    <Package className="h-4 w-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>{t("downloads.actions.install")}</TooltipContent>
+                              </Tooltip>
+                            );
+                          }
+
+                          if (action.kind === "extract" && onExtractRecord) {
+                            return (
+                              <Tooltip key={`${record.id}-extract`}>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                    onClick={() => onExtractRecord(record)}
+                                    aria-label={t("downloads.actions.extract")}
+                                    title={t("downloads.actions.extract")}
+                                  >
+                                    <FileArchive className="h-4 w-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>{t("downloads.actions.extract")}</TooltipContent>
+                              </Tooltip>
+                            );
+                          }
+
+                          if (action.kind === "open" && onOpenRecord) {
+                            return (
+                              <Tooltip key={`${record.id}-open`}>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                    onClick={() => onOpenRecord(record)}
+                                    aria-label={t("downloads.actions.open")}
+                                    title={t("downloads.actions.open")}
+                                  >
+                                    <ExternalLink className="h-4 w-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>{t("downloads.actions.open")}</TooltipContent>
+                              </Tooltip>
+                            );
+                          }
+
+                          if (action.kind === "reveal" && onRevealRecord) {
+                            return (
+                              <Tooltip key={`${record.id}-reveal`}>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                    onClick={() => onRevealRecord(record)}
+                                    aria-label={t("downloads.actions.reveal")}
+                                    title={t("downloads.actions.reveal")}
+                                  >
+                                    <FolderOpen className="h-4 w-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>{t("downloads.actions.reveal")}</TooltipContent>
+                              </Tooltip>
+                            );
+                          }
+
+                          if (action.kind === "reuse" && onReuseRecord) {
+                            return (
+                              <Tooltip key={`${record.id}-reuse`}>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                    onClick={() => onReuseRecord(record)}
+                                    aria-label={t("downloads.historyPanel.reuse")}
+                                    title={t("downloads.historyPanel.reuse")}
+                                  >
+                                    <RotateCcw className="h-4 w-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>{t("downloads.historyPanel.reuse")}</TooltipContent>
+                              </Tooltip>
+                            );
+                          }
+
+                          return null;
+                        })}
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <Button

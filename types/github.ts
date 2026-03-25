@@ -37,6 +37,21 @@ export interface GitHubAssetInfo {
   downloadCount: number | null;
 }
 
+export interface GitHubWorkflowArtifactInfo {
+  id: number;
+  name: string;
+  sizeInBytes: number;
+  sizeHuman: string;
+  archiveDownloadUrl: string;
+  expired: boolean;
+  createdAt: string | null;
+  expiresAt: string | null;
+  workflowRunId: number | null;
+  workflowRunNumber: number | null;
+  workflowRunBranch: string | null;
+  workflowRunHeadSha: string | null;
+}
+
 export interface GitHubParsedRepo {
   owner: string;
   repo: string;
@@ -57,6 +72,6 @@ export interface GitHubRepoInfoResponse {
   topics: string[];
 }
 
-export type GitHubSourceType = 'release' | 'branch' | 'tag';
+export type GitHubSourceType = 'release' | 'branch' | 'tag' | 'workflow';
 
 export type GitHubArchiveFormat = 'zip' | 'tar.gz';

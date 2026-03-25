@@ -2077,6 +2077,7 @@ import type {
   GitHubTagInfo,
   GitHubReleaseInfo,
   GitHubAssetInfo,
+  GitHubWorkflowArtifactInfo,
   GitHubParsedRepo,
   GitHubRepoInfoResponse,
 } from "@/types/github";
@@ -2086,6 +2087,7 @@ export type {
   GitHubTagInfo,
   GitHubReleaseInfo,
   GitHubAssetInfo,
+  GitHubWorkflowArtifactInfo,
   GitHubParsedRepo,
   GitHubRepoInfoResponse,
 };
@@ -2135,6 +2137,13 @@ export const githubGetReleaseAssets = (
     token: token || null,
   });
 
+/** List recent workflow artifacts for a repository */
+export const githubListWorkflowArtifacts = (repo: string, token?: string) =>
+  invoke<GitHubWorkflowArtifactInfo[]>("github_list_workflow_artifacts", {
+    repo,
+    token: token || null,
+  });
+
 /** Download a release asset to the download queue */
 export const githubDownloadAsset = (
   repo: string,
@@ -2165,6 +2174,22 @@ export const githubDownloadSource = (
     repo,
     refName,
     format,
+    destination,
+    token: token || null,
+  });
+
+/** Download a GitHub workflow artifact archive to the download queue */
+export const githubDownloadWorkflowArtifact = (
+  repo: string,
+  artifactId: number,
+  artifactName: string,
+  destination: string,
+  token?: string,
+) =>
+  invoke<string>("github_download_workflow_artifact", {
+    repo,
+    artifactId,
+    artifactName,
     destination,
     token: token || null,
   });

@@ -33,6 +33,7 @@ import {
   Loader2,
   Clock,
   ArrowUpDown,
+  Package,
   CheckCircle2,
   XCircle,
   Pause,
@@ -44,6 +45,7 @@ import { formatEta } from "@/lib/utils";
 import {
   getStateBadgeVariant,
   findClosestPriority,
+  getDownloadFollowUpActions,
   normalizeDownloadFailure,
 } from "@/lib/downloads";
 import { PRIORITY_OPTIONS } from "@/lib/constants/downloads";
@@ -291,6 +293,11 @@ export function DownloadDetailDialog({
   if (!resolvedTask || !progress) return null;
 
   const metadataEntries = Object.entries(resolvedTask.metadata ?? {});
+  const followUpActions = getDownloadFollowUpActions({
+    status: resolvedTask.state,
+    destinationAvailable: resolvedTask.state === "completed",
+    artifactProfile: resolvedTask.artifactProfile,
+  });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -546,6 +553,18 @@ export function DownloadDetailDialog({
                 <Button size="sm" onClick={handleRetry}>
                   <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
                   {t("downloads.actions.retryTask")}
+                </Button>
+              )}
+
+            {resolvedTask.state === "completed" &&
+              followUpActions.some((action) => action.kind === "install") &&
+              onOpenFile && (
+                <Button
+                  size="sm"
+                  onClick={() => onOpenFile(resolvedTask.destination)}
+                >
+                  <Package className="h-3.5 w-3.5 mr-1.5" />
+                  {t("downloads.actions.install")}
                 </Button>
               )}
 

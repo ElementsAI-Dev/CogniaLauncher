@@ -6,6 +6,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Label } from "@/components/ui/label";
+import { createArtifactProfilePreview } from "@/lib/downloads";
 import { selectableCheckboxRowClass, SelectableCardButton } from "./selectable-list-patterns";
 import type { GitLabPipelineInfo, GitLabJobInfo } from "@/types/gitlab";
 
@@ -100,6 +101,10 @@ export function GitLabPipelinesTab({
           <div className="p-2 space-y-1">
             {jobs.map((job) => {
               const checked = selectedJobs.some((j) => j.id === job.id);
+              const profile = createArtifactProfilePreview({
+                fileName: `${job.name}.zip`,
+                sourceKind: "gitlab_pipeline_artifact",
+              });
               return (
                 <label
                   key={job.id}
@@ -127,6 +132,11 @@ export function GitLabPipelinesTab({
                       ? t("downloads.gitlab.downloadArtifacts")
                       : t("common.none")}
                   </Badge>
+                  {job.hasArtifacts && (
+                    <Badge variant="outline" className="text-xs">
+                      {t(`downloads.artifactKind.${profile.artifactKind}`)}
+                    </Badge>
+                  )}
                 </label>
               );
             })}

@@ -24,5 +24,9 @@ pub use manager::{DownloadEvent, DownloadManager, DownloadManagerConfig, Shutdow
 pub use persistence::QueuePersistence;
 pub use queue::DownloadQueue;
 pub use state::{DownloadError, DownloadState};
-pub use task::{DownloadConfig, DownloadProgress, DownloadTask, PostAction};
+pub use task::{
+    ArtifactArch, ArtifactKind, ArtifactPlatform, ArtifactProfile, DownloadConfig,
+    DownloadProgress, DownloadTask, FollowUpAction, InstallIntent, PostAction, SourceDescriptor,
+    SourceKind,
+};
 pub use throttle::SpeedLimiter;

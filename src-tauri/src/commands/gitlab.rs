@@ -1,20 +1,20 @@
 //! GitLab repository commands for download integration
 
+use crate::SharedSecretVault;
 use crate::commands::secrets::{
-    provider_secret_clear_internal, provider_secret_save_internal, provider_secret_status_internal,
-    resolve_provider_secret, ProviderSecretStatus,
+    ProviderSecretStatus, provider_secret_clear_internal, provider_secret_save_internal,
+    provider_secret_status_internal, resolve_provider_secret,
 };
 use crate::error::CogniaError;
 use crate::provider::gitlab::{
     GitLabBranch, GitLabProvider, GitLabRelease, GitLabReleaseLink, GitLabTag,
 };
-use crate::SharedSecretVault;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use super::download::{
-    build_download_request_preset, download_add, DownloadRequest, DownloadRequestPreset,
-    SharedDownloadManager, SharedSettings,
+    DownloadRequest, DownloadRequestPreset, SharedDownloadManager, SharedSettings,
+    build_download_request_preset, download_add,
 };
 
 fn map_gitlab_error(e: CogniaError) -> String {
@@ -217,6 +217,8 @@ fn build_gitlab_download_request(
     file_name: String,
     provider: String,
     headers: std::collections::HashMap<String, String>,
+    source_descriptor: crate::download::SourceDescriptor,
+    artifact_profile: crate::download::ArtifactProfile,
 ) -> DownloadRequest {
     build_download_request_preset(
         url,
@@ -225,9 +227,91 @@ fn build_gitlab_download_request(
         DownloadRequestPreset {
             provider: Some(provider),
             headers: Some(headers),
+            install_intent: Some(artifact_profile.install_intent),
+            source_descriptor: Some(source_descriptor),
+            artifact_profile: Some(artifact_profile),
             ..DownloadRequestPreset::default()
         },
     )
+}
+
+fn infer_artifact_profile(
+    file_name: &str,
+    source_kind: crate::download::SourceKind,
+) -> crate::download::ArtifactProfile {
+    let lower = file_name.to_ascii_lowercase();
+    let artifact_kind = match source_kind {
+        crate::download::SourceKind::GitlabPipelineArtifact => {
+            crate::download::ArtifactKind::CiArtifact
+        }
+        crate::download::SourceKind::GitlabSourceArchive => {
+            crate::download::ArtifactKind::SourceArchive
+        }
+        crate::download::SourceKind::GitlabPackageFile => {
+            crate::download::ArtifactKind::PackageFile
+        }
+        _ if lower.ends_with(".tar.gz")
+            || lower.ends_with(".tgz")
+            || lower.ends_with(".zip")
+            || lower.ends_with(".tar.xz")
+            || lower.ends_with(".txz")
+            || lower.ends_with(".tar.bz2")
+            || lower.ends_with(".tbz2")
+            || lower.ends_with(".tar.zst")
+            || lower.ends_with(".tzst")
+            || lower.ends_with(".7z") =>
+        {
+            crate::download::ArtifactKind::Archive
+        }
+        _ if lower.ends_with(".exe")
+            || lower.ends_with(".msi")
+            || lower.ends_with(".pkg")
+            || lower.ends_with(".dmg") =>
+        {
+            crate::download::ArtifactKind::Installer
+        }
+        _ if lower.ends_with(".deb") || lower.ends_with(".rpm") || lower.ends_with(".appimage") => {
+            crate::download::ArtifactKind::PackageFile
+        }
+        _ if lower.ends_with(".bin") => crate::download::ArtifactKind::PortableBinary,
+        _ => crate::download::ArtifactKind::Unknown,
+    };
+
+    let install_intent = match artifact_kind {
+        crate::download::ArtifactKind::Installer => crate::download::InstallIntent::OpenInstaller,
+        crate::download::ArtifactKind::Archive
+        | crate::download::ArtifactKind::CiArtifact
+        | crate::download::ArtifactKind::SourceArchive => {
+            crate::download::InstallIntent::ExtractThenContinue
+        }
+        _ => crate::download::InstallIntent::None,
+    };
+
+    let suggested_follow_ups = match install_intent {
+        crate::download::InstallIntent::OpenInstaller => vec![
+            crate::download::FollowUpAction::Install,
+            crate::download::FollowUpAction::Open,
+            crate::download::FollowUpAction::Reveal,
+        ],
+        crate::download::InstallIntent::ExtractThenContinue => vec![
+            crate::download::FollowUpAction::Extract,
+            crate::download::FollowUpAction::Open,
+            crate::download::FollowUpAction::Reveal,
+        ],
+        crate::download::InstallIntent::None => vec![
+            crate::download::FollowUpAction::Open,
+            crate::download::FollowUpAction::Reveal,
+        ],
+    };
+
+    crate::download::ArtifactProfile {
+        artifact_kind,
+        source_kind,
+        platform: crate::download::ArtifactPlatform::Unknown,
+        arch: crate::download::ArtifactArch::Unknown,
+        install_intent,
+        suggested_follow_ups,
+    }
 }
 
 #[tauri::command]
@@ -350,12 +434,24 @@ pub async fn gitlab_download_asset(
     let provider = make_gitlab_provider(token, instance_url, &vault).await;
 
     let headers = provider.get_download_headers();
+    let source_descriptor = crate::download::SourceDescriptor {
+        kind: crate::download::SourceKind::GitlabReleaseAsset,
+        provider: Some("gitlab".to_string()),
+        label: Some(format!("{}#{}", project, asset_name)),
+        repo: Some(project.clone()),
+        artifact_id: Some(asset_name.clone()),
+        ..Default::default()
+    };
+    let artifact_profile =
+        infer_artifact_profile(&asset_name, crate::download::SourceKind::GitlabReleaseAsset);
     let request = build_gitlab_download_request(
         asset_url,
         &destination,
         asset_name,
         format!("gitlab:{}", project),
         headers,
+        source_descriptor,
+        artifact_profile,
     );
     download_add(request, manager, settings).await
 }
@@ -389,12 +485,24 @@ pub async fn gitlab_download_source(
     );
 
     let headers = provider.get_download_headers();
+    let source_descriptor = crate::download::SourceDescriptor {
+        kind: crate::download::SourceKind::GitlabSourceArchive,
+        provider: Some("gitlab".to_string()),
+        label: Some(format!("{}@{}", project, ref_name)),
+        repo: Some(project.clone()),
+        ref_name: Some(ref_name.clone()),
+        ..Default::default()
+    };
+    let artifact_profile =
+        infer_artifact_profile(&file_name, crate::download::SourceKind::GitlabSourceArchive);
     let request = build_gitlab_download_request(
         url,
         &destination,
         file_name,
         format!("gitlab:{}", project),
         headers,
+        source_descriptor,
+        artifact_profile,
     );
     download_add(request, manager, settings).await
 }
@@ -593,12 +701,26 @@ pub async fn gitlab_download_job_artifacts(
     let file_name = format!("{}-artifacts-{}.zip", job_name, job_id);
 
     let headers = provider.get_download_headers();
+    let source_descriptor = crate::download::SourceDescriptor {
+        kind: crate::download::SourceKind::GitlabPipelineArtifact,
+        provider: Some("gitlab".to_string()),
+        label: Some(format!("{} pipeline job {}", project, job_name)),
+        repo: Some(project.clone()),
+        job_id: Some(job_id.to_string()),
+        ..Default::default()
+    };
+    let artifact_profile = infer_artifact_profile(
+        &file_name,
+        crate::download::SourceKind::GitlabPipelineArtifact,
+    );
     let request = build_gitlab_download_request(
         url,
         &destination,
         file_name,
         format!("gitlab:{}", project),
         headers,
+        source_descriptor,
+        artifact_profile,
     );
     download_add(request, manager, settings).await
 }
@@ -699,12 +821,25 @@ pub async fn gitlab_download_package_file(
     let url = provider.get_package_file_url(&project, package_id, &file_name);
 
     let headers = provider.get_download_headers();
+    let source_descriptor = crate::download::SourceDescriptor {
+        kind: crate::download::SourceKind::GitlabPackageFile,
+        provider: Some("gitlab".to_string()),
+        label: Some(format!("{} package {}", project, file_name)),
+        repo: Some(project.clone()),
+        package_id: Some(package_id.to_string()),
+        package_file_id: Some(file_name.clone()),
+        ..Default::default()
+    };
+    let artifact_profile =
+        infer_artifact_profile(&file_name, crate::download::SourceKind::GitlabPackageFile);
     let request = build_gitlab_download_request(
         url,
         &destination,
         file_name,
         format!("gitlab:{}", project),
         headers,
+        source_descriptor,
+        artifact_profile,
     );
     download_add(request, manager, settings).await
 }
@@ -730,7 +865,7 @@ pub async fn gitlab_get_instance_url() -> Result<Option<String>, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::build_gitlab_download_request;
+    use super::{build_gitlab_download_request, infer_artifact_profile};
     use std::collections::HashMap;
 
     #[test]
@@ -744,6 +879,18 @@ mod tests {
             "build-artifacts.zip".to_string(),
             "gitlab:group/project".to_string(),
             headers.clone(),
+            crate::download::SourceDescriptor {
+                kind: crate::download::SourceKind::GitlabPipelineArtifact,
+                provider: Some("gitlab".to_string()),
+                label: Some("group/project pipeline".to_string()),
+                repo: Some("group/project".to_string()),
+                job_id: Some("2".to_string()),
+                ..Default::default()
+            },
+            infer_artifact_profile(
+                "build-artifacts.zip",
+                crate::download::SourceKind::GitlabPipelineArtifact,
+            ),
         );
 
         assert_eq!(
@@ -758,5 +905,8 @@ mod tests {
         assert!(request.delete_after_extract.is_none());
         assert!(request.auto_rename.is_none());
         assert!(request.tags.is_none());
+        assert!(request.source_descriptor.is_some());
+        assert!(request.artifact_profile.is_some());
+        assert!(request.install_intent.is_some());
     }
 }

@@ -72,6 +72,7 @@ const mockMessages = {
       actions: {
         retryTask: 'Retry This Task',
         setPriority: 'Set Priority',
+        install: 'Install',
         open: 'Open File',
         reveal: 'Show in Folder',
         extract: 'Extract Archive',
@@ -357,5 +358,24 @@ describe('DownloadDetailDialog', () => {
     await waitFor(() => {
       expect(onSetTaskSpeedLimit).toHaveBeenCalledWith('task-1', 1024);
     });
+  });
+
+  it('shows install-aware action for completed installer tasks', () => {
+    renderDialog({
+      task: {
+        ...baseTask,
+        artifactProfile: {
+          artifactKind: 'installer',
+          sourceKind: 'direct_url',
+          platform: 'windows',
+          arch: 'x64',
+          installIntent: 'open_installer',
+          suggestedFollowUps: ['install'],
+        },
+      } as DownloadTask,
+      onOpenFile: jest.fn(),
+    });
+
+    expect(screen.getByText('Install')).toBeInTheDocument();
   });
 });
