@@ -344,7 +344,7 @@ export function LogToolbar({
   return (
     <Collapsible open={showAdvanced} onOpenChange={setShowAdvanced}>
       <section
-        className="flex flex-col gap-2 border-b bg-background/95 p-3 backdrop-blur supports-backdrop-filter:bg-background/60"
+        className="flex flex-col gap-3 border-b bg-background/95 p-3 sm:p-4 backdrop-blur supports-backdrop-filter:bg-background/60"
         aria-label={t("logs.filter")}
         data-testid="log-toolbar-shell"
       >

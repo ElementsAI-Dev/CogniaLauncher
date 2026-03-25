@@ -48,6 +48,8 @@ interface LogManagementCardProps {
     options: LogCleanupOptions,
   ) => Promise<LogActionResult<LogMutationSummary>>;
   onRefresh: () => void;
+  className?: string;
+  onPreviewStaleChange?: (stale: boolean) => void;
 }
 
 type PolicySaveState = "dirty" | "saving" | "saved" | "error";
@@ -72,6 +74,8 @@ export function LogManagementCard({
   onPreviewCleanup,
   onCleanup,
   onRefresh,
+  className,
+  onPreviewStaleChange,
 }: LogManagementCardProps) {
   const { t } = useLocale();
   const [cleaning, setCleaning] = useState(false);
@@ -139,6 +143,10 @@ export function LogManagementCard({
       previewResult.maxTotalSizeMb !== effectivePolicy.maxTotalSizeMb
     );
   }, [effectivePolicy.maxRetentionDays, effectivePolicy.maxTotalSizeMb, previewResult]);
+
+  useEffect(() => {
+    onPreviewStaleChange?.(isPreviewStale);
+  }, [isPreviewStale, onPreviewStaleChange]);
 
   const markPolicyDirty = useCallback(() => {
     setPolicySaveError(null);
@@ -294,7 +302,7 @@ export function LogManagementCard({
           : t("logs.policyStateSaved");
 
   return (
-    <Card>
+    <Card className={className}>
       <CardHeader className="pb-3">
         <CardTitle className="text-base flex items-center gap-2">
           <Settings2 className="h-4 w-4" />

@@ -21,6 +21,14 @@ describe('useLogStore', () => {
       filterPresets: [],
       bookmarkedIds: [],
       showBookmarksOnly: false,
+      crashReports: [],
+      observability: {
+        runtimeMode: 'web',
+        backendBridgeState: 'unsupported',
+        backendBridgeError: null,
+        latestCrashCapture: null,
+      },
+      latestDiagnosticAction: null,
       _logCounts: { trace: 0, debug: 0, info: 0, warn: 0, error: 0 },
     });
   });
@@ -413,6 +421,76 @@ describe('useLogStore', () => {
 
       useLogStore.getState().setSelectedLogFile(null);
       expect(useLogStore.getState().selectedLogFile).toBeNull();
+    });
+  });
+
+  describe('observability', () => {
+    it('merges observability patches without dropping existing fields', () => {
+      useLogStore.getState().setObservability({
+        runtimeMode: 'desktop-release',
+        backendBridgeState: 'available',
+      });
+
+      useLogStore.getState().setObservability({
+        backendBridgeError: 'bridge failed',
+      });
+
+      expect(useLogStore.getState().observability).toEqual({
+        runtimeMode: 'desktop-release',
+        backendBridgeState: 'available',
+        backendBridgeError: 'bridge failed',
+        latestCrashCapture: null,
+      });
+    });
+
+    it('stores the latest crash capture summary', () => {
+      useLogStore.getState().setLatestCrashCapture({
+        status: 'captured',
+        reason: null,
+        crashInfo: {
+          id: 'runtime-1',
+          source: 'frontend-runtime',
+          reportPath: 'D:/Crash/report.zip',
+          timestamp: '2026-02-25T00:00:00Z',
+          message: 'boom',
+        },
+        updatedAt: 123,
+      });
+
+      expect(useLogStore.getState().observability.latestCrashCapture).toEqual({
+        status: 'captured',
+        reason: null,
+        crashInfo: {
+          id: 'runtime-1',
+          source: 'frontend-runtime',
+          reportPath: 'D:/Crash/report.zip',
+          timestamp: '2026-02-25T00:00:00Z',
+          message: 'boom',
+        },
+        updatedAt: 123,
+      });
+    });
+
+    it('stores the latest diagnostic action result', () => {
+      useLogStore.getState().setLatestDiagnosticAction({
+        kind: 'full_diagnostic_export',
+        status: 'success',
+        path: 'D:/Diagnostics/cognia-diagnostic.zip',
+        error: null,
+        fileCount: 4,
+        sizeBytes: 2048,
+        updatedAt: 456,
+      });
+
+      expect(useLogStore.getState().latestDiagnosticAction).toEqual({
+        kind: 'full_diagnostic_export',
+        status: 'success',
+        path: 'D:/Diagnostics/cognia-diagnostic.zip',
+        error: null,
+        fileCount: 4,
+        sizeBytes: 2048,
+        updatedAt: 456,
+      });
     });
   });
 

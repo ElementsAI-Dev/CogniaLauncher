@@ -5,3 +5,5 @@ export { LogDrawer } from "./log-drawer";
 export { LogFileViewer } from "./log-file-viewer";
 export { LogManagementCard } from "./log-management-card";
 export { LogDiagnosticsCard } from "./log-diagnostics-card";
+export { LogStatsStrip } from "./log-stats-strip";
+export { LogFileListCard } from "./log-file-list-card";

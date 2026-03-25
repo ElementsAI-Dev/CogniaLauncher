@@ -8,6 +8,10 @@ import type {
   LogDiagnosticActionResult,
   LogObservabilitySummary,
 } from "@/lib/stores/log";
+import {
+  getLogBridgeStateLabel,
+  getLogRuntimeModeLabel,
+} from "@/lib/log-workspace";
 import type { CrashReportInfo } from "@/types/tauri";
 import { formatBytes, formatDate } from "@/lib/utils";
 import { AlertTriangle, Bug, Copy, ExternalLink, RefreshCw, ShieldAlert } from "lucide-react";
@@ -21,6 +25,7 @@ interface LogDiagnosticsCardProps {
   onRefreshCrashReports: () => void | Promise<void>;
   onCopyPath: (path: string) => void | Promise<void>;
   onRevealPath: (path: string) => void | Promise<void>;
+  className?: string;
 }
 
 function formatCrashTimestamp(timestamp: string): string {
@@ -35,36 +40,6 @@ function formatCrashTimestamp(timestamp: string): string {
     return timestamp;
   }
   return formatDate(Math.floor(parsedMs / 1000));
-}
-
-function getRuntimeModeLabel(
-  runtimeMode: LogObservabilitySummary["runtimeMode"],
-  t: (key: string) => string,
-): string {
-  switch (runtimeMode) {
-    case "desktop-debug":
-      return t("logs.runtimeModeDesktopDebug");
-    case "desktop-release":
-      return t("logs.runtimeModeDesktopRelease");
-    case "web":
-    default:
-      return t("logs.runtimeModeWeb");
-  }
-}
-
-function getBridgeStateLabel(
-  bridgeState: LogObservabilitySummary["backendBridgeState"],
-  t: (key: string) => string,
-): string {
-  switch (bridgeState) {
-    case "available":
-      return t("logs.bridgeAvailable");
-    case "unavailable":
-      return t("logs.bridgeUnavailable");
-    case "unsupported":
-    default:
-      return t("logs.bridgeUnsupported");
-  }
 }
 
 function getBridgeGuidance(
@@ -96,12 +71,13 @@ export function LogDiagnosticsCard({
   onRefreshCrashReports,
   onCopyPath,
   onRevealPath,
+  className,
 }: LogDiagnosticsCardProps) {
   const { t } = useLocale();
   const latestCrashCapture = observability.latestCrashCapture;
 
   return (
-    <Card className="h-fit">
+    <Card className={className ?? "h-fit"}>
       <CardHeader className="space-y-1">
         <CardTitle className="flex items-center gap-2">
           <ShieldAlert className="h-4 w-4" />
@@ -114,14 +90,14 @@ export function LogDiagnosticsCard({
           <div className="rounded-lg border bg-muted/20 px-3 py-2">
             <p className="text-xs text-muted-foreground">{t("logs.runtimeMode")}</p>
             <p className="text-sm font-medium">
-              {getRuntimeModeLabel(observability.runtimeMode, t)}
+              {getLogRuntimeModeLabel(observability.runtimeMode, t)}
             </p>
           </div>
           <div className="rounded-lg border bg-muted/20 px-3 py-2">
             <p className="text-xs text-muted-foreground">{t("logs.backendBridge")}</p>
             <div className="flex items-center gap-2">
               <p className="text-sm font-medium">
-                {getBridgeStateLabel(observability.backendBridgeState, t)}
+                {getLogBridgeStateLabel(observability.backendBridgeState, t)}
               </p>
               {observability.backendBridgeState !== "available" ? (
                 <Badge variant="outline">{t("logs.needsAttention")}</Badge>

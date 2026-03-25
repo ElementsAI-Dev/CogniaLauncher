@@ -29,6 +29,22 @@ const freezeBackgroundLoad = () => {
 let mockLogFiles: MockLogFile[] = defaultFiles;
 let mockSelectedLogFile: string | null = null;
 let mockIsTauri = false;
+let mockCrashReports: Array<Record<string, unknown>> = [];
+let mockObservability = {
+  runtimeMode: 'desktop-release',
+  backendBridgeState: 'available',
+  backendBridgeError: null,
+  latestCrashCapture: null,
+};
+let mockLatestDiagnosticAction: {
+  kind: 'full_diagnostic_export';
+  status: 'success' | 'failed';
+  path: string | null;
+  error: string | null;
+  fileCount: number | null;
+  sizeBytes: number | null;
+  updatedAt: number;
+} | null = null;
 
 const mockSetSelectedLogFile = jest.fn();
 const mockCleanupLogs = jest.fn();
@@ -48,6 +64,28 @@ jest.mock('@/components/providers/locale-provider', () => ({
       const translations: Record<string, string> = {
         'logs.title': 'Logs',
         'logs.description': 'View application logs',
+        'logs.workspaceOverview': 'Workspace Overview',
+        'logs.workspaceOverviewDescription': 'See runtime health, storage pressure, active context, and the latest workspace action before diving into details.',
+        'logs.overviewRuntime': 'Runtime',
+        'logs.overviewStorage': 'Storage',
+        'logs.overviewContext': 'Context',
+        'logs.overviewActiveSession': 'Active Session',
+        'logs.overviewCurrentSessionValue': 'Current session protected',
+        'logs.overviewFileCountValue': '{count} files',
+        'logs.overviewContextRealtime': 'Realtime monitoring',
+        'logs.overviewContextFiles': 'Historical file browsing',
+        'logs.overviewContextManagement': 'Management and diagnostics',
+        'logs.overviewSelectedFile': 'Selected file: {name}',
+        'logs.overviewNoFileSelected': 'No file selected',
+        'logs.overviewBridgeAttentionTitle': 'Backend bridge needs attention',
+        'logs.overviewBridgeAttentionDescription': 'Backend logs are not flowing into the in-app panel right now.',
+        'logs.overviewPreviewStaleTitle': 'Cleanup preview is stale',
+        'logs.overviewPreviewStaleDescription': 'Refresh preview before running cleanup so the policy context stays aligned.',
+        'logs.overviewRecentActionTitle': 'Latest workspace action',
+        'logs.overviewNoRecentAction': 'No workspace actions yet',
+        'logs.overviewRecentActionDelete': 'Latest delete action',
+        'logs.overviewRecentActionCleanup': 'Latest cleanup action',
+        'logs.overviewRecentActionDiagnostic': 'Latest diagnostic export',
         'logs.realtime': 'Real-time',
         'logs.files': 'Files',
         'logs.logFiles': 'Log Files',
@@ -63,6 +101,34 @@ jest.mock('@/components/providers/locale-provider', () => ({
         'logs.viewFile': 'View File',
         'logs.currentSession': 'Current Session',
         'logs.management': 'Management',
+        'logs.runtimeMode': 'Runtime Mode',
+        'logs.backendBridge': 'Backend Bridge',
+        'logs.diagnostics': 'Diagnostics',
+        'logs.managementDescription': 'Manage log files and cleanup policy',
+        'logs.diagnosticsDescription': 'Export diagnostics and inspect recent crash reports.',
+        'logs.runtimeModeDesktopDebug': 'Desktop Debug',
+        'logs.runtimeModeDesktopRelease': 'Desktop Release',
+        'logs.runtimeModeWeb': 'Web',
+        'logs.bridgeAvailable': 'Available',
+        'logs.bridgeUnavailable': 'Unavailable',
+        'logs.bridgeUnsupported': 'Unsupported',
+        'logs.needsAttention': 'Needs attention',
+        'logs.bridgeGuidanceTitle': 'Backend guidance',
+        'logs.bridgeGuidanceDebug': 'Use DevTools to inspect backend activity in debug mode.',
+        'logs.bridgeGuidanceRelease': 'Backend logs should be visible in the in-app workspace.',
+        'logs.bridgeGuidanceUnavailable': 'Backend bridge is currently unavailable.',
+        'logs.latestDiagnosticExport': 'Latest diagnostic export',
+        'logs.diagnosticResultMetrics': '{files} files · {size}',
+        'logs.refreshCrashReports': 'Refresh crash reports',
+        'logs.recentCrashReports': 'Recent crash reports',
+        'logs.noCrashReports': 'No crash reports',
+        'logs.diagnosticDesktopOnlyDescription': 'Desktop only',
+        'logs.webDiagnosticsUnavailable': 'Desktop-only diagnostics are unavailable in web mode.',
+        'logs.pendingCrashReport': 'Pending',
+        'logs.copyReportPath': 'Copy report path',
+        'logs.openReportFolder': 'Open report folder',
+        'logs.latestCrashCapture': 'Latest crash capture',
+        'logs.statusSkipped': 'Skipped',
         'logs.deleteSelected': 'Delete Selected',
         'logs.deleteConfirmTitle': 'Confirm log deletion',
         'logs.deleteSuccess': 'Deleted {count} log file(s)',
@@ -87,6 +153,17 @@ jest.mock('@/components/providers/locale-provider', () => ({
         'logs.clear': 'Clear logs',
         'logs.pageSize': 'Per page',
         'logs.pageInfo': 'Page {current} of {total}',
+        'logs.searchFiles': 'Search log files...',
+        'logs.sortBy': 'Sort by',
+        'logs.sortNewest': 'Date (newest)',
+        'logs.sortOldest': 'Date (oldest)',
+        'logs.sortLargest': 'Size (largest)',
+        'logs.sortSmallest': 'Size (smallest)',
+        'logs.sortName': 'Name (A-Z)',
+        'logs.selectAll': 'Select all',
+        'logs.deselectAll': 'Deselect all',
+        'logs.selectedCount': '{count} selected',
+        'logs.noSearchResults': 'No files match your search',
         'common.refresh': 'Refresh',
         'common.cancel': 'Cancel',
         'common.previous': 'Previous',
@@ -117,14 +194,9 @@ jest.mock('@/lib/stores/log', () => ({
 jest.mock('@/hooks/use-logs', () => ({
   useLogs: () => ({
     cleanupLogs: mockCleanupLogs,
-    crashReports: [],
-    observability: {
-      runtimeMode: 'desktop-release',
-      backendBridgeState: 'available',
-      backendBridgeError: null,
-      latestCrashCapture: null,
-    },
-    latestDiagnosticAction: null,
+    crashReports: mockCrashReports,
+    observability: mockObservability,
+    latestDiagnosticAction: mockLatestDiagnosticAction,
     deleteLogFiles: mockDeleteLogFiles,
     deleteLogFile: mockDeleteLogFile,
     clearLogs: mockClearLogs,
@@ -175,6 +247,30 @@ jest.mock('@/components/log/log-diagnostics-card', () => ({
   LogDiagnosticsCard: () => <div data-testid="log-diagnostics-card">Diagnostics</div>,
 }));
 
+jest.mock('@/components/log/log-stats-strip', () => ({
+  LogStatsStrip: ({ metrics, latestAction, loading }: {
+    metrics: Array<{ id: string; label: string; value: string }>;
+    latestAction: { statusLabel: string; title: string; description: string; detail?: string | null } | null;
+    loading: boolean;
+  }) => (
+    <div data-testid="logs-stats-strip">
+      {loading && <div>Loading stats...</div>}
+      {metrics?.map((m) => (
+        <div key={m.id}>{m.label}: {m.value}</div>
+      ))}
+      {latestAction && (
+        <div data-testid="logs-result-summary">
+          <span>Latest workspace action</span>
+          <span>{latestAction.statusLabel}</span>
+          <span>{latestAction.title}</span>
+          <span>{latestAction.description}</span>
+          {latestAction.detail && <span>{latestAction.detail}</span>}
+        </div>
+      )}
+    </div>
+  ),
+}));
+
 jest.mock('@/lib/utils', () => ({
   formatBytes: (size: number) => `${size} B`,
   formatDate: (date: number | string) => String(date),
@@ -195,6 +291,14 @@ describe('LogsPage', () => {
     mockIsTauri = false;
     mockLogFiles = defaultFiles;
     mockSelectedLogFile = null;
+    mockCrashReports = [];
+    mockObservability = {
+      runtimeMode: 'desktop-release',
+      backendBridgeState: 'available',
+      backendBridgeError: null,
+      latestCrashCapture: null,
+    };
+    mockLatestDiagnosticAction = null;
     mockLoadLogFiles.mockResolvedValue({ ok: true, data: defaultFiles });
     mockGetLogDirectory.mockResolvedValue({ ok: true, data: '' });
     mockLoadCrashReports.mockResolvedValue({ ok: true, data: [] });
@@ -301,6 +405,42 @@ describe('LogsPage', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Log Files');
   });
 
+  it('renders a stats strip before tab content and surfaces the latest workspace action', () => {
+    mockIsTauri = true;
+    mockLatestDiagnosticAction = {
+      kind: 'full_diagnostic_export',
+      status: 'success',
+      path: 'D:/Diagnostics/cognia-diagnostic.zip',
+      error: null,
+      fileCount: 4,
+      sizeBytes: 2048,
+      updatedAt: 123,
+    };
+
+    render(<LogsPage />);
+
+    expect(screen.getByTestId('logs-stats-strip')).toBeInTheDocument();
+    expect(screen.getByText('Latest workspace action')).toBeInTheDocument();
+    expect(screen.getByText('Latest diagnostic export')).toBeInTheDocument();
+
+    const overview = screen.getByTestId('logs-workspace-overview');
+    const tabs = screen.getByRole('tablist');
+    expect(
+      overview.compareDocumentPosition(tabs) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('keeps contextual diagnostics and management visible on desktop realtime', () => {
+    mockIsTauri = true;
+
+    render(<LogsPage />);
+
+    const realtimeTab = screen.getByRole('tab', { name: /Real-time/ });
+    expect(realtimeTab).toHaveAttribute('data-state', 'active');
+    expect(screen.getByTestId('log-diagnostics-card')).toBeInTheDocument();
+    expect(screen.getByTestId('log-management-card')).toBeInTheDocument();
+  });
+
   it('shows desktop-only message in files tab for non-Tauri', async () => {
     const user = userEvent.setup();
     render(<LogsPage />);
@@ -340,8 +480,9 @@ describe('LogsPage', () => {
       expect(screen.getByText('Page 1 of 2')).toBeInTheDocument();
     });
 
-    expect(screen.getAllByTestId('log-file-row')).toHaveLength(20);
-    expect(screen.getByText('session-001.log')).toBeInTheDocument();
+    const rows = screen.getAllByTestId('log-file-row');
+    expect(rows).toHaveLength(20);
+    expect(within(rows[0]).getByText('session-001.log')).toBeInTheDocument();
     expect(screen.queryByText('session-021.log')).not.toBeInTheDocument();
   });
 
@@ -389,8 +530,9 @@ describe('LogsPage', () => {
       expect(screen.getByText('Page 1 of 2')).toBeInTheDocument();
     });
 
+    // Skip the select-all checkbox (index 0) and click the first file checkbox
     const firstPageCheckboxes = screen.getAllByRole('checkbox');
-    await user.click(firstPageCheckboxes[0]);
+    await user.click(firstPageCheckboxes[1]);
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /Delete Selected/i })).toHaveTextContent('(1)');
     });
@@ -401,7 +543,7 @@ describe('LogsPage', () => {
     });
 
     const secondPageCheckboxes = screen.getAllByRole('checkbox');
-    await user.click(secondPageCheckboxes[0]);
+    await user.click(secondPageCheckboxes[1]);
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /Delete Selected/i })).toHaveTextContent('(2)');
     });
@@ -523,8 +665,9 @@ describe('LogsPage', () => {
     });
 
     const summary = screen.getByTestId('logs-result-summary');
-    expect(summary).toHaveTextContent('Delete result');
+    expect(summary).toHaveTextContent('Latest workspace action');
     expect(summary).toHaveTextContent('Partial success');
+    expect(summary).toHaveTextContent('Latest delete action');
     expect(summary).toHaveTextContent('protected 1');
   });
 });

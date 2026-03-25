@@ -5,15 +5,9 @@ import { LogPanel } from "@/components/log";
 import { LogFileViewer } from "@/components/log/log-file-viewer";
 import { LogDiagnosticsCard } from "@/components/log/log-diagnostics-card";
 import { LogManagementCard } from "@/components/log/log-management-card";
-import { Badge } from "@/components/ui/badge";
+import { LogStatsStrip } from "@/components/log/log-stats-strip";
+import { LogFileListCard } from "@/components/log/log-file-list-card";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,9 +18,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/layout/page-header";
 import { useLocale } from "@/components/providers/locale-provider";
@@ -37,28 +28,25 @@ import {
   type LogMutationSummary,
 } from "@/hooks/use-logs";
 import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
+import {
+  buildLogsWorkspaceOverview,
+  getLatestLogsWorkspaceAction,
+} from "@/lib/log-workspace";
 import { isTauri } from "@/lib/tauri";
 import type { LogCleanupOptions, LogCleanupPolicyInput } from "@/types/tauri";
-import { formatBytes, formatDate } from "@/lib/utils";
-import { formatSessionLabel } from "@/lib/log";
+import { formatBytes } from "@/lib/utils";
 import { writeClipboard } from "@/lib/clipboard";
 import {
   ScrollText,
   FolderOpen,
   FileText,
   RefreshCw,
-  Trash2,
   Settings2,
-  X,
   Copy,
   ShieldAlert,
   Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
-
-const PAGE_SIZE_PRESETS = [20, 50, 100] as const;
-const MIN_PAGE_SIZE = 10;
-const MAX_PAGE_SIZE = 500;
 
 type MutationMode = "delete" | "cleanup";
 
@@ -95,10 +83,20 @@ export default function LogsPage() {
   const [logDir, setLogDir] = useState<string>("");
   const [cleanupPreview, setCleanupPreview] =
     useState<LogCleanupPreviewSummary | null>(null);
+  const [isCleanupPreviewStale, setIsCleanupPreviewStale] = useState(false);
   const [lastMutationSummary, setLastMutationSummary] =
     useState<MutationSummaryRecord | null>(null);
   const [deleteIntent, setDeleteIntent] = useState<DeleteIntent | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [totalSize, setTotalSize] = useState(0);
+  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
+  const [activeTab, setActiveTab] = useState<
+    "realtime" | "files" | "management"
+  >("realtime");
+
+  const stats = getLogStats();
+  const currentSessionFileName = logFiles[0]?.name ?? null;
 
   useKeyboardShortcuts({
     shortcuts: [
@@ -116,32 +114,6 @@ export default function LogsPage() {
       },
     ],
   });
-  const [loading, setLoading] = useState(false);
-  const [totalSize, setTotalSize] = useState(0);
-  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
-  const [activeTab, setActiveTab] = useState<
-    "realtime" | "files" | "management"
-  >("realtime");
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_PRESETS[0]);
-  const [customPageSize, setCustomPageSize] = useState<string>(
-    String(PAGE_SIZE_PRESETS[0]),
-  );
-  const stats = getLogStats();
-  const totalPages = Math.max(1, Math.ceil(logFiles.length / pageSize));
-  const pagedLogFiles = useMemo(() => {
-    const startIndex = (currentPage - 1) * pageSize;
-    return logFiles.slice(startIndex, startIndex + pageSize);
-  }, [currentPage, logFiles, pageSize]);
-
-  const applyPageSize = useCallback((value: number) => {
-    const normalized = Math.min(
-      MAX_PAGE_SIZE,
-      Math.max(MIN_PAGE_SIZE, Math.floor(value)),
-    );
-    setPageSize(normalized);
-    setCustomPageSize(String(normalized));
-  }, []);
 
   const refreshLogsPage = useCallback(async () => {
     if (!isTauri()) return;
@@ -177,10 +149,6 @@ export default function LogsPage() {
   }, [refreshLogsPage]);
 
   useEffect(() => {
-    setCurrentPage((prev) => Math.min(prev, totalPages));
-  }, [totalPages]);
-
-  useEffect(() => {
     const nextTotalSize = logFiles.reduce(
       (total, file) => total + file.size,
       0,
@@ -203,9 +171,10 @@ export default function LogsPage() {
     }
   }, [logFiles, selectedLogFile, setSelectedLogFile]);
 
+  // --- Handlers ---
+
   const handleOpenLogDir = async () => {
     if (!logDir || !isTauri()) return;
-
     try {
       const { revealItemInDir } = await import("@tauri-apps/plugin-opener");
       await revealItemInDir(logDir);
@@ -218,7 +187,6 @@ export default function LogsPage() {
   const handleRevealPath = useCallback(
     async (path: string) => {
       if (!isTauri()) return;
-
       try {
         const { revealItemInDir } = await import("@tauri-apps/plugin-opener");
         await revealItemInDir(path);
@@ -243,6 +211,22 @@ export default function LogsPage() {
       } else {
         next.add(fileName);
       }
+      return next;
+    });
+  }, []);
+
+  const handleSelectFiles = useCallback((fileNames: string[]) => {
+    setSelectedFiles((prev) => {
+      const next = new Set(prev);
+      for (const name of fileNames) next.add(name);
+      return next;
+    });
+  }, []);
+
+  const handleDeselectFiles = useCallback((fileNames: string[]) => {
+    setSelectedFiles((prev) => {
+      const next = new Set(prev);
+      for (const name of fileNames) next.delete(name);
       return next;
     });
   }, []);
@@ -296,67 +280,6 @@ export default function LogsPage() {
     },
     [t],
   );
-
-  const renderResultSummarySection = useCallback(() => {
-    if (!lastMutationSummary) {
-      return null;
-    }
-    return (
-      <section
-        data-testid="logs-result-summary"
-        className={`shrink-0 rounded-lg border px-3 py-2 text-xs ${
-          lastMutationSummary.summary.status === "failed"
-            ? "border-destructive/40 bg-destructive/5"
-            : lastMutationSummary.summary.status === "partial_success"
-              ? "border-amber-500/40 bg-amber-500/5"
-              : "border-emerald-500/40 bg-emerald-500/5"
-        }`}
-      >
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="font-medium text-foreground/90">
-            {lastMutationSummary.mode === "cleanup"
-              ? t("logs.cleanupSummaryTitle")
-              : t("logs.deleteSummaryTitle")}
-          </p>
-          <span className="tabular-nums">
-            {lastMutationSummary.summary.status === "success"
-              ? t("logs.statusSuccess")
-              : lastMutationSummary.summary.status === "partial_success"
-                ? t("logs.statusPartialSuccess")
-                : t("logs.statusFailed")}
-          </span>
-        </div>
-        <p className="mt-1 text-muted-foreground">
-          {t("logs.resultSummaryMetrics", {
-            deleted: lastMutationSummary.summary.deletedCount,
-            size: formatBytes(lastMutationSummary.summary.freedBytes),
-            protected: lastMutationSummary.summary.protectedCount,
-            skipped: lastMutationSummary.summary.skippedCount,
-          })}
-        </p>
-        {lastMutationSummary.summary.reasonCode && (
-          <p className="mt-1 text-muted-foreground">
-            {lastMutationSummary.summary.reasonCode === "current_session_protected"
-              ? t("logs.reasonCurrentSessionProtected")
-              : lastMutationSummary.summary.reasonCode === "log_file_not_found"
-                ? t("logs.reasonLogFileNotFound")
-                : lastMutationSummary.summary.reasonCode === "log_delete_failed"
-                  ? t("logs.reasonLogDeleteFailed")
-                  : lastMutationSummary.summary.reasonCode === "stale_policy_context"
-                    ? t("logs.reasonStalePolicyContext")
-                    : lastMutationSummary.summary.reasonCode}
-          </p>
-        )}
-        {lastMutationSummary.summary.warnings.length > 0 && (
-          <ul className="mt-1 space-y-0.5 text-muted-foreground">
-            {lastMutationSummary.summary.warnings.map((warning, index) => (
-              <li key={`${warning}-${index}`}>{warning}</li>
-            ))}
-          </ul>
-        )}
-      </section>
-    );
-  }, [lastMutationSummary, t]);
 
   const handleCopyPath = useCallback(
     async (path: string) => {
@@ -420,9 +343,7 @@ export default function LogsPage() {
   }, []);
 
   const handleConfirmDelete = useCallback(async () => {
-    if (!deleteIntent) {
-      return;
-    }
+    if (!deleteIntent) return;
 
     setDeleting(true);
     try {
@@ -447,13 +368,7 @@ export default function LogsPage() {
     } finally {
       setDeleting(false);
     }
-  }, [
-    deleteIntent,
-    deleteLogFile,
-    deleteLogFiles,
-    showMutationFeedback,
-    t,
-  ]);
+  }, [deleteIntent, deleteLogFile, deleteLogFiles, showMutationFeedback, t]);
 
   const handleClearHistory = useCallback(async () => {
     const result = await clearLogFile();
@@ -470,16 +385,6 @@ export default function LogsPage() {
     setSelectedFiles(new Set());
     setCleanupPreview(null);
   }, [clearLogFile, showMutationFeedback, t]);
-
-  const handleCustomPageSizeCommit = useCallback(() => {
-    const parsed = Number.parseInt(customPageSize, 10);
-    if (Number.isNaN(parsed)) {
-      setCustomPageSize(String(pageSize));
-      return;
-    }
-    setCurrentPage(1);
-    applyPageSize(parsed);
-  }, [applyPageSize, customPageSize, pageSize]);
 
   const handleManagementRefresh = useCallback(() => {
     setCleanupPreview(null);
@@ -504,11 +409,6 @@ export default function LogsPage() {
     [cleanupLogs],
   );
 
-  const activeDeleteCount = deleteIntent?.fileNames.length ?? 0;
-  const deleteIncludesCurrentSession =
-    (deleteIntent?.fileNames ?? []).includes(logFiles[0]?.name ?? "") ||
-    deleteIntent?.mode === "batch";
-
   const handleDeleteDialogOpenChange = useCallback(
     (open: boolean) => {
       if (!open && !deleting) {
@@ -517,6 +417,140 @@ export default function LogsPage() {
     },
     [deleting],
   );
+
+  // --- Computed values ---
+
+  const activeDeleteCount = deleteIntent?.fileNames.length ?? 0;
+  const deleteIncludesCurrentSession =
+    (deleteIntent?.fileNames ?? []).includes(logFiles[0]?.name ?? "") ||
+    deleteIntent?.mode === "batch";
+
+  const latestWorkspaceAction = useMemo(
+    () =>
+      getLatestLogsWorkspaceAction({
+        lastMutationSummary,
+        latestDiagnosticAction,
+        t,
+        formatBytes,
+      }),
+    [lastMutationSummary, latestDiagnosticAction, t],
+  );
+
+  const workspaceOverview = useMemo(
+    () =>
+      buildLogsWorkspaceOverview({
+        activeTab,
+        fileCount: logFiles.length,
+        totalSize,
+        selectedLogFile,
+        currentSessionFileName,
+        observability,
+        cleanupPreview,
+        isCleanupPreviewStale,
+        t,
+        formatBytes,
+      }),
+    [
+      activeTab,
+      cleanupPreview,
+      currentSessionFileName,
+      isCleanupPreviewStale,
+      logFiles.length,
+      observability,
+      selectedLogFile,
+      t,
+      totalSize,
+    ],
+  );
+
+  // --- Contextual sidebar ---
+
+  const contextualSections = useMemo(
+    () => [
+      {
+        key: "diagnostics",
+        render: () => (
+          <LogDiagnosticsCard
+            className="h-fit"
+            isDesktopRuntime={isTauri()}
+            observability={observability}
+            crashReports={crashReports}
+            latestDiagnosticAction={latestDiagnosticAction}
+            onExportDiagnostic={handleExportDiagnostic}
+            onRefreshCrashReports={refreshLogsPage}
+            onCopyPath={handleCopyPath}
+            onRevealPath={handleRevealPath}
+          />
+        ),
+      },
+      ...(isTauri()
+        ? [
+            {
+              key: "management",
+              render: () => (
+                <LogManagementCard
+                  className="h-fit"
+                  totalSize={totalSize}
+                  fileCount={logFiles.length}
+                  previewResult={cleanupPreview}
+                  onPreviewCleanup={handlePreviewCleanup}
+                  onCleanup={handleManagementCleanup}
+                  onRefresh={handleManagementRefresh}
+                  onPreviewStaleChange={setIsCleanupPreviewStale}
+                />
+              ),
+            },
+          ]
+        : []),
+    ],
+    [
+      cleanupPreview,
+      crashReports,
+      handleCopyPath,
+      handleExportDiagnostic,
+      handleManagementCleanup,
+      handleManagementRefresh,
+      handlePreviewCleanup,
+      handleRevealPath,
+      latestDiagnosticAction,
+      logFiles.length,
+      observability,
+      refreshLogsPage,
+      totalSize,
+    ],
+  );
+
+  const renderContextualRail = useCallback(
+    (variant: "desktop" | "mobile") => {
+      const wrapperClassName =
+        variant === "desktop"
+          ? "hidden lg:flex lg:min-h-0 lg:flex-col lg:gap-4"
+          : "flex flex-col gap-4";
+
+      return (
+        <div
+          className={wrapperClassName}
+          data-testid={
+            variant === "desktop"
+              ? "logs-contextual-rail"
+              : "logs-contextual-stack"
+          }
+        >
+          {contextualSections.map((section) => (
+            <div
+              key={section.key}
+              data-testid={`logs-contextual-section-${section.key}`}
+            >
+              {section.render()}
+            </div>
+          ))}
+        </div>
+      );
+    },
+    [contextualSections],
+  );
+
+  // --- Render ---
 
   return (
     <div className="flex flex-col h-full">
@@ -589,6 +623,19 @@ export default function LogsPage() {
         />
       </div>
 
+      {/* Stats strip */}
+      <section
+        data-testid="logs-workspace-overview"
+        className="shrink-0 px-4 sm:px-6 pt-4"
+      >
+        <LogStatsStrip
+          metrics={workspaceOverview.metrics}
+          attention={workspaceOverview.attention}
+          latestAction={latestWorkspaceAction}
+          loading={loading}
+        />
+      </section>
+
       {/* Tabs */}
       <Tabs
         value={activeTab}
@@ -628,24 +675,27 @@ export default function LogsPage() {
           value="realtime"
           className="flex-1 mt-0 p-4 sm:p-6 pt-3 sm:pt-4 min-h-0"
         >
-          <div className="flex h-full min-h-0 flex-col gap-3">
-            <section
-              role="status"
-              aria-live="polite"
-              className="shrink-0 rounded-lg border bg-card px-3 py-2 text-xs text-muted-foreground"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="font-medium text-foreground/90">
-                  {t("logs.realtime")}
-                </span>
-                <span className="tabular-nums">
-                  {stats.total} {t("logs.entries")}
-                </span>
-              </div>
-            </section>
-            <section className="min-h-0 flex-1" aria-label={t("logs.realtime")}>
-              <LogPanel className="h-full" maxHeight="100%" showToolbar />
-            </section>
+          <div className="grid h-full min-h-0 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+            <div className="flex h-full min-h-0 flex-col gap-3">
+              <section
+                role="status"
+                aria-live="polite"
+                className="shrink-0 rounded-lg border bg-card px-3 py-2 text-xs text-muted-foreground"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-medium text-foreground/90">
+                    {t("logs.realtime")}
+                  </span>
+                  <span className="tabular-nums">
+                    {stats.total} {t("logs.entries")}
+                  </span>
+                </div>
+              </section>
+              <section className="min-h-0 flex-1" aria-label={t("logs.realtime")}>
+                <LogPanel className="h-full" maxHeight="100%" showToolbar />
+              </section>
+            </div>
+            {renderContextualRail("desktop")}
           </div>
         </TabsContent>
 
@@ -670,280 +720,25 @@ export default function LogsPage() {
                 </span>
               </div>
             </section>
-            {renderResultSummarySection()}
 
             <section className="min-h-0 flex-1">
-              <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-4 h-full min-h-0">
-            {/* File list */}
-            <Card className="flex flex-col min-h-0">
-              <CardHeader className="shrink-0 pb-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle className="text-base sm:text-lg">
-                      {t("logs.logFiles")}
-                    </CardTitle>
-                    {logDir && (
-                      <CardDescription>
-                        <code className="text-[11px] sm:text-xs bg-muted px-2 py-1 rounded break-all">
-                          {logDir}
-                        </code>
-                      </CardDescription>
-                    )}
-                  </div>
-                  {selectedFiles.size > 0 && (
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={handleDeleteSelectedRequest}
-                      className="h-8"
-                    >
-                      <Trash2 className="h-3.5 w-3.5 mr-1.5" />
-                      {t("logs.deleteSelected")} ({selectedFiles.size})
-                    </Button>
-                  )}
-                  {logFiles.length > 1 && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleClearHistory}
-                      className="h-8"
-                    >
-                      <Trash2 className="h-3.5 w-3.5 mr-1.5" />
-                      {t("logs.clear")}
-                    </Button>
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent className="flex-1 min-h-0 pt-0">
-                {!isTauri() ? (
-                  <div className="flex flex-col items-center justify-center py-12 sm:py-16 text-muted-foreground">
-                    <div className="relative mb-6">
-                      <div className="absolute inset-0 bg-primary/5 rounded-full blur-2xl scale-150" />
-                      <FileText className="relative h-14 w-14 sm:h-16 sm:w-16 text-muted-foreground/40" />
-                    </div>
-                    <p className="text-sm sm:text-base font-medium text-foreground/70">
-                      {t("logs.desktopOnly")}
-                    </p>
-                    <p className="text-xs sm:text-sm mt-2 text-center max-w-[280px]">
-                      {t("logs.desktopOnlyDescription")}
-                    </p>
-                  </div>
-                ) : logFiles.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-12 sm:py-16 text-muted-foreground">
-                    <div className="relative mb-6">
-                      <div className="absolute inset-0 bg-primary/5 rounded-full blur-2xl scale-150" />
-                      <FileText className="relative h-14 w-14 sm:h-16 sm:w-16 text-muted-foreground/40" />
-                    </div>
-                    <p className="text-sm sm:text-base font-medium text-foreground/70">
-                      {t("logs.noFiles")}
-                    </p>
-                  </div>
-                ) : (
-                  <>
-                    <ScrollArea
-                      data-testid="logs-files-list-scroll-area"
-                      className="h-full min-h-0"
-                    >
-                      <div className="space-y-2 pr-4">
-                        {pagedLogFiles.map((file) => {
-                          const sessionLabel = formatSessionLabel(file.name);
-                          const isCurrent = file.name === logFiles[0]?.name;
-                          const isSelected = selectedFiles.has(file.name);
-                          return (
-                            <div
-                              key={file.name}
-                              data-testid="log-file-row"
-                              className={`group flex items-center gap-3 p-3 sm:p-4 rounded-lg border transition-all cursor-pointer ${
-                                isSelected
-                                  ? "bg-primary/5 border-primary/30"
-                                  : "bg-card hover:bg-muted/30 hover:border-primary/20"
-                              }`}
-                              onClick={() => setSelectedLogFile(file.name)}
-                            >
-                              {!isCurrent && (
-                                <Checkbox
-                                  checked={isSelected}
-                                  onCheckedChange={() =>
-                                    toggleFileSelection(file.name)
-                                  }
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="shrink-0"
-                                />
-                              )}
-                              <div className="shrink-0 p-2 rounded-lg bg-muted/50 group-hover:bg-primary/10 transition-colors">
-                                <FileText className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2">
-                                  <p className="font-medium text-sm truncate">
-                                    {sessionLabel ?? file.name}
-                                  </p>
-                                  {isCurrent && (
-                                    <Badge
-                                      variant="secondary"
-                                      className="shrink-0 text-[10px] px-1.5 py-0"
-                                    >
-                                      {t("logs.currentSession")}
-                                    </Badge>
-                                  )}
-                                </div>
-                                <p className="text-xs text-muted-foreground mt-0.5">
-                                  {formatBytes(file.size)} •{" "}
-                                  {formatDate(file.modified)}
-                                </p>
-                              </div>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSelectedLogFile(file.name);
-                                }}
-                                title={t("logs.viewFile")}
-                              >
-                                <FolderOpen className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  void handleCopyPath(file.path);
-                                }}
-                                title={t("logs.copyFilePath")}
-                              >
-                                <Copy className="h-4 w-4" />
-                              </Button>
-                              {!isCurrent && (
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-destructive"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleDeleteSingleRequest(file.name);
-                                  }}
-                                  title={t("common.delete")}
-                                >
-                                  <X className="h-4 w-4" />
-                                </Button>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </ScrollArea>
-                    <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t pt-3">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-muted-foreground">
-                          {t("logs.pageSize")}
-                        </span>
-                        <div className="flex items-center gap-1">
-                          {PAGE_SIZE_PRESETS.map((preset) => (
-                            <Button
-                              key={preset}
-                              type="button"
-                              size="sm"
-                              variant={
-                                pageSize === preset ? "secondary" : "outline"
-                              }
-                              className="h-7 px-2 text-[11px]"
-                              onClick={() => {
-                                setCurrentPage(1);
-                                applyPageSize(preset);
-                              }}
-                            >
-                              {preset}
-                            </Button>
-                          ))}
-                        </div>
-                        <Input
-                          type="number"
-                          min={MIN_PAGE_SIZE}
-                          max={MAX_PAGE_SIZE}
-                          step={1}
-                          value={customPageSize}
-                          onChange={(event) =>
-                            setCustomPageSize(event.target.value)
-                          }
-                          onBlur={handleCustomPageSizeCommit}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") {
-                              event.preventDefault();
-                              handleCustomPageSizeCommit();
-                            }
-                          }}
-                          aria-label={t("logs.pageSize")}
-                          className="h-7 w-20 text-xs"
-                        />
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-muted-foreground tabular-nums">
-                          {t("logs.pageInfo", {
-                            current: currentPage,
-                            total: totalPages,
-                          })}
-                        </span>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="h-7 px-2 text-xs"
-                          onClick={() =>
-                            setCurrentPage((prev) => Math.max(1, prev - 1))
-                          }
-                          disabled={currentPage <= 1}
-                        >
-                          {t("common.previous")}
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="h-7 px-2 text-xs"
-                          onClick={() =>
-                            setCurrentPage((prev) =>
-                              Math.min(totalPages, prev + 1),
-                            )
-                          }
-                          disabled={currentPage >= totalPages}
-                        >
-                          {t("common.next")}
-                        </Button>
-                      </div>
-                    </div>
-                  </>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Management sidebar */}
-            <div className="hidden lg:flex lg:min-h-0 lg:flex-col lg:gap-4">
-              <LogDiagnosticsCard
-                isDesktopRuntime={isTauri()}
-                observability={observability}
-                crashReports={crashReports}
-                latestDiagnosticAction={latestDiagnosticAction}
-                onExportDiagnostic={handleExportDiagnostic}
-                onRefreshCrashReports={refreshLogsPage}
-                onCopyPath={handleCopyPath}
-                onRevealPath={handleRevealPath}
-              />
-              {isTauri() && (
-                <div className="min-h-0">
-                  <LogManagementCard
-                    totalSize={totalSize}
-                    fileCount={logFiles.length}
-                    previewResult={cleanupPreview}
-                    onPreviewCleanup={handlePreviewCleanup}
-                    onCleanup={handleManagementCleanup}
-                    onRefresh={handleManagementRefresh}
-                  />
-                </div>
-              )}
-            </div>
+              <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] gap-4 h-full min-h-0">
+                <LogFileListCard
+                  logFiles={logFiles}
+                  logDir={logDir}
+                  loading={loading}
+                  currentSessionFileName={currentSessionFileName}
+                  selectedFiles={selectedFiles}
+                  onToggleFileSelection={toggleFileSelection}
+                  onSelectFiles={handleSelectFiles}
+                  onDeselectFiles={handleDeselectFiles}
+                  onViewFile={setSelectedLogFile}
+                  onDeleteRequest={handleDeleteSingleRequest}
+                  onDeleteSelectedRequest={handleDeleteSelectedRequest}
+                  onClearHistory={handleClearHistory}
+                  onCopyPath={handleCopyPath}
+                />
+                {renderContextualRail("desktop")}
               </div>
             </section>
           </div>
@@ -969,30 +764,8 @@ export default function LogsPage() {
                 </span>
               </div>
             </section>
-            {renderResultSummarySection()}
             <section className="min-h-0 flex-1">
-              <div className="flex flex-col gap-4">
-                <LogDiagnosticsCard
-                  isDesktopRuntime={isTauri()}
-                  observability={observability}
-                  crashReports={crashReports}
-                  latestDiagnosticAction={latestDiagnosticAction}
-                  onExportDiagnostic={handleExportDiagnostic}
-                  onRefreshCrashReports={refreshLogsPage}
-                  onCopyPath={handleCopyPath}
-                  onRevealPath={handleRevealPath}
-                />
-                {isTauri() && (
-                  <LogManagementCard
-                    totalSize={totalSize}
-                    fileCount={logFiles.length}
-                    previewResult={cleanupPreview}
-                    onPreviewCleanup={handlePreviewCleanup}
-                    onCleanup={handleManagementCleanup}
-                    onRefresh={handleManagementRefresh}
-                  />
-                )}
-              </div>
+              {renderContextualRail("mobile")}
             </section>
           </div>
         </TabsContent>

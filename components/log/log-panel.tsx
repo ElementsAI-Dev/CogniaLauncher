@@ -108,7 +108,7 @@ export function LogPanel({
   return (
     <Card
       className={cn(
-        "flex min-h-0 flex-1 flex-col overflow-hidden gap-0 rounded-lg py-0",
+        "flex min-h-0 flex-1 flex-col overflow-hidden gap-0 rounded-xl border-border/70 bg-card/90 py-0 shadow-xs",
         className,
       )}
       style={{ maxHeight }}
