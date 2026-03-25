@@ -260,6 +260,24 @@ describe('Environment Constants', () => {
       expect(cppFiles).toContain('xmake.lua (set_languages c++)');
     });
 
+    it('cpp includes provider-specific manifest and preset detection files', () => {
+      const cppFiles = DEFAULT_DETECTION_FILES.cpp;
+      expect(cppFiles).toContain('CMakePresets.json (CMAKE_CXX_STANDARD)');
+      expect(cppFiles).toContain('CMakeUserPresets.json (CMAKE_CXX_STANDARD)');
+      expect(cppFiles).toContain('vcpkg.json');
+      expect(cppFiles).toContain('vcpkg-configuration.json');
+      expect(cppFiles).toContain('conanfile.txt');
+      expect(cppFiles).toContain('conanfile.py');
+    });
+
+    it('cpp provider-specific markers outrank generic tool-version files', () => {
+      const cppFiles = DEFAULT_DETECTION_FILES.cpp;
+      expect(cppFiles.indexOf('vcpkg.json')).toBeGreaterThan(-1);
+      expect(cppFiles.indexOf('.tool-versions')).toBeGreaterThan(-1);
+      expect(cppFiles.indexOf('vcpkg.json')).toBeLessThan(cppFiles.indexOf('.tool-versions'));
+      expect(cppFiles.indexOf('conanfile.txt')).toBeLessThan(cppFiles.indexOf('mise.toml'));
+    });
+
     it('c and cpp have system provider', () => {
       const cProviders = DEFAULT_PROVIDERS.c;
       const cppProviders = DEFAULT_PROVIDERS.cpp;
