@@ -27,6 +27,7 @@ jest.mock("@/components/providers/locale-provider", () => ({
         "packages.activeFilters": "Active filters",
         "packages.clearAllFilters": "Clear all",
         "packages.submitSearch": "Search",
+        "packages.advancedSearch": "Advanced Search",
         "common.clear": "Clear",
       };
       return translations[key] || key;
@@ -268,5 +269,16 @@ describe("SearchBar", () => {
         sortOrder: "desc",
       }),
     );
+  });
+
+  it("keeps provider and filter controls visible without a separate advanced-search toggle", async () => {
+    const user = userEvent.setup();
+    render(<SearchBar {...defaultProps} />);
+
+    expect(screen.queryByTestId("advanced-search-panel")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Filters" }));
+    expect(screen.getByText("Providers")).toBeInTheDocument();
+    expect(screen.getByText("Filters")).toBeInTheDocument();
   });
 });

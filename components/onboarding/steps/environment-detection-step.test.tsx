@@ -264,4 +264,31 @@ describe("EnvironmentDetectionStep", () => {
       expect(screen.getByText("13.2")).toBeInTheDocument();
     });
   });
+
+  it("renders provider-specific manifest sources without flattening them", async () => {
+    mockIsTauri.mockReturnValue(true);
+    mockEnvList.mockResolvedValue([]);
+    mockEnvListProviders.mockResolvedValue([]);
+    mockBuildOnboardingDetections.mockReturnValue([
+      {
+        detectionKey: "cpp::vcpkg",
+        name: "C++",
+        envType: "cpp",
+        providerId: "vcpkg",
+        providerName: "vcpkg",
+        version: "vcpkg manifest",
+        available: false,
+        source: "vcpkg.json",
+        scope: "managed" as const,
+      },
+    ]);
+
+    render(<EnvironmentDetectionStep t={mockT} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("vcpkg")).toBeInTheDocument();
+      expect(screen.getByText("vcpkg manifest")).toBeInTheDocument();
+      expect(screen.getByText(/vcpkg\.json/)).toBeInTheDocument();
+    });
+  });
 });

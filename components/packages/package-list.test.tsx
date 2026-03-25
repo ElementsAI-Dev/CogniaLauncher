@@ -3,9 +3,16 @@ import userEvent from "@testing-library/user-event";
 import { PackageList } from "./package-list";
 import type { InstalledPackage, PackageSummary } from "@/lib/tauri";
 
+const mockPush = jest.fn();
 const mockTogglePackageSelection = jest.fn();
 const mockSelectAllPackages = jest.fn();
 const mockClearPackageSelection = jest.fn();
+
+jest.mock("next/navigation", () => ({
+  useRouter: () => ({
+    push: mockPush,
+  }),
+}));
 
 jest.mock("@/components/providers/locale-provider", () => ({
   useLocale: () => ({
@@ -246,5 +253,17 @@ describe("PackageList", () => {
     const checkboxes = screen.getAllByRole("checkbox");
     await user.click(checkboxes[0]);
     expect(mockSelectAllPackages).toHaveBeenCalled();
+  });
+
+  it("uses package detail routing as the primary click action for search results", async () => {
+    const user = userEvent.setup();
+    const onSelect = jest.fn();
+
+    render(<PackageList {...defaultProps} onSelect={onSelect} />);
+
+    await user.click(screen.getByText("numpy"));
+
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(mockPush).toHaveBeenCalledWith("/packages/detail?name=numpy&provider=pip");
   });
 });

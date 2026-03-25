@@ -34,6 +34,18 @@ describe("DetectedVersionBadge", () => {
     expect(screen.getByText(/tool versions file/)).toBeInTheDocument();
   });
 
+  it("preserves provider-specific manifest source labels", () => {
+    render(
+      <DetectedVersionBadge
+        {...defaultProps}
+        version="vcpkg manifest"
+        source="vcpkg.json"
+        sourceType="manifest"
+      />,
+    );
+    expect(screen.getByText(/vcpkg manifest.*\(vcpkg\.json\)/)).toBeInTheDocument();
+  });
+
   it("renders Scan icon in full mode", () => {
     const { container } = render(<DetectedVersionBadge {...defaultProps} />);
     // Scan icon is rendered as an svg with lucide class
