@@ -75,13 +75,17 @@ import type {
   WslBatchWorkflowSummary,
 } from '@/types/wsl';
 import {
+  WSL_ACTION_INVENTORY,
   buildWslBatchWorkflowPreflight,
   buildWslDistroHref,
   buildWslOverviewHref,
   normalizeWslBatchWorkflowPreset,
   normalizeSelectedDistros,
   readWslOverviewContext,
+  resolveWslWorkspaceScopedTarget,
+  sanitizeWslOverviewContext,
   summarizeBatchResults,
+  type WslOverviewContext,
 } from '@/lib/wsl/workflow';
 
 interface WslLifecycleFeedback {
@@ -224,6 +228,7 @@ export default function WslPage() {
     capabilities,
     runtimeSnapshot,
     runtimeInfo,
+    distroInfoByName,
     completeness,
     loading,
     error,
@@ -260,6 +265,7 @@ export default function WslPage() {
     installWithLocation,
     getVersionInfo,
     refreshRuntimeInfo,
+    refreshDistroInfo,
     getTotalDiskUsage,
     openInExplorer,
     openInTerminal,
@@ -309,7 +315,7 @@ export default function WslPage() {
     | { type: 'assistance'; actionId: string; origin: 'panel' | 'error' }
     | null
   >(null);
-  const [selectedDistroForConfig, setSelectedDistroForConfig] = useState<string | null>(null);
+  const [configOverrideDistroName, setConfigOverrideDistroName] = useState<string | null>(null);
   const [changeUserOpen, setChangeUserOpen] = useState(false);
   const [changeUserDistro, setChangeUserDistro] = useState('');
   const [mountDialogOpen, setMountDialogOpen] = useState(false);
@@ -358,9 +364,33 @@ export default function WslPage() {
     return () => clearTimeout(timer);
   }, [lifecycleFeedback]);
 
-  const filteredDistros = activeTagFilter
-    ? distros.filter((d) => (distroTags[d.name] ?? []).includes(activeTagFilter))
-    : distros;
+  const filteredDistros = useMemo(
+    () => (
+      activeTagFilter
+        ? distros.filter((d) => (distroTags[d.name] ?? []).includes(activeTagFilter))
+        : distros
+    ),
+    [activeTagFilter, distros, distroTags],
+  );
+  const activeWorkspaceDistroName = useMemo(() => {
+    if (overviewContext.activeDistroName && distros.some((d) => d.name === overviewContext.activeDistroName)) {
+      return overviewContext.activeDistroName;
+    }
+
+    const selectedTarget = Array.from(selectedDistros).find((name) => distros.some((d) => d.name === name));
+    if (selectedTarget) {
+      return selectedTarget;
+    }
+
+    return filteredDistros[0]?.name ?? distros[0]?.name ?? null;
+  }, [distros, filteredDistros, overviewContext.activeDistroName, selectedDistros]);
+  const activeWorkspaceDistro = activeWorkspaceDistroName
+    ? distros.find((distro) => distro.name === activeWorkspaceDistroName) ?? null
+    : null;
+  const activeWorkspaceInfo = activeWorkspaceDistroName
+    ? distroInfoByName[activeWorkspaceDistroName] ?? null
+    : null;
+  const activeWorkflowSummary = workflowSummaries[0] ?? null;
   const completenessHint = useMemo(() => {
     if (runtimeSnapshot?.state === 'degraded') {
       return runtimeSnapshot.degradedReasons[0]
@@ -375,11 +405,38 @@ export default function WslPage() {
     }
     return null;
   }, [completeness.degradedReasons, completeness.state, runtimeSnapshot, t]);
+  const activeWorkspaceHint = useMemo(() => {
+    if (activeWorkspaceInfo?.state === 'partial' || activeWorkspaceInfo?.state === 'stale') {
+      return activeWorkspaceInfo.environment.reason
+        ?? activeWorkspaceInfo.resources.reason
+        ?? activeWorkspaceInfo.ipAddress.reason
+        ?? t('wsl.runtimeDegradedHint');
+    }
+    if (activeWorkspaceInfo?.state === 'unavailable') {
+      return activeWorkspaceInfo.environment.reason
+        ?? activeWorkspaceInfo.resources.reason
+        ?? activeWorkspaceInfo.ipAddress.reason
+        ?? t('wsl.runtimeUnavailableHint');
+    }
+    return completenessHint;
+  }, [activeWorkspaceInfo, completenessHint, t]);
+  const activeWorkspaceTitle = activeWorkspaceDistroName
+    ? `${activeWorkspaceDistroName}${overviewContext.continueAction ? ` · ${overviewContext.continueAction}` : ''}`
+    : t('wsl.title');
+  const configTargetResolution = useMemo(
+    () => resolveWslWorkspaceScopedTarget({
+      activeWorkspaceDistroName,
+      overrideDistroName: configOverrideDistroName,
+      availableDistroNames: distros.map((distro) => distro.name),
+      fallbackDistroName: distros[0]?.name ?? null,
+    }),
+    [activeWorkspaceDistroName, configOverrideDistroName, distros],
+  );
   const runtimeAssistanceActions = getAssistanceActions('runtime');
   const batchAssistanceActions = useMemo(() => {
-    const referenceDistro = filteredDistros[0]?.name ?? distros[0]?.name;
+    const referenceDistro = activeWorkspaceDistroName ?? filteredDistros[0]?.name ?? distros[0]?.name;
     return referenceDistro ? getAssistanceActions('distro', referenceDistro) : [];
-  }, [distros, filteredDistros, getAssistanceActions]);
+  }, [activeWorkspaceDistroName, distros, filteredDistros, getAssistanceActions]);
   const workflowCommandOptions = useMemo(
     () => [...PRESET_COMMANDS, ...savedCommands],
     [savedCommands]
@@ -407,30 +464,33 @@ export default function WslPage() {
     }
   }, [getTotalDiskUsage, getVersionInfo, isDesktop, runtimeInfoSnapshot]);
 
-  const syncOverviewContext = useCallback((nextTab: 'installed' | 'available', nextTag: string | null) => {
-    const href = buildWslOverviewHref({ tab: nextTab, tag: nextTag, origin: 'overview' });
-    setOverviewContext({ tab: nextTab, tag: nextTag, origin: 'overview' });
+  const syncOverviewContext = useCallback((nextContext: Partial<WslOverviewContext>) => {
+    const resolved = sanitizeWslOverviewContext({
+      ...overviewContext,
+      tab: nextContext.tab ?? activeTab,
+      tag: nextContext.tag ?? activeTagFilter,
+      origin: nextContext.origin ?? overviewContext.origin,
+      activeDistroName: nextContext.activeDistroName ?? overviewContext.activeDistroName,
+      continueAction: nextContext.continueAction ?? overviewContext.continueAction,
+    });
+    const href = buildWslOverviewHref(resolved);
+    setOverviewContext(resolved);
     if (typeof window !== 'undefined' && pathname === '/wsl') {
       window.history.replaceState(null, '', href);
     }
     return href;
-  }, [pathname, setOverviewContext]);
+  }, [activeTab, activeTagFilter, overviewContext, pathname, setOverviewContext]);
 
-  // Keep selected per-distro config target valid when distros change
   useEffect(() => {
     if (distros.length === 0) {
-      setSelectedDistroForConfig(null);
+      setConfigOverrideDistroName(null);
       return;
     }
 
-    const selectedIsValid = selectedDistroForConfig
-      ? distros.some((d) => d.name === selectedDistroForConfig)
-      : false;
-
-    if (!selectedIsValid) {
-      setSelectedDistroForConfig(distros[0].name);
+    if (configOverrideDistroName && !distros.some((d) => d.name === configOverrideDistroName)) {
+      setConfigOverrideDistroName(null);
     }
-  }, [distros, selectedDistroForConfig]);
+  }, [configOverrideDistroName, distros]);
 
   useEffect(() => {
     if (!totalDiskUsage) {
@@ -450,12 +510,19 @@ export default function WslPage() {
     if (nextContext.tag !== activeTagFilter) {
       setActiveTagFilter(nextContext.tag);
     }
-  }, [activeTab, activeTagFilter, overviewContext, searchParams]);
+    if (
+      nextContext.origin !== overviewContext.origin
+      || nextContext.activeDistroName !== overviewContext.activeDistroName
+      || nextContext.continueAction !== overviewContext.continueAction
+    ) {
+      setOverviewContext(nextContext);
+    }
+  }, [activeTab, activeTagFilter, overviewContext, searchParams, setOverviewContext]);
 
   useEffect(() => {
     if (activeTagFilter && !availableTags.includes(activeTagFilter)) {
       setActiveTagFilter(null);
-      syncOverviewContext(activeTab, null);
+      syncOverviewContext({ tag: null });
     }
   }, [activeTab, activeTagFilter, availableTags, syncOverviewContext]);
 
@@ -470,8 +537,39 @@ export default function WslPage() {
   }, [activeTab, selectedDistros]);
 
   useEffect(() => {
-    setOverviewContext({ tab: activeTab, tag: activeTagFilter, origin: 'overview' });
-  }, [activeTab, activeTagFilter, setOverviewContext]);
+    if (
+      overviewContext.tab !== activeTab
+      || overviewContext.tag !== activeTagFilter
+      || overviewContext.origin !== 'overview'
+    ) {
+      setOverviewContext({ tab: activeTab, tag: activeTagFilter, origin: 'overview' });
+    }
+  }, [activeTab, activeTagFilter, overviewContext.origin, overviewContext.tab, overviewContext.tag, setOverviewContext]);
+
+  useEffect(() => {
+    if (activeWorkspaceDistroName && activeWorkspaceDistroName !== overviewContext.activeDistroName) {
+      syncOverviewContext({ activeDistroName: activeWorkspaceDistroName });
+      return;
+    }
+    if (!activeWorkspaceDistroName && (overviewContext.activeDistroName || overviewContext.continueAction)) {
+      syncOverviewContext({ activeDistroName: null, continueAction: null });
+    }
+  }, [
+    activeWorkspaceDistroName,
+    overviewContext.activeDistroName,
+    overviewContext.continueAction,
+    syncOverviewContext,
+  ]);
+
+  useEffect(() => {
+    if (
+      available === true
+      && activeWorkspaceDistroName
+      && !activeWorkspaceInfo
+    ) {
+      void refreshDistroInfo(activeWorkspaceDistroName);
+    }
+  }, [activeWorkspaceDistroName, activeWorkspaceInfo, available, refreshDistroInfo]);
 
   // Initialize on mount
   useEffect(() => {
@@ -521,22 +619,123 @@ export default function WslPage() {
     });
   }, [t]);
 
-  const handleInstallOnline = useCallback(async (name: string) => {
-    setRunningFeedback(t('wsl.install').replace('{name}', name), () => {
-      void handleInstallOnline(name);
+  const refreshWorkspaceTargets = useCallback(async (
+    targets: readonly Array<'inventory' | 'runtime' | 'config' | 'backup' | 'network'>,
+    targetDistroName?: string | null,
+  ) => {
+    const refreshJobs: Promise<unknown>[] = [];
+    if (targets.includes('inventory')) {
+      refreshJobs.push(refreshDistros());
+    }
+    if (targets.includes('runtime')) {
+      refreshJobs.push(refreshRuntimeInfoAction());
+    }
+    if (targets.includes('config')) {
+      refreshJobs.push(refreshConfig());
+    }
+    if (targets.includes('network')) {
+      refreshJobs.push(refreshStatus());
+    }
+    if (targets.includes('backup') || targets.includes('inventory') || targets.includes('runtime')) {
+      refreshJobs.push(refreshSidebarMeta());
+    }
+
+    const distroTarget = targetDistroName ?? activeWorkspaceDistroName;
+    if (distroTarget) {
+      refreshJobs.push(refreshDistroInfo(distroTarget));
+    }
+
+    if (refreshJobs.length > 0) {
+      await Promise.all(refreshJobs);
+    }
+  }, [
+    activeWorkspaceDistroName,
+    refreshConfig,
+    refreshDistros,
+    refreshDistroInfo,
+    refreshRuntimeInfoAction,
+    refreshSidebarMeta,
+    refreshStatus,
+  ]);
+
+  const syncSupportTargetContext = useCallback((targetDistroName: string, continueAction: string) => {
+    syncOverviewContext({
+      activeDistroName: targetDistroName,
+      continueAction,
     });
-    try {
-      await installOnlineDistro(name);
-      toast.success(t('wsl.installSuccess').replace('{name}', name));
-      await refreshSidebarMeta();
-      setSuccessFeedback(t('wsl.install').replace('{name}', name), name);
-    } catch (err) {
-      toast.error(String(err));
-      setFailedFeedback(t('wsl.install').replace('{name}', name), String(err), () => {
-        void handleInstallOnline(name);
+  }, [syncOverviewContext]);
+
+  const runWorkspaceAction = useCallback(async <T,>({
+    inventoryId,
+    label,
+    run,
+    targetDistroName,
+    continueAction,
+    successToastMessage,
+    successDetails,
+    errorMessage,
+    retry,
+    onSuccess,
+  }: {
+    inventoryId: keyof typeof WSL_ACTION_INVENTORY;
+    label: string;
+    run: () => Promise<T>;
+    targetDistroName?: string | null;
+    continueAction?: string | null;
+    successToastMessage?: (result: T) => string | null;
+    successDetails?: (result: T) => string | undefined;
+    errorMessage?: (error: unknown) => string;
+    retry?: () => void;
+    onSuccess?: (result: T) => Promise<void> | void;
+  }) => {
+    if (targetDistroName || continueAction) {
+      syncOverviewContext({
+        activeDistroName: targetDistroName ?? overviewContext.activeDistroName,
+        continueAction: continueAction ?? overviewContext.continueAction,
       });
     }
-  }, [installOnlineDistro, refreshSidebarMeta, setFailedFeedback, setRunningFeedback, setSuccessFeedback, t]);
+    setRunningFeedback(label, retry);
+
+    try {
+      const result = await run();
+      const toastMessage = successToastMessage?.(result);
+      if (toastMessage) {
+        toast.success(toastMessage);
+      }
+      await refreshWorkspaceTargets(WSL_ACTION_INVENTORY[inventoryId].refreshTargets, targetDistroName);
+      await onSuccess?.(result);
+      setSuccessFeedback(label, successDetails?.(result));
+      return result;
+    } catch (err) {
+      const message = errorMessage?.(err) ?? String(err);
+      toast.error(message);
+      await refreshWorkspaceTargets(WSL_ACTION_INVENTORY[inventoryId].refreshTargets, targetDistroName);
+      setFailedFeedback(label, message, retry);
+      return null;
+    }
+  }, [
+    overviewContext.activeDistroName,
+    overviewContext.continueAction,
+    refreshWorkspaceTargets,
+    setFailedFeedback,
+    setRunningFeedback,
+    setSuccessFeedback,
+    syncOverviewContext,
+  ]);
+
+  const handleInstallOnline = useCallback(async (name: string) => {
+    void runWorkspaceAction({
+      inventoryId: 'runtime.installOnline',
+      label: t('wsl.install').replace('{name}', name),
+      run: () => installOnlineDistro(name),
+      continueAction: 'install',
+      successToastMessage: () => t('wsl.installSuccess').replace('{name}', name),
+      successDetails: () => name,
+      retry: () => {
+        void handleInstallOnline(name);
+      },
+    });
+  }, [installOnlineDistro, runWorkspaceAction, t]);
 
   const handleOpenInstallWithLocation = useCallback((name: string) => {
     setInstallLocationDistroName(name);
@@ -544,69 +743,61 @@ export default function WslPage() {
   }, []);
 
   const handleInstallWithLocation = useCallback(async (name: string, location: string) => {
-    setRunningFeedback(t('wsl.installWithLocation'), () => {
-      void handleInstallWithLocation(name, location);
-    });
-    try {
-      await installWithLocation(name, location);
-      toast.success(t('wsl.installWithLocationSuccess').replace('{name}', name));
-      await refreshSidebarMeta();
-      setSuccessFeedback(t('wsl.installWithLocation'), location);
-    } catch (err) {
-      toast.error(String(err));
-      setFailedFeedback(t('wsl.installWithLocation'), String(err), () => {
+    void runWorkspaceAction({
+      inventoryId: 'runtime.installWithLocation',
+      label: t('wsl.installWithLocation'),
+      run: () => installWithLocation(name, location),
+      continueAction: 'install',
+      successToastMessage: () => t('wsl.installWithLocationSuccess').replace('{name}', name),
+      successDetails: () => location,
+      retry: () => {
         void handleInstallWithLocation(name, location);
-      });
-    }
-  }, [installWithLocation, refreshSidebarMeta, setFailedFeedback, setRunningFeedback, setSuccessFeedback, t]);
+      },
+    });
+  }, [installWithLocation, runWorkspaceAction, t]);
 
   const handleLaunch = useCallback(async (name: string) => {
-    setRunningFeedback(t('wsl.launch').replace('{name}', name), () => {
-      void handleLaunch(name);
-    });
-    try {
-      await launch(name);
-      toast.success(t('wsl.launchSuccess').replace('{name}', name));
-      setSuccessFeedback(t('wsl.launch').replace('{name}', name), name);
-    } catch (err) {
-      toast.error(String(err));
-      setFailedFeedback(t('wsl.launch').replace('{name}', name), String(err), () => {
+    void runWorkspaceAction({
+      inventoryId: 'distro.launch',
+      label: t('wsl.launch').replace('{name}', name),
+      run: () => launch(name),
+      targetDistroName: name,
+      continueAction: 'launch',
+      successToastMessage: () => t('wsl.launchSuccess').replace('{name}', name),
+      successDetails: () => name,
+      retry: () => {
         void handleLaunch(name);
-      });
-    }
-  }, [launch, setFailedFeedback, setRunningFeedback, setSuccessFeedback, t]);
+      },
+    });
+  }, [launch, runWorkspaceAction, t]);
 
   const handleTerminate = useCallback(async (name: string) => {
-    setRunningFeedback(t('wsl.terminate').replace('{name}', name), () => {
-      void handleTerminate(name);
-    });
-    try {
-      await terminate(name);
-      toast.success(t('wsl.terminateSuccess').replace('{name}', name));
-      setSuccessFeedback(t('wsl.terminate').replace('{name}', name), name);
-    } catch (err) {
-      toast.error(String(err));
-      setFailedFeedback(t('wsl.terminate').replace('{name}', name), String(err), () => {
+    void runWorkspaceAction({
+      inventoryId: 'distro.terminate',
+      label: t('wsl.terminate').replace('{name}', name),
+      run: () => terminate(name),
+      targetDistroName: name,
+      continueAction: 'terminate',
+      successToastMessage: () => t('wsl.terminateSuccess').replace('{name}', name),
+      successDetails: () => name,
+      retry: () => {
         void handleTerminate(name);
-      });
-    }
-  }, [setFailedFeedback, setRunningFeedback, setSuccessFeedback, t, terminate]);
+      },
+    });
+  }, [runWorkspaceAction, t, terminate]);
 
   const handleShutdown = useCallback(async () => {
-    setRunningFeedback(t('wsl.shutdown'), () => {
-      void handleShutdown();
-    });
-    try {
-      await shutdown();
-      toast.success(t('wsl.shutdownSuccess'));
-      setSuccessFeedback(t('wsl.shutdown'));
-    } catch (err) {
-      toast.error(String(err));
-      setFailedFeedback(t('wsl.shutdown'), String(err), () => {
+    void runWorkspaceAction({
+      inventoryId: 'runtime.shutdown',
+      label: t('wsl.shutdown'),
+      run: () => shutdown(),
+      continueAction: 'shutdown',
+      successToastMessage: () => t('wsl.shutdownSuccess'),
+      retry: () => {
         void handleShutdown();
-      });
-    }
-  }, [setFailedFeedback, setRunningFeedback, setSuccessFeedback, shutdown, t]);
+      },
+    });
+  }, [runWorkspaceAction, shutdown, t]);
 
   const handleSetDefault = useCallback(async (name: string) => {
     try {
@@ -664,32 +855,34 @@ export default function WslPage() {
   }, [buildExportErrorMessage, exportDistro, t]);
 
   const handleImport = useCallback(async (options: WslImportOptions) => {
-    setRunningFeedback(t('wsl.import').replace('{name}', options.name), () => {
-      void handleImport(options);
-    });
-    try {
-      await importDistro(options);
-      toast.success(t('wsl.importSuccess').replace('{name}', options.name));
-      await refreshSidebarMeta();
-      setSuccessFeedback(t('wsl.import').replace('{name}', options.name), options.name);
-    } catch (err) {
-      toast.error(String(err));
-      setFailedFeedback(t('wsl.import').replace('{name}', options.name), String(err), () => {
+    void runWorkspaceAction({
+      inventoryId: 'runtime.import',
+      label: t('wsl.import').replace('{name}', options.name),
+      run: () => importDistro(options),
+      targetDistroName: options.name,
+      continueAction: 'import',
+      successToastMessage: () => t('wsl.importSuccess').replace('{name}', options.name),
+      successDetails: () => options.name,
+      retry: () => {
         void handleImport(options);
-      });
-    }
-  }, [importDistro, refreshSidebarMeta, setFailedFeedback, setRunningFeedback, setSuccessFeedback, t]);
+      },
+    });
+  }, [importDistro, runWorkspaceAction, t]);
 
   const handleInstallWslOnly = useCallback(async () => {
-    setRunningFeedback(t('wsl.installWslOnly'));
-    const result = await installWslOnly();
-    const nowAvailable = await checkAvailability();
-    if (nowAvailable) {
-      await Promise.all([refreshAll(), refreshSidebarMeta()]);
-    }
-    setSuccessFeedback(t('wsl.installWslOnly'), result);
-    return result;
-  }, [checkAvailability, installWslOnly, refreshAll, refreshSidebarMeta, setRunningFeedback, setSuccessFeedback, t]);
+    return await runWorkspaceAction({
+      inventoryId: 'runtime.installWslOnly',
+      label: t('wsl.installWslOnly'),
+      run: () => installWslOnly(),
+      continueAction: 'install',
+      onSuccess: async () => {
+        const nowAvailable = await checkAvailability();
+        if (nowAvailable) {
+          await Promise.all([refreshAll(), refreshSidebarMeta()]);
+        }
+      },
+    });
+  }, [checkAvailability, installWslOnly, refreshAll, refreshSidebarMeta, runWorkspaceAction, t]);
 
   const handleSetDefaultVersion = useCallback(async (version: number) => {
     try {
@@ -701,21 +894,19 @@ export default function WslPage() {
   }, [setDefaultVersion, t]);
 
   const handleImportInPlaceConfirm = useCallback(async (name: string, vhdxPath: string) => {
-    setRunningFeedback(t('wsl.importInPlace').replace('{name}', name), () => {
-      void handleImportInPlaceConfirm(name, vhdxPath);
-    });
-    try {
-      await importInPlace(name, vhdxPath);
-      toast.success(t('wsl.importInPlaceSuccess').replace('{name}', name));
-      await refreshSidebarMeta();
-      setSuccessFeedback(t('wsl.importInPlace').replace('{name}', name), vhdxPath);
-    } catch (err) {
-      toast.error(String(err));
-      setFailedFeedback(t('wsl.importInPlace').replace('{name}', name), String(err), () => {
+    void runWorkspaceAction({
+      inventoryId: 'runtime.importInPlace',
+      label: t('wsl.importInPlace').replace('{name}', name),
+      run: () => importInPlace(name, vhdxPath),
+      targetDistroName: name,
+      continueAction: 'import',
+      successToastMessage: () => t('wsl.importInPlaceSuccess').replace('{name}', name),
+      successDetails: () => vhdxPath,
+      retry: () => {
         void handleImportInPlaceConfirm(name, vhdxPath);
-      });
-    }
-  }, [importInPlace, refreshSidebarMeta, setFailedFeedback, setRunningFeedback, setSuccessFeedback, t]);
+      },
+    });
+  }, [importInPlace, runWorkspaceAction, t]);
 
   const handleMount = useCallback(async (options: WslMountOptions) => {
     setRunningFeedback(t('wsl.mount'));
@@ -752,21 +943,19 @@ export default function WslPage() {
   }, []);
 
   const handleUnregister = useCallback(async (name: string) => {
-    setRunningFeedback(t('wsl.unregister').replace('{name}', name), () => {
-      void handleUnregister(name);
-    });
-    try {
-      await unregisterDistro(name);
-      toast.success(t('wsl.unregisterSuccess').replace('{name}', name));
-      await refreshSidebarMeta();
-      setSuccessFeedback(t('wsl.unregister').replace('{name}', name), name);
-    } catch (err) {
-      toast.error(String(err));
-      setFailedFeedback(t('wsl.unregister').replace('{name}', name), String(err), () => {
+    void runWorkspaceAction({
+      inventoryId: 'distro.unregister',
+      label: t('wsl.unregister').replace('{name}', name),
+      run: () => unregisterDistro(name),
+      targetDistroName: name,
+      continueAction: 'unregister',
+      successToastMessage: () => t('wsl.unregisterSuccess').replace('{name}', name),
+      successDetails: () => name,
+      retry: () => {
         void handleUnregister(name);
-      });
-    }
-  }, [refreshSidebarMeta, setFailedFeedback, setRunningFeedback, setSuccessFeedback, t, unregisterDistro]);
+      },
+    });
+  }, [runWorkspaceAction, t, unregisterDistro]);
 
   const handleChangeDefaultUserOpen = useCallback((name: string) => {
     setChangeUserDistro(name);
@@ -787,21 +976,18 @@ export default function WslPage() {
   }, [changeDefaultUser, t]);
 
   const handleUpdate = useCallback(async () => {
-    setRunningFeedback(t('wsl.update'), () => {
-      void handleUpdate();
-    });
-    try {
-      const result = await updateWsl();
-      toast.success(t('wsl.updateSuccess') + (result ? `\n${result}` : ''));
-      await refreshSidebarMeta();
-      setSuccessFeedback(t('wsl.update'), result);
-    } catch (err) {
-      toast.error(String(err));
-      setFailedFeedback(t('wsl.update'), String(err), () => {
+    void runWorkspaceAction({
+      inventoryId: 'runtime.update',
+      label: t('wsl.update'),
+      run: () => updateWsl(),
+      continueAction: 'update',
+      successToastMessage: (result) => t('wsl.updateSuccess') + (result ? `\n${result}` : ''),
+      successDetails: (result) => result || undefined,
+      retry: () => {
         void handleUpdate();
-      });
-    }
-  }, [refreshSidebarMeta, setFailedFeedback, setRunningFeedback, setSuccessFeedback, t, updateWsl]);
+      },
+    });
+  }, [runWorkspaceAction, t, updateWsl]);
 
   const handleOpenInExplorer = useCallback(async (name: string) => {
     try {
@@ -827,26 +1013,25 @@ export default function WslPage() {
   }, []);
 
   const handleCloneConfirm = useCallback(async (name: string, newName: string, location: string) => {
-    setRunningFeedback(t('wsl.clone').replace('{name}', newName), () => {
-      void handleCloneConfirm(name, newName, location);
-    });
-    try {
-      const result = await cloneDistro(name, newName, location);
-      toast.success(t('wsl.cloneSuccess').replace('{name}', newName) + (result ? `\n${result}` : ''));
-      await refreshSidebarMeta();
-      setSuccessFeedback(t('wsl.clone').replace('{name}', newName), result);
-    } catch (err) {
-      toast.error(String(err));
-      setFailedFeedback(t('wsl.clone').replace('{name}', newName), String(err), () => {
+    void runWorkspaceAction({
+      inventoryId: 'distro.clone',
+      label: t('wsl.clone').replace('{name}', newName),
+      run: () => cloneDistro(name, newName, location),
+      targetDistroName: newName,
+      continueAction: 'clone',
+      successToastMessage: (result) => t('wsl.cloneSuccess').replace('{name}', newName) + (result ? `\n${result}` : ''),
+      successDetails: (result) => result || undefined,
+      retry: () => {
         void handleCloneConfirm(name, newName, location);
-      });
-    }
-  }, [cloneDistro, refreshSidebarMeta, setFailedFeedback, setRunningFeedback, setSuccessFeedback, t]);
+      },
+    });
+  }, [cloneDistro, runWorkspaceAction, t]);
 
   const runAssistanceAction = useCallback(async (actionId: string, origin: 'panel' | 'error') => {
     setRunningAssistanceId(actionId);
     setAssistanceOrigin(origin);
     try {
+      syncOverviewContext({ continueAction: 'assistance' });
       const summary = await executeAssistanceAction(actionId, 'runtime');
       setAssistanceSummary(summary);
       if (summary.status === 'success') {
@@ -860,7 +1045,7 @@ export default function WslPage() {
     } finally {
       setRunningAssistanceId(null);
     }
-  }, [executeAssistanceAction, refreshSidebarMeta, setFailedFeedback, setSuccessFeedback]);
+  }, [executeAssistanceAction, refreshSidebarMeta, setFailedFeedback, setSuccessFeedback, syncOverviewContext]);
 
   const handleAssistanceAction = useCallback((actionId: string, origin: 'panel' | 'error' = 'panel') => {
     const action = assistanceActionById[actionId];
@@ -878,47 +1063,51 @@ export default function WslPage() {
 
   const handleBatchLaunch = useCallback(async () => {
     if (selectedDistros.size === 0) return;
-    setRunningFeedback(t('wsl.batch.launch'));
-    try {
-      const results = await batchLaunch(Array.from(selectedDistros));
-      const summary = summarizeBatchResults(results);
-      const failed = results.filter(([, ok]) => !ok);
-      if (failed.length === 0) {
-        toast.success(t('wsl.batch.launchSuccess').replace('{count}', String(results.length)));
-      } else {
-        toast.warning(t('wsl.batch.partialFail').replace('{failed}', String(failed.length)).replace('{total}', String(results.length)));
-      }
-      setSelectedDistros(new Set());
-      setSuccessFeedback(t('wsl.batch.launch'), summary.details.join('\n'));
-    } catch (err) {
-      toast.error(String(err));
-      setFailedFeedback(t('wsl.batch.launch'), String(err), () => {
+    void runWorkspaceAction({
+      inventoryId: 'runtime.batchLaunch',
+      label: t('wsl.batch.launch'),
+      run: () => batchLaunch(Array.from(selectedDistros)),
+      targetDistroName: Array.from(selectedDistros)[0] ?? activeWorkspaceDistroName,
+      continueAction: 'batch-launch',
+      successToastMessage: (results) => {
+        const failed = results.filter(([, ok]) => !ok);
+        return failed.length === 0
+          ? t('wsl.batch.launchSuccess').replace('{count}', String(results.length))
+          : t('wsl.batch.partialFail').replace('{failed}', String(failed.length)).replace('{total}', String(results.length));
+      },
+      successDetails: (results) => summarizeBatchResults(results).details.join('\n'),
+      retry: () => {
         void handleBatchLaunch();
-      });
-    }
-  }, [batchLaunch, selectedDistros, setFailedFeedback, setRunningFeedback, setSuccessFeedback, t]);
+      },
+      onSuccess: () => {
+        setSelectedDistros(new Set());
+      },
+    });
+  }, [activeWorkspaceDistroName, batchLaunch, runWorkspaceAction, selectedDistros, t]);
 
   const handleBatchTerminate = useCallback(async () => {
     if (selectedDistros.size === 0) return;
-    setRunningFeedback(t('wsl.batch.terminate'));
-    try {
-      const results = await batchTerminate(Array.from(selectedDistros));
-      const summary = summarizeBatchResults(results);
-      const failed = results.filter(([, ok]) => !ok);
-      if (failed.length === 0) {
-        toast.success(t('wsl.batch.terminateSuccess').replace('{count}', String(results.length)));
-      } else {
-        toast.warning(t('wsl.batch.partialFail').replace('{failed}', String(failed.length)).replace('{total}', String(results.length)));
-      }
-      setSelectedDistros(new Set());
-      setSuccessFeedback(t('wsl.batch.terminate'), summary.details.join('\n'));
-    } catch (err) {
-      toast.error(String(err));
-      setFailedFeedback(t('wsl.batch.terminate'), String(err), () => {
+    void runWorkspaceAction({
+      inventoryId: 'runtime.batchTerminate',
+      label: t('wsl.batch.terminate'),
+      run: () => batchTerminate(Array.from(selectedDistros)),
+      targetDistroName: Array.from(selectedDistros)[0] ?? activeWorkspaceDistroName,
+      continueAction: 'batch-terminate',
+      successToastMessage: (results) => {
+        const failed = results.filter(([, ok]) => !ok);
+        return failed.length === 0
+          ? t('wsl.batch.terminateSuccess').replace('{count}', String(results.length))
+          : t('wsl.batch.partialFail').replace('{failed}', String(failed.length)).replace('{total}', String(results.length));
+      },
+      successDetails: (results) => summarizeBatchResults(results).details.join('\n'),
+      retry: () => {
         void handleBatchTerminate();
-      });
-    }
-  }, [batchTerminate, selectedDistros, setFailedFeedback, setRunningFeedback, setSuccessFeedback, t]);
+      },
+      onSuccess: () => {
+        setSelectedDistros(new Set());
+      },
+    });
+  }, [activeWorkspaceDistroName, batchTerminate, runWorkspaceAction, selectedDistros, t]);
 
   const toggleSelectDistro = useCallback((name: string) => {
     setSelectedDistros((prev) => {
@@ -1009,6 +1198,10 @@ export default function WslPage() {
         selectedDistros,
         distroTags,
       });
+      syncOverviewContext({
+        activeDistroName: Array.from(selectedDistros)[0] ?? activeWorkspaceDistroName,
+        continueAction: 'workflow',
+      });
       recordWorkflowSummary(summary);
       setWorkflowPreviewOpen(false);
     } catch (err) {
@@ -1016,7 +1209,7 @@ export default function WslPage() {
     } finally {
       setWorkflowRunning(false);
     }
-  }, [distroTags, recordWorkflowSummary, runBatchWorkflow, selectedDistros, workflowPreviewCandidate]);
+  }, [activeWorkspaceDistroName, distroTags, recordWorkflowSummary, runBatchWorkflow, selectedDistros, syncOverviewContext, workflowPreviewCandidate]);
 
   const handleRetryWorkflowSummary = useCallback(async (summary?: WslBatchWorkflowSummary | null) => {
     const activeSummary = summary ?? workflowSummaries[0] ?? null;
@@ -1025,13 +1218,17 @@ export default function WslPage() {
     setWorkflowRunning(true);
     try {
       const retriedSummary = await retryBatchWorkflowFailures(activeSummary, { distroTags });
+      syncOverviewContext({
+        activeDistroName: retriedSummary.results[0]?.distroName ?? activeWorkspaceDistroName,
+        continueAction: 'workflow',
+      });
       recordWorkflowSummary(retriedSummary);
     } catch (err) {
       toast.error(String(err));
     } finally {
       setWorkflowRunning(false);
     }
-  }, [distroTags, recordWorkflowSummary, retryBatchWorkflowFailures, workflowSummaries]);
+  }, [activeWorkspaceDistroName, distroTags, recordWorkflowSummary, retryBatchWorkflowFailures, syncOverviewContext, workflowSummaries]);
 
   const confirmAndExecute = useCallback(async () => {
     if (!confirmAction) return;
@@ -1234,6 +1431,78 @@ export default function WslPage() {
             <div data-testid="wsl-layout-grid" className={desktopLayoutClass}>
             {/* Primary workflow region */}
             <section data-testid="wsl-primary-region" className="space-y-5">
+              <section data-testid="wsl-active-workspace">
+                <Card className="border-border/60 bg-card/40 py-0">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base font-semibold">{activeWorkspaceTitle}</CardTitle>
+                    <CardDescription>
+                      {activeWorkspaceDistro
+                        ? `${activeWorkspaceDistro.state} · WSL ${activeWorkspaceDistro.version}`
+                        : t('wsl.description')}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3 pb-6">
+                    {activeWorkspaceHint && (
+                      <Alert data-testid="wsl-active-workspace-hint">
+                        <AlertDescription>{activeWorkspaceHint}</AlertDescription>
+                      </Alert>
+                    )}
+                    {lifecycleFeedback && (
+                      <Alert
+                        data-testid="wsl-lifecycle-feedback"
+                        variant={lifecycleFeedback.status === 'failed' ? 'destructive' : 'default'}
+                      >
+                        <AlertDescription className="space-y-2">
+                          <p className="font-medium">{lifecycleFeedback.title}</p>
+                          {lifecycleFeedback.details && (
+                            <p className="text-xs whitespace-pre-wrap text-muted-foreground">{lifecycleFeedback.details}</p>
+                          )}
+                          <div className="flex flex-wrap gap-2">
+                            {lifecycleFeedback.status === 'failed' && retryActionRef.current && (
+                              <Button size="sm" variant="outline" onClick={() => retryActionRef.current?.()}>
+                                {t('wsl.assistance.retry')}
+                              </Button>
+                            )}
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => {
+                                retryActionRef.current = null;
+                                setLifecycleFeedback(null);
+                              }}
+                            >
+                              {t('wsl.assistance.dismiss')}
+                            </Button>
+                          </div>
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                    {activeWorkflowSummary && (
+                      <Alert data-testid="wsl-primary-workflow-summary">
+                        <AlertDescription className="space-y-2">
+                          <p className="font-medium">{activeWorkflowSummary.workflowName}</p>
+                          <p className="text-xs text-muted-foreground">{activeWorkflowSummary.actionLabel}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {activeWorkflowSummary.failed > 0
+                              ? `${activeWorkflowSummary.failed} failed / ${activeWorkflowSummary.total} total`
+                              : `${activeWorkflowSummary.succeeded} succeeded / ${activeWorkflowSummary.total} total`}
+                          </p>
+                          {activeWorkflowSummary.failed > 0 && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs"
+                              onClick={() => handleRetryWorkflowSummary(activeWorkflowSummary)}
+                            >
+                              {t('wsl.assistance.retry')}
+                            </Button>
+                          )}
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                  </CardContent>
+                </Card>
+              </section>
               <section
                 data-testid="wsl-distro-workflow-section"
                 className="rounded-xl border border-border/60 bg-card/40 p-3 sm:p-4"
@@ -1244,7 +1513,7 @@ export default function WslPage() {
                     const nextTab = v as 'installed' | 'available';
                     setActiveTab(nextTab);
                     setSelectedDistros(new Set());
-                    syncOverviewContext(nextTab, activeTagFilter);
+                            syncOverviewContext({ tab: nextTab, tag: activeTagFilter });
                   }}
                 >
                   <TabsList>
@@ -1263,7 +1532,7 @@ export default function WslPage() {
                         className="cursor-pointer text-xs"
                         onClick={() => {
                           setActiveTagFilter(null);
-                          syncOverviewContext(activeTab, null);
+                          syncOverviewContext({ tag: null });
                         }}
                       >
                         {t('wsl.tags.all')}
@@ -1276,7 +1545,7 @@ export default function WslPage() {
                           onClick={() => {
                             const nextTag = activeTagFilter === tag ? null : tag;
                             setActiveTagFilter(nextTag);
-                            syncOverviewContext(activeTab, nextTag);
+                            syncOverviewContext({ tag: nextTag });
                           }}
                         >
                           {tag}
@@ -1313,7 +1582,7 @@ export default function WslPage() {
                           className="mt-2"
                           onClick={() => {
                             setActiveTagFilter(null);
-                            syncOverviewContext(activeTab, null);
+                            syncOverviewContext({ tag: null });
                           }}
                         >
                           {t('wsl.clearFilter')}
@@ -1361,6 +1630,10 @@ export default function WslPage() {
                                   tab: activeTab,
                                   tag: activeTagFilter,
                                   origin: 'overview',
+                                  activeDistroName: activeWorkspaceDistroName,
+                                  continueAction: distro.name === activeWorkspaceDistroName
+                                    ? overviewContext.continueAction
+                                    : undefined,
                                 })}
                                 onLaunch={handleLaunch}
                                 onTerminate={handleTerminate}
@@ -1405,6 +1678,8 @@ export default function WslPage() {
                 >
                   <WslExecTerminal
                     distros={distros}
+                    activeWorkspaceDistroName={activeWorkspaceDistroName}
+                    onTargetExecuted={(distroName) => syncSupportTargetContext(distroName, 'terminal')}
                     onExec={execCommand}
                     t={t}
                   />
@@ -1414,36 +1689,6 @@ export default function WslPage() {
 
             {/* Supporting region */}
             <aside data-testid="wsl-supporting-region" className="space-y-6">
-              {lifecycleFeedback && (
-                <Alert
-                  data-testid="wsl-lifecycle-feedback"
-                  variant={lifecycleFeedback.status === 'failed' ? 'destructive' : 'default'}
-                >
-                  <AlertDescription className="space-y-2">
-                    <p className="font-medium">{lifecycleFeedback.title}</p>
-                    {lifecycleFeedback.details && (
-                      <p className="text-xs whitespace-pre-wrap text-muted-foreground">{lifecycleFeedback.details}</p>
-                    )}
-                    <div className="flex flex-wrap gap-2">
-                      {lifecycleFeedback.status === 'failed' && retryActionRef.current && (
-                        <Button size="sm" variant="outline" onClick={() => retryActionRef.current?.()}>
-                          {t('wsl.assistance.retry')}
-                        </Button>
-                      )}
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => {
-                          retryActionRef.current = null;
-                          setLifecycleFeedback(null);
-                        }}
-                      >
-                        {t('wsl.assistance.dismiss')}
-                      </Button>
-                    </div>
-                  </AlertDescription>
-                </Alert>
-              )}
               <WslSupportGroup
                 testId="wsl-support-maintenance-group"
                 title={t('wsl.supportGroups.maintenanceTitle')}
@@ -1712,6 +1957,7 @@ export default function WslPage() {
               >
                 <WslBackupCard
                   distroNames={distros.map((d) => d.name)}
+                  activeWorkspaceDistroName={activeWorkspaceDistroName}
                   backupDistro={backupDistro}
                   listBackups={listBackups}
                   restoreBackup={restoreBackup}
@@ -1727,6 +1973,7 @@ export default function WslPage() {
                   distros={distros}
                   availableTags={availableTags}
                   selectedCount={selectedDistros.size}
+                  referenceDistroName={activeWorkspaceDistroName}
                   commandOptions={workflowCommandOptions}
                   assistanceActions={batchAssistanceActions}
                   onDraftChange={handleWorkflowDraftChange}
@@ -1763,9 +2010,38 @@ export default function WslPage() {
                     <p className="text-xs font-medium text-muted-foreground">
                       {t('wsl.distroConfig.targetLabel')}
                     </p>
+                    {activeWorkspaceDistroName && configTargetResolution.distroName && (
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                        <span>
+                          {configTargetResolution.followsWorkspace
+                            ? t('wsl.workspaceContext.following').replace('{name}', configTargetResolution.distroName)
+                            : t('wsl.workspaceContext.override').replace('{name}', configTargetResolution.distroName)}
+                        </span>
+                        {!configTargetResolution.followsWorkspace && (
+                          <>
+                            <span>{t('wsl.workspaceContext.active').replace('{name}', activeWorkspaceDistroName)}</span>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-2 text-xs"
+                              onClick={() => setConfigOverrideDistroName(null)}
+                            >
+                              {t('wsl.workspaceContext.return')}
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    )}
                     <Select
-                      value={selectedDistroForConfig ?? ''}
-                      onValueChange={(value) => setSelectedDistroForConfig(value)}
+                      value={configTargetResolution.distroName ?? ''}
+                      onValueChange={(value) => {
+                        if (!activeWorkspaceDistroName || value === activeWorkspaceDistroName) {
+                          setConfigOverrideDistroName(null);
+                          return;
+                        }
+                        setConfigOverrideDistroName(value);
+                      }}
                     >
                       <SelectTrigger className="h-8">
                         <SelectValue placeholder={t('wsl.distroConfig.targetPlaceholder')} />
@@ -1780,9 +2056,9 @@ export default function WslPage() {
                     </Select>
                   </div>
                 )}
-                {selectedDistroForConfig && (
+                {configTargetResolution.distroName && (
                   <WslDistroConfigCard
-                    distroName={selectedDistroForConfig}
+                    distroName={configTargetResolution.distroName}
                     getDistroConfig={getDistroConfig}
                     setDistroConfigValue={setDistroConfigValue}
                     t={t}

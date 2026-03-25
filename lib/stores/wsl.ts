@@ -5,6 +5,7 @@ import type { WslBatchWorkflowPreset, WslBatchWorkflowSummary } from '@/types/ws
 import {
   DEFAULT_WSL_OVERVIEW_CONTEXT,
   normalizeWslBatchWorkflowPreset,
+  sanitizeWslOverviewContext,
   type WslOverviewContext,
 } from '@/lib/wsl/workflow';
 
@@ -188,12 +189,14 @@ export const useWslStore = create<WslStoreState>()(
             tab: context.tab ?? state.overviewContext.tab,
             tag: context.tag ?? state.overviewContext.tag,
             origin: context.origin ?? state.overviewContext.origin,
+            activeDistroName: context.activeDistroName ?? state.overviewContext.activeDistroName,
+            continueAction: context.continueAction ?? state.overviewContext.continueAction,
           },
         })),
     }),
     {
       name: 'cognia-wsl-store',
-      version: 3,
+      version: 4,
       migrate: (persisted, version) => {
         if (!persisted || typeof persisted !== 'object') {
           return persisted as WslStoreState;
@@ -208,11 +211,16 @@ export const useWslStore = create<WslStoreState>()(
           normalizeWorkflowSummary(summary)
         );
 
+        const normalizedOverviewContext = sanitizeWslOverviewContext(
+          typed.overviewContext as Partial<WslOverviewContext> | undefined
+        );
+
         if (version < 2) {
           return {
             ...typed,
             workflowPresets: normalizedWorkflowPresets,
             workflowSummaries: normalizedWorkflowSummaries,
+            overviewContext: normalizedOverviewContext,
           } as WslStoreState;
         }
 
@@ -221,6 +229,16 @@ export const useWslStore = create<WslStoreState>()(
             ...typed,
             workflowPresets: normalizedWorkflowPresets,
             workflowSummaries: normalizedWorkflowSummaries,
+            overviewContext: normalizedOverviewContext,
+          } as WslStoreState;
+        }
+
+        if (version < 4) {
+          return {
+            ...typed,
+            workflowPresets: normalizedWorkflowPresets,
+            workflowSummaries: normalizedWorkflowSummaries,
+            overviewContext: normalizedOverviewContext,
           } as WslStoreState;
         }
 
@@ -228,6 +246,7 @@ export const useWslStore = create<WslStoreState>()(
           ...typed,
           workflowPresets: normalizedWorkflowPresets,
           workflowSummaries: normalizedWorkflowSummaries,
+          overviewContext: normalizedOverviewContext,
         } as WslStoreState;
       },
     }

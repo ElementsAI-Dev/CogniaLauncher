@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useMemo, useState, useRef, useEffect } from 'react';
 import { writeClipboard } from '@/lib/clipboard';
 import { Card, CardContent, CardHeader, CardTitle, CardAction } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -23,9 +23,16 @@ import { toast } from 'sonner';
 import { useWslStore } from '@/lib/stores/wsl';
 import { PRESET_COMMANDS } from '@/lib/constants/wsl';
 import type { ExecHistoryEntry, WslExecTerminalProps } from '@/types/wsl';
+import { resolveWslWorkspaceScopedTarget } from '@/lib/wsl/workflow';
 
-export function WslExecTerminal({ distros, onExec, t }: WslExecTerminalProps) {
-  const [selectedDistro, setSelectedDistro] = useState('');
+export function WslExecTerminal({
+  distros,
+  onExec,
+  activeWorkspaceDistroName,
+  onTargetExecuted,
+  t,
+}: WslExecTerminalProps) {
+  const [overrideDistroName, setOverrideDistroName] = useState<string | null>(null);
   const [command, setCommand] = useState('');
   const [user, setUser] = useState('');
   const [executing, setExecuting] = useState(false);
@@ -34,13 +41,26 @@ export function WslExecTerminal({ distros, onExec, t }: WslExecTerminalProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const { savedCommands, addSavedCommand, removeSavedCommand } = useWslStore();
   const allSavedCommands = [...PRESET_COMMANDS, ...savedCommands];
+  const defaultDistroName = useMemo(
+    () => distros.find((d) => d.isDefault)?.name ?? distros[0]?.name ?? null,
+    [distros],
+  );
+  const targetResolution = useMemo(
+    () => resolveWslWorkspaceScopedTarget({
+      activeWorkspaceDistroName,
+      overrideDistroName,
+      availableDistroNames: distros.map((d) => d.name),
+      fallbackDistroName: defaultDistroName,
+    }),
+    [activeWorkspaceDistroName, defaultDistroName, distros, overrideDistroName],
+  );
+  const selectedDistro = targetResolution.distroName ?? '';
 
   useEffect(() => {
-    if (distros.length > 0 && !selectedDistro) {
-      const defaultDistro = distros.find((d) => d.isDefault);
-      setSelectedDistro(defaultDistro?.name ?? distros[0].name);
+    if (overrideDistroName && !distros.some((d) => d.name === overrideDistroName)) {
+      setOverrideDistroName(null);
     }
-  }, [distros, selectedDistro]);
+  }, [distros, overrideDistroName]);
 
   useEffect(() => {
     if (outputRef.current) {
@@ -62,6 +82,7 @@ export function WslExecTerminal({ distros, onExec, t }: WslExecTerminalProps) {
           timestamp: Date.now(),
         },
       ]);
+      onTargetExecuted?.(selectedDistro);
       setCommand('');
     } catch (err) {
       toast.error(String(err));
@@ -103,10 +124,42 @@ export function WslExecTerminal({ distros, onExec, t }: WslExecTerminalProps) {
         )}
       </CardHeader>
       <CardContent className="space-y-3">
+        {activeWorkspaceDistroName && selectedDistro && (
+          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <span>
+              {targetResolution.followsWorkspace
+                ? t('wsl.workspaceContext.following').replace('{name}', selectedDistro)
+                : t('wsl.workspaceContext.override').replace('{name}', selectedDistro)}
+            </span>
+            {!targetResolution.followsWorkspace && (
+              <>
+                <span>{t('wsl.workspaceContext.active').replace('{name}', activeWorkspaceDistroName)}</span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-2 text-xs"
+                  onClick={() => setOverrideDistroName(null)}
+                >
+                  {t('wsl.workspaceContext.return')}
+                </Button>
+              </>
+            )}
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-2">
           <div className="space-y-1">
             <Label className="text-xs">{t('wsl.distros')}</Label>
-            <Select value={selectedDistro} onValueChange={setSelectedDistro}>
+            <Select
+              value={selectedDistro}
+              onValueChange={(value) => {
+                if (!activeWorkspaceDistroName || value === activeWorkspaceDistroName) {
+                  setOverrideDistroName(null);
+                  return;
+                }
+                setOverrideDistroName(value);
+              }}
+            >
               <SelectTrigger className="h-8 text-xs">
                 <SelectValue placeholder={t('wsl.exec.selectDistro')} />
               </SelectTrigger>

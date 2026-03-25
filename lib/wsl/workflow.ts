@@ -18,6 +18,7 @@ import type {
   WslBatchWorkflowSummary,
   WslBatchWorkflowTarget,
   WslBatchWorkflowTargetResolution,
+  WslWorkspaceScopedTargetResolution,
 } from '@/types/wsl';
 
 export type WslOverviewTab = 'installed' | 'available';
@@ -30,6 +31,8 @@ export interface WslOverviewContext {
   tab: WslOverviewTab;
   tag: string | null;
   origin: WslWorkflowOrigin;
+  activeDistroName: string | null;
+  continueAction: string | null;
 }
 
 export interface WslActionInventoryItem {
@@ -44,6 +47,8 @@ export const DEFAULT_WSL_OVERVIEW_CONTEXT: WslOverviewContext = {
   tab: 'installed',
   tag: null,
   origin: 'overview',
+  activeDistroName: null,
+  continueAction: null,
 };
 
 export const WSL_ACTION_INVENTORY: Record<string, WslActionInventoryItem> = {
@@ -493,6 +498,8 @@ export function sanitizeWslOverviewContext(
     tab: context?.tab === 'available' ? 'available' : 'installed',
     tag: context?.tag ?? null,
     origin: context?.origin ?? DEFAULT_WSL_OVERVIEW_CONTEXT.origin,
+    activeDistroName: context?.activeDistroName ?? null,
+    continueAction: context?.continueAction ?? null,
   };
 }
 
@@ -506,11 +513,15 @@ export function readWslOverviewContext(
   const tabParam = searchParams.get('tab');
   const tagParam = searchParams.get('tag');
   const originParam = searchParams.get('origin') as WslWorkflowOrigin | null;
+  const activeDistroName = searchParams.get('active');
+  const continueAction = searchParams.get('continue');
 
   return sanitizeWslOverviewContext({
     tab: tabParam === 'available' ? 'available' : fallbackContext.tab,
     tag: tagParam ?? fallbackContext.tag,
     origin: originParam ?? fallbackContext.origin,
+    activeDistroName: activeDistroName ?? fallbackContext.activeDistroName,
+    continueAction: continueAction ?? fallbackContext.continueAction,
   });
 }
 
@@ -528,6 +539,12 @@ export function buildWslOverviewHref(
   }
   if (resolved.origin !== DEFAULT_WSL_OVERVIEW_CONTEXT.origin) {
     params.set('origin', resolved.origin);
+  }
+  if (resolved.activeDistroName) {
+    params.set('active', resolved.activeDistroName);
+  }
+  if (resolved.continueAction) {
+    params.set('continue', resolved.continueAction);
   }
 
   const query = params.toString();
@@ -548,8 +565,8 @@ export function buildWslDistroHref(
   params.set('origin', options?.origin ?? resolved.origin);
   params.set('returnTo', options?.returnTo ?? buildWslOverviewHref(resolved));
 
-  if (options?.continueAction) {
-    params.set('continue', options.continueAction);
+  if (options?.continueAction ?? resolved.continueAction) {
+    params.set('continue', options?.continueAction ?? resolved.continueAction ?? '');
   }
 
   return `/wsl/distro?${params.toString()}`;
@@ -561,6 +578,62 @@ export function normalizeSelectedDistros(
 ): Set<string> {
   const validNames = new Set(distros.map((distro) => distro.name));
   return new Set(Array.from(selected).filter((name) => validNames.has(name)));
+}
+
+export function resolveWslWorkspaceScopedTarget({
+  activeWorkspaceDistroName,
+  overrideDistroName,
+  availableDistroNames,
+  fallbackDistroName,
+}: {
+  activeWorkspaceDistroName?: string | null;
+  overrideDistroName?: string | null;
+  availableDistroNames: string[];
+  fallbackDistroName?: string | null;
+}): WslWorkspaceScopedTargetResolution {
+  const available = new Set(availableDistroNames);
+  const hasAvailable = (name?: string | null) => Boolean(name) && available.has(name);
+
+  if (hasAvailable(overrideDistroName) && overrideDistroName === activeWorkspaceDistroName) {
+    return {
+      distroName: overrideDistroName ?? null,
+      source: 'workspace',
+      followsWorkspace: true,
+    };
+  }
+
+  if (hasAvailable(overrideDistroName)) {
+    return {
+      distroName: overrideDistroName ?? null,
+      source: 'override',
+      followsWorkspace: false,
+    };
+  }
+
+  if (hasAvailable(activeWorkspaceDistroName)) {
+    return {
+      distroName: activeWorkspaceDistroName ?? null,
+      source: 'workspace',
+      followsWorkspace: true,
+    };
+  }
+
+  if (hasAvailable(fallbackDistroName)) {
+    return {
+      distroName: fallbackDistroName ?? null,
+      source: 'fallback',
+      followsWorkspace: false,
+    };
+  }
+
+  return {
+    distroName: null,
+    source: 'unavailable',
+    followsWorkspace: false,
+    blockedReason: activeWorkspaceDistroName
+      ? `Workspace target '${activeWorkspaceDistroName}' is unavailable.`
+      : 'No workspace target is available.',
+  };
 }
 
 export function summarizeBatchResults(results: [string, boolean, string][]) {

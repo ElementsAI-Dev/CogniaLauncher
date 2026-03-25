@@ -10,6 +10,7 @@ import {
   normalizeWslBatchWorkflowPreset,
   normalizeSelectedDistros,
   readWslOverviewContext,
+  resolveWslWorkspaceScopedTarget,
   resolveWslBatchWorkflowTargets,
   sanitizeWslOverviewContext,
   summarizeWslBatchWorkflowRun,
@@ -421,36 +422,55 @@ describe('buildWslBatchWorkflowPreflight', () => {
 
 describe('wsl workflow helpers', () => {
   it('normalizes overview context and builds stable hrefs', () => {
-    expect(sanitizeWslOverviewContext({ tab: 'available', tag: 'dev', origin: 'widget' })).toEqual({
+    expect(sanitizeWslOverviewContext({
       tab: 'available',
       tag: 'dev',
       origin: 'widget',
+      activeDistroName: 'Ubuntu',
+      continueAction: 'launch',
+    } as never)).toEqual({
+      tab: 'available',
+      tag: 'dev',
+      origin: 'widget',
+      activeDistroName: 'Ubuntu',
+      continueAction: 'launch',
     });
-    expect(buildWslOverviewHref({ tab: 'available', tag: 'dev', origin: 'widget' })).toBe(
-      '/wsl?tab=available&tag=dev&origin=widget',
+    expect(buildWslOverviewHref({
+      tab: 'available',
+      tag: 'dev',
+      origin: 'widget',
+      activeDistroName: 'Ubuntu',
+      continueAction: 'launch',
+    } as never)).toBe(
+      '/wsl?tab=available&tag=dev&origin=widget&active=Ubuntu&continue=launch',
     );
     expect(
       buildWslDistroHref('Ubuntu', {
         origin: 'detail',
         tab: 'available',
         tag: 'dev',
+        activeDistroName: 'Ubuntu',
         continueAction: 'relaunch',
-      }),
+      } as never),
     ).toContain('continue=relaunch');
   });
 
   it('reads overview context from search params with fallback defaults', () => {
-    const params = new URLSearchParams('tab=available&tag=ops&origin=assistance');
+    const params = new URLSearchParams('tab=available&tag=ops&origin=assistance&active=Debian&continue=launch');
 
-    expect(readWslOverviewContext(params, { origin: 'sidebar' })).toEqual({
+    expect(readWslOverviewContext(params, { origin: 'sidebar' } as never)).toEqual({
       tab: 'available',
       tag: 'ops',
       origin: 'assistance',
+      activeDistroName: 'Debian',
+      continueAction: 'launch',
     });
-    expect(readWslOverviewContext(null, { tag: 'fallback' })).toEqual({
+    expect(readWslOverviewContext(null, { tag: 'fallback' } as never)).toEqual({
       tab: 'installed',
       tag: 'fallback',
       origin: 'overview',
+      activeDistroName: null,
+      continueAction: null,
     });
   });
 
@@ -466,6 +486,42 @@ describe('wsl workflow helpers', () => {
       failed: 1,
       succeeded: 1,
       details: ['Ubuntu: ok - done', 'Debian: failed - boom'],
+    });
+  });
+
+  it('prefers active workspace targets over fallback defaults for workspace-scoped modules', () => {
+    expect(resolveWslWorkspaceScopedTarget({
+      activeWorkspaceDistroName: 'Debian',
+      availableDistroNames: distros.map((distro) => distro.name),
+      fallbackDistroName: 'Ubuntu',
+    })).toEqual({
+      distroName: 'Debian',
+      source: 'workspace',
+      followsWorkspace: true,
+    });
+  });
+
+  it('preserves valid overrides and falls back cleanly when overrides become invalid', () => {
+    expect(resolveWslWorkspaceScopedTarget({
+      activeWorkspaceDistroName: 'Debian',
+      overrideDistroName: 'Ubuntu',
+      availableDistroNames: distros.map((distro) => distro.name),
+      fallbackDistroName: 'Debian',
+    })).toEqual({
+      distroName: 'Ubuntu',
+      source: 'override',
+      followsWorkspace: false,
+    });
+
+    expect(resolveWslWorkspaceScopedTarget({
+      activeWorkspaceDistroName: 'Debian',
+      overrideDistroName: 'Missing',
+      availableDistroNames: distros.map((distro) => distro.name),
+      fallbackDistroName: 'Ubuntu',
+    })).toEqual({
+      distroName: 'Debian',
+      source: 'workspace',
+      followsWorkspace: true,
     });
   });
 

@@ -277,6 +277,42 @@ jest.mock("@/hooks/use-wsl", () => ({
       distroCount: mockDistros.length,
       degradedReasons: [],
     },
+    runtimeInfo: {
+      state: "ready",
+      runtime: { state: "ready", data: null, failure: null, reason: undefined, updatedAt: "2026-03-05T00:00:00Z" },
+      status: { state: "ready", data: null, failure: null, reason: undefined, updatedAt: "2026-03-05T00:00:00Z" },
+      capabilities: { state: "ready", data: null, failure: null, reason: undefined, updatedAt: "2026-03-05T00:00:00Z" },
+      versionInfo: {
+        state: "ready",
+        data: { wslVersion: "2.4.0", kernelVersion: "6.6.0", wslgVersion: "1.0.0" },
+        failure: null,
+        reason: undefined,
+        updatedAt: "2026-03-05T00:00:00Z",
+      },
+      lastUpdatedAt: "2026-03-05T00:00:00Z",
+    },
+    distroInfoByName: {
+      Ubuntu: {
+        distroName: "Ubuntu",
+        distroState: "Running",
+        state: "ready",
+        diskUsage: { state: "ready", data: null, failure: null, reason: undefined, updatedAt: "2026-03-05T00:00:00Z" },
+        ipAddress: { state: "ready", data: "172.20.0.1", failure: null, reason: undefined, updatedAt: "2026-03-05T00:00:00Z" },
+        environment: { state: "ready", data: null, failure: null, reason: undefined, updatedAt: "2026-03-05T00:00:00Z" },
+        resources: { state: "ready", data: null, failure: null, reason: undefined, updatedAt: "2026-03-05T00:00:00Z" },
+        lastUpdatedAt: "2026-03-05T00:00:00Z",
+      },
+      Debian: {
+        distroName: "Debian",
+        distroState: "Stopped",
+        state: "unavailable",
+        diskUsage: { state: "ready", data: null, failure: null, reason: undefined, updatedAt: "2026-03-05T00:00:00Z" },
+        ipAddress: { state: "unavailable", data: null, failure: null, reason: "Distribution is not running.", updatedAt: null },
+        environment: { state: "unavailable", data: null, failure: null, reason: "Distribution is not running.", updatedAt: null },
+        resources: { state: "unavailable", data: null, failure: null, reason: "Distribution is not running.", updatedAt: null },
+        lastUpdatedAt: "2026-03-05T00:00:00Z",
+      },
+    },
     completeness: {
       state: mockAvailable ? (mockDistros.length > 0 ? "ready" : "empty") : "unavailable",
       available: !!mockAvailable,
@@ -291,6 +327,7 @@ jest.mock("@/hooks/use-wsl", () => ({
     refreshDistros: mockRefreshDistros,
     refreshOnlineDistros: mockRefreshOnlineDistros,
     refreshStatus: mockRefreshStatus,
+    refreshDistroInfo: jest.fn().mockResolvedValue(null),
     refreshAll: mockRefreshAll,
     terminate: mockTerminate,
     shutdown: mockShutdown,
@@ -541,13 +578,24 @@ jest.mock("@/components/wsl", () => ({
   ),
   WslExecTerminal: ({
     onExec,
+    activeWorkspaceDistroName,
+    onTargetExecuted,
   }: {
     onExec?: (d: string, c: string) => void;
+    activeWorkspaceDistroName?: string | null;
+    onTargetExecuted?: (d: string) => void;
   }) => (
     <div data-testid="exec-terminal">
       Terminal
+      <span data-testid="exec-target">{activeWorkspaceDistroName ?? "none"}</span>
       {onExec && (
-        <button data-testid="exec-cmd" onClick={() => onExec("Ubuntu", "ls")}>
+        <button
+          data-testid="exec-cmd"
+          onClick={() => {
+            onExec("Ubuntu", "ls");
+            onTargetExecuted?.("Ubuntu");
+          }}
+        >
           Exec
         </button>
       )}
@@ -558,19 +606,34 @@ jest.mock("@/components/wsl", () => ({
   WslImportInPlaceDialog: () => null,
   WslInstallLocationDialog: () => null,
   WslCloneDialog: () => null,
-  WslBackupCard: () => <div data-testid="backup-card">Backup</div>,
+  WslBackupCard: ({
+    activeWorkspaceDistroName,
+  }: {
+    activeWorkspaceDistroName?: string | null;
+  }) => (
+    <div data-testid="backup-card">
+      Backup
+      <span data-testid="backup-target">{activeWorkspaceDistroName ?? "none"}</span>
+    </div>
+  ),
   WslBatchWorkflowCard: ({
     draft,
+    assistanceActions,
+    referenceDistroName,
     onDraftChange,
     onSavePreset,
     onRunDraft,
   }: {
     draft: Record<string, unknown>;
+    assistanceActions: Array<{ id: string }>;
+    referenceDistroName?: string | null;
     onDraftChange: (nextDraft: Record<string, unknown>) => void;
     onSavePreset: () => void;
     onRunDraft: () => void;
   }) => (
     <div data-testid="wsl-batch-workflow-card">
+      <span data-testid="workflow-reference-target">{referenceDistroName ?? "none"}</span>
+      <span data-testid="workflow-assistance-action">{assistanceActions[0]?.id ?? "none"}</span>
       <button data-testid="save-batch-workflow" onClick={onSavePreset}>Save Workflow</button>
       <button data-testid="run-selected-workflow" onClick={onRunDraft}>Run Selected Workflow</button>
       <button
@@ -628,7 +691,7 @@ describe("WslPage", () => {
       savedCommands: [],
       workflowPresets: [],
       workflowSummaries: [],
-      overviewContext: { tab: "installed", tag: null, origin: "overview" },
+      overviewContext: { tab: "installed", tag: null, origin: "overview", activeDistroName: null, continueAction: null },
     });
     mockGetAssistanceActions.mockReturnValue([
       {
@@ -698,6 +761,7 @@ describe("WslPage", () => {
     expect(screen.getByTestId("wsl-layout-grid")).toBeInTheDocument();
     expect(screen.getByTestId("wsl-primary-region")).toBeInTheDocument();
     expect(screen.getByTestId("wsl-supporting-region")).toBeInTheDocument();
+    expect(screen.getByTestId("wsl-active-workspace")).toBeInTheDocument();
     expect(screen.getByTestId("wsl-summary-actions")).toBeInTheDocument();
     expect(
       screen.getByTestId("wsl-support-maintenance-group"),
@@ -810,6 +874,15 @@ describe("WslPage - Handlers", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockAvailable = true;
+    useWslStore.setState({
+      distroTags: {},
+      availableTags: ["dev", "test", "prod", "experiment"],
+      customProfiles: [],
+      savedCommands: [],
+      workflowPresets: [],
+      workflowSummaries: [],
+      overviewContext: { tab: "installed", tag: null, origin: "overview", activeDistroName: null, continueAction: null },
+    });
   });
 
   it("launches a distro when launch button is clicked", async () => {
@@ -888,10 +961,8 @@ describe("WslPage - Handlers", () => {
     render(<WslPage />);
 
     await waitFor(() => {
-      expect(mockGetVersionInfo).toHaveBeenCalled();
       expect(mockGetTotalDiskUsage).toHaveBeenCalled();
     });
-    const versionCallsBefore = mockGetVersionInfo.mock.calls.length;
     const diskCallsBefore = mockGetTotalDiskUsage.mock.calls.length;
 
     await user.click(screen.getByText(/Available/));
@@ -901,9 +972,6 @@ describe("WslPage - Handlers", () => {
       expect(mockInstallOnlineDistro).toHaveBeenCalledWith("Fedora");
     });
     await waitFor(() => {
-      expect(mockGetVersionInfo.mock.calls.length).toBeGreaterThan(
-        versionCallsBefore,
-      );
       expect(mockGetTotalDiskUsage.mock.calls.length).toBeGreaterThan(
         diskCallsBefore,
       );
@@ -961,10 +1029,8 @@ describe("WslPage - Handlers", () => {
     render(<WslPage />);
 
     await waitFor(() => {
-      expect(mockGetVersionInfo).toHaveBeenCalled();
       expect(mockGetTotalDiskUsage).toHaveBeenCalled();
     });
-    const versionCallsBefore = mockGetVersionInfo.mock.calls.length;
     const diskCallsBefore = mockGetTotalDiskUsage.mock.calls.length;
 
     await user.click(screen.getByTestId("unregister-Ubuntu"));
@@ -974,9 +1040,6 @@ describe("WslPage - Handlers", () => {
       expect(mockUnregisterDistro).toHaveBeenCalledWith("Ubuntu");
     });
     await waitFor(() => {
-      expect(mockGetVersionInfo.mock.calls.length).toBeGreaterThan(
-        versionCallsBefore,
-      );
       expect(mockGetTotalDiskUsage.mock.calls.length).toBeGreaterThan(
         diskCallsBefore,
       );
@@ -1026,13 +1089,99 @@ describe("WslPage - Handlers", () => {
 
     render(<WslPage />);
 
-    const detailLink = screen.getByTestId("detail-link-Ubuntu");
+    const detailLink = screen.getByTestId("detail-link-Debian");
     expect(detailLink).toHaveAttribute(
       "href",
       expect.stringContaining("/wsl/distro?"),
     );
     expect(detailLink.getAttribute("href")).toContain("origin=overview");
     expect(detailLink.getAttribute("href")).toContain("returnTo=");
+  });
+
+  it("surfaces the active workspace target and preserves overview resume context in detail links", () => {
+    useWslStore.setState({
+      ...useWslStore.getState(),
+      overviewContext: {
+        tab: "installed",
+        tag: null,
+        origin: "overview",
+        activeDistroName: "Debian",
+        continueAction: "launch",
+      } as never,
+    });
+
+    render(<WslPage />);
+
+    expect(screen.getByTestId("wsl-active-workspace")).toHaveTextContent("Debian");
+    expect(screen.getByTestId("wsl-active-workspace")).toHaveTextContent("launch");
+
+    const detailLink = screen.getByTestId("detail-link-Debian");
+    expect(detailLink.getAttribute("href")).toContain("continue=launch");
+    expect(decodeURIComponent(detailLink.getAttribute("href") ?? "")).toContain("active=Debian");
+  });
+
+  it("passes the active workspace target into distro-scoped support modules", () => {
+    useWslStore.setState({
+      ...useWslStore.getState(),
+      overviewContext: {
+        tab: "installed",
+        tag: null,
+        origin: "overview",
+        activeDistroName: "Debian",
+        continueAction: null,
+      } as never,
+    });
+
+    render(<WslPage />);
+
+    expect(screen.getByTestId("exec-target")).toHaveTextContent("Debian");
+    expect(screen.getByTestId("backup-target")).toHaveTextContent("Debian");
+    expect(screen.getByTestId("distro-config")).toHaveTextContent("Debian");
+  });
+
+  it("derives workflow assistance context from the active workspace target", () => {
+    mockGetAssistanceActions.mockImplementation((scope: string, distroName?: string) => {
+      if (scope === "distro") {
+        return [
+          {
+            id: `distro.preflight.${distroName}`,
+            scope: "distro",
+            category: "check",
+            risk: "safe",
+            labelKey: "wsl.assistance.actions.distroPreflight.label",
+            descriptionKey: "wsl.assistance.actions.distroPreflight.desc",
+            supported: true,
+          },
+        ];
+      }
+
+      return [
+        {
+          id: "runtime.preflight",
+          scope: "runtime",
+          category: "check",
+          risk: "safe",
+          labelKey: "wsl.assistance.actions.runtimePreflight.label",
+          descriptionKey: "wsl.assistance.actions.runtimePreflight.desc",
+          supported: true,
+        },
+      ];
+    });
+    useWslStore.setState({
+      ...useWslStore.getState(),
+      overviewContext: {
+        tab: "installed",
+        tag: null,
+        origin: "overview",
+        activeDistroName: "Debian",
+        continueAction: "workflow",
+      } as never,
+    });
+
+    render(<WslPage />);
+
+    expect(screen.getByTestId("workflow-reference-target")).toHaveTextContent("Debian");
+    expect(screen.getByTestId("workflow-assistance-action")).toHaveTextContent("distro.preflight.Debian");
   });
 
   it("shows inline lifecycle feedback after launching a distro", async () => {
@@ -1044,6 +1193,34 @@ describe("WslPage - Handlers", () => {
     await waitFor(() => {
       expect(screen.getByTestId("wsl-lifecycle-feedback")).toBeInTheDocument();
       expect(screen.getByText("Launch Ubuntu completed")).toBeInTheDocument();
+    });
+    expect(
+      screen.getByTestId("wsl-primary-region").contains(screen.getByTestId("wsl-lifecycle-feedback")),
+    ).toBe(true);
+    expect(screen.getByTestId("wsl-active-workspace")).toHaveTextContent("Ubuntu");
+  });
+
+  it("realigns the active workspace after a support terminal action completes", async () => {
+    const user = userEvent.setup();
+    useWslStore.setState({
+      ...useWslStore.getState(),
+      overviewContext: {
+        tab: "installed",
+        tag: null,
+        origin: "overview",
+        activeDistroName: "Debian",
+        continueAction: null,
+      } as never,
+    });
+
+    render(<WslPage />);
+    expect(screen.getByTestId("wsl-active-workspace")).toHaveTextContent("Debian");
+
+    await user.click(screen.getByTestId("exec-cmd"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("wsl-active-workspace")).toHaveTextContent("Ubuntu");
+      expect(screen.getByTestId("wsl-active-workspace")).toHaveTextContent("terminal");
     });
   });
 
@@ -1060,6 +1237,7 @@ describe("WslPage - Handlers", () => {
       expect(mockRunBatchWorkflow).toHaveBeenCalled();
     });
     expect(await screen.findByTestId("wsl-batch-workflow-summary")).toHaveTextContent("Selected workflow");
+    expect(await screen.findByTestId("wsl-primary-workflow-summary")).toHaveTextContent("Selected workflow");
   });
 
   it("builds tag-based batch workflow previews from current distro tags", async () => {
@@ -1095,6 +1273,15 @@ describe("WslPage - Non-Tauri", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockAvailable = true;
+    useWslStore.setState({
+      distroTags: {},
+      availableTags: ["dev", "test", "prod", "experiment"],
+      customProfiles: [],
+      savedCommands: [],
+      workflowPresets: [],
+      workflowSummaries: [],
+      overviewContext: { tab: "installed", tag: null, origin: "overview", activeDistroName: null, continueAction: null },
+    });
     const tauri = jest.requireMock("@/lib/tauri");
     tauri.isTauri.mockReturnValue(false);
   });
@@ -1116,6 +1303,15 @@ describe("WslPage - WSL Not Installed", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockAvailable = false;
+    useWslStore.setState({
+      distroTags: {},
+      availableTags: ["dev", "test", "prod", "experiment"],
+      customProfiles: [],
+      savedCommands: [],
+      workflowPresets: [],
+      workflowSummaries: [],
+      overviewContext: { tab: "installed", tag: null, origin: "overview", activeDistroName: null, continueAction: null },
+    });
     const tauri = jest.requireMock("@/lib/tauri");
     tauri.isTauri.mockReturnValue(true);
   });
@@ -1133,7 +1329,6 @@ describe("WslPage - WSL Not Installed", () => {
       expect(mockInstallWslOnly).toHaveBeenCalled();
       expect(mockCheckAvailability).toHaveBeenCalled();
       expect(mockRefreshAll).toHaveBeenCalled();
-      expect(mockGetVersionInfo).toHaveBeenCalled();
       expect(mockGetTotalDiskUsage).toHaveBeenCalled();
     });
   });

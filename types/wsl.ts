@@ -242,6 +242,13 @@ export interface WslBatchWorkflowTargetResolution {
   missingNames: string[];
 }
 
+export interface WslWorkspaceScopedTargetResolution {
+  distroName: string | null;
+  source: 'workspace' | 'override' | 'fallback' | 'unavailable';
+  followsWorkspace: boolean;
+  blockedReason?: string;
+}
+
 export interface WslBatchWorkflowPreflightStep {
   stepId: string;
   label: string;
@@ -483,6 +490,8 @@ export interface WslOnlineListProps {
 export interface WslExecTerminalProps {
   distros: WslDistroStatus[];
   onExec: (distro: string, command: string, user?: string) => Promise<WslExecResult>;
+  activeWorkspaceDistroName?: string | null;
+  onTargetExecuted?: (distro: string) => void;
   t: (key: string, params?: Record<string, string | number>) => string;
 }
 
@@ -566,6 +575,7 @@ export interface WslBatchWorkflowCardProps {
   distros: WslDistroStatus[];
   availableTags: string[];
   selectedCount: number;
+  referenceDistroName?: string | null;
   commandOptions: Array<{ id: string; name: string; command: string; user?: string }>;
   assistanceActions: WslAssistanceActionDescriptor[];
   onDraftChange: (draft: WslBatchWorkflowPreset) => void;

@@ -48,6 +48,7 @@ import {
 import { toast } from "sonner";
 import { formatBytes } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { resolveWslWorkspaceScopedTarget } from "@/lib/wsl/workflow";
 
 interface BackupEntry {
   fileName: string;
@@ -59,6 +60,7 @@ interface BackupEntry {
 
 interface WslBackupCardProps {
   distroNames: string[];
+  activeWorkspaceDistroName?: string | null;
   backupDistro: (name: string, destDir: string) => Promise<BackupEntry>;
   listBackups: (backupDir: string) => Promise<BackupEntry[]>;
   restoreBackup: (
@@ -87,6 +89,7 @@ function resolveBackupDir(dir: string): string {
 
 export function WslBackupCard({
   distroNames,
+  activeWorkspaceDistroName,
   backupDistro,
   listBackups,
   restoreBackup,
@@ -104,12 +107,25 @@ export function WslBackupCard({
   const [restoreTarget, setRestoreTarget] = useState<BackupEntry | null>(null);
   const [restoreName, setRestoreName] = useState("");
   const [restoreLocation, setRestoreLocation] = useState("");
-  const [selectedDistro, setSelectedDistro] = useState("");
+  const [overrideDistroName, setOverrideDistroName] = useState<string | null>(
+    null,
+  );
   const [lifecycleState, setLifecycleState] = useState<{
     status: "success" | "failed";
     title: string;
     details?: string;
   } | null>(null);
+  const targetResolution = useMemo(
+    () =>
+      resolveWslWorkspaceScopedTarget({
+        activeWorkspaceDistroName,
+        overrideDistroName,
+        availableDistroNames: distroNames,
+        fallbackDistroName: distroNames[0] ?? null,
+      }),
+    [activeWorkspaceDistroName, distroNames, overrideDistroName],
+  );
+  const selectedDistro = targetResolution.distroName ?? "";
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -129,10 +145,10 @@ export function WslBackupCard({
   }, [refresh]);
 
   useEffect(() => {
-    if (distroNames.length > 0 && !selectedDistro) {
-      setSelectedDistro(distroNames[0]);
+    if (overrideDistroName && !distroNames.includes(overrideDistroName)) {
+      setOverrideDistroName(null);
     }
-  }, [distroNames, selectedDistro]);
+  }, [distroNames, overrideDistroName]);
 
   // Auto-dismiss success feedback after 5 seconds
   useEffect(() => {
@@ -306,6 +322,40 @@ export function WslBackupCard({
               </AlertDescription>
             </Alert>
           )}
+          {activeWorkspaceDistroName && selectedDistro && (
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <span>
+                {targetResolution.followsWorkspace
+                  ? t("wsl.workspaceContext.following").replace(
+                      "{name}",
+                      selectedDistro,
+                    )
+                  : t("wsl.workspaceContext.override").replace(
+                      "{name}",
+                      selectedDistro,
+                    )}
+              </span>
+              {!targetResolution.followsWorkspace && (
+                <>
+                  <span>
+                    {t("wsl.workspaceContext.active").replace(
+                      "{name}",
+                      activeWorkspaceDistroName,
+                    )}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-xs"
+                    onClick={() => setOverrideDistroName(null)}
+                  >
+                    {t("wsl.workspaceContext.return")}
+                  </Button>
+                </>
+              )}
+            </div>
+          )}
           <div className="flex flex-col sm:flex-row sm:items-end gap-3">
             <div className="flex-1 space-y-1">
               <Label className="text-xs">{t("wsl.backupMgmt.backupDir")}</Label>
@@ -342,7 +392,17 @@ export function WslBackupCard({
               <select
                 className="h-9 text-xs border rounded px-2 flex-1 bg-background"
                 value={selectedDistro}
-                onChange={(e) => setSelectedDistro(e.target.value)}
+                onChange={(e) => {
+                  const nextValue = e.target.value;
+                  if (
+                    !activeWorkspaceDistroName
+                    || nextValue === activeWorkspaceDistroName
+                  ) {
+                    setOverrideDistroName(null);
+                    return;
+                  }
+                  setOverrideDistroName(nextValue);
+                }}
               >
                 {distroNames.map((name) => (
                   <option key={name} value={name}>

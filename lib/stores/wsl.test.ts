@@ -73,12 +73,16 @@ describe('useWslStore', () => {
       tab: 'available',
       tag: 'dev',
       origin: 'sidebar',
-    });
+      activeDistroName: 'Ubuntu',
+      continueAction: 'launch',
+    } as never);
 
     expect(useWslStore.getState().overviewContext).toEqual({
       tab: 'available',
       tag: 'dev',
       origin: 'sidebar',
+      activeDistroName: 'Ubuntu',
+      continueAction: 'launch',
     });
   });
 
@@ -101,6 +105,35 @@ describe('useWslStore', () => {
 
     useWslStore.getState().removeWorkflowPreset(added.id);
     expect(useWslStore.getState().workflowPresets).toEqual([]);
+
+    nowSpy.mockRestore();
+    randomSpy.mockRestore();
+  });
+
+  it('updates only the targeted workflow preset and preserves unrelated presets', () => {
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(1700000000000);
+    const randomSpy = jest.spyOn(Math, 'random')
+      .mockReturnValueOnce(0.111111)
+      .mockReturnValueOnce(0.222222);
+
+    useWslStore.getState().addWorkflowPreset({
+      name: 'Launch selected',
+      target: { mode: 'selected' },
+      steps: [{ id: 'launch', kind: 'lifecycle', operation: 'launch', label: 'Launch' }],
+    } as never);
+    useWslStore.getState().addWorkflowPreset({
+      name: 'Terminate selected',
+      target: { mode: 'selected' },
+      steps: [{ id: 'terminate', kind: 'lifecycle', operation: 'terminate', label: 'Terminate' }],
+    } as never);
+
+    const [firstPreset, secondPreset] = useWslStore.getState().workflowPresets;
+    useWslStore.getState().updateWorkflowPreset(firstPreset.id, { name: 'Launch active selection' });
+
+    expect(useWslStore.getState().workflowPresets).toEqual([
+      expect.objectContaining({ id: firstPreset.id, name: 'Launch active selection' }),
+      expect.objectContaining({ id: secondPreset.id, name: 'Terminate selected' }),
+    ]);
 
     nowSpy.mockRestore();
     randomSpy.mockRestore();
@@ -227,5 +260,105 @@ describe('useWslStore', () => {
       'summary-2',
       'summary-1',
     ]);
+  });
+
+  it('returns non-object persisted values unchanged during migration', () => {
+    const getPersistConfig = () =>
+      (useWslStore as unknown as {
+        persist: {
+          getOptions: () => { migrate: (state: unknown, version: number) => unknown };
+        };
+      }).persist.getOptions();
+
+    expect(getPersistConfig().migrate(undefined, 1)).toBeUndefined();
+  });
+
+  it('migrates persisted workflow data and overview context across store versions', () => {
+    const getPersistConfig = () =>
+      (useWslStore as unknown as {
+        persist: {
+          getOptions: () => { migrate: (state: unknown, version: number) => unknown };
+        };
+      }).persist.getOptions();
+
+    const persisted = {
+      workflowPresets: [{
+        id: 'preset-1',
+        name: 'Legacy preset',
+        createdAt: '2026-03-01T00:00:00.000Z',
+        updatedAt: '2026-03-01T00:00:00.000Z',
+        target: { mode: 'selected' },
+        action: { kind: 'health-check', label: 'Health check' },
+      }],
+      workflowSummaries: [{
+        id: 'summary-1',
+        workflowName: 'Legacy preset',
+        actionLabel: 'Health check',
+        startedAt: '2026-03-01T00:00:00.000Z',
+        completedAt: '2026-03-01T00:01:00.000Z',
+        total: 1,
+        succeeded: 1,
+        failed: 0,
+        skipped: 0,
+        refreshTargets: [],
+        workflow: {
+          id: 'preset-1',
+          name: 'Legacy preset',
+          createdAt: '2026-03-01T00:00:00.000Z',
+          updatedAt: '2026-03-01T00:00:00.000Z',
+          target: { mode: 'selected' },
+          action: { kind: 'health-check', label: 'Health check' },
+        },
+        results: [{ distroName: 'Ubuntu', status: 'success', retryable: false }],
+      }],
+      overviewContext: {
+        tab: 'available',
+        tag: 'dev',
+        origin: 'widget',
+        activeDistroName: 'Ubuntu',
+        continueAction: 'launch',
+      },
+    };
+
+    for (const version of [1, 2, 3, 4]) {
+      const migrated = getPersistConfig().migrate(persisted, version) as {
+        overviewContext: {
+          tab: string;
+          tag: string | null;
+          origin: string;
+          activeDistroName: string | null;
+          continueAction: string | null;
+        };
+        workflowPresets: Array<{ id: string; steps?: Array<{ kind: string }> }>;
+        workflowSummaries: Array<{
+          workflow: { steps?: Array<{ kind: string }> };
+          resumeFromStepIndex: number | null;
+          resumeFromStepIndexByDistro: Record<string, number>;
+        }>;
+      };
+
+      expect(migrated.overviewContext).toEqual({
+        tab: 'available',
+        tag: 'dev',
+        origin: 'widget',
+        activeDistroName: 'Ubuntu',
+        continueAction: 'launch',
+      });
+      expect(migrated.workflowPresets[0]).toEqual(
+        expect.objectContaining({
+          id: 'preset-1',
+          steps: [expect.objectContaining({ kind: 'health-check' })],
+        }),
+      );
+      expect(migrated.workflowSummaries[0]).toEqual(
+        expect.objectContaining({
+          resumeFromStepIndex: null,
+          resumeFromStepIndexByDistro: {},
+        }),
+      );
+      expect(migrated.workflowSummaries[0].workflow.steps).toEqual([
+        expect.objectContaining({ kind: 'health-check' }),
+      ]);
+    }
   });
 });

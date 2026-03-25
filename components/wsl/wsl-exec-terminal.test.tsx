@@ -20,6 +20,10 @@ const mockT = (key: string) => {
     'wsl.exec.run': 'Run',
     'wsl.exec.noRunningHint': 'No distributions are running.',
     'wsl.distros': 'Distributions',
+    'wsl.workspaceContext.following': 'Following active workspace: {name}',
+    'wsl.workspaceContext.override': 'Override target: {name}',
+    'wsl.workspaceContext.active': 'Active workspace: {name}',
+    'wsl.workspaceContext.return': 'Use Active Workspace',
     'common.clear': 'Clear',
     'common.copied': 'Copied',
   };
@@ -137,5 +141,21 @@ describe('WslExecTerminal', () => {
     await userEvent.type(input, 'pwd{enter}');
 
     expect(mockExec).toHaveBeenCalledWith('Ubuntu', 'pwd', undefined);
+  });
+
+  it('uses the active workspace target instead of the default distro when provided', async () => {
+    render(
+      <WslExecTerminal
+        distros={distros}
+        onExec={mockExec}
+        t={mockT}
+        activeWorkspaceDistroName="Debian"
+      />,
+    );
+
+    const input = screen.getByPlaceholderText('Enter command...');
+    await userEvent.type(input, 'pwd{enter}');
+
+    expect(mockExec).toHaveBeenCalledWith('Debian', 'pwd', undefined);
   });
 });

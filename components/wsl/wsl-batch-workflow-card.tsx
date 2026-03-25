@@ -139,6 +139,7 @@ export function WslBatchWorkflowCard({
   distros,
   availableTags,
   selectedCount,
+  referenceDistroName,
   commandOptions,
   assistanceActions,
   onDraftChange,
@@ -249,6 +250,12 @@ export function WslBatchWorkflowCard({
             {t('wsl.batchWorkflow.addStep')}
           </Button>
         </div>
+
+        {referenceDistroName && (
+          <p className="text-xs text-muted-foreground">
+            {t('wsl.workspaceContext.reference').replace('{name}', referenceDistroName)}
+          </p>
+        )}
 
         {normalizedDraft.target.mode === 'tag' && (
           <Select
