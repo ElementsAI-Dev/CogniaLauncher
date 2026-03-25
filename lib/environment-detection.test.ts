@@ -45,6 +45,8 @@ describe('environment-detection utils', () => {
 
   it('formats detection source labels', () => {
     expect(formatDetectionSource('tool_versions_file')).toBe('tool versions file');
+    expect(formatDetectionSource('vcpkg.json', 'manifest')).toBe('vcpkg.json');
+    expect(formatDetectionSource('conanfile.txt', 'manifest')).toBe('conanfile.txt');
   });
 
   it('builds stable provider detection keys', () => {

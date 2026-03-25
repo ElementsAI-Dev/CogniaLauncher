@@ -96,6 +96,16 @@ export function formatDetectionSource(source: string, sourceType?: string): stri
     return 'global default';
   }
   if (sourceType === 'manifest') {
+    if (
+      source === 'vcpkg.json'
+      || source === 'vcpkg-configuration.json'
+      || source === 'conanfile.txt'
+      || source === 'conanfile.py'
+      || source === 'CMakePresets.json (CMAKE_CXX_STANDARD)'
+      || source === 'CMakeUserPresets.json (CMAKE_CXX_STANDARD)'
+    ) {
+      return source.trim();
+    }
     return 'project manifest';
   }
   return source.replaceAll('_', ' ').trim();
