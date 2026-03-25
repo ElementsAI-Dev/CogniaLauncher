@@ -77,6 +77,11 @@ Providers are the core abstraction in CogniaLauncher. Each Provider encapsulates
 | conan | Conan C/C++ package manager |
 | xmake | Xmake/Xrepo C/C++ package manager |
 
+Notes:
+- C++ project detection now recognizes provider-specific files such as `vcpkg.json`, `vcpkg-configuration.json`, `conanfile.txt`, `conanfile.py`, and `CMakePresets.json`.
+- `xmake` package workflows depend on runnable `xrepo` commands, not only an `xmake` binary on PATH.
+- `msvc` readiness is anchored on a working `cl.exe` toolchain and can fall back to developer-shell discovery when `vswhere` is unavailable.
+
 ### Other
 
 | Provider | Description |

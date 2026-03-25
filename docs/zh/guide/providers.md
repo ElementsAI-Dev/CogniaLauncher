@@ -77,6 +77,11 @@ Provider 是 CogniaLauncher 的核心抽象，每个 Provider 封装一个具体
 | conan | Conan C/C++ 包管理器 |
 | xmake | Xmake/Xrepo C/C++ 包管理器 |
 
+说明：
+- 现在的 C++ 项目检测会识别 `vcpkg.json`、`vcpkg-configuration.json`、`conanfile.txt`、`conanfile.py`、`CMakePresets.json` 等 provider-specific 文件。
+- `xmake` 相关包管理工作流依赖可运行的 `xrepo` 命令，而不是仅仅检测到 PATH 上存在 `xmake`。
+- `msvc` 可用性以可执行的 `cl.exe` 工具链为准；当 `vswhere` 不可用时，也会尝试开发者命令行环境回退检测。
+
 ### 其他
 
 | Provider | 描述 |
