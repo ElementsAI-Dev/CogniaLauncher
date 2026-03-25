@@ -1,6 +1,8 @@
 import { useGitRepoStore } from './git';
 import { act } from '@testing-library/react';
 
+type GitRepoStoreState = ReturnType<typeof useGitRepoStore.getState>;
+
 // Reset store between tests
 beforeEach(() => {
   const { setState } = useGitRepoStore;
@@ -10,7 +12,8 @@ beforeEach(() => {
       pinnedRepos: [],
       lastRepoPath: null,
       cloneHistory: [],
-    });
+      workbenchByRepoPath: {},
+    } satisfies Partial<GitRepoStoreState>);
   });
 });
 
@@ -203,5 +206,57 @@ describe('useGitRepoStore', () => {
     });
     expect(useGitRepoStore.getState().recentRepos).toEqual(['/repo/a']);
     expect(useGitRepoStore.getState().cloneHistory).toEqual([]);
+  });
+
+  it('returns default workbench preferences for an unknown repository', () => {
+    const store = useGitRepoStore.getState();
+    const preference = store.getWorkbenchPreference('/repo/unknown');
+
+    expect(preference.activeTab).toBe('overview');
+    expect(preference.panels.graphDetail).toEqual({
+      collapsed: false,
+      hidden: false,
+    });
+    expect(preference.panels.historyDetail).toEqual({
+      collapsed: false,
+      hidden: false,
+    });
+  });
+
+  it('stores workbench preferences per repository without leaking panel state', () => {
+    const store = useGitRepoStore.getState();
+
+    act(() => {
+      store.setWorkbenchActiveTab('/repo/a', 'history');
+      store.hideWorkbenchPanel('/repo/a', 'historyDetail');
+      store.setWorkbenchPanelCollapsed('/repo/a', 'changesInspector', true);
+      store.setWorkbenchActiveTab('/repo/b', 'tools');
+    });
+
+    const repoAPreference = useGitRepoStore.getState().getWorkbenchPreference('/repo/a');
+    const repoBPreference = useGitRepoStore.getState().getWorkbenchPreference('/repo/b');
+
+    expect(repoAPreference.activeTab).toBe('history');
+    expect(repoAPreference.panels.historyDetail.hidden).toBe(true);
+    expect(repoAPreference.panels.changesInspector.collapsed).toBe(true);
+    expect(repoBPreference.activeTab).toBe('tools');
+    expect(repoBPreference.panels.historyDetail.hidden).toBe(false);
+    expect(repoBPreference.panels.changesInspector.collapsed).toBe(false);
+  });
+
+  it('restoreAllWorkbenchPanels reveals hidden panels but preserves collapse state', () => {
+    const store = useGitRepoStore.getState();
+
+    act(() => {
+      store.hideWorkbenchPanel('/repo/a', 'graphDetail');
+      store.setWorkbenchPanelCollapsed('/repo/a', 'graphDetail', true);
+      store.hideWorkbenchPanel('/repo/a', 'changesInspector');
+      store.restoreAllWorkbenchPanels('/repo/a');
+    });
+
+    const preference = useGitRepoStore.getState().getWorkbenchPreference('/repo/a');
+    expect(preference.panels.graphDetail.hidden).toBe(false);
+    expect(preference.panels.graphDetail.collapsed).toBe(true);
+    expect(preference.panels.changesInspector.hidden).toBe(false);
   });
 });

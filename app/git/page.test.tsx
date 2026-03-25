@@ -1,6 +1,9 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import GitPage from './page';
+import { useGitRepoStore } from '@/lib/stores/git';
+
+type GitRepoStoreState = ReturnType<typeof useGitRepoStore.getState>;
 
 const mockRefreshAll = jest.fn().mockResolvedValue(undefined);
 const mockSetRepoPath = jest.fn().mockResolvedValue(undefined);
@@ -513,6 +516,15 @@ describe('GitPage', () => {
     mockSupportSnapshot = createSupportSnapshot();
     mockRefreshSupportSnapshot.mockImplementation(async () => mockSupportSnapshot);
     jest.spyOn(window, 'confirm').mockReturnValue(true);
+    act(() => {
+      useGitRepoStore.setState({
+        recentRepos: [],
+        pinnedRepos: [],
+        lastRepoPath: null,
+        cloneHistory: [],
+        workbenchByRepoPath: {},
+      } satisfies Partial<GitRepoStoreState>);
+    });
   });
 
   afterEach(() => {
@@ -734,6 +746,89 @@ describe('GitPage', () => {
     expect(mockRefreshGitByScopes).toHaveBeenCalledWith(
       expect.arrayContaining(['graph']),
     );
+  });
+
+  it('restores the saved active tab for the current repository', async () => {
+    act(() => {
+      useGitRepoStore.setState({
+        workbenchByRepoPath: {
+          '/test/repo': {
+            activeTab: 'operations',
+            panels: {
+              graphDetail: { collapsed: false, hidden: false },
+              historyDetail: { collapsed: false, hidden: false },
+              changesInspector: { collapsed: false, hidden: false },
+              toolsWorkspace: { collapsed: false, hidden: false },
+              advancedWorkspace: { collapsed: false, hidden: false },
+              operationsWorkspace: { collapsed: false, hidden: false },
+            },
+          },
+        },
+      } satisfies Partial<GitRepoStoreState>);
+    });
+
+    await renderGitPage();
+
+    expect(screen.getByRole('tab', { name: /operations/i })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    expect(screen.getByTestId('interactive-rebase-card')).toBeInTheDocument();
+  });
+
+  it('allows hiding and restoring the changes inspector panel', async () => {
+    const user = userEvent.setup();
+    await renderGitPage();
+
+    await user.click(screen.getByRole('tab', { name: /changes/i }));
+    await user.click(screen.getByTestId('git-workbench-hide-changesInspector'));
+
+    expect(screen.queryByTestId('diff-viewer')).not.toBeInTheDocument();
+    expect(
+      screen.getByTestId('git-workbench-restore-changesInspector'),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByTestId('git-workbench-restore-changesInspector'));
+
+    expect(screen.getByTestId('diff-viewer')).toBeInTheDocument();
+  });
+
+  it('restores the hidden changes inspector when stash diff routing jumps to changes', async () => {
+    const user = userEvent.setup();
+    await renderGitPage();
+
+    await user.click(screen.getByRole('tab', { name: /changes/i }));
+    await user.click(screen.getByTestId('git-workbench-hide-changesInspector'));
+    await user.click(screen.getByRole('tab', { name: /repository/i }));
+    await user.click(screen.getByTestId('show-stash-diff'));
+
+    await waitFor(() => {
+      expect(screen.getByRole('tab', { name: /changes/i })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      );
+      expect(screen.getByTestId('diff-viewer')).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByTestId('git-workbench-restore-changesInspector'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('restores the history detail panel when a history surface selects a commit', async () => {
+    const user = userEvent.setup();
+    await renderGitPage();
+
+    await user.click(screen.getByRole('tab', { name: /history/i }));
+    await user.click(screen.getByTestId('git-workbench-hide-historyDetail'));
+
+    expect(screen.queryByTestId('commit-detail')).not.toBeInTheDocument();
+
+    await user.click(screen.getByTestId('reflog-select'));
+
+    await waitFor(() => {
+      expect(mockGetCommitDetail).toHaveBeenCalledWith('abc1234');
+      expect(screen.getByTestId('commit-detail')).toHaveTextContent('abc1234');
+    });
   });
 });
 

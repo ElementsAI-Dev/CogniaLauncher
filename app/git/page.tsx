@@ -2,13 +2,20 @@
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { PageHeader } from "@/components/layout/page-header";
+import { GitWorkbenchPanel } from "@/components/git/git-workbench-panel";
 import { useGit } from "@/hooks/use-git";
 import { useGitAdvanced } from "@/hooks/use-git-advanced";
 import { useGitLfs } from "@/hooks/use-git-lfs";
 import { useLocale } from "@/components/providers/locale-provider";
 import { isTauri, revealPath } from "@/lib/tauri";
 import { writeClipboard } from "@/lib/clipboard";
-import { useGitRepoStore } from "@/lib/stores/git";
+import {
+  createDefaultGitWorkbenchPanelsState,
+  type GitWorkbenchPanelId,
+  type GitWorkbenchPanelsState,
+  type GitWorkbenchTab,
+  useGitRepoStore,
+} from "@/lib/stores/git";
 import { runEditorActionFlow } from "@/lib/editor-action";
 import {
   GitStatusCard,
@@ -96,6 +103,17 @@ function normalizeEditorOpenReason(
   }
 }
 
+const WORKBENCH_PANELS_BY_TAB: Partial<
+  Record<GitWorkbenchTab, GitWorkbenchPanelId[]>
+> = {
+  graph: ["graphDetail"],
+  history: ["historyDetail"],
+  changes: ["changesInspector"],
+  tools: ["toolsWorkspace"],
+  advanced: ["advancedWorkspace"],
+  operations: ["operationsWorkspace"],
+};
+
 export default function GitPage() {
   const { t } = useLocale();
   const isDesktop = isTauri();
@@ -135,7 +153,9 @@ export default function GitPage() {
   } = gitLfs;
 
   const initializedRef = useRef(false);
-  const [activeTab, setActiveTab] = useState<string>("overview");
+  const [activeTab, setActiveTab] = useState<GitWorkbenchTab>("overview");
+  const [workbenchPanels, setWorkbenchPanels] =
+    useState<GitWorkbenchPanelsState>(createDefaultGitWorkbenchPanelsState);
   const [selectedCommitHash, setSelectedCommitHash] = useState<string | null>(
     null,
   );
@@ -259,6 +279,155 @@ export default function GitPage() {
     refreshSupportSnapshot,
   ]);
 
+  const restoreWorkbenchForPath = useCallback(
+    (path: string | null | undefined) => {
+      if (!path) {
+        setActiveTab("overview");
+        setWorkbenchPanels(createDefaultGitWorkbenchPanelsState());
+        return;
+      }
+      const preference = repoStore.getWorkbenchPreference(path);
+      setActiveTab(preference.activeTab);
+      setWorkbenchPanels(preference.panels);
+    },
+    [repoStore],
+  );
+
+  const handleActiveTabChange = useCallback(
+    (nextTab: string) => {
+      const normalizedTab = nextTab as GitWorkbenchTab;
+      setActiveTab(normalizedTab);
+      if (repoPath) {
+        repoStore.setWorkbenchActiveTab(repoPath, normalizedTab);
+      }
+    },
+    [repoPath, repoStore],
+  );
+
+  const setWorkbenchPanelCollapsed = useCallback(
+    (panelId: GitWorkbenchPanelId, collapsed: boolean) => {
+      setWorkbenchPanels((current) => ({
+        ...current,
+        [panelId]: {
+          ...current[panelId],
+          collapsed,
+        },
+      }));
+      if (repoPath) {
+        repoStore.setWorkbenchPanelCollapsed(repoPath, panelId, collapsed);
+      }
+    },
+    [repoPath, repoStore],
+  );
+
+  const hideWorkbenchPanel = useCallback(
+    (panelId: GitWorkbenchPanelId) => {
+      setWorkbenchPanels((current) => ({
+        ...current,
+        [panelId]: {
+          ...current[panelId],
+          hidden: true,
+        },
+      }));
+      if (repoPath) {
+        repoStore.hideWorkbenchPanel(repoPath, panelId);
+      }
+    },
+    [repoPath, repoStore],
+  );
+
+  const restoreWorkbenchPanel = useCallback(
+    (panelId: GitWorkbenchPanelId) => {
+      setWorkbenchPanels((current) => ({
+        ...current,
+        [panelId]: {
+          ...current[panelId],
+          hidden: false,
+        },
+      }));
+      if (repoPath) {
+        repoStore.restoreWorkbenchPanel(repoPath, panelId);
+      }
+    },
+    [repoPath, repoStore],
+  );
+
+  const restoreAllWorkbenchPanels = useCallback(() => {
+    setWorkbenchPanels((current) => {
+      const next = { ...current };
+      for (const panelId of Object.keys(next) as GitWorkbenchPanelId[]) {
+        next[panelId] = {
+          ...next[panelId],
+          hidden: false,
+        };
+      }
+      return next;
+    });
+    if (repoPath) {
+      repoStore.restoreAllWorkbenchPanels(repoPath);
+    }
+  }, [repoPath, repoStore]);
+
+  const ensureWorkbenchPanelVisible = useCallback(
+    (panelId: GitWorkbenchPanelId) => {
+      if (!workbenchPanels[panelId]?.hidden) return;
+      restoreWorkbenchPanel(panelId);
+    },
+    [restoreWorkbenchPanel, workbenchPanels],
+  );
+
+  const selectCommitInWorkbench = useCallback(
+    async (hash: string, preferredTab: "graph" | "history") => {
+      ensureWorkbenchPanelVisible(
+        preferredTab === "graph" ? "graphDetail" : "historyDetail",
+      );
+      if (activeTab !== preferredTab) {
+        handleActiveTabChange(preferredTab);
+      }
+      setSelectedCommitHash(hash);
+      setDetailLoading(true);
+      try {
+        const detail = await getCommitDetail(hash);
+        setCommitDetail(detail);
+      } finally {
+        setDetailLoading(false);
+      }
+    },
+    [
+      activeTab,
+      ensureWorkbenchPanelVisible,
+      getCommitDetail,
+      handleActiveTabChange,
+    ],
+  );
+
+  const hiddenPanelsForActiveTab = useMemo(() => {
+    const panelIds = WORKBENCH_PANELS_BY_TAB[activeTab] ?? [];
+    return panelIds.filter((panelId) => workbenchPanels[panelId]?.hidden);
+  }, [activeTab, workbenchPanels]);
+
+  const getWorkbenchPanelLabel = useCallback(
+    (panelId: GitWorkbenchPanelId) => {
+      switch (panelId) {
+        case "graphDetail":
+          return t("git.workbench.panels.graphDetail");
+        case "historyDetail":
+          return t("git.workbench.panels.historyDetail");
+        case "changesInspector":
+          return t("git.workbench.panels.changesInspector");
+        case "toolsWorkspace":
+          return t("git.workbench.panels.toolsWorkspace");
+        case "advancedWorkspace":
+          return t("git.workbench.panels.advancedWorkspace");
+        case "operationsWorkspace":
+          return t("git.workbench.panels.operationsWorkspace");
+        default:
+          return panelId;
+      }
+    },
+    [t],
+  );
+
   // Restore last repo on mount
   useEffect(() => {
     if (!initializedRef.current && isDesktop) {
@@ -283,6 +452,11 @@ export default function GitPage() {
     repoStore.lastRepoPath,
     setRepoPath,
   ]);
+
+  useEffect(() => {
+    if (!isDesktop) return;
+    restoreWorkbenchForPath(repoPath);
+  }, [isDesktop, repoPath, restoreWorkbenchForPath]);
 
   useEffect(() => {
     if (!repoPath) {
@@ -363,18 +537,18 @@ export default function GitPage() {
     [getSupportReason],
   );
 
-  const handleSelectCommit = useCallback(
+  const handleSelectCommitFromGraph = useCallback(
     async (hash: string) => {
-      setSelectedCommitHash(hash);
-      setDetailLoading(true);
-      try {
-        const detail = await getCommitDetail(hash);
-        setCommitDetail(detail);
-      } finally {
-        setDetailLoading(false);
-      }
+      await selectCommitInWorkbench(hash, "graph");
     },
-    [getCommitDetail],
+    [selectCommitInWorkbench],
+  );
+
+  const handleSelectCommitFromHistory = useCallback(
+    async (hash: string) => {
+      await selectCommitInWorkbench(hash, "history");
+    },
+    [selectCommitInWorkbench],
   );
 
   if (!isDesktop) {
@@ -553,10 +727,11 @@ export default function GitPage() {
   const handleViewDiff = async (file: string, staged?: boolean) => {
     setDiffLoading(true);
     try {
+      ensureWorkbenchPanelVisible("changesInspector");
       const d = await git.getDiff(staged, file);
       setDiffContent(d);
       if (activeTab !== "changes") {
-        setActiveTab("changes");
+        handleActiveTabChange("changes");
       }
     } catch (e) {
       toast.error(String(e));
@@ -569,8 +744,9 @@ export default function GitPage() {
     try {
       const diff = await runAction(() => git.stashShowDiff(stashId), {
         onSuccess: async (diff) => {
+          ensureWorkbenchPanelVisible("changesInspector");
           setDiffContent(diff);
-          setActiveTab("changes");
+          handleActiveTabChange("changes");
         },
       });
       return diff;
@@ -609,7 +785,7 @@ export default function GitPage() {
         </Alert>
       )}
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
+      <Tabs value={activeTab} onValueChange={handleActiveTabChange}>
         <TabsList>
           <TabsTrigger value="overview">{t("git.tabs.overview")}</TabsTrigger>
           <TabsTrigger value="repository" disabled={!git.available}>
@@ -646,6 +822,38 @@ export default function GitPage() {
             {t("git.tabs.operations")}
           </TabsTrigger>
         </TabsList>
+
+        {hiddenPanelsForActiveTab.length > 0 && (
+          <Alert data-testid="git-workbench-restore-bar">
+            <AlertDescription className="flex flex-wrap items-center gap-2">
+              <span>{t("git.workbench.restoreHidden")}</span>
+              {hiddenPanelsForActiveTab.map((panelId) => (
+                <Button
+                  key={panelId}
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  data-testid={`git-workbench-restore-${panelId}`}
+                  onClick={() => restoreWorkbenchPanel(panelId)}
+                >
+                  {t("git.workbench.restorePanel", {
+                    panel: getWorkbenchPanelLabel(panelId),
+                  })}
+                </Button>
+              ))}
+              {hiddenPanelsForActiveTab.length > 1 && (
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="ghost"
+                  onClick={restoreAllWorkbenchPanels}
+                >
+                  {t("git.workbench.restoreAll")}
+                </Button>
+              )}
+            </AlertDescription>
+          </Alert>
+        )}
 
         {/* Overview Tab */}
         <TabsContent value="overview" className="space-y-4 mt-4">
@@ -867,11 +1075,19 @@ export default function GitPage() {
 
         {/* Graph Tab */}
         <TabsContent value="graph" className="space-y-4 mt-4">
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-            <div className="xl:col-span-2">
+          <div
+            className={
+              workbenchPanels.graphDetail.hidden
+                ? "grid grid-cols-1 gap-4"
+                : "grid grid-cols-1 gap-4 xl:grid-cols-3"
+            }
+          >
+            <div
+              className={workbenchPanels.graphDetail.hidden ? "" : "xl:col-span-2"}
+            >
               <GitCommitGraph
                 onLoadGraph={git.getGraphLog}
-                onSelectCommit={handleSelectCommit}
+                onSelectCommit={handleSelectCommitFromGraph}
                 selectedHash={selectedCommitHash}
                 branches={git.branches}
                 refreshKey={graphReloadKey}
@@ -942,61 +1158,103 @@ export default function GitPage() {
                 }}
               />
             </div>
-            <div>
-              <GitCommitDetail
-                hash={selectedCommitHash}
-                detail={commitDetail}
-                loading={detailLoading}
-                onClose={() => {
-                  setSelectedCommitHash(null);
-                  setCommitDetail(null);
-                }}
-                onGetCommitDiff={git.getCommitDiff}
-              />
-              {!selectedCommitHash && (
-                <GitContributorsChart contributors={git.contributors} />
-              )}
-            </div>
+            {!workbenchPanels.graphDetail.hidden && (
+              <GitWorkbenchPanel
+                panelId="graphDetail"
+                title={t("git.workbench.panels.graphDetail")}
+                description={t("git.workbench.panelDescriptions.graphDetail")}
+                state={workbenchPanels.graphDetail}
+                onToggleCollapsed={() =>
+                  setWorkbenchPanelCollapsed(
+                    "graphDetail",
+                    !workbenchPanels.graphDetail.collapsed,
+                  )
+                }
+                onHide={() => hideWorkbenchPanel("graphDetail")}
+              >
+                <div className="space-y-4">
+                  <GitCommitDetail
+                    hash={selectedCommitHash}
+                    detail={commitDetail}
+                    loading={detailLoading}
+                    onClose={() => {
+                      setSelectedCommitHash(null);
+                      setCommitDetail(null);
+                    }}
+                    onGetCommitDiff={git.getCommitDiff}
+                  />
+                  {!selectedCommitHash && (
+                    <GitContributorsChart contributors={git.contributors} />
+                  )}
+                </div>
+              </GitWorkbenchPanel>
+            )}
           </div>
         </TabsContent>
 
         {/* History Tab */}
         <TabsContent value="history" className="space-y-4 mt-4">
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-            <div className="xl:col-span-2">
+          <div
+            className={
+              workbenchPanels.historyDetail.hidden
+                ? "grid grid-cols-1 gap-4"
+                : "grid grid-cols-1 gap-4 xl:grid-cols-3"
+            }
+          >
+            <div
+              className={
+                workbenchPanels.historyDetail.hidden ? "" : "xl:col-span-2"
+              }
+            >
               <GitCommitLog
                 commits={git.commits}
                 onLoadMore={(opts) => git.getLog(opts)}
-                onSelectCommit={handleSelectCommit}
+                onSelectCommit={handleSelectCommitFromHistory}
                 selectedHash={selectedCommitHash}
                 queryState={git.historyState.log}
               />
             </div>
-            <div className="space-y-4">
-              <GitCommitDetail
-                hash={selectedCommitHash}
-                detail={commitDetail}
-                loading={detailLoading}
-                onClose={() => {
-                  setSelectedCommitHash(null);
-                  setCommitDetail(null);
-                }}
-                onGetCommitDiff={git.getCommitDiff}
-              />
-              {!selectedCommitHash && (
-                <>
-                  <GitContributorsChart contributors={git.contributors} />
-                  <GitActivityHeatmap onGetActivity={git.getActivity} />
-                </>
-              )}
-              {selectedCommitHash && (
-                <GitActivityHeatmap onGetActivity={git.getActivity} />
-              )}
-            </div>
+            {!workbenchPanels.historyDetail.hidden && (
+              <GitWorkbenchPanel
+                panelId="historyDetail"
+                title={t("git.workbench.panels.historyDetail")}
+                description={t("git.workbench.panelDescriptions.historyDetail")}
+                state={workbenchPanels.historyDetail}
+                onToggleCollapsed={() =>
+                  setWorkbenchPanelCollapsed(
+                    "historyDetail",
+                    !workbenchPanels.historyDetail.collapsed,
+                  )
+                }
+                onHide={() => hideWorkbenchPanel("historyDetail")}
+              >
+                <div className="space-y-4">
+                  <GitCommitDetail
+                    hash={selectedCommitHash}
+                    detail={commitDetail}
+                    loading={detailLoading}
+                    onClose={() => {
+                      setSelectedCommitHash(null);
+                      setCommitDetail(null);
+                    }}
+                    onGetCommitDiff={git.getCommitDiff}
+                  />
+                  {!selectedCommitHash && (
+                    <>
+                      <GitContributorsChart contributors={git.contributors} />
+                      <GitActivityHeatmap onGetActivity={git.getActivity} />
+                    </>
+                  )}
+                  {selectedCommitHash && (
+                    <GitActivityHeatmap onGetActivity={git.getActivity} />
+                  )}
+                </div>
+              </GitWorkbenchPanel>
+            )}
           </div>
           <GitSearchCommits
             onSearch={git.searchCommits}
-            onSelectCommit={handleSelectCommit}
+            onSelectCommit={handleSelectCommitFromHistory}
             queryState={git.historyState.search}
           />
           <GitVisualFileHistory
@@ -1008,7 +1266,7 @@ export default function GitPage() {
             repoPath={git.repoPath}
             onGetHistory={git.getFileHistory}
             onGetCommitDiff={git.getCommitDiff}
-            onSelectCommit={handleSelectCommit}
+            onSelectCommit={handleSelectCommitFromHistory}
             queryState={git.historyState.fileHistory}
           />
           <GitBlameView
@@ -1018,7 +1276,7 @@ export default function GitPage() {
           />
           <GitReflogCard
             onGetReflog={git.getReflog}
-            onSelectCommit={handleSelectCommit}
+            onSelectCommit={handleSelectCommitFromHistory}
             queryState={git.historyState.reflog}
             onResetTo={async (hash, mode) => {
               const confirmed = window.confirm(t("git.resetAction.confirm"));
@@ -1039,7 +1297,13 @@ export default function GitPage() {
 
         {/* Changes Tab */}
         <TabsContent value="changes" className="space-y-4 mt-4">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div
+            className={
+              workbenchPanels.changesInspector.hidden
+                ? "grid grid-cols-1 gap-4"
+                : "grid grid-cols-1 gap-4 lg:grid-cols-2"
+            }
+          >
             <GitStatusFiles
               files={git.statusFiles}
               loading={git.loading}
@@ -1079,316 +1343,397 @@ export default function GitPage() {
                 }
               }}
             />
+            {!workbenchPanels.changesInspector.hidden && (
+              <GitWorkbenchPanel
+                panelId="changesInspector"
+                title={t("git.workbench.panels.changesInspector")}
+                description={t(
+                  "git.workbench.panelDescriptions.changesInspector",
+                )}
+                state={workbenchPanels.changesInspector}
+                onToggleCollapsed={() =>
+                  setWorkbenchPanelCollapsed(
+                    "changesInspector",
+                    !workbenchPanels.changesInspector.collapsed,
+                  )
+                }
+                onHide={() => hideWorkbenchPanel("changesInspector")}
+                contentClassName="space-y-4"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={async () => {
+                      setDiffLoading(true);
+                      try {
+                        const d = await git.getDiff(
+                          false,
+                          undefined,
+                          contextLines,
+                        );
+                        setDiffContent(d);
+                      } finally {
+                        setDiffLoading(false);
+                      }
+                    }}
+                    disabled={!git.repoPath}
+                  >
+                    {t("git.diffView.unstaged")}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={async () => {
+                      setDiffLoading(true);
+                      try {
+                        const d = await git.getDiff(
+                          true,
+                          undefined,
+                          contextLines,
+                        );
+                        setDiffContent(d);
+                      } finally {
+                        setDiffLoading(false);
+                      }
+                    }}
+                    disabled={!git.repoPath}
+                  >
+                    {t("git.diffView.staged")}
+                  </Button>
+                  <span className="mx-1 h-6 w-px self-center bg-border" />
+                  <input
+                    type="text"
+                    placeholder={t("git.diffView.fromCommit")}
+                    value={compareFrom}
+                    onChange={(e) => setCompareFrom(e.target.value)}
+                    className="h-8 w-28 rounded-md border border-input bg-background px-2 text-xs font-mono placeholder:text-muted-foreground"
+                  />
+                  <span className="self-center text-xs text-muted-foreground">
+                    ..
+                  </span>
+                  <input
+                    type="text"
+                    placeholder={t("git.diffView.toCommit")}
+                    value={compareTo}
+                    onChange={(e) => setCompareTo(e.target.value)}
+                    className="h-8 w-28 rounded-md border border-input bg-background px-2 text-xs font-mono placeholder:text-muted-foreground"
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={
+                      !git.repoPath ||
+                      !compareFrom.trim() ||
+                      !compareTo.trim() ||
+                      diffLoading
+                    }
+                    onClick={async () => {
+                      setDiffLoading(true);
+                      try {
+                        const d = await git.getDiffBetween(
+                          compareFrom.trim(),
+                          compareTo.trim(),
+                          undefined,
+                          contextLines,
+                        );
+                        setDiffContent(d);
+                      } catch (e) {
+                        toast.error(String(e));
+                      } finally {
+                        setDiffLoading(false);
+                      }
+                    }}
+                  >
+                    {t("git.diffView.compare")}
+                  </Button>
+                  <span className="mx-1 h-6 w-px self-center bg-border" />
+                  <Select
+                    value={
+                      contextLines === undefined ? "default" : String(contextLines)
+                    }
+                    onValueChange={(v) =>
+                      setContextLines(v === "default" ? undefined : Number(v))
+                    }
+                  >
+                    <SelectTrigger className="h-8 w-[100px] text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="default">
+                        {t("git.diffView.contextDefault")}
+                      </SelectItem>
+                      <SelectItem value="5">
+                        5 {t("git.diffView.contextLines")}
+                      </SelectItem>
+                      <SelectItem value="10">
+                        10 {t("git.diffView.contextLines")}
+                      </SelectItem>
+                      <SelectItem value="20">
+                        20 {t("git.diffView.contextLines")}
+                      </SelectItem>
+                      <SelectItem value="50">
+                        {t("git.diffView.contextAll")}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <GitDiffViewer diff={diffContent} loading={diffLoading} />
+              </GitWorkbenchPanel>
+            )}
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={async () => {
-                setDiffLoading(true);
-                try {
-                  const d = await git.getDiff(false, undefined, contextLines);
-                  setDiffContent(d);
-                } finally {
-                  setDiffLoading(false);
-                }
-              }}
-              disabled={!git.repoPath}
-            >
-              {t("git.diffView.unstaged")}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={async () => {
-                setDiffLoading(true);
-                try {
-                  const d = await git.getDiff(true, undefined, contextLines);
-                  setDiffContent(d);
-                } finally {
-                  setDiffLoading(false);
-                }
-              }}
-              disabled={!git.repoPath}
-            >
-              {t("git.diffView.staged")}
-            </Button>
-            <span className="w-px h-6 bg-border self-center mx-1" />
-            <input
-              type="text"
-              placeholder={t("git.diffView.fromCommit")}
-              value={compareFrom}
-              onChange={(e) => setCompareFrom(e.target.value)}
-              className="h-8 w-28 rounded-md border border-input bg-background px-2 text-xs font-mono placeholder:text-muted-foreground"
-            />
-            <span className="self-center text-xs text-muted-foreground">
-              ..
-            </span>
-            <input
-              type="text"
-              placeholder={t("git.diffView.toCommit")}
-              value={compareTo}
-              onChange={(e) => setCompareTo(e.target.value)}
-              className="h-8 w-28 rounded-md border border-input bg-background px-2 text-xs font-mono placeholder:text-muted-foreground"
-            />
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={
-                !git.repoPath ||
-                !compareFrom.trim() ||
-                !compareTo.trim() ||
-                diffLoading
-              }
-              onClick={async () => {
-                setDiffLoading(true);
-                try {
-                  const d = await git.getDiffBetween(
-                    compareFrom.trim(),
-                    compareTo.trim(),
-                    undefined,
-                    contextLines,
-                  );
-                  setDiffContent(d);
-                } catch (e) {
-                  toast.error(String(e));
-                } finally {
-                  setDiffLoading(false);
-                }
-              }}
-            >
-              {t("git.diffView.compare")}
-            </Button>
-            <span className="w-px h-6 bg-border self-center mx-1" />
-            <Select
-              value={
-                contextLines === undefined ? "default" : String(contextLines)
-              }
-              onValueChange={(v) =>
-                setContextLines(v === "default" ? undefined : Number(v))
-              }
-            >
-              <SelectTrigger className="h-8 w-[100px] text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="default">
-                  {t("git.diffView.contextDefault")}
-                </SelectItem>
-                <SelectItem value="5">
-                  5 {t("git.diffView.contextLines")}
-                </SelectItem>
-                <SelectItem value="10">
-                  10 {t("git.diffView.contextLines")}
-                </SelectItem>
-                <SelectItem value="20">
-                  20 {t("git.diffView.contextLines")}
-                </SelectItem>
-                <SelectItem value="50">
-                  {t("git.diffView.contextAll")}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <GitDiffViewer diff={diffContent} loading={diffLoading} />
         </TabsContent>
 
         {/* Tools Tab */}
         <TabsContent value="tools" className="space-y-4 mt-4">
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-            <GitSubmodulesCard
-              submodules={gitAdvanced.submodules}
-              onRefresh={gitAdvanced.refreshSubmodules}
-              onAdd={gitAdvanced.addSubmodule}
-              onUpdate={gitAdvanced.updateSubmodules}
-              onRemove={gitAdvanced.removeSubmodule}
-              onSync={gitAdvanced.syncSubmodules}
-            />
-            <GitWorktreesCard
-              worktrees={gitAdvanced.worktrees}
-              onRefresh={gitAdvanced.refreshWorktrees}
-              onAdd={gitAdvanced.addWorktree}
-              onRemove={gitAdvanced.removeWorktree}
-              onPrune={gitAdvanced.pruneWorktrees}
-            />
-            <GitGitignoreCard
-              onGetGitignore={gitAdvanced.getGitignore}
-              onSetGitignore={gitAdvanced.setGitignore}
-              onCheckIgnore={gitAdvanced.checkIgnore}
-              onAddToGitignore={gitAdvanced.addToGitignore}
-            />
-            <GitHooksCard
-              hooks={gitAdvanced.hooks}
-              onRefresh={gitAdvanced.refreshHooks}
-              onGetContent={gitAdvanced.getHookContent}
-              onSetContent={gitAdvanced.setHookContent}
-              onToggle={gitAdvanced.toggleHook}
-            />
-            <GitLfsCard
-              lfsAvailable={gitLfs.lfsAvailable}
-              lfsVersion={gitLfs.lfsVersion}
-              trackedPatterns={gitLfs.trackedPatterns}
-              lfsFiles={gitLfs.lfsFiles}
-              onCheckAvailability={gitLfs.checkAvailability}
-              onRefreshTrackedPatterns={gitLfs.refreshTrackedPatterns}
-              onRefreshLfsFiles={gitLfs.refreshLfsFiles}
-              onTrack={gitLfs.track}
-              onUntrack={gitLfs.untrack}
-              onInstall={gitLfs.install}
-            />
-          </div>
+          {!workbenchPanels.toolsWorkspace.hidden && (
+            <GitWorkbenchPanel
+              panelId="toolsWorkspace"
+              title={t("git.workbench.panels.toolsWorkspace")}
+              description={t("git.workbench.panelDescriptions.toolsWorkspace")}
+              state={workbenchPanels.toolsWorkspace}
+              onToggleCollapsed={() =>
+                setWorkbenchPanelCollapsed(
+                  "toolsWorkspace",
+                  !workbenchPanels.toolsWorkspace.collapsed,
+                )
+              }
+              onHide={() => hideWorkbenchPanel("toolsWorkspace")}
+            >
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                <GitSubmodulesCard
+                  submodules={gitAdvanced.submodules}
+                  onRefresh={gitAdvanced.refreshSubmodules}
+                  onAdd={gitAdvanced.addSubmodule}
+                  onUpdate={gitAdvanced.updateSubmodules}
+                  onRemove={gitAdvanced.removeSubmodule}
+                  onSync={gitAdvanced.syncSubmodules}
+                />
+                <GitWorktreesCard
+                  worktrees={gitAdvanced.worktrees}
+                  onRefresh={gitAdvanced.refreshWorktrees}
+                  onAdd={gitAdvanced.addWorktree}
+                  onRemove={gitAdvanced.removeWorktree}
+                  onPrune={gitAdvanced.pruneWorktrees}
+                />
+                <GitGitignoreCard
+                  onGetGitignore={gitAdvanced.getGitignore}
+                  onSetGitignore={gitAdvanced.setGitignore}
+                  onCheckIgnore={gitAdvanced.checkIgnore}
+                  onAddToGitignore={gitAdvanced.addToGitignore}
+                />
+                <GitHooksCard
+                  hooks={gitAdvanced.hooks}
+                  onRefresh={gitAdvanced.refreshHooks}
+                  onGetContent={gitAdvanced.getHookContent}
+                  onSetContent={gitAdvanced.setHookContent}
+                  onToggle={gitAdvanced.toggleHook}
+                />
+                <GitLfsCard
+                  lfsAvailable={gitLfs.lfsAvailable}
+                  lfsVersion={gitLfs.lfsVersion}
+                  trackedPatterns={gitLfs.trackedPatterns}
+                  lfsFiles={gitLfs.lfsFiles}
+                  onCheckAvailability={gitLfs.checkAvailability}
+                  onRefreshTrackedPatterns={gitLfs.refreshTrackedPatterns}
+                  onRefreshLfsFiles={gitLfs.refreshLfsFiles}
+                  onTrack={gitLfs.track}
+                  onUntrack={gitLfs.untrack}
+                  onInstall={gitLfs.install}
+                />
+              </div>
+            </GitWorkbenchPanel>
+          )}
         </TabsContent>
 
         {/* Advanced Tab */}
         <TabsContent value="advanced" className="space-y-4 mt-4">
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-            <GitLocalConfigCard
-              config={gitAdvanced.localConfig}
-              onRefresh={gitAdvanced.refreshLocalConfig}
-              onSet={gitAdvanced.setLocalConfig}
-              onRemove={gitAdvanced.removeLocalConfig}
-              onGetValue={gitAdvanced.getLocalConfigValue}
-            />
-            <GitRepoStatsCard
-              repoStats={gitAdvanced.repoStats}
-              onRefresh={gitAdvanced.refreshRepoStats}
-              onFsck={gitAdvanced.fsck}
-              onDescribe={gitAdvanced.describe}
-              onIsShallow={gitAdvanced.isShallow}
-              onDeepen={gitAdvanced.deepen}
-              onUnshallow={gitAdvanced.unshallow}
-            />
-            <GitSparseCheckoutCard
-              isSparseCheckout={gitAdvanced.isSparseCheckout}
-              sparsePatterns={gitAdvanced.sparsePatterns}
-              supportReason={getSupportReason("sparseCheckout")}
-              onRefresh={gitAdvanced.refreshSparseCheckout}
-              onInit={async (cone) => {
-                ensureFeatureSupported("sparseCheckout");
-                return await gitAdvanced.sparseCheckoutInit(cone);
-              }}
-              onSet={async (patterns) => {
-                ensureFeatureSupported("sparseCheckout");
-                return await gitAdvanced.sparseCheckoutSet(patterns);
-              }}
-              onAdd={async (patterns) => {
-                ensureFeatureSupported("sparseCheckout");
-                return await gitAdvanced.sparseCheckoutAdd(patterns);
-              }}
-              onDisable={async () => {
-                ensureFeatureSupported("sparseCheckout");
-                return await gitAdvanced.sparseCheckoutDisable();
-              }}
-            />
-            <GitRemotePruneCard
-              remotes={git.remotes}
-              onPrune={gitAdvanced.remotePrune}
-            />
-            <GitSignatureVerifyCard
-              supportReason={getSupportReason("signatureVerify")}
-              onVerifyCommit={async (hash) => {
-                ensureFeatureSupported("signatureVerify");
-                return await gitAdvanced.verifyCommit(hash);
-              }}
-              onVerifyTag={async (tag) => {
-                ensureFeatureSupported("signatureVerify");
-                return await gitAdvanced.verifyTag(tag);
-              }}
-            />
-          </div>
+          {!workbenchPanels.advancedWorkspace.hidden && (
+            <GitWorkbenchPanel
+              panelId="advancedWorkspace"
+              title={t("git.workbench.panels.advancedWorkspace")}
+              description={t("git.workbench.panelDescriptions.advancedWorkspace")}
+              state={workbenchPanels.advancedWorkspace}
+              onToggleCollapsed={() =>
+                setWorkbenchPanelCollapsed(
+                  "advancedWorkspace",
+                  !workbenchPanels.advancedWorkspace.collapsed,
+                )
+              }
+              onHide={() => hideWorkbenchPanel("advancedWorkspace")}
+            >
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                <GitLocalConfigCard
+                  config={gitAdvanced.localConfig}
+                  onRefresh={gitAdvanced.refreshLocalConfig}
+                  onSet={gitAdvanced.setLocalConfig}
+                  onRemove={gitAdvanced.removeLocalConfig}
+                  onGetValue={gitAdvanced.getLocalConfigValue}
+                />
+                <GitRepoStatsCard
+                  repoStats={gitAdvanced.repoStats}
+                  onRefresh={gitAdvanced.refreshRepoStats}
+                  onFsck={gitAdvanced.fsck}
+                  onDescribe={gitAdvanced.describe}
+                  onIsShallow={gitAdvanced.isShallow}
+                  onDeepen={gitAdvanced.deepen}
+                  onUnshallow={gitAdvanced.unshallow}
+                />
+                <GitSparseCheckoutCard
+                  isSparseCheckout={gitAdvanced.isSparseCheckout}
+                  sparsePatterns={gitAdvanced.sparsePatterns}
+                  supportReason={getSupportReason("sparseCheckout")}
+                  onRefresh={gitAdvanced.refreshSparseCheckout}
+                  onInit={async (cone) => {
+                    ensureFeatureSupported("sparseCheckout");
+                    return await gitAdvanced.sparseCheckoutInit(cone);
+                  }}
+                  onSet={async (patterns) => {
+                    ensureFeatureSupported("sparseCheckout");
+                    return await gitAdvanced.sparseCheckoutSet(patterns);
+                  }}
+                  onAdd={async (patterns) => {
+                    ensureFeatureSupported("sparseCheckout");
+                    return await gitAdvanced.sparseCheckoutAdd(patterns);
+                  }}
+                  onDisable={async () => {
+                    ensureFeatureSupported("sparseCheckout");
+                    return await gitAdvanced.sparseCheckoutDisable();
+                  }}
+                />
+                <GitRemotePruneCard
+                  remotes={git.remotes}
+                  onPrune={gitAdvanced.remotePrune}
+                />
+                <GitSignatureVerifyCard
+                  supportReason={getSupportReason("signatureVerify")}
+                  onVerifyCommit={async (hash) => {
+                    ensureFeatureSupported("signatureVerify");
+                    return await gitAdvanced.verifyCommit(hash);
+                  }}
+                  onVerifyTag={async (tag) => {
+                    ensureFeatureSupported("signatureVerify");
+                    return await gitAdvanced.verifyTag(tag);
+                  }}
+                />
+              </div>
+            </GitWorkbenchPanel>
+          )}
         </TabsContent>
 
         {/* Operations Tab */}
         <TabsContent value="operations" className="space-y-4 mt-4">
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-            <GitRebaseSquashCard
-              supportReason={getSupportReason("rebaseSquash")}
-              onRebase={async (onto, confirmRisk) => {
-                ensureFeatureSupported("rebaseSquash");
-                const msg = await gitAdvanced.rebase(onto, confirmRisk);
-                await refreshAfterGraphWrite();
-                await refreshAdvancedData();
-                return msg;
-              }}
-              onSquash={async (count, message, confirmRisk) => {
-                ensureFeatureSupported("rebaseSquash");
-                const msg = await gitAdvanced.squash(count, message, confirmRisk);
-                await refreshAfterGraphWrite();
-                await refreshAdvancedData();
-                return msg;
-              }}
-            />
-            <GitInteractiveRebaseCard
-              supportReason={getSupportReason("interactiveRebase")}
-              onPreview={async (base) => {
-                ensureFeatureSupported("interactiveRebase");
-                return await gitAdvanced.getRebaseTodoPreview(base);
-              }}
-              onStart={async (base, todo) => {
-                ensureFeatureSupported("interactiveRebase");
-                return await gitAdvanced.startInteractiveRebase(base, todo);
-              }}
-            />
-            <GitBisectCard
-              bisectState={gitAdvanced.bisectState}
-              supportReason={getSupportReason("bisect")}
-              onRefreshState={async () => {
-                ensureFeatureSupported("bisect");
-                await gitAdvanced.refreshBisectState();
-              }}
-              onStart={async (badRef, goodRef) => {
-                ensureFeatureSupported("bisect");
-                return await gitAdvanced.bisectStart(badRef, goodRef);
-              }}
-              onGood={async () => {
-                ensureFeatureSupported("bisect");
-                return await gitAdvanced.bisectGood();
-              }}
-              onBad={async () => {
-                ensureFeatureSupported("bisect");
-                return await gitAdvanced.bisectBad();
-              }}
-              onSkip={async () => {
-                ensureFeatureSupported("bisect");
-                return await gitAdvanced.bisectSkip();
-              }}
-              onReset={async () => {
-                ensureFeatureSupported("bisect");
-                return await gitAdvanced.bisectReset();
-              }}
-              onLog={async () => {
-                ensureFeatureSupported("bisect");
-                return await gitAdvanced.bisectLog();
-              }}
-            />
-            <GitArchiveCard
-              supportReason={getSupportReason("archive")}
-              onArchive={async (format, outputPath, refName, prefix) => {
-                ensureFeatureSupported("archive");
-                return await gitAdvanced.archive(
-                  format,
-                  outputPath,
-                  refName,
-                  prefix,
-                );
-              }}
-            />
-            <GitPatchCard
-              supportReason={getSupportReason("patch")}
-              onFormatPatch={async (range, outputDir) => {
-                ensureFeatureSupported("patch");
-                return await gitAdvanced.formatPatch(range, outputDir);
-              }}
-              onApplyPatch={async (patchPath, checkOnly) => {
-                ensureFeatureSupported("patch");
-                return await gitAdvanced.applyPatch(patchPath, checkOnly);
-              }}
-              onApplyMailbox={async (patchPath) => {
-                ensureFeatureSupported("patch");
-                return await gitAdvanced.applyMailbox(patchPath);
-              }}
-            />
-          </div>
+          {!workbenchPanels.operationsWorkspace.hidden && (
+            <GitWorkbenchPanel
+              panelId="operationsWorkspace"
+              title={t("git.workbench.panels.operationsWorkspace")}
+              description={t(
+                "git.workbench.panelDescriptions.operationsWorkspace",
+              )}
+              state={workbenchPanels.operationsWorkspace}
+              onToggleCollapsed={() =>
+                setWorkbenchPanelCollapsed(
+                  "operationsWorkspace",
+                  !workbenchPanels.operationsWorkspace.collapsed,
+                )
+              }
+              onHide={() => hideWorkbenchPanel("operationsWorkspace")}
+            >
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                <GitRebaseSquashCard
+                  supportReason={getSupportReason("rebaseSquash")}
+                  onRebase={async (onto, confirmRisk) => {
+                    ensureFeatureSupported("rebaseSquash");
+                    const msg = await gitAdvanced.rebase(onto, confirmRisk);
+                    await refreshAfterGraphWrite();
+                    await refreshAdvancedData();
+                    return msg;
+                  }}
+                  onSquash={async (count, message, confirmRisk) => {
+                    ensureFeatureSupported("rebaseSquash");
+                    const msg = await gitAdvanced.squash(
+                      count,
+                      message,
+                      confirmRisk,
+                    );
+                    await refreshAfterGraphWrite();
+                    await refreshAdvancedData();
+                    return msg;
+                  }}
+                />
+                <GitInteractiveRebaseCard
+                  supportReason={getSupportReason("interactiveRebase")}
+                  onPreview={async (base) => {
+                    ensureFeatureSupported("interactiveRebase");
+                    return await gitAdvanced.getRebaseTodoPreview(base);
+                  }}
+                  onStart={async (base, todo) => {
+                    ensureFeatureSupported("interactiveRebase");
+                    return await gitAdvanced.startInteractiveRebase(base, todo);
+                  }}
+                />
+                <GitBisectCard
+                  bisectState={gitAdvanced.bisectState}
+                  supportReason={getSupportReason("bisect")}
+                  onRefreshState={async () => {
+                    ensureFeatureSupported("bisect");
+                    await gitAdvanced.refreshBisectState();
+                  }}
+                  onStart={async (badRef, goodRef) => {
+                    ensureFeatureSupported("bisect");
+                    return await gitAdvanced.bisectStart(badRef, goodRef);
+                  }}
+                  onGood={async () => {
+                    ensureFeatureSupported("bisect");
+                    return await gitAdvanced.bisectGood();
+                  }}
+                  onBad={async () => {
+                    ensureFeatureSupported("bisect");
+                    return await gitAdvanced.bisectBad();
+                  }}
+                  onSkip={async () => {
+                    ensureFeatureSupported("bisect");
+                    return await gitAdvanced.bisectSkip();
+                  }}
+                  onReset={async () => {
+                    ensureFeatureSupported("bisect");
+                    return await gitAdvanced.bisectReset();
+                  }}
+                  onLog={async () => {
+                    ensureFeatureSupported("bisect");
+                    return await gitAdvanced.bisectLog();
+                  }}
+                />
+                <GitArchiveCard
+                  supportReason={getSupportReason("archive")}
+                  onArchive={async (format, outputPath, refName, prefix) => {
+                    ensureFeatureSupported("archive");
+                    return await gitAdvanced.archive(
+                      format,
+                      outputPath,
+                      refName,
+                      prefix,
+                    );
+                  }}
+                />
+                <GitPatchCard
+                  supportReason={getSupportReason("patch")}
+                  onFormatPatch={async (range, outputDir) => {
+                    ensureFeatureSupported("patch");
+                    return await gitAdvanced.formatPatch(range, outputDir);
+                  }}
+                  onApplyPatch={async (patchPath, checkOnly) => {
+                    ensureFeatureSupported("patch");
+                    return await gitAdvanced.applyPatch(patchPath, checkOnly);
+                  }}
+                  onApplyMailbox={async (patchPath) => {
+                    ensureFeatureSupported("patch");
+                    return await gitAdvanced.applyMailbox(patchPath);
+                  }}
+                />
+              </div>
+            </GitWorkbenchPanel>
+          )}
         </TabsContent>
       </Tabs>
     </div>
