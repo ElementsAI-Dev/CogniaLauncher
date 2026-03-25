@@ -1,20 +1,15 @@
 import { render, screen } from '@testing-library/react';
-import DocsPage, { generateStaticParams } from './page';
+import DocsPage, { generateMetadata, generateStaticParams } from './page';
 
-const mockGetDocContentBilingual = jest.fn();
-const mockGetDocPageDataBilingual = jest.fn();
+const mockGetDocsRouteData = jest.fn();
 const mockGetAllDocSlugs = jest.fn();
-const mockGetDocBasePath = jest.fn();
+const mockExtractDocExcerpt = jest.fn();
 const mockNotFound = jest.fn();
 
-const mockBuildSearchIndex = jest.fn();
-
 jest.mock('@/lib/docs/content', () => ({
-  getDocContentBilingual: (...args: unknown[]) => mockGetDocContentBilingual(...args),
-  getDocPageDataBilingual: (...args: unknown[]) => mockGetDocPageDataBilingual(...args),
+  getDocsRouteData: (...args: unknown[]) => mockGetDocsRouteData(...args),
   getAllDocSlugs: () => mockGetAllDocSlugs(),
-  getDocBasePath: (...args: unknown[]) => mockGetDocBasePath(...args),
-  buildSearchIndex: () => mockBuildSearchIndex(),
+  extractDocExcerpt: (...args: unknown[]) => mockExtractDocExcerpt(...args),
 }));
 
 jest.mock('next/navigation', () => ({
@@ -47,33 +42,41 @@ jest.mock('./docs-page-client', () => ({
 describe('DocsPage', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockExtractDocExcerpt.mockImplementation((content: string) => content.split('\n').find((line) => line.trim() && !line.startsWith('#')) ?? '');
   });
 
   it('generateStaticParams returns all doc slugs', () => {
-    mockGetAllDocSlugs.mockReturnValue([['index'], ['architecture', 'frontend']]);
+    mockGetAllDocSlugs.mockReturnValue([[], ['architecture', 'frontend']]);
     const params = generateStaticParams();
     expect(params).toEqual([
-      { slug: ['index'] },
+      { slug: [] },
       { slug: ['architecture', 'frontend'] },
     ]);
   });
 
   it('renders DocsPageClient for valid slug', async () => {
-    mockGetDocPageDataBilingual.mockReturnValue({
-      en: {
+    mockGetDocsRouteData.mockReturnValue({
+      docEn: {
         locale: 'en',
         content: '# Hello World',
         sourcePath: 'docs/en/architecture/frontend.md',
         lastModified: '2026-01-15T12:00:00.000Z',
       },
-      zh: {
+      docZh: {
         locale: 'zh',
         content: '# 你好世界',
         sourcePath: 'docs/zh/architecture/frontend.md',
         lastModified: '2026-01-16T12:00:00.000Z',
       },
+      renderedDoc: {
+        locale: 'en',
+        content: '# Hello World',
+        sourcePath: 'docs/en/architecture/frontend.md',
+        lastModified: '2026-01-15T12:00:00.000Z',
+      },
+      basePath: 'architecture',
+      searchIndex: [],
     });
-    mockGetDocBasePath.mockReturnValue('architecture');
 
     const el = await DocsPage({ params: Promise.resolve({ slug: ['architecture', 'frontend'] }) });
     render(el);
@@ -87,12 +90,13 @@ describe('DocsPage', () => {
 
   it('passes searchIndex to DocsPageClient', async () => {
     const mockIndex = [{ slug: 'test', headingsZh: [], headingsEn: [], excerptZh: '', excerptEn: '' }];
-    mockGetDocPageDataBilingual.mockReturnValue({
-      en: { locale: 'en', content: '# Test', sourcePath: 'docs/en/index.md', lastModified: '2026-01-15T12:00:00.000Z' },
-      zh: { locale: 'zh', content: '# 测试', sourcePath: 'docs/zh/index.md', lastModified: '2026-01-15T12:00:00.000Z' },
+    mockGetDocsRouteData.mockReturnValue({
+      docEn: { locale: 'en', content: '# Test', sourcePath: 'docs/en/index.md', lastModified: '2026-01-15T12:00:00.000Z' },
+      docZh: { locale: 'zh', content: '# 测试', sourcePath: 'docs/zh/index.md', lastModified: '2026-01-15T12:00:00.000Z' },
+      renderedDoc: { locale: 'en', content: '# Test', sourcePath: 'docs/en/index.md', lastModified: '2026-01-15T12:00:00.000Z' },
+      basePath: undefined,
+      searchIndex: mockIndex,
     });
-    mockGetDocBasePath.mockReturnValue(undefined);
-    mockBuildSearchIndex.mockReturnValue(mockIndex);
 
     const el = await DocsPage({ params: Promise.resolve({ slug: [] }) });
     render(el);
@@ -101,11 +105,76 @@ describe('DocsPage', () => {
   });
 
   it('calls notFound() when both languages are null', async () => {
-    mockGetDocPageDataBilingual.mockReturnValue({ en: null, zh: null });
+    mockGetDocsRouteData.mockReturnValue({
+      docEn: null,
+      docZh: null,
+      renderedDoc: null,
+      basePath: undefined,
+      searchIndex: [],
+    });
 
     await expect(
       DocsPage({ params: Promise.resolve({ slug: ['nonexistent'] }) })
     ).rejects.toThrow('NEXT_NOT_FOUND');
     expect(mockNotFound).toHaveBeenCalled();
+  });
+
+  it('generateMetadata returns title and description from the rendered doc', async () => {
+    mockGetDocsRouteData.mockReturnValue({
+      docEn: {
+        locale: 'en',
+        content: '# Frontend\n\nFrontend architecture details for the docs viewer.',
+        sourcePath: 'docs/en/architecture/frontend.md',
+        lastModified: '2026-01-15T12:00:00.000Z',
+      },
+      docZh: {
+        locale: 'zh',
+        content: '# 前端架构\n\n文档查看器的前端说明。',
+        sourcePath: 'docs/zh/architecture/frontend.md',
+        lastModified: '2026-01-16T12:00:00.000Z',
+      },
+      renderedDoc: {
+        locale: 'en',
+        content: '# Frontend\n\nFrontend architecture details for the docs viewer.',
+        sourcePath: 'docs/en/architecture/frontend.md',
+        lastModified: '2026-01-15T12:00:00.000Z',
+      },
+      basePath: 'architecture',
+      searchIndex: [],
+    });
+
+    const metadata = await generateMetadata({ params: Promise.resolve({ slug: ['architecture', 'frontend'] }) });
+
+    expect(metadata).toEqual(expect.objectContaining({
+      title: 'Frontend | CogniaLauncher Docs',
+      description: expect.stringContaining('Frontend architecture details'),
+    }));
+  });
+
+  it('generateMetadata falls back to the rendered zh doc when en is missing', async () => {
+    mockGetDocsRouteData.mockReturnValue({
+      docEn: null,
+      docZh: {
+        locale: 'zh',
+        content: '# 日志系统\n\n日志页面目前只有中文文档。',
+        sourcePath: 'docs/zh/guide/logs.md',
+        lastModified: '2026-01-16T12:00:00.000Z',
+      },
+      renderedDoc: {
+        locale: 'zh',
+        content: '# 日志系统\n\n日志页面目前只有中文文档。',
+        sourcePath: 'docs/zh/guide/logs.md',
+        lastModified: '2026-01-16T12:00:00.000Z',
+      },
+      basePath: 'guide',
+      searchIndex: [],
+    });
+
+    const metadata = await generateMetadata({ params: Promise.resolve({ slug: ['guide', 'logs'] }) });
+
+    expect(metadata).toEqual(expect.objectContaining({
+      title: 'Logs | CogniaLauncher Docs',
+      description: expect.stringContaining('日志页面目前只有中文文档'),
+    }));
   });
 });

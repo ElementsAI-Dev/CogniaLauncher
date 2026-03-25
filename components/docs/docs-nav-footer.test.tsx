@@ -48,14 +48,20 @@ describe('DocsNavFooter', () => {
     render(<DocsNavFooter sourcePath="docs/en/guide/dashboard.md" />);
     const editLink = screen.getByText('Edit this page');
     expect(editLink).toBeInTheDocument();
-    expect(editLink.closest('a')).toHaveAttribute('href', expect.stringContaining('docs/en/guide/dashboard.md'));
+    expect(editLink.closest('a')).toHaveAttribute(
+      'href',
+      'https://github.com/AstroAir/CogniaLauncher/edit/master/docs/en/guide/dashboard.md'
+    );
     expect(editLink.closest('a')).toHaveAttribute('target', '_blank');
   });
 
   it('uses canonical index.md sourcePath for section pages', () => {
     render(<DocsNavFooter sourcePath="docs/zh/guide/index.md" slug="guide" />);
     const editLink = screen.getByText('Edit this page');
-    expect(editLink.closest('a')).toHaveAttribute('href', expect.stringContaining('docs/zh/guide/index.md'));
+    expect(editLink.closest('a')).toHaveAttribute(
+      'href',
+      'https://github.com/AstroAir/CogniaLauncher/edit/master/docs/zh/guide/index.md'
+    );
     expect(editLink.closest('a')).not.toHaveAttribute('href', expect.stringContaining('docs/zh/guide.md'));
   });
 

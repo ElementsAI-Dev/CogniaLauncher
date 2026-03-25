@@ -6,9 +6,8 @@ import { Separator } from '@/components/ui/separator';
 import { useLocale } from '@/components/providers/locale-provider';
 import { ChevronLeft, ChevronRight, Pencil } from 'lucide-react';
 import { slugToArray } from '@/lib/docs/navigation';
+import { getDocsEditUrl } from '@/lib/docs/source';
 import type { DocNavLink } from '@/types/docs';
-
-const GITHUB_REPO_URL = 'https://github.com/AstroAir/CogniaLauncher';
 
 interface DocsNavFooterProps {
   prev?: DocNavLink;
@@ -19,6 +18,7 @@ interface DocsNavFooterProps {
 
 export function DocsNavFooter({ prev, next, slug, sourcePath }: DocsNavFooterProps) {
   const { t, locale } = useLocale();
+  void slug;
 
   const getTitle = (item: { title: string; titleEn?: string }) =>
     locale === 'en' ? (item.titleEn ?? item.title) : item.title;
@@ -28,11 +28,7 @@ export function DocsNavFooter({ prev, next, slug, sourcePath }: DocsNavFooterPro
     return arr.length === 0 ? '/docs' : `/docs/${arr.join('/')}`;
   };
 
-  const editUrl = sourcePath
-    ? `${GITHUB_REPO_URL}/edit/main/${sourcePath}`
-    : slug
-      ? `${GITHUB_REPO_URL}/edit/main/docs/${locale}/${slug === 'index' ? 'index' : slug}.md`
-      : undefined;
+  const editUrl = sourcePath ? getDocsEditUrl(sourcePath) : undefined;
 
   return (
     <footer className="mt-12 space-y-4" aria-label="Page navigation">
