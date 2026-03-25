@@ -21,6 +21,7 @@ import {
   ChevronDown, Shield, Fish, Monitor, Atom,
 } from 'lucide-react';
 import type { ShellInfo, ShellStartupMeasurement, ShellHealthResult, ShellType } from '@/types/tauri';
+import type { TerminalShellReadout } from '@/types/terminal';
 import { useLocale } from '@/components/providers/locale-provider';
 
 interface TerminalDetectedShellsProps {
@@ -30,6 +31,7 @@ interface TerminalDetectedShellsProps {
   measuringShellId?: string | null;
   onMeasureStartup?: (shellId: string) => void;
   healthResults?: Record<string, ShellHealthResult>;
+  shellReadouts?: Record<string, TerminalShellReadout>;
   checkingHealthShellId?: string | null;
   onCheckShellHealth?: (shellId: string) => void;
   onGetShellInfo?: (shellId: string) => Promise<ShellInfo | null> | ShellInfo | null | void;
@@ -78,6 +80,7 @@ export function TerminalDetectedShells({
   measuringShellId,
   onMeasureStartup,
   healthResults = {},
+  shellReadouts = {},
   checkingHealthShellId,
   onCheckShellHealth,
   onGetShellInfo,
@@ -149,6 +152,7 @@ export function TerminalDetectedShells({
             key={shell.id}
             shell={shell}
             startupMeasurement={startupMeasurements[shell.id]}
+            shellReadout={shellReadouts[shell.id]}
             measuringShellId={measuringShellId}
             onMeasureStartup={onMeasureStartup}
             healthResult={healthResults[shell.id]}
@@ -165,6 +169,7 @@ export function TerminalDetectedShells({
 function ShellCard({
   shell,
   startupMeasurement,
+  shellReadout,
   measuringShellId,
   onMeasureStartup,
   healthResult,
@@ -174,6 +179,7 @@ function ShellCard({
 }: {
   shell: ShellInfo;
   startupMeasurement?: ShellStartupMeasurement;
+  shellReadout?: TerminalShellReadout;
   measuringShellId?: string | null;
   onMeasureStartup?: (shellId: string) => void;
   healthResult?: ShellHealthResult;
@@ -269,6 +275,11 @@ function ShellCard({
                 ? t('terminal.healthHealthy')
                 : t('terminal.healthIssues', { count: issues.length })}
             </span>
+          </div>
+        )}
+        {shellReadout?.degradedReason && (
+          <div className="rounded-md border border-amber-300/60 bg-amber-50/70 px-2 py-1.5 text-xs text-amber-900 dark:border-amber-700/40 dark:bg-amber-950/30 dark:text-amber-200">
+            {shellReadout.degradedReason}
           </div>
         )}
         {issues.length > 0 && (
@@ -425,6 +436,12 @@ function ShellCard({
                 <div className="space-y-1">
                   <p className="text-muted-foreground">{t('terminal.healthCheck')}</p>
                   <p>{healthResult.status}</p>
+                </div>
+              )}
+              {shellReadout?.degradedReason && (
+                <div className="space-y-1">
+                  <p className="text-muted-foreground">Readout status</p>
+                  <p>{shellReadout.degradedReason}</p>
                 </div>
               )}
             </div>

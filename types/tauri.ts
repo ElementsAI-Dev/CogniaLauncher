@@ -2863,6 +2863,10 @@ export interface CrashInfo {
 }
 
 /** Crash report artifact metadata exposed to the logs workspace */
+export type ShellFrameworkPluginSupportStatus =
+  | 'supported'
+  | 'missing-config'
+  | 'unsupported';
 export interface CrashReportInfo {
   id: string;
   source: string;
@@ -2874,6 +2878,8 @@ export interface CrashReportInfo {
 }
 
 // ============================================================================
+  pluginSupportStatus: ShellFrameworkPluginSupportStatus;
+  pluginSupportReason: string | null;
 // Xmake/Xrepo Types
 // ============================================================================
 

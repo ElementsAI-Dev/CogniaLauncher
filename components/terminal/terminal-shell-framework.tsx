@@ -31,6 +31,7 @@ import {
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import { Blocks, Puzzle, RefreshCw, ExternalLink, Palette, FileText, Sparkles, Plug, Terminal, FolderOpen, HardDrive, Trash2, ScanSearch } from 'lucide-react';
 import type { ShellInfo, ShellType, ShellFrameworkInfo, ShellPlugin, FrameworkCategory, FrameworkCacheInfo } from '@/types/tauri';
+import type { TerminalFrameworkReadout } from '@/types/terminal';
 import { useLocale } from '@/components/providers/locale-provider';
 import { formatBytes } from '@/lib/utils';
 
@@ -38,6 +39,7 @@ interface TerminalShellFrameworkProps {
   shells: ShellInfo[];
   frameworks: ShellFrameworkInfo[];
   plugins: ShellPlugin[];
+  frameworkReadouts?: Record<string, TerminalFrameworkReadout>;
   frameworkCacheStats?: FrameworkCacheInfo[];
   frameworkCacheLoading?: boolean;
   onDetectFrameworks: (shellType: ShellType) => Promise<void>;
@@ -63,6 +65,7 @@ export function TerminalShellFramework({
   shells,
   frameworks,
   plugins,
+  frameworkReadouts = {},
   frameworkCacheStats,
   frameworkCacheLoading,
   onDetectFrameworks,
@@ -90,6 +93,9 @@ export function TerminalShellFramework({
 
   const shellTypes = Array.from(new Set(frameworks.map(fw => fw.shellType)));
   const filteredFrameworks = shellFilter === 'all' ? frameworks : frameworks.filter(fw => fw.shellType === shellFilter);
+  const selectedFrameworkReadout = selectedFramework
+    ? frameworkReadouts[`${selectedFramework.shellType}:${selectedFramework.name}:${selectedFramework.path}`]
+    : null;
 
   const handleDetectAll = async () => {
     setDetecting(true);
@@ -104,6 +110,9 @@ export function TerminalShellFramework({
 
   const handleSelectFramework = async (fw: ShellFrameworkInfo) => {
     setSelectedFramework(fw);
+    if (fw.pluginSupportStatus !== 'supported') {
+      return;
+    }
     await onFetchPlugins(fw.name, fw.path, fw.shellType, fw.configPath);
   };
 
@@ -346,6 +355,11 @@ export function TerminalShellFramework({
                             </TooltipContent>
                           </Tooltip>
                         )}
+                        {fw.pluginSupportStatus !== 'supported' && fw.pluginSupportReason && (
+                          <span className="text-amber-700 dark:text-amber-300">
+                            {fw.pluginSupportReason}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -396,7 +410,14 @@ export function TerminalShellFramework({
           </div>
         )}
 
-        {selectedFramework && plugins.length === 0 && (
+        {selectedFramework && selectedFrameworkReadout?.degradedReason && (
+          <Alert>
+            <AlertTitle>{t('terminal.plugins')}</AlertTitle>
+            <AlertDescription>{selectedFrameworkReadout.degradedReason}</AlertDescription>
+          </Alert>
+        )}
+
+        {selectedFramework && plugins.length === 0 && !selectedFrameworkReadout?.degradedReason && (
           <Empty className="border-dashed py-4">
             <EmptyHeader>
               <EmptyMedia variant="icon">

@@ -14,7 +14,13 @@ import type {
   TerminalProfile,
   TerminalProfileTemplate,
 } from '@/types/tauri';
-import type { UseTerminalState, ProxyMode, TerminalResourceKey } from '@/types/terminal';
+import type {
+  UseTerminalState,
+  ProxyMode,
+  TerminalResourceKey,
+  TerminalFrameworkReadout,
+  TerminalShellReadout,
+} from '@/types/terminal';
 
 interface UseTerminalOptions {
   t: (key: string, params?: Record<string, string | number>) => string;
@@ -47,6 +53,64 @@ function buildValidationFailureResult(
   };
 }
 
+function buildFrameworkReadoutKey(
+  frameworkName: string,
+  frameworkPath: string,
+  shellType: ShellType,
+): string {
+  return `${shellType}:${frameworkName}:${frameworkPath}`;
+}
+
+function isShellConfigAvailable(
+  shell?: { configFiles: Array<{ exists: boolean }> },
+): boolean {
+  if (!shell) return false;
+  return shell.configFiles.some((configFile) => configFile.exists);
+}
+
+function createShellReadout(
+  shellId: string,
+  existing?: TerminalShellReadout,
+): TerminalShellReadout {
+  return existing ?? {
+    shellId,
+    status: 'ready',
+    degradedReason: null,
+    startupStatus: 'idle',
+    healthStatus: 'idle',
+    frameworkSummaryCount: 0,
+    pluginSummaryCount: 0,
+    lastUpdatedAt: null,
+  };
+}
+
+function buildFrameworkDiscoveryFallback(
+  shellType: ShellType,
+  hasConfig: boolean,
+): {
+  status: TerminalShellReadout['status'];
+  degradedReason: string | null;
+} {
+  if (!hasConfig) {
+    return {
+      status: 'missing-config',
+      degradedReason: 'No shell config sources are available for framework discovery.',
+    };
+  }
+
+  if (!['bash', 'zsh', 'fish', 'powershell'].includes(shellType)) {
+    return {
+      status: 'unsupported',
+      degradedReason: `Framework discovery is unavailable for ${shellType}.`,
+    };
+  }
+
+  return {
+    status: 'ready',
+    degradedReason: null,
+  };
+}
+
 export function useTerminal({ t }: UseTerminalOptions) {
   const [state, setState] = useState<UseTerminalState>({
     shells: [],
@@ -64,6 +128,8 @@ export function useTerminal({ t }: UseTerminalOptions) {
     proxyEnvVars: [],
     startupMeasurements: {},
     healthResults: {},
+    shellReadouts: {},
+    frameworkReadouts: {},
     measuringShellId: null,
     checkingHealthShellId: null,
     selectedShellId: null,
@@ -136,7 +202,15 @@ export function useTerminal({ t }: UseTerminalOptions) {
     setState((prev) => ({ ...prev, shellsLoading: true }));
     try {
       const shells = await tauri.terminalDetectShells();
-      setState((prev) => ({ ...prev, shells, shellsLoading: false }));
+      setState((prev) => ({
+        ...prev,
+        shells,
+        shellReadouts: shells.reduce<Record<string, TerminalShellReadout>>((acc, shell) => {
+          acc[shell.id] = createShellReadout(shell.id, prev.shellReadouts[shell.id]);
+          return acc;
+        }, { ...prev.shellReadouts }),
+        shellsLoading: false,
+      }));
     } catch (e) {
       setState((prev) => ({ ...prev, shellsLoading: false, error: String(e) }));
     }
@@ -152,9 +226,38 @@ export function useTerminal({ t }: UseTerminalOptions) {
         ...prev,
         measuringShellId: null,
         startupMeasurements: { ...prev.startupMeasurements, [shellId]: measurement },
+        shellReadouts: {
+          ...prev.shellReadouts,
+          [shellId]: {
+            ...createShellReadout(shellId, prev.shellReadouts[shellId]),
+            startupStatus: 'ready',
+            status:
+              prev.shellReadouts[shellId]?.healthStatus === 'failed'
+                ? 'failed'
+                : 'ready',
+            degradedReason:
+              prev.shellReadouts[shellId]?.healthStatus === 'failed'
+                ? prev.shellReadouts[shellId]?.degradedReason ?? null
+                : null,
+            lastUpdatedAt: Date.now(),
+          },
+        },
       }));
     } catch (e) {
-      setState((prev) => ({ ...prev, measuringShellId: null }));
+      setState((prev) => ({
+        ...prev,
+        measuringShellId: null,
+        shellReadouts: {
+          ...prev.shellReadouts,
+          [shellId]: {
+            ...createShellReadout(shellId, prev.shellReadouts[shellId]),
+            startupStatus: 'failed',
+            status: 'failed',
+            degradedReason: String(e),
+            lastUpdatedAt: Date.now(),
+          },
+        },
+      }));
       toast.error(t('terminal.toastMeasureStartupFailed', { error: String(e) }));
     }
   }, [t]);
@@ -169,9 +272,38 @@ export function useTerminal({ t }: UseTerminalOptions) {
         ...prev,
         checkingHealthShellId: null,
         healthResults: { ...prev.healthResults, [shellId]: result },
+        shellReadouts: {
+          ...prev.shellReadouts,
+          [shellId]: {
+            ...createShellReadout(shellId, prev.shellReadouts[shellId]),
+            healthStatus: 'ready',
+            status:
+              prev.shellReadouts[shellId]?.startupStatus === 'failed'
+                ? 'failed'
+                : 'ready',
+            degradedReason:
+              prev.shellReadouts[shellId]?.startupStatus === 'failed'
+                ? prev.shellReadouts[shellId]?.degradedReason ?? null
+                : null,
+            lastUpdatedAt: Date.now(),
+          },
+        },
       }));
     } catch (e) {
-      setState((prev) => ({ ...prev, checkingHealthShellId: null }));
+      setState((prev) => ({
+        ...prev,
+        checkingHealthShellId: null,
+        shellReadouts: {
+          ...prev.shellReadouts,
+          [shellId]: {
+            ...createShellReadout(shellId, prev.shellReadouts[shellId]),
+            healthStatus: 'failed',
+            status: 'failed',
+            degradedReason: String(e),
+            lastUpdatedAt: Date.now(),
+          },
+        },
+      }));
       toast.error(t('terminal.toastCheckHealthFailed', { error: String(e) }));
     }
   }, [t]);
@@ -179,7 +311,19 @@ export function useTerminal({ t }: UseTerminalOptions) {
   const getShellInfo = useCallback(async (shellId: string) => {
     if (!isTauri()) return null;
     try {
-      return await tauri.terminalGetShellInfo(shellId);
+      const shellInfo = await tauri.terminalGetShellInfo(shellId);
+      setState((prev) => ({
+        ...prev,
+        selectedShellId: shellId,
+        shellReadouts: {
+          ...prev.shellReadouts,
+          [shellId]: {
+            ...createShellReadout(shellId, prev.shellReadouts[shellId]),
+            lastUpdatedAt: Date.now(),
+          },
+        },
+      }));
+      return shellInfo;
     } catch (e) {
       toast.error(t('terminal.toastLoadShellInfoFailed', { error: String(e) }));
       return null;
@@ -604,13 +748,56 @@ export function useTerminal({ t }: UseTerminalOptions) {
     if (!isTauri()) return;
     try {
       const frameworks = await tauri.terminalDetectFramework(shellType);
-      setState((prev) => ({
-        ...prev,
-        frameworks: [
+      setState((prev) => {
+        const nextFrameworks = [
           ...prev.frameworks.filter((item) => item.shellType !== shellType),
           ...frameworks,
-        ],
-      }));
+        ];
+        const nextShellReadouts = { ...prev.shellReadouts };
+        for (const shell of prev.shells.filter((item) => item.shellType === shellType)) {
+          const fallback = frameworks.length === 0
+            ? buildFrameworkDiscoveryFallback(shellType, isShellConfigAvailable(shell))
+            : { status: 'ready' as const, degradedReason: null };
+          nextShellReadouts[shell.id] = {
+            ...createShellReadout(shell.id, prev.shellReadouts[shell.id]),
+            frameworkSummaryCount: frameworks.length,
+            status: fallback.status,
+            degradedReason: fallback.degradedReason,
+            lastUpdatedAt: Date.now(),
+          };
+        }
+
+        const nextFrameworkReadouts = Object.fromEntries(
+          Object.entries(prev.frameworkReadouts).filter(
+            ([, readout]) => readout.shellType !== shellType,
+          ),
+        ) as Record<string, TerminalFrameworkReadout>;
+        for (const framework of frameworks) {
+          const key = buildFrameworkReadoutKey(
+            framework.name,
+            framework.path,
+            framework.shellType,
+          );
+          nextFrameworkReadouts[key] = {
+            key,
+            shellType: framework.shellType,
+            status:
+              framework.pluginSupportStatus === 'supported'
+                ? 'ready'
+                : framework.pluginSupportStatus,
+            degradedReason: framework.pluginSupportReason,
+            pluginCount: prev.frameworkReadouts[key]?.pluginCount ?? 0,
+            lastUpdatedAt: Date.now(),
+          };
+        }
+
+        return {
+          ...prev,
+          frameworks: nextFrameworks,
+          shellReadouts: nextShellReadouts,
+          frameworkReadouts: nextFrameworkReadouts,
+        };
+      });
     } catch (e) {
       toast.error(t('terminal.toastDetectFrameworksFailed', { error: String(e) }));
     }
@@ -620,8 +807,68 @@ export function useTerminal({ t }: UseTerminalOptions) {
     if (!isTauri()) return;
     try {
       const plugins = await tauri.terminalListPlugins(frameworkName, frameworkPath, shellType, configPath);
-      setState((prev) => ({ ...prev, plugins }));
+      setState((prev) => {
+        const key = buildFrameworkReadoutKey(frameworkName, frameworkPath, shellType);
+        const framework = prev.frameworks.find(
+          (item) =>
+            item.name === frameworkName
+            && item.path === frameworkPath
+            && item.shellType === shellType,
+        );
+        const shell = prev.shells.find((item) => item.shellType === shellType);
+        const degradedReason =
+          plugins.length === 0 && framework?.pluginSupportStatus !== 'supported'
+            ? framework?.pluginSupportReason ?? null
+            : null;
+
+        return {
+          ...prev,
+          selectedShellId: shell?.id ?? prev.selectedShellId,
+          plugins,
+          frameworkReadouts: {
+            ...prev.frameworkReadouts,
+            [key]: {
+              key,
+              shellType,
+              status:
+                plugins.length === 0 && framework?.pluginSupportStatus !== 'supported'
+                  ? framework.pluginSupportStatus
+                  : 'ready',
+              degradedReason,
+              pluginCount: plugins.length,
+              lastUpdatedAt: Date.now(),
+            },
+          },
+          shellReadouts: shell
+            ? {
+                ...prev.shellReadouts,
+                [shell.id]: {
+                  ...createShellReadout(shell.id, prev.shellReadouts[shell.id]),
+                  pluginSummaryCount: plugins.length,
+                  lastUpdatedAt: Date.now(),
+                },
+              }
+            : prev.shellReadouts,
+        };
+      });
     } catch (e) {
+      setState((prev) => {
+        const key = buildFrameworkReadoutKey(frameworkName, frameworkPath, shellType);
+        return {
+          ...prev,
+          frameworkReadouts: {
+            ...prev.frameworkReadouts,
+            [key]: {
+              key,
+              shellType,
+              status: 'failed',
+              degradedReason: String(e),
+              pluginCount: prev.frameworkReadouts[key]?.pluginCount ?? 0,
+              lastUpdatedAt: Date.now(),
+            },
+          },
+        };
+      });
       toast.error(t('terminal.toastLoadPluginsFailed', { error: String(e) }));
     }
   }, [t]);
@@ -1191,6 +1438,10 @@ export function useTerminal({ t }: UseTerminalOptions) {
             shells: shellsResult,
             profiles: profilesResult,
             templates: templatesResult,
+            shellReadouts: shellsResult.reduce<Record<string, TerminalShellReadout>>((acc, shell) => {
+              acc[shell.id] = createShellReadout(shell.id, prev.shellReadouts[shell.id]);
+              return acc;
+            }, { ...prev.shellReadouts }),
             resourceStale: {
               ...prev.resourceStale,
               profiles: false,

@@ -30,6 +30,8 @@ const frameworks: ShellFrameworkInfo[] = [
     homepage: 'https://ohmyz.sh',
     configPath: '/home/user/.zshrc',
     activeTheme: 'robbyrussell',
+    pluginSupportStatus: 'supported',
+    pluginSupportReason: null,
   },
 ];
 
@@ -155,6 +157,35 @@ describe('TerminalShellFramework', () => {
     await waitFor(() => {
       expect(onFetchPlugins).toHaveBeenCalledWith('Oh My Zsh', '/home/user/.oh-my-zsh', 'zsh', '/home/user/.zshrc');
     });
+  });
+
+  it('shows explicit degraded plugin inventory feedback for unsupported frameworks', async () => {
+    const user = userEvent.setup();
+    const onFetchPlugins = jest.fn().mockResolvedValue(undefined);
+
+    render(
+      <TerminalShellFramework
+        shells={shells}
+        frameworks={[
+          {
+            ...frameworks[0],
+            name: 'Oh My Posh',
+            pluginSupportStatus: 'unsupported',
+            pluginSupportReason: 'Plugin inventory is unavailable for prompt engines.',
+          },
+        ]}
+        plugins={[]}
+        onDetectFrameworks={jest.fn()}
+        onFetchPlugins={onFetchPlugins}
+      />,
+    );
+
+    await user.click(screen.getByText('Oh My Posh'));
+
+    expect(onFetchPlugins).not.toHaveBeenCalled();
+    expect(
+      screen.getByText('Plugin inventory is unavailable for prompt engines.'),
+    ).toBeInTheDocument();
   });
 
   it('disables detect button when no shells provided', () => {
@@ -398,5 +429,52 @@ describe('TerminalShellFramework', () => {
       expect(onGetFrameworkCacheInfo).toHaveBeenCalledTimes(2);
     });
     expect(screen.getAllByText('0 B').length).toBeGreaterThan(0);
+  });
+
+  it('filters framework view by shell type', async () => {
+    const user = userEvent.setup();
+    const mixedShells: ShellInfo[] = [
+      ...shells,
+      {
+        id: 'bash',
+        name: 'Bash',
+        shellType: 'bash',
+        version: '5.2',
+        executablePath: '/bin/bash',
+        configFiles: [],
+        isDefault: false,
+      },
+    ];
+    const mixedFrameworks: ShellFrameworkInfo[] = [
+      ...frameworks,
+      {
+        name: 'Bash-it',
+        version: '2.0.0',
+        path: '/home/user/.bash-it',
+        shellType: 'bash',
+        category: 'plugin-manager',
+        description: 'Bash framework',
+        homepage: null,
+        configPath: '/home/user/.bashrc',
+        activeTheme: null,
+        pluginSupportStatus: 'supported',
+        pluginSupportReason: null,
+      },
+    ];
+
+    render(
+      <TerminalShellFramework
+        shells={mixedShells}
+        frameworks={mixedFrameworks}
+        plugins={[]}
+        onDetectFrameworks={jest.fn()}
+        onFetchPlugins={jest.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: /bash \(1\)/i }));
+
+    expect(screen.getByText('Bash-it')).toBeInTheDocument();
+    expect(screen.queryByText('Oh My Zsh')).not.toBeInTheDocument();
   });
 });

@@ -28,7 +28,16 @@ const mockGetShellInfo = jest.fn();
 const mockGetSingleFrameworkCacheInfo = jest.fn();
 
 const mockTerminalHookState = {
-  shells: [{ id: 'bash', name: 'Bash', path: '/bin/bash' }],
+  shells: [
+    {
+      id: 'bash',
+      name: 'Bash',
+      shellType: 'bash',
+      executablePath: '/bin/bash',
+      configFiles: [],
+      isDefault: true,
+    },
+  ],
   profiles: [],
   templates: [],
   loading: false,
@@ -122,6 +131,7 @@ const mockTerminalHookState = {
   saveNoProxy: jest.fn(),
   markResourcesStale: jest.fn(),
   markResourcesFresh: jest.fn(),
+  setSelectedShellContext: jest.fn(),
   fetchTemplates: jest.fn(),
   createCustomTemplate: jest.fn(),
   deleteCustomTemplate: jest.fn(),
@@ -138,14 +148,32 @@ jest.mock('@/components/terminal', () => ({
   TerminalDetectedShells: ({
     shells,
     onGetShellInfo,
+    onContinueToConfig,
+    onContinueToFrameworks,
+    onContinueToEnvVars,
+    activeShellId,
   }: {
     shells: unknown[];
     onGetShellInfo?: (shellId: string) => void;
+    onContinueToConfig?: (shellId: string) => void;
+    onContinueToFrameworks?: (shellId: string) => void;
+    onContinueToEnvVars?: (shellId: string) => void;
+    activeShellId?: string | null;
   }) => (
     <div data-testid="detected-shells">
       Shells: {shells.length}
+      <span data-testid="active-shell-context">{activeShellId ?? 'none'}</span>
       <button type="button" onClick={() => onGetShellInfo?.('bash')}>
         inspect-shell
+      </button>
+      <button type="button" onClick={() => onContinueToConfig?.('bash')}>
+        handoff-config
+      </button>
+      <button type="button" onClick={() => onContinueToFrameworks?.('bash')}>
+        handoff-frameworks
+      </button>
+      <button type="button" onClick={() => onContinueToEnvVars?.('bash')}>
+        handoff-envvars
       </button>
     </div>
   ),
@@ -161,13 +189,16 @@ jest.mock('@/components/terminal', () => ({
     onRequestDiscard,
     onRefreshHandled,
     refreshIntent,
+    activeShellId,
   }: {
     onDirtyChange?: (value: boolean) => void;
     onRequestDiscard?: () => void;
     onRefreshHandled?: (handled: { configEntries: boolean; configMetadata: boolean }) => void;
     refreshIntent?: { configEntries: boolean; configMetadata: boolean };
+    activeShellId?: string | null;
   }) => (
     <div data-testid="shell-config">
+      <span data-testid="shell-config-active-shell">{activeShellId ?? 'none'}</span>
       <button type="button" onClick={() => onDirtyChange?.(true)}>set-config-dirty</button>
       <button type="button" onClick={() => onRequestDiscard?.()}>request-config-discard</button>
       <button
@@ -186,10 +217,13 @@ jest.mock('@/components/terminal', () => ({
   ),
   TerminalShellFramework: ({
     onGetFrameworkCacheInfo,
+    activeShellId,
   }: {
     onGetFrameworkCacheInfo?: (frameworkName: string, frameworkPath: string, shellType: string) => void;
+    activeShellId?: string | null;
   }) => (
     <div data-testid="shell-framework">
+      <span data-testid="shell-framework-active-shell">{activeShellId ?? 'none'}</span>
       Frameworks
       <button
         type="button"
@@ -523,4 +557,5 @@ describe('TerminalPage', () => {
     await user.click(screen.getByRole('button', { name: /inspect-framework-cache/i }));
     expect(mockGetSingleFrameworkCacheInfo).toHaveBeenCalledWith('Oh My Zsh', '/home/user/.oh-my-zsh', 'zsh');
   });
+
 });

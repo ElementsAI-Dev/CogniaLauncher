@@ -260,6 +260,7 @@ export default function TerminalPage() {
             shells={terminal.shells}
             loading={terminal.shellsLoading}
             startupMeasurements={terminal.startupMeasurements}
+            shellReadouts={terminal.shellReadouts}
             measuringShellId={terminal.measuringShellId}
             onMeasureStartup={terminal.measureStartup}
             healthResults={terminal.healthResults}
@@ -345,6 +346,7 @@ export default function TerminalPage() {
             shells={terminal.shells}
             frameworks={terminal.frameworks}
             plugins={terminal.plugins}
+            frameworkReadouts={terminal.frameworkReadouts}
             frameworkCacheStats={terminal.frameworkCacheStats}
             frameworkCacheLoading={terminal.frameworkCacheLoading}
             onDetectFrameworks={terminal.detectFrameworks}

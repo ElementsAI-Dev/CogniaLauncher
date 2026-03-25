@@ -2408,6 +2408,14 @@ pub enum FrameworkCategory {
     Theme,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PluginSupportStatus {
+    Supported,
+    MissingConfig,
+    Unsupported,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ShellFrameworkInfo {
@@ -2420,6 +2428,8 @@ pub struct ShellFrameworkInfo {
     pub homepage: Option<String>,
     pub config_path: Option<String>,
     pub active_theme: Option<String>,
+    pub plugin_support_status: PluginSupportStatus,
+    pub plugin_support_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2428,6 +2438,27 @@ pub struct ShellPlugin {
     pub name: String,
     pub enabled: bool,
     pub source: String,
+}
+
+fn plugin_support_from_config(
+    config_path: Option<&Path>,
+    missing_reason: &str,
+) -> (PluginSupportStatus, Option<String>) {
+    if config_path.is_some_and(|path| path.exists()) {
+        (PluginSupportStatus::Supported, None)
+    } else {
+        (
+            PluginSupportStatus::MissingConfig,
+            Some(missing_reason.to_string()),
+        )
+    }
+}
+
+fn unsupported_plugin_support(reason: &str) -> (PluginSupportStatus, Option<String>) {
+    (
+        PluginSupportStatus::Unsupported,
+        Some(reason.to_string()),
+    )
 }
 
 /// Detect installed shell frameworks for a given shell type.
@@ -2474,6 +2505,11 @@ fn detect_zsh_frameworks(
             .ok()
             .map(|v| v.trim().to_string());
         let active_theme = parse_omz_theme(&zshrc_content);
+        let zshrc_path = home.join(".zshrc");
+        let (plugin_support_status, plugin_support_reason) = plugin_support_from_config(
+            Some(zshrc_path.as_path()),
+            "No shell config sources are available for plugin discovery.",
+        );
         frameworks.push(ShellFrameworkInfo {
             name: "Oh My Zsh".to_string(),
             version,
@@ -2483,8 +2519,14 @@ fn detect_zsh_frameworks(
             description: "Community-driven Zsh configuration framework with 300+ plugins"
                 .to_string(),
             homepage: Some("https://ohmyz.sh".to_string()),
-            config_path: Some(home.join(".zshrc").display().to_string()),
+            config_path: if zshrc_path.exists() {
+                Some(zshrc_path.display().to_string())
+            } else {
+                None
+            },
             active_theme,
+            plugin_support_status,
+            plugin_support_reason,
         });
     }
 
@@ -2492,6 +2534,10 @@ fn detect_zsh_frameworks(
     let prezto_path = home.join(".zprezto");
     if prezto_path.exists() {
         let config_path = home.join(".zpreztorc");
+        let (plugin_support_status, plugin_support_reason) = plugin_support_from_config(
+            Some(config_path.as_path()),
+            "No shell config sources are available for plugin discovery.",
+        );
         frameworks.push(ShellFrameworkInfo {
             name: "Prezto".to_string(),
             version: None,
@@ -2506,12 +2552,19 @@ fn detect_zsh_frameworks(
                 None
             },
             active_theme: None,
+            plugin_support_status,
+            plugin_support_reason,
         });
     }
 
     // zinit
     for zinit_path in &[home.join(".zinit"), home.join(".local/share/zinit")] {
         if zinit_path.exists() {
+            let zshrc_path = home.join(".zshrc");
+            let (plugin_support_status, plugin_support_reason) = plugin_support_from_config(
+                Some(zshrc_path.as_path()),
+                "No shell config sources are available for plugin discovery.",
+            );
             frameworks.push(ShellFrameworkInfo {
                 name: "Zinit".to_string(),
                 version: None,
@@ -2520,8 +2573,14 @@ fn detect_zsh_frameworks(
                 category: FrameworkCategory::PluginManager,
                 description: "Flexible and fast Zsh plugin manager".to_string(),
                 homepage: Some("https://github.com/zdharma-continuum/zinit".to_string()),
-                config_path: Some(home.join(".zshrc").display().to_string()),
+                config_path: if zshrc_path.exists() {
+                    Some(zshrc_path.display().to_string())
+                } else {
+                    None
+                },
                 active_theme: None,
+                plugin_support_status,
+                plugin_support_reason,
             });
             break;
         }
@@ -2531,6 +2590,10 @@ fn detect_zsh_frameworks(
     for antidote_path in &[home.join(".antidote"), home.join(".cache/antidote")] {
         if antidote_path.exists() {
             let plugins_txt = home.join(".zsh_plugins.txt");
+            let (plugin_support_status, plugin_support_reason) = plugin_support_from_config(
+                Some(plugins_txt.as_path()),
+                "No shell config sources are available for plugin discovery.",
+            );
             frameworks.push(ShellFrameworkInfo {
                 name: "Antidote".to_string(),
                 version: None,
@@ -2545,6 +2608,8 @@ fn detect_zsh_frameworks(
                     None
                 },
                 active_theme: None,
+                plugin_support_status,
+                plugin_support_reason,
             });
             break;
         }
@@ -2555,6 +2620,11 @@ fn detect_zsh_frameworks(
         .map(PathBuf::from)
         .unwrap_or_else(|_| home.join(".zplug"));
     if zplug_path.exists() {
+        let zshrc_path = home.join(".zshrc");
+        let (plugin_support_status, plugin_support_reason) = plugin_support_from_config(
+            Some(zshrc_path.as_path()),
+            "No shell config sources are available for plugin discovery.",
+        );
         frameworks.push(ShellFrameworkInfo {
             name: "zplug".to_string(),
             version: None,
@@ -2563,8 +2633,14 @@ fn detect_zsh_frameworks(
             category: FrameworkCategory::PluginManager,
             description: "Next-generation Zsh plugin manager".to_string(),
             homepage: Some("https://github.com/zplug/zplug".to_string()),
-            config_path: Some(home.join(".zshrc").display().to_string()),
+            config_path: if zshrc_path.exists() {
+                Some(zshrc_path.display().to_string())
+            } else {
+                None
+            },
             active_theme: None,
+            plugin_support_status,
+            plugin_support_reason,
         });
     }
 
@@ -2584,6 +2660,9 @@ fn detect_zsh_frameworks(
             .as_ref()
             .map(|p| p.display().to_string())
             .unwrap_or_else(|| p10k_config.display().to_string());
+        let (plugin_support_status, plugin_support_reason) = unsupported_plugin_support(
+            "Plugin inventory is unavailable for prompt engines.",
+        );
         frameworks.push(ShellFrameworkInfo {
             name: "Powerlevel10k".to_string(),
             version: None,
@@ -2598,6 +2677,8 @@ fn detect_zsh_frameworks(
                 None
             },
             active_theme: None,
+            plugin_support_status,
+            plugin_support_reason,
         });
     }
 }
@@ -2610,6 +2691,11 @@ fn detect_bash_frameworks(
     // bash-it
     let bashit_path = home.join(".bash_it");
     if bashit_path.exists() {
+        let bashrc_path = home.join(".bashrc");
+        let (plugin_support_status, plugin_support_reason) = plugin_support_from_config(
+            Some(bashrc_path.as_path()),
+            "No shell config sources are available for plugin discovery.",
+        );
         frameworks.push(ShellFrameworkInfo {
             name: "Bash-it".to_string(),
             version: None,
@@ -2618,8 +2704,14 @@ fn detect_bash_frameworks(
             category: FrameworkCategory::Framework,
             description: "Community Bash commands and scripts for Bash 3.2+".to_string(),
             homepage: Some("https://github.com/Bash-it/bash-it".to_string()),
-            config_path: Some(home.join(".bashrc").display().to_string()),
+            config_path: if bashrc_path.exists() {
+                Some(bashrc_path.display().to_string())
+            } else {
+                None
+            },
             active_theme: None,
+            plugin_support_status,
+            plugin_support_reason,
         });
     }
 
@@ -2628,6 +2720,11 @@ fn detect_bash_frameworks(
     if omb_path.exists() {
         let bashrc_content = std::fs::read_to_string(home.join(".bashrc")).unwrap_or_default();
         let active_theme = parse_omb_theme(&bashrc_content);
+        let bashrc_path = home.join(".bashrc");
+        let (plugin_support_status, plugin_support_reason) = plugin_support_from_config(
+            Some(bashrc_path.as_path()),
+            "No shell config sources are available for plugin discovery.",
+        );
         frameworks.push(ShellFrameworkInfo {
             name: "Oh My Bash".to_string(),
             version: None,
@@ -2636,8 +2733,14 @@ fn detect_bash_frameworks(
             category: FrameworkCategory::Framework,
             description: "Oh My Bash is an open source, community-driven framework for managing your bash configuration".to_string(),
             homepage: Some("https://github.com/ohmybash/oh-my-bash".to_string()),
-            config_path: Some(home.join(".bashrc").display().to_string()),
+            config_path: if bashrc_path.exists() {
+                Some(bashrc_path.display().to_string())
+            } else {
+                None
+            },
             active_theme,
+            plugin_support_status,
+            plugin_support_reason,
         });
     }
 }
@@ -2650,6 +2753,10 @@ fn detect_fish_frameworks(
     // Fisher
     let fisher_plugins = home.join(".config/fish/fish_plugins");
     if fisher_plugins.exists() {
+        let (plugin_support_status, plugin_support_reason) = plugin_support_from_config(
+            Some(fisher_plugins.as_path()),
+            "No shell config sources are available for plugin discovery.",
+        );
         frameworks.push(ShellFrameworkInfo {
             name: "Fisher".to_string(),
             version: None,
@@ -2660,12 +2767,19 @@ fn detect_fish_frameworks(
             homepage: Some("https://github.com/jorgebucaran/fisher".to_string()),
             config_path: Some(fisher_plugins.display().to_string()),
             active_theme: None,
+            plugin_support_status,
+            plugin_support_reason,
         });
     }
 
     // Oh My Fish
     let omf_path = home.join(".local/share/omf");
     if omf_path.exists() {
+        let config_path = home.join(".config/fish/config.fish");
+        let (plugin_support_status, plugin_support_reason) = plugin_support_from_config(
+            Some(config_path.as_path()),
+            "No shell config sources are available for plugin discovery.",
+        );
         frameworks.push(ShellFrameworkInfo {
             name: "Oh My Fish".to_string(),
             version: None,
@@ -2674,14 +2788,24 @@ fn detect_fish_frameworks(
             category: FrameworkCategory::Framework,
             description: "The Fish Shell Framework".to_string(),
             homepage: Some("https://github.com/oh-my-fish/oh-my-fish".to_string()),
-            config_path: Some(home.join(".config/fish/config.fish").display().to_string()),
+            config_path: if config_path.exists() {
+                Some(config_path.display().to_string())
+            } else {
+                None
+            },
             active_theme: None,
+            plugin_support_status,
+            plugin_support_reason,
         });
     }
 
     // Tide (popular Fish prompt)
     let tide_path = home.join(".config/fish/functions/_tide_init.fish");
     if tide_path.exists() {
+        let config_path = home.join(".config/fish/config.fish");
+        let (plugin_support_status, plugin_support_reason) = unsupported_plugin_support(
+            "Plugin inventory is unavailable for prompt engines.",
+        );
         frameworks.push(ShellFrameworkInfo {
             name: "Tide".to_string(),
             version: None,
@@ -2690,8 +2814,14 @@ fn detect_fish_frameworks(
             category: FrameworkCategory::Theme,
             description: "Modern Fish prompt inspired by Powerlevel10k".to_string(),
             homepage: Some("https://github.com/IlanCosman/tide".to_string()),
-            config_path: Some(home.join(".config/fish/config.fish").display().to_string()),
+            config_path: if config_path.exists() {
+                Some(config_path.display().to_string())
+            } else {
+                None
+            },
             active_theme: None,
+            plugin_support_status,
+            plugin_support_reason,
         });
     }
 }
@@ -2722,6 +2852,9 @@ async fn detect_prompt_engines(shell_type: ShellType, frameworks: &mut Vec<Shell
 
         let themes_path = std::env::var("POSH_THEMES_PATH").ok();
         let config_path = std::env::var("POSH_THEME").ok();
+        let (plugin_support_status, plugin_support_reason) = unsupported_plugin_support(
+            "Plugin inventory is unavailable for prompt engines.",
+        );
 
         frameworks.push(ShellFrameworkInfo {
             name: "Oh My Posh".to_string(),
@@ -2735,6 +2868,8 @@ async fn detect_prompt_engines(shell_type: ShellType, frameworks: &mut Vec<Shell
             homepage: Some("https://ohmyposh.dev".to_string()),
             config_path,
             active_theme: themes_path,
+            plugin_support_status,
+            plugin_support_reason,
         });
     }
 
@@ -2768,6 +2903,9 @@ async fn detect_prompt_engines(shell_type: ShellType, frameworks: &mut Vec<Shell
                 }
             })
         });
+        let (plugin_support_status, plugin_support_reason) = unsupported_plugin_support(
+            "Plugin inventory is unavailable for prompt engines.",
+        );
 
         frameworks.push(ShellFrameworkInfo {
             name: "Starship".to_string(),
@@ -2781,6 +2919,8 @@ async fn detect_prompt_engines(shell_type: ShellType, frameworks: &mut Vec<Shell
             homepage: Some("https://starship.rs".to_string()),
             config_path,
             active_theme: None,
+            plugin_support_status,
+            plugin_support_reason,
         });
     }
 }
@@ -3405,6 +3545,8 @@ pub async fn clean_framework_cache(framework_name: &str) -> CogniaResult<u64> {
         homepage: None,
         config_path: None,
         active_theme: None,
+        plugin_support_status: PluginSupportStatus::Supported,
+        plugin_support_reason: None,
     };
 
     let cache_paths = resolve_framework_cache_paths(&dummy);
@@ -4518,6 +4660,8 @@ source ~/no_space.nu
             homepage: None,
             config_path: None,
             active_theme: None,
+            plugin_support_status: PluginSupportStatus::Supported,
+            plugin_support_reason: None,
         }
     }
 

@@ -708,6 +708,8 @@ pub async fn terminal_list_plugins(
         homepage: None,
         config_path,
         active_theme: None,
+        plugin_support_status: terminal::PluginSupportStatus::Supported,
+        plugin_support_reason: None,
     };
     Ok(terminal::list_shell_plugins(&framework, None))
 }
@@ -912,6 +914,8 @@ pub async fn terminal_get_single_framework_cache_info(
         homepage: None,
         config_path: None,
         active_theme: None,
+        plugin_support_status: terminal::PluginSupportStatus::Supported,
+        plugin_support_reason: None,
     };
     Ok(terminal::get_framework_cache_info(&dummy).await)
 }

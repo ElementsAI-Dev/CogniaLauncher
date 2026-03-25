@@ -7,6 +7,8 @@ const mockTerminalDetectShells = jest.fn();
 const mockTerminalListProfiles = jest.fn();
 const mockTerminalLaunchProfileDetailed = jest.fn();
 const mockTerminalDetectFramework = jest.fn();
+const mockTerminalMeasureStartup = jest.fn();
+const mockTerminalCheckShellHealth = jest.fn();
 const mockTerminalGetShellInfo = jest.fn();
 const mockTerminalReadConfig = jest.fn();
 const mockTerminalParseConfigContent = jest.fn();
@@ -38,6 +40,8 @@ jest.mock('@/lib/platform', () => ({
 
 jest.mock('@/lib/tauri', () => ({
   terminalDetectShells: (...args: unknown[]) => mockTerminalDetectShells(...args),
+  terminalMeasureStartup: (...args: unknown[]) => mockTerminalMeasureStartup(...args),
+  terminalCheckShellHealth: (...args: unknown[]) => mockTerminalCheckShellHealth(...args),
   terminalGetShellInfo: (...args: unknown[]) => mockTerminalGetShellInfo(...args),
   terminalListProfiles: (...args: unknown[]) => mockTerminalListProfiles(...args),
   terminalListTemplates: (...args: unknown[]) => mockTerminalListTemplates(...args),
@@ -106,6 +110,17 @@ describe('useTerminal', () => {
     mockTerminalListProfiles.mockResolvedValue([]);
     mockTerminalListTemplates.mockResolvedValue([]);
     mockTerminalDetectFramework.mockResolvedValue([]);
+    mockTerminalMeasureStartup.mockResolvedValue({
+      shellId: 'bash',
+      withProfileMs: 120,
+      withoutProfileMs: 80,
+      differenceMs: 40,
+    });
+    mockTerminalCheckShellHealth.mockResolvedValue({
+      shellId: 'bash',
+      status: 'healthy',
+      issues: [],
+    });
     mockTerminalGetShellInfo.mockResolvedValue({
       id: 'bash',
       name: 'Bash',
@@ -328,6 +343,45 @@ describe('useTerminal', () => {
       id: 'bash',
       executablePath: '/bin/bash',
     }));
+  });
+
+  it('preserves last stable shell diagnostics while marking degraded readout on failure', async () => {
+    mockTerminalCheckShellHealth
+      .mockResolvedValueOnce({
+        shellId: 'bash',
+        status: 'healthy',
+        issues: [],
+      })
+      .mockRejectedValueOnce(new Error('probe timeout'));
+
+    const { result } = renderHook(() => useTerminal({ t: mockT }));
+    await waitFor(() => expect(mockTerminalDetectShells).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      await result.current.checkShellHealth('bash');
+    });
+
+    expect(result.current.healthResults.bash?.status).toBe('healthy');
+    expect(result.current.shellReadouts.bash).toEqual(
+      expect.objectContaining({
+        shellId: 'bash',
+        healthStatus: 'ready',
+      }),
+    );
+
+    await act(async () => {
+      await result.current.checkShellHealth('bash');
+    });
+
+    expect(result.current.healthResults.bash?.status).toBe('healthy');
+    expect(result.current.shellReadouts.bash).toEqual(
+      expect.objectContaining({
+        shellId: 'bash',
+        status: 'failed',
+        degradedReason: 'Error: probe timeout',
+        healthStatus: 'failed',
+      }),
+    );
   });
 
   it('searchPSModules returns PowerShell gallery results', async () => {

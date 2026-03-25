@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { TerminalDetectedShells } from './terminal-detected-shells';
 import type { ShellInfo } from '@/types/tauri';
+import type { TerminalShellReadout } from '@/types/terminal';
 
 jest.mock('@/components/providers/locale-provider', () => ({
   useLocale: () => ({ t: (key: string) => key }),
@@ -99,4 +100,36 @@ describe('TerminalDetectedShells', () => {
     expect(screen.getByText('C:/pwsh.exe')).toBeInTheDocument();
     expect(screen.getByText('C:/profile.ps1')).toBeInTheDocument();
   });
+
+  it('surfaces degraded shell readout reasons without discarding shell details', async () => {
+    const user = userEvent.setup();
+    const shellReadouts: Record<string, TerminalShellReadout> = {
+      bash: {
+        shellId: 'bash',
+        status: 'failed',
+        degradedReason: 'Health check failed: timeout',
+        startupStatus: 'ready',
+        healthStatus: 'failed',
+        frameworkSummaryCount: 0,
+        pluginSummaryCount: 0,
+        lastUpdatedAt: Date.now(),
+      },
+    };
+
+    render(
+      <TerminalDetectedShells
+        shells={[shells[0]]}
+        loading={false}
+        shellReadouts={shellReadouts}
+        onGetShellInfo={jest.fn().mockResolvedValue(shells[0])}
+      />,
+    );
+
+    expect(screen.getByText('Health check failed: timeout')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'terminal.viewShellDetails' }));
+    expect((await screen.findAllByText('Health check failed: timeout')).length).toBeGreaterThan(1);
+    expect(screen.getByText('/bin/bash')).toBeInTheDocument();
+  });
+
 });
