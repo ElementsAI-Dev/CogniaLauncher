@@ -71,7 +71,7 @@ interface SortableMenuItemProps {
   onToggleEnabled: (id: TrayMenuItemId, checked: boolean) => void;
 }
 
-function SortableMenuItem({
+export function SortableMenuItem({
   id,
   isPriority,
   canDrag,
@@ -148,7 +148,7 @@ interface DisabledMenuItemProps {
   onToggleEnabled: (id: TrayMenuItemId, checked: boolean) => void;
 }
 
-function DisabledMenuItem({ id, label, t, onToggleEnabled }: DisabledMenuItemProps) {
+export function DisabledMenuItem({ id, label, t, onToggleEnabled }: DisabledMenuItemProps) {
   return (
     <div className="flex items-center gap-2 px-2 py-2 text-sm text-muted-foreground">
       <span className="inline-flex h-5 w-5 items-center justify-center">
@@ -181,7 +181,7 @@ interface StaticEnabledMenuItemProps {
   onToggleEnabled: (id: TrayMenuItemId, checked: boolean) => void;
 }
 
-function StaticEnabledMenuItem({
+export function StaticEnabledMenuItem({
   id,
   label,
   t,

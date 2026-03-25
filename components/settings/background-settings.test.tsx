@@ -285,4 +285,15 @@ describe("BackgroundSettings", () => {
     expect(screen.getByText("Background Preview")).toBeInTheDocument();
     expect(screen.getByText("Image selected")).toBeInTheDocument();
   });
+
+  it("disables scale control when fit mode is tile", () => {
+    useAppearanceStore.getState().setBackgroundEnabled(true);
+    useAppearanceStore.getState().setBackgroundFit("tile");
+    mockGetBackgroundImage.mockReturnValue("data:image/jpeg;base64,test");
+
+    render(<BackgroundSettings t={t} />);
+
+    const sliders = screen.getAllByRole("slider");
+    expect(sliders[2]).toHaveAttribute("data-disabled", "");
+  });
 });

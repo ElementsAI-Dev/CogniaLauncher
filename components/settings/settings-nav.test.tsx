@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { SettingsNav } from "./settings-nav";
 import type { SettingsSection } from "@/lib/constants/settings-registry";
 
@@ -130,5 +131,56 @@ describe("SettingsNav", () => {
     expect(screen.getByText("Keyboard shortcuts")).toBeInTheDocument();
     expect(screen.getByText("Focus search")).toBeInTheDocument();
     expect(screen.getByText("Navigate sections")).toBeInTheDocument();
+  });
+
+  it("calls onSectionClick when a section button is pressed", async () => {
+    const onSectionClick = jest.fn();
+    render(<SettingsNav {...defaultProps} onSectionClick={onSectionClick} />);
+
+    await userEvent.click(screen.getByRole("button", { name: /Network/i }));
+
+    expect(onSectionClick).toHaveBeenCalledWith("network");
+  });
+
+  it("scrolls the active item into view when it falls outside the nav viewport", () => {
+    const scrollIntoView = jest.fn();
+    const rectSpy = jest
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function () {
+        if ((this as HTMLElement).getAttribute("aria-current") === "true") {
+          return {
+            top: 200,
+            bottom: 260,
+            left: 0,
+            right: 0,
+            width: 0,
+            height: 0,
+            x: 0,
+            y: 0,
+            toJSON: () => ({}),
+          } as DOMRect;
+        }
+        return {
+          top: 0,
+          bottom: 100,
+          left: 0,
+          right: 0,
+          width: 0,
+          height: 0,
+          x: 0,
+          y: 0,
+          toJSON: () => ({}),
+        } as DOMRect;
+      });
+    const scrollSpy = jest
+      .spyOn(HTMLElement.prototype, "scrollIntoView")
+      .mockImplementation(scrollIntoView);
+
+    render(<SettingsNav {...defaultProps} activeSection="network" />);
+
+    expect(scrollSpy).toHaveBeenCalled();
+
+    rectSpy.mockRestore();
+    scrollSpy.mockRestore();
   });
 });

@@ -190,4 +190,27 @@ describe("AppearanceWorkbench", () => {
     expect(screen.getByRole("button", { name: "Save Preset" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Rename Preset" })).toBeDisabled();
   });
+
+  it("falls back to the first preset when the active preset id is unknown", () => {
+    render(
+      <AppearanceWorkbench
+        {...defaultProps}
+        activePresetId="unknown"
+      />,
+    );
+
+    expect(screen.getByRole("textbox", { name: "Preset Name" })).toHaveValue("Default");
+  });
+
+  it("shows an empty preset name when no presets are available", () => {
+    render(
+      <AppearanceWorkbench
+        {...defaultProps}
+        presets={[]}
+        activePresetId="missing"
+      />,
+    );
+
+    expect(screen.getByRole("textbox", { name: "Preset Name" })).toHaveValue("");
+  });
 });

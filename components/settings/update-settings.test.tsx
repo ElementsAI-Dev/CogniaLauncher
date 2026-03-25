@@ -212,6 +212,51 @@ describe("UpdateSettings", () => {
     ]);
   });
 
+  it("does not commit blur updates when source mode is not custom", () => {
+    const onValueChange = jest.fn();
+    render(
+      <UpdateSettings
+        appSettings={appSettings}
+        onValueChange={onValueChange}
+        t={mockT}
+      />,
+    );
+
+    fireEvent.blur(screen.queryByRole("textbox", { name: "Custom Endpoints" }) ?? document.body);
+
+    expect(onValueChange).not.toHaveBeenCalledWith("updateCustomEndpoints", expect.anything());
+  });
+
+  it("switches source mode to custom on blur after valid custom endpoint input", () => {
+    const onValueChange = jest.fn();
+    render(
+      <UpdateSettings
+        appSettings={{
+          ...appSettings,
+          updateCustomEndpoints: [
+            "https://updates.example.com/{{target}}/{{current_version}}",
+          ],
+        }}
+        onValueChange={onValueChange}
+        t={mockT}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("combobox", { name: "Update Source" }));
+    fireEvent.click(screen.getByRole("option", { name: "Custom" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Custom Endpoints" }), {
+      target: {
+        value: "https://updates.example.com/{{target}}/{{current_version}}",
+      },
+    });
+    fireEvent.blur(screen.getByRole("textbox", { name: "Custom Endpoints" }));
+
+    expect(onValueChange).toHaveBeenCalledWith("updateCustomEndpoints", [
+      "https://updates.example.com/{{target}}/{{current_version}}",
+    ]);
+    expect(onValueChange).toHaveBeenCalledWith("updateSourceMode", "custom");
+  });
+
   it("resets custom endpoint draft when app settings change", () => {
     const onValueChange = jest.fn();
     const { rerender } = render(

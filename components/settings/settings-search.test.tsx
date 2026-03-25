@@ -264,4 +264,50 @@ describe("SettingsSearch", () => {
 
     expect(screen.getByText("Advanced")).toBeInTheDocument();
   });
+
+  it("clears search on Escape when the input is focused", () => {
+    const clearSearch = jest.fn();
+    const search = createMockSearch({
+      query: "parallel",
+      isSearching: true,
+      clearSearch,
+    });
+
+    render(<SettingsSearch search={search} t={mockT} />);
+
+    const input = screen.getByPlaceholderText("Search settings...");
+    input.focus();
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(clearSearch).toHaveBeenCalled();
+    expect(input).not.toHaveFocus();
+  });
+
+  it("renders highlighted search result fragments with mark tags", () => {
+    const search = createMockSearch({
+      query: "para",
+      isSearching: true,
+      totalResults: 1,
+      highlightText: (text: string) => [
+        { text: text.slice(0, 4), highlighted: true },
+        { text: text.slice(4), highlighted: false },
+      ],
+      results: [
+        {
+          setting: {
+            key: "general.parallel_downloads",
+            section: "general",
+            labelKey: "settings.parallelDownloads",
+            descKey: "settings.parallelDownloadsDesc",
+            type: "input",
+          },
+          matchedIn: ["label"],
+        },
+      ],
+    });
+
+    render(<SettingsSearch search={search} t={mockT} />);
+
+    expect(screen.getByText("Para", { selector: "mark" })).toBeInTheDocument();
+  });
 });

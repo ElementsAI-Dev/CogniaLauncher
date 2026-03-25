@@ -1,5 +1,10 @@
 import { render, screen, fireEvent } from "@testing-library/react";
-import { ShortcutSettings } from "./shortcut-settings";
+import {
+  buildShortcutString,
+  getDefaultShortcut,
+  formatDisplayShortcut,
+  ShortcutSettings,
+} from "./shortcut-settings";
 import { isTauri } from "@/lib/platform";
 
 jest.mock("@/lib/platform", () => ({
@@ -238,6 +243,23 @@ describe("ShortcutSettings", () => {
     );
   });
 
+  it("cancels recording when the window loses focus", () => {
+    render(
+      <ShortcutSettings
+        localConfig={defaultConfig}
+        errors={{}}
+        onValueChange={mockOnValueChange}
+        t={mockT}
+      />,
+    );
+
+    const inputs = screen.getAllByRole("textbox");
+    fireEvent.click(inputs[0]);
+    fireEvent.blur(window);
+
+    expect(screen.queryByDisplayValue("Press keys...")).not.toBeInTheDocument();
+  });
+
   it("ignores shortcut recording without modifier keys", () => {
     render(
       <ShortcutSettings
@@ -352,5 +374,38 @@ describe("ShortcutSettings", () => {
     expect(inputs[0]).toHaveValue("—");
     expect(inputs[1]).toHaveValue("—");
     expect(inputs[2]).toHaveValue("—");
+  });
+});
+
+describe("shortcut helpers", () => {
+  it("returns an empty default shortcut for unknown config keys", () => {
+    expect(getDefaultShortcut("shortcuts.unknown")).toBe("");
+  });
+
+  it("formats shortcuts using mac-style glyphs when navigator looks like macOS", () => {
+    const originalNavigator = global.navigator;
+    Object.defineProperty(global, "navigator", {
+      configurable: true,
+      value: { userAgent: "Macintosh" },
+    });
+
+    expect(formatDisplayShortcut("CmdOrCtrl+Shift+Alt+Space")).toBe("⌘⇧⌥Space");
+
+    Object.defineProperty(global, "navigator", {
+      configurable: true,
+      value: originalNavigator,
+    });
+  });
+
+  it("returns null for standalone modifier events", () => {
+    expect(
+      buildShortcutString({
+        key: "Alt",
+        altKey: true,
+        ctrlKey: false,
+        shiftKey: false,
+        metaKey: false,
+      } as KeyboardEvent),
+    ).toBeNull();
   });
 });

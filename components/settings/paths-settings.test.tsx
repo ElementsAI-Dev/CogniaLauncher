@@ -1,7 +1,6 @@
 import React from "react";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { PathsSettings } from "./paths-settings";
-import { toast } from "sonner";
 
 const mockIsTauri = jest.fn(() => false);
 const mockValidatePath = jest.fn();

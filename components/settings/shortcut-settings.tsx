@@ -28,7 +28,11 @@ const DEFAULT_SHORTCUTS: Record<string, string> = {
   "shortcuts.quick_search": "CmdOrCtrl+Shift+F",
 };
 
-function buildShortcutString(e: KeyboardEvent): string | null {
+export function getDefaultShortcut(configKey: string): string {
+  return DEFAULT_SHORTCUTS[configKey] || "";
+}
+
+export function buildShortcutString(e: KeyboardEvent): string | null {
   const parts: string[] = [];
 
   if (e.ctrlKey || e.metaKey) parts.push("CmdOrCtrl");
@@ -55,7 +59,7 @@ function buildShortcutString(e: KeyboardEvent): string | null {
   return parts.join("+");
 }
 
-function formatDisplayShortcut(shortcut: string): string {
+export function formatDisplayShortcut(shortcut: string): string {
   if (!shortcut) return "—";
   const isMac =
     typeof navigator !== "undefined" && /Mac/i.test(navigator.userAgent);
@@ -120,11 +124,11 @@ function ShortcutItem({
   }, [recording]);
 
   const handleReset = useCallback(() => {
-    const defaultVal = DEFAULT_SHORTCUTS[configKey] || "";
+    const defaultVal = getDefaultShortcut(configKey);
     onValueChange(configKey, defaultVal);
   }, [configKey, onValueChange]);
 
-  const isDefault = value === (DEFAULT_SHORTCUTS[configKey] || "");
+  const isDefault = value === getDefaultShortcut(configKey);
 
   return (
     <div className="flex items-center justify-between py-3">

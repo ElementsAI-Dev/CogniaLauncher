@@ -1,7 +1,13 @@
 import React from "react";
 import { render, screen, fireEvent, act, within } from "@testing-library/react";
 import * as dndCore from "@dnd-kit/core";
-import { TrayMenuCustomizer } from "./tray-menu-customizer";
+import * as dndSortable from "@dnd-kit/sortable";
+import {
+  DisabledMenuItem,
+  SortableMenuItem,
+  StaticEnabledMenuItem,
+  TrayMenuCustomizer,
+} from "./tray-menu-customizer";
 
 const mockTrayGetMenuConfig = jest.fn();
 const mockTraySetMenuConfig = jest.fn();
@@ -20,6 +26,7 @@ jest.mock("@/lib/tauri", () => ({
 }));
 
 let dndHandlers: Array<(event: unknown) => void> = [];
+let mockSortableDragging = false;
 
 jest.mock("@dnd-kit/core", () => {
   return {
@@ -72,13 +79,16 @@ jest.mock("@dnd-kit/sortable", () => ({
     setNodeRef: jest.fn(),
     transform: null,
     transition: null,
-    isDragging: false,
+    isDragging: mockSortableDragging,
   }),
   arrayMove: (array: unknown[], from: number, to: number) => {
     const next = [...array];
     const [moved] = next.splice(from, 1);
     next.splice(to, 0, moved);
     return next;
+  },
+  __setDragging: (next: boolean) => {
+    mockSortableDragging = next;
   },
 }));
 
@@ -117,6 +127,7 @@ describe("TrayMenuCustomizer", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     (dndCore as unknown as { __resetHandlers: () => void }).__resetHandlers();
+    (dndSortable as unknown as { __setDragging: (next: boolean) => void }).__setDragging(false);
     mockIsTauri.mockReturnValue(true);
     mockTrayGetAvailableMenuItems.mockResolvedValue([
       "show_hide",
@@ -373,5 +384,102 @@ describe("TrayMenuCustomizer", () => {
     });
 
     expect(screen.getByText("mystery_action")).toBeInTheDocument();
+  });
+
+  it("renders non-draggable sortable items with disabled drag affordances", () => {
+    render(
+      <SortableMenuItem
+        id={"settings"}
+        isPriority={false}
+        canDrag={false}
+        canTogglePriority={true}
+        label="Settings"
+        t={mockT}
+        onPriorityToggle={jest.fn()}
+        onToggleEnabled={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Drag to reorder" })).toBeDisabled();
+  });
+
+  it("renders drag styling for actively dragged sortable items", () => {
+    (dndSortable as unknown as { __setDragging: (next: boolean) => void }).__setDragging(true);
+
+    const { container } = render(
+      <SortableMenuItem
+        id={"settings"}
+        isPriority
+        canDrag
+        canTogglePriority
+        label="Settings"
+        t={mockT}
+        onPriorityToggle={jest.fn()}
+        onToggleEnabled={jest.fn()}
+      />,
+    );
+
+    expect(container.firstElementChild).toHaveClass("rounded-sm");
+  });
+
+  it("wires toggle handlers for disabled and static enabled menu items", () => {
+    const onToggleEnabled = jest.fn();
+    const { rerender } = render(
+      <DisabledMenuItem
+        id={"downloads"}
+        label="Downloads"
+        t={mockT}
+        onToggleEnabled={onToggleEnabled}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("switch"));
+    expect(onToggleEnabled).toHaveBeenCalledWith("downloads", true);
+
+    rerender(
+      <StaticEnabledMenuItem
+        id={"show_hide"}
+        label="Show/Hide"
+        t={mockT}
+        onToggleEnabled={onToggleEnabled}
+      />,
+    );
+
+    expect(screen.getByRole("switch")).toBeDisabled();
+  });
+
+  it("does not persist reorder when drag end stays on the same item", async () => {
+    mockTrayGetMenuConfig.mockResolvedValue({
+      items: ["show_hide", "settings", "quit"],
+      priorityItems: ["settings"],
+    });
+
+    await act(async () => {
+      render(<TrayMenuCustomizer t={mockT} />);
+    });
+
+    const callsBefore = mockTraySetMenuConfig.mock.calls.length;
+    await act(async () => {
+      (
+        dndCore as unknown as {
+          __triggerDragEnd: (
+            index: number,
+            activeId: string,
+            overId: string | null,
+          ) => void;
+        }
+      ).__triggerDragEnd(0, "settings", "settings");
+      (
+        dndCore as unknown as {
+          __triggerDragEnd: (
+            index: number,
+            activeId: string,
+            overId: string | null,
+          ) => void;
+        }
+      ).__triggerDragEnd(1, "show_hide", "show_hide");
+    });
+
+    expect(mockTraySetMenuConfig).toHaveBeenCalledTimes(callsBefore);
   });
 });

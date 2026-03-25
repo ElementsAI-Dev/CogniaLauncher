@@ -127,6 +127,12 @@ describe("CollapsibleSection", () => {
     expect(screen.getByText("General Settings")).toBeInTheDocument();
   });
 
+  it("falls back to the default icon when an unknown icon id is provided", () => {
+    render(<CollapsibleSection {...defaultProps} icon={"UnknownIcon" as never} />);
+
+    expect(screen.getByText("General Settings")).toBeInTheDocument();
+  });
+
   it("applies correct section ID for navigation", () => {
     render(<CollapsibleSection {...defaultProps} />);
 

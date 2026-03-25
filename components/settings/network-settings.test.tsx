@@ -261,5 +261,44 @@ describe("NetworkSettings", () => {
       expect(screen.getByText("Detected from environment")).toBeInTheDocument();
       expect(screen.queryByText("Connection successful")).not.toBeInTheDocument();
     });
+
+    it("renders a single test result without detect feedback", () => {
+      mockUseProxyTools.mockReturnValue({
+        detectLoading: false,
+        detectResult: null,
+        testLoading: false,
+        testResult: "Connection successful",
+        handleDetectProxy: jest.fn(),
+        handleTestProxy: jest.fn(),
+      });
+
+      render(<NetworkSettings {...defaultProps} />);
+
+      expect(screen.queryByText("Detected from environment")).not.toBeInTheDocument();
+      expect(screen.getByText("Connection successful")).toBeInTheDocument();
+    });
+
+    it("shows loading indicators for detect and test actions", () => {
+      mockUseProxyTools.mockReturnValue({
+        detectLoading: true,
+        detectResult: null,
+        testLoading: true,
+        testResult: null,
+        handleDetectProxy: jest.fn(),
+        handleTestProxy: jest.fn(),
+      });
+
+      render(
+        <NetworkSettings
+          {...defaultProps}
+          localConfig={{
+            ...defaultProps.localConfig,
+            "network.proxy": "http://proxy:8080",
+          }}
+        />,
+      );
+
+      expect(document.querySelectorAll('.animate-spin').length).toBeGreaterThanOrEqual(2);
+    });
   });
 });
