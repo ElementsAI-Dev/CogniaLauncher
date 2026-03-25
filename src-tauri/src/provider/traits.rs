@@ -1,5 +1,6 @@
 use crate::error::CogniaResult;
 use crate::platform::env::{Architecture, EnvModifications, Platform};
+use crate::provider::support::SupportReason;
 use crate::resolver::Dependency;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -259,6 +260,10 @@ pub trait Provider: Send + Sync {
     }
 
     async fn is_available(&self) -> bool;
+
+    async fn unavailable_reason(&self) -> Option<SupportReason> {
+        None
+    }
 
     async fn search(
         &self,

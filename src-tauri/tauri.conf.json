@@ -903,6 +903,96 @@
                   "description": "Shell id already updated automatically"
                 }
               ]
+            },
+            "snapshot-list": {
+              "description": "List envvar recovery snapshots"
+            },
+            "snapshot-create": {
+              "description": "Create an envvar recovery snapshot",
+              "args": [
+                {
+                  "name": "scopes",
+                  "takesValue": true,
+                  "multiple": true,
+                  "description": "Scopes to capture: user|system|process"
+                },
+                {
+                  "name": "mode",
+                  "takesValue": true,
+                  "description": "Snapshot mode: manual|automatic"
+                },
+                {
+                  "name": "source-action",
+                  "takesValue": true,
+                  "description": "Optional source action label"
+                },
+                {
+                  "name": "note",
+                  "takesValue": true,
+                  "description": "Optional snapshot note"
+                }
+              ]
+            },
+            "snapshot-protection": {
+              "description": "Preview backup protection state for a risky envvar action",
+              "args": [
+                {
+                  "name": "action",
+                  "index": 1,
+                  "takesValue": true,
+                  "description": "Risky action id"
+                },
+                {
+                  "name": "scope",
+                  "takesValue": true,
+                  "description": "Scope: process|user|system"
+                }
+              ]
+            },
+            "snapshot-preview": {
+              "description": "Preview restore diff for an envvar snapshot",
+              "args": [
+                {
+                  "name": "path",
+                  "index": 1,
+                  "takesValue": true,
+                  "description": "Snapshot path"
+                },
+                {
+                  "name": "scopes",
+                  "takesValue": true,
+                  "multiple": true,
+                  "description": "Optional scopes to preview"
+                }
+              ]
+            },
+            "snapshot-restore": {
+              "description": "Restore envvar state from a snapshot",
+              "args": [
+                {
+                  "name": "path",
+                  "index": 1,
+                  "takesValue": true,
+                  "description": "Snapshot path"
+                },
+                {
+                  "name": "scopes",
+                  "takesValue": true,
+                  "multiple": true,
+                  "description": "Optional scopes to restore"
+                }
+              ]
+            },
+            "snapshot-delete": {
+              "description": "Delete an envvar snapshot",
+              "args": [
+                {
+                  "name": "path",
+                  "index": 1,
+                  "takesValue": true,
+                  "description": "Snapshot path"
+                }
+              ]
             }
           }
         },

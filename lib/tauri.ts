@@ -3698,31 +3698,6 @@ export const envvarRevealValue = (key: string, scope: EnvVarScope) =>
 export const envvarGetSupportSnapshot = () =>
   invoke<EnvVarSupportSnapshot>("envvar_get_support_snapshot");
 
-/** Set a process-level environment variable */
-export const envvarSetProcess = (key: string, value: string) =>
-  invoke<EnvVarMutationResult>("envvar_set_process", { key, value });
-
-/** Remove a process-level environment variable */
-export const envvarRemoveProcess = (key: string) =>
-  invoke<EnvVarMutationResult>("envvar_remove_process", { key });
-
-/** Get a persistent environment variable by scope */
-export const envvarGetPersistent = (key: string, scope: EnvVarScope) =>
-  invoke<string | null>("envvar_get_persistent", { key, scope });
-
-/** Set a persistent environment variable */
-export const envvarSetPersistent = (
-  key: string,
-  value: string,
-  scope: EnvVarScope,
-) => invoke<EnvVarMutationResult>("envvar_set_persistent", { key, value, scope });
-
-/** Remove a persistent environment variable */
-export const envvarRemovePersistent = (key: string, scope: EnvVarScope) =>
-  invoke<EnvVarMutationResult>("envvar_remove_persistent", { key, scope });
-
-/** Get PATH entries with existence info */
-export const envvarGetPath = (scope: EnvVarScope) =>
 /** List envvar recovery snapshots */
 export const envvarListSnapshots = () =>
   invoke<EnvVarSnapshotInfo[]>("envvar_list_snapshots");
@@ -3766,6 +3741,31 @@ export const envvarRestoreSnapshot = (
 export const envvarDeleteSnapshot = (snapshotPath: string) =>
   invoke<BackupDeleteResult>("envvar_delete_snapshot", { snapshotPath });
 
+/** Set a process-level environment variable */
+export const envvarSetProcess = (key: string, value: string) =>
+  invoke<EnvVarMutationResult>("envvar_set_process", { key, value });
+
+/** Remove a process-level environment variable */
+export const envvarRemoveProcess = (key: string) =>
+  invoke<EnvVarMutationResult>("envvar_remove_process", { key });
+
+/** Get a persistent environment variable by scope */
+export const envvarGetPersistent = (key: string, scope: EnvVarScope) =>
+  invoke<string | null>("envvar_get_persistent", { key, scope });
+
+/** Set a persistent environment variable */
+export const envvarSetPersistent = (
+  key: string,
+  value: string,
+  scope: EnvVarScope,
+) => invoke<EnvVarMutationResult>("envvar_set_persistent", { key, value, scope });
+
+/** Remove a persistent environment variable */
+export const envvarRemovePersistent = (key: string, scope: EnvVarScope) =>
+  invoke<EnvVarMutationResult>("envvar_remove_persistent", { key, scope });
+
+/** Get PATH entries with existence info */
+export const envvarGetPath = (scope: EnvVarScope) =>
   invoke<PathEntryInfo[]>("envvar_get_path", { scope });
 
 /** Add a PATH entry */

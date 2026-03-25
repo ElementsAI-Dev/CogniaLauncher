@@ -822,7 +822,10 @@ pub async fn check_updates(
                         errors: 0,
                     });
                 } else if !provider.is_available().await {
-                    let reason = provider_unavailable_reason();
+                    let reason = provider
+                        .unavailable_reason()
+                        .await
+                        .unwrap_or_else(provider_unavailable_reason);
                     outcomes.lock().await.push(UpdateCheckProviderOutcome {
                         provider: provider_id.clone(),
                         status: UPDATE_OUTCOME_UNSUPPORTED.into(),
@@ -1510,6 +1513,23 @@ mod tests {
         assert!(conflicts[0]
             .message
             .contains("dependency lookup failed for lodash@4.17.21"));
+    }
+
+    #[test]
+    fn cpp_dependency_lookup_failures_keep_provider_specific_context() {
+        let mut failures = std::collections::HashMap::new();
+        failures.insert(
+            "fmt".to_string(),
+            "dependency lookup failed for fmt@10.2.1 via vcpkg: failed to parse vcpkg depend-info output for fmt"
+                .to_string(),
+        );
+
+        let conflicts = build_dependency_lookup_conflicts(&failures);
+
+        assert_eq!(conflicts.len(), 1);
+        assert_eq!(conflicts[0].package, "fmt");
+        assert!(conflicts[0].message.contains("via vcpkg"));
+        assert!(conflicts[0].message.contains("depend-info"));
     }
 
     #[test]

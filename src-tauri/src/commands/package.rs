@@ -414,6 +414,7 @@ fn build_provider_status_info(
     info: crate::provider::ProviderInfo,
     platform: Platform,
     availability: ProviderAvailabilityProbe,
+    runtime_reason_override: Option<crate::provider::support::SupportReason>,
 ) -> ProviderStatusInfo {
     let installed = availability.is_available();
     let supported_platforms = info.platforms.clone();
@@ -425,6 +426,14 @@ fn build_provider_status_info(
     let update_support = update_support_reason(platform, &supported_platforms, &capability_set);
     let (scope, runtime_reason) =
         classify_provider_scope(platform, &supported_platforms, availability);
+    let runtime_reason = if matches!(
+        scope,
+        crate::provider::support::ProviderHealthScope::Unavailable
+    ) {
+        runtime_reason_override.or(runtime_reason)
+    } else {
+        runtime_reason
+    };
 
     ProviderStatusInfo {
         id: info.id,
@@ -466,23 +475,26 @@ async fn resolve_provider_status_info(
     is_api_provider: bool,
     platform: Platform,
 ) -> ProviderStatusInfo {
-    let availability = if !info.enabled {
-        ProviderAvailabilityProbe::Unavailable
+    let (availability, runtime_reason_override) = if !info.enabled {
+        (ProviderAvailabilityProbe::Unavailable, None)
     } else {
         match provider {
             Some(provider) => {
                 let timeout = provider_health_probe_timeout(&info.id, is_api_provider);
                 match tokio::time::timeout(timeout, provider.is_available()).await {
-                    Ok(true) => ProviderAvailabilityProbe::Available,
-                    Ok(false) => ProviderAvailabilityProbe::Unavailable,
-                    Err(_) => ProviderAvailabilityProbe::Timeout,
+                    Ok(true) => (ProviderAvailabilityProbe::Available, None),
+                    Ok(false) => (
+                        ProviderAvailabilityProbe::Unavailable,
+                        provider.unavailable_reason().await,
+                    ),
+                    Err(_) => (ProviderAvailabilityProbe::Timeout, None),
                 }
             }
-            None => ProviderAvailabilityProbe::Unavailable,
+            None => (ProviderAvailabilityProbe::Unavailable, None),
         }
     };
 
-    build_provider_status_info(info, platform, availability)
+    build_provider_status_info(info, platform, availability, runtime_reason_override)
 }
 
 #[tauri::command]
@@ -711,7 +723,9 @@ mod tests {
     use crate::config::Settings;
     use crate::platform::env::{current_platform, Platform};
     use crate::provider::support::ProviderAvailabilityProbe;
-    use crate::provider::support::{REASON_HEALTH_CHECK_TIMEOUT, REASON_PROVIDER_UNAVAILABLE};
+    use crate::provider::support::{
+        SupportReason, REASON_HEALTH_CHECK_TIMEOUT, REASON_PROVIDER_UNAVAILABLE,
+    };
     use crate::provider::{Capability, InstalledPackage, ProviderInfo, ProviderRegistry};
     use std::path::PathBuf;
 
@@ -786,6 +800,7 @@ mod tests {
             info,
             Platform::Windows,
             ProviderAvailabilityProbe::Unavailable,
+            None,
         );
 
         assert!(!status.installed);
@@ -805,8 +820,12 @@ mod tests {
     #[test]
     fn test_build_provider_status_info_timeout_scope() {
         let info = provider_info("npm", vec![Capability::Update]);
-        let status =
-            build_provider_status_info(info, Platform::Windows, ProviderAvailabilityProbe::Timeout);
+        let status = build_provider_status_info(
+            info,
+            Platform::Windows,
+            ProviderAvailabilityProbe::Timeout,
+            None,
+        );
 
         assert!(!status.installed);
         assert_eq!(status.scope_state, "timeout");
@@ -829,6 +848,7 @@ mod tests {
             info,
             Platform::Windows,
             ProviderAvailabilityProbe::Available,
+            None,
         );
 
         assert!(status.installed);
@@ -845,6 +865,7 @@ mod tests {
             info,
             Platform::Windows,
             ProviderAvailabilityProbe::Unavailable,
+            None,
         );
 
         assert_eq!(status.id, "zig");
@@ -853,6 +874,30 @@ mod tests {
         assert_eq!(
             status.reason_code.as_deref(),
             Some(REASON_PROVIDER_UNAVAILABLE)
+        );
+    }
+
+    #[test]
+    fn test_build_provider_status_info_prefers_custom_unavailable_reason() {
+        let info = provider_info("xmake", vec![Capability::Update]);
+        let status = build_provider_status_info(
+            info,
+            Platform::Windows,
+            ProviderAvailabilityProbe::Unavailable,
+            Some(SupportReason {
+                code: "xrepo-executable-missing",
+                message: "xrepo executable was not found on PATH".into(),
+            }),
+        );
+
+        assert_eq!(status.scope_state, "unavailable");
+        assert_eq!(
+            status.reason_code.as_deref(),
+            Some("xrepo-executable-missing")
+        );
+        assert_eq!(
+            status.reason.as_deref(),
+            Some("xrepo executable was not found on PATH")
         );
     }
 
@@ -874,7 +919,10 @@ mod tests {
             resolve_provider_status_info(info, provider, is_api_provider, current_platform()).await;
 
         assert_eq!(status.scope_state, "unavailable");
-        assert_eq!(status.reason_code.as_deref(), Some(REASON_PROVIDER_UNAVAILABLE));
+        assert_eq!(
+            status.reason_code.as_deref(),
+            Some(REASON_PROVIDER_UNAVAILABLE)
+        );
         assert!(!provider_status_is_available(&status));
     }
 
@@ -884,6 +932,7 @@ mod tests {
             provider_info("npm", vec![Capability::Update]),
             Platform::Windows,
             ProviderAvailabilityProbe::Timeout,
+            None,
         );
         let unsupported_status = build_provider_status_info(
             ProviderInfo {
@@ -892,6 +941,7 @@ mod tests {
             },
             Platform::Linux,
             ProviderAvailabilityProbe::Available,
+            None,
         );
 
         assert!(!provider_status_is_available(&timeout_status));

@@ -39,10 +39,12 @@ name: CI/CD Pipeline
 on:
   push:
     branches:
+      - master
       - main
       - develop
   pull_request:
     branches:
+      - master
       - main
       - develop
 
@@ -290,7 +292,7 @@ jobs:
           retention-days: 7
 
       - name: Store build size
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         run: |
           mkdir -p .github/size-snapshot
           du -sb out/ | cut -f1 > .github/size-snapshot/build-size.txt

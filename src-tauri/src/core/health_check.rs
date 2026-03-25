@@ -868,17 +868,25 @@ impl HealthCheckManager {
 
         // Check 1: Provider availability
         let timeout_budget = provider_health_probe_timeout(provider.id(), false);
-        let availability = match tokio::time::timeout(timeout_budget, provider.is_available()).await
-        {
-            Ok(true) => ProviderAvailabilityProbe::Available,
-            Ok(false) => ProviderAvailabilityProbe::Unavailable,
-            Err(_) => ProviderAvailabilityProbe::Timeout,
-        };
+        let (availability, runtime_reason_override) =
+            match tokio::time::timeout(timeout_budget, provider.is_available()).await {
+                Ok(true) => (ProviderAvailabilityProbe::Available, None),
+                Ok(false) => (
+                    ProviderAvailabilityProbe::Unavailable,
+                    provider.unavailable_reason().await,
+                ),
+                Err(_) => (ProviderAvailabilityProbe::Timeout, None),
+            };
         let (scope, runtime_reason) = classify_provider_scope(
             current_platform(),
             &provider.supported_platforms(),
             availability,
         );
+        let runtime_reason = if matches!(scope, ProviderHealthScope::Unavailable) {
+            runtime_reason_override.or(runtime_reason)
+        } else {
+            runtime_reason
+        };
 
         if !scope.is_available() {
             if let Some(reason) = runtime_reason.as_ref() {
@@ -2049,12 +2057,16 @@ mod tests {
 
     #[test]
     fn test_health_issue_evidence_json_round_trip() {
-        let issue = HealthIssue::new(Severity::Warning, IssueCategory::NetworkError, "Network flaky")
-            .with_evidence(
-                HealthSignalSource::NetworkProbe,
-                HealthEvidenceConfidence::Inferred,
-                "registry_probe",
-            );
+        let issue = HealthIssue::new(
+            Severity::Warning,
+            IssueCategory::NetworkError,
+            "Network flaky",
+        )
+        .with_evidence(
+            HealthSignalSource::NetworkProbe,
+            HealthEvidenceConfidence::Inferred,
+            "registry_probe",
+        );
         let json = serde_json::to_string(&issue).unwrap();
         let decoded: HealthIssue = serde_json::from_str(&json).unwrap();
 
@@ -2062,10 +2074,7 @@ mod tests {
             decoded.signal_source,
             Some(HealthSignalSource::NetworkProbe)
         );
-        assert_eq!(
-            decoded.confidence,
-            Some(HealthEvidenceConfidence::Inferred)
-        );
+        assert_eq!(decoded.confidence, Some(HealthEvidenceConfidence::Inferred));
         assert_eq!(decoded.check_id.as_deref(), Some("registry_probe"));
     }
 

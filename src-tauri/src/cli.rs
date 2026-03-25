@@ -97,6 +97,12 @@ const ENVVAR_SUBCOMMANDS: &[&str] = &[
     "apply-path-repair",
     "resolve-conflict",
     "shell-guidance",
+    "snapshot-list",
+    "snapshot-create",
+    "snapshot-protection",
+    "snapshot-preview",
+    "snapshot-restore",
+    "snapshot-delete",
 ];
 const LOG_SUBCOMMANDS: &[&str] = &["list", "export", "clear", "size", "cleanup"];
 const DOWNLOAD_SUBCOMMANDS: &[&str] = &[
@@ -354,6 +360,23 @@ fn parse_env_file_format(raw: Option<String>) -> Result<EnvFileFormat, String> {
         "nushell" | "nu" => Ok(EnvFileFormat::Nushell),
         other => Err(format!(
             "Invalid format '{}'. Expected one of: dotenv, shell, fish, powershell, nushell",
+            other
+        )),
+    }
+}
+
+fn parse_envvar_snapshot_mode(
+    raw: Option<String>,
+) -> Result<crate::commands::envvar::EnvVarSnapshotCreationMode, String> {
+    match raw
+        .unwrap_or_else(|| "manual".to_string())
+        .to_lowercase()
+        .as_str()
+    {
+        "manual" => Ok(crate::commands::envvar::EnvVarSnapshotCreationMode::Manual),
+        "automatic" | "auto" => Ok(crate::commands::envvar::EnvVarSnapshotCreationMode::Automatic),
+        other => Err(format!(
+            "Invalid snapshot mode '{}'. Expected one of: manual, automatic",
             other
         )),
     }
@@ -1218,7 +1241,10 @@ async fn cmd_update(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_
         }
 
         if !p.is_available().await {
-            let reason = provider_unavailable_reason();
+            let reason = p
+                .unavailable_reason()
+                .await
+                .unwrap_or_else(provider_unavailable_reason);
             provider_outcomes.push(CliProviderOutcome {
                 provider: p.id().to_string(),
                 status: SUPPORT_STATUS_UNSUPPORTED.to_string(),
@@ -2782,7 +2808,7 @@ async fn cmd_profiles(
 // ── Subcommand: envvar ──────────────────────────────────────────
 
 async fn cmd_envvar(
-    _ctx: &CliContext,
+    ctx: &CliContext,
     matches: &tauri_plugin_cli::Matches,
     json_mode: bool,
 ) -> i32 {
@@ -3773,6 +3799,209 @@ async fn cmd_envvar(
                 }
                 Err(e) => runtime_error(command, json_mode, format!("Shell guidance error: {}", e)),
             }
+        }
+        "snapshot-list" => {
+            let command = "envvar.snapshot-list";
+            match crate::commands::envvar::list_envvar_snapshot_bundles(&ctx.settings).await {
+                Ok(snapshots) => {
+                    if json_mode {
+                        print_command_json(command, &snapshots);
+                    } else if snapshots.is_empty() {
+                        println!("No envvar snapshots found");
+                    } else {
+                        let rows: Vec<Vec<String>> = snapshots
+                            .iter()
+                            .map(|item| {
+                                vec![
+                                    item.name.clone(),
+                                    item.creation_mode.as_str().to_string(),
+                                    item
+                                        .source_action
+                                        .clone()
+                                        .unwrap_or_else(|| "-".to_string()),
+                                    item.scopes.iter().map(|scope| scope_to_string(*scope)).collect::<Vec<_>>().join(","),
+                                    item.integrity_state.clone(),
+                                ]
+                            })
+                            .collect();
+                        print_table(&["NAME", "MODE", "SOURCE", "SCOPES", "INTEGRITY"], &rows);
+                    }
+                    EXIT_OK
+                }
+                Err(e) => runtime_error(command, json_mode, format!("Snapshot list error: {}", e)),
+            }
+        }
+        "snapshot-create" => {
+            let command = "envvar.snapshot-create";
+            let mode = match parse_envvar_snapshot_mode(get_string(&subcmd.matches.args, "mode")) {
+                Ok(value) => value,
+                Err(msg) => return usage_error(command, json_mode, msg),
+            };
+            let scope_values = get_string_list(&subcmd.matches.args, "scopes");
+            let scopes = if scope_values.is_empty() {
+                vec![EnvVarScope::User, EnvVarScope::System]
+            } else {
+                let mut parsed = Vec::new();
+                for raw_scope in scope_values {
+                    match parse_env_scope(Some(raw_scope), EnvVarScope::User) {
+                        Ok(scope) => parsed.push(scope),
+                        Err(msg) => return usage_error(command, json_mode, msg),
+                    }
+                }
+                parsed
+            };
+            let source_action = get_string(&subcmd.matches.args, "source-action");
+            let note = get_string(&subcmd.matches.args, "note");
+
+            let payload = match crate::commands::envvar::capture_envvar_snapshot_payload(&scopes).await {
+                Ok(value) => value,
+                Err(e) => return runtime_error(command, json_mode, format!("Snapshot capture error: {}", e)),
+            };
+            match crate::commands::envvar::write_envvar_snapshot_bundle(
+                &ctx.settings,
+                &payload,
+                mode,
+                source_action.as_deref(),
+                note.as_deref(),
+                None,
+            )
+            .await
+            {
+                Ok(snapshot) => {
+                    if json_mode {
+                        print_command_json(command, &snapshot);
+                    } else {
+                        println!("Created envvar snapshot: {}", snapshot.path);
+                    }
+                    EXIT_OK
+                }
+                Err(e) => runtime_error(command, json_mode, format!("Snapshot create error: {}", e)),
+            }
+        }
+        "snapshot-protection" => {
+            let command = "envvar.snapshot-protection";
+            let action = match get_string(&subcmd.matches.args, "action") {
+                Some(value) => value,
+                None => return usage_error(command, json_mode, "action is required"),
+            };
+            let scope = match parse_env_scope(get_string(&subcmd.matches.args, "scope"), EnvVarScope::User) {
+                Ok(value) => value,
+                Err(msg) => return usage_error(command, json_mode, msg),
+            };
+            match crate::commands::envvar::get_envvar_backup_protection_for_settings(
+                &ctx.settings,
+                &action,
+                scope,
+            )
+            .await
+            {
+                Ok(state) => {
+                    if json_mode {
+                        print_command_json(command, &state);
+                    } else {
+                        println!("Protection state: {} [{}]", state.state, state.reason_code);
+                        println!("{}", state.reason);
+                    }
+                    if matches!(state.state.as_str(), "will_create" | "will_reuse") {
+                        EXIT_OK
+                    } else {
+                        EXIT_ERROR
+                    }
+                }
+                Err(e) => runtime_error(command, json_mode, format!("Snapshot protection error: {}", e)),
+            }
+        }
+        "snapshot-preview" => {
+            let command = "envvar.snapshot-preview";
+            let path = match get_string(&subcmd.matches.args, "path") {
+                Some(value) => value,
+                None => return usage_error(command, json_mode, "snapshot path is required"),
+            };
+            let scope_values = get_string_list(&subcmd.matches.args, "scopes");
+            let mut scopes = Vec::new();
+            for raw_scope in scope_values {
+                match parse_env_scope(Some(raw_scope), EnvVarScope::User) {
+                    Ok(scope) => scopes.push(scope),
+                    Err(msg) => return usage_error(command, json_mode, msg),
+                }
+            }
+            match crate::commands::envvar::preview_envvar_snapshot_for_settings(&ctx.settings, &path, &scopes).await {
+                Ok(preview) => {
+                    if json_mode {
+                        print_command_json(command, &preview);
+                    } else {
+                        println!("Snapshot preview for {}", preview.created_at);
+                        let rows: Vec<Vec<String>> = preview
+                            .segments
+                            .iter()
+                            .map(|segment| {
+                                vec![
+                                    scope_to_string(segment.scope),
+                                    segment.added_variables.to_string(),
+                                    segment.changed_variables.to_string(),
+                                    segment.removed_variables.to_string(),
+                                    if segment.skipped { "yes".into() } else { "no".into() },
+                                ]
+                            })
+                            .collect();
+                        print_table(&["SCOPE", "ADD", "CHANGE", "REMOVE", "SKIPPED"], &rows);
+                    }
+                    EXIT_OK
+                }
+                Err(e) => runtime_error(command, json_mode, format!("Snapshot preview error: {}", e)),
+            }
+        }
+        "snapshot-restore" => {
+            let command = "envvar.snapshot-restore";
+            let path = match get_string(&subcmd.matches.args, "path") {
+                Some(value) => value,
+                None => return usage_error(command, json_mode, "snapshot path is required"),
+            };
+            let scope_values = get_string_list(&subcmd.matches.args, "scopes");
+            let mut scopes = Vec::new();
+            for raw_scope in scope_values {
+                match parse_env_scope(Some(raw_scope), EnvVarScope::User) {
+                    Ok(scope) => scopes.push(scope),
+                    Err(msg) => return usage_error(command, json_mode, msg),
+                }
+            }
+            match crate::commands::envvar::restore_envvar_snapshot_for_settings(&ctx.settings, &path, &scopes).await {
+                Ok(result) => {
+                    if json_mode {
+                        print_command_json(command, &result);
+                    } else {
+                        println!(
+                            "Restored scopes: {} [{}]",
+                            result.restored_scopes.iter().map(|scope| scope_to_string(*scope)).collect::<Vec<_>>().join(","),
+                            result.status
+                        );
+                        if let Some(message) = &result.message {
+                            println!("{}", message);
+                        }
+                    }
+                    if result.success { EXIT_OK } else { EXIT_ERROR }
+                }
+                Err(e) => runtime_error(command, json_mode, format!("Snapshot restore error: {}", e)),
+            }
+        }
+        "snapshot-delete" => {
+            let command = "envvar.snapshot-delete";
+            let path = match get_string(&subcmd.matches.args, "path") {
+                Some(value) => value,
+                None => return usage_error(command, json_mode, "snapshot path is required"),
+            };
+            let result = crate::core::backup::delete_backup_with_result(std::path::Path::new(&path)).await;
+            if json_mode {
+                print_command_json(command, &result);
+            } else if result.success {
+                println!("Deleted envvar snapshot: {}", path);
+            } else {
+                eprintln!(
+                    "Delete snapshot failed: {}",
+                    result.error.unwrap_or_else(|| "unknown error".to_string())
+                );
+            }
+            if result.success { EXIT_OK } else { EXIT_ERROR }
         }
         other => usage_error(
             COMMAND,

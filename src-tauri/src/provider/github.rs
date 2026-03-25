@@ -2,7 +2,7 @@ use super::traits::*;
 use crate::download::{AssetLike, AssetPicker, LibcType};
 use crate::error::{CogniaError, CogniaResult};
 use crate::platform::{
-    env::{current_arch, current_platform, detect_libc, Architecture, Platform},
+    env::{Architecture, Platform, current_arch, current_platform, detect_libc},
     fs,
     network::HttpClient,
 };
@@ -74,6 +74,23 @@ impl GitHubProvider {
             .await
     }
 
+    pub async fn list_workflow_artifacts(
+        &self,
+        repo: &str,
+    ) -> CogniaResult<Vec<GitHubWorkflowArtifact>> {
+        #[derive(Deserialize)]
+        struct WorkflowArtifactsResponse {
+            artifacts: Vec<GitHubWorkflowArtifact>,
+        }
+
+        self.api_get::<WorkflowArtifactsResponse>(&format!(
+            "/repos/{}/actions/artifacts?per_page=30",
+            repo
+        ))
+        .await
+        .map(|response| response.artifacts)
+    }
+
     pub async fn get_release_by_tag(&self, repo: &str, tag: &str) -> CogniaResult<GitHubRelease> {
         self.api_get(&format!("/repos/{}/releases/tags/{}", repo, tag))
             .await
@@ -109,6 +126,13 @@ impl GitHubProvider {
     /// Get the API URL for downloading a release asset (required for private repos)
     pub fn get_asset_api_download_url(&self, repo: &str, asset_id: u64) -> String {
         format!("{}/repos/{}/releases/assets/{}", GITHUB_API, repo, asset_id)
+    }
+
+    pub fn get_workflow_artifact_download_url(&self, repo: &str, artifact_id: u64) -> String {
+        format!(
+            "{}/repos/{}/actions/artifacts/{}/zip",
+            GITHUB_API, repo, artifact_id
+        )
     }
 
     /// Get HTTP headers needed for authenticated downloads
@@ -247,6 +271,26 @@ pub struct GitHubAsset {
     pub browser_download_url: String,
     pub content_type: Option<String>,
     pub download_count: Option<u64>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct GitHubWorkflowArtifact {
+    pub id: u64,
+    pub name: String,
+    pub size_in_bytes: u64,
+    pub archive_download_url: String,
+    pub expired: bool,
+    pub created_at: Option<String>,
+    pub expires_at: Option<String>,
+    pub workflow_run: Option<GitHubWorkflowRunRef>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct GitHubWorkflowRunRef {
+    pub id: u64,
+    pub run_number: Option<u64>,
+    pub head_branch: Option<String>,
+    pub head_sha: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -530,6 +574,16 @@ mod tests {
         assert_eq!(
             url,
             format!("{}/repos/owner/repo/releases/assets/12345", GITHUB_API)
+        );
+    }
+
+    #[test]
+    fn test_get_workflow_artifact_download_url() {
+        let provider = GitHubProvider::new();
+        let url = provider.get_workflow_artifact_download_url("owner/repo", 777);
+        assert_eq!(
+            url,
+            format!("{}/repos/owner/repo/actions/artifacts/777/zip", GITHUB_API)
         );
     }
 

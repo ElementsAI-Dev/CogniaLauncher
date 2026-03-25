@@ -6,8 +6,13 @@ const JAVA_POM_SOURCE: &str = "pom.xml (java.version)";
 const JAVA_GRADLE_SOURCE: &str = "build.gradle (sourceCompatibility)";
 const JAVA_GRADLE_WRAPPER_SOURCE: &str =
     "gradle/wrapper/gradle-wrapper.properties (distributionUrl)";
-const JAVA_MAVEN_WRAPPER_SOURCE: &str =
-    ".mvn/wrapper/maven-wrapper.properties (distributionUrl)";
+const JAVA_MAVEN_WRAPPER_SOURCE: &str = ".mvn/wrapper/maven-wrapper.properties (distributionUrl)";
+const CPP_CMAKE_PRESETS_SOURCE: &str = "CMakePresets.json (CMAKE_CXX_STANDARD)";
+const CPP_CMAKE_USER_PRESETS_SOURCE: &str = "CMakeUserPresets.json (CMAKE_CXX_STANDARD)";
+const CPP_VCPKG_MANIFEST_SOURCE: &str = "vcpkg.json";
+const CPP_VCPKG_CONFIGURATION_SOURCE: &str = "vcpkg-configuration.json";
+const CPP_CONANFILE_TXT_SOURCE: &str = "conanfile.txt";
+const CPP_CONANFILE_PY_SOURCE: &str = "conanfile.py";
 
 /// Default detection sources for a logical environment type.
 ///
@@ -153,8 +158,14 @@ pub fn default_detection_sources(env_type: &str) -> &'static [&'static str] {
         ],
         "cpp" => &[
             "CMakeLists.txt (CMAKE_CXX_STANDARD)",
+            CPP_CMAKE_PRESETS_SOURCE,
+            CPP_CMAKE_USER_PRESETS_SOURCE,
             "meson.build (cpp_std)",
             "xmake.lua (set_languages c++)",
+            CPP_VCPKG_MANIFEST_SOURCE,
+            CPP_VCPKG_CONFIGURATION_SOURCE,
+            CPP_CONANFILE_TXT_SOURCE,
+            CPP_CONANFILE_PY_SOURCE,
             ".tool-versions",
             "mise.toml",
         ],
@@ -219,6 +230,8 @@ pub fn classify_detection_source(env_type: &str, source: &str) -> String {
 
     if source.contains("pom.xml")
         || source.contains("build.gradle")
+        || source.contains("CMakePresets.json")
+        || source.contains("CMakeUserPresets.json")
         || source.contains("package.json")
         || source.contains("build.zig.zon")
         || source.contains("Cargo.toml")
@@ -227,6 +240,9 @@ pub fn classify_detection_source(env_type: &str, source: &str) -> String {
         || source.contains("pyproject.toml")
         || source.contains("pubspec.yaml")
         || source.contains("Gemfile")
+        || source.contains("conanfile")
+        || source == CPP_VCPKG_MANIFEST_SOURCE
+        || source == CPP_VCPKG_CONFIGURATION_SOURCE
         || source.contains("manifest")
     {
         "manifest".to_string()
@@ -2104,8 +2120,43 @@ async fn detect_cpp(dir: &Path, source: &str) -> CogniaResult<Option<DetectedVal
         "CMakeLists.txt (CMAKE_CXX_STANDARD)" => {
             read_cmake_standard(dir.join("CMakeLists.txt"), "CMAKE_CXX_STANDARD", source).await
         }
+        CPP_CMAKE_PRESETS_SOURCE => {
+            read_cmake_presets_standard(
+                dir.join("CMakePresets.json"),
+                "CMAKE_CXX_STANDARD",
+                source,
+                "cmake preset",
+            )
+            .await
+        }
+        CPP_CMAKE_USER_PRESETS_SOURCE => {
+            read_cmake_presets_standard(
+                dir.join("CMakeUserPresets.json"),
+                "CMAKE_CXX_STANDARD",
+                source,
+                "cmake user preset",
+            )
+            .await
+        }
         "meson.build (cpp_std)" => read_meson_build_cpp_std(dir.join("meson.build")).await,
         "xmake.lua (set_languages c++)" => read_xmake_lua_cpp_std(dir.join("xmake.lua")).await,
+        CPP_VCPKG_MANIFEST_SOURCE => {
+            read_marker_file(dir.join("vcpkg.json"), "vcpkg manifest", source).await
+        }
+        CPP_VCPKG_CONFIGURATION_SOURCE => {
+            read_marker_file(
+                dir.join("vcpkg-configuration.json"),
+                "vcpkg configuration",
+                source,
+            )
+            .await
+        }
+        CPP_CONANFILE_TXT_SOURCE => {
+            read_conan_cpp_context(dir.join("conanfile.txt"), "conan recipe", source).await
+        }
+        CPP_CONANFILE_PY_SOURCE => {
+            read_conan_cpp_context(dir.join("conanfile.py"), "conan recipe", source).await
+        }
         ".tool-versions" => {
             read_tool_versions(
                 dir.join(".tool-versions"),
@@ -2155,6 +2206,135 @@ async fn read_cmake_standard(
     }
 
     Ok(None)
+}
+
+async fn read_marker_file(
+    path: PathBuf,
+    marker_value: &str,
+    source_label: &str,
+) -> CogniaResult<Option<DetectedValue>> {
+    if !path.is_file() {
+        return Ok(None);
+    }
+
+    Ok(Some(DetectedValue {
+        value: marker_value.to_string(),
+        source: source_label.to_string(),
+        path,
+    }))
+}
+
+async fn read_conan_cpp_context(
+    path: PathBuf,
+    fallback_value: &str,
+    source_label: &str,
+) -> CogniaResult<Option<DetectedValue>> {
+    if !path.is_file() {
+        return Ok(None);
+    }
+
+    let content = match crate::platform::fs::read_file_string(&path).await {
+        Ok(s) => s,
+        Err(_) => return Ok(None),
+    };
+
+    let re = match regex::Regex::new(r#"compiler\.cppstd\s*[:=]\s*['"]?(?:gnu\+\+|c\+\+)?(\d+)"#) {
+        Ok(r) => r,
+        Err(_) => return Ok(None),
+    };
+
+    let value = re
+        .captures(&content)
+        .and_then(|caps| caps.get(1))
+        .map(|standard| format!("C++{}", standard.as_str().trim()))
+        .unwrap_or_else(|| fallback_value.to_string());
+
+    Ok(Some(DetectedValue {
+        value,
+        source: source_label.to_string(),
+        path,
+    }))
+}
+
+async fn read_cmake_presets_standard(
+    path: PathBuf,
+    variable: &str,
+    source_label: &str,
+    fallback_value: &str,
+) -> CogniaResult<Option<DetectedValue>> {
+    if !path.is_file() {
+        return Ok(None);
+    }
+
+    let content = match crate::platform::fs::read_file_string(&path).await {
+        Ok(s) => s,
+        Err(_) => return Ok(None),
+    };
+
+    let json: serde_json::Value = match serde_json::from_str(&content) {
+        Ok(value) => value,
+        Err(_) => {
+            return Ok(Some(DetectedValue {
+                value: fallback_value.to_string(),
+                source: source_label.to_string(),
+                path,
+            }));
+        }
+    };
+
+    let value = find_cmake_preset_variable(&json, variable)
+        .map(|standard| format!("C++{}", standard))
+        .unwrap_or_else(|| fallback_value.to_string());
+
+    Ok(Some(DetectedValue {
+        value,
+        source: source_label.to_string(),
+        path,
+    }))
+}
+
+fn find_cmake_preset_variable(value: &serde_json::Value, variable: &str) -> Option<String> {
+    match value {
+        serde_json::Value::Object(map) => {
+            if let Some(found) = map.get(variable) {
+                if let Some(parsed) = normalize_cmake_preset_standard(found) {
+                    return Some(parsed);
+                }
+            }
+
+            map.values()
+                .find_map(|child| find_cmake_preset_variable(child, variable))
+        }
+        serde_json::Value::Array(items) => items
+            .iter()
+            .find_map(|child| find_cmake_preset_variable(child, variable)),
+        _ => None,
+    }
+}
+
+fn normalize_cmake_preset_standard(value: &serde_json::Value) -> Option<String> {
+    match value {
+        serde_json::Value::String(raw) => {
+            let trimmed = raw.trim();
+            if trimmed.is_empty() {
+                return None;
+            }
+            let digits = trimmed
+                .trim_start_matches("C++")
+                .trim_start_matches("c++")
+                .trim();
+            if digits.chars().all(|ch| ch.is_ascii_digit()) {
+                Some(digits.to_string())
+            } else {
+                None
+            }
+        }
+        serde_json::Value::Number(raw) => Some(raw.to_string()),
+        serde_json::Value::Object(map) => {
+            map.get("value").and_then(normalize_cmake_preset_standard)
+        }
+        _ => None,
+    }
 }
 
 /// meson.build `c_std` — parse `default_options: ['c_std=c17']` or `'c_std': 'c17'`
@@ -4364,6 +4544,27 @@ rust-version = "1.70"
     }
 
     #[tokio::test]
+    async fn default_detection_sources_cpp_contract_is_explicit() {
+        // Drift guard: C++ source ordering defines precedence across provider markers and generic files.
+        assert_eq!(
+            default_detection_sources("cpp"),
+            &[
+                "CMakeLists.txt (CMAKE_CXX_STANDARD)",
+                "CMakePresets.json (CMAKE_CXX_STANDARD)",
+                "CMakeUserPresets.json (CMAKE_CXX_STANDARD)",
+                "meson.build (cpp_std)",
+                "xmake.lua (set_languages c++)",
+                "vcpkg.json",
+                "vcpkg-configuration.json",
+                "conanfile.txt",
+                "conanfile.py",
+                ".tool-versions",
+                "mise.toml",
+            ],
+        );
+    }
+
+    #[tokio::test]
     async fn default_enabled_node_includes_all_supported_sources() {
         let enabled = default_enabled_detection_sources("node");
         assert_eq!(
@@ -4557,5 +4758,109 @@ rust-version = "1.70"
             .unwrap()
             .unwrap();
         assert_eq!(detected.version, "C++17");
+    }
+
+    #[tokio::test]
+    async fn cpp_detects_cmake_presets_cpp_standard() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join("CMakePresets.json"),
+            r#"{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "default",
+      "cacheVariables": {
+        "CMAKE_CXX_STANDARD": "23"
+      }
+    }
+  ]
+}"#,
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["CMakePresets.json (CMAKE_CXX_STANDARD)".to_string()];
+        let detected = detect_env_version("cpp", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.version, "C++23");
+        assert_eq!(detected.source, "CMakePresets.json (CMAKE_CXX_STANDARD)");
+        assert_eq!(detected.source_type, "manifest");
+    }
+
+    #[tokio::test]
+    async fn cpp_detects_vcpkg_manifest_context() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join("vcpkg.json"),
+            r#"{
+  "name": "demo",
+  "dependencies": ["fmt"]
+}"#,
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["vcpkg.json".to_string()];
+        let detected = detect_env_version("cpp", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.version, "vcpkg manifest");
+        assert_eq!(detected.source, "vcpkg.json");
+        assert_eq!(detected.source_type, "manifest");
+    }
+
+    #[tokio::test]
+    async fn cpp_detects_conanfile_txt_cppstd() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join("conanfile.txt"),
+            "[settings]\ncompiler=msvc\ncompiler.version=194\ncompiler.cppstd=20\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["conanfile.txt".to_string()];
+        let detected = detect_env_version("cpp", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.version, "C++20");
+        assert_eq!(detected.source, "conanfile.txt");
+        assert_eq!(detected.source_type, "manifest");
+    }
+
+    #[tokio::test]
+    async fn cpp_provider_marker_takes_priority_over_tool_versions() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(root.join(".tool-versions"), "cpp 17\n")
+            .await
+            .unwrap();
+        crate::platform::fs::write_file_string(
+            root.join("vcpkg.json"),
+            r#"{"name":"demo","dependencies":["fmt"]}"#,
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["vcpkg.json".to_string(), ".tool-versions".to_string()];
+        let detected = detect_env_version("cpp", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.version, "vcpkg manifest");
+        assert_eq!(detected.source, "vcpkg.json");
+        assert_eq!(detected.source_type, "manifest");
     }
 }

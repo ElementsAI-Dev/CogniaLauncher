@@ -109,11 +109,13 @@ pub use environment::{
 };
 pub use envvar::{
     envvar_add_path_entry, envvar_deduplicate_path, envvar_detect_conflicts, envvar_expand,
-    envvar_export_env_file, envvar_get, envvar_get_path, envvar_get_persistent,
+    envvar_create_snapshot, envvar_delete_snapshot, envvar_export_env_file, envvar_get,
+    envvar_get_backup_protection, envvar_get_path, envvar_get_persistent,
     envvar_get_support_snapshot, envvar_import_env_file, envvar_list_all, envvar_list_persistent,
-    envvar_list_persistent_typed, envvar_list_shell_profiles, envvar_read_shell_profile,
-    envvar_remove_path_entry, envvar_remove_persistent, envvar_remove_process,
-    envvar_reorder_path, envvar_set_persistent, envvar_set_process,
+    envvar_list_persistent_typed, envvar_list_shell_profiles, envvar_list_snapshots,
+    envvar_preview_snapshot_restore, envvar_read_shell_profile, envvar_remove_path_entry,
+    envvar_remove_persistent, envvar_remove_process, envvar_reorder_path,
+    envvar_restore_snapshot, envvar_set_persistent, envvar_set_process,
 };
 pub use feedback::{
     feedback_count, feedback_delete, feedback_export, feedback_get, feedback_list, feedback_save,
@@ -154,10 +156,11 @@ pub use git::{
     git_verify_commit, git_verify_tag, git_get_support_snapshot,
 };
 pub use github::{
-    github_clear_token, github_download_asset, github_download_source, github_get_release_assets,
-    github_get_repo_info, github_get_token, github_list_branches, github_list_releases,
-    github_list_tags, github_parse_url, github_set_token, github_validate_repo,
-    github_validate_token,
+    github_clear_token, github_download_asset, github_download_source,
+    github_download_workflow_artifact, github_get_release_assets, github_get_repo_info,
+    github_get_token, github_list_branches, github_list_releases,
+    github_list_tags, github_list_workflow_artifacts, github_parse_url, github_set_token,
+    github_validate_repo, github_validate_token,
 };
 pub use gitlab::{
     gitlab_clear_token, gitlab_download_asset, gitlab_download_job_artifacts,

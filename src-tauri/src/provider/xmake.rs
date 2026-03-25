@@ -4,6 +4,7 @@ use crate::platform::{
     env::Platform,
     process::{self, ProcessOptions},
 };
+use crate::provider::support::SupportReason;
 use crate::resolver::Dependency;
 use async_trait::async_trait;
 use std::collections::HashSet;
@@ -30,6 +31,24 @@ use std::time::Duration;
 ///   - `xrepo add-repo/rm-repo/list-repo/update-repo` — Repository management
 ///   - `xmake --version` — Version info
 pub struct XmakeProvider;
+
+fn classify_xmake_binary_presence(has_xmake: bool, has_xrepo: bool) -> Option<SupportReason> {
+    if !has_xmake {
+        return Some(SupportReason {
+            code: "xmake-executable-missing",
+            message: "xmake executable was not found on PATH".into(),
+        });
+    }
+
+    if !has_xrepo {
+        return Some(SupportReason {
+            code: "xrepo-executable-missing",
+            message: "xrepo executable was not found on PATH".into(),
+        });
+    }
+
+    None
+}
 
 impl XmakeProvider {
     pub fn new() -> Self {
@@ -109,6 +128,34 @@ impl XmakeProvider {
                         .map(|h| PathBuf::from(h).join(".xmake").join("packages"))
                 }
             })
+    }
+
+    async fn get_unavailable_reason() -> SupportReason {
+        let has_xmake = process::which("xmake").await.is_some();
+        let has_xrepo = process::which("xrepo").await.is_some();
+        if let Some(reason) = classify_xmake_binary_presence(has_xmake, has_xrepo) {
+            return reason;
+        }
+
+        let opts = ProcessOptions::new().with_timeout(Duration::from_secs(10));
+        match process::execute("xrepo", &["--version"], Some(opts)).await {
+            Ok(output) if !output.success => SupportReason {
+                code: "xrepo-version-probe-failed",
+                message: if output.stderr.trim().is_empty() {
+                    "xrepo version probe failed".into()
+                } else {
+                    output.stderr.trim().to_string()
+                },
+            },
+            Ok(_) => SupportReason {
+                code: "xmake-provider-unavailable",
+                message: "xmake/xrepo is unavailable for an unspecified reason".into(),
+            },
+            Err(err) => SupportReason {
+                code: "xrepo-version-probe-failed",
+                message: err.to_string(),
+            },
+        }
     }
 
     /// Parse `xrepo search` output
@@ -581,12 +628,27 @@ impl Provider for XmakeProvider {
         if process::which("xmake").await.is_none() {
             return false;
         }
+        if process::which("xrepo").await.is_none() {
+            return false;
+        }
         // Verify xmake works
         let opts = ProcessOptions::new().with_timeout(Duration::from_secs(10));
-        match process::execute("xmake", &["--version"], Some(opts)).await {
+        let xmake_ok = match process::execute("xmake", &["--version"], Some(opts.clone())).await {
+            Ok(output) => output.success,
+            Err(_) => false,
+        };
+        if !xmake_ok {
+            return false;
+        }
+
+        match process::execute("xrepo", &["--version"], Some(opts)).await {
             Ok(output) => output.success,
             Err(_) => false,
         }
+    }
+
+    async fn unavailable_reason(&self) -> Option<SupportReason> {
+        Some(Self::get_unavailable_reason().await)
     }
 
     async fn search(
@@ -682,9 +744,7 @@ impl Provider for XmakeProvider {
 
     async fn get_dependencies(&self, name: &str, _version: &str) -> CogniaResult<Vec<Dependency>> {
         // Try xrepo info to get deps
-        let out = Self::run_xrepo_combined(&["info", name]).await;
-
-        if let Ok(output) = out {
+        if let Ok(output) = Self::run_xrepo_combined(&["info", name]).await {
             let info = Self::parse_info_output(&output);
             if !info.deps.is_empty() {
                 return Ok(info
@@ -699,8 +759,7 @@ impl Provider for XmakeProvider {
         }
 
         // Fallback: try xmake require --info for dependency info
-        let out = Self::run_xmake(&["require", "--info", name]).await;
-        if let Ok(output) = out {
+        if let Ok(output) = Self::run_xmake(&["require", "--info", name]).await {
             let info = Self::parse_info_output(&output);
             if !info.deps.is_empty() {
                 return Ok(info
@@ -714,7 +773,10 @@ impl Provider for XmakeProvider {
             }
         }
 
-        Ok(vec![])
+        Err(CogniaError::Provider(format!(
+            "failed to resolve dependencies for {} via xrepo/xmake metadata",
+            name
+        )))
     }
 
     async fn get_installed_version(&self, name: &str) -> CogniaResult<Option<String>> {
@@ -1204,5 +1266,22 @@ myrepo https://github.com/mygroup/myrepo.git
         let (name, version) = XmakeProvider::split_name_version("boost-system");
         assert_eq!(name, "boost-system");
         assert_eq!(version, None);
+    }
+
+    #[test]
+    fn test_classify_xmake_binary_presence_missing_xmake() {
+        let reason = classify_xmake_binary_presence(false, true).expect("reason");
+        assert_eq!(reason.code, "xmake-executable-missing");
+    }
+
+    #[test]
+    fn test_classify_xmake_binary_presence_missing_xrepo() {
+        let reason = classify_xmake_binary_presence(true, false).expect("reason");
+        assert_eq!(reason.code, "xrepo-executable-missing");
+    }
+
+    #[test]
+    fn test_classify_xmake_binary_presence_none_when_both_exist() {
+        assert!(classify_xmake_binary_presence(true, true).is_none());
     }
 }

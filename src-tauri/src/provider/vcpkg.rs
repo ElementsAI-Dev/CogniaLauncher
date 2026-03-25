@@ -4,6 +4,7 @@ use crate::platform::{
     env::Platform,
     process::{self, ProcessOptions},
 };
+use crate::provider::support::SupportReason;
 use crate::resolver::Dependency;
 use async_trait::async_trait;
 use std::collections::HashSet;
@@ -134,6 +135,51 @@ impl VcpkgProvider {
         }
         Ok(None)
     }
+
+    async fn get_unavailable_reason(&self) -> SupportReason {
+        let exe = self.get_vcpkg_exe();
+        if let Some(root) = &self.vcpkg_root {
+            let exe_path = if cfg!(windows) {
+                root.join("vcpkg.exe")
+            } else {
+                root.join("vcpkg")
+            };
+            if !exe_path.exists() {
+                return SupportReason {
+                    code: "vcpkg-executable-missing",
+                    message: format!(
+                        "VCPKG_ROOT points to {}, but the vcpkg executable was not found",
+                        root.display()
+                    ),
+                };
+            }
+        } else if process::which("vcpkg").await.is_none() {
+            return SupportReason {
+                code: "vcpkg-executable-missing",
+                message: "vcpkg executable was not found on PATH".into(),
+            };
+        }
+
+        let opts = ProcessOptions::new().with_timeout(Duration::from_secs(10));
+        match process::execute(&exe, &["version"], Some(opts)).await {
+            Ok(output) if output.success => SupportReason {
+                code: "vcpkg-provider-unavailable",
+                message: "vcpkg is unavailable for an unspecified reason".into(),
+            },
+            Ok(output) => SupportReason {
+                code: "vcpkg-version-probe-failed",
+                message: if output.stderr.trim().is_empty() {
+                    "vcpkg version probe failed".into()
+                } else {
+                    output.stderr.trim().to_string()
+                },
+            },
+            Err(err) => SupportReason {
+                code: "vcpkg-version-probe-failed",
+                message: err.to_string(),
+            },
+        }
+    }
 }
 
 impl Default for VcpkgProvider {
@@ -190,6 +236,10 @@ impl Provider for VcpkgProvider {
             Ok(output) => output.success,
             Err(_) => false,
         }
+    }
+
+    async fn unavailable_reason(&self) -> Option<SupportReason> {
+        Some(self.get_unavailable_reason().await)
     }
 
     async fn search(
@@ -337,34 +387,44 @@ impl Provider for VcpkgProvider {
     async fn get_dependencies(&self, name: &str, _version: &str) -> CogniaResult<Vec<Dependency>> {
         let exe = self.get_vcpkg_exe();
         let opts = self.make_opts();
-        let out = process::execute(&exe, &["depend-info", name], Some(opts)).await;
-        if let Ok(result) = out {
-            if result.success {
-                // Output format: "package[core]: dep1, dep2, dep3"
-                return Ok(result
-                    .stdout
-                    .lines()
-                    .filter(|l| !l.trim().is_empty() && l.contains(':'))
-                    .flat_map(|line| {
-                        // Split at first colon only to handle "pkg[core]: deps"
-                        let deps_part = line.split_once(':').map(|x| x.1).unwrap_or("");
-                        deps_part
-                            .split(',')
-                            .filter(|s| !s.trim().is_empty())
-                            .map(|dep| {
-                                let dep_name = dep.trim().split('[').next().unwrap_or("").trim();
-                                Dependency {
-                                    name: dep_name.to_string(),
-                                    constraint: crate::resolver::VersionConstraint::Any,
-                                }
-                            })
-                            .collect::<Vec<_>>()
-                    })
-                    .filter(|d| !d.name.is_empty() && d.name != name)
-                    .collect());
-            }
+        let result = process::execute(&exe, &["depend-info", name], Some(opts)).await?;
+        if !result.success {
+            return Err(CogniaError::Provider(if result.stderr.trim().is_empty() {
+                format!("vcpkg depend-info failed for {}", name)
+            } else {
+                result.stderr
+            }));
         }
-        Ok(vec![])
+
+        let parsed: Vec<Dependency> = result
+            .stdout
+            .lines()
+            .filter(|l| !l.trim().is_empty() && l.contains(':'))
+            .flat_map(|line| {
+                let deps_part = line.split_once(':').map(|x| x.1).unwrap_or("");
+                deps_part
+                    .split(',')
+                    .filter(|s| !s.trim().is_empty())
+                    .map(|dep| {
+                        let dep_name = dep.trim().split('[').next().unwrap_or("").trim();
+                        Dependency {
+                            name: dep_name.to_string(),
+                            constraint: crate::resolver::VersionConstraint::Any,
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .filter(|d| !d.name.is_empty() && d.name != name)
+            .collect();
+
+        if parsed.is_empty() && !result.stdout.trim().is_empty() {
+            return Err(CogniaError::Provider(format!(
+                "failed to parse vcpkg depend-info output for {}",
+                name
+            )));
+        }
+
+        Ok(parsed)
     }
 
     async fn get_installed_version(&self, name: &str) -> CogniaResult<Option<String>> {
@@ -636,5 +696,15 @@ mod tests {
         let provider = VcpkgProvider::new();
         assert!(!provider.requires_elevation("install"));
         assert!(!provider.requires_elevation("uninstall"));
+    }
+
+    #[tokio::test]
+    async fn test_unavailable_reason_when_executable_missing_from_root() {
+        let provider = VcpkgProvider {
+            vcpkg_root: Some(PathBuf::from(r"Z:\missing-vcpkg-root")),
+            default_triplet: Some("x64-windows".into()),
+        };
+        let reason = provider.unavailable_reason().await.unwrap();
+        assert_eq!(reason.code, "vcpkg-executable-missing");
     }
 }

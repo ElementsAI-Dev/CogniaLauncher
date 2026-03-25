@@ -4,6 +4,7 @@ use crate::platform::{
     env::Platform,
     process::{self, ProcessOptions},
 };
+use crate::provider::support::SupportReason;
 use crate::resolver::Dependency;
 use async_trait::async_trait;
 use std::collections::HashSet;
@@ -27,6 +28,10 @@ use std::time::Duration;
 pub struct ConanProvider {
     /// Custom remote name (defaults to "conancenter")
     default_remote: String,
+}
+
+fn is_supported_conan_cli_output(text: &str) -> bool {
+    text.contains("version 2.") || text.contains("version 3.")
 }
 
 impl ConanProvider {
@@ -153,6 +158,45 @@ impl ConanProvider {
         }
         Ok(None)
     }
+
+    async fn get_unavailable_reason(&self) -> SupportReason {
+        if process::which("conan").await.is_none() {
+            return SupportReason {
+                code: "conan-executable-missing",
+                message: "conan executable was not found on PATH".into(),
+            };
+        }
+
+        let opts = ProcessOptions::new().with_timeout(Duration::from_secs(10));
+        match process::execute("conan", &["version"], Some(opts)).await {
+            Ok(output) if !output.success => SupportReason {
+                code: "conan-version-probe-failed",
+                message: if output.stderr.trim().is_empty() {
+                    "conan version probe failed".into()
+                } else {
+                    output.stderr.trim().to_string()
+                },
+            },
+            Ok(output) => {
+                let text = format!("{}{}", output.stdout, output.stderr);
+                if !is_supported_conan_cli_output(&text) {
+                    return SupportReason {
+                        code: "conan-legacy-cli",
+                        message: "Conan 2.x or newer is required for this provider".into(),
+                    };
+                }
+
+                SupportReason {
+                    code: "conan-provider-unavailable",
+                    message: "Conan is unavailable for an unspecified reason".into(),
+                }
+            }
+            Err(err) => SupportReason {
+                code: "conan-version-probe-failed",
+                message: err.to_string(),
+            },
+        }
+    }
 }
 
 impl Default for ConanProvider {
@@ -199,10 +243,14 @@ impl Provider for ConanProvider {
                 // Conan 2.x output: "Conan version 2.x.y"
                 // Ensure it's Conan 2.x (not 1.x which has different CLI)
                 let text = format!("{}{}", output.stdout, output.stderr);
-                text.contains("version 2.") || text.contains("version 3.")
+                is_supported_conan_cli_output(&text)
             }
             Err(_) => false,
         }
+    }
+
+    async fn unavailable_reason(&self) -> Option<SupportReason> {
+        Some(self.get_unavailable_reason().await)
     }
 
     async fn search(
@@ -386,77 +434,73 @@ impl Provider for ConanProvider {
                 if let Some(v) = versions.first() {
                     format!("{}/{}", name, v.version)
                 } else {
-                    return Ok(vec![]);
+                    return Err(CogniaError::Provider(format!(
+                        "failed to resolve Conan version for {} before dependency lookup",
+                        name
+                    )));
                 }
             } else {
-                return Ok(vec![]);
+                return Err(CogniaError::Provider(format!(
+                    "failed to query Conan versions for {} before dependency lookup",
+                    name
+                )));
             }
         } else {
             format!("{}/{}", name, version)
         };
 
         let requires_arg = format!("--requires={}", ref_str);
-        let out = self
+        let output = self
             .run_conan(&["graph", "info", &requires_arg, "--format=json"])
-            .await;
+            .await?;
 
-        if let Ok(output) = out {
-            // Parse JSON output for dependencies
-            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&output) {
-                let mut deps = Vec::new();
+        let json = serde_json::from_str::<serde_json::Value>(&output).map_err(|err| {
+            CogniaError::Provider(format!(
+                "failed to parse conan graph info output for {}: {}",
+                ref_str, err
+            ))
+        })?;
+        let mut deps = Vec::new();
 
-                // Conan 2.x graph info JSON has "nodes" array
-                if let Some(nodes) = json["nodes"].as_array() {
-                    for node in nodes {
-                        // Skip the root node (context == "consumer")
-                        if node["context"].as_str() == Some("consumer") {
-                            continue;
-                        }
-                        // Skip the package itself
-                        let node_ref = node["ref"].as_str().unwrap_or("");
-                        if node_ref.starts_with(&format!("{}/", name)) {
-                            continue;
-                        }
-
-                        if let Some((dep_name, _)) = Self::parse_ref(node_ref) {
-                            if !dep_name.is_empty() && dep_name != name {
-                                deps.push(Dependency {
-                                    name: dep_name,
-                                    constraint: crate::resolver::VersionConstraint::Any,
-                                });
-                            }
-                        }
-                    }
+        if let Some(nodes) = json["nodes"].as_array() {
+            for node in nodes {
+                if node["context"].as_str() == Some("consumer") {
+                    continue;
                 }
-                // Also check "graph" -> "nodes" format (varies by Conan version)
-                else if let Some(graph) = json.get("graph") {
-                    if let Some(nodes) = graph["nodes"].as_object() {
-                        for (_id, node) in nodes {
-                            let node_ref = node["ref"].as_str().unwrap_or("");
-                            if node_ref.starts_with(&format!("{}/", name))
-                                || node_ref == "conanfile"
-                            {
-                                continue;
-                            }
-                            if let Some((dep_name, _)) = Self::parse_ref(node_ref) {
-                                if !dep_name.is_empty() && dep_name != name {
-                                    deps.push(Dependency {
-                                        name: dep_name,
-                                        constraint: crate::resolver::VersionConstraint::Any,
-                                    });
-                                }
-                            }
-                        }
-                    }
+                let node_ref = node["ref"].as_str().unwrap_or("");
+                if node_ref.starts_with(&format!("{}/", name)) {
+                    continue;
                 }
 
-                if !deps.is_empty() {
-                    return Ok(deps);
+                if let Some((dep_name, _)) = Self::parse_ref(node_ref) {
+                    if !dep_name.is_empty() && dep_name != name {
+                        deps.push(Dependency {
+                            name: dep_name,
+                            constraint: crate::resolver::VersionConstraint::Any,
+                        });
+                    }
+                }
+            }
+        } else if let Some(graph) = json.get("graph") {
+            if let Some(nodes) = graph["nodes"].as_object() {
+                for (_id, node) in nodes {
+                    let node_ref = node["ref"].as_str().unwrap_or("");
+                    if node_ref.starts_with(&format!("{}/", name)) || node_ref == "conanfile" {
+                        continue;
+                    }
+                    if let Some((dep_name, _)) = Self::parse_ref(node_ref) {
+                        if !dep_name.is_empty() && dep_name != name {
+                            deps.push(Dependency {
+                                name: dep_name,
+                                constraint: crate::resolver::VersionConstraint::Any,
+                            });
+                        }
+                    }
                 }
             }
         }
 
-        Ok(vec![])
+        Ok(deps)
     }
 
     async fn get_installed_version(&self, name: &str) -> CogniaResult<Option<String>> {
@@ -718,5 +762,17 @@ Local Cache
     fn test_custom_remote() {
         let provider = ConanProvider::new().with_remote("my-remote");
         assert_eq!(provider.default_remote, "my-remote");
+    }
+
+    #[test]
+    fn test_supported_conan_cli_output_accepts_modern_versions() {
+        assert!(is_supported_conan_cli_output("Conan version 2.10.1"));
+        assert!(is_supported_conan_cli_output("Conan version 3.0.0"));
+    }
+
+    #[test]
+    fn test_supported_conan_cli_output_rejects_legacy_versions() {
+        assert!(!is_supported_conan_cli_output("Conan version 1.59.0"));
+        assert!(!is_supported_conan_cli_output("unexpected output"));
     }
 }

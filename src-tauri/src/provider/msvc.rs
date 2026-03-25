@@ -4,6 +4,7 @@ use crate::platform::{
     env::Platform,
     process::{self, ProcessOptions},
 };
+use crate::provider::support::SupportReason;
 use async_trait::async_trait;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
@@ -295,25 +296,35 @@ impl MsvcProvider {
     async fn resolve_usable_toolchain_uncached(
         &self,
     ) -> Result<ResolvedMsvcToolchain, MsvcDetectionIssue> {
-        if self.vswhere_path.is_none() {
-            return Err(MsvcDetectionIssue::new(MsvcDetectionReason::VswhereMissing));
-        }
-
-        let instances = self.query_vc_instances().await.map_err(|err| {
-            MsvcDetectionIssue::new(MsvcDetectionReason::NoVcInstance).with_detail(err.to_string())
-        })?;
-
-        if instances.is_empty() {
-            return Err(MsvcDetectionIssue::new(MsvcDetectionReason::NoVcInstance));
-        }
-
         let mut best_issue: Option<MsvcDetectionIssue> = None;
-        for instance in instances {
-            match self.validate_instance(instance).await {
-                Ok(validated) => return Ok(validated),
-                Err(issue) => {
-                    best_issue = choose_more_actionable_issue(best_issue, issue);
+
+        if self.vswhere_path.is_some() {
+            let instances = self.query_vc_instances().await.map_err(|err| {
+                MsvcDetectionIssue::new(MsvcDetectionReason::NoVcInstance)
+                    .with_detail(err.to_string())
+            })?;
+
+            if !instances.is_empty() {
+                for instance in instances {
+                    match self.validate_instance(instance).await {
+                        Ok(validated) => return Ok(validated),
+                        Err(issue) => {
+                            best_issue = choose_more_actionable_issue(best_issue, issue);
+                        }
+                    }
                 }
+            }
+        } else {
+            best_issue = choose_more_actionable_issue(
+                best_issue,
+                MsvcDetectionIssue::new(MsvcDetectionReason::VswhereMissing),
+            );
+        }
+
+        match self.resolve_developer_shell_toolchain().await {
+            Ok(toolchain) => return Ok(toolchain),
+            Err(issue) => {
+                best_issue = choose_more_actionable_issue(best_issue, issue);
             }
         }
 
@@ -335,6 +346,84 @@ impl MsvcProvider {
         self.resolve_usable_toolchain()
             .await
             .map_err(|issue| issue.to_error())
+    }
+
+    async fn resolve_developer_shell_toolchain(
+        &self,
+    ) -> Result<ResolvedMsvcToolchain, MsvcDetectionIssue> {
+        let mut candidates = Vec::new();
+
+        if let Some(path) = process::which("cl.exe").await {
+            candidates.push(PathBuf::from(path));
+        }
+
+        if let Ok(path) = std::env::var("VCToolsInstallDir") {
+            candidates.extend(candidate_cl_paths_from_vctools_install_dir(Path::new(
+                &path,
+            )));
+        }
+
+        if let Ok(path) = std::env::var("VCINSTALLDIR") {
+            candidates.extend(candidate_cl_paths_from_vcinstall_dir(Path::new(&path)));
+        }
+
+        candidates.sort();
+        candidates.dedup();
+
+        if candidates.is_empty() {
+            return Err(
+                MsvcDetectionIssue::new(MsvcDetectionReason::CompilerMissing)
+                    .with_instance("developer-shell")
+                    .with_detail("cl.exe was not found in PATH or developer-shell environment"),
+            );
+        }
+
+        let mut best_issue: Option<MsvcDetectionIssue> = None;
+        for candidate in candidates {
+            if !candidate.exists() {
+                best_issue = choose_more_actionable_issue(
+                    best_issue,
+                    MsvcDetectionIssue::new(MsvcDetectionReason::CompilerMissing)
+                        .with_instance("developer-shell")
+                        .with_detail(candidate.display().to_string()),
+                );
+                continue;
+            }
+
+            if !self.probe_cl_executable(&candidate).await {
+                best_issue = choose_more_actionable_issue(
+                    best_issue,
+                    MsvcDetectionIssue::new(MsvcDetectionReason::CompilerNotRunnable)
+                        .with_instance("developer-shell")
+                        .with_detail(candidate.display().to_string()),
+                );
+                continue;
+            }
+
+            let toolset_version = infer_toolset_version_from_cl_path(&candidate)
+                .unwrap_or_else(|| "developer-shell".to_string());
+            return Ok(ResolvedMsvcToolchain {
+                instance: VsInstance {
+                    instance_id: "developer-shell".to_string(),
+                    installation_path: candidate
+                        .parent()
+                        .unwrap_or_else(|| Path::new(""))
+                        .display()
+                        .to_string(),
+                    installation_version: toolset_version.clone(),
+                    display_name: "Developer Command Prompt".to_string(),
+                    product_id: Some("developer-shell".to_string()),
+                    is_prerelease: None,
+                },
+                toolset_version,
+                cl_exe_path: candidate,
+            });
+        }
+
+        Err(best_issue.unwrap_or_else(|| {
+            MsvcDetectionIssue::new(MsvcDetectionReason::CompilerMissing)
+                .with_instance("developer-shell")
+        }))
     }
 }
 
@@ -450,6 +539,42 @@ fn find_cl_exe(install_path: &Path, toolset_version: &str) -> Option<PathBuf> {
     }
 }
 
+fn candidate_cl_paths_from_vctools_install_dir(root: &Path) -> Vec<PathBuf> {
+    [
+        root.join("bin").join("Hostx64").join("x64").join("cl.exe"),
+        root.join("bin").join("Hostx86").join("x86").join("cl.exe"),
+    ]
+    .into_iter()
+    .collect()
+}
+
+fn candidate_cl_paths_from_vcinstall_dir(root: &Path) -> Vec<PathBuf> {
+    let tools_root = root.join("Tools").join("MSVC");
+    let mut candidates = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&tools_root) {
+        for entry in entries.flatten() {
+            let version_root = entry.path();
+            candidates.extend(candidate_cl_paths_from_vctools_install_dir(&version_root));
+        }
+    }
+    candidates
+}
+
+fn infer_toolset_version_from_cl_path(path: &Path) -> Option<String> {
+    let parts: Vec<String> = path
+        .iter()
+        .map(|part| part.to_string_lossy().to_string())
+        .collect();
+
+    for window in parts.windows(2) {
+        if window[0].eq_ignore_ascii_case("MSVC") {
+            return Some(window[1].clone());
+        }
+    }
+
+    None
+}
+
 // ---------------------------------------------------------------------------
 // Provider + SystemPackageProvider trait implementations
 // ---------------------------------------------------------------------------
@@ -478,6 +603,16 @@ impl Provider for MsvcProvider {
 
     async fn is_available(&self) -> bool {
         self.resolve_usable_toolchain().await.is_ok()
+    }
+
+    async fn unavailable_reason(&self) -> Option<SupportReason> {
+        self.resolve_usable_toolchain()
+            .await
+            .err()
+            .map(|issue| SupportReason {
+                code: issue.reason.code(),
+                message: issue.to_error().to_string(),
+            })
     }
 
     async fn search(
@@ -964,5 +1099,16 @@ mod tests {
         // Should NOT have Search, Install, Uninstall
         assert!(!caps.contains(&Capability::Install));
         assert!(!caps.contains(&Capability::Search));
+    }
+
+    #[test]
+    fn test_infer_toolset_version_from_cl_path() {
+        let path = PathBuf::from(
+            r"C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\bin\Hostx64\x64\cl.exe",
+        );
+        assert_eq!(
+            infer_toolset_version_from_cl_path(&path).as_deref(),
+            Some("14.44.35207")
+        );
     }
 }

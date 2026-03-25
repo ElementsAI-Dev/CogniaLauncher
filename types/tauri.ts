@@ -421,6 +421,13 @@ export interface CacheRepairResult {
   freed_human: string;
 }
 
+export interface CustomCacheEntry {
+  id: string;
+  displayName: string;
+  path: string;
+  category: string;
+}
+
 export interface CacheSettings {
   max_size: number;
   max_age_days: number;
@@ -429,6 +436,8 @@ export interface CacheSettings {
   auto_clean_threshold?: number;
   monitor_interval?: number;
   monitor_external?: boolean;
+  external_cache_excluded_providers?: string[];
+  custom_cache_entries?: CustomCacheEntry[];
 }
 
 export interface CleanPreviewItem {
@@ -1262,15 +1271,6 @@ export interface DownloadProgress {
   totalHuman: string | null;
 }
 
-export interface DownloadTask {
-  id: string;
-  url: string;
-  name: string;
-  destination: string;
-  state: 'queued' | 'downloading' | 'paused' | 'cancelled' | 'completed' | 'failed' | 'extracting';
-  progress: DownloadProgress;
-  error: string | null;
-  provider: string | null;
 export type DownloadSourceKind =
   | 'direct_url'
   | 'batch_item'
@@ -1342,6 +1342,15 @@ export interface DownloadArtifactProfile {
   suggestedFollowUps: DownloadSuggestedFollowUp[];
 }
 
+export interface DownloadTask {
+  id: string;
+  url: string;
+  name: string;
+  destination: string;
+  state: 'queued' | 'downloading' | 'paused' | 'cancelled' | 'completed' | 'failed' | 'extracting';
+  progress: DownloadProgress;
+  error: string | null;
+  provider: string | null;
   createdAt: string;
   startedAt: string | null;
   completedAt: string | null;
@@ -1361,6 +1370,9 @@ export interface DownloadArtifactProfile {
   autoRename?: boolean;
   recoverable?: boolean | null;
   failureReasonCode?: string | null;
+  installIntent?: DownloadInstallIntent;
+  sourceDescriptor?: DownloadSourceDescriptor | null;
+  artifactProfile?: DownloadArtifactProfile | null;
 }
 
 export interface DownloadQueueStats {
@@ -1370,9 +1382,6 @@ export interface DownloadQueueStats {
   paused: number;
   completed: number;
   failed: number;
-  installIntent?: DownloadInstallIntent;
-  sourceDescriptor?: DownloadSourceDescriptor | null;
-  artifactProfile?: DownloadArtifactProfile | null;
   cancelled: number;
   totalBytes: number;
   downloadedBytes: number;
@@ -1398,6 +1407,10 @@ export interface DownloadHistoryRecord {
   status: 'completed' | 'failed' | 'cancelled';
   error: string | null;
   provider: string | null;
+  metadata?: Record<string, string>;
+  installIntent?: DownloadInstallIntent;
+  sourceDescriptor?: DownloadSourceDescriptor | null;
+  artifactProfile?: DownloadArtifactProfile | null;
 }
 
 export interface DownloadHistoryStats {
@@ -1407,10 +1420,6 @@ export interface DownloadHistoryStats {
   cancelledCount: number;
   totalBytes: number;
   totalBytesHuman: string;
-  metadata?: Record<string, string>;
-  installIntent?: DownloadInstallIntent;
-  sourceDescriptor?: DownloadSourceDescriptor | null;
-  artifactProfile?: DownloadArtifactProfile | null;
   averageSpeed: number;
   averageSpeedHuman: string;
   successRate: number;
@@ -1442,6 +1451,9 @@ export interface DownloadRequest {
   deleteAfterExtract?: boolean;
   autoRename?: boolean;
   tags?: string[];
+  installIntent?: DownloadInstallIntent;
+  sourceDescriptor?: DownloadSourceDescriptor;
+  artifactProfile?: DownloadArtifactProfile;
 }
 
 export interface VerifyResult {
@@ -1451,9 +1463,6 @@ export interface VerifyResult {
   error: string | null;
 }
 
-  installIntent?: DownloadInstallIntent;
-  sourceDescriptor?: DownloadSourceDescriptor;
-  artifactProfile?: DownloadArtifactProfile;
 export interface DownloadShutdownOutcome {
   paused: number;
   fallbackCancelled: number;
@@ -2663,6 +2672,91 @@ export interface EnvVarPathMutationResult {
   shellGuidance: EnvVarShellGuidance[];
 }
 
+export type EnvVarSnapshotCreationMode = 'manual' | 'automatic';
+
+export interface EnvVarSnapshotScopePayload {
+  scope: EnvVarScope;
+  variables: PersistentEnvVar[];
+  pathEntries: string[];
+  variableFingerprint: string;
+  pathFingerprint: string;
+  restorable: boolean;
+}
+
+export interface EnvVarSnapshotPayload {
+  formatVersion: number;
+  createdAt: string;
+  creationMode?: EnvVarSnapshotCreationMode | null;
+  sourceAction?: string | null;
+  note?: string | null;
+  scopes: EnvVarSnapshotScopePayload[];
+}
+
+export interface EnvVarSnapshotInfo {
+  path: string;
+  name: string;
+  createdAt: string;
+  creationMode: EnvVarSnapshotCreationMode;
+  sourceAction?: string | null;
+  note?: string | null;
+  scopes: EnvVarScope[];
+  integrityState: string;
+  snapshot: EnvVarSnapshotPayload;
+}
+
+export interface EnvVarBackupProtectionState {
+  action: string;
+  scope: EnvVarScope;
+  state: 'will_create' | 'will_reuse' | 'blocked' | 'unprotected';
+  reasonCode: string;
+  reason: string;
+  nextSteps: string[];
+  snapshot?: EnvVarSnapshotInfo | null;
+}
+
+export interface EnvVarSnapshotRestorePreviewSegment {
+  scope: EnvVarScope;
+  changedVariables: number;
+  addedVariables: number;
+  removedVariables: number;
+  addedPathEntries: number;
+  removedPathEntries: number;
+  skipped: boolean;
+  reasonCode?: string | null;
+  reason?: string | null;
+}
+
+export interface EnvVarSnapshotRestorePreview {
+  createdAt: string;
+  segments: EnvVarSnapshotRestorePreviewSegment[];
+}
+
+export interface EnvVarSnapshotCreateResult {
+  success: boolean;
+  status: 'verified' | 'failed';
+  reasonCode?: string | null;
+  message?: string | null;
+  snapshot?: EnvVarSnapshotInfo | null;
+}
+
+export interface EnvVarSnapshotRestoreSkipped {
+  scope: EnvVarScope;
+  reasonCode?: string | null;
+  reason: string;
+}
+
+export interface EnvVarSnapshotRestoreResult {
+  success: boolean;
+  verified: boolean;
+  status: 'verified' | 'partial' | 'failed';
+  reasonCode?: string | null;
+  message?: string | null;
+  restoredScopes: EnvVarScope[];
+  skipped: EnvVarSnapshotRestoreSkipped[];
+  primaryShellTarget?: string | null;
+  shellGuidance: EnvVarShellGuidance[];
+}
+
 // ============================================================================
 // Terminal Management
 // ============================================================================
@@ -2753,91 +2847,6 @@ export interface PSProfileInfo {
 
 export interface PSModuleInfo {
   name: string;
-export type EnvVarSnapshotCreationMode = 'manual' | 'automatic';
-
-export interface EnvVarSnapshotScopePayload {
-  scope: EnvVarScope;
-  variables: PersistentEnvVar[];
-  pathEntries: string[];
-  variableFingerprint: string;
-  pathFingerprint: string;
-  restorable: boolean;
-}
-
-export interface EnvVarSnapshotPayload {
-  formatVersion: number;
-  createdAt: string;
-  creationMode?: EnvVarSnapshotCreationMode | null;
-  sourceAction?: string | null;
-  note?: string | null;
-  scopes: EnvVarSnapshotScopePayload[];
-}
-
-export interface EnvVarSnapshotInfo {
-  path: string;
-  name: string;
-  createdAt: string;
-  creationMode: EnvVarSnapshotCreationMode;
-  sourceAction?: string | null;
-  note?: string | null;
-  scopes: EnvVarScope[];
-  integrityState: string;
-  snapshot: EnvVarSnapshotPayload;
-}
-
-export interface EnvVarBackupProtectionState {
-  action: string;
-  scope: EnvVarScope;
-  state: 'will_create' | 'will_reuse' | 'blocked' | 'unprotected';
-  reasonCode: string;
-  reason: string;
-  nextSteps: string[];
-  snapshot?: EnvVarSnapshotInfo | null;
-}
-
-export interface EnvVarSnapshotRestorePreviewSegment {
-  scope: EnvVarScope;
-  changedVariables: number;
-  addedVariables: number;
-  removedVariables: number;
-  addedPathEntries: number;
-  removedPathEntries: number;
-  skipped: boolean;
-  reasonCode?: string | null;
-  reason?: string | null;
-}
-
-export interface EnvVarSnapshotRestorePreview {
-  createdAt: string;
-  segments: EnvVarSnapshotRestorePreviewSegment[];
-}
-
-export interface EnvVarSnapshotCreateResult {
-  success: boolean;
-  status: 'verified' | 'failed';
-  reasonCode?: string | null;
-  message?: string | null;
-  snapshot?: EnvVarSnapshotInfo | null;
-}
-
-export interface EnvVarSnapshotRestoreSkipped {
-  scope: EnvVarScope;
-  reasonCode?: string | null;
-  reason: string;
-}
-
-export interface EnvVarSnapshotRestoreResult {
-  success: boolean;
-  verified: boolean;
-  status: 'verified' | 'partial' | 'failed';
-  reasonCode?: string | null;
-  message?: string | null;
-  restoredScopes: EnvVarScope[];
-  skipped: EnvVarSnapshotRestoreSkipped[];
-  primaryShellTarget?: string | null;
-  shellGuidance: EnvVarShellGuidance[];
-}
-
   version: string;
   moduleType: string;
   path: string;
@@ -2854,6 +2863,10 @@ export interface PSScriptInfo {
 }
 
 export type FrameworkCategory = 'framework' | 'plugin-manager' | 'prompt-engine' | 'theme';
+export type ShellFrameworkPluginSupportStatus =
+  | 'supported'
+  | 'missing-config'
+  | 'unsupported';
 
 export interface ShellFrameworkInfo {
   name: string;
@@ -2865,6 +2878,8 @@ export interface ShellFrameworkInfo {
   homepage: string | null;
   configPath: string | null;
   activeTheme: string | null;
+  pluginSupportStatus: ShellFrameworkPluginSupportStatus;
+  pluginSupportReason: string | null;
 }
 
 export interface ShellPlugin {
@@ -3029,10 +3044,6 @@ export interface CrashInfo {
 }
 
 /** Crash report artifact metadata exposed to the logs workspace */
-export type ShellFrameworkPluginSupportStatus =
-  | 'supported'
-  | 'missing-config'
-  | 'unsupported';
 export interface CrashReportInfo {
   id: string;
   source: string;
@@ -3044,8 +3055,6 @@ export interface CrashReportInfo {
 }
 
 // ============================================================================
-  pluginSupportStatus: ShellFrameworkPluginSupportStatus;
-  pluginSupportReason: string | null;
 // Xmake/Xrepo Types
 // ============================================================================
 

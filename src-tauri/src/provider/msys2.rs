@@ -4,6 +4,7 @@ use crate::platform::{
     env::Platform,
     process::{self, ProcessOptions},
 };
+use crate::provider::support::SupportReason;
 use async_trait::async_trait;
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -75,6 +76,42 @@ impl Msys2Provider {
                 "Version not found for {}",
                 name
             )))
+        }
+    }
+
+    async fn get_unavailable_reason(&self) -> SupportReason {
+        let Some(exe) = self.get_pacman_exe() else {
+            return SupportReason {
+                code: "msys2-root-missing",
+                message: "MSYS2 installation root was not found".into(),
+            };
+        };
+
+        if !PathBuf::from(&exe).exists() {
+            return SupportReason {
+                code: "msys2-pacman-missing",
+                message: format!("MSYS2 root was found, but pacman.exe is missing at {}", exe),
+            };
+        }
+
+        let opts = ProcessOptions::new().with_timeout(Duration::from_secs(10));
+        match process::execute(&exe, &["--version"], Some(opts)).await {
+            Ok(output) if output.success => SupportReason {
+                code: "msys2-provider-unavailable",
+                message: "MSYS2 is unavailable for an unspecified reason".into(),
+            },
+            Ok(output) => SupportReason {
+                code: "msys2-pacman-not-runnable",
+                message: if output.stderr.trim().is_empty() {
+                    "MSYS2 pacman probe failed".into()
+                } else {
+                    output.stderr.trim().to_string()
+                },
+            },
+            Err(err) => SupportReason {
+                code: "msys2-pacman-not-runnable",
+                message: err.to_string(),
+            },
         }
     }
 }
@@ -275,6 +312,10 @@ impl Provider for Msys2Provider {
             Ok(output) => output.success,
             Err(_) => false,
         }
+    }
+
+    async fn unavailable_reason(&self) -> Option<SupportReason> {
+        Some(self.get_unavailable_reason().await)
     }
 
     async fn search(
@@ -600,5 +641,12 @@ mod tests {
         assert!(caps.contains(&Capability::Upgrade));
         assert!(caps.contains(&Capability::UpdateIndex));
         assert_eq!(caps.len(), 7);
+    }
+
+    #[tokio::test]
+    async fn test_unavailable_reason_when_root_missing() {
+        let provider = Msys2Provider { msys2_root: None };
+        let reason = provider.unavailable_reason().await.unwrap();
+        assert_eq!(reason.code, "msys2-root-missing");
     }
 }
