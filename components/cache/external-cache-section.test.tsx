@@ -11,6 +11,23 @@ jest.mock('@/components/providers/locale-provider', () => ({
   useLocale: () => ({ t: (key: string) => key }),
 }));
 
+jest.mock('next/link', () => {
+  const MockLink = ({
+    children,
+    href,
+    ...props
+  }: {
+    children: React.ReactNode;
+    href: string;
+  }) => (
+    <a href={href} {...props}>
+      {children}
+    </a>
+  );
+  MockLink.displayName = 'MockLink';
+  return MockLink;
+});
+
 jest.mock('@/hooks/use-external-cache', () => ({
   useExternalCache: (...args: unknown[]) => mockUseExternalCache(...args),
 }));
@@ -33,6 +50,9 @@ const defaultHookState = {
       canClean: true,
       category: 'package_manager',
       probePending: false,
+      cleanupMode: 'direct_clean_only',
+      scopeType: 'external',
+      isCustom: false,
     },
     {
       provider: 'docker',
@@ -44,6 +64,9 @@ const defaultHookState = {
       canClean: false,
       category: 'devtools',
       probePending: false,
+      cleanupMode: 'disabled',
+      scopeType: 'external',
+      isCustom: false,
     },
   ],
   loading: false,
@@ -67,6 +90,9 @@ const defaultHookState = {
         canClean: true,
         category: 'package_manager',
         probePending: false,
+        cleanupMode: 'direct_clean_only',
+        scopeType: 'external',
+        isCustom: false,
       },
     ],
     devtools: [
@@ -80,6 +106,9 @@ const defaultHookState = {
         canClean: false,
         category: 'devtools',
         probePending: false,
+        cleanupMode: 'disabled',
+        scopeType: 'external',
+        isCustom: false,
       },
     ],
   },
@@ -202,5 +231,69 @@ describe('ExternalCacheSection', () => {
     expect(screen.getByText('cache.externalLoadFailed')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /common\.retry/i }));
     expect(mockFetchExternalCaches).toHaveBeenCalled();
+  });
+
+  it('renders direct-clean-only and disabled maintenance explanations', () => {
+    render(<ExternalCacheSection useTrash={false} setUseTrash={jest.fn()} />);
+
+    expect(screen.getByText('cache.externalCleanupDirectOnly')).toBeInTheDocument();
+    expect(screen.getByText('cache.externalCleanupDisabled')).toBeInTheDocument();
+  });
+
+  it('renders drilldown links for cache rows', () => {
+    render(<ExternalCacheSection useTrash={false} setUseTrash={jest.fn()} />);
+
+    const links = screen.getAllByRole('link', { name: 'cache.viewDetails' });
+    expect(links[0]).toHaveAttribute(
+      'href',
+      '/cache/external?target=npm&targetType=external',
+    );
+  });
+
+  it('surfaces custom scope identity when a custom cache entry is present', () => {
+    mockUseExternalCache.mockReturnValue({
+      ...defaultHookState,
+      caches: [
+        {
+          provider: 'custom_docs',
+          displayName: 'Docs Cache',
+          cachePath: 'C:\\cache\\docs',
+          size: 1048576,
+          sizeHuman: '1 MB',
+          isAvailable: true,
+          canClean: true,
+          category: 'devtools',
+          probePending: false,
+          cleanupMode: 'direct_clean_only',
+          scopeType: 'custom',
+          isCustom: true,
+        },
+      ],
+      grouped: {
+        devtools: [
+          {
+            provider: 'custom_docs',
+            displayName: 'Docs Cache',
+            cachePath: 'C:\\cache\\docs',
+            size: 1048576,
+            sizeHuman: '1 MB',
+            isAvailable: true,
+            canClean: true,
+            category: 'devtools',
+            probePending: false,
+            cleanupMode: 'direct_clean_only',
+            scopeType: 'custom',
+            isCustom: true,
+          },
+        ],
+      },
+      orderedCategories: ['devtools'],
+      cleanableCount: 1,
+      totalSize: 1048576,
+    });
+
+    render(<ExternalCacheSection useTrash={false} setUseTrash={jest.fn()} />);
+
+    expect(screen.getByText('cache.detail.customScope')).toBeInTheDocument();
   });
 });

@@ -572,6 +572,9 @@ export default function CachePage() {
             historySummary={historySummary}
             historyLoading={historyLoading}
             historyError={historyReadState.error}
+            defaultDownloadsRoot={cacheInfo?.default_downloads?.location ?? null}
+            defaultDownloadsAvailable={cacheInfo?.default_downloads?.is_available ?? false}
+            defaultDownloadsReason={cacheInfo?.default_downloads?.reason ?? null}
             fetchCleanupHistory={fetchCleanupHistory}
             handleRetryHistory={retryHistory}
             handleClearHistory={handleClearHistory}

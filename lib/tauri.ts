@@ -1004,6 +1004,14 @@ export type ExternalCacheDetectionState =
   | "skipped"
   | "error";
 
+export type ExternalCacheCleanupMode =
+  | "preview_required"
+  | "direct_clean_only"
+  | "repair_first"
+  | "disabled";
+
+export type ExternalCacheScopeType = "external" | "custom";
+
 export interface ExternalCacheInfo {
   provider: string;
   displayName: string;
@@ -1018,6 +1026,9 @@ export interface ExternalCacheInfo {
   detectionState?: ExternalCacheDetectionState;
   detectionReason?: string | null;
   detectionError?: string | null;
+  cleanupMode?: ExternalCacheCleanupMode;
+  scopeType?: ExternalCacheScopeType;
+  isCustom?: boolean;
 }
 
 export interface ExternalCacheCleanResult {
@@ -1180,6 +1191,9 @@ export interface ExternalCachePathInfo {
   detectionState?: ExternalCacheDetectionState;
   detectionReason?: string | null;
   detectionError?: string | null;
+  cleanupMode?: ExternalCacheCleanupMode;
+  scopeType?: ExternalCacheScopeType;
+  isCustom?: boolean;
 }
 
 export const getExternalCachePaths = () =>

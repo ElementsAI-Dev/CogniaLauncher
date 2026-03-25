@@ -223,6 +223,53 @@ describe('useExternalCache', () => {
     });
   });
 
+  it('normalizes maintenance metadata when backend omits explicit scope hints', async () => {
+    mockDiscoverExternalCacheCandidates.mockResolvedValueOnce([
+      {
+        provider: 'custom_docs',
+        displayName: 'Docs Cache',
+        cachePath: '/tmp/docs-cache',
+        size: 0,
+        sizeHuman: '0 B',
+        isAvailable: false,
+        canClean: false,
+        category: 'devtools',
+        probePending: true,
+      },
+    ]);
+    mockProbeExternalCacheProvider.mockResolvedValueOnce({
+      provider: 'custom_docs',
+      displayName: 'Docs Cache',
+      cachePath: '/tmp/docs-cache',
+      size: 0,
+      sizeHuman: '0 B',
+      isAvailable: false,
+      canClean: false,
+      category: 'devtools',
+      probePending: false,
+      detectionState: 'error',
+      detectionReason: 'path_not_directory',
+    });
+
+    const { result } = renderHook(() =>
+      useExternalCache({
+        t: (key) => key,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.fetchExternalCaches();
+      await flushAsyncEffects();
+    });
+
+    await waitFor(() => {
+      expect(result.current.caches[0]?.provider).toBe('custom_docs');
+      expect(result.current.caches[0]?.scopeType).toBe('custom');
+      expect(result.current.caches[0]?.cleanupMode).toBe('disabled');
+      expect(result.current.caches[0]?.isCustom).toBe(true);
+    });
+  });
+
   it('shows completed providers while others remain probe-pending', async () => {
     const slowProbe = deferred<ReturnType<typeof makeProbed>>();
     mockDiscoverExternalCacheCandidates.mockResolvedValueOnce([

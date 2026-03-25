@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useId, useState } from 'react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -22,6 +23,7 @@ import {
 import { Activity, RefreshCw, TrendingUp } from 'lucide-react';
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { isTauri } from '@/lib/tauri';
+import { buildExternalCacheDetailHref } from '@/lib/cache/scopes';
 import type { CacheSizeMonitor, CacheSizeSnapshot } from '@/lib/tauri';
 import type { CacheMonitorCardProps } from '@/types/cache';
 
@@ -237,10 +239,16 @@ export function CacheMonitorCard({ refreshTrigger, autoRefreshInterval = 0 }: Ca
                       key={cache.provider}
                       className="flex items-center justify-between rounded-lg border p-3 text-sm"
                     >
-                      <span>{cache.displayName}</span>
-                      <DashboardStatusBadge tone="default">
-                        {cache.sizeHuman}
-                      </DashboardStatusBadge>
+                      <div className="flex items-center gap-3">
+                        <span>{cache.displayName}</span>
+                        <Link
+                          href={buildExternalCacheDetailHref(cache.provider, 'external')}
+                          className="text-xs text-muted-foreground underline-offset-4 hover:underline"
+                        >
+                          {t('cache.viewDetails')}
+                        </Link>
+                      </div>
+                      <DashboardStatusBadge tone="default">{cache.sizeHuman}</DashboardStatusBadge>
                     </div>
                   ))}
                 </div>

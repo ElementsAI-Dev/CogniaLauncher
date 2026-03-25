@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,6 +23,8 @@ import {
 } from "@/components/ui/select";
 import { FolderOpen, Plus, Trash2 } from "lucide-react";
 import { isTauri } from "@/lib/tauri";
+import { getCategoryLabel } from "@/lib/constants/cache";
+import { buildExternalCacheDetailHref } from "@/lib/cache/scopes";
 import type { CustomCacheEntry, CustomCacheDialogProps } from "@/types/cache";
 
 const CATEGORIES = [
@@ -185,15 +188,25 @@ export function CustomCacheDialog({
                 <p className="text-xs text-muted-foreground truncate">
                   {entry.path}
                 </p>
+                <p className="text-xs text-muted-foreground">
+                  {getCategoryLabel(entry.category, t)}
+                </p>
               </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => handleRemove(entry.id)}
-                className="ml-2 shrink-0 text-destructive hover:text-destructive"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
+              <div className="ml-2 shrink-0 flex items-center gap-1">
+                <Button variant="ghost" size="sm" asChild>
+                  <Link href={buildExternalCacheDetailHref(entry.id, "custom")}>
+                    {t("cache.viewDetails")}
+                  </Link>
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleRemove(entry.id)}
+                  className="text-destructive hover:text-destructive"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
             </div>
           ))}
         </div>

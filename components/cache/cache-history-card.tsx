@@ -50,12 +50,16 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import type { CleanupRecord, CleanupHistorySummary } from '@/lib/tauri';
+import { deriveCleanTypeMaintenanceMetadata } from '@/lib/cache/maintenance';
 
 export interface CacheHistoryCardProps {
   cleanupHistory: CleanupRecord[];
   historySummary: CleanupHistorySummary | null;
   historyLoading: boolean;
   historyError: string | null;
+  defaultDownloadsRoot?: string | null;
+  defaultDownloadsAvailable?: boolean;
+  defaultDownloadsReason?: string | null;
   fetchCleanupHistory: () => void;
   handleRetryHistory: () => void;
   handleClearHistory: () => void;
@@ -66,6 +70,9 @@ export function CacheHistoryCard({
   historySummary,
   historyLoading,
   historyError,
+  defaultDownloadsRoot,
+  defaultDownloadsAvailable = true,
+  defaultDownloadsReason,
   fetchCleanupHistory,
   handleRetryHistory,
   handleClearHistory,
@@ -81,6 +88,14 @@ export function CacheHistoryCard({
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const hasHistory = cleanupHistory.length > 0;
+  const detailMaintenance = detail
+    ? deriveCleanTypeMaintenanceMetadata(
+      detail.clean_type === 'default_downloads'
+        ? 'default_downloads'
+        : 'downloads',
+      { defaultDownloadsRoot },
+    )
+    : null;
 
   const csvText = useMemo(() => {
     if (!hasHistory) return '';
@@ -304,6 +319,33 @@ export function CacheHistoryCard({
 
           {detail && (
             <div className="space-y-3">
+              {detail.clean_type === 'default_downloads' && detailMaintenance && (
+                <div className="rounded-md border bg-muted/20 p-3 space-y-1">
+                  {defaultDownloadsAvailable && detailMaintenance.defaultDownloadsRoot ? (
+                    <p className="text-xs text-muted-foreground">
+                      {t('cache.defaultDownloadsRoot')}:{' '}
+                      <span className="font-mono break-all">
+                        {detailMaintenance.defaultDownloadsRoot}
+                      </span>
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      {t('cache.defaultDownloadsUnavailable')}
+                    </p>
+                  )}
+                  {defaultDownloadsReason && !defaultDownloadsAvailable && (
+                    <p className="text-xs text-muted-foreground">
+                      {t('cache.defaultDownloadsUnavailableReason', {
+                        reason: defaultDownloadsReason,
+                      })}
+                    </p>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    {t(detailMaintenance.explanationKey)}
+                  </p>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div className="rounded-md border p-3">
                   <p className="text-xs text-muted-foreground">{t('cache.freedSize')}</p>

@@ -72,13 +72,18 @@ import { ENTRIES_PER_PAGE } from '@/lib/constants/cache';
 import type { CacheDetailPageClientProps } from '@/types/cache';
 
 import { CacheDetailExternalView } from './cache-detail-external';
+import { CacheDetailDefaultDownloadsView } from './cache-detail-default-downloads';
 import { CachePreviewDialog } from '@/components/cache/cache-preview-dialog';
 
-export function CacheDetailPageClient({ cacheType }: CacheDetailPageClientProps) {
+export function CacheDetailPageClient({
+  cacheType,
+  targetId,
+  targetType,
+}: CacheDetailPageClientProps) {
   const { t } = useLocale();
 
   // Validate cache type
-  const validTypes = ['download', 'metadata', 'external'];
+  const validTypes = ['download', 'metadata', 'default_downloads', 'external'];
   const isValidType = validTypes.includes(cacheType);
 
   if (!isValidType) {
@@ -101,7 +106,11 @@ export function CacheDetailPageClient({ cacheType }: CacheDetailPageClientProps)
   }
 
   if (cacheType === 'external') {
-    return <CacheDetailExternalView />;
+    return <CacheDetailExternalView targetId={targetId} targetType={targetType} />;
+  }
+
+  if (cacheType === 'default_downloads') {
+    return <CacheDetailDefaultDownloadsView />;
   }
 
   return <InternalCacheDetailView cacheType={cacheType as 'download' | 'metadata'} />;

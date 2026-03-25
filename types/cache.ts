@@ -26,7 +26,9 @@ export interface ExternalCacheSectionProps {
 }
 
 export interface CacheDetailPageClientProps {
-  cacheType: 'download' | 'metadata' | 'external';
+  cacheType: 'download' | 'metadata' | 'default_downloads' | 'external';
+  targetId?: string | null;
+  targetType?: 'external' | 'custom' | null;
 }
 
 // ============================================================================

@@ -678,11 +678,18 @@ export function useCachePage({ t }: UseCachePageOptions) {
     void fetchBrowserEntries(false, undefined, debouncedBrowserSearch);
   }, [debouncedBrowserSearch, fetchBrowserEntries]);
 
-  const handleSettingsChange = (key: keyof CacheSettings, value: number | boolean) => {
-    if (localSettings) {
-      setLocalSettings({ ...localSettings, [key]: value });
-      setSettingsDirty(true);
-    }
+  const handleSettingsChange = <K extends keyof CacheSettings>(
+    key: K,
+    value: CacheSettings[K],
+  ) => {
+    setLocalSettings((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        [key]: value,
+      };
+    });
+    setSettingsDirty(true);
   };
 
   const handleSaveSettings = async () => {
@@ -691,6 +698,17 @@ export function useCachePage({ t }: UseCachePageOptions) {
     try {
       await updateCacheSettings(localSettings);
       setSettingsDirty(false);
+      await refreshOverviewState({
+        includeCacheInfo: true,
+        includeCacheSettings: true,
+        includeAccessStats: false,
+        includeHotFiles: false,
+        includeMonitor: true,
+      });
+      emitInvalidations(
+        ['cache_overview', 'cache_entries', 'external_cache', 'about_cache_stats'],
+        'cache-page:save-settings',
+      );
       toast.success(t('cache.settingsSaved'));
     } catch (err) {
       toast.error(`${t('cache.settingsFailed')}: ${err}`);

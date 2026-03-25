@@ -10,6 +10,23 @@ jest.mock("@/lib/tauri", () => ({
   },
 }));
 
+jest.mock("next/link", () => {
+  const MockLink = ({
+    children,
+    href,
+    ...props
+  }: {
+    children: React.ReactNode;
+    href: string;
+  }) => (
+    <a href={href} {...props}>
+      {children}
+    </a>
+  );
+  MockLink.displayName = "MockLink";
+  return MockLink;
+});
+
 function createProps(overrides: Partial<React.ComponentProps<typeof CustomCacheDialog>> = {}) {
   return {
     entries: [],
@@ -102,5 +119,28 @@ describe("CustomCacheDialog", () => {
         category: "devtools",
       },
     ]);
+  });
+
+  it("renders a drilldown link for existing custom cache entries", () => {
+    render(
+      <CustomCacheDialog
+        {...createProps({
+          entries: [
+            {
+              id: "custom_docs",
+              displayName: "Docs Cache",
+              path: "C:\\cache\\docs",
+              category: "devtools",
+            },
+          ],
+        })}
+      />,
+    );
+
+    const link = screen.getByRole("link", { name: "cache.viewDetails" });
+    expect(link).toHaveAttribute(
+      "href",
+      "/cache/external?target=custom_docs&targetType=custom",
+    );
   });
 });

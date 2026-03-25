@@ -1,4 +1,5 @@
 import {
+  buildExternalCacheDetailHref,
   canonicalScopeToCleanType,
   canonicalScopeFromDetailType,
   canonicalScopeLabelKey,
@@ -8,6 +9,7 @@ import {
   isCanonicalCacheScope,
   isPreviewCapableCleanType,
   isTrashApplicableCleanType,
+  parseExternalCacheDetailTarget,
 } from './scopes';
 
 describe('cache scopes', () => {
@@ -16,6 +18,7 @@ describe('cache scopes', () => {
   it('maps detail route types to canonical scopes', () => {
     expect(canonicalScopeFromDetailType('download')).toBe('downloads');
     expect(canonicalScopeFromDetailType('metadata')).toBe('metadata');
+    expect(canonicalScopeFromDetailType('default_downloads')).toBe('default_downloads');
     expect(canonicalScopeFromDetailType('external')).toBe('external');
   });
 
@@ -46,5 +49,23 @@ describe('cache scopes', () => {
     expect(cleanTypeLabelKey('metadata')).toBe('cache.typeMetadata');
     expect(isPreviewCapableCleanType('downloads')).toBe(true);
     expect(isTrashApplicableCleanType('all')).toBe(true);
+  });
+
+  it('builds and parses external cache drilldown targets', () => {
+    expect(buildExternalCacheDetailHref('npm', 'external')).toBe(
+      '/cache/external?target=npm&targetType=external',
+    );
+    expect(buildExternalCacheDetailHref('custom_docs', 'custom')).toBe(
+      '/cache/external?target=custom_docs&targetType=custom',
+    );
+    expect(
+      parseExternalCacheDetailTarget({
+        target: 'custom_docs',
+        targetType: 'custom',
+      }),
+    ).toEqual({
+      targetId: 'custom_docs',
+      targetType: 'custom',
+    });
   });
 });

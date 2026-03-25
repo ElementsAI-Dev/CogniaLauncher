@@ -54,8 +54,21 @@ function inferDetectionState(cache: ExternalCacheInfo): ExternalCacheDetectionSt
   return 'found';
 }
 
+function inferScopeType(cache: ExternalCacheInfo): 'external' | 'custom' {
+  if (cache.scopeType) return cache.scopeType;
+  if (cache.isCustom) return 'custom';
+  if (cache.provider.startsWith('custom_')) return 'custom';
+  return 'external';
+}
+
+function inferCleanupMode(cache: ExternalCacheInfo): 'preview_required' | 'direct_clean_only' | 'repair_first' | 'disabled' {
+  if (cache.cleanupMode) return cache.cleanupMode;
+  return cache.canClean ? 'direct_clean_only' : 'disabled';
+}
+
 function normalizeExternalCacheInfo(cache: ExternalCacheInfo): ExternalCacheInfo {
   const detectionState = inferDetectionState(cache);
+  const scopeType = inferScopeType(cache);
   const detectionReason = cache.detectionReason ?? (
     detectionState === 'skipped' ? 'legacy_skipped' : null
   );
@@ -66,6 +79,9 @@ function normalizeExternalCacheInfo(cache: ExternalCacheInfo): ExternalCacheInfo
     detectionError: cache.detectionError ?? null,
     sizePending: cache.sizePending ?? false,
     probePending: cache.probePending ?? false,
+    scopeType,
+    cleanupMode: inferCleanupMode(cache),
+    isCustom: scopeType === 'custom',
   };
 }
 

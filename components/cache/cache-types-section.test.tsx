@@ -69,9 +69,10 @@ describe("CacheTypesSection", () => {
     expect(screen.getByText("1.5 GB")).toBeInTheDocument();
     const detailLinks = screen.getAllByRole("link", { name: "cache.viewDetails" });
 
-    expect(detailLinks).toHaveLength(2);
+    expect(detailLinks).toHaveLength(3);
     expect(detailLinks[0]).toHaveAttribute("href", "/cache/download");
     expect(detailLinks[1]).toHaveAttribute("href", "/cache/metadata");
+    expect(detailLinks[2]).toHaveAttribute("href", "/cache/default_downloads");
   });
 
   it("starts a preview for an available cache type", async () => {

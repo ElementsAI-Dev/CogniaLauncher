@@ -55,7 +55,7 @@ const CACHE_TYPES: CacheTypeCardData[] = [
     descKey: 'cache.defaultDownloadsDesc',
     icon: FolderDown,
     cleanType: 'default_downloads',
-    detailHref: '',
+    detailHref: '/cache/default_downloads',
     getSize: (info) => info.default_downloads?.size_human ?? '0 B',
     getCount: (info) => info.default_downloads?.entry_count ?? 0,
     getAvailable: (info) => info.default_downloads?.is_available ?? false,

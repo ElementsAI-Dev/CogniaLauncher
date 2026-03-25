@@ -35,6 +35,24 @@ const cleanupHistory = [
   },
 ];
 
+const defaultDownloadsHistory = [
+  {
+    id: "cleanup-default-downloads",
+    timestamp: "2025-01-02T00:00:00Z",
+    clean_type: "default_downloads",
+    file_count: 1,
+    freed_human: "512 MB",
+    use_trash: false,
+    files_truncated: false,
+    files: [
+      {
+        path: "C:\\Users\\test\\Downloads\\sdk.zip",
+        size_human: "512 MB",
+      },
+    ],
+  },
+];
+
 const historySummary = {
   total_cleanups: 4,
   total_freed_human: "5.0 GB",
@@ -50,6 +68,9 @@ function createProps(
     historySummary,
     historyLoading: false,
     historyError: null,
+    defaultDownloadsRoot: "C:\\Users\\test\\Downloads",
+    defaultDownloadsAvailable: true,
+    defaultDownloadsReason: null,
     fetchCleanupHistory: jest.fn(),
     handleRetryHistory: jest.fn(),
     handleClearHistory: jest.fn(),
@@ -123,5 +144,24 @@ describe("CacheHistoryCard", () => {
     await user.click(confirmButtons[confirmButtons.length - 1]);
 
     expect(props.handleClearHistory).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows default-downloads safety context in the history detail dialog", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <CacheHistoryCard
+        {...createProps({
+          cleanupHistory: defaultDownloadsHistory,
+        })}
+      />,
+    );
+
+    await user.click(screen.getByTestId("cleanup-record-cleanup-default-downloads"));
+
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText(/cache\.defaultDownloadsRoot/)).toBeInTheDocument();
+    expect(within(dialog).getByText("C:\\Users\\test\\Downloads")).toBeInTheDocument();
+    expect(within(dialog).getByText("cache.defaultDownloadsSafetyNote")).toBeInTheDocument();
   });
 });

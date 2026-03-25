@@ -62,14 +62,25 @@ import {
 import { formatBytes } from '@/lib/utils';
 import { useCacheDetailExternal } from '@/hooks/use-cache-detail-external';
 import { getCategoryLabel } from '@/lib/constants/cache';
+import { deriveExternalCacheMaintenanceMetadata } from '@/lib/cache/maintenance';
+import { buildExternalCacheDetailHref } from '@/lib/cache/scopes';
 import type { ExternalCacheCleanResult } from '@/lib/tauri';
 import { writeClipboard } from '@/lib/clipboard';
 
-export function CacheDetailExternalView() {
+interface CacheDetailExternalViewProps {
+  targetId?: string | null;
+  targetType?: 'external' | 'custom' | null;
+}
+
+export function CacheDetailExternalView({
+  targetId = null,
+  targetType = null,
+}: CacheDetailExternalViewProps = {}) {
   const { t } = useLocale();
   const [resultOpen, setResultOpen] = useState(false);
   const [resultTitle, setResultTitle] = useState('');
   const [resultRows, setResultRows] = useState<ExternalCacheCleanResult[]>([]);
+  const [expandedProviders, setExpandedProviders] = useState<string[]>([]);
 
   const {
     caches,
@@ -140,6 +151,24 @@ export function CacheDetailExternalView() {
       default:
         return { label: t('cache.detail.externalAvailable'), variant: 'default' as const };
     }
+  };
+
+  const targetExists = targetId
+    ? caches.some((cache) => cache.provider === targetId)
+    : false;
+  const missingTarget =
+    !loading && targetId && caches.length > 0 && !targetExists ? targetId : null;
+  const activeExpandedProviders =
+    targetId && targetExists && !expandedProviders.includes(targetId)
+      ? [...expandedProviders, targetId]
+      : expandedProviders;
+
+  const updateExpandedForCategory = (category: string, values: string[]) => {
+    const categoryProviders = grouped[category]?.map((cache) => cache.provider) ?? [];
+    setExpandedProviders((prev) => {
+      const remaining = prev.filter((value) => !categoryProviders.includes(value));
+      return [...remaining, ...values];
+    });
   };
 
   return (
@@ -249,6 +278,15 @@ export function CacheDetailExternalView() {
         </Alert>
       )}
 
+      {missingTarget && (
+        <Alert>
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            {t('cache.detail.externalTargetMissing', { target: missingTarget })}
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Cache List by Category */}
       {loading ? (
         <div className="space-y-4">
@@ -290,21 +328,44 @@ export function CacheDetailExternalView() {
             </CardHeader>
             <CardContent>
               <ScrollArea className="max-h-[500px]">
-                <Accordion type="multiple" className="space-y-2">
+                <Accordion
+                  type="multiple"
+                  className="space-y-2"
+                  value={activeExpandedProviders.filter((provider) =>
+                    grouped[category].some((cache) => cache.provider === provider),
+                  )}
+                  onValueChange={(values) => updateExpandedForCategory(category, values)}
+                >
                   {grouped[category].map((cache) => {
                     const pathInfo = getPathInfo(cache.provider);
                     const stateBadge = getStateBadge(cache);
+                    const maintenance = deriveExternalCacheMaintenanceMetadata(cache, pathInfo);
+                    const isTargeted = targetId === cache.provider;
                     return (
-                      <AccordionItem key={cache.provider} value={cache.provider} className="rounded-lg border last:border-b">
+                      <AccordionItem
+                        key={cache.provider}
+                        value={cache.provider}
+                        className={`rounded-lg border last:border-b ${isTargeted ? 'border-primary' : ''}`}
+                      >
                         <div className="flex items-center justify-between p-3 hover:bg-muted/50 transition-colors">
                           <div className="flex items-center gap-3 flex-1 min-w-0">
                             <AccordionTrigger className="p-0 hover:no-underline [&>svg]:size-4 shrink-0 h-8 w-8 items-center justify-center" />
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-2">
                                 <span className="font-medium text-sm">{cache.displayName}</span>
+                                <Badge variant="outline" className="text-[10px]">
+                                  {cache.isCustom ? t('cache.detail.customScope') : t('cache.detail.externalScope')}
+                                </Badge>
                                 <Badge variant={stateBadge.variant} className="text-xs">
                                   {stateBadge.label}
                                 </Badge>
+                                {isTargeted && (
+                                  <Badge variant="secondary" className="text-[10px]">
+                                    {targetType === 'custom'
+                                      ? t('cache.detail.customScope')
+                                      : t('cache.detail.externalScope')}
+                                  </Badge>
+                                )}
                               </div>
                               <p className="text-xs text-muted-foreground truncate">
                                 {cache.cachePath || t('cache.managedByTool')}
@@ -316,10 +377,22 @@ export function CacheDetailExternalView() {
                                     : cache.detectionReason || cache.detectionError}
                                 </p>
                               )}
+                              <p className="text-[11px] text-muted-foreground truncate mt-0.5">
+                                {t(maintenance.explanationKey)}
+                              </p>
                             </div>
                           </div>
                           <div className="flex items-center gap-3 shrink-0">
                             <span className="font-mono text-sm">{cache.sizePending ? (<Skeleton className="h-3 w-12 inline-block" />) : cache.sizeHuman}</span>
+                            <Link
+                              href={buildExternalCacheDetailHref(
+                                cache.provider,
+                                cache.isCustom ? 'custom' : 'external',
+                              )}
+                              className="text-xs text-muted-foreground underline-offset-4 hover:underline"
+                            >
+                              {t('cache.viewDetails')}
+                            </Link>
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <Button
@@ -383,6 +456,10 @@ export function CacheDetailExternalView() {
                             <div className="flex gap-2">
                               <span className="text-muted-foreground shrink-0">{t('cache.detail.externalCleanable')}:</span>
                               <span>{cache.canClean ? t('cache.yes') : t('cache.no')}</span>
+                            </div>
+                            <div className="flex gap-2">
+                              <span className="text-muted-foreground shrink-0">{t('cache.detail.externalMaintenanceMode')}:</span>
+                              <span>{t(maintenance.explanationKey)}</span>
                             </div>
                           </div>
                         </AccordionContent>
@@ -456,7 +533,19 @@ export function CacheDetailExternalView() {
               <TableBody>
                 {resultRows.map((r) => (
                   <TableRow key={r.provider}>
-                    <TableCell className="font-medium">{r.displayName}</TableCell>
+                    <TableCell className="font-medium">
+                      <Link
+                        href={buildExternalCacheDetailHref(
+                          r.provider,
+                          caches.find((cache) => cache.provider === r.provider)?.isCustom
+                            ? 'custom'
+                            : 'external',
+                        )}
+                        className="underline-offset-4 hover:underline"
+                      >
+                        {r.displayName}
+                      </Link>
+                    </TableCell>
                     <TableCell>
                       <Badge variant={r.success ? 'default' : 'destructive'}>
                         {r.success ? t('cache.success') : t('cache.failed')}

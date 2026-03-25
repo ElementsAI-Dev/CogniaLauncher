@@ -91,6 +91,13 @@ const cacheInfoData = {
     size_human: "256 MB",
     location: "C:\\cache\\metadata",
   },
+  default_downloads: {
+    entry_count: 1,
+    size_human: "512 MB",
+    location: "C:\\Users\\test\\Downloads",
+    is_available: true,
+    reason: null,
+  },
 };
 
 const accessStatsData = {
@@ -157,6 +164,109 @@ describe("CacheDetailPage", () => {
   it("delegates to CacheDetailExternalView for external type", () => {
     render(<CacheDetailPageClient cacheType="external" />);
     expect(screen.getByTestId("external-view")).toBeInTheDocument();
+  });
+
+  it("treats default-downloads as a valid cache detail type", () => {
+    render(<CacheDetailPageClient cacheType="default_downloads" />);
+    expect(screen.queryByText(/Unknown cache type: default_downloads/)).not.toBeInTheDocument();
+  });
+
+  it("renders default-downloads root, preview candidates, and skipped reasons", async () => {
+    mockIsTauri = true;
+    mockCacheCleanPreview.mockResolvedValueOnce({
+      files: [
+        {
+          path: "C:\\Users\\test\\Downloads\\sdk.zip",
+          size: 536870912,
+          size_human: "512 MB",
+          entry_type: "default_download",
+          created_at: "2025-01-02T00:00:00Z",
+        },
+      ],
+      skipped: [
+        {
+          path: "C:\\Users\\test\\Downloads\\keep.txt",
+          reason: "outside_default_downloads_root",
+        },
+      ],
+      skipped_count: 1,
+      total_count: 1,
+      total_size: 536870912,
+      total_size_human: "512 MB",
+    });
+
+    await act(async () => {
+      render(<CacheDetailPageClient cacheType="default_downloads" />);
+    });
+
+    expect(screen.getByText("cache.defaultDownloads")).toBeInTheDocument();
+    expect(screen.getAllByText("C:\\Users\\test\\Downloads").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("cache.defaultDownloadsSafetyNote")).toBeInTheDocument();
+    expect(screen.getByText("sdk.zip")).toBeInTheDocument();
+    expect(screen.getByText("outside_default_downloads_root")).toBeInTheDocument();
+  });
+
+  it("cleans default-downloads scope and shows a scoped result summary", async () => {
+    mockIsTauri = true;
+    mockCacheCleanPreview.mockResolvedValueOnce({
+      files: [
+        {
+          path: "C:\\Users\\test\\Downloads\\sdk.zip",
+          size: 536870912,
+          size_human: "512 MB",
+          entry_type: "default_download",
+          created_at: "2025-01-02T00:00:00Z",
+        },
+      ],
+      skipped: [
+        {
+          path: "C:\\Users\\test\\Downloads\\keep.txt",
+          reason: "outside_default_downloads_root",
+        },
+      ],
+      skipped_count: 1,
+      total_count: 1,
+      total_size: 536870912,
+      total_size_human: "512 MB",
+    });
+    mockCacheCleanEnhanced.mockResolvedValueOnce({
+      freed_bytes: 536870912,
+      freed_human: "512 MB",
+      deleted_count: 1,
+      use_trash: true,
+      history_id: "cleanup-default-downloads",
+      skipped_count: 1,
+      file_outcomes: [
+        {
+          path: "C:\\Users\\test\\Downloads\\sdk.zip",
+          size: 536870912,
+          size_human: "512 MB",
+          outcome: "deleted",
+        },
+        {
+          path: "C:\\Users\\test\\Downloads\\keep.txt",
+          size: 0,
+          size_human: "0 B",
+          outcome: "skipped",
+          reason: "outside_default_downloads_root",
+        },
+      ],
+    });
+
+    await act(async () => {
+      render(<CacheDetailPageClient cacheType="default_downloads" />);
+    });
+
+    const cleanBtn = screen.getByText("cache.detail.cleanThisCache").closest("button")!;
+    await act(async () => {
+      cleanBtn.click();
+    });
+    await act(async () => {});
+
+    expect(mockCacheCleanEnhanced).toHaveBeenCalledWith("default_downloads", true);
+    expect(screen.getByText("cache.detail.defaultDownloadsResultTitle")).toBeInTheDocument();
+    expect(screen.getByText(/cache\.detail\.defaultDownloadsDeletedCount/)).toBeInTheDocument();
+    expect(screen.getByText(/cache\.detail\.defaultDownloadsSkippedCount/)).toBeInTheDocument();
   });
 
   it("renders download title for download type", () => {

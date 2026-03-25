@@ -546,6 +546,10 @@ pub struct ExternalCacheInfo {
     pub detection_reason: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detection_error: Option<String>,
+    pub cleanup_mode: ExternalCacheCleanupMode,
+    pub scope_type: ExternalCacheScopeType,
+    #[serde(default)]
+    pub is_custom: bool,
 }
 
 /// Normalized external cache detection state.
@@ -556,6 +560,24 @@ pub enum ExternalCacheDetectionState {
     Unavailable,
     Skipped,
     Error,
+}
+
+/// Normalized cleanup mode for a detected external or custom cache scope.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExternalCacheCleanupMode {
+    PreviewRequired,
+    DirectCleanOnly,
+    RepairFirst,
+    Disabled,
+}
+
+/// Normalized scope type for detected external cache rows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExternalCacheScopeType {
+    External,
+    Custom,
 }
 
 #[derive(Debug, Clone)]
@@ -1711,6 +1733,16 @@ fn build_external_cache_info(
             candidate.has_clean_command
         }
     };
+    let cleanup_mode = if can_clean {
+        ExternalCacheCleanupMode::DirectCleanOnly
+    } else {
+        ExternalCacheCleanupMode::Disabled
+    };
+    let scope_type = if candidate.is_custom {
+        ExternalCacheScopeType::Custom
+    } else {
+        ExternalCacheScopeType::External
+    };
 
     ExternalCacheInfo {
         provider: candidate.provider.clone(),
@@ -1730,6 +1762,9 @@ fn build_external_cache_info(
         detection_state,
         detection_reason,
         detection_error,
+        cleanup_mode,
+        scope_type,
+        is_custom: candidate.is_custom,
     }
 }
 
@@ -2670,6 +2705,60 @@ mod tests {
         assert!(ExternalCacheProvider::Cargo.clean_command().is_none());
         assert!(ExternalCacheProvider::Bun.clean_command().is_none());
         assert!(ExternalCacheProvider::Gradle.clean_command().is_none());
+    }
+
+    #[test]
+    fn build_external_cache_info_marks_custom_scope_as_direct_clean_only() {
+        let candidate = ExternalDiscoveryCandidate {
+            provider: "custom_docs".to_string(),
+            display_name: "Docs Cache".to_string(),
+            category: "devtools".to_string(),
+            cache_path: Some(PathBuf::from("C:/cache/docs")),
+            is_available: true,
+            has_clean_command: false,
+            is_custom: true,
+        };
+
+        let info = build_external_cache_info(
+            &candidate,
+            128,
+            false,
+            false,
+            ExternalCacheDetectionState::Found,
+            None,
+            None,
+        );
+
+        assert!(info.is_custom);
+        assert_eq!(info.scope_type, ExternalCacheScopeType::Custom);
+        assert_eq!(info.cleanup_mode, ExternalCacheCleanupMode::DirectCleanOnly);
+    }
+
+    #[test]
+    fn build_external_cache_info_marks_uncleanable_scope_as_disabled() {
+        let candidate = ExternalDiscoveryCandidate {
+            provider: "docker".to_string(),
+            display_name: "Docker Cache".to_string(),
+            category: "devtools".to_string(),
+            cache_path: None,
+            is_available: false,
+            has_clean_command: false,
+            is_custom: false,
+        };
+
+        let info = build_external_cache_info(
+            &candidate,
+            0,
+            false,
+            false,
+            ExternalCacheDetectionState::Unavailable,
+            Some("provider_unavailable".to_string()),
+            None,
+        );
+
+        assert!(!info.is_custom);
+        assert_eq!(info.scope_type, ExternalCacheScopeType::External);
+        assert_eq!(info.cleanup_mode, ExternalCacheCleanupMode::Disabled);
     }
 
     async fn reset_provider_size_test_state() {

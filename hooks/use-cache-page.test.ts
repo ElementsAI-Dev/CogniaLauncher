@@ -42,7 +42,17 @@ function deferred<T>() {
 }
 const mockSettingsState = {
   cacheInfo: { total_size: 1024, max_size: 4096, usage_percent: 25 },
-  cacheSettings: { max_size: 4096, retention_days: 7 },
+  cacheSettings: {
+    max_size: 4096,
+    max_age_days: 7,
+    metadata_cache_ttl: 600,
+    auto_clean: true,
+    auto_clean_threshold: 80,
+    monitor_interval: 300,
+    monitor_external: false,
+    external_cache_excluded_providers: [],
+    custom_cache_entries: [],
+  },
   cacheVerification: { missing_files: 0, corrupted_files: 0, size_mismatches: 0 },
   loading: false,
   error: null,
@@ -305,6 +315,47 @@ describe('useCachePage', () => {
     expect(mockEmitInvalidations).toHaveBeenCalledWith(
       ['cache_overview', 'cache_entries', 'about_cache_stats'],
       'cache-page:optimize',
+    );
+  });
+
+  it('updates support configuration arrays and refreshes external caches after save', async () => {
+    const { result } = renderHook(() => useCachePage({ t }));
+
+    act(() => {
+      result.current.handleSettingsChange('external_cache_excluded_providers', [
+        'gradle',
+        'maven',
+      ] as never);
+      result.current.handleSettingsChange('custom_cache_entries', [
+        {
+          id: 'custom_docs',
+          displayName: 'Docs Cache',
+          path: '/tmp/docs-cache',
+          category: 'devtools',
+        },
+      ] as never);
+    });
+
+    await act(async () => {
+      await result.current.handleSaveSettings();
+    });
+
+    expect(mockUpdateCacheSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        external_cache_excluded_providers: ['gradle', 'maven'],
+        custom_cache_entries: [
+          {
+            id: 'custom_docs',
+            displayName: 'Docs Cache',
+            path: '/tmp/docs-cache',
+            category: 'devtools',
+          },
+        ],
+      }),
+    );
+    expect(mockEmitInvalidations).toHaveBeenCalledWith(
+      ['cache_overview', 'cache_entries', 'external_cache', 'about_cache_stats'],
+      'cache-page:save-settings',
     );
   });
 

@@ -20,6 +20,7 @@ import { Eye, FileText, HardDrive, Inbox, Recycle, RefreshCw, Trash2 } from 'luc
 import type { CleanPreview } from '@/lib/tauri';
 import type { CleanType } from '@/types/cache';
 import { cleanTypeLabelKey } from '@/lib/cache/scopes';
+import { deriveCleanTypeMaintenanceMetadata } from '@/lib/cache/maintenance';
 
 export interface CachePreviewDialogProps {
   previewOpen: boolean;
@@ -49,6 +50,9 @@ export function CachePreviewDialog({
   const { t } = useLocale();
   const previewTypeLabel = t(cleanTypeLabelKey(previewType));
   const isDefaultDownloads = previewType === 'default_downloads';
+  const maintenance = deriveCleanTypeMaintenanceMetadata(previewType, {
+    defaultDownloadsRoot,
+  });
 
   return (
     <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
@@ -107,14 +111,14 @@ export function CachePreviewDialog({
           <div className="space-y-4">
             {isDefaultDownloads && (
               <div className="rounded-lg border bg-muted/20 p-3 space-y-1">
-                {defaultDownloadsRoot && (
+                {maintenance.defaultDownloadsRoot && (
                   <p className="text-xs text-muted-foreground">
                     {t('cache.defaultDownloadsRoot')}:{' '}
-                    <span className="font-mono break-all">{defaultDownloadsRoot}</span>
+                    <span className="font-mono break-all">{maintenance.defaultDownloadsRoot}</span>
                   </p>
                 )}
                 <p className="text-xs text-muted-foreground">
-                  {t('cache.defaultDownloadsSafetyNote')}
+                  {t(maintenance.explanationKey)}
                 </p>
               </div>
             )}

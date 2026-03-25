@@ -82,6 +82,9 @@ const mockCaches = [
     isAvailable: true,
     canClean: true,
     category: "package_manager",
+    cleanupMode: "direct_clean_only",
+    scopeType: "external",
+    isCustom: false,
   },
   {
     provider: "pip",
@@ -93,6 +96,9 @@ const mockCaches = [
     isAvailable: false,
     canClean: false,
     category: "package_manager",
+    cleanupMode: "disabled",
+    scopeType: "external",
+    isCustom: false,
   },
 ];
 
@@ -176,6 +182,24 @@ describe("CacheDetailExternal", () => {
     expect(screen.getByText("pip Cache")).toBeInTheDocument();
   });
 
+  it("auto-expands the targeted provider when drilldown target props are provided", async () => {
+    mockIsTauri = true;
+    mockDiscoverExternalCachesFast.mockResolvedValue(mockCaches);
+    mockGetExternalCachePaths.mockResolvedValue(mockPaths);
+
+    await act(async () => {
+      render(
+        <CacheDetailExternalView
+          targetId="npm"
+          targetType="external"
+        />,
+      );
+    });
+
+    expect(screen.getByText("cache.detail.externalCachePath:")).toBeInTheDocument();
+    expect(screen.getByText("npm cache clean --force")).toBeInTheDocument();
+  });
+
   it("shows available/unavailable badges per cache", async () => {
     mockIsTauri = true;
     mockDiscoverExternalCachesFast.mockResolvedValue(mockCaches);
@@ -253,6 +277,18 @@ describe("CacheDetailExternal", () => {
     });
     expect(screen.getByText("/home/test/.npm")).toBeInTheDocument();
     expect(screen.getByText("/home/test/.cache/pip")).toBeInTheDocument();
+  });
+
+  it("renders maintenance explanations for direct-clean and disabled scopes", async () => {
+    mockIsTauri = true;
+    mockDiscoverExternalCachesFast.mockResolvedValue(mockCaches);
+    mockGetExternalCachePaths.mockResolvedValue(mockPaths);
+    await act(async () => {
+      render(<CacheDetailExternalView />);
+    });
+
+    expect(screen.getByText("cache.externalCleanupDirectCommand")).toBeInTheDocument();
+    expect(screen.getByText("cache.externalCleanupDisabled")).toBeInTheDocument();
   });
 
   it("renders clean button per cache item", async () => {

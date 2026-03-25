@@ -8,6 +8,23 @@ jest.mock("@/components/providers/locale-provider", () => ({
   useLocale: () => ({ t: (key: string) => key }),
 }));
 
+jest.mock("next/link", () => {
+  const MockLink = ({
+    children,
+    href,
+    ...props
+  }: {
+    children: React.ReactNode;
+    href: string;
+  }) => (
+    <a href={href} {...props}>
+      {children}
+    </a>
+  );
+  MockLink.displayName = "MockLink";
+  return MockLink;
+});
+
 const mockGetCacheSizeHistory = jest.fn();
 
 jest.mock("@/lib/tauri", () => ({
@@ -105,6 +122,25 @@ describe("CacheMonitorCard", () => {
     });
     expect(screen.getByText("npm cache")).toBeInTheDocument();
     expect(screen.getByText("200 MB")).toBeInTheDocument();
+  });
+
+  it("renders drilldown links for external caches in the overview section", async () => {
+    mockIsTauri = true;
+    mockCacheSizeMonitor.mockResolvedValue({
+      ...monitorData,
+      externalCaches: [
+        { provider: "npm", displayName: "npm cache", sizeHuman: "200 MB" },
+      ],
+    });
+    await act(async () => {
+      render(<CacheMonitorCard />);
+    });
+
+    const link = screen.getByRole("link", { name: "cache.viewDetails" });
+    expect(link).toHaveAttribute(
+      "href",
+      "/cache/external?target=npm&targetType=external",
+    );
   });
 
   it("shows external caches section title", async () => {

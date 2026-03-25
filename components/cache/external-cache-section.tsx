@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { CacheProviderIcon } from "@/components/provider-management/provider-icon";
 import { Button } from "@/components/ui/button";
@@ -61,6 +62,8 @@ import {
 } from "lucide-react";
 import { formatBytes } from "@/lib/utils";
 import { getCategoryLabel } from "@/lib/constants/cache";
+import { deriveExternalCacheMaintenanceMetadata } from "@/lib/cache/maintenance";
+import { buildExternalCacheDetailHref } from "@/lib/cache/scopes";
 import type { ExternalCacheSectionProps } from "@/types/cache";
 import { useExternalCache } from "@/hooks/use-external-cache";
 import type { ExternalCacheCleanResult } from "@/lib/tauri";
@@ -255,7 +258,9 @@ export function ExternalCacheSection({
               <h4 className="text-sm font-medium text-muted-foreground px-1">
                 {getCategoryLabel(cat, t)}
               </h4>
-              {grouped[cat].map((cache) => (
+              {grouped[cat].map((cache) => {
+                const maintenance = deriveExternalCacheMaintenanceMetadata(cache);
+                return (
                 <div
                   key={cache.provider}
                   className="flex items-center justify-between p-3 rounded-lg border bg-card"
@@ -268,6 +273,9 @@ export function ExternalCacheSection({
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <p className="font-medium">{cache.displayName}</p>
+                        <Badge variant="outline" className="text-[10px]">
+                          {cache.isCustom ? t("cache.detail.customScope") : t("cache.detail.externalScope")}
+                        </Badge>
                         {cache.probePending ? (
                           <RefreshCw className="h-3 w-3 animate-spin text-muted-foreground" />
                         ) : cache.detectionState === "found" ? (
@@ -302,6 +310,11 @@ export function ExternalCacheSection({
                           )}
                         </div>
                       )}
+                      {!cache.probePending && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {t(maintenance.explanationKey)}
+                        </p>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-3 ml-4">
@@ -310,6 +323,15 @@ export function ExternalCacheSection({
                     >
                       {cache.probePending ? t("common.loading") : cache.sizeHuman}
                     </Badge>
+                    <Link
+                      href={buildExternalCacheDetailHref(
+                        cache.provider,
+                        cache.isCustom ? "custom" : "external",
+                      )}
+                      className="text-xs text-muted-foreground underline-offset-4 hover:underline"
+                    >
+                      {t("cache.viewDetails")}
+                    </Link>
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Button
@@ -332,7 +354,7 @@ export function ExternalCacheSection({
                     </Tooltip>
                   </div>
                 </div>
-              ))}
+              )})}
             </div>
           ))}
         </div>
@@ -358,7 +380,19 @@ export function ExternalCacheSection({
               <TableBody>
                 {resultRows.map((r) => (
                   <TableRow key={r.provider}>
-                    <TableCell className="font-medium">{r.displayName}</TableCell>
+                    <TableCell className="font-medium">
+                      <Link
+                        href={buildExternalCacheDetailHref(
+                          r.provider,
+                          externalCaches.find((cache) => cache.provider === r.provider)?.isCustom
+                            ? "custom"
+                            : "external",
+                        )}
+                        className="underline-offset-4 hover:underline"
+                      >
+                        {r.displayName}
+                      </Link>
+                    </TableCell>
                     <TableCell>
                       <Badge variant={r.success ? "default" : "destructive"}>
                         {r.success ? t("cache.success") : t("cache.failed")}

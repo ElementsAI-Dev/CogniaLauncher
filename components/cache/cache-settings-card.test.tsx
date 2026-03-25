@@ -14,6 +14,8 @@ const baseSettings = {
   auto_clean_threshold: 80,
   monitor_interval: 300,
   monitor_external: false,
+  external_cache_excluded_providers: [],
+  custom_cache_entries: [],
 };
 
 function createProps(
@@ -100,5 +102,34 @@ describe("CacheSettingsCard", () => {
     await user.click(screen.getByRole("button", { name: "common.save" }));
 
     expect(props.handleSaveSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders external cache support controls and propagates exclusion edits", () => {
+    const props = createProps({
+      localSettings: {
+        ...baseSettings,
+        external_cache_excluded_providers: ["gradle"],
+      },
+    });
+
+    render(<CacheSettingsCard {...props} />);
+
+    expect(
+      screen.getByLabelText("settings.externalCacheExcludedProviders"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("settings.customCacheEntries")).toBeInTheDocument();
+    expect(screen.getByText("settings.customCacheEmpty")).toBeInTheDocument();
+
+    fireEvent.change(
+      screen.getByLabelText("settings.externalCacheExcludedProviders"),
+      {
+        target: { value: "gradle, maven , sbt" },
+      },
+    );
+
+    expect(props.handleSettingsChange).toHaveBeenCalledWith(
+      "external_cache_excluded_providers",
+      ["gradle", "maven", "sbt"],
+    );
   });
 });

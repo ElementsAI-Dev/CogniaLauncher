@@ -4,7 +4,7 @@ use crate::cache::{
     DownloadHistory, DownloadResumer, ExternalCacheCleanResult, ExternalCacheInfo, MetadataCache,
     MigrationMode, MigrationResult, MigrationValidation,
 };
-use crate::config::Settings;
+use crate::config::{settings::CustomCacheEntry, Settings};
 use crate::platform::{disk, disk::format_size, fs, process::ProcessOptions, PlatformPaths};
 use chrono::{DateTime, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
@@ -984,6 +984,10 @@ pub struct CacheSettings {
     pub monitor_interval: u64,
     #[serde(default)]
     pub monitor_external: bool,
+    #[serde(default)]
+    pub external_cache_excluded_providers: Vec<String>,
+    #[serde(default)]
+    pub custom_cache_entries: Vec<CustomCacheEntry>,
 }
 
 fn default_threshold() -> u8 {
@@ -1006,6 +1010,8 @@ pub async fn get_cache_settings(
         auto_clean_threshold: s.general.cache_auto_clean_threshold,
         monitor_interval: s.general.cache_monitor_interval,
         monitor_external: s.general.cache_monitor_external,
+        external_cache_excluded_providers: s.general.external_cache_excluded_providers.clone(),
+        custom_cache_entries: s.general.custom_cache_entries.clone(),
     })
 }
 
@@ -1022,6 +1028,8 @@ pub async fn set_cache_settings(
     s.general.cache_auto_clean_threshold = new_settings.auto_clean_threshold;
     s.general.cache_monitor_interval = new_settings.monitor_interval;
     s.general.cache_monitor_external = new_settings.monitor_external;
+    s.general.external_cache_excluded_providers = new_settings.external_cache_excluded_providers;
+    s.general.custom_cache_entries = new_settings.custom_cache_entries;
     s.save().await.map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -2631,6 +2639,9 @@ pub struct ExternalCachePathInfo {
     pub detection_state: external::ExternalCacheDetectionState,
     pub detection_reason: Option<String>,
     pub detection_error: Option<String>,
+    pub cleanup_mode: external::ExternalCacheCleanupMode,
+    pub scope_type: external::ExternalCacheScopeType,
+    pub is_custom: bool,
 }
 
 /// Get path info for all external cache providers
@@ -2682,6 +2693,9 @@ pub async fn get_external_cache_paths(
             detection_state: cache.detection_state,
             detection_reason: cache.detection_reason,
             detection_error: cache.detection_error,
+            cleanup_mode: cache.cleanup_mode,
+            scope_type: cache.scope_type,
+            is_custom: cache.is_custom,
         });
     }
 
@@ -2815,8 +2829,10 @@ mod tests {
     use super::{
         clean_default_downloads_candidates, collect_default_downloads_candidates_with_root,
         record_cache_snapshot, CacheChangedEvent, CacheCommandScope, CacheOptimizeResult,
+        CacheSettings,
     };
     use crate::cache::{DownloadCache, DownloadHistory, DownloadRecord, MetadataCache};
+    use crate::config::settings::CustomCacheEntry;
     use chrono::Utc;
     use serde_json::Value;
     use tempfile::tempdir;
@@ -2910,6 +2926,48 @@ mod tests {
     fn cache_command_scope_parses_default_downloads() {
         let parsed = CacheCommandScope::parse(Some("default_downloads"));
         assert!(matches!(parsed, Ok(CacheCommandScope::DefaultDownloads)));
+    }
+
+    #[test]
+    fn cache_settings_serde_round_trip_preserves_support_configuration() {
+        let settings = CacheSettings {
+            max_size: 4096,
+            max_age_days: 7,
+            metadata_cache_ttl: 600,
+            auto_clean: true,
+            auto_clean_threshold: 80,
+            monitor_interval: 300,
+            monitor_external: true,
+            external_cache_excluded_providers: vec!["gradle".to_string(), "maven".to_string()],
+            custom_cache_entries: vec![CustomCacheEntry {
+                id: "custom_docs".to_string(),
+                display_name: "Docs Cache".to_string(),
+                path: "C:/cache/docs".to_string(),
+                category: "devtools".to_string(),
+            }],
+        };
+
+        let value = serde_json::to_value(&settings).expect("serialize cache settings");
+        assert_eq!(
+            value.get("external_cache_excluded_providers"),
+            Some(&serde_json::json!(["gradle", "maven"]))
+        );
+        assert_eq!(
+            value
+                .get("custom_cache_entries")
+                .and_then(|entries| entries.as_array())
+                .map(|entries| entries.len()),
+            Some(1)
+        );
+
+        let parsed: CacheSettings =
+            serde_json::from_value(value).expect("deserialize cache settings");
+        assert_eq!(
+            parsed.external_cache_excluded_providers,
+            vec!["gradle".to_string(), "maven".to_string()]
+        );
+        assert_eq!(parsed.custom_cache_entries.len(), 1);
+        assert_eq!(parsed.custom_cache_entries[0].display_name, "Docs Cache");
     }
 
     #[tokio::test]

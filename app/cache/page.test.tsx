@@ -389,6 +389,7 @@ const mockMessages = {
       autoCleanDesc: "Automatically clean old entries",
       settingsSaved: "Cache settings saved",
       settingsFailed: "Failed to save cache settings",
+      settingsSupportTitle: "Support Coverage",
       refreshSuccess: "Cache info refreshed",
       refreshFailed: "Failed to refresh cache info",
       // Database maintenance keys
@@ -454,6 +455,18 @@ const mockMessages = {
         "Files will be permanently deleted and cannot be recovered",
       movedToTrash: "moved to trash",
       permanentlyDeleted: "permanently deleted",
+      cleanupPreviewRequired:
+        "Preview the affected cache entries before executing cleanup.",
+      cleanupRepairFirst:
+        "Repair managed cache issues before running broader cleanup.",
+      externalCleanupDirectOnly:
+        "This cache can be cleaned directly, but it does not provide a preview candidate list.",
+      externalCleanupDirectCommand:
+        "This cache is cleaned through the provider's native command path, without a preview candidate list.",
+      externalCleanupDisabled:
+        "This cache is currently not eligible for cleanup until detection or availability issues are resolved.",
+      externalCleanupDisabledCustom:
+        "This custom cache path must be fixed before it can participate in direct cleanup.",
       confirmClean: "Confirm Clean",
       cleanupHistory: "Cleanup History",
       cleanupHistoryDesc: "View past cache cleanup operations",
@@ -529,6 +542,20 @@ const mockMessages = {
         "Current cache signals look stable. Keep monitoring growth and refresh trends as needed.",
       insightActionMonitorCta: "View trend details",
     },
+    settings: {
+      externalCacheExcludedProviders: "Excluded External Cache Providers",
+      externalCacheExcludedProvidersDesc:
+        "Comma-separated provider IDs to skip during external cache scanning",
+      disabledProvidersPlaceholder: "e.g., gradle, maven",
+      customCacheEntries: "Custom Cache Directories",
+      customCacheEntriesDesc:
+        "User-defined cache directories to monitor alongside built-in providers",
+      customCacheAdd: "Add Custom Cache",
+      customCacheName: "Display Name",
+      customCachePath: "Cache Path",
+      customCacheCategory: "Category",
+      customCacheEmpty: "No custom cache directories configured",
+    },
   },
   zh: {
     common: {
@@ -553,6 +580,19 @@ const mockMessages = {
       permanentDeleteDesc: "Files will be permanently deleted",
       movedToTrash: "moved to trash",
       permanentlyDeleted: "permanently deleted",
+      settingsSupportTitle: "Support Coverage",
+      cleanupPreviewRequired:
+        "Preview the affected cache entries before executing cleanup.",
+      cleanupRepairFirst:
+        "Repair managed cache issues before running broader cleanup.",
+      externalCleanupDirectOnly:
+        "This cache can be cleaned directly, but it does not provide a preview candidate list.",
+      externalCleanupDirectCommand:
+        "This cache is cleaned through the provider's native command path, without a preview candidate list.",
+      externalCleanupDisabled:
+        "This cache is currently not eligible for cleanup until detection or availability issues are resolved.",
+      externalCleanupDisabledCustom:
+        "This custom cache path must be fixed before it can participate in direct cleanup.",
       confirmClean: "Confirm Clean",
       cleanupHistory: "Cleanup History",
       cleanupHistoryDesc: "View past cache cleanup operations",
@@ -630,6 +670,20 @@ const mockMessages = {
       metadataCacheTtl: "Metadata Cache TTL",
       metadataCacheTtlDesc: "Metadata cache ttl in seconds",
       ttlSeconds: "seconds",
+    },
+    settings: {
+      externalCacheExcludedProviders: "Excluded External Cache Providers",
+      externalCacheExcludedProvidersDesc:
+        "Comma-separated provider IDs to skip during external cache scanning",
+      disabledProvidersPlaceholder: "e.g., gradle, maven",
+      customCacheEntries: "Custom Cache Directories",
+      customCacheEntriesDesc:
+        "User-defined cache directories to monitor alongside built-in providers",
+      customCacheAdd: "Add Custom Cache",
+      customCacheName: "Display Name",
+      customCachePath: "Cache Path",
+      customCacheCategory: "Category",
+      customCacheEmpty: "No custom cache directories configured",
     },
   },
 };

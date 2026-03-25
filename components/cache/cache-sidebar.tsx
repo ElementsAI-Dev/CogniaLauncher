@@ -10,7 +10,10 @@ export interface CacheSidebarProps {
   settingsDirty: boolean;
   settingsLoading: boolean;
   isSavingSettings: boolean;
-  handleSettingsChange: (key: keyof CacheSettings, value: number | boolean) => void;
+  handleSettingsChange: <K extends keyof CacheSettings>(
+    key: K,
+    value: CacheSettings[K],
+  ) => void;
   handleSaveSettings: () => void;
   // Path props
   pathRefreshTrigger: number;

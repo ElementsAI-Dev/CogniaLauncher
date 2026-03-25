@@ -7,15 +7,20 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Separator } from '@/components/ui/separator';
 import { Settings } from 'lucide-react';
 import type { CacheSettings } from '@/lib/tauri';
+import { CustomCacheDialog } from './custom-cache-dialog';
 
 export interface CacheSettingsCardProps {
   localSettings: CacheSettings | null;
   settingsDirty: boolean;
   loading: boolean;
   isSavingSettings: boolean;
-  handleSettingsChange: (key: keyof CacheSettings, value: number | boolean) => void;
+  handleSettingsChange: <K extends keyof CacheSettings>(
+    key: K,
+    value: CacheSettings[K],
+  ) => void;
   handleSaveSettings: () => void;
 }
 
@@ -28,6 +33,9 @@ export function CacheSettingsCard({
   handleSaveSettings,
 }: CacheSettingsCardProps) {
   const { t } = useLocale();
+  const excludedProvidersValue = (
+    localSettings?.external_cache_excluded_providers ?? []
+  ).join(', ');
 
   return (
     <Card>
@@ -186,6 +194,45 @@ export function CacheSettingsCard({
                   </div>
                 </div>
               )}
+            </div>
+
+            <Separator />
+
+            <div className="space-y-4">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                {t('cache.settingsSupportTitle')}
+              </p>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="sidebar-excludedProviders" className="text-xs">
+                  {t('settings.externalCacheExcludedProviders')}
+                </Label>
+                <Input
+                  id="sidebar-excludedProviders"
+                  type="text"
+                  value={excludedProvidersValue}
+                  onChange={(e) => {
+                    const providers = e.target.value
+                      .split(',')
+                      .map((item) => item.trim())
+                      .filter((item) => item.length > 0);
+                    handleSettingsChange('external_cache_excluded_providers', providers);
+                  }}
+                  placeholder={t('settings.disabledProvidersPlaceholder')}
+                  className="h-8 text-sm"
+                />
+                <p className="text-xs text-muted-foreground">
+                  {t('settings.externalCacheExcludedProvidersDesc')}
+                </p>
+              </div>
+
+              <CustomCacheDialog
+                entries={localSettings?.custom_cache_entries ?? []}
+                onEntriesChange={(entries) => {
+                  handleSettingsChange('custom_cache_entries', entries);
+                }}
+                t={t}
+              />
             </div>
 
             {/* Save button */}
