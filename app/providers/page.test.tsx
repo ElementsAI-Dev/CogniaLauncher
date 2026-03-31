@@ -112,7 +112,7 @@ const mockProviders = [
   },
 ];
 
-jest.mock('@/hooks/use-packages', () => ({
+jest.mock('@/hooks/packages/use-packages', () => ({
   usePackages: () => ({
     providers: mockProviders,
     loading: false,

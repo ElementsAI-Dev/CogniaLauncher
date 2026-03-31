@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { EnvironmentWorkflowBanner } from "./environment-workflow-banner";
 
 const mockClearWorkflowAction = jest.fn();
@@ -51,10 +52,16 @@ describe("EnvironmentWorkflowBanner", () => {
       "environments.workflow.refresh": "Refresh",
       "environments.workflow.dismiss": "Dismiss",
       "environments.workflow.clearContext": "Clear context",
+      "environments.workflow.origin.detail": "Environment details",
+      "environments.workflow.origin.direct": "Direct access",
       "environments.workflow.origin.overview": "Environment overview",
+      "environments.workflow.hint.error": "The last action failed.",
+      "environments.workflow.hint.running": "The action is still running.",
       "environments.workflow.hint.success": "Last action completed successfully.",
       "environments.workflow.hint.blocked": "Action is blocked. Check requirements and try again.",
       "environments.workflow.action.applyProfile.success": "Profile applied.",
+      "environments.workflow.action.refresh.error": "Refresh failed.",
+      "environments.workflow.action.install.running": "Install in progress.",
       "environments.workflow.action.setupPath.blocked": "PATH setup is blocked.",
     };
 
@@ -109,5 +116,76 @@ describe("EnvironmentWorkflowBanner", () => {
     expect(
       screen.getByText("Action is blocked. Check requirements and try again."),
     ).toBeInTheDocument();
+  });
+
+  it("renders a context-only banner and clears workflow context", async () => {
+    const user = userEvent.setup();
+    mockStoreState.workflowContext = {
+      envType: "node",
+      origin: "detail",
+      returnHref: "/environments",
+      projectPath: "/workspace/app",
+      providerId: "fnm",
+      updatedAt: 4,
+    };
+    mockStoreState.workflowAction = null;
+
+    render(<EnvironmentWorkflowBanner envType="node" t={t} />);
+
+    expect(screen.getByText("Workflow context for Node.js")).toBeInTheDocument();
+    expect(screen.getByText("Opened from Environment details.")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Clear context" }));
+
+    expect(mockClearWorkflowContext).toHaveBeenCalled();
+  });
+
+  it("renders error state actions and lets the user refresh or dismiss", async () => {
+    const user = userEvent.setup();
+    const onRefresh = jest.fn();
+    mockStoreState.workflowAction = {
+      envType: "node",
+      action: "refresh",
+      status: "error",
+      providerId: "fnm",
+      projectPath: "/workspace/app",
+      error: "Refresh timed out.",
+      updatedAt: 5,
+    };
+
+    render(<EnvironmentWorkflowBanner envType="node" onRefresh={onRefresh} t={t} />);
+
+    expect(screen.getByText("Refresh failed.")).toBeInTheDocument();
+    expect(screen.getByText("The last action failed.")).toBeInTheDocument();
+    expect(screen.getByText("Error: Refresh timed out.")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+    await user.click(screen.getByRole("button", { name: "Dismiss" }));
+
+    expect(onRefresh).toHaveBeenCalled();
+    expect(mockClearWorkflowAction).toHaveBeenCalled();
+  });
+
+  it("returns null when neither context nor action matches the current env type", () => {
+    mockStoreState.workflowContext = {
+      envType: "python",
+      origin: "direct",
+      returnHref: "/",
+      projectPath: null,
+      providerId: "pyenv",
+      updatedAt: 6,
+    };
+    mockStoreState.workflowAction = {
+      envType: "python",
+      action: "install",
+      status: "running",
+      providerId: "pyenv",
+      projectPath: null,
+      updatedAt: 7,
+    };
+
+    const { container } = render(<EnvironmentWorkflowBanner envType="node" t={t} />);
+
+    expect(container).toBeEmptyDOMElement();
   });
 });

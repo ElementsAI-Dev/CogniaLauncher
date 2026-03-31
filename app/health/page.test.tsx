@@ -33,7 +33,7 @@ const mockSummary = {
   actionableIssueCount: 0,
 };
 
-jest.mock('@/hooks/use-health-check', () => ({
+jest.mock('@/hooks/health/use-health-check', () => ({
   useHealthCheck: () => ({
     systemHealth: mockSystemHealth,
     environmentHealth: {},
@@ -124,6 +124,7 @@ describe('HealthPage', () => {
     mockSystemHealth = {
       overall_status: 'healthy',
       checked_at: new Date().toISOString(),
+      envvar_issues: [],
       system_issues: [],
       environments: [
         { env_type: 'node', provider_id: 'fnm', status: 'healthy', issues: [], suggestions: [] },
@@ -141,6 +142,7 @@ describe('HealthPage', () => {
     mockSystemHealth = {
       overall_status: 'warning',
       checked_at: new Date().toISOString(),
+      envvar_issues: [],
       system_issues: [],
       environments: [{ env_type: 'node', provider_id: 'fnm', status: 'warning', issues: [], suggestions: [] }],
       package_managers: [],
@@ -154,6 +156,7 @@ describe('HealthPage', () => {
     mockSystemHealth = {
       overall_status: 'warning',
       checked_at: new Date().toISOString(),
+      envvar_issues: [],
       system_issues: [],
       environments: [
         { env_type: 'node', status: 'healthy', issues: [], suggestions: [] },
@@ -189,6 +192,7 @@ describe('HealthPage', () => {
     mockSystemHealth = {
       overall_status: 'healthy',
       checked_at: new Date().toISOString(),
+      envvar_issues: [],
       system_issues: [],
       environments: [],
       package_managers: [],
@@ -203,6 +207,7 @@ describe('HealthPage', () => {
     mockSystemHealth = {
       overall_status: 'healthy',
       checked_at: new Date().toISOString(),
+      envvar_issues: [],
       system_issues: [],
       environments: [],
       package_managers: [],
@@ -217,6 +222,16 @@ describe('HealthPage', () => {
     mockSystemHealth = {
       overall_status: 'warning',
       checked_at: new Date().toISOString(),
+      envvar_issues: [
+        {
+          severity: 'warning',
+          message: 'User PATH contains invalid entries',
+          fix_command: null,
+          signal_source: 'system_probe',
+          confidence: 'verified',
+          check_id: 'envvar_path_validity:user',
+        },
+      ],
       system_issues: [
         {
           severity: 'warning',
@@ -270,9 +285,50 @@ describe('HealthPage', () => {
     const clipboardSpy = writeClipboard as jest.Mock;
     expect(clipboardSpy).toHaveBeenCalledTimes(1);
     const exported = clipboardSpy.mock.calls[0]?.[0] as string;
+    expect(exported).toContain('EnvVar Issues (1):');
     expect(exported).toContain('scope=timeout');
     expect(exported).toContain('source=runtime_probe');
     expect(exported).toContain('confidence=verified');
     expect(exported).toContain('check=environment_missing_active_version:fnm');
+  });
+
+  it('renders envvar diagnostics in a dedicated section', () => {
+    mockSystemHealth = {
+      overall_status: 'warning',
+      checked_at: new Date().toISOString(),
+      envvar_issues: [
+        {
+          severity: 'warning',
+          category: 'path_conflict',
+          message: 'User PATH contains invalid entries',
+          details: 'Missing directories: C:\\ghost',
+          fix_command: null,
+          fix_description: null,
+          remediation_id: null,
+          check_id: 'envvar_path_validity:user',
+        },
+      ],
+      system_issues: [
+        {
+          severity: 'warning',
+          category: 'other',
+          message: 'Disk space low',
+          details: null,
+          fix_command: null,
+          fix_description: null,
+          remediation_id: null,
+        },
+      ],
+      environments: [],
+      package_managers: [],
+      skipped_providers: [],
+    };
+
+    render(<HealthPage />);
+
+    expect(screen.getByText('environments.healthCheck.envvarIssues')).toBeInTheDocument();
+    expect(screen.getByText('User PATH contains invalid entries')).toBeInTheDocument();
+    expect(screen.getByText('environments.healthCheck.systemIssues')).toBeInTheDocument();
+    expect(screen.getByText('Disk space low')).toBeInTheDocument();
   });
 });

@@ -1,8 +1,8 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { UpdateCheckerCard } from "./update-checker";
-import { useEnvironments } from "@/hooks/use-environments";
+import { useEnvironments } from "@/hooks/environments/use-environments";
 
-jest.mock("@/hooks/use-environments", () => ({
+jest.mock("@/hooks/environments/use-environments", () => ({
   useEnvironments: jest.fn(),
 }));
 

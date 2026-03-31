@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils';
 import { getCategoryMeta } from '@/lib/constants/toolbox';
 import { Star, Sparkles, Plug } from 'lucide-react';
 import { DynamicIcon } from '@/components/ui/dynamic-icon';
-import type { UnifiedTool } from '@/hooks/use-toolbox';
+import type { UnifiedTool } from '@/hooks/toolbox/use-toolbox';
 
 interface ToolCardProps {
   tool: UnifiedTool;

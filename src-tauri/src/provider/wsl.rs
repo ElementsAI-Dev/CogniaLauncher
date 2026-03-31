@@ -188,6 +188,38 @@ pub struct WslBackupEntry {
     pub distro_name: String,
 }
 
+/// A captured WSL distribution entry stored inside an environment profile.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct WslProfileSnapshotDistro {
+    pub name: String,
+    pub version: String,
+    pub is_default: bool,
+}
+
+/// A captured WSL profile snapshot.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct WslProfileSnapshot {
+    pub wslconfig_content: String,
+    pub distros: Vec<WslProfileSnapshotDistro>,
+    pub default_distro: Option<String>,
+}
+
+/// A skipped WSL apply entry reported while restoring a WSL profile snapshot.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct WslProfileApplySkipped {
+    pub distro_name: String,
+    pub reason: String,
+    pub expected_version: Option<String>,
+    pub installed_version: Option<String>,
+}
+
+/// Result of applying a WSL profile snapshot.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct WslProfileApplyResult {
+    pub applied: bool,
+    pub skipped: Vec<WslProfileApplySkipped>,
+}
+
 /// A port forwarding rule parsed from `netsh interface portproxy show all`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -324,6 +356,35 @@ impl WslProvider {
             return None;
         }
         Some(trimmed.chars().take(240).collect::<String>())
+    }
+
+    fn wslconfig_path() -> CogniaResult<PathBuf> {
+        let user_profile = std::env::var("USERPROFILE").map_err(|_| {
+            CogniaError::Provider("USERPROFILE environment variable not set".into())
+        })?;
+        Ok(PathBuf::from(user_profile).join(".wslconfig"))
+    }
+
+    pub fn read_wslconfig_content() -> CogniaResult<String> {
+        let config_path = Self::wslconfig_path()?;
+        if !config_path.exists() {
+            return Ok(String::new());
+        }
+
+        std::fs::read_to_string(&config_path)
+            .map_err(|e| CogniaError::Provider(format!("Failed to read .wslconfig: {}", e)))
+    }
+
+    pub fn write_wslconfig_content(content: &str) -> CogniaResult<()> {
+        let config_path = Self::wslconfig_path()?;
+        if let Some(parent) = config_path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| {
+                CogniaError::Provider(format!("Failed to prepare .wslconfig directory: {}", e))
+            })?;
+        }
+
+        std::fs::write(&config_path, content)
+            .map_err(|e| CogniaError::Provider(format!("Failed to write .wslconfig: {}", e)))
     }
 
     fn push_runtime_probe(
@@ -574,6 +635,95 @@ impl WslProvider {
             reason: "WSL runtime could not be detected by any probe.".to_string(),
             probes,
         }
+    }
+
+    pub async fn capture_snapshot(&self) -> CogniaResult<WslProfileSnapshot> {
+        let wslconfig_content = Self::read_wslconfig_content()?;
+        let distros = self
+            .run_wsl_lenient(&["--list", "--verbose"])
+            .await
+            .map(|output| Self::parse_list_verbose(&output))
+            .unwrap_or_default()
+            .into_iter()
+            .map(|distro| WslProfileSnapshotDistro {
+                name: distro.name,
+                version: format!("WSL {}", distro.wsl_version),
+                is_default: distro.is_default,
+            })
+            .collect::<Vec<_>>();
+
+        let default_distro = self
+            .get_wsl_status()
+            .await
+            .ok()
+            .and_then(|status| Self::parse_status_output(&status).0)
+            .or_else(|| {
+                distros
+                    .iter()
+                    .find(|distro| distro.is_default)
+                    .map(|distro| distro.name.clone())
+            });
+
+        Ok(WslProfileSnapshot {
+            wslconfig_content,
+            distros,
+            default_distro,
+        })
+    }
+
+    pub async fn apply_snapshot(
+        &self,
+        snapshot: &WslProfileSnapshot,
+    ) -> CogniaResult<WslProfileApplyResult> {
+        Self::write_wslconfig_content(&snapshot.wslconfig_content)?;
+
+        let installed = self
+            .run_wsl_lenient(&["--list", "--verbose"])
+            .await
+            .map(|output| Self::parse_list_verbose(&output))
+            .unwrap_or_default();
+        let mut skipped = Vec::new();
+
+        for distro in &snapshot.distros {
+            let installed_match = installed.iter().find(|entry| entry.name == distro.name);
+            match installed_match {
+                Some(installed_distro) => {
+                    let installed_version = format!("WSL {}", installed_distro.wsl_version);
+                    if installed_version != distro.version {
+                        skipped.push(WslProfileApplySkipped {
+                            distro_name: distro.name.clone(),
+                            reason: "Version mismatch".to_string(),
+                            expected_version: Some(distro.version.clone()),
+                            installed_version: Some(installed_version),
+                        });
+                    }
+                }
+                None => skipped.push(WslProfileApplySkipped {
+                    distro_name: distro.name.clone(),
+                    reason: "Distribution is not installed".to_string(),
+                    expected_version: Some(distro.version.clone()),
+                    installed_version: None,
+                }),
+            }
+        }
+
+        if let Some(default_distro) = snapshot.default_distro.as_deref() {
+            if installed.iter().any(|entry| entry.name == default_distro) {
+                self.set_default_distro(default_distro).await?;
+            } else {
+                skipped.push(WslProfileApplySkipped {
+                    distro_name: default_distro.to_string(),
+                    reason: "Default distribution is not installed".to_string(),
+                    expected_version: None,
+                    installed_version: None,
+                });
+            }
+        }
+
+        Ok(WslProfileApplyResult {
+            applied: true,
+            skipped,
+        })
     }
 
     /// Execute a wsl.exe command and return stdout on success.
@@ -1476,6 +1626,7 @@ impl WslProvider {
     /// Add a port forwarding rule via `netsh interface portproxy add v4tov4`.
     pub async fn add_port_forward(
         &self,
+        listen_address: &str,
         listen_port: u16,
         connect_port: u16,
         connect_address: &str,
@@ -1489,6 +1640,7 @@ impl WslProvider {
                 "portproxy",
                 "add",
                 "v4tov4",
+                &format!("listenaddress={}", listen_address),
                 &format!("listenport={}", listen_str),
                 &format!("connectport={}", connect_str),
                 &format!("connectaddress={}", connect_address),
@@ -1508,7 +1660,11 @@ impl WslProvider {
     }
 
     /// Remove a port forwarding rule via `netsh interface portproxy delete v4tov4`.
-    pub async fn remove_port_forward(&self, listen_port: u16) -> CogniaResult<()> {
+    pub async fn remove_port_forward(
+        &self,
+        listen_address: &str,
+        listen_port: u16,
+    ) -> CogniaResult<()> {
         let listen_str = listen_port.to_string();
         let out = process::execute(
             "netsh",
@@ -1517,6 +1673,7 @@ impl WslProvider {
                 "portproxy",
                 "delete",
                 "v4tov4",
+                &format!("listenaddress={}", listen_address),
                 &format!("listenport={}", listen_str),
             ],
             Some(ProcessOptions::new().with_timeout(Duration::from_secs(15))),

@@ -317,7 +317,10 @@ impl Provider for BunProvider {
             .unwrap_or_else(|_| req.version.clone().unwrap_or_else(|| "unknown".into()));
 
         let install_path = if req.global {
-            self.get_global_dir().await.unwrap_or_default().join(&req.name)
+            self.get_global_dir()
+                .await
+                .unwrap_or_default()
+                .join(&req.name)
         } else {
             PathBuf::from("node_modules").join(&req.name)
         };
@@ -371,7 +374,8 @@ impl Provider for BunProvider {
 
             // Determine install path based on global or local
             let install_path = if filter.global_only {
-                self.get_global_dir().await
+                self.get_global_dir()
+                    .await
                     .map(|p| p.join("node_modules").join(&pkg_name))
                     .unwrap_or_default()
             } else {

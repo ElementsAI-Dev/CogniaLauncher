@@ -1,6 +1,7 @@
 use crate::core::{
     EnvironmentProfile, ProfileApplyResult, ProfileEnvironment, SharedProfileManager,
 };
+use crate::provider::wsl::{WslProfileApplyResult, WslProfileSnapshot, WslProvider};
 use tauri::State;
 
 /// List all profiles
@@ -28,6 +29,9 @@ pub async fn profile_create(
     name: String,
     description: Option<String>,
     environments: Vec<ProfileEnvironment>,
+    env_snapshot: Option<std::collections::HashMap<String, String>>,
+    capture_wsl_snapshot: Option<bool>,
+    wsl_snapshot: Option<WslProfileSnapshot>,
     manager: State<'_, SharedProfileManager>,
 ) -> Result<EnvironmentProfile, String> {
     let mut profile = EnvironmentProfile::new(name);
@@ -39,6 +43,32 @@ pub async fn profile_create(
     for env in environments {
         profile.add_environment(env);
     }
+
+    profile.env_snapshot = env_snapshot;
+    profile.wsl_snapshot = if wsl_snapshot.is_some() {
+        wsl_snapshot
+    } else if capture_wsl_snapshot.unwrap_or(false) {
+        #[cfg(target_os = "windows")]
+        {
+            let provider = WslProvider::new();
+            if provider.detect_runtime_snapshot().await.available {
+                Some(
+                    provider
+                        .capture_snapshot()
+                        .await
+                        .map_err(|e| e.to_string())?,
+                )
+            } else {
+                None
+            }
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            None
+        }
+    } else {
+        None
+    };
 
     let mut mgr = manager.write().await;
     mgr.create(profile).await.map_err(|e| e.to_string())
@@ -98,10 +128,61 @@ pub async fn profile_import(
 #[tauri::command]
 pub async fn profile_create_from_current(
     name: String,
+    include_wsl_configuration: Option<bool>,
+    include_env_snapshot: Option<bool>,
     manager: State<'_, SharedProfileManager>,
 ) -> Result<EnvironmentProfile, String> {
     let mut mgr = manager.write().await;
-    mgr.create_from_current(&name)
-        .await
-        .map_err(|e| e.to_string())
+    mgr.create_from_current(
+        &name,
+        include_wsl_configuration.unwrap_or(false),
+        include_env_snapshot.unwrap_or(false),
+    )
+    .await
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn profile_capture_wsl_snapshot() -> Result<WslProfileSnapshot, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let provider = WslProvider::new();
+        return provider.capture_snapshot().await.map_err(|e| e.to_string());
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        Err("WSL snapshots are only available on Windows".to_string())
+    }
+}
+
+#[tauri::command]
+pub async fn profile_apply_wsl_snapshot(
+    snapshot: WslProfileSnapshot,
+) -> Result<WslProfileApplyResult, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let provider = WslProvider::new();
+        return provider
+            .apply_snapshot(&snapshot)
+            .await
+            .map_err(|e| e.to_string());
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        Ok(WslProfileApplyResult {
+            applied: false,
+            skipped: snapshot
+                .distros
+                .into_iter()
+                .map(|distro| crate::provider::wsl::WslProfileApplySkipped {
+                    distro_name: distro.name,
+                    reason: "WSL snapshots are only available on Windows".to_string(),
+                    expected_version: Some(distro.version),
+                    installed_version: None,
+                })
+                .collect(),
+        })
+    }
 }

@@ -564,10 +564,7 @@ fn parse_help_commands(output: &str) -> HashSet<String> {
             continue;
         }
         for token in trimmed.split_whitespace() {
-            if token
-                .chars()
-                .all(|ch| ch.is_ascii_lowercase() || ch == '-')
-            {
+            if token.chars().all(|ch| ch.is_ascii_lowercase() || ch == '-') {
                 commands.insert(token.to_string());
             }
         }
@@ -615,7 +612,9 @@ fn build_support_feature(
         (
             "unknown".to_string(),
             Some("Unable to determine feature support deterministically.".to_string()),
-            vec!["Retry support detection after confirming Git installation integrity.".to_string()],
+            vec![
+                "Retry support detection after confirming Git installation integrity.".to_string(),
+            ],
         )
     } else {
         ("supported".to_string(), None, vec![])
@@ -1571,40 +1570,33 @@ impl GitProvider {
         let version_ref = git_version.as_deref();
 
         let mut features: Vec<GitSupportFeature> = Vec::new();
-        let mut push_feature =
-            |key: &str,
-             min_version: Option<&str>,
-             requires_repo: bool,
-             command_keys: &[&str],
-             manual_command_ok: Option<bool>| {
-                let command_ok = if let Some(value) = manual_command_ok {
-                    Some(value)
-                } else {
-                    commands.as_ref().map(|set| {
-                        command_keys.is_empty()
-                            || command_keys.iter().all(|command| set.contains(*command))
-                    })
-                };
-                let version_ok = min_version.and_then(|min| version_at_least(version_ref, min));
-                features.push(build_support_feature(
-                    key,
-                    min_version,
-                    requires_repo,
-                    git_available,
-                    repo_ready,
-                    version_ok,
-                    command_ok,
-                ));
+        let mut push_feature = |key: &str,
+                                min_version: Option<&str>,
+                                requires_repo: bool,
+                                command_keys: &[&str],
+                                manual_command_ok: Option<bool>| {
+            let command_ok = if let Some(value) = manual_command_ok {
+                Some(value)
+            } else {
+                commands.as_ref().map(|set| {
+                    command_keys.is_empty()
+                        || command_keys.iter().all(|command| set.contains(*command))
+                })
             };
+            let version_ok = min_version.and_then(|min| version_at_least(version_ref, min));
+            features.push(build_support_feature(
+                key,
+                min_version,
+                requires_repo,
+                git_available,
+                repo_ready,
+                version_ok,
+                command_ok,
+            ));
+        };
 
         push_feature("rebaseSquash", Some("2.22.0"), true, &["rebase"], None);
-        push_feature(
-            "interactiveRebase",
-            Some("2.22.0"),
-            true,
-            &["rebase"],
-            None,
-        );
+        push_feature("interactiveRebase", Some("2.22.0"), true, &["rebase"], None);
         push_feature("bisect", Some("2.0.0"), true, &["bisect"], None);
         push_feature(
             "sparseCheckout",
@@ -4719,12 +4711,7 @@ filename src/main.rs\n\
         let message = format!("Hello{}World", FIELD_SEP);
         let input = format!(
             "abc1234{}{}{}Author{}2025-01-15T10:30:00+08:00{}Hello{}World",
-            FIELD_SEP,
-            FIELD_SEP,
-            FIELD_SEP,
-            FIELD_SEP,
-            FIELD_SEP,
-            FIELD_SEP,
+            FIELD_SEP, FIELD_SEP, FIELD_SEP, FIELD_SEP, FIELD_SEP, FIELD_SEP,
         );
         let entries = parse_graph_log(&input);
         assert_eq!(entries.len(), 1);

@@ -9,8 +9,8 @@ import { Badge } from '@/components/ui/badge';
 import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible';
 import { DynamicIcon } from '@/components/ui/dynamic-icon';
 import { useLocale } from '@/components/providers/locale-provider';
-import { useToolbox } from '@/hooks/use-toolbox';
-import { useToolboxMarketplace } from '@/hooks/use-toolbox-marketplace';
+import { useToolbox } from '@/hooks/toolbox/use-toolbox';
+import { useToolboxMarketplace } from '@/hooks/toolbox/use-toolbox-marketplace';
 import { getToolboxDetailPath } from '@/lib/toolbox-route';
 
 type AssistancePanelId = 'history' | 'featured';

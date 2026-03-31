@@ -1,4 +1,8 @@
-import type { DetectedEnvironment, EnvironmentProviderInfo } from '@/lib/tauri';
+import type {
+  CppCompilerMetadata,
+  DetectedEnvironment,
+  EnvironmentProviderInfo,
+} from '@/lib/tauri';
 import { getLogicalEnvType } from '@/lib/stores/environment';
 
 type ProviderLike = Pick<EnvironmentProviderInfo, 'id' | 'env_type'>;
@@ -109,4 +113,39 @@ export function formatDetectionSource(source: string, sourceType?: string): stri
     return 'project manifest';
   }
   return source.replaceAll('_', ' ').trim();
+}
+
+function formatCompilerFamilyName(family: string, variant?: string | null): string {
+  const normalizedVariant = variant?.trim();
+  if (normalizedVariant) {
+    return normalizedVariant;
+  }
+
+  switch (family.trim().toLowerCase()) {
+    case 'msvc':
+      return 'MSVC';
+    case 'clang':
+      return 'Clang';
+    case 'gcc':
+      return 'GCC';
+    default:
+      return family.trim();
+  }
+}
+
+export function formatCppCompilerLabel(
+  compiler?: CppCompilerMetadata | null,
+): string {
+  if (!compiler) {
+    return '';
+  }
+
+  const parts = [
+    compiler.subsystem?.trim(),
+    formatCompilerFamilyName(compiler.family, compiler.variant),
+    compiler.version?.trim(),
+    compiler.target_architecture?.trim(),
+  ].filter((part): part is string => Boolean(part && part.length > 0));
+
+  return parts.join(' ');
 }

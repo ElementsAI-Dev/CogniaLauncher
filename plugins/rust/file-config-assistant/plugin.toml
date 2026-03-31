@@ -18,6 +18,18 @@ keywords = ["config", "profile", "filesystem", "state", "assistant", "automation
 icon = "FolderCog"
 entry = "file_config_assistant"
 
+[[tools]]
+id = "file-config-assistant-guided"
+name_en = "File Config Assistant Guided"
+name_zh = "文件配置助手向导"
+description_en = "Guided workflow for profile file actions with staged recovery hints and exportable outputs."
+description_zh = "带分阶段恢复提示与可导出结果的配置档案操作向导工作流。"
+category = "developer"
+keywords = ["config", "profile", "workflow", "guided", "filesystem", "assistant"]
+icon = "Workflow"
+entry = "file_config_assistant_guided"
+ui_mode = "declarative"
+
 [permissions]
 config_read = true
 config_write = true

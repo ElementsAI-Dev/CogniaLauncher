@@ -60,7 +60,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { formatBytes } from '@/lib/utils';
-import { useCacheDetailExternal } from '@/hooks/use-cache-detail-external';
+import { useCacheDetailExternal } from '@/hooks/cache/use-cache-detail-external';
 import { getCategoryLabel } from '@/lib/constants/cache';
 import { deriveExternalCacheMaintenanceMetadata } from '@/lib/cache/maintenance';
 import { buildExternalCacheDetailHref } from '@/lib/cache/scopes';

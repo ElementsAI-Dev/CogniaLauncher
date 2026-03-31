@@ -36,8 +36,8 @@ import {
 } from "lucide-react";
 import { useLocale } from "@/components/providers/locale-provider";
 import type { SearchFilters, SearchSuggestion } from "@/lib/tauri";
-import { useDebounce } from "@/hooks/use-mobile";
-import { useSearchHistory } from "@/hooks/use-search-history";
+import { useDebounce } from "@/hooks/shared/use-mobile";
+import { useSearchHistory } from "@/hooks/packages/use-search-history";
 import type { SearchBarProps } from "@/types/packages";
 import {
   DropdownMenu,

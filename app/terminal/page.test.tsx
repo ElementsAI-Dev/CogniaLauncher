@@ -10,11 +10,29 @@ jest.mock('@/components/providers/locale-provider', () => ({
         'terminal.description': 'Manage terminal shells and profiles',
         'terminal.tabShells': 'Shells',
         'terminal.tabProfiles': 'Profiles',
-        'terminal.tabConfig': 'Config',
+        'terminal.tabConfig': 'Shell Config',
         'terminal.tabFrameworks': 'Frameworks',
         'terminal.tabPowerShell': 'PowerShell',
         'terminal.tabProxy': 'Proxy',
         'terminal.tabEnvVars': 'Env Vars',
+        'terminal.section.shell-environment': 'Shell Environment',
+        'terminal.section.profiles': 'Profiles',
+        'terminal.section.configuration': 'Configuration',
+        'terminal.section.network': 'Network',
+        'terminal.sectionShellEnvironment': 'Shell Environment',
+        'terminal.sectionShellEnvironmentDesc': 'Detected shells, frameworks, and environment variables',
+        'terminal.sectionProfiles': 'Profiles',
+        'terminal.sectionProfilesDesc': 'Terminal profiles for quick launching',
+        'terminal.sectionConfiguration': 'Configuration',
+        'terminal.sectionConfigurationDesc': 'Shell configuration files and PowerShell management',
+        'terminal.sectionNetwork': 'Network',
+        'terminal.sectionNetworkDesc': 'Proxy configuration and network settings',
+        'terminal.quickStatus': 'Quick Status',
+        'terminal.detected': 'detected',
+        'terminal.saved': 'saved',
+        'terminal.healthCheck': 'Health',
+        'terminal.healthStatus.unchecked': 'Unchecked',
+        'terminal.proxyModeNone': 'None',
       };
       return translations[key] || key;
     },
@@ -62,7 +80,7 @@ const mockTerminalHookState = {
   selectedShellId: null,
   launchingProfileId: null,
   lastLaunchResult: null,
-  proxyMode: 'global',
+  proxyMode: 'none',
   customProxy: '',
   noProxy: '',
   globalProxy: '',
@@ -99,6 +117,7 @@ const mockTerminalHookState = {
   fetchConfigEntries: jest.fn(),
   backupShellConfig: jest.fn(),
   parseConfigContent: jest.fn(),
+  validateConfigContent: jest.fn(),
   writeShellConfig: jest.fn(),
   getConfigEditorMetadata: jest.fn(),
   restoreConfigSnapshot: jest.fn(),
@@ -138,67 +157,42 @@ const mockTerminalHookState = {
   saveProfileAsTemplate: jest.fn(),
   createProfileFromTemplate: jest.fn(),
   appendToShellConfig: jest.fn(),
+  shellReadouts: {},
+  frameworkReadouts: {},
 };
 
-jest.mock('@/hooks/use-terminal', () => ({
+jest.mock('@/hooks/terminal/use-terminal', () => ({
   useTerminal: () => mockTerminalHookState,
 }));
 
-jest.mock('@/components/terminal', () => ({
-  TerminalDetectedShells: ({
-    shells,
-    onGetShellInfo,
-    onContinueToConfig,
-    onContinueToFrameworks,
-    onContinueToEnvVars,
-    activeShellId,
-  }: {
-    shells: unknown[];
-    onGetShellInfo?: (shellId: string) => void;
-    onContinueToConfig?: (shellId: string) => void;
-    onContinueToFrameworks?: (shellId: string) => void;
-    onContinueToEnvVars?: (shellId: string) => void;
-    activeShellId?: string | null;
-  }) => (
-    <div data-testid="detected-shells">
-      Shells: {shells.length}
-      <span data-testid="active-shell-context">{activeShellId ?? 'none'}</span>
-      <button type="button" onClick={() => onGetShellInfo?.('bash')}>
-        inspect-shell
-      </button>
-      <button type="button" onClick={() => onContinueToConfig?.('bash')}>
-        handoff-config
-      </button>
-      <button type="button" onClick={() => onContinueToFrameworks?.('bash')}>
-        handoff-frameworks
-      </button>
-      <button type="button" onClick={() => onContinueToEnvVars?.('bash')}>
-        handoff-envvars
-      </button>
-    </div>
-  ),
-  TerminalProfileList: ({ onFromTemplate }: { onFromTemplate?: () => void }) => (
-    <div data-testid="profile-list">
-      Profiles
+// Mock section components
+jest.mock('@/components/terminal/sections/shell-environment-section', () => ({
+  ShellEnvironmentSection: () => <div data-testid="shell-environment-section">Shell Environment Content</div>,
+}));
+
+jest.mock('@/components/terminal/sections/profiles-section', () => ({
+  ProfilesSection: ({ onFromTemplate }: { onFromTemplate?: () => void }) => (
+    <div data-testid="profiles-section">
+      Profiles Content
       <button type="button" onClick={() => onFromTemplate?.()}>open-template-picker</button>
     </div>
   ),
-  TerminalProfileDialog: () => null,
-  TerminalShellConfig: ({
+}));
+
+jest.mock('@/components/terminal/sections/configuration-section', () => ({
+  ConfigurationSection: ({
     onDirtyChange,
     onRequestDiscard,
     onRefreshHandled,
     refreshIntent,
-    activeShellId,
   }: {
     onDirtyChange?: (value: boolean) => void;
     onRequestDiscard?: () => void;
     onRefreshHandled?: (handled: { configEntries: boolean; configMetadata: boolean }) => void;
     refreshIntent?: { configEntries: boolean; configMetadata: boolean };
-    activeShellId?: string | null;
   }) => (
-    <div data-testid="shell-config">
-      <span data-testid="shell-config-active-shell">{activeShellId ?? 'none'}</span>
+    <div data-testid="configuration-section">
+      Configuration Content
       <button type="button" onClick={() => onDirtyChange?.(true)}>set-config-dirty</button>
       <button type="button" onClick={() => onRequestDiscard?.()}>request-config-discard</button>
       <button
@@ -212,36 +206,16 @@ jest.mock('@/components/terminal', () => ({
       >
         acknowledge-config-refresh
       </button>
-      Shell Config
     </div>
   ),
-  TerminalShellFramework: ({
-    onGetFrameworkCacheInfo,
-    activeShellId,
-  }: {
-    onGetFrameworkCacheInfo?: (frameworkName: string, frameworkPath: string, shellType: string) => void;
-    activeShellId?: string | null;
-  }) => (
-    <div data-testid="shell-framework">
-      <span data-testid="shell-framework-active-shell">{activeShellId ?? 'none'}</span>
-      Frameworks
-      <button
-        type="button"
-        onClick={() => onGetFrameworkCacheInfo?.('Oh My Zsh', '/home/user/.oh-my-zsh', 'zsh')}
-      >
-        inspect-framework-cache
-      </button>
-    </div>
-  ),
-  TerminalPsManagement: () => <div data-testid="ps-management">PS Management</div>,
-  TerminalPsModulesTable: ({ onSearchModules }: { onSearchModules?: (query: string) => void }) => (
-    <div data-testid="ps-modules">
-      PS Modules
-      <button type="button" onClick={() => onSearchModules?.('Pester')}>search-modules</button>
-    </div>
-  ),
-  TerminalProxySettings: () => <div data-testid="proxy-settings">Proxy</div>,
-  TerminalEnvVars: () => <div data-testid="env-vars">Env Vars</div>,
+}));
+
+jest.mock('@/components/terminal/sections/network-section', () => ({
+  NetworkSection: () => <div data-testid="network-section">Network Content</div>,
+}));
+
+jest.mock('@/components/terminal', () => ({
+  TerminalProfileDialog: () => null,
   TerminalTemplatePicker: ({
     open,
     onCreateCustom,
@@ -288,6 +262,13 @@ jest.mock('@/components/terminal', () => ({
   ) : null,
 }));
 
+function clickNavButton(name: string) {
+  const buttons = screen.getAllByRole('button');
+  const navButton = buttons.find((btn) => btn.textContent?.includes(name));
+  if (!navButton) throw new Error(`Nav button "${name}" not found`);
+  return userEvent.setup().click(navButton);
+}
+
 describe('TerminalPage', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -316,147 +297,67 @@ describe('TerminalPage', () => {
     expect(screen.getByText('Manage terminal shells and profiles')).toBeInTheDocument();
   });
 
-  it('renders all 7 tabs', () => {
+  it('renders sidebar with 4 section nav buttons', () => {
     render(<TerminalPage />);
-    expect(screen.getByRole('tab', { name: /shells/i })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /profiles/i })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /config/i })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /frameworks/i })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /powershell/i })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /proxy/i })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /env vars/i })).toBeInTheDocument();
+    const buttons = screen.getAllByRole('button');
+    const navLabels = ['Shell Environment', 'Profiles', 'Configuration', 'Network'];
+    for (const label of navLabels) {
+      expect(buttons.some((btn) => btn.textContent?.includes(label))).toBe(true);
+    }
   });
 
-  it('uses scrollable tablist layout for compact viewports', () => {
+  it('shows shell environment section by default', () => {
     render(<TerminalPage />);
-
-    const tablist = screen.getByRole('tablist');
-    expect(tablist.className).toContain('overflow-x-auto');
-    expect(screen.getByRole('tab', { name: /shells/i }).className).toContain('flex-none');
+    expect(screen.getByTestId('shell-environment-section')).toBeInTheDocument();
   });
 
-  it('shows shells tab content by default', () => {
+  it('switches to profiles section', async () => {
     render(<TerminalPage />);
-    expect(screen.getByTestId('detected-shells')).toBeInTheDocument();
-    expect(screen.getByTestId('detected-shells')).toHaveTextContent('Shells: 1');
-  });
-
-  it('switches to profiles tab', async () => {
-    const user = userEvent.setup();
-    render(<TerminalPage />);
-
-    await user.click(screen.getByRole('tab', { name: /profiles/i }));
+    await clickNavButton('Profiles');
     await waitFor(() => {
-      expect(screen.getByTestId('profile-list')).toBeInTheDocument();
+      expect(screen.getByTestId('profiles-section')).toBeInTheDocument();
     });
   });
 
-  it('switches to config tab', async () => {
-    const user = userEvent.setup();
+  it('switches to configuration section', async () => {
     render(<TerminalPage />);
-
-    await user.click(screen.getByRole('tab', { name: /config/i }));
+    await clickNavButton('Configuration');
     await waitFor(() => {
-      expect(screen.getByTestId('shell-config')).toBeInTheDocument();
+      expect(screen.getByTestId('configuration-section')).toBeInTheDocument();
     });
   });
 
-  it('switches to proxy tab', async () => {
-    const user = userEvent.setup();
+  it('switches to network section and loads proxy config', async () => {
     render(<TerminalPage />);
-
-    await user.click(screen.getByRole('tab', { name: /proxy/i }));
+    await clickNavButton('Network');
     await waitFor(() => {
-      expect(screen.getByTestId('proxy-settings')).toBeInTheDocument();
+      expect(screen.getByTestId('network-section')).toBeInTheDocument();
     });
     expect(mockLoadProxyConfig).toHaveBeenCalledTimes(1);
-    expect(mockFetchProxyEnvVars).toHaveBeenCalledTimes(0);
   });
 
-  it('switches to env vars tab', async () => {
+  it('guards section switch when config editor is dirty until discard is confirmed', async () => {
     const user = userEvent.setup();
     render(<TerminalPage />);
 
-    await user.click(screen.getByRole('tab', { name: /env vars/i }));
+    await clickNavButton('Configuration');
     await waitFor(() => {
-      expect(screen.getByTestId('env-vars')).toBeInTheDocument();
-    });
-    expect(mockFetchShellEnvVars).toHaveBeenCalledTimes(1);
-  });
-
-  it('refreshes proxy tab only when proxy resources are stale', async () => {
-    const user = userEvent.setup();
-    const { rerender } = render(<TerminalPage />);
-
-    await user.click(screen.getByRole('tab', { name: /proxy/i }));
-    expect(mockLoadProxyConfig).toHaveBeenCalledTimes(1);
-    expect(mockFetchProxyEnvVars).toHaveBeenCalledTimes(0);
-
-    mockTerminalHookState.resourceStale = {
-      ...mockTerminalHookState.resourceStale,
-      proxyConfig: false,
-      proxyEnvVars: false,
-    };
-    rerender(<TerminalPage />);
-
-    await user.click(screen.getByRole('tab', { name: /shells/i }));
-    await user.click(screen.getByRole('tab', { name: /proxy/i }));
-
-    expect(mockLoadProxyConfig).toHaveBeenCalledTimes(1);
-    expect(mockFetchProxyEnvVars).toHaveBeenCalledTimes(0);
-
-    mockTerminalHookState.resourceStale = {
-      ...mockTerminalHookState.resourceStale,
-      proxyConfig: true,
-      proxyEnvVars: true,
-    };
-    rerender(<TerminalPage />);
-
-    await user.click(screen.getByRole('tab', { name: /shells/i }));
-    await user.click(screen.getByRole('tab', { name: /proxy/i }));
-
-    expect(mockLoadProxyConfig).toHaveBeenCalledTimes(2);
-    expect(mockFetchProxyEnvVars).toHaveBeenCalledTimes(0);
-  });
-
-  it('refreshes proxy env vars independently when only proxy env is stale', async () => {
-    const user = userEvent.setup();
-    mockTerminalHookState.resourceStale = {
-      ...mockTerminalHookState.resourceStale,
-      proxyConfig: false,
-      proxyEnvVars: true,
-    };
-
-    render(<TerminalPage />);
-
-    await user.click(screen.getByRole('tab', { name: /proxy/i }));
-
-    expect(mockLoadProxyConfig).toHaveBeenCalledTimes(0);
-    expect(mockFetchProxyEnvVars).toHaveBeenCalledTimes(1);
-  });
-
-  it('guards tab switch when config editor is dirty until discard is confirmed', async () => {
-    const user = userEvent.setup();
-    render(<TerminalPage />);
-
-    await user.click(screen.getByRole('tab', { name: /config/i }));
-    await waitFor(() => {
-      expect(screen.getByTestId('shell-config')).toBeInTheDocument();
+      expect(screen.getByTestId('configuration-section')).toBeInTheDocument();
     });
 
     await user.click(screen.getByRole('button', { name: /set-config-dirty/i }));
-    await user.click(screen.getByRole('tab', { name: /profiles/i }));
+    await clickNavButton('Profiles');
 
     expect(screen.getByText('terminal.unsavedChangesTitle')).toBeInTheDocument();
-    expect(screen.queryByTestId('profile-list')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('profiles-section')).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /terminal\.cancel/i }));
-    expect(screen.queryByTestId('profile-list')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('profiles-section')).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('tab', { name: /profiles/i }));
+    await clickNavButton('Profiles');
     await user.click(screen.getByRole('button', { name: /terminal\.discardAndContinue/i }));
     await waitFor(() => {
-      expect(screen.getByTestId('profile-list')).toBeInTheDocument();
+      expect(screen.getByTestId('profiles-section')).toBeInTheDocument();
     });
   });
 
@@ -470,63 +371,31 @@ describe('TerminalPage', () => {
 
     render(<TerminalPage />);
 
-    await user.click(screen.getByRole('tab', { name: /config/i }));
+    await clickNavButton('Configuration');
     await waitFor(() => {
-      expect(screen.getByTestId('shell-config')).toBeInTheDocument();
+      expect(screen.getByTestId('configuration-section')).toBeInTheDocument();
     });
 
     await user.click(screen.getByRole('button', { name: /acknowledge-config-refresh/i }));
     expect(mockTerminalHookState.markResourcesFresh).toHaveBeenCalledWith(['configEntries', 'configMetadata']);
 
     await user.click(screen.getByRole('button', { name: /set-config-dirty/i }));
-    await user.click(screen.getByRole('tab', { name: /profiles/i }));
+    await clickNavButton('Profiles');
 
     expect(screen.getByText('terminal.unsavedChangesTitle')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /terminal\.discardAndContinue/i }));
     await waitFor(() => {
-      expect(screen.getByTestId('profile-list')).toBeInTheDocument();
+      expect(screen.getByTestId('profiles-section')).toBeInTheDocument();
     });
-  });
-
-  it('marks only config metadata fresh when that is the only stale config resource', async () => {
-    const user = userEvent.setup();
-    mockTerminalHookState.resourceStale = {
-      ...mockTerminalHookState.resourceStale,
-      configEntries: false,
-      configMetadata: true,
-    };
-
-    render(<TerminalPage />);
-
-    await user.click(screen.getByRole('tab', { name: /config/i }));
-    await waitFor(() => {
-      expect(screen.getByTestId('shell-config')).toBeInTheDocument();
-    });
-
-    await user.click(screen.getByRole('button', { name: /acknowledge-config-refresh/i }));
-    expect(mockTerminalHookState.markResourcesFresh).toHaveBeenCalledWith(['configMetadata']);
-  });
-
-  it('wires PowerShell gallery search into the modules table', async () => {
-    const user = userEvent.setup();
-    render(<TerminalPage />);
-
-    await user.click(screen.getByRole('tab', { name: /powershell/i }));
-    await waitFor(() => {
-      expect(screen.getByTestId('ps-modules')).toBeInTheDocument();
-    });
-
-    await user.click(screen.getByRole('button', { name: /search-modules/i }));
-    expect(mockTerminalHookState.searchPSModules).toHaveBeenCalledWith('Pester');
   });
 
   it('wires custom template creation through the template picker workflow', async () => {
     const user = userEvent.setup();
     render(<TerminalPage />);
 
-    await user.click(screen.getByRole('tab', { name: /profiles/i }));
+    await clickNavButton('Profiles');
     await waitFor(() => {
-      expect(screen.getByTestId('profile-list')).toBeInTheDocument();
+      expect(screen.getByTestId('profiles-section')).toBeInTheDocument();
     });
 
     await user.click(screen.getByRole('button', { name: /open-template-picker/i }));
@@ -542,20 +411,8 @@ describe('TerminalPage', () => {
     }));
   });
 
-  it('wires shell and framework drilldown callbacks into terminal components', async () => {
-    const user = userEvent.setup();
+  it('renders quick status widget', () => {
     render(<TerminalPage />);
-
-    await user.click(screen.getByRole('button', { name: /inspect-shell/i }));
-    expect(mockGetShellInfo).toHaveBeenCalledWith('bash');
-
-    await user.click(screen.getByRole('tab', { name: /frameworks/i }));
-    await waitFor(() => {
-      expect(screen.getByTestId('shell-framework')).toBeInTheDocument();
-    });
-
-    await user.click(screen.getByRole('button', { name: /inspect-framework-cache/i }));
-    expect(mockGetSingleFrameworkCacheInfo).toHaveBeenCalledWith('Oh My Zsh', '/home/user/.oh-my-zsh', 'zsh');
+    expect(screen.getByText('Quick Status')).toBeInTheDocument();
   });
-
 });

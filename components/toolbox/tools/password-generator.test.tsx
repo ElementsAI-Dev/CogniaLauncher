@@ -13,7 +13,7 @@ jest.mock('@/components/providers/locale-provider', () => ({
   }),
 }));
 
-jest.mock('@/hooks/use-clipboard', () => ({
+jest.mock('@/hooks/shared/use-clipboard', () => ({
   useCopyToClipboard: () => ({
     copied: false,
     copy: jest.fn(),

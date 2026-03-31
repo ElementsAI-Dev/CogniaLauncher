@@ -18,7 +18,7 @@ import {
   getGradientId,
 } from "@/lib/theme/chart-utils";
 import type { EnvironmentInfo, InstalledPackage } from "@/lib/tauri";
-import type { DashboardActivityTimelineModel } from "@/hooks/use-dashboard-insights";
+import type { DashboardActivityTimelineModel } from "@/hooks/dashboard/use-dashboard-insights";
 import { WidgetEmptyCard } from "@/components/dashboard/widgets/widget-empty-card";
 import {
   DashboardLegendList,

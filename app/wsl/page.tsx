@@ -3,7 +3,7 @@
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState, useCallback, useMemo, type ReactNode } from 'react';
 import { PageHeader } from '@/components/layout/page-header';
-import { useWsl } from '@/hooks/use-wsl';
+import { useWsl } from '@/hooks/wsl/use-wsl';
 import { useLocale } from '@/components/providers/locale-provider';
 import { isTauri } from '@/lib/tauri';
 import { useWslStore } from '@/lib/stores/wsl';
@@ -620,7 +620,7 @@ export default function WslPage() {
   }, [t]);
 
   const refreshWorkspaceTargets = useCallback(async (
-    targets: readonly Array<'inventory' | 'runtime' | 'config' | 'backup' | 'network'>,
+    targets: ReadonlyArray<'inventory' | 'runtime' | 'config' | 'backup' | 'network'>,
     targetDistroName?: string | null,
   ) => {
     const refreshJobs: Promise<unknown>[] = [];
@@ -1437,7 +1437,7 @@ export default function WslPage() {
                     <CardTitle className="text-base font-semibold">{activeWorkspaceTitle}</CardTitle>
                     <CardDescription>
                       {activeWorkspaceDistro
-                        ? `${activeWorkspaceDistro.state} · WSL ${activeWorkspaceDistro.version}`
+                        ? `${activeWorkspaceDistro.state} · WSL ${activeWorkspaceDistro.wslVersion}`
                         : t('wsl.description')}
                     </CardDescription>
                   </CardHeader>

@@ -1,5 +1,8 @@
 import type {
   BatchResult,
+  ConflictInfo,
+  ConflictResolutionResult,
+  ConflictResolutionStrategy,
   PackageComparison,
   PackageInfo,
   PackageSummary,
@@ -11,7 +14,7 @@ import type {
   VersionInfo,
   InstallHistoryEntry,
 } from './tauri';
-import type { ExportedPackageList } from '@/hooks/use-package-export';
+import type { ExportedPackageList } from '@/hooks/packages/use-package-export';
 
 // ============================================================================
 // Batch Operations
@@ -21,6 +24,7 @@ export type OperationType = 'install' | 'uninstall' | 'update';
 
 export interface BatchOperationsProps {
   selectedPackages: string[];
+  allowedOperations?: OperationType[];
   onBatchInstall: (
     packages: string[],
     options?: {
@@ -66,6 +70,11 @@ export interface DependencyTreeProps {
   error?: string | null;
   loading: boolean;
   onResolve: (request: DependencyResolveRequest) => Promise<ResolutionResult | null>;
+  onResolveConflict?: (
+    conflict: ConflictInfo,
+    strategy: ConflictResolutionStrategy,
+    manualVersion?: string,
+  ) => Promise<ConflictResolutionResult | null>;
   onRetry?: () => Promise<void>;
 }
 
@@ -150,6 +159,7 @@ export interface PackageListProps {
   ) => void;
   onPin?: (name: string, version?: string, provider?: string) => void;
   onUnpin?: (name: string, provider?: string) => void;
+  onRollback?: (name: string, version?: string, provider?: string) => void;
   onBookmark?: (name: string, provider?: string) => void;
   selectable?: boolean;
   showSelectAll?: boolean;

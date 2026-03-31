@@ -18,7 +18,7 @@ import {
   DashboardMetricItem,
   DashboardStatusBadge,
 } from "@/components/dashboard/dashboard-primitives";
-import type { DashboardTrendModel } from "@/hooks/use-dashboard-insights";
+import type { DashboardTrendModel } from "@/hooks/dashboard/use-dashboard-insights";
 import {
   getChartAxisTickStyle,
   getChartColor,

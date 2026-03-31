@@ -1,6 +1,10 @@
 use crate::cache::MetadataCache;
+use crate::commands::batch::ConflictInfo;
 use crate::config::Settings;
-use crate::core::Orchestrator;
+use crate::core::{
+    Orchestrator, PackagePreflightSummary, PackageValidationResult, ValidationContext,
+    ValidationStatus, ValidatorChain,
+};
 use crate::platform::env::{current_platform, Platform};
 use crate::provider::{
     support::{
@@ -11,7 +15,7 @@ use crate::provider::{
     ProviderRegistry, SearchOptions,
 };
 use futures::future::join_all;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tauri::State;
 use tokio::sync::RwLock;
@@ -258,6 +262,96 @@ pub async fn package_install(
         .into_iter()
         .map(|r| format!("{}@{}", r.name, r.version))
         .collect())
+}
+
+#[tauri::command]
+pub async fn pre_install_validate(
+    packages: Vec<String>,
+    registry: State<'_, SharedRegistry>,
+    settings: State<'_, SharedSettings>,
+) -> Result<PackagePreflightSummary, String> {
+    let context = ValidationContext::from_package_specs(
+        packages.clone(),
+        registry.inner().clone(),
+        settings.inner().clone(),
+    )
+    .await;
+
+    if context
+        .packages
+        .iter()
+        .any(|package| package.provider_id.is_none())
+    {
+        return Ok(PackagePreflightSummary {
+            results: context
+                .packages
+                .iter()
+                .filter(|package| package.provider_id.is_none())
+                .map(|package| PackageValidationResult {
+                    validator_id: "install_plan".to_string(),
+                    validator_name: "Install plan".to_string(),
+                    status: ValidationStatus::Failure,
+                    summary: format!("Could not resolve a provider for '{}'.", package.name),
+                    details: vec![format!(
+                        "Specify a provider explicitly for '{}', for example 'npm:{}' or 'pip:{}' .",
+                        package.raw, package.name, package.name
+                    )],
+                    remediation: Some("Retry with an explicit provider prefix.".to_string()),
+                    package: Some(package.raw.clone()),
+                    provider_id: None,
+                    blocking: true,
+                    timed_out: false,
+                })
+                .collect(),
+            can_proceed: false,
+            has_warnings: false,
+            has_failures: true,
+            checked_at: chrono::Utc::now().to_rfc3339(),
+        });
+    }
+
+    let summary = ValidatorChain::package_preflight().run(context).await;
+
+    Ok(summary)
+}
+
+#[tauri::command]
+pub async fn resolve_dependency_conflict(
+    conflicts: Vec<ConflictInfo>,
+    strategy: crate::resolver::ConflictResolutionStrategy,
+    manual_versions: Option<HashMap<String, String>>,
+    registry: State<'_, SharedRegistry>,
+) -> Result<crate::resolver::ConflictResolutionResult, String> {
+    let normalized = conflicts
+        .into_iter()
+        .map(|conflict| crate::resolver::ConflictResolutionInput {
+            package_name: if conflict.package_name.trim().is_empty() {
+                conflict.package.clone()
+            } else {
+                conflict.package_name.clone()
+            },
+            provider_id: None,
+            versions: if conflict.versions.is_empty() {
+                conflict
+                    .required_versions
+                    .iter()
+                    .map(|version| version.constraint.clone())
+                    .collect()
+            } else {
+                conflict.versions.clone()
+            },
+        })
+        .collect::<Vec<_>>();
+
+    let registry = registry.read().await;
+    crate::resolver::resolve_dependency_conflict(
+        &registry,
+        &normalized,
+        strategy,
+        manual_versions.as_ref(),
+    )
+    .await
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -899,6 +993,33 @@ mod tests {
             status.reason.as_deref(),
             Some("xrepo executable was not found on PATH")
         );
+    }
+
+    #[test]
+    fn test_build_provider_status_info_keeps_cpp_reason_code() {
+        let info = provider_info("system-cpp", vec![Capability::List]);
+        let status = build_provider_status_info(
+            info,
+            Platform::Windows,
+            ProviderAvailabilityProbe::Unavailable,
+            Some(SupportReason {
+                code: "cpp-compiler-not-found",
+                message:
+                    "No runnable C++ compiler was found in PATH (checked clang-cl, clang++, g++, c++)"
+                        .into(),
+            }),
+        );
+
+        assert_eq!(status.scope_state, "unavailable");
+        assert_eq!(
+            status.reason_code.as_deref(),
+            Some("cpp-compiler-not-found")
+        );
+        assert!(status
+            .reason
+            .as_deref()
+            .unwrap_or_default()
+            .contains("C++ compiler"));
     }
 
     #[tokio::test]

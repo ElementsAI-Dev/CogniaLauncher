@@ -24,7 +24,7 @@ import {
   getCapabilityLabel,
 } from "@/lib/constants/provider-capability";
 import { useLocale } from "@/components/providers/locale-provider";
-import { useProviderStatus } from "@/hooks/use-provider-status";
+import { useProviderStatus } from "@/hooks/providers/use-provider-status";
 import { ProviderIcon, PlatformIcon } from "./provider-icon";
 import { ProviderStatusBadge } from "./provider-status-badge";
 import { ProviderActionsMenu } from "./provider-actions-menu";

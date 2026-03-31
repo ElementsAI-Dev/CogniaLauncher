@@ -7,6 +7,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Label } from "@/components/ui/label";
 import { createArtifactProfilePreview } from "@/lib/downloads";
+import {
+  useAssetMatcher,
+  getArchLabel,
+  getPlatformLabel,
+} from "@/hooks/downloads/use-asset-matcher";
 import { selectableCheckboxRowClass, SelectableCardButton } from "./selectable-list-patterns";
 import type { GitLabPipelineInfo, GitLabJobInfo } from "@/types/gitlab";
 
@@ -33,6 +38,8 @@ export function GitLabPipelinesTab({
   onRefresh,
   t,
 }: GitLabPipelinesTabProps) {
+  const { currentPlatform, currentArch } = useAssetMatcher();
+
   return (
     <>
       <div className="flex items-center justify-between">
@@ -105,11 +112,18 @@ export function GitLabPipelinesTab({
                 fileName: `${job.name}.zip`,
                 sourceKind: "gitlab_pipeline_artifact",
               });
+              const isRecommended =
+                job.hasArtifacts &&
+                currentPlatform !== "unknown" &&
+                currentArch !== "unknown" &&
+                profile.platform === currentPlatform &&
+                profile.arch === currentArch;
               return (
                 <label
                   key={job.id}
                   className={selectableCheckboxRowClass({
-                    selected: checked,
+                    selected: checked || isRecommended,
+                    tone: isRecommended ? "success" : "default",
                     disabled: !job.hasArtifacts,
                   })}
                 >
@@ -135,6 +149,23 @@ export function GitLabPipelinesTab({
                   {job.hasArtifacts && (
                     <Badge variant="outline" className="text-xs">
                       {t(`downloads.artifactKind.${profile.artifactKind}`)}
+                    </Badge>
+                  )}
+                  {job.hasArtifacts && profile.platform !== "unknown" && (
+                    <Badge variant="outline" className="text-xs">
+                      {profile.platform === "universal"
+                        ? getArchLabel("universal")
+                        : getPlatformLabel(profile.platform)}
+                    </Badge>
+                  )}
+                  {job.hasArtifacts && profile.arch !== "unknown" && (
+                    <Badge variant="secondary" className="text-xs">
+                      {getArchLabel(profile.arch)}
+                    </Badge>
+                  )}
+                  {isRecommended && (
+                    <Badge variant="secondary" className="text-xs">
+                      {t("downloads.gitlab.recommended")}
                     </Badge>
                   )}
                 </label>

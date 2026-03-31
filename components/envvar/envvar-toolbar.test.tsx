@@ -52,6 +52,6 @@ describe('EnvVarToolbar', () => {
   it('disables controls when busy', () => {
     render(<EnvVarToolbar {...defaultProps} disabled />);
     expect(screen.getByPlaceholderText('Search environment variables...')).toBeDisabled();
-    expect(screen.getByRole('combobox')).toBeInTheDocument();
+    expect(screen.getByTestId('envvar-scope-filter')).toBeInTheDocument();
   });
 });

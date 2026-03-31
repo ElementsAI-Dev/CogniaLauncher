@@ -2,7 +2,7 @@ import { formatBytes, formatUptime } from '@/lib/utils';
 import { APP_VERSION } from '@/lib/app-version';
 import type { AboutInsights, SystemInfo } from '@/types/about';
 import type { SelfUpdateInfo } from '@/lib/tauri';
-import type { SystemInfoDisplay } from '@/hooks/use-system-info-display';
+import type { SystemInfoDisplay } from '@/hooks/about/use-system-info-display';
 
 export interface BuildSystemInfoTextParams {
   systemInfo: SystemInfo | null;

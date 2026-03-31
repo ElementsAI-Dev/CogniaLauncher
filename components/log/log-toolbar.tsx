@@ -35,7 +35,7 @@ import {
 import { Toggle } from "@/components/ui/toggle";
 import { ToolbarCluster, ToolbarRow, denseToolbarControl } from "@/components/ui/toolbar";
 import { useLogStore } from "@/lib/stores/log";
-import { useLogs } from "@/hooks/use-logs";
+import { useLogs } from "@/hooks/logs/use-logs";
 import { ALL_LEVELS, LEVEL_COLORS, LEVEL_STYLES, KNOWN_TARGETS } from "@/lib/constants/log";
 import { formatDateTimeInput, parseDateTimeInput } from "@/lib/log";
 import { useLocale } from "@/components/providers/locale-provider";

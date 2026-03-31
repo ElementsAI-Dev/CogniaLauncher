@@ -1,6 +1,8 @@
 import {
   buildLogsWorkspaceOverview,
+  buildLogsWorkspaceHref,
   getLatestLogsWorkspaceAction,
+  parseLogsWorkspaceRouteContext,
 } from './log-workspace';
 import type { LogCleanupPreviewResult } from '@/types/tauri';
 import type { LogObservabilitySummary } from './stores/log';
@@ -136,5 +138,33 @@ describe('log workspace helpers', () => {
       expect.objectContaining({ title: 'Backend bridge needs attention' }),
       expect.objectContaining({ title: 'Cleanup preview is stale' }),
     ]);
+  });
+
+  it('builds a logs workspace href with normalized route context', () => {
+    const href = buildLogsWorkspaceHref({
+      tab: 'files',
+      search: ' panic ',
+      levels: ['error', 'warn', 'error'],
+      selectedFile: 'session.log',
+      showBookmarksOnly: true,
+    });
+
+    expect(href).toBe(
+      '/logs?tab=files&q=panic&levels=error%2Cwarn&file=session.log&bookmarks=1',
+    );
+  });
+
+  it('parses route context and ignores invalid values', () => {
+    const params = new URLSearchParams(
+      'tab=files&q=panic&levels=error,warn,invalid&file=trace.log&bookmarks=0',
+    );
+
+    expect(parseLogsWorkspaceRouteContext(params)).toEqual({
+      tab: 'files',
+      search: 'panic',
+      levels: ['error', 'warn'],
+      selectedFile: 'trace.log',
+      showBookmarksOnly: false,
+    });
   });
 });

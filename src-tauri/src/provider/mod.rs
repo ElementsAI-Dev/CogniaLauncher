@@ -11,6 +11,7 @@ pub mod chocolatey;
 pub mod composer;
 pub mod conan;
 pub mod conda;
+pub mod cpp_compiler;
 pub mod deno;
 pub mod dnf;
 pub mod fvm;
@@ -63,6 +64,7 @@ pub mod zig;
 pub mod zypper;
 
 pub use api::*;
+pub use cpp_compiler::CppCompilerMetadata;
 pub use node_base::NodeProviderUtils;
 pub use registry::*;
 pub use system::{SystemEnvironmentProvider, SystemEnvironmentType};

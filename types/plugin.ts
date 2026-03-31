@@ -191,6 +191,7 @@ export interface PluginMarketplaceAcquisitionRecord {
   pluginId: string;
   listingId: string;
   storeId: string;
+  toolId: string | null;
   action: PluginMarketplaceActionType;
   phase: PluginMarketplaceActionPhase;
   outcome: PluginMarketplaceAcquisitionOutcome;
@@ -232,18 +233,25 @@ export type PluginSdkUsagePathType =
   | 'scaffold-workflow';
 
 export type PluginSdkUsageSurface = 'runtime' | 'ink-authoring';
+export type PluginSdkUsageCoverage = 'reference' | 'builtin-primary';
+export type PluginSdkWorkflowInteractionMode = NonNullable<PluginToolDeclaration['uiMode']>;
 
 export interface PluginSdkUsagePath {
   type: PluginSdkUsagePathType;
   surface: PluginSdkUsageSurface;
+  coverage: PluginSdkUsageCoverage;
   path: string;
   pluginId?: string;
+  toolId?: string;
   displayName?: string;
   launchCommand?: string;
   entrypoints: string[];
   requiredPermissions: string[];
+  interactionMode?: PluginSdkWorkflowInteractionMode;
+  discoverable?: boolean;
   localPrerequisites?: string[];
   pluginPointIds?: string[];
+  workflowIntents?: string[];
 }
 
 export interface PluginSdkCapabilityCoverage {
@@ -257,6 +265,7 @@ export interface PluginSdkCapabilityCoverage {
   status: 'covered' | 'warning' | 'blocked';
   reason: string | null;
   missingPermissions: string[];
+  preferredWorkflow?: PluginSdkUsagePath;
 }
 
 export interface PluginSettingDeclaration {

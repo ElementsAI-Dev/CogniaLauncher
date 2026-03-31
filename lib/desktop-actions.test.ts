@@ -37,6 +37,30 @@ describe("desktop-actions", () => {
     expect(trayActionIds).not.toContain("feature_request");
   });
 
+  it("exposes WSL actions only on the command palette surface", () => {
+    const commandPaletteIds = getDesktopActionsForSurface("command_palette").map(
+      (action) => action.id,
+    );
+    const trayActionIds = getDesktopActionsForSurface("tray").map(
+      (action) => action.id,
+    );
+
+    expect(commandPaletteIds).toEqual(
+      expect.arrayContaining([
+        "wsl_launch_default",
+        "wsl_shutdown_all",
+        "wsl_open_terminal",
+      ]),
+    );
+    expect(trayActionIds).not.toEqual(
+      expect.arrayContaining([
+        "wsl_launch_default",
+        "wsl_shutdown_all",
+        "wsl_open_terminal",
+      ]),
+    );
+  });
+
   it("marks native-only actions so unsupported surfaces can filter them", () => {
     const action = getDesktopAction("open_logs");
 
@@ -83,5 +107,22 @@ describe("desktop-actions", () => {
     expect(result).toBe(false);
     expect(context.navigate).not.toHaveBeenCalled();
     expect(context.ensureWindowVisible).not.toHaveBeenCalled();
+  });
+
+  it("executes WSL callback-backed actions through the shared executor context", async () => {
+    const context = createContext({
+      wslLaunchDefault: jest.fn().mockResolvedValue(true),
+      wslShutdownAll: jest.fn().mockResolvedValue(true),
+      wslOpenTerminal: jest.fn().mockResolvedValue(true),
+    });
+
+    await executeDesktopAction("wsl_launch_default", context);
+    await executeDesktopAction("wsl_shutdown_all", context);
+    await executeDesktopAction("wsl_open_terminal", context);
+
+    expect(context.ensureWindowVisible).toHaveBeenCalledTimes(3);
+    expect(context.wslLaunchDefault).toHaveBeenCalled();
+    expect(context.wslShutdownAll).toHaveBeenCalled();
+    expect(context.wslOpenTerminal).toHaveBeenCalled();
   });
 });

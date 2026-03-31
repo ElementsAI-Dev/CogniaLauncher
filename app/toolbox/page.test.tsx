@@ -1,7 +1,7 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import ToolboxPage from './page';
-import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts';
+import { useKeyboardShortcuts } from '@/hooks/shared/use-keyboard-shortcuts';
 
 let mockIsDesktop = true;
 let mockFetchPlugins = jest.fn();
@@ -61,17 +61,17 @@ jest.mock('@/components/providers/locale-provider', () => ({
   useLocale: () => ({ t: (key: string) => key }),
 }));
 
-jest.mock('@/hooks/use-keyboard-shortcuts', () => ({
+jest.mock('@/hooks/shared/use-keyboard-shortcuts', () => ({
   useKeyboardShortcuts: jest.fn(),
 }));
 
-jest.mock('@/hooks/use-plugins', () => ({
+jest.mock('@/hooks/plugins/use-plugins', () => ({
   usePlugins: () => ({
     fetchPlugins: mockFetchPlugins,
   }),
 }));
 
-jest.mock('@/hooks/use-toolbox', () => ({
+jest.mock('@/hooks/toolbox/use-toolbox', () => ({
   useToolbox: () => mockToolboxState,
 }));
 

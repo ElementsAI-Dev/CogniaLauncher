@@ -17,7 +17,7 @@ jest.mock('@/components/providers/locale-provider', () => ({
   useLocale: () => ({ t: (k: string) => k, locale: 'en' }),
 }));
 
-jest.mock('@/hooks/use-plugins', () => ({
+jest.mock('@/hooks/plugins/use-plugins', () => ({
   usePlugins: () => ({
     callTool: mockCallTool,
     getLocales: mockGetLocales,

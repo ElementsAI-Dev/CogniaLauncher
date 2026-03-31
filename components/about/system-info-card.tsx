@@ -45,7 +45,7 @@ import {
   Database,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useSystemInfoDisplay } from "@/hooks/use-system-info-display";
+import { useSystemInfoDisplay } from "@/hooks/about/use-system-info-display";
 import { buildSystemInfoText } from "@/lib/about-utils";
 import { formatBytes, formatUptime } from "@/lib/utils";
 import { APP_VERSION } from "@/lib/app-version";

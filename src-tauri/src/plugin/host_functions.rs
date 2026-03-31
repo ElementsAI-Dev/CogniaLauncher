@@ -496,7 +496,11 @@ fn apply_file_dialog_options<R: tauri::Runtime>(
     }
     for filter in &request.filters {
         if !filter.name.trim().is_empty() && !filter.extensions.is_empty() {
-            let exts = filter.extensions.iter().map(|ext| ext.as_str()).collect::<Vec<_>>();
+            let exts = filter
+                .extensions
+                .iter()
+                .map(|ext| ext.as_str())
+                .collect::<Vec<_>>();
             dialog = dialog.add_filter(&filter.name, &exts);
         }
     }
@@ -720,9 +724,8 @@ fn serialize_process_lookup(path: Option<String>) -> Result<String, ExtismError>
 }
 
 fn serialize_process_availability(available: bool) -> Result<String, ExtismError> {
-    serde_json::to_string(&ProcessAvailabilityOutput { available }).map_err(|e| {
-        ExtismError::msg(format!("Failed to serialize process availability: {}", e))
-    })
+    serde_json::to_string(&ProcessAvailabilityOutput { available })
+        .map_err(|e| ExtismError::msg(format!("Failed to serialize process availability: {}", e)))
 }
 
 fn serialize_json<T: Serialize>(value: &T) -> Result<String, ExtismError> {
@@ -3646,7 +3649,7 @@ host_fn!(pub cognia_profile_create_from_current(user_data: HostContext; input: S
         let pm = ctx.profile_manager.as_ref()
             .ok_or_else(|| ExtismError::msg("profile manager not available"))?;
         let mut mgr = pm.write().await;
-        let profile = mgr.create_from_current(name).await
+        let profile = mgr.create_from_current(name, false, false).await
             .map_err(|e| ExtismError::msg(e.to_string()))?;
         serialize_json(&profile.id)
     })
@@ -6393,8 +6396,8 @@ pub fn build_host_functions(user_data: UserData<HostContext>) -> Vec<extism::Fun
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugin::manifest::PluginPermissions;
     use crate::config::Settings;
+    use crate::plugin::manifest::PluginPermissions;
     use crate::plugin::permissions::PermissionManager;
     use crate::provider::registry::ProviderRegistry;
     use std::path::PathBuf;
@@ -6773,7 +6776,9 @@ mod tests {
         let start_failed = map_process_error(crate::platform::process::ProcessError::StartFailed(
             std::io::Error::new(std::io::ErrorKind::NotFound, "missing demo binary"),
         ));
-        assert!(start_failed.to_string().contains("Failed to execute command"));
+        assert!(start_failed
+            .to_string()
+            .contains("Failed to execute command"));
         assert!(start_failed.to_string().contains("missing demo binary"));
     }
 

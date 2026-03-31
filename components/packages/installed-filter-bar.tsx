@@ -20,7 +20,7 @@ import { Search, X, Server } from "lucide-react";
 import { useLocale } from "@/components/providers/locale-provider";
 import type { InstalledFilterBarProps } from "@/types/packages";
 export type { InstalledFilterState } from "@/types/packages";
-export { useInstalledFilter } from "@/hooks/use-installed-filter";
+export { useInstalledFilter } from "@/hooks/packages/use-installed-filter";
 
 export function InstalledFilterBar({
   packages,

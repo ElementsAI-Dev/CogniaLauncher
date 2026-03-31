@@ -17,6 +17,7 @@ import {
 import { useLocale } from '@/components/providers/locale-provider';
 import { toast } from 'sonner';
 import type { GitRepoActionBarProps } from '@/types/git';
+import { useGitActionDialogs } from './use-git-action-dialogs';
 
 type ActionKey = 'push' | 'pull' | 'fetch' | 'clean';
 
@@ -47,6 +48,7 @@ export function GitRepoActionBar({
   const [fetchPrune, setFetchPrune] = useState(false);
   const [fetchAll, setFetchAll] = useState(false);
   const [cleanDirectories, setCleanDirectories] = useState(false);
+  const { confirm, dialogs } = useGitActionDialogs();
 
   const disabled = !repoPath || !!externalLoading;
 
@@ -96,7 +98,10 @@ export function GitRepoActionBar({
       }
     }
 
-    const shouldClean = window.confirm(t('git.actions.cleanConfirm'));
+    const shouldClean = await confirm({
+      title: t('git.actions.clean'),
+      description: t('git.actions.cleanConfirm'),
+    });
     if (!shouldClean) return;
 
     await runAction(
@@ -107,6 +112,7 @@ export function GitRepoActionBar({
   };
 
   return (
+    <>
     <Card>
       <CardContent className="py-3">
         <div className="space-y-3">
@@ -120,7 +126,10 @@ export function GitRepoActionBar({
               onClick={async () => {
                 const requiresRiskConfirm = pushForce || pushForceLease;
                 if (requiresRiskConfirm) {
-                  const confirmed = window.confirm(t('git.actions.pushConfirm'));
+                  const confirmed = await confirm({
+                    title: t('git.actions.push'),
+                    description: t('git.actions.pushConfirm'),
+                  });
                   if (!confirmed) return;
                 }
                 await runAction(
@@ -325,5 +334,7 @@ export function GitRepoActionBar({
         </div>
       </CardContent>
     </Card>
+    {dialogs}
+    </>
   );
 }

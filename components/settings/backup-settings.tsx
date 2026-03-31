@@ -63,7 +63,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useBackup } from "@/hooks/use-backup";
+import { useBackup } from "@/hooks/settings/use-backup";
 import { isTauri } from "@/lib/tauri";
 import type {
   BackupContentType,

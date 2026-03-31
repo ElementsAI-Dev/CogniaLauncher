@@ -1,6 +1,12 @@
 import type { EnvVarRow } from '@/lib/envvar';
-import type { EnvVarDetectionState } from '@/hooks/use-envvar';
-import type { EnvVarActionSupport, EnvVarScope, EnvVarSupportSnapshot } from '@/types/tauri';
+import type { EnvVarDetectionState } from '@/hooks/envvar/use-envvar';
+import type {
+  EnvVarActionSupport,
+  EnvVarBackupProtectionState,
+  EnvVarScope,
+  EnvVarSupportSnapshot,
+} from '@/types/tauri';
+import { getCanonicalRecoveryAction } from '@/lib/envvar-recovery-actions';
 
 export type EnvVarAction =
   | 'refresh'
@@ -15,9 +21,12 @@ export type EnvVarAction =
   | 'path-remove'
   | 'path-reorder'
   | 'path-deduplicate'
-  | 'path-repair';
+  | 'path-repair'
+  | 'snapshot-restore';
 
 type TranslateFn = (key: string, params?: Record<string, string | number>) => string;
+
+export { getCanonicalRecoveryAction };
 
 export function getSupportForAction(
   supportSnapshot: EnvVarSupportSnapshot | null,
@@ -76,9 +85,23 @@ export function getActionLabel(action: EnvVarAction, t: TranslateFn): string {
       return t('envvar.pathEditor.deduplicate');
     case 'path-repair':
       return t('envvar.pathEditor.applyRepair');
+    case 'snapshot-restore':
+      return t('envvar.snapshots.restore');
     default:
       return t('common.error');
   }
+}
+
+export function getBackupProtectionBadgeVariant(
+  protection: Pick<EnvVarBackupProtectionState, 'state'> | null,
+): 'secondary' | 'outline' | 'destructive' {
+  if (protection?.state === 'blocked') {
+    return 'destructive';
+  }
+  if (protection?.state === 'unprotected') {
+    return 'outline';
+  }
+  return 'secondary';
 }
 
 export function getDetectionStatusText(

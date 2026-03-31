@@ -15,7 +15,7 @@ import {
   ProviderHistoryTab,
   ProviderEnvironmentTab,
 } from '@/components/provider-management/detail';
-import { useProviderDetail } from '@/hooks/use-provider-detail';
+import { useProviderDetail } from '@/hooks/providers/use-provider-detail';
 import { useLocale } from '@/components/providers/locale-provider';
 import {
   AlertCircle,
@@ -55,6 +55,9 @@ export function ProviderDetailPageClient({ providerId }: ProviderDetailPageClien
     loadingHistory,
     historyError,
     pinnedPackages,
+    preflightSummary,
+    preflightPackages,
+    isPreflightOpen,
     environmentInfo,
     environmentProviderInfo,
     availableVersions,
@@ -80,6 +83,8 @@ export function ProviderDetailPageClient({ providerId }: ProviderDetailPageClien
     applyHealthRemediation,
     fetchHistory,
     fetchEnvironmentInfo,
+    confirmPreflight,
+    dismissPreflight,
   } = useProviderDetail(providerId);
 
   const router = useRouter();
@@ -273,6 +278,11 @@ export function ProviderDetailPageClient({ providerId }: ProviderDetailPageClien
             onRollbackPackage={rollbackToLastVersion}
             onRefreshPackages={refreshPackageSurface}
             onViewPackageDetails={handleViewPackageDetails}
+            preflightSummary={preflightSummary}
+            preflightPackages={preflightPackages}
+            isPreflightOpen={isPreflightOpen}
+            onConfirmPreflight={confirmPreflight}
+            onDismissPreflight={dismissPreflight}
           />
         </TabsContent>
 

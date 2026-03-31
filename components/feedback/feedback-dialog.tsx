@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import Image from "next/image";
 import { useLocale } from "@/components/providers/locale-provider";
 import { useFeedbackStore } from "@/lib/stores/feedback";
-import { useFeedback } from "@/hooks/use-feedback";
+import { useFeedback } from "@/hooks/feedback/use-feedback";
 import {
   Dialog,
   DialogContent,

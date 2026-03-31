@@ -5,6 +5,12 @@ Production built-in plugin for dependency update visibility and team-ready updat
 ## Tool
 
 - `pkg-update-advisor`
+- `pkg-update-advisor-guided`
+
+## Workflow Split
+
+- `pkg-update-advisor`: automation-safe text entrypoint for scripts and deterministic JSON summaries.
+- `pkg-update-advisor-guided`: declarative Toolbox workflow with filters, structured summary/stream/artifact channels, and partial follow-up degradation reporting when clipboard / notification / event follow-ups fail.
 
 ## Input
 
@@ -20,6 +26,8 @@ Production built-in plugin for dependency update visibility and team-ready updat
 ```
 
 All fields are optional. Empty input auto-selects installed packages for the selected provider.
+
+The guided entrypoint renders the same update-advisor core through declarative form state instead of requiring raw JSON input.
 
 ## Output
 
@@ -42,6 +50,8 @@ All fields are optional. Empty input auto-selects installed packages for the sel
 - `cognia.clipboard`: optional summary sharing
 - `cognia.notification`: optional update alerting
 - `cognia.event`: completion signal
+
+The guided workflow keeps `pkg_search` as the core requirement and treats clipboard / notification / event follow-ups as degradable stages so update results remain visible on partial failure.
 
 ## Build
 

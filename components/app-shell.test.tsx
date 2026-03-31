@@ -6,7 +6,7 @@ const mockToggleDrawer = jest.fn();
 const mockFetchConfig = jest.fn();
 const mockRequestDashboardQuickSearchFocus = jest.fn();
 
-jest.mock("@/hooks/use-desktop-action-executor", () => ({
+jest.mock("@/hooks/desktop/use-desktop-action-executor", () => ({
   useDesktopActionExecutor:
     (options: {
       openCommandPalette?: () => void;
@@ -54,18 +54,18 @@ jest.mock("@/lib/stores/log", () => ({
   }),
 }));
 
-jest.mock("@/hooks/use-settings", () => ({
+jest.mock("@/hooks/settings/use-settings", () => ({
   useSettings: () => ({
     config: null,
     fetchConfig: mockFetchConfig,
   }),
 }));
 
-jest.mock("@/hooks/use-appearance-config-sync", () => ({
+jest.mock("@/hooks/settings/use-appearance-config-sync", () => ({
   useAppearanceConfigSync: jest.fn(),
 }));
 
-jest.mock("@/hooks/use-global-shortcuts", () => ({
+jest.mock("@/hooks/desktop/use-global-shortcuts", () => ({
   useGlobalShortcuts: jest.fn(),
 }));
 
@@ -117,7 +117,7 @@ const mockWindowControls = {
   handleDoubleClick: jest.fn(),
 };
 
-jest.mock("@/hooks/use-window-controls", () => ({
+jest.mock("@/hooks/desktop/use-window-controls", () => ({
   useWindowControls: () => mockWindowControls,
 }));
 
@@ -218,7 +218,7 @@ const mockOnboarding = {
   stopTour: jest.fn(),
 };
 
-jest.mock("@/hooks/use-onboarding", () => ({
+jest.mock("@/hooks/onboarding/use-onboarding", () => ({
   useOnboarding: () => mockOnboarding,
 }));
 

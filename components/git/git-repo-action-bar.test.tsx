@@ -42,7 +42,6 @@ describe('GitRepoActionBar', () => {
   });
 
   it('passes push options through', async () => {
-    const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(true);
     const onPush = jest.fn().mockResolvedValue('pushed');
     render(<GitRepoActionBar {...baseProps} onPush={onPush} />);
 
@@ -52,6 +51,7 @@ describe('GitRepoActionBar', () => {
     fireEvent.click(screen.getByLabelText('git.pushAction.forceLease'));
     fireEvent.click(screen.getByLabelText('push --set-upstream'));
     fireEvent.click(screen.getByText('git.actions.push'));
+    fireEvent.click(await screen.findByRole('button', { name: 'common.confirm' }));
 
     await waitFor(() => {
       expect(onPush).toHaveBeenCalledWith(
@@ -63,7 +63,6 @@ describe('GitRepoActionBar', () => {
         true,
       );
     });
-    confirmSpy.mockRestore();
   });
 
   it('passes pull options through', async () => {
@@ -95,7 +94,6 @@ describe('GitRepoActionBar', () => {
   });
 
   it('passes clean directories flag through', async () => {
-    const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(true);
     const onClean = jest.fn().mockResolvedValue('cleaned');
     const onCleanPreview = jest.fn().mockResolvedValue(['tmp/file.tmp']);
     render(
@@ -108,12 +106,12 @@ describe('GitRepoActionBar', () => {
 
     fireEvent.click(screen.getByLabelText('clean -d'));
     fireEvent.click(screen.getByText('git.actions.clean'));
+    fireEvent.click(await screen.findByRole('button', { name: 'common.confirm' }));
 
     await waitFor(() => {
       expect(onCleanPreview).toHaveBeenCalledWith(true);
       expect(onClean).toHaveBeenCalledWith(true, true);
     });
-    confirmSpy.mockRestore();
   });
 
   it('syncs remote and branch inputs when repository context changes', async () => {

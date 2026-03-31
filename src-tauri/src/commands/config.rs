@@ -1,8 +1,8 @@
+use crate::commands::package::{invalidate_package_caches, refresh_provider_registry};
 use crate::config::Settings;
 use crate::core::system_info::BatteryInfo;
-use crate::commands::package::{invalidate_package_caches, refresh_provider_registry};
-use crate::SharedRegistry;
 use crate::platform::disk::format_size;
+use crate::SharedRegistry;
 use serde::Serialize;
 use std::sync::Arc;
 use tauri::State;
@@ -112,6 +112,9 @@ const CONFIG_LIST_STATIC_KEYS: &[&str] = &[
     "tray.notification_events",
     "tray.menu_items",
     "tray.menu_priority_items",
+    "envvar.default_scope",
+    "envvar.auto_snapshot",
+    "envvar.mask_sensitive",
     "paths.root",
     "paths.cache",
     "paths.environments",
@@ -373,6 +376,9 @@ mod tests {
         assert!(CONFIG_LIST_STATIC_KEYS.contains(&"tray.notification_events"));
         assert!(CONFIG_LIST_STATIC_KEYS.contains(&"tray.menu_items"));
         assert!(CONFIG_LIST_STATIC_KEYS.contains(&"tray.menu_priority_items"));
+        assert!(CONFIG_LIST_STATIC_KEYS.contains(&"envvar.default_scope"));
+        assert!(CONFIG_LIST_STATIC_KEYS.contains(&"envvar.auto_snapshot"));
+        assert!(CONFIG_LIST_STATIC_KEYS.contains(&"envvar.mask_sensitive"));
     }
 
     #[test]
@@ -456,14 +462,17 @@ mod tests {
         settings
             .set_provider_legacy_token("github", "ghp_legacy_secret")
             .unwrap();
-        settings.set_value("providers.gitlab.url", "https://gitlab.example.com").unwrap();
+        settings
+            .set_value("providers.gitlab.url", "https://gitlab.example.com")
+            .unwrap();
 
         let entries = collect_config_list(&settings);
         let map: std::collections::HashMap<_, _> = entries.into_iter().collect();
 
         assert!(!map.contains_key("providers.github.token"));
         assert_eq!(
-            map.get("providers.gitlab.url").map(std::string::String::as_str),
+            map.get("providers.gitlab.url")
+                .map(std::string::String::as_str),
             Some("https://gitlab.example.com")
         );
     }

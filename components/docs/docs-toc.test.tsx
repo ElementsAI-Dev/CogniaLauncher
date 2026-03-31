@@ -11,7 +11,7 @@ jest.mock("@/lib/docs/headings", () => ({
 // Mock useActiveHeading
 const mockScrollToId = jest.fn();
 let mockActiveId = "";
-jest.mock("@/hooks/use-active-heading", () => ({
+jest.mock("@/hooks/docs/use-active-heading", () => ({
   useActiveHeading: () => ({
     activeId: mockActiveId,
     scrollToId: mockScrollToId,
@@ -203,6 +203,13 @@ describe("DocsToc", () => {
     const link = screen.getByText("Introduction").closest("a");
     expect(link?.className).toContain("text-primary");
     expect(link?.className).toContain("border-primary");
+  });
+
+  it("marks the active heading with aria-current", () => {
+    mockActiveId = "introduction";
+    render(<DocsToc content={contentWithHeadings} mode="desktop" />);
+    const link = screen.getByText("Introduction").closest("a");
+    expect(link).toHaveAttribute("aria-current", "location");
   });
 
   it("applies inactive style with border-transparent when activeId does not match", () => {

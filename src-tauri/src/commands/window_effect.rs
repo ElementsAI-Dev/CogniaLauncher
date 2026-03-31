@@ -1,8 +1,6 @@
 use tauri::{AppHandle, Manager};
 
-use crate::commands::window_effect_support::{
-    resolve_requested_effect, supported_window_effects,
-};
+use crate::commands::window_effect_support::{resolve_requested_effect, supported_window_effects};
 
 /// Apply a window effect to the given window.
 /// Called from lib.rs setup and from Tauri commands at runtime.
@@ -26,21 +24,7 @@ pub(crate) fn apply_effect_to_window(
 
 /// Clear all vibrancy/blur effects from the window.
 fn clear_all_effects(window: &tauri::WebviewWindow) {
-    #[cfg(target_os = "windows")]
-    {
-        let _ = window_vibrancy::clear_mica(window);
-        let _ = window_vibrancy::clear_acrylic(window);
-        let _ = window_vibrancy::clear_blur(window);
-        let _ = window_vibrancy::clear_tabbed(window);
-    }
-    #[cfg(target_os = "macos")]
-    {
-        let _ = window_vibrancy::clear_vibrancy(window);
-    }
-    #[cfg(target_os = "linux")]
-    {
-        // No native effects on Linux
-    }
+    clear_native_effects(window);
 }
 
 /// Apply a specific effect using platform APIs.
@@ -49,46 +33,93 @@ fn apply_platform_effect(
     effect: &str,
     dark: Option<bool>,
 ) -> Result<(), String> {
-    #[cfg(target_os = "windows")]
-    {
-        match effect {
-            "mica" => window_vibrancy::apply_mica(window, dark)
-                .map_err(|e| format!("Failed to apply mica: {e}"))?,
-            "mica-tabbed" => window_vibrancy::apply_tabbed(window, dark)
-                .map_err(|e| format!("Failed to apply mica tabbed: {e}"))?,
-            "acrylic" => window_vibrancy::apply_acrylic(window, Some((0, 0, 0, 0)))
-                .map_err(|e| format!("Failed to apply acrylic: {e}"))?,
-            "blur" => window_vibrancy::apply_blur(window, Some((0, 0, 0, 0)))
-                .map_err(|e| format!("Failed to apply blur: {e}"))?,
-            _ => {
-                return Err(format!("Unsupported effect on Windows: {effect}"));
-            }
+    apply_native_platform_effect(window, effect, dark)
+}
+
+#[cfg(all(target_os = "windows", not(test)))]
+fn clear_native_effects(window: &tauri::WebviewWindow) {
+    let _ = window_vibrancy::clear_mica(window);
+    let _ = window_vibrancy::clear_acrylic(window);
+    let _ = window_vibrancy::clear_blur(window);
+    let _ = window_vibrancy::clear_tabbed(window);
+}
+
+#[cfg(all(target_os = "macos", not(test)))]
+fn clear_native_effects(window: &tauri::WebviewWindow) {
+    let _ = window_vibrancy::clear_vibrancy(window);
+}
+
+#[cfg(any(test, target_os = "linux"))]
+fn clear_native_effects(window: &tauri::WebviewWindow) {
+    let _ = window;
+}
+
+#[cfg(all(target_os = "windows", not(test)))]
+fn apply_native_platform_effect(
+    window: &tauri::WebviewWindow,
+    effect: &str,
+    dark: Option<bool>,
+) -> Result<(), String> {
+    match effect {
+        "mica" => window_vibrancy::apply_mica(window, dark)
+            .map_err(|e| format!("Failed to apply mica: {e}"))?,
+        "mica-tabbed" => window_vibrancy::apply_tabbed(window, dark)
+            .map_err(|e| format!("Failed to apply mica tabbed: {e}"))?,
+        "acrylic" => window_vibrancy::apply_acrylic(window, Some((0, 0, 0, 0)))
+            .map_err(|e| format!("Failed to apply acrylic: {e}"))?,
+        "blur" => window_vibrancy::apply_blur(window, Some((0, 0, 0, 0)))
+            .map_err(|e| format!("Failed to apply blur: {e}"))?,
+        _ => {
+            return Err(format!("Unsupported effect on Windows: {effect}"));
         }
-        Ok(())
     }
-    #[cfg(target_os = "macos")]
-    {
-        match effect {
-            "vibrancy" => {
-                window_vibrancy::apply_vibrancy(
-                    window,
-                    window_vibrancy::NSVisualEffectMaterial::HudWindow,
-                    None,
-                    None,
-                )
-                .map_err(|e| format!("Failed to apply vibrancy: {e}"))?;
-            }
-            _ => {
-                return Err(format!("Unsupported effect on macOS: {effect}"));
-            }
+    Ok(())
+}
+
+#[cfg(all(target_os = "macos", not(test)))]
+fn apply_native_platform_effect(
+    window: &tauri::WebviewWindow,
+    effect: &str,
+    dark: Option<bool>,
+) -> Result<(), String> {
+    let _ = dark;
+    match effect {
+        "vibrancy" => {
+            window_vibrancy::apply_vibrancy(
+                window,
+                window_vibrancy::NSVisualEffectMaterial::HudWindow,
+                None,
+                None,
+            )
+            .map_err(|e| format!("Failed to apply vibrancy: {e}"))?;
         }
-        Ok(())
+        _ => {
+            return Err(format!("Unsupported effect on macOS: {effect}"));
+        }
     }
-    #[cfg(target_os = "linux")]
-    {
-        let _ = (window, effect, dark);
-        Err("Native window effects are not supported on Linux".into())
-    }
+    Ok(())
+}
+
+#[cfg(test)]
+fn apply_native_platform_effect(
+    window: &tauri::WebviewWindow,
+    effect: &str,
+    dark: Option<bool>,
+) -> Result<(), String> {
+    let _ = (window, dark);
+    Err(format!(
+        "Native window effects are unavailable in unit tests: {effect}"
+    ))
+}
+
+#[cfg(all(not(test), target_os = "linux"))]
+fn apply_native_platform_effect(
+    window: &tauri::WebviewWindow,
+    effect: &str,
+    dark: Option<bool>,
+) -> Result<(), String> {
+    let _ = (window, effect, dark);
+    Err("Native window effects are not supported on Linux".into())
 }
 
 // ============================================================================

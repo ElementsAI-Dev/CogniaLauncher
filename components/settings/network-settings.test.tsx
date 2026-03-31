@@ -7,7 +7,7 @@ const mockUseProxyTools = jest.fn();
 jest.mock("@/lib/platform", () => ({
   isTauri: () => mockIsTauri(),
 }));
-jest.mock("@/hooks/use-proxy-tools", () => ({
+jest.mock("@/hooks/settings/use-proxy-tools", () => ({
   useProxyTools: (...args: unknown[]) => mockUseProxyTools(...args),
 }));
 

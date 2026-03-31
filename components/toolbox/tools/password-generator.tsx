@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect, useMemo } from 'react';
-import { useCopyToClipboard } from '@/hooks/use-clipboard';
+import { useCopyToClipboard } from '@/hooks/shared/use-clipboard';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { useLocale } from '@/components/providers/locale-provider';
-import { useToolPreferences } from '@/hooks/use-tool-preferences';
+import { useToolPreferences } from '@/hooks/toolbox/use-tool-preferences';
 import { TOOLBOX_LIMITS } from '@/lib/constants/toolbox-limits';
 import { fillRandomValues } from '@/lib/toolbox/browser-api';
 import {

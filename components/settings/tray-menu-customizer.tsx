@@ -27,7 +27,7 @@ import {
 } from "@/lib/desktop-actions";
 import { cn } from "@/lib/utils";
 import type { TrayMenuItemId } from "@/lib/tauri";
-import { useTrayMenu } from "@/hooks/use-tray-menu";
+import { useTrayMenu } from "@/hooks/settings/use-tray-menu";
 
 /** Human-readable labels for each menu item ID */
 function getMenuItemLabel(id: TrayMenuItemId, t: (key: string) => string): string {

@@ -82,7 +82,9 @@ jest.mock('react-markdown', () => {
 
       // Code blocks
       if (line.startsWith('```')) {
-        const lang = line.slice(3).trim();
+        const fenceMeta = line.slice(3).trim();
+        const [lang = '', ...metaParts] = fenceMeta.split(/\s+/).filter(Boolean);
+        const dataMeta = metaParts.join(' ');
         const codeLines: string[] = [];
         let j = i + 1;
         while (j < lines.length && !lines[j].startsWith('```')) {
@@ -92,7 +94,11 @@ jest.mock('react-markdown', () => {
         const codeText = codeLines.join('\n');
         const PreComponent = components.pre;
         if (PreComponent) {
-          const codeEl = <code className={lang ? `language-${lang}` : ''}>{codeText}</code>;
+          const codeEl = (
+            <code className={lang ? `language-${lang}` : ''} data-meta={dataMeta || undefined}>
+              {codeText}
+            </code>
+          );
           elements.push(<PreComponent key={i}>{codeEl}</PreComponent>);
         } else {
           elements.push(<pre key={i}><code>{codeText}</code></pre>);
@@ -117,15 +123,31 @@ jest.mock('react-markdown', () => {
       }
 
       // Links
-      const linkMatch = line.match(/\[([^\]]+)\]\(([^)]+)\)/);
+      const linkMatch = line.match(/\[([^\]]+)\]\(([^)]*)\)/);
       if (linkMatch) {
         const linkText = linkMatch[1];
-        const href = linkMatch[2];
+        const href = linkMatch[2] || undefined;
         const AComponent = components.a;
         if (AComponent) {
           elements.push(<AComponent key={i} href={href}>{linkText}</AComponent>);
         } else {
           elements.push(<a key={i} href={href}>{linkText}</a>);
+        }
+        continue;
+      }
+
+      // Blockquotes / callouts
+      if (line.startsWith('> ')) {
+        const blockquoteText = line.slice(2);
+        const BlockquoteComponent = components.blockquote;
+        if (BlockquoteComponent) {
+          elements.push(
+            <BlockquoteComponent key={i}>
+              <p>{blockquoteText}</p>
+            </BlockquoteComponent>
+          );
+        } else {
+          elements.push(<blockquote key={i}>{blockquoteText}</blockquote>);
         }
         continue;
       }
@@ -251,6 +273,17 @@ describe('MarkdownRenderer', () => {
     });
   });
 
+  it('renders code fence filenames when title metadata is present', () => {
+    const { container } = render(
+      <MarkdownRenderer content={'```ts title="example.ts"\nconst x = 1;\n```'} />
+    );
+
+    expect(screen.getByText('example.ts')).toBeInTheDocument();
+    expect(screen.getByText('ts')).toBeInTheDocument();
+    expect(container.querySelector('.docs-code-filename')).toBeInTheDocument();
+    expect(container.querySelector('pre')).toHaveClass('rounded-t-none');
+  });
+
   it('renders mermaid code fences as diagrams', async () => {
     const { container } = render(<MarkdownRenderer content={"```mermaid\ngraph TD\nA-->B\n```"} />);
 
@@ -335,12 +368,9 @@ describe('MarkdownRenderer', () => {
   });
 
   it('renders link without href as plain anchor', () => {
-    // Directly test the a component's !href branch by rendering with a crafted mock
-    // that passes href=undefined. We achieve this by using a link syntax that our mock
-    // parser doesn't catch but the component can still handle.
     const { container } = render(<MarkdownRenderer content="[NoHref]()" />);
-    // The mock parser treats empty () as href="" which is truthy, so this falls through
-    // to the default <a href=""> branch. The !href branch requires href to be undefined.
+    const link = screen.getByText('NoHref');
+    expect(link).not.toHaveAttribute('href');
     expect(container.querySelector('.docs-prose')).toBeInTheDocument();
   });
 
@@ -354,6 +384,13 @@ describe('MarkdownRenderer', () => {
     render(<MarkdownRenderer content="![Screenshot](img.png)" />);
     const img = screen.getByAltText('Screenshot');
     expect(img).toBeInTheDocument();
+    expect(img).toHaveClass('docs-img');
+  });
+
+  it('falls back to an empty alt string for decorative images', () => {
+    const { container } = render(<MarkdownRenderer content="![](img.png)" />);
+    const img = container.querySelector('img');
+    expect(img).toHaveAttribute('alt', '');
     expect(img).toHaveClass('docs-img');
   });
 
@@ -393,6 +430,19 @@ describe('MarkdownRenderer', () => {
     const content = '<details>\n<summary>Toggle</summary>\nBody text\n</details>';
     render(<MarkdownRenderer content={content} />);
     expect(screen.getByText('Body text')).toBeInTheDocument();
+  });
+
+  it('renders GitHub callouts as alert notes', () => {
+    render(<MarkdownRenderer content="> [!NOTE] Keep this safe" />);
+    expect(screen.getByRole('note', { name: 'Note' })).toBeInTheDocument();
+    expect(screen.getByText(/Keep this safe/)).toBeInTheDocument();
+  });
+
+  it('keeps plain blockquotes as blockquotes when no callout marker is present', () => {
+    const { container } = render(<MarkdownRenderer content="> Plain quote" />);
+    expect(screen.queryByRole('note')).not.toBeInTheDocument();
+    expect(container.querySelector('blockquote')).toBeInTheDocument();
+    expect(screen.getByText('Plain quote')).toBeInTheDocument();
   });
 
   it('handles anchor click by scrolling to element', () => {

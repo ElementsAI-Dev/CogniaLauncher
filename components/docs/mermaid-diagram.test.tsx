@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { MermaidDiagram } from './mermaid-diagram';
 
 let mockResolvedTheme: string | undefined = 'light';
@@ -88,5 +88,49 @@ describe('MermaidDiagram', () => {
     });
 
     expect(mockMermaidRender).toHaveBeenCalled();
+  });
+
+  it('does not commit a late success result after unmount', async () => {
+    let resolveRender: ((value: { svg: string }) => void) | undefined;
+    mockMermaidRender.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveRender = resolve;
+        }),
+    );
+
+    const { unmount } = render(<MermaidDiagram source={'graph TD\nA-->B'} />);
+
+    expect(screen.getByRole('status')).toBeInTheDocument();
+    unmount();
+
+    await act(async () => {
+      resolveRender?.({ svg: '<svg><text>late</text></svg>' });
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByText('Diagram unavailable')).not.toBeInTheDocument();
+  });
+
+  it('does not commit a late failure result after unmount', async () => {
+    let rejectRender: ((error: Error) => void) | undefined;
+    mockMermaidRender.mockImplementation(
+      () =>
+        new Promise((_, reject) => {
+          rejectRender = reject;
+        }),
+    );
+
+    const { unmount } = render(<MermaidDiagram source={'graph TD\nA-->B'} />);
+
+    expect(screen.getByRole('status')).toBeInTheDocument();
+    unmount();
+
+    await act(async () => {
+      rejectRender?.(new Error('late failure'));
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByText('Diagram unavailable')).not.toBeInTheDocument();
   });
 });

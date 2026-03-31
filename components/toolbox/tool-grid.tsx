@@ -3,7 +3,7 @@
 import { useMemo } from 'react';
 import { ToolCard } from '@/components/toolbox/tool-card';
 import { cn } from '@/lib/utils';
-import type { UnifiedTool } from '@/hooks/use-toolbox';
+import type { UnifiedTool } from '@/hooks/toolbox/use-toolbox';
 
 interface ToolGridProps {
   tools: UnifiedTool[];

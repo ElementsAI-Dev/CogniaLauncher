@@ -35,6 +35,8 @@ const mockT = (key: string, params?: Record<string, string | number>) => {
       return 'Apply system to user';
     case 'common.delete':
       return 'Delete';
+    case 'envvar.conflicts.review':
+      return 'Review';
     case 'common.clear':
       return 'Clear';
     default:
@@ -76,7 +78,7 @@ describe('EnvVarConflictPanel', () => {
     });
   });
 
-  it('filters default ignored keys and renders the desktop conflict table', () => {
+  it('filters default ignored keys and renders the desktop conflict table', async () => {
     render(
       <EnvVarConflictPanel
         {...defaultProps}
@@ -86,6 +88,10 @@ describe('EnvVarConflictPanel', () => {
 
     expect(screen.getByTestId('envvar-conflicts-summary')).toBeInTheDocument();
     expect(screen.getByTestId('envvar-conflicts-count')).toHaveTextContent('1');
+
+    // Panel starts collapsed — expand it
+    await userEvent.click(screen.getByTestId('envvar-conflicts-review'));
+
     expect(screen.getByTestId('envvar-conflicts-table')).toBeInTheDocument();
     expect(screen.getByTestId('envvar-conflicts-hidden-count')).toHaveTextContent(
       'Hidden by ignore: 1',
@@ -98,6 +104,9 @@ describe('EnvVarConflictPanel', () => {
 
   it('adds and removes custom ignored keys with normalized persistence', async () => {
     render(<EnvVarConflictPanel {...defaultProps} />);
+
+    // Expand the collapsed panel
+    await userEvent.click(screen.getByTestId('envvar-conflicts-review'));
 
     await userEvent.type(
       screen.getByTestId('envvar-conflicts-ignore-input'),
@@ -126,6 +135,8 @@ describe('EnvVarConflictPanel', () => {
   it('clears duplicate or default ignore input without persisting a new custom key', async () => {
     render(<EnvVarConflictPanel {...defaultProps} />);
 
+    await userEvent.click(screen.getByTestId('envvar-conflicts-review'));
+
     const input = screen.getByTestId('envvar-conflicts-ignore-input');
 
     await userEvent.type(input, 'PATH{Enter}');
@@ -148,6 +159,8 @@ describe('EnvVarConflictPanel', () => {
   it('ignores whitespace-only custom ignore input', async () => {
     render(<EnvVarConflictPanel {...defaultProps} />);
 
+    await userEvent.click(screen.getByTestId('envvar-conflicts-review'));
+
     const input = screen.getByTestId('envvar-conflicts-ignore-input');
 
     await userEvent.type(input, '   {Enter}');
@@ -166,6 +179,9 @@ describe('EnvVarConflictPanel', () => {
         conflicts={[buildConflict({ key: 'NODE_HOME' })]}
       />,
     );
+
+    // No visible conflicts (NODE_HOME is ignored) so no Review button — use toggle
+    await userEvent.click(screen.getByTestId('envvar-conflicts-toggle'));
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Delete NODE_HOME' })).toBeInTheDocument();
@@ -203,6 +219,9 @@ describe('EnvVarConflictPanel', () => {
       <EnvVarConflictPanel {...defaultProps} onResolve={onResolve} />,
     );
 
+    // Expand the collapsed panel first
+    await userEvent.click(screen.getByTestId('envvar-conflicts-review'));
+
     await userEvent.click(screen.getByTestId('envvar-conflict-user-to-system-JAVA_HOME'));
     await userEvent.click(screen.getByTestId('envvar-conflict-system-to-user-JAVA_HOME'));
 
@@ -231,6 +250,9 @@ describe('EnvVarConflictPanel', () => {
     const onResolve = jest.fn();
     render(<EnvVarConflictPanel {...defaultProps} onResolve={onResolve} />);
 
+    // Expand the collapsed panel
+    await userEvent.click(screen.getByTestId('envvar-conflicts-review'));
+
     await waitFor(() => {
       expect(screen.getByTestId('envvar-conflicts-compact-list')).toBeInTheDocument();
     });
@@ -249,6 +271,9 @@ describe('EnvVarConflictPanel', () => {
 
     try {
       render(<EnvVarConflictPanel {...defaultProps} />);
+
+      // Expand the collapsed panel
+      await userEvent.click(screen.getByTestId('envvar-conflicts-review'));
 
       await userEvent.type(
         screen.getByTestId('envvar-conflicts-ignore-input'),

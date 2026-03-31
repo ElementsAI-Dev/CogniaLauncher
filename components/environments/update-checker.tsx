@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import type { EnvironmentInfo } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
-import { useUpdateChecker } from "@/hooks/use-update-checker";
+import { useUpdateChecker } from "@/hooks/environments/use-update-checker";
 import type { EnvUpdateInfo } from "@/types/environments";
 
 export type { EnvUpdateInfo };

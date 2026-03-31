@@ -15,7 +15,7 @@ import {
 } from '@/components/toolbox/tool-layout';
 import { useLocale } from '@/components/providers/locale-provider';
 import { TOOLBOX_LIMITS } from '@/lib/constants/toolbox-limits';
-import { useToolPreferences } from '@/hooks/use-tool-preferences';
+import { useToolPreferences } from '@/hooks/toolbox/use-tool-preferences';
 import type { ToolComponentProps } from '@/types/toolbox';
 
 const DEFAULT_PREFERENCES = {

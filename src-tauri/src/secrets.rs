@@ -132,7 +132,8 @@ impl SecretVault {
 
         let key = KeyDerivation::argon2(password, &self.salt_path);
 
-        let stronghold = Stronghold::new(&self.snapshot_path, key).map_err(|error| error.to_string())?;
+        let stronghold =
+            Stronghold::new(&self.snapshot_path, key).map_err(|error| error.to_string())?;
 
         if self.is_initialized() {
             match stronghold.load_client(CLIENT_NAME.to_vec()) {
@@ -208,7 +209,9 @@ impl SecretVault {
                 .store()
                 .delete(key.as_bytes())
                 .map_err(|error| error.to_string())?;
-            self.stronghold()?.save().map_err(|error| error.to_string())?;
+            self.stronghold()?
+                .save()
+                .map_err(|error| error.to_string())?;
         }
 
         Ok(existed)
@@ -257,7 +260,10 @@ mod tests {
         let key = provider_secret_key("github");
         vault.save_secret(&key, "ghp_test123").unwrap();
         assert!(vault.contains_secret(&key).unwrap());
-        assert_eq!(vault.get_secret(&key).unwrap().as_deref(), Some("ghp_test123"));
+        assert_eq!(
+            vault.get_secret(&key).unwrap().as_deref(),
+            Some("ghp_test123")
+        );
 
         assert!(vault.remove_secret(&key).unwrap());
         assert!(!vault.contains_secret(&key).unwrap());
@@ -276,8 +282,12 @@ mod tests {
         let mut vault = SecretVault::new(temp.path().to_path_buf());
         let mut settings = Settings::default();
 
-        settings.set_provider_legacy_token("github", "ghp_legacy").unwrap();
-        settings.set_provider_legacy_token("gitlab", "glpat_legacy").unwrap();
+        settings
+            .set_provider_legacy_token("github", "ghp_legacy")
+            .unwrap();
+        settings
+            .set_provider_legacy_token("gitlab", "glpat_legacy")
+            .unwrap();
 
         vault.setup("secret-passphrase").await.unwrap();
         vault
@@ -288,11 +298,17 @@ mod tests {
         assert_eq!(migrated, vec!["github".to_string(), "gitlab".to_string()]);
 
         assert_eq!(
-            vault.get_secret(&provider_secret_key("github")).unwrap().as_deref(),
+            vault
+                .get_secret(&provider_secret_key("github"))
+                .unwrap()
+                .as_deref(),
             Some("ghp_existing")
         );
         assert_eq!(
-            vault.get_secret(&provider_secret_key("gitlab")).unwrap().as_deref(),
+            vault
+                .get_secret(&provider_secret_key("gitlab"))
+                .unwrap()
+                .as_deref(),
             Some("glpat_legacy")
         );
         assert_eq!(settings.get_provider_legacy_token("github"), None);

@@ -36,21 +36,16 @@ describe('CacheDetailPage', () => {
   it('renders CacheDetailPageClient with correct cacheType prop', async () => {
     const el = await CacheDetailPage({
       params: Promise.resolve({ cacheType: 'download' }),
-      searchParams: Promise.resolve({}),
     });
     render(el);
     expect(screen.getByTestId('cache-detail')).toHaveTextContent('download:none:none');
   });
 
-  it('passes external drilldown target query params through to the client page', async () => {
+  it('renders the external cache detail route without resolving search params on the server', async () => {
     const el = await CacheDetailPage({
       params: Promise.resolve({ cacheType: 'external' }),
-      searchParams: Promise.resolve({
-        target: 'custom_docs',
-        targetType: 'custom',
-      }),
     });
     render(el);
-    expect(screen.getByTestId('cache-detail')).toHaveTextContent('external:custom_docs:custom');
+    expect(screen.getByTestId('cache-detail')).toHaveTextContent('external:none:none');
   });
 });

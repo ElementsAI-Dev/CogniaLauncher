@@ -4,6 +4,7 @@ use crate::platform::{
     env::Platform,
     process::{self, ProcessOptions},
 };
+use crate::provider::cpp_compiler::{fingerprint_cpp_compiler, CppCompilerMetadata};
 use crate::provider::support::SupportReason;
 use async_trait::async_trait;
 use std::collections::HashSet;
@@ -48,6 +49,10 @@ impl Msys2Provider {
 
     fn make_opts(&self) -> ProcessOptions {
         ProcessOptions::new().with_timeout(Duration::from_secs(120))
+    }
+
+    fn make_compiler_probe_opts(&self) -> ProcessOptions {
+        ProcessOptions::new().with_timeout(Duration::from_secs(15))
     }
 
     /// Run pacman with given arguments
@@ -113,6 +118,51 @@ impl Msys2Provider {
                 message: err.to_string(),
             },
         }
+    }
+
+    pub async fn detect_cpp_compiler(
+        &self,
+    ) -> CogniaResult<Option<(String, PathBuf, CppCompilerMetadata)>> {
+        let Some(root) = self.msys2_root.as_ref() else {
+            return Ok(None);
+        };
+
+        let candidates = [
+            root.join("ucrt64").join("bin").join("g++.exe"),
+            root.join("ucrt64").join("bin").join("clang++.exe"),
+            root.join("clang64").join("bin").join("clang++.exe"),
+            root.join("mingw64").join("bin").join("g++.exe"),
+            root.join("mingw32").join("bin").join("g++.exe"),
+        ];
+        let opts = self.make_compiler_probe_opts();
+
+        for candidate in candidates {
+            if !candidate.exists() {
+                continue;
+            }
+
+            let exe = candidate.to_string_lossy().to_string();
+            let output = process::execute(&exe, &["--version"], Some(opts.clone())).await?;
+            if !output.success {
+                continue;
+            }
+
+            let Some(metadata) = fingerprint_cpp_compiler(
+                "g++",
+                &candidate,
+                &output.stdout,
+                &output.stderr,
+                Some("msys2-root"),
+            ) else {
+                continue;
+            };
+
+            if let Some(version) = metadata.version.clone() {
+                return Ok(Some((version, candidate, metadata)));
+            }
+        }
+
+        Ok(None)
     }
 }
 

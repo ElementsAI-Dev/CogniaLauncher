@@ -16,6 +16,10 @@ describe('wsl information helpers', () => {
     expect(snapshot.status.state).toBe('idle');
     expect(snapshot.capabilities.state).toBe('idle');
     expect(snapshot.versionInfo.state).toBe('idle');
+    expect(snapshot.is_healthy).toBeNull();
+    expect(snapshot.running_count).toBe(0);
+    expect(snapshot.default_distro).toBeNull();
+    expect(snapshot.kernel_up_to_date).toBeNull();
     expect(snapshot.lastUpdatedAt).toBeNull();
   });
 

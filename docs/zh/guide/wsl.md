@@ -55,6 +55,9 @@ CogniaLauncher 提供完整的 Windows Subsystem for Linux (WSL) 管理功能。
 - **在终端打开** — 直接在 Windows Terminal（或回退 Shell）中打开发行版
 - **内联生命周期反馈** — 长任务、批量操作和高风险操作会在页面内保留运行/成功/失败状态与重试提示
 - **工作流续接** — 进入发行版详情时会保留返回原始概览、侧边栏或卡片入口的路径
+- **托盘快捷动作** — 桌面托盘现在会镜像 WSL 运行状态，并支持启动默认发行版、关闭全部运行中的发行版、直接打开 WSL 管理页面
+- **命令面板动作** — 在 Windows 且 WSL 可用时，命令面板会提供启动默认发行版、关闭全部发行版、打开默认发行版终端等快捷动作
+- **CLI 管理** — `cognia wsl list|status|launch|terminate|shutdown|exec` 提供无界面 WSL 控制能力，支持表格与 JSON 输出
 
 ### 磁盘管理
 
@@ -74,6 +77,7 @@ CogniaLauncher 提供完整的 Windows Subsystem for Linux (WSL) 管理功能。
 - **更改默认用户** — 修改发行版的默认登录用户
 - **健康检查** — 在发行版详情中运行健康诊断并查看结构化问题/时间戳
 - **端口转发** — 以显式二次确认和风险提示执行 `netsh portproxy` 规则增删
+- **网络模式切换** — 可在发行版网络页切换全局 WSL 网络模式（`NAT`、`mirrored`、`virtioproxy`），并通过重启确认自动执行 `wsl --shutdown`
 
 ### 辅助设施
 
@@ -98,6 +102,12 @@ CogniaLauncher 提供完整的 Windows Subsystem for Linux (WSL) 管理功能。
 
 - 检查 WSL 组件更新
 - 执行 WSL 更新
+
+### 配置快照、健康集成与备份自动化
+
+- **配置快照** — 环境配置文件现在可以捕获并恢复 WSL 状态，包括 `.wslconfig`、发行版清单以及默认发行版元数据
+- **统一健康检查中的 WSL** — 全局健康检查页面现在会把 WSL 运行时问题单独展示，不再混在 envvar 或普通系统问题里
+- **计划备份** — 发行版详情中已集成备份计划卡片，支持持久化频率、启动时漏跑检测，以及成功备份后的保留数量清理
 
 ### 信息读取与刷新
 
@@ -143,8 +153,12 @@ CogniaLauncher 提供完整的 Windows Subsystem for Linux (WSL) 管理功能。
 | `wsl_change_default_user` | 更改默认用户 |
 | `wsl_get_distro_config` | 读取发行版配置 |
 | `wsl_set_distro_config` | 写入发行版配置 |
+| `wsl_set_networking_mode` | 修改全局 WSL 网络模式 |
 | `wsl_get_capabilities` | 获取运行时命令能力 |
 | `wsl_get_version_info` | 获取 WSL 组件详细版本信息 |
 | `wsl_total_disk_usage` | 获取所有发行版总磁盘占用 |
 | `wsl_move_distro` | 迁移发行版磁盘位置 |
 | `wsl_resize_distro` | 扩容发行版虚拟磁盘 |
+| `profile_capture_wsl_snapshot` | 为环境配置文件捕获 WSL 状态 |
+| `profile_apply_wsl_snapshot` | 应用已捕获的 WSL 配置快照 |
+| `tray_set_wsl_state` | 将 WSL 运行状态同步到桌面托盘 |

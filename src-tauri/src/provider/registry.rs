@@ -912,7 +912,10 @@ mod tests {
 
         let registry = ProviderRegistry::with_settings(&settings).await.unwrap();
         let npm_info = registry.get_provider_info("npm").expect("npm must exist");
-        assert!(npm_info.enabled, "explicit provider config should override legacy disabled list");
+        assert!(
+            npm_info.enabled,
+            "explicit provider config should override legacy disabled list"
+        );
     }
 
     #[tokio::test]

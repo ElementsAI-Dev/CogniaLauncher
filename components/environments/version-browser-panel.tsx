@@ -29,7 +29,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useVersionBrowser } from "@/hooks/use-version-browser";
+import { useVersionBrowser } from "@/hooks/environments/use-version-browser";
 import { formatDate } from "@/lib/version-utils";
 import type { VersionFilter } from "@/lib/constants/environments";
 

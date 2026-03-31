@@ -20,6 +20,7 @@ import {
 import { useLocale } from '@/components/providers/locale-provider';
 import { toast } from 'sonner';
 import type { GitBranchCardProps } from '@/types/git';
+import { useGitActionDialogs } from './use-git-action-dialogs';
 
 export function GitBranchCard({
   branches,
@@ -39,6 +40,7 @@ export function GitBranchCard({
   const forceDeleteCheckboxId = 'git-branch-force-delete';
   const localBranches = branches.filter((b) => !b.isRemote);
   const remoteBranches = branches.filter((b) => b.isRemote);
+  const { confirm, prompt, dialogs } = useGitActionDialogs();
 
   const handleCheckout = async (name: string) => {
     if (!onCheckout) return;
@@ -84,7 +86,10 @@ export function GitBranchCard({
     const branch = rest.join('/');
     if (!remote || !branch) return;
 
-    const ok = window.confirm(t('git.branchAction.deleteRemoteConfirm'));
+    const ok = await confirm({
+      title: t('git.branchAction.deleteRemote'),
+      description: t('git.branchAction.deleteRemoteConfirm'),
+    });
     if (!ok) return;
 
     try {
@@ -97,7 +102,12 @@ export function GitBranchCard({
 
   const handleRename = async (name: string) => {
     if (!onRename) return;
-    const next = window.prompt(t('git.branchAction.rename'), name);
+    const next = await prompt({
+      title: t('git.branchAction.rename'),
+      label: t('git.branchAction.rename'),
+      placeholder: t('git.branchAction.newBranchName'),
+      defaultValue: name,
+    });
     if (!next || next.trim() === '' || next.trim() === name) return;
     try {
       const msg = await onRename(name, next.trim());
@@ -110,7 +120,12 @@ export function GitBranchCard({
   const handleSetUpstream = async (name: string, currentUpstream?: string | null) => {
     if (!onSetUpstream) return;
     const suggested = currentUpstream && currentUpstream.trim() ? currentUpstream : `origin/${name}`;
-    const upstream = window.prompt(t('git.branchAction.setUpstream'), suggested);
+    const upstream = await prompt({
+      title: t('git.branchAction.setUpstream'),
+      label: t('git.branchAction.setUpstream'),
+      defaultValue: suggested,
+      placeholder: suggested,
+    });
     if (!upstream || upstream.trim() === '') return;
     try {
       const msg = await onSetUpstream(name, upstream.trim());
@@ -121,6 +136,7 @@ export function GitBranchCard({
   };
 
   return (
+    <>
     <Card>
       <CardHeader className="pb-3">
         <CardTitle className="text-sm flex items-center gap-2">
@@ -300,5 +316,7 @@ export function GitBranchCard({
         )}
       </CardContent>
     </Card>
+    {dialogs}
+    </>
   );
 }

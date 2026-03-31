@@ -90,15 +90,35 @@ jest.mock("@/components/ui/collapsible", () => ({
 }));
 
 jest.mock("@/components/ui/sheet", () => ({
-  Sheet: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="sheet">{children}</div>
-  ),
-  SheetTrigger: ({ children }: { children: React.ReactNode }) => (
-    <>{children}</>
-  ),
-  SheetContent: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="sheet-content">{children}</div>
-  ),
+  Sheet: ({
+    children,
+    open,
+    onOpenChange,
+  }: {
+    children: React.ReactNode;
+    open: boolean;
+    onOpenChange: (next: boolean) => void;
+  }) => {
+    (globalThis as typeof globalThis & { __docsSheetState?: { open: boolean; onOpenChange: (next: boolean) => void } }).__docsSheetState = {
+      open,
+      onOpenChange,
+    };
+    return <div data-testid="sheet" data-open={open}>{children}</div>;
+  },
+  SheetTrigger: ({ children }: { children: React.ReactNode }) => {
+    return React.isValidElement<Record<string, unknown>>(children)
+      ? React.cloneElement(children, {
+          onClick: () => {
+            const state = (globalThis as typeof globalThis & { __docsSheetState?: { open: boolean; onOpenChange: (next: boolean) => void } }).__docsSheetState;
+            state?.onOpenChange(true);
+          },
+        })
+      : <>{children}</>;
+  },
+  SheetContent: ({ children }: { children: React.ReactNode }) => {
+    const state = (globalThis as typeof globalThis & { __docsSheetState?: { open: boolean } }).__docsSheetState;
+    return state?.open ? <div data-testid="sheet-content">{children}</div> : null;
+  },
   SheetHeader: ({ children }: { children: React.ReactNode }) => (
     <div>{children}</div>
   ),
@@ -205,6 +225,13 @@ describe("DocsSidebar", () => {
     expect(installLink?.className).toContain("bg-primary/10");
   });
 
+  it("marks the active item with aria-current", () => {
+    mockPathname = "/docs/getting-started/installation";
+    render(<DocsSidebar />);
+    const installLink = screen.getByText("Installation").closest("a");
+    expect(installLink).toHaveAttribute("aria-current", "page");
+  });
+
   it("applies inactive style when pathname does not match", () => {
     mockPathname = "/docs";
     render(<DocsSidebar />);
@@ -270,8 +297,26 @@ describe("DocsSidebar", () => {
       },
     ];
     render(<DocsMobileSidebar searchIndex={index} />);
-    const search = screen.getByTestId("docs-search");
-    expect(search).toHaveAttribute("data-has-index", "true");
+    screen.getByRole("button", { name: "docs.mobileMenu" }).click();
+    return waitFor(() => {
+      const search = screen.getByTestId("docs-search");
+      expect(search).toHaveAttribute("data-has-index", "true");
+    });
+  });
+
+  it("closes the mobile sheet after clicking a nav item", async () => {
+    render(<DocsMobileSidebar />);
+
+    expect(screen.queryByTestId("sheet-content")).not.toBeInTheDocument();
+
+    await screen.getByRole("button", { name: "docs.mobileMenu" }).click();
+    expect(screen.getByTestId("sheet-content")).toBeInTheDocument();
+
+    screen.getByText("Installation").click();
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("sheet-content")).not.toBeInTheDocument();
+    });
   });
 
   it("renders DocsSearch without searchIndex by default", () => {

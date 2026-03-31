@@ -251,6 +251,19 @@ fn issue(
 static BACKUP_MUTATION_GATE: LazyLock<tokio::sync::Mutex<()>> =
     LazyLock::new(|| tokio::sync::Mutex::new(()));
 
+pub(crate) fn try_acquire_backup_mutation_gate(
+    operation: &str,
+) -> Result<tokio::sync::MutexGuard<'static, ()>, String> {
+    BACKUP_MUTATION_GATE
+        .try_lock()
+        .map_err(|_| mutation_in_progress_error(operation))
+}
+
+#[cfg(test)]
+pub(crate) async fn lock_backup_mutation_gate_for_test() -> tokio::sync::MutexGuard<'static, ()> {
+    BACKUP_MUTATION_GATE.lock().await
+}
+
 fn mutation_in_progress_error(operation: &str) -> String {
     format!(
         "Backup mutation '{}' is already running; wait for completion and retry",
@@ -1633,7 +1646,11 @@ pub async fn delete_backup_with_result(backup_path: &Path) -> BackupDeleteResult
             success: false,
             status: BackupOperationStatus::Failed,
             reason_code: Some(operation_failure_reason("delete", &e)),
-            issues: vec![issue(&operation_failure_reason("delete", &e), e.to_string(), None)],
+            issues: vec![issue(
+                &operation_failure_reason("delete", &e),
+                e.to_string(),
+                None,
+            )],
             deleted: false,
             path: backup_path.display().to_string(),
             error: Some(e.to_string()),
@@ -1674,7 +1691,11 @@ pub async fn export_backup_with_result(backup_path: &Path, dest_path: &Path) -> 
             success: false,
             status: BackupOperationStatus::Failed,
             reason_code: Some(operation_failure_reason("export", &e)),
-            issues: vec![issue(&operation_failure_reason("export", &e), e.to_string(), None)],
+            issues: vec![issue(
+                &operation_failure_reason("export", &e),
+                e.to_string(),
+                None,
+            )],
             bytes: 0,
             backup_path: backup_path.display().to_string(),
             dest_path: dest_path.display().to_string(),
@@ -1714,7 +1735,11 @@ pub async fn import_backup_with_result(zip_path: &Path, settings: &Settings) -> 
             success: false,
             status: BackupOperationStatus::Failed,
             reason_code: Some(operation_failure_reason("import", &e)),
-            issues: vec![issue(&operation_failure_reason("import", &e), e.to_string(), None)],
+            issues: vec![issue(
+                &operation_failure_reason("import", &e),
+                e.to_string(),
+                None,
+            )],
             zip_path: zip_path.display().to_string(),
             info: None,
             error: Some(e.to_string()),
@@ -2300,7 +2325,10 @@ mod tests {
         let result = export_backup_with_result(&empty_dir, &dest).await;
         assert!(!result.success);
         assert_eq!(result.status, BackupOperationStatus::Failed);
-        assert_eq!(result.reason_code.as_deref(), Some("backup_export_path_error"));
+        assert_eq!(
+            result.reason_code.as_deref(),
+            Some("backup_export_path_error")
+        );
     }
 
     #[tokio::test]

@@ -14,7 +14,7 @@ import {
 const mockUseBackup = jest.fn();
 const mockIsTauri = jest.fn();
 
-jest.mock("@/hooks/use-backup", () => ({
+jest.mock("@/hooks/settings/use-backup", () => ({
   useBackup: () => mockUseBackup(),
 }));
 

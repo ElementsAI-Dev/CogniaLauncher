@@ -3,9 +3,17 @@ import userEvent from "@testing-library/user-event";
 import { LogDrawer } from "./log-drawer";
 import { useLogStore } from "@/lib/stores/log";
 
+const mockPush = jest.fn();
+
 // Mock tauri module
 jest.mock("@/lib/tauri", () => ({
   isTauri: jest.fn(() => true),
+}));
+
+jest.mock("next/navigation", () => ({
+  useRouter: () => ({
+    push: mockPush,
+  }),
 }));
 
 // Mock locale provider
@@ -45,6 +53,7 @@ jest.mock("@/components/providers/locale-provider", () => ({
         "logs.notAvailable": "Logs not available",
         "logs.notAvailableDescription":
           "Log viewer is only available in the desktop application",
+        "logs.openWorkspace": "Open Logs Workspace",
         "logs.expand": "Expand",
         "logs.collapse": "Collapse",
         "common.copy": "Copy",
@@ -57,6 +66,7 @@ jest.mock("@/components/providers/locale-provider", () => ({
 
 describe("LogDrawer", () => {
   beforeEach(() => {
+    mockPush.mockReset();
     // Reset store state
     useLogStore.setState({
       logs: [],
@@ -73,6 +83,7 @@ describe("LogDrawer", () => {
       drawerOpen: false,
       logFiles: [],
       selectedLogFile: null,
+      showBookmarksOnly: false,
     });
   });
 
@@ -169,5 +180,27 @@ describe("LogDrawer", () => {
     render(<LogDrawer />);
     // Badge text is "{count} {entries}" e.g. "3 entries"
     expect(screen.getByText(/3 entries/)).toBeInTheDocument();
+  });
+
+  it("opens logs workspace with filter context and closes the drawer", async () => {
+    const user = userEvent.setup();
+    useLogStore.setState({
+      ...useLogStore.getState(),
+      drawerOpen: true,
+      filter: {
+        ...useLogStore.getState().filter,
+        levels: ["error", "warn"],
+        search: "panic",
+      },
+      showBookmarksOnly: true,
+    });
+
+    render(<LogDrawer />);
+    await user.click(screen.getByRole("button", { name: "Open Logs Workspace" }));
+
+    expect(mockPush).toHaveBeenCalledWith(
+      "/logs?tab=realtime&q=panic&levels=error%2Cwarn&bookmarks=1",
+    );
+    expect(useLogStore.getState().drawerOpen).toBe(false);
   });
 });

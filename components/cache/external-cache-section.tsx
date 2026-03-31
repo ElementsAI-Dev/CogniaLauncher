@@ -65,7 +65,7 @@ import { getCategoryLabel } from "@/lib/constants/cache";
 import { deriveExternalCacheMaintenanceMetadata } from "@/lib/cache/maintenance";
 import { buildExternalCacheDetailHref } from "@/lib/cache/scopes";
 import type { ExternalCacheSectionProps } from "@/types/cache";
-import { useExternalCache } from "@/hooks/use-external-cache";
+import { useExternalCache } from "@/hooks/cache/use-external-cache";
 import type { ExternalCacheCleanResult } from "@/lib/tauri";
 import { writeClipboard } from "@/lib/clipboard";
 

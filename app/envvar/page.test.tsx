@@ -2,6 +2,8 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import EnvVarPage from './page';
 
+let mockSearchParams = new URLSearchParams();
+
 const mockLoadDetection = jest.fn().mockResolvedValue(null);
 const mockSetVar = jest.fn().mockResolvedValue(true);
 const mockRemoveVar = jest.fn().mockResolvedValue(true);
@@ -84,6 +86,9 @@ const hookState = {
   }>,
   snapshotLoading: false,
   snapshotError: null as string | null,
+  defaultScopePreference: 'all' as 'all' | 'process' | 'user' | 'system',
+  autoSnapshotEnabled: false,
+  maskSensitiveByDefault: true,
   fetchSnapshotHistory: mockFetchSnapshotHistory,
   createSnapshot: mockCreateSnapshot,
   getBackupProtection: mockGetBackupProtection,
@@ -113,8 +118,12 @@ const hookState = {
   loadDetection: mockLoadDetection,
 };
 
-jest.mock('@/hooks/use-envvar', () => ({
+jest.mock('@/hooks/envvar/use-envvar', () => ({
   useEnvVar: () => hookState,
+}));
+
+jest.mock('next/navigation', () => ({
+  useSearchParams: () => mockSearchParams,
 }));
 
 jest.mock('@/components/providers/locale-provider', () => ({
@@ -126,8 +135,22 @@ jest.mock('@/lib/tauri', () => ({
 }));
 
 jest.mock('sonner', () => ({
-  toast: { success: jest.fn(), error: jest.fn(), warning: jest.fn(), info: jest.fn() },
+  toast: {
+    success: jest.fn(),
+    warning: jest.fn(),
+    error: jest.fn(),
+    info: jest.fn(),
+  },
 }));
+
+const { toast: mockToast } = jest.requireMock('sonner') as {
+  toast: {
+    success: jest.Mock;
+    warning: jest.Mock;
+    error: jest.Mock;
+    info: jest.Mock;
+  };
+};
 
 describe('EnvVarPage', () => {
   const originalInnerWidth = window.innerWidth;
@@ -149,6 +172,7 @@ describe('EnvVarPage', () => {
   });
 
   beforeEach(() => {
+    mockSearchParams = new URLSearchParams();
     mockIsTauri = false;
     hookState.envVars = {};
     hookState.processVarSummaries = [];
@@ -180,6 +204,9 @@ describe('EnvVarPage', () => {
     hookState.snapshotHistory = [];
     hookState.snapshotLoading = false;
     hookState.snapshotError = null;
+    hookState.defaultScopePreference = 'all';
+    hookState.autoSnapshotEnabled = false;
+    hookState.maskSensitiveByDefault = true;
     mockSetVar.mockResolvedValue(true);
     mockLoadDetection.mockResolvedValue(null);
     mockGetBackupProtection.mockResolvedValue(null);
@@ -215,6 +242,48 @@ describe('EnvVarPage', () => {
     });
   });
 
+  it('uses envvar settings default scope for initial detection', async () => {
+    mockIsTauri = true;
+    hookState.defaultScopePreference = 'user';
+    render(<EnvVarPage />);
+
+    await waitFor(() => {
+      expect(mockLoadDetection).toHaveBeenCalledWith('user', { forceRefresh: true });
+    });
+  });
+
+  it('applies hydrated default scope after the first render and refreshes that scope', async () => {
+    mockIsTauri = true;
+    hookState.defaultScopePreference = 'all';
+    const { rerender } = render(<EnvVarPage />);
+
+    await waitFor(() => {
+      expect(mockLoadDetection).toHaveBeenCalledWith('all', { forceRefresh: true });
+    });
+
+    mockLoadDetection.mockClear();
+    hookState.defaultScopePreference = 'user';
+    rerender(<EnvVarPage />);
+
+    await waitFor(() => {
+      expect(mockLoadDetection).toHaveBeenCalledWith('user', { forceRefresh: true });
+    });
+  });
+
+  it('opens the requested tab from search params', async () => {
+    mockIsTauri = true;
+    mockSearchParams = new URLSearchParams('tab=path');
+    hookState.pathEntries = [
+      { path: '/usr/bin', exists: true, isDirectory: true, isDuplicate: false },
+    ] as never[];
+
+    render(<EnvVarPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('envvar-path-content')).toBeInTheDocument();
+    });
+  });
+
   it('renders one-row desktop action layout', async () => {
     mockIsTauri = true;
     render(<EnvVarPage />);
@@ -222,8 +291,8 @@ describe('EnvVarPage', () => {
     const actions = screen.getByTestId('envvar-header-actions');
     expect(actions).toBeInTheDocument();
     expect(actions.className).toContain('md:flex-nowrap');
-    expect(screen.getByRole('button', { name: 'envvar.importExport.import' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'envvar.importExport.export' })).toBeInTheDocument();
+    expect(screen.getByTestId('envvar-snapshots-toggle')).toBeInTheDocument();
+    expect(screen.getByTestId('envvar-import-export-trigger')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'envvar.actions.refresh' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'envvar.actions.add' })).toBeInTheDocument();
 
@@ -249,6 +318,9 @@ describe('EnvVarPage', () => {
 
     render(<EnvVarPage />);
 
+    // Snapshots are now in a collapsible — open it first
+    await userEvent.click(screen.getByTestId('envvar-snapshots-toggle'));
+
     expect(screen.getByTestId('envvar-snapshot-history')).toBeInTheDocument();
     expect(screen.getByText('envvar-snapshot-1')).toBeInTheDocument();
 
@@ -269,6 +341,9 @@ describe('EnvVarPage', () => {
     });
 
     render(<EnvVarPage />);
+
+    // Open the collapsible snapshot section
+    await userEvent.click(screen.getByTestId('envvar-snapshots-toggle'));
 
     await waitFor(() => {
       expect(screen.getByTestId('envvar-snapshot-protection')).toBeInTheDocument();
@@ -292,6 +367,7 @@ describe('EnvVarPage', () => {
     ];
     mockPreviewSnapshotRestore.mockResolvedValueOnce({
       createdAt: '2026-03-19T00:00:00Z',
+      fingerprint: 'system-only-preview',
       segments: [
         {
           scope: 'user',
@@ -309,13 +385,299 @@ describe('EnvVarPage', () => {
 
     render(<EnvVarPage />);
 
+    // Open collapsible snapshot section
+    await userEvent.click(screen.getByTestId('envvar-snapshots-toggle'));
+
     await userEvent.click(screen.getByRole('button', { name: 'envvar.snapshots.preview' }));
 
     await waitFor(() => {
       expect(screen.getByTestId('envvar-snapshot-preview')).toBeInTheDocument();
     });
     expect(screen.getByText(/envvar\.snapshots\.segmentSummary/)).toBeInTheDocument();
-    expect(mockPreviewSnapshotRestore).toHaveBeenCalledWith('D:/snapshots/envvar-snapshot-1');
+    expect(mockPreviewSnapshotRestore).toHaveBeenCalledWith('D:/snapshots/envvar-snapshot-1', []);
+  });
+
+  it('uses the selected snapshot scopes when generating restore preview', async () => {
+    mockIsTauri = true;
+    hookState.snapshotHistory = [
+      {
+        path: 'D:/snapshots/envvar-snapshot-1',
+        name: 'envvar-snapshot-1',
+        createdAt: '2026-03-19T00:00:00Z',
+        creationMode: 'manual',
+        sourceAction: 'import_apply',
+        note: 'before import',
+        scopes: ['user', 'system'],
+        integrityState: 'valid',
+      },
+    ];
+    mockPreviewSnapshotRestore.mockResolvedValueOnce({
+      createdAt: '2026-03-19T00:00:00Z',
+      fingerprint: 'restore-preview-fingerprint',
+      segments: [
+        {
+          scope: 'system',
+          changedVariables: 1,
+          addedVariables: 0,
+          removedVariables: 0,
+          addedPathEntries: 0,
+          removedPathEntries: 0,
+          skipped: false,
+          reasonCode: null,
+          reason: null,
+        },
+      ],
+    });
+
+    render(<EnvVarPage />);
+
+    await userEvent.click(screen.getByTestId('envvar-snapshots-toggle'));
+    await userEvent.click(screen.getByTestId('envvar-snapshot-scope-system-D:/snapshots/envvar-snapshot-1'));
+    await userEvent.click(screen.getByRole('button', { name: 'envvar.snapshots.preview' }));
+
+    await waitFor(() => {
+      expect(mockPreviewSnapshotRestore).toHaveBeenCalledWith('D:/snapshots/envvar-snapshot-1', ['system']);
+    });
+  });
+
+  it('refreshes visible recovery state after restoring a snapshot', async () => {
+    mockIsTauri = true;
+    hookState.detectionState = 'showing-fresh';
+    hookState.pathEntries = [
+      { path: '/usr/bin', exists: true, isDirectory: true, isDuplicate: false },
+    ] as never[];
+    hookState.snapshotHistory = [
+      {
+        path: 'D:/snapshots/envvar-snapshot-1',
+        name: 'envvar-snapshot-1',
+        createdAt: '2026-03-19T00:00:00Z',
+        creationMode: 'manual',
+        sourceAction: 'import_apply',
+        note: 'before import',
+        scopes: ['user', 'system'],
+        integrityState: 'valid',
+      },
+    ];
+    mockGetBackupProtection.mockResolvedValue({
+      action: 'import_apply',
+      scope: 'user',
+      state: 'will_reuse',
+      reasonCode: 'compatible_snapshot_available',
+      reason: 'A compatible automatic envvar snapshot already protects the current state.',
+      nextSteps: [],
+      snapshot: null,
+    });
+    mockPreviewSnapshotRestore.mockResolvedValueOnce({
+      createdAt: '2026-03-19T00:00:00Z',
+      fingerprint: 'restore-preview-fingerprint',
+      segments: [
+        {
+          scope: 'user',
+          changedVariables: 2,
+          addedVariables: 1,
+          removedVariables: 0,
+          addedPathEntries: 1,
+          removedPathEntries: 0,
+          skipped: false,
+          reasonCode: null,
+          reason: null,
+        },
+      ],
+    });
+    mockRestoreSnapshot.mockResolvedValueOnce({
+      success: true,
+      verified: true,
+      status: 'verified',
+      reasonCode: null,
+      message: null,
+      restoredScopes: ['user'],
+      skipped: [],
+      primaryShellTarget: null,
+      shellGuidance: [],
+    });
+
+    render(<EnvVarPage />);
+
+    await userEvent.click(
+      screen.getByRole('tab', { name: /^envvar\.tabs\.pathEditor(?:\s+\d+)?$/ }),
+    );
+    await waitFor(() => {
+      expect(mockGetBackupProtection).toHaveBeenCalledWith('import_apply', 'user');
+    });
+    mockFetchPath.mockClear();
+    mockGetBackupProtection.mockClear();
+    hookState.clearImportPreview.mockClear();
+    hookState.clearPathRepairPreview.mockClear();
+
+    await userEvent.click(screen.getByTestId('envvar-snapshots-toggle'));
+    await userEvent.click(screen.getByRole('button', { name: 'envvar.snapshots.preview' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('envvar-snapshot-preview')).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: 'envvar.snapshots.restore' }));
+
+    await waitFor(() => {
+      expect(mockRestoreSnapshot).toHaveBeenCalledWith(
+        'D:/snapshots/envvar-snapshot-1',
+        undefined,
+        'restore-preview-fingerprint',
+      );
+    });
+    await waitFor(() => {
+      expect(hookState.clearImportPreview).toHaveBeenCalled();
+      expect(hookState.clearPathRepairPreview).toHaveBeenCalled();
+    });
+    expect(mockFetchPath).toHaveBeenCalledWith('process');
+    expect(mockGetBackupProtection).toHaveBeenCalledWith('import_apply', 'user');
+    expect(screen.queryByTestId('envvar-snapshot-preview')).not.toBeInTheDocument();
+    expect(screen.getByTestId('envvar-action-notice')).toHaveTextContent('envvar.snapshots.restoreComplete');
+  });
+
+  it('restores only the selected snapshot scopes after preview', async () => {
+    mockIsTauri = true;
+    hookState.snapshotHistory = [
+      {
+        path: 'D:/snapshots/envvar-snapshot-1',
+        name: 'envvar-snapshot-1',
+        createdAt: '2026-03-19T00:00:00Z',
+        creationMode: 'manual',
+        sourceAction: 'import_apply',
+        note: 'before import',
+        scopes: ['user', 'system'],
+        integrityState: 'valid',
+      },
+    ];
+    mockPreviewSnapshotRestore.mockResolvedValueOnce({
+      createdAt: '2026-03-19T00:00:00Z',
+      fingerprint: 'user-only-preview',
+      segments: [
+        {
+          scope: 'user',
+          changedVariables: 1,
+          addedVariables: 0,
+          removedVariables: 0,
+          addedPathEntries: 0,
+          removedPathEntries: 0,
+          skipped: false,
+          reasonCode: null,
+          reason: null,
+        },
+      ],
+    });
+    mockRestoreSnapshot.mockResolvedValueOnce({
+      success: true,
+      verified: true,
+      status: 'verified',
+      reasonCode: null,
+      message: null,
+      restoredScopes: ['user'],
+      skipped: [],
+      primaryShellTarget: null,
+      shellGuidance: [],
+    });
+
+    render(<EnvVarPage />);
+
+    await userEvent.click(screen.getByTestId('envvar-snapshots-toggle'));
+    await userEvent.click(screen.getByTestId('envvar-snapshot-scope-user-D:/snapshots/envvar-snapshot-1'));
+    await userEvent.click(screen.getByRole('button', { name: 'envvar.snapshots.preview' }));
+    await waitFor(() => {
+      expect(screen.getByTestId('envvar-snapshot-preview')).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: 'envvar.snapshots.restore' }));
+
+    await waitFor(() => {
+      expect(mockRestoreSnapshot).toHaveBeenCalledWith(
+        'D:/snapshots/envvar-snapshot-1',
+        ['user'],
+        'user-only-preview',
+      );
+    });
+  });
+
+  it('rejects restoring a snapshot before its preview has been reviewed', async () => {
+    mockIsTauri = true;
+    hookState.snapshotHistory = [
+      {
+        path: 'D:/snapshots/envvar-snapshot-1',
+        name: 'envvar-snapshot-1',
+        createdAt: '2026-03-19T00:00:00Z',
+        creationMode: 'manual',
+        sourceAction: 'import_apply',
+        note: 'before import',
+        scopes: ['user', 'system'],
+        integrityState: 'valid',
+      },
+    ];
+
+    render(<EnvVarPage />);
+
+    await userEvent.click(screen.getByTestId('envvar-snapshots-toggle'));
+    await userEvent.click(screen.getByRole('button', { name: 'envvar.snapshots.restore' }));
+
+    expect(mockRestoreSnapshot).not.toHaveBeenCalled();
+    expect(screen.getByTestId('envvar-action-error')).toBeInTheDocument();
+  });
+
+  it('rejects restoring a different snapshot than the one currently previewed', async () => {
+    mockIsTauri = true;
+    hookState.snapshotHistory = [
+      {
+        path: 'D:/snapshots/envvar-snapshot-1',
+        name: 'envvar-snapshot-1',
+        createdAt: '2026-03-19T00:00:00Z',
+        creationMode: 'manual',
+        sourceAction: 'import_apply',
+        note: 'before import',
+        scopes: ['user', 'system'],
+        integrityState: 'valid',
+      },
+      {
+        path: 'D:/snapshots/envvar-snapshot-2',
+        name: 'envvar-snapshot-2',
+        createdAt: '2026-03-19T01:00:00Z',
+        creationMode: 'manual',
+        sourceAction: 'path_repair_apply',
+        note: 'before repair',
+        scopes: ['user'],
+        integrityState: 'valid',
+      },
+    ];
+    mockPreviewSnapshotRestore.mockResolvedValue({
+      createdAt: '2026-03-19T00:00:00Z',
+      segments: [
+        {
+          scope: 'user',
+          changedVariables: 1,
+          addedVariables: 0,
+          removedVariables: 0,
+          addedPathEntries: 0,
+          removedPathEntries: 0,
+          skipped: false,
+          reasonCode: null,
+          reason: null,
+        },
+      ],
+    });
+
+    render(<EnvVarPage />);
+
+    await userEvent.click(screen.getByTestId('envvar-snapshots-toggle'));
+    const previewButtons = screen.getAllByRole('button', { name: 'envvar.snapshots.preview' });
+    await userEvent.click(previewButtons[0]);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('envvar-snapshot-preview')).toBeInTheDocument();
+    });
+
+    const restoreButtons = screen.getAllByRole('button', { name: 'envvar.snapshots.restore' });
+    await userEvent.click(restoreButtons[1]);
+
+    expect(mockRestoreSnapshot).not.toHaveBeenCalled();
+    expect(screen.getByTestId('envvar-action-error')).toBeInTheDocument();
   });
 
   it('disables refresh when backend support marks it blocked', async () => {
@@ -388,6 +750,9 @@ describe('EnvVarPage', () => {
 
     render(<EnvVarPage />);
 
+    // Expand the collapsed conflict panel
+    await userEvent.click(screen.getByTestId('envvar-conflicts-review'));
+
     await waitFor(() => {
       expect(screen.getByTestId('envvar-conflicts-compact-list')).toBeInTheDocument();
     });
@@ -414,6 +779,9 @@ describe('EnvVarPage', () => {
 
     render(<EnvVarPage />);
 
+    // Expand the collapsed conflict panel
+    await userEvent.click(screen.getByTestId('envvar-conflicts-review'));
+
     await waitFor(() => {
       expect(screen.getByTestId('envvar-conflicts-table')).toBeInTheDocument();
     });
@@ -434,6 +802,8 @@ describe('EnvVarPage', () => {
     hookState.detectionState = 'showing-fresh';
 
     render(<EnvVarPage />);
+
+    await userEvent.click(screen.getByTestId('envvar-conflicts-review'));
 
     await waitFor(() => {
       expect(screen.getByTestId('envvar-conflicts-table')).toBeInTheDocument();
@@ -456,6 +826,8 @@ describe('EnvVarPage', () => {
 
     render(<EnvVarPage />);
 
+    await userEvent.click(screen.getByTestId('envvar-conflicts-review'));
+
     await waitFor(() => {
       expect(screen.getByTestId('envvar-conflicts-scroll-area')).toBeInTheDocument();
     });
@@ -466,7 +838,7 @@ describe('EnvVarPage', () => {
     expect(screen.getByTestId('envvar-variables-list-shell')).toBeInTheDocument();
   });
 
-  it('supports collapsing, dismissing, and restoring conflict panel', async () => {
+  it('supports expanding, collapsing, dismissing, and restoring conflict panel', async () => {
     mockIsTauri = true;
     hookState.conflicts = [
       { key: 'JAVA_HOME', userValue: 'A', systemValue: 'B', effectiveValue: 'A' },
@@ -479,6 +851,11 @@ describe('EnvVarPage', () => {
       expect(screen.getByTestId('envvar-conflicts-summary')).toBeInTheDocument();
     });
 
+    // Panel starts collapsed — expand it
+    await userEvent.click(screen.getByTestId('envvar-conflicts-review'));
+    expect(screen.getByTestId('envvar-conflicts-scroll-area')).toBeInTheDocument();
+
+    // Collapse it again
     await userEvent.click(screen.getByTestId('envvar-conflicts-toggle'));
     expect(screen.queryByTestId('envvar-conflicts-scroll-area')).not.toBeInTheDocument();
 
@@ -498,6 +875,8 @@ describe('EnvVarPage', () => {
     hookState.detectionState = 'showing-fresh';
 
     render(<EnvVarPage />);
+
+    await userEvent.click(screen.getByTestId('envvar-conflicts-review'));
 
     await waitFor(() => {
       expect(screen.getByTestId('envvar-conflicts-scroll-area')).toBeInTheDocument();
@@ -521,6 +900,8 @@ describe('EnvVarPage', () => {
     hookState.detectionState = 'showing-fresh';
 
     render(<EnvVarPage />);
+
+    await userEvent.click(screen.getByTestId('envvar-conflicts-review'));
 
     await waitFor(() => {
       expect(screen.getByTestId('envvar-conflicts-scroll-area')).toBeInTheDocument();
@@ -558,6 +939,9 @@ describe('EnvVarPage', () => {
     expect(tabsRoot.className).toContain('flex-1');
     expect(listShell.className).toContain('min-h-0');
     expect(listShell.className).toContain('flex-1');
+
+    // Detection alert is hidden when fresh
+    expect(screen.queryByTestId('envvar-detection-status')).not.toBeInTheDocument();
 
     await waitFor(() => {
       expect(mockLoadDetection).toHaveBeenCalled();
@@ -614,9 +998,9 @@ describe('EnvVarPage', () => {
     await userEvent.click(addButtons[addButtons.length - 1]);
 
     await waitFor(() => {
-      expect(screen.getByTestId('envvar-operation-error')).toBeInTheDocument();
+      expect(mockToast.error).toHaveBeenCalled();
     });
-    expect(screen.getByTestId('envvar-operation-error')).toHaveTextContent('envvar.actions.add');
+    expect(mockToast.error.mock.calls[0][0]).toContain('envvar.actions.add');
   });
 
   it('resolves conflicts from conflict actions', async () => {
@@ -636,6 +1020,8 @@ describe('EnvVarPage', () => {
 
     render(<EnvVarPage />);
 
+    await userEvent.click(screen.getByTestId('envvar-conflicts-review'));
+
     await waitFor(() => {
       expect(screen.getByTestId('envvar-conflicts-table')).toBeInTheDocument();
     });
@@ -645,6 +1031,53 @@ describe('EnvVarPage', () => {
     await waitFor(() => {
       expect(mockResolveConflict).toHaveBeenCalledWith('JAVA_HOME', 'system', 'user');
     });
+  });
+
+  it('refreshes protection notice using the conflict target scope and exact action', async () => {
+    mockIsTauri = true;
+    hookState.conflicts = [
+      { key: 'JAVA_HOME', userValue: 'A', systemValue: 'B', effectiveValue: 'A' },
+    ];
+    hookState.detectionState = 'showing-fresh';
+    mockResolveConflict.mockResolvedValue({
+      key: 'JAVA_HOME',
+      sourceScope: 'system',
+      targetScope: 'user',
+      appliedValue: 'B',
+      success: true,
+      verified: true,
+      status: 'verified',
+      reasonCode: null,
+      message: null,
+      primaryShellTarget: null,
+      shellGuidance: [],
+    });
+
+    render(<EnvVarPage />);
+
+    await userEvent.click(screen.getByTestId('envvar-conflicts-review'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('envvar-conflicts-table')).toBeInTheDocument();
+    });
+    mockGetBackupProtection.mockClear();
+    mockGetBackupProtection.mockResolvedValueOnce({
+      action: 'conflict_resolve',
+      scope: 'user',
+      state: 'will_reuse',
+      reasonCode: 'compatible_snapshot_available',
+      reason: 'Conflict resolution is protected by an existing snapshot.',
+      nextSteps: [],
+      snapshot: null,
+    });
+
+    await userEvent.click(screen.getByTestId('envvar-conflict-system-to-user-JAVA_HOME'));
+    await userEvent.click(screen.getByTestId('envvar-snapshots-toggle'));
+
+    await waitFor(() => {
+      expect(mockGetBackupProtection).toHaveBeenCalledWith('conflict_resolve', 'user');
+    });
+    expect(screen.getByText('Conflict resolution is protected by an existing snapshot.')).toBeInTheDocument();
   });
 
   it('shows manual follow-up notice for degraded conflict resolution results', async () => {
@@ -669,6 +1102,8 @@ describe('EnvVarPage', () => {
 
     render(<EnvVarPage />);
 
+    await userEvent.click(screen.getByTestId('envvar-conflicts-review'));
+
     await waitFor(() => {
       expect(screen.getByTestId('envvar-conflicts-table')).toBeInTheDocument();
     });
@@ -676,11 +1111,11 @@ describe('EnvVarPage', () => {
     await userEvent.click(screen.getByTestId('envvar-conflict-system-to-user-JAVA_HOME'));
 
     await waitFor(() => {
-      expect(screen.getByText('Manual shell sync is still required.')).toBeInTheDocument();
+      expect(mockToast.warning).toHaveBeenCalledWith('Manual shell sync is still required.');
     });
   });
 
-  it('shows shell guidance banner and opens shell tab from shortcut', async () => {
+  it('shows shell guidance dot on Shells tab when guidance is available', async () => {
     mockIsTauri = true;
     hookState.detectionState = 'showing-fresh';
     hookState.shellGuidance = [
@@ -694,13 +1129,19 @@ describe('EnvVarPage', () => {
 
     render(<EnvVarPage />);
 
-    expect(screen.getByTestId('envvar-shell-guidance-banner')).toBeInTheDocument();
+    expect(screen.getByTestId('envvar-shell-guidance-dot')).toBeInTheDocument();
 
-    await userEvent.click(screen.getByTestId('envvar-shell-guidance-open'));
+    // Clicking the Shells tab navigates and fetches profiles
+    await userEvent.click(
+      screen.getByRole('tab', { name: /^envvar\.tabs\.shellProfiles/ }),
+    );
 
     await waitFor(() => {
       expect(mockFetchShellProfiles).toHaveBeenCalled();
     });
+
+    // Dot disappears when on the Shells tab
+    expect(screen.queryByTestId('envvar-shell-guidance-dot')).not.toBeInTheDocument();
   });
 
   it('changes the toolbar scope filter and refreshes that scope', async () => {
@@ -715,15 +1156,17 @@ describe('EnvVarPage', () => {
     });
     mockLoadDetection.mockClear();
 
-    await userEvent.click(screen.getByRole('combobox', { name: 'envvar.table.scope' }));
-    await userEvent.click(await screen.findByText('envvar.scopes.user'));
+    // ToggleGroup scope filter — click the "User" toggle item
+    const scopeFilter = screen.getByTestId('envvar-scope-filter');
+    const userToggle = within(scopeFilter).getByText('envvar.scopes.user');
+    await userEvent.click(userToggle);
 
     await waitFor(() => {
       expect(mockLoadDetection).toHaveBeenCalledWith('user', undefined);
     });
   });
 
-  it('shows a pending refresh status banner with the action label', async () => {
+  it('disables buttons while a refresh is in progress', async () => {
     mockIsTauri = true;
     hookState.detectionState = 'showing-fresh';
 
@@ -737,8 +1180,8 @@ describe('EnvVarPage', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'envvar.actions.refresh' }));
 
-    expect(screen.getByTestId('envvar-operation-status')).toHaveTextContent('common.loading');
-    expect(screen.getByTestId('envvar-operation-status')).toHaveTextContent('envvar.actions.refresh');
+    // While refreshing, buttons are disabled
+    expect(screen.getByRole('button', { name: 'envvar.actions.add' })).toBeDisabled();
   });
 
   it('shows filtered count text when the toolbar search narrows results', async () => {
@@ -873,23 +1316,25 @@ describe('EnvVarPage', () => {
     });
   });
 
-  it('surfaces preview import errors from the import dialog', async () => {
+  it('surfaces preview import errors as toast', async () => {
     mockIsTauri = true;
     hookState.detectionState = 'showing-fresh';
     mockPreviewImportEnvFile.mockResolvedValue(null);
 
     render(<EnvVarPage />);
 
-    await userEvent.click(screen.getByRole('button', { name: 'envvar.importExport.import' }));
+    // Open dropdown, click import
+    await userEvent.click(screen.getByTestId('envvar-import-export-trigger'));
+    await userEvent.click(screen.getByTestId('envvar-import-trigger'));
     await userEvent.type(screen.getByRole('textbox'), 'FOO=bar');
     await userEvent.click(screen.getByRole('button', { name: 'envvar.importExport.preview' }));
 
     await waitFor(() => {
-      expect(screen.getByTestId('envvar-operation-error')).toHaveTextContent('envvar.importExport.preview');
+      expect(mockToast.error).toHaveBeenCalled();
     });
   });
 
-  it('applies import previews and surfaces manual follow-up notices', async () => {
+  it('applies import previews and surfaces manual follow-up notices as toast', async () => {
     mockIsTauri = true;
     hookState.detectionState = 'showing-fresh';
     hookState.importPreview = {
@@ -915,34 +1360,81 @@ describe('EnvVarPage', () => {
 
     render(<EnvVarPage />);
 
-    await userEvent.click(screen.getByRole('button', { name: 'envvar.importExport.import' }));
+    await userEvent.click(screen.getByTestId('envvar-import-export-trigger'));
+    await userEvent.click(screen.getByTestId('envvar-import-trigger'));
     await userEvent.type(screen.getByRole('textbox'), 'JAVA_HOME=/jdk');
     await userEvent.click(screen.getByRole('button', { name: 'envvar.importExport.applyPreview' }));
 
     await waitFor(() => {
-      expect(screen.getByTestId('envvar-operation-notice')).toHaveTextContent('preview follow-up required');
+      expect(mockToast.warning).toHaveBeenCalledWith('preview follow-up required');
     });
   });
 
-  it('surfaces export failures from the dialog actions', async () => {
+  it('refreshes protection notice using the import preview scope instead of the page scope', async () => {
+    mockIsTauri = true;
+    hookState.detectionState = 'showing-fresh';
+    mockPreviewImportEnvFile.mockResolvedValue({
+      scope: 'system',
+      fingerprint: 'preview-fingerprint',
+      additions: 1,
+      updates: 0,
+      noops: 0,
+      invalid: 0,
+      skipped: 0,
+      items: [{ key: 'JAVA_HOME', value: '/jdk', action: 'add', reason: null }],
+      primaryShellTarget: null,
+      shellGuidance: [],
+    });
+
+    render(<EnvVarPage />);
+
+    await waitFor(() => {
+      expect(mockGetBackupProtection).toHaveBeenCalledWith('import_apply', 'user');
+    });
+    mockGetBackupProtection.mockClear();
+    mockGetBackupProtection.mockResolvedValueOnce({
+      action: 'import_apply',
+      scope: 'system',
+      state: 'will_create',
+      reasonCode: 'new_snapshot_required',
+      reason: 'System import needs a fresh snapshot.',
+      nextSteps: [],
+      snapshot: null,
+    });
+
+    await userEvent.click(screen.getByTestId('envvar-import-export-trigger'));
+    await userEvent.click(screen.getByTestId('envvar-import-trigger'));
+    const dialog = screen.getByRole('dialog');
+    await userEvent.click(within(dialog).getAllByRole('combobox')[0]);
+    await userEvent.click((await screen.findAllByText('envvar.scopes.system')).at(-1)!);
+    await userEvent.type(screen.getByRole('textbox'), 'JAVA_HOME=/jdk');
+    await userEvent.click(screen.getByRole('button', { name: 'envvar.importExport.preview' }));
+
+    await waitFor(() => {
+      expect(mockGetBackupProtection).toHaveBeenCalledWith('import_apply', 'system');
+    });
+  });
+
+  it('surfaces export failures as toast', async () => {
     mockIsTauri = true;
     hookState.detectionState = 'showing-fresh';
     mockExportEnvFile.mockResolvedValueOnce(null);
 
     render(<EnvVarPage />);
 
-    await userEvent.click(screen.getByRole('button', { name: 'envvar.importExport.export' }));
+    await userEvent.click(screen.getByTestId('envvar-import-export-trigger'));
+    await userEvent.click(screen.getByTestId('envvar-export-trigger'));
     const exportDialog = screen.getByRole('dialog');
     await userEvent.click(within(exportDialog).getByRole('tab', { name: 'envvar.importExport.export' }));
     const exportButtons = within(exportDialog).getAllByRole('button', { name: 'envvar.importExport.export' });
     fireEvent.click(exportButtons[exportButtons.length - 1]);
 
     await waitFor(() => {
-      expect(screen.getByTestId('envvar-operation-error')).toHaveTextContent('envvar.importExport.export');
+      expect(mockToast.error).toHaveBeenCalled();
     });
   });
 
-  it('surfaces path repair preview errors through the page handlers', async () => {
+  it('surfaces path repair preview errors as toast', async () => {
     mockIsTauri = true;
     hookState.detectionState = 'showing-fresh';
     hookState.pathEntries = [
@@ -958,11 +1450,56 @@ describe('EnvVarPage', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'envvar.pathEditor.previewRepair' }));
     await waitFor(() => {
-      expect(screen.getByTestId('envvar-operation-error')).toHaveTextContent('preview repair exploded');
+      expect(mockToast.error).toHaveBeenCalled();
     });
+    expect(mockToast.error.mock.calls[0][0]).toContain('preview repair exploded');
   });
 
-  it('surfaces path repair apply errors through the page handlers', async () => {
+  it('refreshes protection notice using the exact path repair action and scope', async () => {
+    mockIsTauri = true;
+    hookState.detectionState = 'showing-fresh';
+    hookState.pathEntries = [
+      { path: '/usr/bin', exists: true, isDirectory: true, isDuplicate: false },
+      { path: '/missing/bin', exists: false, isDirectory: false, isDuplicate: false },
+    ] as never[];
+    mockPreviewPathRepair.mockResolvedValue({
+      scope: 'process',
+      fingerprint: 'repair-preview',
+      currentEntries: ['/usr/bin', '/missing/bin'],
+      repairedEntries: ['/usr/bin'],
+      duplicateCount: 0,
+      missingCount: 1,
+      removedCount: 1,
+      primaryShellTarget: null,
+      shellGuidance: [],
+    });
+
+    render(<EnvVarPage />);
+
+    await userEvent.click(
+      screen.getByRole('tab', { name: /^envvar\.tabs\.pathEditor(?:\s+\d+)?$/ }),
+    );
+    mockGetBackupProtection.mockClear();
+    mockGetBackupProtection.mockResolvedValueOnce({
+      action: 'path_repair_apply',
+      scope: 'process',
+      state: 'will_create',
+      reasonCode: 'new_snapshot_required',
+      reason: 'PATH repair needs a fresh snapshot.',
+      nextSteps: [],
+      snapshot: null,
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: 'envvar.pathEditor.previewRepair' }));
+    await userEvent.click(screen.getByTestId('envvar-snapshots-toggle'));
+
+    await waitFor(() => {
+      expect(mockGetBackupProtection).toHaveBeenCalledWith('path_repair_apply', 'process');
+    });
+    expect(screen.getByText('PATH repair needs a fresh snapshot.')).toBeInTheDocument();
+  });
+
+  it('surfaces path repair apply errors as toast', async () => {
     mockIsTauri = true;
     hookState.detectionState = 'showing-fresh';
     hookState.pathEntries = [
@@ -994,11 +1531,11 @@ describe('EnvVarPage', () => {
     await userEvent.click(applyRepairButton);
 
     await waitFor(() => {
-      expect(screen.getByTestId('envvar-operation-error')).toHaveTextContent('common.error');
+      expect(mockToast.error).toHaveBeenCalled();
     });
   });
 
-  it('surfaces null conflict resolution results as action errors', async () => {
+  it('surfaces null conflict resolution results as toast error', async () => {
     mockIsTauri = true;
     hookState.conflicts = [
       { key: 'JAVA_HOME', userValue: 'A', systemValue: 'B', effectiveValue: 'A' },
@@ -1008,6 +1545,8 @@ describe('EnvVarPage', () => {
 
     render(<EnvVarPage />);
 
+    await userEvent.click(screen.getByTestId('envvar-conflicts-review'));
+
     await waitFor(() => {
       expect(screen.getByTestId('envvar-conflicts-table')).toBeInTheDocument();
     });
@@ -1015,7 +1554,7 @@ describe('EnvVarPage', () => {
     await userEvent.click(screen.getByTestId('envvar-conflict-system-to-user-JAVA_HOME'));
 
     await waitFor(() => {
-      expect(screen.getByTestId('envvar-operation-error')).toHaveTextContent('envvar.conflicts.resolve');
+      expect(mockToast.error).toHaveBeenCalled();
     });
   });
 });

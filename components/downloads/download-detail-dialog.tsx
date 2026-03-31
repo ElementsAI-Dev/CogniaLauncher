@@ -53,10 +53,12 @@ import { useDownloadStore } from "@/lib/stores/download";
 
 interface DownloadDetailDialogProps {
   task: DownloadTask | null;
+  destinationAvailable?: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onRetry?: (taskId: string) => Promise<void>;
   onSetPriority?: (taskId: string, priority: number) => Promise<void>;
+  onReuseTask?: (task: DownloadTask) => void | Promise<void>;
   onOpenFile?: (path: string) => Promise<void>;
   onRevealFile?: (path: string) => Promise<void>;
   onCalculateChecksum?: (path: string) => Promise<string>;
@@ -115,10 +117,12 @@ function getFailureHintTranslationKey(reasonCode?: string | null): string | null
 
 export function DownloadDetailDialog({
   task,
+  destinationAvailable = false,
   open,
   onOpenChange,
   onRetry,
   onSetPriority,
+  onReuseTask,
   onOpenFile,
   onRevealFile,
   onCalculateChecksum,
@@ -295,7 +299,7 @@ export function DownloadDetailDialog({
   const metadataEntries = Object.entries(resolvedTask.metadata ?? {});
   const followUpActions = getDownloadFollowUpActions({
     status: resolvedTask.state,
-    destinationAvailable: resolvedTask.state === "completed",
+    destinationAvailable,
     artifactProfile: resolvedTask.artifactProfile,
   });
 
@@ -568,7 +572,7 @@ export function DownloadDetailDialog({
                 </Button>
               )}
 
-            {resolvedTask.state === "completed" && onOpenFile && (
+            {followUpActions.some((action) => action.kind === "open") && onOpenFile && (
               <Button
                 size="sm"
                 variant="outline"
@@ -579,7 +583,7 @@ export function DownloadDetailDialog({
               </Button>
             )}
 
-            {resolvedTask.state === "completed" && onRevealFile && (
+            {followUpActions.some((action) => action.kind === "reveal") && onRevealFile && (
               <Button
                 size="sm"
                 variant="outline"
@@ -590,7 +594,7 @@ export function DownloadDetailDialog({
               </Button>
             )}
 
-            {resolvedTask.state === "completed" && onCalculateChecksum && (
+            {destinationAvailable && onCalculateChecksum && (
               <Button
                 size="sm"
                 variant="outline"
@@ -606,7 +610,7 @@ export function DownloadDetailDialog({
               </Button>
             )}
 
-            {resolvedTask.state === "completed" &&
+            {destinationAvailable &&
               onVerifyFile &&
               resolvedTask.expectedChecksum && (
                 <Button
@@ -624,7 +628,7 @@ export function DownloadDetailDialog({
                 </Button>
               )}
 
-            {resolvedTask.state === "completed" && onExtractArchive && (
+            {followUpActions.some((action) => action.kind === "extract") && onExtractArchive && (
               <Button
                 size="sm"
                 variant="outline"
@@ -637,6 +641,17 @@ export function DownloadDetailDialog({
                   <Archive className="h-3.5 w-3.5 mr-1.5" />
                 )}
                 {t("downloads.actions.extract")}
+              </Button>
+            )}
+
+            {followUpActions.some((action) => action.kind === "reuse") && onReuseTask && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => onReuseTask(resolvedTask)}
+              >
+                <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                {t("downloads.historyPanel.reuse")}
               </Button>
             )}
           </div>

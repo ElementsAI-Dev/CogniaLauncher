@@ -14,10 +14,12 @@ import {
 import {
   RefreshCw,
   Download,
+  SquareTerminal,
 } from "lucide-react";
 import { DetectedVersionBadge } from "@/components/environments/detected-version-badge";
 import { LanguageIcon } from "@/components/provider-management/provider-icon";
 import { LANGUAGES } from "@/lib/constants/environments";
+import { formatCppCompilerLabel } from "@/lib/environment-detection";
 import type { EnvironmentInfo, DetectedEnvironment } from "@/lib/tauri";
 
 interface EnvDetailHeaderProps {
@@ -27,6 +29,7 @@ interface EnvDetailHeaderProps {
   isRefreshing: boolean;
   onRefresh: () => void;
   onOpenVersionBrowser: () => void;
+  onOpenInTerminal?: () => void;
   t: (key: string, params?: Record<string, string | number>) => string;
 }
 
@@ -37,10 +40,17 @@ export function EnvDetailHeader({
   isRefreshing,
   onRefresh,
   onOpenVersionBrowser,
+  onOpenInTerminal,
   t,
 }: EnvDetailHeaderProps) {
   const langInfo = LANGUAGES.find((l) => l.id === envType);
   const displayName = langInfo?.name || envType;
+  const compilerLabel = formatCppCompilerLabel(env?.compiler_metadata);
+  const subtitle = env
+    ? compilerLabel
+      ? `${t("environments.details.subtitle", { provider: env.provider })} · ${compilerLabel}`
+      : t("environments.details.subtitle", { provider: env.provider })
+    : t("environments.detail.notConfigured");
 
   return (
     <div className="space-y-4">
@@ -90,9 +100,7 @@ export function EnvDetailHeader({
               )}
             </div>
             <p className="text-sm text-muted-foreground">
-              {env
-                ? t("environments.details.subtitle", { provider: env.provider })
-                : t("environments.detail.notConfigured")}
+              {subtitle}
             </p>
           </div>
         </div>
@@ -109,6 +117,15 @@ export function EnvDetailHeader({
               className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`}
             />
             {t("environments.refresh")}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onOpenInTerminal}
+            className="gap-2"
+          >
+            <SquareTerminal className="h-4 w-4" />
+            {t("environments.detail.openInTerminal")}
           </Button>
           {env?.available && (
             <Button size="sm" onClick={onOpenVersionBrowser} className="gap-2">

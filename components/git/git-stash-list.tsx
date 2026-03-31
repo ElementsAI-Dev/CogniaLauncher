@@ -10,6 +10,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { useLocale } from '@/components/providers/locale-provider';
 import { toast } from 'sonner';
 import type { GitStashListProps } from '@/types/git';
+import { useGitActionDialogs } from './use-git-action-dialogs';
 
 export function GitStashList({
   stashes,
@@ -26,6 +27,7 @@ export function GitStashList({
   const [stashFiles, setStashFiles] = useState('');
   const [includeUntracked, setIncludeUntracked] = useState(false);
   const [saving, setSaving] = useState(false);
+  const { prompt, dialogs } = useGitActionDialogs();
 
   const handleApply = async (id: string) => {
     if (!onApply) return;
@@ -93,7 +95,11 @@ export function GitStashList({
 
   const handleBranchFromStash = async (stashId: string) => {
     if (!onBranchFromStash) return;
-    const branchName = window.prompt(t('git.stashBranch.branchName'));
+    const branchName = await prompt({
+      title: t('git.stashBranch.title'),
+      label: t('git.stashBranch.branchName'),
+      placeholder: t('git.branchAction.newBranchName'),
+    });
     if (!branchName || !branchName.trim()) return;
     try {
       const msg = await onBranchFromStash(branchName.trim(), stashId);
@@ -113,6 +119,7 @@ export function GitStashList({
   };
 
   return (
+    <>
     <Card>
       <CardHeader className="pb-3">
         <CardTitle className="text-sm flex items-center gap-2">
@@ -253,5 +260,7 @@ export function GitStashList({
         )}
       </CardContent>
     </Card>
+    {dialogs}
+    </>
   );
 }

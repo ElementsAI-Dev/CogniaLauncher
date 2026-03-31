@@ -404,6 +404,34 @@ The scaffold contract also depends on lifecycle profile:
 
 `builtin + javascript` is rejected by validation.
 
+### Advanced Scaffold Inputs
+
+The Toolbox scaffold authoring flow now forwards the supported advanced inputs
+directly into generated artifacts:
+
+- `extensionPoints` determine generated manifest fragments and source stubs for
+  iframe UI, event listeners, log listeners, and settings schema examples.
+- Host UI permissions and related toggles map to generated
+  `[permissions]`/capability declarations instead of requiring manual follow-up
+  edits.
+- HTTP domains are preserved in both `plugin.toml` and
+  `cognia.scaffold.json` so the handoff contract matches what the author
+  selected.
+
+The generated README mirrors the same selections and next-step commands exposed
+by `cognia.scaffold.json`.
+
+### Built-in TypeScript Maintainer Handoff
+
+For `builtin + typescript`, the scaffold now emits the minimum repository
+maintenance contract expected by `pnpm plugins:validate`:
+
+- `catalog-entry.sample.json` includes `packageName` and `testFile`.
+- `src/index.test.ts` is generated so the sample entry references a real test
+  asset.
+- README/lifecycle metadata reuse the same checksum and validation commands
+  returned by the scaffold handoff.
+
 ### Scaffold Template Option Effects
 
 `templateOptions` controls optional scaffold artifacts:

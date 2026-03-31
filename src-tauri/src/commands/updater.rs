@@ -5,9 +5,8 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_updater::{Error as UpdaterError, Update, Updater, UpdaterExt};
 
-const EMBEDDED_OFFICIAL_ENDPOINTS: &[&str] = &[
-    "https://github.com/ElementAstro/CogniaLauncher/releases/latest/download/latest.json",
-];
+const EMBEDDED_OFFICIAL_ENDPOINTS: &[&str] =
+    &["https://github.com/ElementAstro/CogniaLauncher/releases/latest/download/latest.json"];
 const EMBEDDED_MIRROR_ENDPOINTS: &[&str] = &[
     "https://gh-proxy.com/https://github.com/ElementAstro/CogniaLauncher/releases/latest/download/latest.json",
 ];
@@ -146,14 +145,20 @@ fn parse_custom_endpoints(endpoints: &[String]) -> Vec<Url> {
         .filter_map(|value| match Url::parse(value) {
             Ok(url) => Some(url),
             Err(error) => {
-                log::warn!("Ignoring invalid custom updater endpoint '{}': {}", value, error);
+                log::warn!(
+                    "Ignoring invalid custom updater endpoint '{}': {}",
+                    value,
+                    error
+                );
                 None
             }
         })
         .collect()
 }
 
-fn resolve_update_source_candidates(update_settings: &UpdateSettings) -> Vec<UpdateSourceCandidate> {
+fn resolve_update_source_candidates(
+    update_settings: &UpdateSettings,
+) -> Vec<UpdateSourceCandidate> {
     let mut candidates = Vec::new();
 
     match update_settings.source_mode {
@@ -164,7 +169,9 @@ fn resolve_update_source_candidates(update_settings: &UpdateSettings) -> Vec<Upd
         )),
     }
 
-    if update_settings.fallback_to_official && !matches!(update_settings.source_mode, UpdateSourceMode::Official) {
+    if update_settings.fallback_to_official
+        && !matches!(update_settings.source_mode, UpdateSourceMode::Official)
+    {
         candidates.push(UpdateSourceCandidate::official());
     }
 
@@ -221,9 +228,9 @@ fn categorize_updater_error(error: &UpdaterError) -> UpdateErrorCategory {
                 UpdateErrorCategory::Network
             }
         }
-        UpdaterError::Minisign(_)
-        | UpdaterError::Base64(_)
-        | UpdaterError::SignatureUtf8(_) => UpdateErrorCategory::Signature,
+        UpdaterError::Minisign(_) | UpdaterError::Base64(_) | UpdaterError::SignatureUtf8(_) => {
+            UpdateErrorCategory::Signature
+        }
         UpdaterError::Semver(_)
         | UpdaterError::Serialization(_)
         | UpdaterError::UrlParse(_)
@@ -235,7 +242,10 @@ fn categorize_updater_error(error: &UpdaterError) -> UpdateErrorCategory {
     }
 }
 
-fn build_updater_with_endpoints(app: &AppHandle, endpoints: Vec<Url>) -> Result<Updater, UpdaterError> {
+fn build_updater_with_endpoints(
+    app: &AppHandle,
+    endpoints: Vec<Url>,
+) -> Result<Updater, UpdaterError> {
     app.updater_builder().endpoints(endpoints)?.build()
 }
 
@@ -244,7 +254,9 @@ fn build_updater_for_candidate(
     candidate: &UpdateSourceCandidate,
 ) -> Result<Updater, UpdateSourceFailure> {
     let build_result = match &candidate.strategy {
-        EndpointStrategy::Override(endpoints) => build_updater_with_endpoints(app, endpoints.clone()),
+        EndpointStrategy::Override(endpoints) => {
+            build_updater_with_endpoints(app, endpoints.clone())
+        }
         EndpointStrategy::Default => match app.updater_builder().build() {
             Ok(updater) => Ok(updater),
             Err(UpdaterError::EmptyEndpoints) => {
@@ -336,7 +348,10 @@ fn emit_update_progress(
     );
 }
 
-fn format_failure_message(failure: &UpdateSourceFailure, attempted_sources: &[UpdateSourceKind]) -> String {
+fn format_failure_message(
+    failure: &UpdateSourceFailure,
+    attempted_sources: &[UpdateSourceKind],
+) -> String {
     let attempted = attempted_source_labels(attempted_sources).join(",");
     let attempted = if attempted.is_empty() {
         "none".to_string()
@@ -444,7 +459,10 @@ pub async fn self_update(app: AppHandle) -> Result<(), String> {
                 let failure = UpdateSourceFailure::new(
                     candidate.source,
                     UpdateErrorCategory::NoUpdate,
-                    format!("No update available from {} source", candidate.source.as_str()),
+                    format!(
+                        "No update available from {} source",
+                        candidate.source.as_str()
+                    ),
                 );
                 return Err(format_failure_message(&failure, &attempted_sources));
             }
@@ -584,7 +602,10 @@ mod tests {
     fn resolve_source_candidates_prefers_selected_source_then_official_fallback() {
         let settings = build_update_settings(UpdateSourceMode::Mirror, true, vec![]);
         let candidates = resolve_update_source_candidates(&settings);
-        let sources: Vec<&str> = candidates.iter().map(|candidate| candidate.source.as_str()).collect();
+        let sources: Vec<&str> = candidates
+            .iter()
+            .map(|candidate| candidate.source.as_str())
+            .collect();
         assert_eq!(sources, vec!["mirror", "official"]);
     }
 
@@ -596,7 +617,10 @@ mod tests {
             vec!["https://updates.example.com/latest.json"],
         );
         let candidates = resolve_update_source_candidates(&settings);
-        let sources: Vec<&str> = candidates.iter().map(|candidate| candidate.source.as_str()).collect();
+        let sources: Vec<&str> = candidates
+            .iter()
+            .map(|candidate| candidate.source.as_str())
+            .collect();
         assert_eq!(sources, vec!["custom"]);
         assert!(matches!(
             candidates[0].strategy,
@@ -608,7 +632,10 @@ mod tests {
     fn resolve_source_candidates_keeps_official_single_source() {
         let settings = build_update_settings(UpdateSourceMode::Official, true, vec![]);
         let candidates = resolve_update_source_candidates(&settings);
-        let sources: Vec<&str> = candidates.iter().map(|candidate| candidate.source.as_str()).collect();
+        let sources: Vec<&str> = candidates
+            .iter()
+            .map(|candidate| candidate.source.as_str())
+            .collect();
         assert_eq!(sources, vec!["official"]);
     }
 

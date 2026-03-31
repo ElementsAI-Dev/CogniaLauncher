@@ -8,7 +8,7 @@ use crate::download::{
     DownloadConfig, DownloadEvent, DownloadManager, DownloadManagerConfig, DownloadState,
     DownloadTask, ShutdownOutcome,
 };
-use crate::platform::disk::{self, DiskSpace, format_size};
+use crate::platform::disk::{self, format_size, DiskSpace};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;

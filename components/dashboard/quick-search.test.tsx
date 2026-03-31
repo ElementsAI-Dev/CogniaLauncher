@@ -42,13 +42,13 @@ let mockAllTools: Array<{
 }> = [];
 const mockExecuteDesktopAction = jest.fn();
 
-jest.mock("@/hooks/use-toolbox", () => ({
+jest.mock("@/hooks/toolbox/use-toolbox", () => ({
   useToolbox: () => ({
     allTools: mockAllTools,
   }),
 }));
 
-jest.mock("@/hooks/use-desktop-action-executor", () => ({
+jest.mock("@/hooks/desktop/use-desktop-action-executor", () => ({
   useDesktopActionExecutor: () => mockExecuteDesktopAction,
 }));
 

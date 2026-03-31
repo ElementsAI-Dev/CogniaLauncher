@@ -32,6 +32,13 @@ describe('VALIDATION_RULES', () => {
     expect(rule.min).toBe(1);
     expect(rule.max).toBe(32);
   });
+
+  it('has rules for general.package_download_threshold_mb', () => {
+    const rule = VALIDATION_RULES['general.package_download_threshold_mb'];
+    expect(rule).toBeDefined();
+    expect(rule.min).toBe(0);
+    expect(rule.max).toBe(10240);
+  });
 });
 
 describe('validateField', () => {
@@ -94,6 +101,13 @@ describe('validateField', () => {
     expect(validateField('general.update_check_concurrency', '8', mockT)).toBeNull();
     expect(validateField('general.update_check_concurrency', '1', mockT)).toBeNull();
     expect(validateField('general.update_check_concurrency', '32', mockT)).toBeNull();
+  });
+
+  it('validates package_download_threshold_mb range', () => {
+    expect(validateField('general.package_download_threshold_mb', '0', mockT)).toBeNull();
+    expect(validateField('general.package_download_threshold_mb', '512', mockT)).toBeNull();
+    expect(validateField('general.package_download_threshold_mb', '-1', mockT)).toContain('min');
+    expect(validateField('general.package_download_threshold_mb', '20000', mockT)).toContain('max');
   });
 
   it('validates dynamic provider priority keys as numeric-or-empty', () => {

@@ -52,9 +52,13 @@ fn build_dependency_lookup_conflicts(
     let mut conflicts: Vec<ConflictInfo> = failures
         .iter()
         .map(|(package, message)| ConflictInfo {
+            package_name: package.clone(),
             package: package.clone(),
+            required_by: vec![],
+            versions: vec![],
             required_versions: vec![],
             message: message.clone(),
+            resolution: None,
         })
         .collect();
     conflicts.sort_by(|a, b| {
@@ -189,9 +193,13 @@ pub struct ResolvedPackage {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConflictInfo {
+    pub package_name: String,
     pub package: String,
+    pub required_by: Vec<String>,
+    pub versions: Vec<String>,
     pub required_versions: Vec<RequiredVersion>,
     pub message: String,
+    pub resolution: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

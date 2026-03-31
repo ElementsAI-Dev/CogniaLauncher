@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import NumberBaseConverter from './number-base-converter';
 import { TOOLBOX_LIMITS } from '@/lib/constants/toolbox-limits';
+import { useToolboxStore } from '@/lib/stores/toolbox';
 
 jest.mock('@/components/providers/locale-provider', () => ({
   useLocale: () => ({
@@ -9,13 +10,17 @@ jest.mock('@/components/providers/locale-provider', () => ({
 }));
 
 describe('NumberBaseConverter', () => {
+  beforeEach(() => {
+    useToolboxStore.setState({ toolPreferences: {} });
+  });
+
   it('renders localized base labels', () => {
     render(<NumberBaseConverter />);
 
-    expect(screen.getByText('toolbox.tools.numberBaseConverter.baseBinary')).toBeInTheDocument();
-    expect(screen.getByText('toolbox.tools.numberBaseConverter.baseOctal')).toBeInTheDocument();
-    expect(screen.getByText('toolbox.tools.numberBaseConverter.baseDecimal')).toBeInTheDocument();
-    expect(screen.getByText('toolbox.tools.numberBaseConverter.baseHexadecimal')).toBeInTheDocument();
+    expect(screen.getAllByText('toolbox.tools.numberBaseConverter.baseBinary').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('toolbox.tools.numberBaseConverter.baseOctal').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('toolbox.tools.numberBaseConverter.baseDecimal').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('toolbox.tools.numberBaseConverter.baseHexadecimal').length).toBeGreaterThan(0);
   });
 
   it('converts hexadecimal input to decimal correctly', () => {
@@ -36,5 +41,38 @@ describe('NumberBaseConverter', () => {
     });
 
     expect(screen.getByText('toolbox.tools.shared.inputTooLarge')).toBeInTheDocument();
+  });
+
+  it('persists the preferred source and target base pair across renders', () => {
+    const { unmount } = render(<NumberBaseConverter />);
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'toolbox.tools.numberBaseConverter.sourceBase: toolbox.tools.numberBaseConverter.baseOctal',
+      }),
+    );
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'toolbox.tools.numberBaseConverter.targetBase: toolbox.tools.numberBaseConverter.baseHexadecimal',
+      }),
+    );
+
+    expect(useToolboxStore.getState().toolPreferences['number-base-converter']).toEqual(
+      expect.objectContaining({ sourceBase: 8, targetBase: 16 }),
+    );
+
+    unmount();
+    render(<NumberBaseConverter />);
+
+    expect(
+      screen.getByRole('button', {
+        name: 'toolbox.tools.numberBaseConverter.sourceBase: toolbox.tools.numberBaseConverter.baseOctal',
+      }),
+    ).toHaveAttribute('aria-pressed', 'true');
+    expect(
+      screen.getByRole('button', {
+        name: 'toolbox.tools.numberBaseConverter.targetBase: toolbox.tools.numberBaseConverter.baseHexadecimal',
+      }),
+    ).toHaveAttribute('aria-pressed', 'true');
   });
 });

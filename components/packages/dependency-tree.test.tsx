@@ -34,6 +34,7 @@ jest.mock("@/components/providers/locale-provider", () => ({
         "packages.resolutionFailed": "Resolution failed",
         "packages.installationOrder": "Installation Order",
         "packages.dependencyConflicts": "Dependency Conflicts",
+        "packages.resolveConflict": "Resolve",
         "packages.requiredVersions": "Required versions:",
         "packages.requiredBy": "Required by:",
         "packages.suggestion": "Suggestion:",
@@ -130,16 +131,19 @@ const nestedResolution = {
 };
 
 const mockOnResolve = jest.fn().mockResolvedValue(mockResolution);
+const mockOnResolveConflict = jest.fn().mockResolvedValue(null);
 
 const defaultProps = {
   packageId: "numpy",
   onResolve: mockOnResolve,
+  onResolveConflict: mockOnResolveConflict,
   loading: false,
 };
 
 describe("DependencyTree", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockOnResolveConflict.mockResolvedValue(null);
   });
 
   it("renders dependency tree component", () => {
@@ -310,5 +314,48 @@ describe("DependencyTree", () => {
       version: "2.31.0",
       source: "search",
     });
+  });
+
+  it("shows resolve actions for conflicted nodes and summaries", async () => {
+    const user = userEvent.setup();
+    render(
+      <DependencyTree
+        {...defaultProps}
+        resolution={{
+          ...mockResolution,
+          success: false,
+          conflicts: [
+            {
+              package_name: "urllib3",
+              required_by: ["requests", "botocore"],
+              versions: ["^1.26.0", "^2.0.0"],
+              resolution: "Prefer urllib3 2.0.7",
+            },
+          ],
+          tree: [
+            {
+              name: "urllib3",
+              version: "1.26.18",
+              constraint: "^1.26.0",
+              provider: "pip",
+              dependencies: [],
+              is_direct: false,
+              is_installed: true,
+              is_conflict: true,
+              conflict_reason:
+                "requests and botocore require incompatible urllib3 ranges",
+              depth: 1,
+            },
+          ],
+        }}
+      />,
+    );
+
+    const resolveButtons = screen.getAllByRole("button", { name: "Resolve" });
+    expect(resolveButtons.length).toBeGreaterThan(0);
+
+    await user.click(resolveButtons[resolveButtons.length - 1]);
+
+    expect(mockOnResolveConflict).toHaveBeenCalled();
   });
 });

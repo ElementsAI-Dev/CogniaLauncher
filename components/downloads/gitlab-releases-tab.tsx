@@ -6,7 +6,12 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { createArtifactProfilePreview } from "@/lib/downloads";
-import { Calendar, FileArchive } from "lucide-react";
+import {
+  useAssetMatcher,
+  getArchLabel,
+  getPlatformLabel,
+} from "@/hooks/downloads/use-asset-matcher";
+import { Calendar, FileArchive, Star } from "lucide-react";
 import {
   SelectableCardButton,
   selectableCheckboxRowClass,
@@ -30,9 +35,14 @@ export function GitLabReleasesTab({
   onAssetToggle,
   t,
 }: GitLabReleasesTabProps) {
+  const { parseAssets, currentPlatform, currentArch } = useAssetMatcher();
   const currentRelease = useMemo(() => {
     return releases.find((r) => r.tagName === selectedRelease);
   }, [releases, selectedRelease]);
+  const parsedAssets = useMemo(() => {
+    if (!currentRelease) return [];
+    return parseAssets(currentRelease.assets);
+  }, [currentRelease, parseAssets]);
 
   return (
     <>
@@ -101,10 +111,17 @@ export function GitLabReleasesTab({
       {/* Asset Selection */}
       {currentRelease && currentRelease.assets.length > 0 && (
         <div className="mt-3">
-          <Label>{t("downloads.gitlab.selectAssets")}</Label>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <Label>{t("downloads.gitlab.selectAssets")}</Label>
+            {currentPlatform !== "unknown" && (
+              <span className="text-xs text-muted-foreground">
+                {getPlatformLabel(currentPlatform)} {getArchLabel(currentArch)}
+              </span>
+            )}
+          </div>
           <ScrollArea className="h-35 border rounded-md mt-2">
             <div className="p-2 space-y-1">
-              {currentRelease.assets.map((asset) => {
+              {parsedAssets.map(({ asset, platform, arch, isRecommended }) => {
                 const isSelected = !!selectedAssets.find(
                   (a) => a.id === asset.id,
                 );
@@ -116,7 +133,11 @@ export function GitLabReleasesTab({
                   <label
                     key={asset.id}
                     className={selectableCheckboxRowClass({
-                      selected: isSelected,
+                      selected: isSelected || isRecommended,
+                      tone: isRecommended ? "success" : "default",
+                      className: isSelected
+                        ? "border-primary bg-primary/10 hover:bg-primary/15"
+                        : undefined,
                     })}
                   >
                     <Checkbox
@@ -126,11 +147,23 @@ export function GitLabReleasesTab({
                       }
                     />
                     <div className="flex items-center gap-2 flex-1 min-w-0">
-                      <FileArchive className="h-4 w-4 text-muted-foreground shrink-0" />
+                      {isRecommended ? (
+                        <Star className="h-4 w-4 text-green-500 shrink-0" />
+                      ) : (
+                        <FileArchive className="h-4 w-4 text-muted-foreground shrink-0" />
+                      )}
                       <span className="text-sm font-mono truncate">
                         {asset.name}
                       </span>
                     </div>
+                    {isRecommended && (
+                      <Badge
+                        variant="secondary"
+                        className="text-xs ml-2"
+                      >
+                        {t("downloads.gitlab.recommended")}
+                      </Badge>
+                    )}
                     {asset.linkType && (
                       <Badge
                         variant="outline"
@@ -142,6 +175,16 @@ export function GitLabReleasesTab({
                     <Badge variant="secondary" className="text-xs ml-2">
                       {t(`downloads.artifactKind.${profile.artifactKind}`)}
                     </Badge>
+                    {platform !== "unknown" && (
+                      <Badge variant="outline" className="text-xs ml-2">
+                        {getPlatformLabel(platform)}
+                      </Badge>
+                    )}
+                    {arch !== "unknown" && (
+                      <Badge variant="secondary" className="text-xs ml-2">
+                        {getArchLabel(arch)}
+                      </Badge>
+                    )}
                   </label>
                 );
               })}

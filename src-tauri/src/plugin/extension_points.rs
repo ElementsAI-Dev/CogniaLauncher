@@ -1,7 +1,5 @@
 use crate::error::{CogniaError, CogniaResult};
-use crate::plugin::manifest::{
-    is_supported_log_listen_filter, PluginManifest, UiMode,
-};
+use crate::plugin::manifest::{is_supported_log_listen_filter, PluginManifest, UiMode};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -77,7 +75,9 @@ pub fn load_plugin_point_matrix() -> CogniaResult<&'static PluginPointMatrix> {
         .map_err(|error| CogniaError::Plugin(error.clone()))
 }
 
-pub fn find_plugin_point_definition(point_id: &str) -> CogniaResult<Option<&'static PluginPointDefinition>> {
+pub fn find_plugin_point_definition(
+    point_id: &str,
+) -> CogniaResult<Option<&'static PluginPointDefinition>> {
     Ok(load_plugin_point_matrix()?
         .plugin_points
         .iter()
@@ -191,7 +191,9 @@ fn find_required_definition<'a>(
         .plugin_points
         .iter()
         .find(|definition| definition.id == point_id)
-        .ok_or_else(|| CogniaError::Plugin(format!("Unknown plugin point definition '{}'", point_id)))
+        .ok_or_else(|| {
+            CogniaError::Plugin(format!("Unknown plugin point definition '{}'", point_id))
+        })
 }
 
 fn validate_plugin_point_matrix(matrix: &PluginPointMatrix) -> CogniaResult<()> {
@@ -343,10 +345,7 @@ fn validate_settings_plugin_point(manifest: &PluginManifest) -> Option<String> {
         if setting.setting_type == "number" {
             if let (Some(min), Some(max)) = (setting.min, setting.max) {
                 if min > max {
-                    return Some(format!(
-                        "setting '{}' has min greater than max",
-                        setting_id
-                    ));
+                    return Some(format!("setting '{}' has min greater than max", setting_id));
                 }
             }
         }
@@ -396,8 +395,14 @@ mod tests {
         let matrix = load_plugin_point_matrix().expect("matrix loads");
         assert_eq!(matrix.schema_version, 1);
         assert!(matrix.plugin_points.len() >= 6);
-        assert!(matrix.plugin_points.iter().any(|point| point.id == "tool-iframe-ui"));
-        assert!(matrix.plugin_points.iter().any(|point| point.id == "log-listener"));
+        assert!(matrix
+            .plugin_points
+            .iter()
+            .any(|point| point.id == "tool-iframe-ui"));
+        assert!(matrix
+            .plugin_points
+            .iter()
+            .any(|point| point.id == "log-listener"));
     }
 
     #[test]
@@ -432,10 +437,18 @@ options = [{ value = "default", labelEn = "Default" }]
 
         let inventory = derive_plugin_point_inventory(&manifest).expect("inventory derives");
         assert_eq!(inventory.len(), 4);
-        assert!(inventory.iter().any(|entry| entry.point_id == "tool-declarative-ui" && entry.discoverable));
-        assert!(inventory.iter().any(|entry| entry.point_id == "event-listener" && entry.discoverable));
-        assert!(inventory.iter().any(|entry| entry.point_id == "log-listener" && entry.discoverable));
-        assert!(inventory.iter().any(|entry| entry.point_id == "settings-schema" && entry.discoverable));
+        assert!(inventory
+            .iter()
+            .any(|entry| entry.point_id == "tool-declarative-ui" && entry.discoverable));
+        assert!(inventory
+            .iter()
+            .any(|entry| entry.point_id == "event-listener" && entry.discoverable));
+        assert!(inventory
+            .iter()
+            .any(|entry| entry.point_id == "log-listener" && entry.discoverable));
+        assert!(inventory
+            .iter()
+            .any(|entry| entry.point_id == "settings-schema" && entry.discoverable));
     }
 
     #[test]

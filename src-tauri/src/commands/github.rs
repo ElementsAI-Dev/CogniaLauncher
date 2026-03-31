@@ -1,20 +1,20 @@
 //! GitHub repository commands for download integration
 
-use crate::SharedSecretVault;
 use crate::commands::secrets::{
-    ProviderSecretStatus, provider_secret_clear_internal, provider_secret_save_internal,
-    provider_secret_status_internal, resolve_provider_secret,
+    provider_secret_clear_internal, provider_secret_save_internal, provider_secret_status_internal,
+    resolve_provider_secret, ProviderSecretStatus,
 };
 use crate::platform::disk::format_size;
 use crate::provider::github::{
     GitHubAsset, GitHubBranch, GitHubProvider, GitHubRelease, GitHubTag, GitHubWorkflowArtifact,
 };
+use crate::SharedSecretVault;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use super::download::{
-    DownloadRequest, DownloadRequestPreset, SharedDownloadManager, SharedSettings,
-    build_download_request_preset, download_add,
+    build_download_request_preset, download_add, DownloadRequest, DownloadRequestPreset,
+    SharedDownloadManager, SharedSettings,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

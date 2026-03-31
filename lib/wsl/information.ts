@@ -162,6 +162,7 @@ export function deriveWslDistroInfoState(snapshot: WslDistroInfoSnapshot): WslIn
     snapshot.ipAddress.state,
     snapshot.environment.state,
     snapshot.resources.state,
+    snapshot.portForwards.state,
   ];
 
   const state = summarizeInfoStates([
@@ -187,6 +188,10 @@ export function createEmptyWslRuntimeInfoSnapshot(): WslRuntimeInfoSnapshot {
     status: createWslInfoSection<WslStatus>(),
     capabilities: createWslInfoSection<WslCapabilities>(),
     versionInfo: createWslInfoSection<WslVersionInfo>(),
+    is_healthy: null,
+    running_count: 0,
+    default_distro: null,
+    kernel_up_to_date: null,
     lastUpdatedAt: null,
   };
   return snapshot;
@@ -204,6 +209,7 @@ export function createEmptyWslDistroInfoSnapshot(
     ipAddress: createWslInfoSection<string>(),
     environment: createWslInfoSection<WslDistroEnvironment>(),
     resources: createWslInfoSection<WslDistroResources>(),
+    portForwards: createWslInfoSection(),
     lastUpdatedAt: null,
   };
 }
@@ -212,9 +218,27 @@ export function finalizeWslRuntimeInfoSnapshot(
   snapshot: WslRuntimeInfoSnapshot,
 ): WslRuntimeInfoSnapshot {
   const state = deriveWslRuntimeInfoState(snapshot);
+  const runningDistros = snapshot.status.data?.runningDistros;
+  const runningCount = Array.isArray(runningDistros) ? runningDistros.length : 0;
+  const defaultDistro = snapshot.status.data?.defaultDistribution ?? null;
+  const kernelUpToDate = snapshot.versionInfo.state === 'ready'
+    ? Boolean(snapshot.versionInfo.data?.kernelVersion)
+    : snapshot.versionInfo.state === 'failed' || snapshot.versionInfo.state === 'stale'
+      ? false
+      : null;
+  const isHealthy = state === 'ready'
+    ? kernelUpToDate !== false
+    : state === 'unavailable'
+      ? false
+      : null;
+
   return {
     ...snapshot,
     state,
+    is_healthy: isHealthy,
+    running_count: runningCount,
+    default_distro: defaultDistro,
+    kernel_up_to_date: kernelUpToDate,
     lastUpdatedAt: maxUpdatedAt([
       snapshot.runtime.updatedAt,
       snapshot.status.updatedAt,
@@ -235,6 +259,7 @@ export function finalizeWslDistroInfoSnapshot(
       snapshot.ipAddress.updatedAt,
       snapshot.environment.updatedAt,
       snapshot.resources.updatedAt,
+      snapshot.portForwards.updatedAt,
     ]),
   };
 }

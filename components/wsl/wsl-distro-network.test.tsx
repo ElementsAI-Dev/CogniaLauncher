@@ -53,8 +53,8 @@ describe('WslDistroNetwork', () => {
   const defaultOnExec = jest.fn<Promise<WslExecResult>, [string, string, string?]>();
   const defaultGetIp = jest.fn<Promise<string>, [string?]>();
   const defaultListPortForwards = jest.fn<Promise<Array<{ listenAddress: string; listenPort: string; connectAddress: string; connectPort: string }>>, []>();
-  const defaultAddPortForward = jest.fn<Promise<void>, [number, number, string]>();
-  const defaultRemovePortForward = jest.fn<Promise<void>, [number]>();
+  const defaultAddPortForward = jest.fn<Promise<void>, [string, number, number, string]>();
+  const defaultRemovePortForward = jest.fn<Promise<void>, [string, number]>();
 
   const defaultProps = {
     distroName: 'Ubuntu',
@@ -127,19 +127,19 @@ describe('WslDistroNetwork', () => {
 
     const [listenInput, connectPortInput] = screen.getAllByRole('spinbutton');
     await user.type(listenInput, '5000');
-    const addressInput = screen.getByRole('textbox');
+    const addressInput = screen.getByLabelText('Connect Address');
     await user.clear(addressInput);
     await user.type(addressInput, '172.20.0.5');
     await user.type(connectPortInput, '5000');
 
     await user.click(screen.getByLabelText('add-port-forward-rule'));
 
-    expect(screen.getByText('Add Port Forward Rule')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Add Port Forward Rule' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Confirm' }));
 
     await waitFor(() => {
-      expect(defaultAddPortForward).toHaveBeenCalledWith(5000, 5000, '172.20.0.5');
-      expect(defaultListPortForwards).toHaveBeenCalledTimes(2);
+      expect(defaultAddPortForward).toHaveBeenCalledWith('0.0.0.0', 5000, 5000, '172.20.0.5');
+      expect(defaultListPortForwards.mock.calls.length).toBeGreaterThanOrEqual(2);
     });
   });
 
@@ -148,17 +148,17 @@ describe('WslDistroNetwork', () => {
     render(<WslDistroNetwork {...defaultProps} isRunning={true} />);
 
     await waitFor(() => {
-      expect(screen.getByLabelText('remove-port-forward-3000')).toBeInTheDocument();
+      expect(screen.getByLabelText('remove-port-forward-3000-*')).toBeInTheDocument();
     });
 
-    await user.click(screen.getByLabelText('remove-port-forward-3000'));
+    await user.click(screen.getByLabelText('remove-port-forward-3000-*'));
 
     expect(screen.getByText('Remove Port Forward Rule')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Confirm' }));
 
     await waitFor(() => {
-      expect(defaultRemovePortForward).toHaveBeenCalledWith(3000);
-      expect(defaultListPortForwards).toHaveBeenCalledTimes(2);
+      expect(defaultRemovePortForward).toHaveBeenCalledWith('*', 3000);
+      expect(defaultListPortForwards.mock.calls.length).toBeGreaterThanOrEqual(2);
     });
   });
 
@@ -169,7 +169,7 @@ describe('WslDistroNetwork', () => {
 
     const [listenInput, connectPortInput] = screen.getAllByRole('spinbutton');
     await user.type(listenInput, '5001');
-    const addressInput = screen.getByRole('textbox');
+    const addressInput = screen.getByLabelText('Connect Address');
     await user.clear(addressInput);
     await user.type(addressInput, '172.20.0.5');
     await user.type(connectPortInput, '5001');

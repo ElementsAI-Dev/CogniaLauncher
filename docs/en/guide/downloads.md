@@ -12,6 +12,7 @@ CogniaLauncher provides a complete download management system with queue, speed 
 - **Queue Management** — Automatic queuing, executed by priority
 - **Concurrency Control** — Limit concurrent download tasks (default 4)
 - **Provider Parity** — Manual add, batch import, GitHub, and GitLab flows all use the same canonical `download_add` contract
+- **Single Runtime Owner** — Live task listeners, startup hydration, clipboard monitoring, and shutdown persistence are owned by the shared `DownloadRuntimeProvider`, while pages and widgets consume the shared store without starting a second runtime
 
 ### Advanced Request Controls
 
@@ -57,6 +58,8 @@ If the file to download already exists in cache (checksum match), the system cop
 - View statistics
 - Clear all history
 - Clear history older than N days (retention window)
+- Completed records expose file or install-aware follow-up actions only when the destination is still available
+- Failed, cancelled, or missing-file records fall back to reuse/re-edit flows instead of pretending file actions still work
 
 ### Failure and Progress UX
 
@@ -64,6 +67,8 @@ If the file to download already exists in cache (checksum match), the system cop
   `selection_error`, `network_error`, `integrity_error`, `cache_error`, `cancelled`, `timeout`
 - Detail view shows retry guidance based on recoverability
 - Queue and detail views stay synchronized to live runtime task/progress updates
+- Reopened drafts keep trusted `sourceDescriptor` / `artifactProfile` / `installIntent` metadata, but URL or filename edits force a fresh inference pass so stale provider metadata is not carried forward
+- GitLab release assets, pipeline artifacts, and package files now surface the same platform/architecture recommendation cues used by GitHub where the filename provides enough signal
 
 ### File Operations
 
@@ -98,7 +103,7 @@ Download progress is pushed via the Tauri event system:
 
 On application close, the following is automatically executed:
 
-- Cancel all active downloads
+- Persist recoverable queued/downloading work through the shared runtime owner before window teardown
 - Clean up stale partial download files (older than 7 days)
 - Save download state
 

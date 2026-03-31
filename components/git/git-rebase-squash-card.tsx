@@ -8,6 +8,7 @@ import { GitCommitHorizontal } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { toast } from 'sonner';
 import type { GitRebaseSquashCardProps } from '@/types/git';
+import { useGitActionDialogs } from './use-git-action-dialogs';
 
 export function GitRebaseSquashCard({
   loading,
@@ -20,11 +21,13 @@ export function GitRebaseSquashCard({
   const [countText, setCountText] = useState('2');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+  const { confirm, dialogs } = useGitActionDialogs();
 
   const blocked = Boolean(supportReason);
   const disabled = blocked || loading || busy;
 
   return (
+    <>
     <Card>
       <CardHeader className="pb-3">
         <CardTitle className="text-sm flex items-center gap-2">
@@ -52,7 +55,10 @@ export function GitRebaseSquashCard({
             className="h-7 text-xs"
             disabled={disabled || !onto.trim()}
             onClick={async () => {
-              const confirmed = window.confirm(t('git.quickOps.rewriteConfirm'));
+              const confirmed = await confirm({
+                title: t('git.quickOps.rebase'),
+                description: t('git.quickOps.rewriteConfirm'),
+              });
               if (!confirmed) return;
               setBusy(true);
               try {
@@ -98,7 +104,10 @@ export function GitRebaseSquashCard({
                 toast.error(t('git.quickOps.squashCountInvalid'));
                 return;
               }
-              const confirmed = window.confirm(t('git.quickOps.rewriteConfirm'));
+              const confirmed = await confirm({
+                title: t('git.quickOps.squash'),
+                description: t('git.quickOps.rewriteConfirm'),
+              });
               if (!confirmed) return;
               setBusy(true);
               try {
@@ -116,5 +125,7 @@ export function GitRebaseSquashCard({
         </div>
       </CardContent>
     </Card>
+    {dialogs}
+    </>
   );
 }

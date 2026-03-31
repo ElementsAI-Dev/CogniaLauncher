@@ -556,7 +556,7 @@ export function buildWslDistroHref(
   options?: Partial<WslOverviewContext> & {
     origin?: WslWorkflowOrigin;
     returnTo?: string;
-    continueAction?: string;
+    continueAction?: string | null;
   }
 ): string {
   const params = new URLSearchParams({ name: distroName });
@@ -592,7 +592,8 @@ export function resolveWslWorkspaceScopedTarget({
   fallbackDistroName?: string | null;
 }): WslWorkspaceScopedTargetResolution {
   const available = new Set(availableDistroNames);
-  const hasAvailable = (name?: string | null) => Boolean(name) && available.has(name);
+  const hasAvailable = (name?: string | null) =>
+    typeof name === 'string' && available.has(name);
 
   if (hasAvailable(overrideDistroName) && overrideDistroName === activeWorkspaceDistroName) {
     return {

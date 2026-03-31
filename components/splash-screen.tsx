@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Progress } from "@/components/ui/progress";
 import { useLocale } from "@/components/providers/locale-provider";
-import type { InitPhase } from "@/hooks/use-app-init";
+import type { InitPhase } from "@/hooks/desktop/use-app-init";
 
 interface SplashScreenProps {
   phase: InitPhase;

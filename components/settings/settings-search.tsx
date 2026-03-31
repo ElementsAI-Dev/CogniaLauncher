@@ -24,7 +24,7 @@ import { cn } from "@/lib/utils";
 import type {
   SettingsSearchResult,
   UseSettingsSearchReturn,
-} from "@/hooks/use-settings-search";
+} from "@/hooks/settings/use-settings-search";
 import type { SettingsSection } from "@/lib/constants/settings-registry";
 import type { TranslateFunction } from "@/types/settings";
 import { isInputFocused } from "@/lib/utils/dom";

@@ -80,3 +80,6 @@ plugins/typescript/**/.tools/
 
 # OpenSpec workspace artifacts
 openspec
+
+# Superpowers
+.superpowers

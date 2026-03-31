@@ -10,6 +10,16 @@ jest.mock("@/components/providers/locale-provider", () => ({
         "environments.profiles.description": "Save and restore environment configurations",
         "environments.profiles.saveCurrentTitle": "Save Current Configuration",
         "environments.profiles.saveCurrentDesc": "Save your current environments as a profile",
+        "environments.profiles.includeWslConfiguration": "Include WSL configuration",
+        "environments.profiles.includeEnvSnapshot": "Include environment variables",
+        "environments.profiles.includeEnvSnapshotCount": `Current user variables: ${params?.count || 0}`,
+        "environments.profiles.wslSnapshot": "WSL snapshot",
+        "environments.profiles.envSnapshot": "Environment snapshot",
+        "environments.profiles.envSnapshotPreview": "Environment variables preview",
+        "environments.profiles.wslDefaultDistro": `Default distro: ${params?.name || ""}`,
+        "environments.profiles.wslDistros": "WSL distros",
+        "environments.profiles.wslConfigPreview": ".wslconfig preview",
+        "environments.profiles.wslApplySkipped": `WSL skipped ${params?.name || ""}: ${params?.reason || ""}`,
         "environments.profiles.namePlaceholder": "Profile name",
         "environments.profiles.save": "Save",
         "environments.profiles.importJson": "Import JSON",
@@ -50,6 +60,7 @@ const mockDeleteProfile = jest.fn();
 const mockExportProfile = jest.fn();
 const mockImportProfile = jest.fn();
 const mockRefresh = jest.fn();
+const mockEnvvarListPersistentTyped = jest.fn();
 
 let mockProfilesState = {
   profiles: [] as Array<{
@@ -63,7 +74,7 @@ let mockProfilesState = {
   error: null as string | null,
 };
 
-jest.mock("@/hooks/use-profiles", () => ({
+jest.mock("@/hooks/environments/use-profiles", () => ({
   useProfiles: () => ({
     ...mockProfilesState,
     refresh: mockRefresh,
@@ -73,6 +84,11 @@ jest.mock("@/hooks/use-profiles", () => ({
     exportProfile: mockExportProfile,
     importProfile: mockImportProfile,
   }),
+}));
+
+jest.mock("@/lib/tauri", () => ({
+  isTauri: jest.fn(() => true),
+  envvarListPersistentTyped: (...args: unknown[]) => mockEnvvarListPersistentTyped(...args),
 }));
 
 jest.mock("@/lib/clipboard", () => ({
@@ -98,6 +114,18 @@ const sampleProfile = {
     { env_type: "node", version: "18.0.0", provider_id: "fnm" },
     { env_type: "python", version: "3.11.0", provider_id: "pyenv" },
   ],
+  env_snapshot: {
+    NODE_ENV: "development",
+    API_TOKEN: "secret-token",
+  },
+  wsl_snapshot: {
+    wslconfig_content: "[wsl2]\nmemory=8GB",
+    default_distro: "Ubuntu",
+    distros: [
+      { name: "Ubuntu", version: "WSL 2", is_default: true },
+      { name: "Debian", version: "WSL 2", is_default: false },
+    ],
+  },
   created_at: "2024-06-01T00:00:00Z",
 };
 
@@ -109,6 +137,10 @@ describe("ProfileManager", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockEnvvarListPersistentTyped.mockResolvedValue([
+      { key: "NODE_ENV", value: "development" },
+      { key: "JAVA_HOME", value: "/jdk" },
+    ]);
     mockCreateFromCurrent.mockResolvedValue({ id: "1", name: "Test" });
     mockApplyProfile.mockResolvedValue({
       profile_id: "p1",
@@ -166,7 +198,40 @@ describe("ProfileManager", () => {
     await user.click(screen.getByText("Save"));
 
     await waitFor(() => {
-      expect(mockCreateFromCurrent).toHaveBeenCalledWith("My Profile");
+      expect(mockCreateFromCurrent).toHaveBeenCalledWith("My Profile", {
+        includeWslConfiguration: false,
+        includeEnvSnapshot: false,
+      });
+    });
+  });
+
+  it("passes WSL snapshot option when the checkbox is enabled", async () => {
+    const user = userEvent.setup();
+    render(<ProfileManager {...defaultProps} />);
+    await user.type(screen.getByPlaceholderText("Profile name"), "My Profile");
+    await user.click(screen.getByRole("checkbox", { name: "Include WSL configuration" }));
+    await user.click(screen.getByText("Save"));
+
+    await waitFor(() => {
+      expect(mockCreateFromCurrent).toHaveBeenCalledWith("My Profile", {
+        includeWslConfiguration: true,
+        includeEnvSnapshot: false,
+      });
+    });
+  });
+
+  it("passes env snapshot option when the checkbox is enabled", async () => {
+    const user = userEvent.setup();
+    render(<ProfileManager {...defaultProps} />);
+    await user.type(screen.getByPlaceholderText("Profile name"), "My Profile");
+    await user.click(screen.getByRole("checkbox", { name: "Include environment variables" }));
+    await user.click(screen.getByText("Save"));
+
+    await waitFor(() => {
+      expect(mockCreateFromCurrent).toHaveBeenCalledWith("My Profile", {
+        includeWslConfiguration: false,
+        includeEnvSnapshot: true,
+      });
     });
   });
 
@@ -212,6 +277,27 @@ describe("ProfileManager", () => {
     render(<ProfileManager {...defaultProps} />);
     expect(screen.getByText("node@18.0.0")).toBeInTheDocument();
     expect(screen.getByText("python@3.11.0")).toBeInTheDocument();
+  });
+
+  it("renders WSL snapshot details when present on a profile", () => {
+    mockProfilesState.profiles = [sampleProfile];
+    render(<ProfileManager {...defaultProps} />);
+
+    expect(screen.getByText("WSL snapshot")).toBeInTheDocument();
+    expect(screen.getByText("Default distro: Ubuntu")).toBeInTheDocument();
+    expect(screen.getByText(".wslconfig preview")).toBeInTheDocument();
+    expect(screen.getByText("Ubuntu (WSL 2)")).toBeInTheDocument();
+    expect(screen.getByText("Debian (WSL 2)")).toBeInTheDocument();
+  });
+
+  it("renders env snapshot preview when present on a profile", () => {
+    mockProfilesState.profiles = [sampleProfile];
+    render(<ProfileManager {...defaultProps} />);
+
+    expect(screen.getByText("Environment snapshot")).toBeInTheDocument();
+    expect(screen.getByText("Environment variables preview")).toBeInTheDocument();
+    expect(screen.getByText("NODE_ENV")).toBeInTheDocument();
+    expect(screen.getAllByText("••••••").length).toBeGreaterThan(0);
   });
 
   it("calls applyProfile when apply button is clicked", async () => {
@@ -270,6 +356,35 @@ describe("ProfileManager", () => {
 
     await waitFor(() => {
       expect(toast.warning).toHaveBeenCalled();
+    });
+  });
+
+  it("renders skipped WSL snapshot apply results", async () => {
+    mockApplyProfile.mockResolvedValue({
+      profile_id: "p1",
+      profile_name: "Dev Setup",
+      successful: [{ env_type: "node", version: "18.0.0" }],
+      failed: [],
+      skipped: [],
+      wsl_snapshot: {
+        applied: true,
+        skipped: [
+          {
+            distro_name: "Ubuntu",
+            reason: "Version mismatch",
+            expected_version: "WSL 2",
+            installed_version: "WSL 1",
+          },
+        ],
+      },
+    });
+    mockProfilesState.profiles = [sampleProfile];
+    const user = userEvent.setup();
+    render(<ProfileManager {...defaultProps} />);
+    await user.click(screen.getByTitle("Apply"));
+
+    await waitFor(() => {
+      expect(screen.getByText("WSL skipped Ubuntu: Version mismatch")).toBeInTheDocument();
     });
   });
 

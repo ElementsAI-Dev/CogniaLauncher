@@ -25,6 +25,8 @@ describe('usePackageStore', () => {
       isCheckingUpdates: false,
       lastUpdateCheck: null,
       lastScanTimestamp: null,
+      pendingConflicts: [],
+      resolvedVersions: {},
     });
   });
 
@@ -264,6 +266,58 @@ describe('usePackageStore', () => {
       usePackageStore.getState().setSearchMeta({ total: 100, page: 1, pageSize: 20, facets: { providers: {}, licenses: {} } });
       usePackageStore.getState().setSearchMeta(null);
       expect(usePackageStore.getState().searchMeta).toBeNull();
+    });
+  });
+
+  describe('conflict resolution state', () => {
+    it('should set pending conflicts', () => {
+      const conflicts = [
+        {
+          package_name: 'urllib3',
+          required_by: ['requests'],
+          versions: ['^2.0.0'],
+        },
+      ];
+
+      usePackageStore.getState().setPendingConflicts(conflicts);
+
+      expect(usePackageStore.getState().pendingConflicts).toEqual(conflicts);
+    });
+
+    it('should set resolved versions by package key', () => {
+      usePackageStore.getState().setResolvedVersion('urllib3', '2.0.7');
+      expect(usePackageStore.getState().resolvedVersions).toEqual({
+        urllib3: '2.0.7',
+      });
+    });
+
+    it('persists conflict state in the partial store payload', () => {
+      usePackageStore.setState({
+        pendingConflicts: [
+          {
+            package_name: 'urllib3',
+            required_by: ['requests'],
+            versions: ['^2.0.0'],
+          },
+        ],
+        resolvedVersions: {
+          urllib3: '2.0.7',
+        },
+      });
+
+      const partialize = usePackageStore.persist.getOptions().partialize;
+      const persisted = partialize(usePackageStore.getState());
+
+      expect(persisted.pendingConflicts).toEqual([
+        {
+          package_name: 'urllib3',
+          required_by: ['requests'],
+          versions: ['^2.0.0'],
+        },
+      ]);
+      expect(persisted.resolvedVersions).toEqual({
+        urllib3: '2.0.7',
+      });
     });
   });
 

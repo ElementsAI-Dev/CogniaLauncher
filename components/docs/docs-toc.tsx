@@ -13,7 +13,7 @@ import { useLocale } from '@/components/providers/locale-provider';
 import { ChevronRight, List } from 'lucide-react';
 import type { TocItem, DocsTocMode } from '@/types/docs';
 import { extractHeadings } from '@/lib/docs/headings';
-import { useActiveHeading } from '@/hooks/use-active-heading';
+import { useActiveHeading } from '@/hooks/docs/use-active-heading';
 
 interface DocsTocProps {
   content: string;

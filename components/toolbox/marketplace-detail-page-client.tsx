@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/layout/page-header';
 import { useLocale } from '@/components/providers/locale-provider';
-import { useToolboxMarketplace } from '@/hooks/use-toolbox-marketplace';
+import { useToolboxMarketplace } from '@/hooks/toolbox/use-toolbox-marketplace';
 import { getToolboxDetailPath } from '@/lib/toolbox-route';
 
 export function MarketplaceDetailPageClient({ listingId }: { listingId: string }) {

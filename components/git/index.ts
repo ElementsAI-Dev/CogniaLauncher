@@ -42,3 +42,5 @@ export { GitRebaseSquashCard } from './git-rebase-squash-card';
 export { GitBisectCard } from './git-bisect-card';
 export { GitArchiveCard } from './git-archive-card';
 export { GitPatchCard } from './git-patch-card';
+export { GitStatsStrip } from './git-stats-strip';
+export { GitDiffToolbar } from './git-diff-toolbar';

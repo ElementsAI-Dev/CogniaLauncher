@@ -1,8 +1,8 @@
 import { render, screen } from "@testing-library/react";
 import { TrayProvider } from "./tray-provider";
-import * as useTraySync from "@/hooks/use-tray-sync";
+import * as useTraySync from "@/hooks/desktop/use-tray-sync";
 
-jest.mock("@/hooks/use-tray-sync", () => ({
+jest.mock("@/hooks/desktop/use-tray-sync", () => ({
   useTraySync: jest.fn(),
 }));
 

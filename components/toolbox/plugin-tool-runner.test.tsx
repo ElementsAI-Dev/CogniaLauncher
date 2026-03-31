@@ -7,12 +7,23 @@ jest.mock('@/components/providers/locale-provider', () => ({
 }));
 
 const mockCallTool = jest.fn().mockResolvedValue('{"result":"ok"}');
-jest.mock('@/hooks/use-plugins', () => ({
+const mockCancelTool = jest.fn().mockResolvedValue(true);
+const mockUseToolProgress = jest.fn(() => ({
+  phase: null,
+  progress: null,
+  message: null,
+  error: null,
+}));
+jest.mock('@/hooks/plugins/use-plugins', () => ({
   usePlugins: () => ({
     callTool: mockCallTool,
+    cancelTool: mockCancelTool,
     getLocales: jest.fn().mockResolvedValue(null),
     translatePluginKey: jest.fn((_l: unknown, _lo: string, k: string) => k),
   }),
+}));
+jest.mock('@/hooks/toolbox/use-tool-progress', () => ({
+  useToolProgress: (...args: Parameters<typeof mockUseToolProgress>) => mockUseToolProgress(...args),
 }));
 
 const mockIsTauri = jest.fn(() => true);
@@ -79,6 +90,12 @@ describe('PluginToolRunner', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockIsTauri.mockReturnValue(true);
+    mockUseToolProgress.mockReturnValue({
+      phase: null,
+      progress: null,
+      message: null,
+      error: null,
+    });
   });
 
   it('shows explicit empty fallback when text mode returns empty output', async () => {
@@ -238,6 +255,7 @@ describe('PluginToolRunner', () => {
     });
 
     expect(screen.getByTestId('plugin-ui-renderer')).toBeInTheDocument();
+    expect(screen.getByTestId('plugin-ui-renderer')).toHaveTextContent('blocks: 1');
   });
 
   it('renders iframe mode', () => {
@@ -300,19 +318,70 @@ describe('PluginToolRunner', () => {
       fireEvent.click(runButton);
     });
 
-    expect(screen.getByText('common.cancel')).toBeInTheDocument();
-    expect(screen.getByText('toolbox.plugin.running')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'common.cancel' })).toBeInTheDocument();
+    expect(screen.getAllByText('toolbox.plugin.running').length).toBeGreaterThan(0);
 
     // Cancel
     await act(async () => {
-      fireEvent.click(screen.getByText('common.cancel'));
+      fireEvent.click(screen.getByRole('button', { name: 'common.cancel' }));
     });
 
-    expect(screen.queryByText('common.cancel')).not.toBeInTheDocument();
-    expect(screen.getByText('toolbox.plugin.cancelled')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'common.cancel' })).not.toBeInTheDocument();
+    expect(screen.getAllByText('toolbox.plugin.cancelled').length).toBeGreaterThan(0);
 
     // Resolve to prevent unhandled promise
     resolveCall!('done');
+  });
+
+  it('renders runtime progress state when backend progress is active', () => {
+    mockUseToolProgress.mockReturnValue({
+      phase: 'running',
+      progress: 25,
+      message: 'working',
+      error: null,
+    });
+
+    render(<PluginToolRunner tool={baseTool} />);
+
+    expect(screen.getByText('working')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'common.cancel' })).toBeInTheDocument();
+  });
+
+  it('forwards cancel action through plugin cancellation bridge', async () => {
+    let resolveCall: (value: string) => void;
+    mockCallTool.mockReturnValue(new Promise<string>((resolve) => {
+      resolveCall = resolve;
+    }));
+
+    render(<PluginToolRunner tool={baseTool} />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('toolbox.plugin.run'));
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'common.cancel' }));
+    });
+
+    expect(mockCancelTool).toHaveBeenCalled();
+    resolveCall!('done');
+  });
+
+  it('renders structured runtime errors with retry affordance', () => {
+    mockUseToolProgress.mockReturnValue({
+      phase: 'failed',
+      progress: null,
+      message: 'permission blocked',
+      error: {
+        kind: 'permission_denied',
+        message: 'permission blocked',
+      },
+    });
+
+    render(<PluginToolRunner tool={baseTool} />);
+
+    expect(screen.getByText('permission_denied')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'common.retry' })).toBeInTheDocument();
   });
 
   // --- Smart output ---

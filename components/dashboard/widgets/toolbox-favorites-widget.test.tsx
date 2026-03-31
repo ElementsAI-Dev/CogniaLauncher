@@ -32,7 +32,7 @@ let mockAllTools: MockTool[] = [];
 let mockFavorites: string[] = [];
 let mockRecentTools: string[] = [];
 
-jest.mock("@/hooks/use-toolbox", () => ({
+jest.mock("@/hooks/toolbox/use-toolbox", () => ({
   useToolbox: () => ({
     allTools: mockAllTools,
     favorites: mockFavorites,

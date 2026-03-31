@@ -13,7 +13,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { LogToolbar } from "./log-toolbar";
 import { LogEntry } from "./log-entry";
-import { useLogs } from "@/hooks/use-logs";
+import { useLogs } from "@/hooks/logs/use-logs";
 import { useLogStore } from "@/lib/stores/log";
 import type { LogEntry as UiLogEntry, LogFilter, LogLevel } from "@/types/log";
 import type { LogQueryMeta } from "@/types/tauri";

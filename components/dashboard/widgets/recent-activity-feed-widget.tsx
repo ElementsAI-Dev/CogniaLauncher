@@ -9,7 +9,7 @@ import {
   DashboardEmptyState,
   DashboardStatusBadge,
 } from "@/components/dashboard/dashboard-primitives";
-import type { DashboardActivityModel } from "@/hooks/use-dashboard-insights";
+import type { DashboardActivityModel } from "@/hooks/dashboard/use-dashboard-insights";
 
 interface RecentActivityFeedWidgetProps {
   model: DashboardActivityModel;

@@ -235,6 +235,18 @@ Environment variable subcommands (P0):
 - `envvar remove-persistent <key> [--scope user|system]`
 - `envvar export <file> [--scope ...] [--format dotenv|shell|fish|powershell|nushell]`
 - `envvar import <file> [--scope process|user|system]`
+- `envvar snapshot-list`
+- `envvar snapshot-create [--scope user|system] [--mode manual|automatic] [--source-action <name>] [--note <text>]`
+- `envvar snapshot-protection --action <name> [--scope user|system]`
+- `envvar snapshot-preview <path> [--scope user|system ...]`
+- `envvar snapshot-restore <path> [--scope user|system ...]`
+- `envvar snapshot-delete <path>`
+
+Envvar recovery notes:
+
+- Risky persistent-scope workflows can create or reuse safety snapshots before mutations run.
+- Restore is preview-first and only targets persistent `user` / `system` envvar state and PATH; `process` scope is diagnostic-only.
+- Automatic safety snapshots are retention-managed separately from manual recovery points; manual snapshots remain until you delete them explicitly.
 
 Log/diagnostic subcommands (P0):
 

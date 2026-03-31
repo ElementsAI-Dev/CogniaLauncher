@@ -29,6 +29,7 @@ const freezeBackgroundLoad = () => {
 let mockLogFiles: MockLogFile[] = defaultFiles;
 let mockSelectedLogFile: string | null = null;
 let mockIsTauri = false;
+let mockSearchParams = new URLSearchParams();
 let mockCrashReports: Array<Record<string, unknown>> = [];
 let mockObservability = {
   runtimeMode: 'desktop-release',
@@ -47,6 +48,9 @@ let mockLatestDiagnosticAction: {
 } | null = null;
 
 const mockSetSelectedLogFile = jest.fn();
+const mockSetSearch = jest.fn();
+const mockSetFilter = jest.fn();
+const mockSetShowBookmarksOnly = jest.fn();
 const mockCleanupLogs = jest.fn();
 const mockDeleteLogFiles = jest.fn();
 const mockDeleteLogFile = jest.fn();
@@ -105,6 +109,7 @@ jest.mock('@/components/providers/locale-provider', () => ({
         'logs.backendBridge': 'Backend Bridge',
         'logs.diagnostics': 'Diagnostics',
         'logs.managementDescription': 'Manage log files and cleanup policy',
+        'logs.managementDesktopOnlyDescription': 'Management is available in the desktop app only.',
         'logs.diagnosticsDescription': 'Export diagnostics and inspect recent crash reports.',
         'logs.runtimeModeDesktopDebug': 'Desktop Debug',
         'logs.runtimeModeDesktopRelease': 'Desktop Release',
@@ -188,10 +193,26 @@ jest.mock('@/lib/stores/log', () => ({
     getLogStats: () => ({ total: 42, byLevel: { trace: 0, debug: 0, info: 27, warn: 10, error: 5 } }),
     selectedLogFile: mockSelectedLogFile,
     setSelectedLogFile: mockSetSelectedLogFile,
+    setSearch: mockSetSearch,
+    setFilter: mockSetFilter,
+    setShowBookmarksOnly: mockSetShowBookmarksOnly,
+    filter: {
+      levels: ['info', 'warn', 'error'],
+      search: '',
+      target: undefined,
+      useRegex: false,
+      maxScanLines: null,
+      startTime: null,
+      endTime: null,
+    },
   }),
 }));
 
-jest.mock('@/hooks/use-logs', () => ({
+jest.mock('next/navigation', () => ({
+  useSearchParams: () => mockSearchParams,
+}));
+
+jest.mock('@/hooks/logs/use-logs', () => ({
   useLogs: () => ({
     cleanupLogs: mockCleanupLogs,
     crashReports: mockCrashReports,
@@ -289,6 +310,7 @@ describe('LogsPage', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockIsTauri = false;
+    mockSearchParams = new URLSearchParams();
     mockLogFiles = defaultFiles;
     mockSelectedLogFile = null;
     mockCrashReports = [];
@@ -299,6 +321,9 @@ describe('LogsPage', () => {
       latestCrashCapture: null,
     };
     mockLatestDiagnosticAction = null;
+    mockSetSearch.mockReset();
+    mockSetFilter.mockReset();
+    mockSetShowBookmarksOnly.mockReset();
     mockLoadLogFiles.mockResolvedValue({ ok: true, data: defaultFiles });
     mockGetLogDirectory.mockResolvedValue({ ok: true, data: '' });
     mockLoadCrashReports.mockResolvedValue({ ok: true, data: [] });
@@ -448,7 +473,35 @@ describe('LogsPage', () => {
     await user.click(screen.getByRole('tab', { name: /Files/ }));
 
     await waitFor(() => {
-      expect(screen.getByText('Desktop Only')).toBeInTheDocument();
+      expect(
+        screen.getByText('Log files are only available in the desktop app.'),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it('shows explicit management unavailable guidance in non-Tauri mode', async () => {
+    const user = userEvent.setup();
+    render(<LogsPage />);
+
+    await user.click(screen.getByRole('tab', { name: /Management/ }));
+
+    expect(
+      screen.getByText('Management is available in the desktop app only.'),
+    ).toBeInTheDocument();
+  });
+
+  it('hydrates logs workspace context from route search params', async () => {
+    mockSearchParams = new URLSearchParams(
+      'tab=files&q=panic&levels=error,warn&bookmarks=1&file=2026-02-27_10-00-00.log',
+    );
+
+    render(<LogsPage />);
+
+    await waitFor(() => {
+      expect(mockSetSearch).toHaveBeenCalledWith('panic');
+      expect(mockSetFilter).toHaveBeenCalledWith({ levels: ['error', 'warn'] });
+      expect(mockSetShowBookmarksOnly).toHaveBeenCalledWith(true);
+      expect(mockSetSelectedLogFile).toHaveBeenCalledWith('2026-02-27_10-00-00.log');
     });
   });
 
@@ -627,6 +680,10 @@ describe('LogsPage', () => {
     await waitFor(() => {
       expect(toast.error).toHaveBeenCalledWith('Delete failed');
     });
+
+    const summary = screen.getByTestId('logs-result-summary');
+    expect(summary).toHaveTextContent('Failed');
+    expect(summary).toHaveTextContent('Latest delete action');
   });
 
   it('surfaces partial-success delete feedback in persistent summary', async () => {

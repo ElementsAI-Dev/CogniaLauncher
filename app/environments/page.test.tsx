@@ -36,7 +36,7 @@ const mockEnvironmentStoreState = {
     | null,
 };
 
-jest.mock('@/hooks/use-environments', () => ({
+jest.mock('@/hooks/environments/use-environments', () => ({
   useEnvironments: () => ({
     environments: [
       {
@@ -64,6 +64,7 @@ jest.mock('@/hooks/use-environments', () => ({
     detectedVersions: [],
     availableProviders: [
       { id: 'nvm', display_name: 'nvm', env_type: 'node' },
+      { id: 'fnm', display_name: 'fnm', env_type: 'node' },
       { id: 'pyenv', display_name: 'pyenv', env_type: 'python' },
     ],
     loading: false,
@@ -86,13 +87,13 @@ jest.mock('@/lib/tauri', () => ({
   isTauri: () => mockIsTauri(),
 }));
 
-jest.mock('@/hooks/use-environment-detection', () => ({
+jest.mock('@/hooks/environments/use-environment-detection', () => ({
   useEnvironmentDetection: () => ({
     getProjectDetectedForEnv: mockGetProjectDetectedForEnv,
   }),
 }));
 
-jest.mock('@/hooks/use-environment-workflow', () => ({
+jest.mock('@/hooks/environments/use-environment-workflow', () => ({
   useEnvironmentWorkflow: () => ({
     syncWorkflowContext: mockSyncWorkflowContext,
     setWorkflowActionState: jest.fn(),
@@ -139,7 +140,7 @@ jest.mock('@/lib/stores/environment', () => ({
   ),
 }));
 
-jest.mock('@/hooks/use-auto-version', () => ({
+jest.mock('@/hooks/environments/use-auto-version', () => ({
   useAutoVersionSwitch: jest.fn(),
   useProjectPath: () => ({ projectPath: '/test/project' }),
 }));
@@ -166,8 +167,23 @@ jest.mock('@/components/providers/locale-provider', () => ({
 }));
 
 jest.mock('@/components/environments/environment-card', () => ({
-  EnvironmentCard: ({ env }: { env: { env_type: string } }) => (
-    <div data-testid={`env-card-${env.env_type}`}>{env.env_type}</div>
+  EnvironmentCard: ({
+    env,
+    onProviderChange,
+  }: {
+    env: { env_type: string };
+    onProviderChange?: (providerId: string) => void;
+  }) => (
+    <div data-testid={`env-card-${env.env_type}`}>
+      <span>{env.env_type}</span>
+      <button
+        data-testid={`provider-change-${env.env_type}`}
+        onClick={() => onProviderChange?.(env.env_type === 'node' ? 'fnm' : 'pyenv')}
+        type="button"
+      >
+        change-provider
+      </button>
+    </div>
   ),
 }));
 
@@ -297,6 +313,24 @@ describe('EnvironmentsPage', () => {
     render(<EnvironmentsPage />);
     expect(screen.getByTestId('env-card-node')).toBeInTheDocument();
     expect(screen.getByTestId('env-card-python')).toBeInTheDocument();
+  });
+
+  it('keeps workflow context in sync when provider selection changes', async () => {
+    const user = userEvent.setup();
+    render(<EnvironmentsPage />);
+
+    await user.click(screen.getByTestId('provider-change-node'));
+
+    expect(mockSetSelectedProvider).toHaveBeenCalledWith('node', 'fnm');
+    expect(mockSyncWorkflowContext).toHaveBeenCalledWith(
+      'node',
+      expect.objectContaining({
+        origin: 'overview',
+        returnHref: '/environments',
+        projectPath: '/test/project',
+        providerId: 'fnm',
+      }),
+    );
   });
 
   it('renders toolbar', () => {

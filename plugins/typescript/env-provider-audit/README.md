@@ -5,6 +5,12 @@ Production built-in plugin for environment/provider visibility and runtime readi
 ## Tool
 
 - `env-provider-audit`
+- `env-provider-audit-guided`
+
+## Workflow Split
+
+- `env-provider-audit`: automation-safe text entrypoint. Keep using this for deterministic JSON input/output in scripts.
+- `env-provider-audit-guided`: declarative Toolbox workflow with form defaults, structured summary/stream/artifact channels, and partial follow-up degradation reporting when notification/event side-effects fail.
 
 ## Input
 
@@ -18,6 +24,8 @@ Production built-in plugin for environment/provider visibility and runtime readi
 ```
 
 All fields are optional. Empty input uses safe defaults.
+
+The guided entrypoint renders the same audit core through declarative form state instead of requiring raw JSON input.
 
 ## Output
 
@@ -40,6 +48,8 @@ All fields are optional. Empty input uses safe defaults.
 - `cognia.platform`: host OS context
 - `cognia.event`: emits completion signal
 - `cognia.notification`: optional issue summary notification
+
+The guided workflow keeps `env_read` as the core requirement and treats `notification` / `event` follow-ups as degradable stages instead of blanking the successful audit result.
 
 ## Build
 

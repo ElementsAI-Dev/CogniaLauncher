@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { writeClipboard } from '@/lib/clipboard';
 import {
   Dialog,
@@ -22,7 +22,9 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -51,10 +53,16 @@ import {
   FileDown,
   ClipboardPaste,
 } from "lucide-react";
-import { useProfiles } from "@/hooks/use-profiles";
+import { useProfiles } from "@/hooks/environments/use-profiles";
 import { useLocale } from "@/components/providers/locale-provider";
 import { readClipboard } from "@/lib/clipboard";
-import type { EnvironmentProfile, ProfileApplyResult } from "@/lib/tauri";
+import {
+  envvarListPersistentTyped,
+  isTauri,
+  type EnvironmentProfile,
+  type ProfileApplyResult,
+} from "@/lib/tauri";
+import { EnvVarKvEditor } from "@/components/envvar";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -78,6 +86,9 @@ export function ProfileManager({ open, onOpenChange }: ProfileManagerProps) {
   } = useProfiles();
 
   const [newProfileName, setNewProfileName] = useState("");
+  const [includeWslConfiguration, setIncludeWslConfiguration] = useState(false);
+  const [includeEnvSnapshot, setIncludeEnvSnapshot] = useState(false);
+  const [envSnapshotCount, setEnvSnapshotCount] = useState<number | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [applyingId, setApplyingId] = useState<string | null>(null);
   const [applyResult, setApplyResult] = useState<ProfileApplyResult | null>(null);
@@ -85,21 +96,50 @@ export function ProfileManager({ open, onOpenChange }: ProfileManagerProps) {
   const [importJson, setImportJson] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    if (!open || !isTauri()) {
+      setEnvSnapshotCount(null);
+      return;
+    }
+
+    let active = true;
+    void envvarListPersistentTyped("user")
+      .then((items) => {
+        if (active) {
+          setEnvSnapshotCount(items.length);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setEnvSnapshotCount(null);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [open]);
+
   const handleCreateFromCurrent = useCallback(async () => {
     if (!newProfileName.trim()) return;
     setIsCreating(true);
     try {
-      const result = await createFromCurrent(newProfileName.trim());
+      const result = await createFromCurrent(newProfileName.trim(), {
+        includeWslConfiguration,
+        includeEnvSnapshot,
+      });
       if (result) {
         toast.success(t("environments.profiles.created"));
         setNewProfileName("");
+        setIncludeWslConfiguration(false);
+        setIncludeEnvSnapshot(false);
       }
     } catch (err) {
       toast.error(String(err));
     } finally {
       setIsCreating(false);
     }
-  }, [newProfileName, createFromCurrent, t]);
+  }, [newProfileName, createFromCurrent, includeEnvSnapshot, includeWslConfiguration, t]);
 
   const handleApply = useCallback(
     async (profile: EnvironmentProfile) => {
@@ -249,6 +289,41 @@ export function ProfileManager({ open, onOpenChange }: ProfileManagerProps) {
                   )}
                   {t("environments.profiles.save")}
                 </Button>
+              </div>
+              <div className="mt-3 space-y-3 rounded-md border p-3">
+                <div className="flex items-start gap-3">
+                  <Checkbox
+                    id="profiles-include-wsl-configuration"
+                    checked={includeWslConfiguration}
+                    onCheckedChange={(checked) => setIncludeWslConfiguration(checked === true)}
+                    disabled={isCreating || loading}
+                  />
+                  <div className="space-y-1">
+                    <Label htmlFor="profiles-include-wsl-configuration" className="cursor-pointer">
+                      {t("environments.profiles.includeWslConfiguration")}
+                    </Label>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <Checkbox
+                    id="profiles-include-env-snapshot"
+                    checked={includeEnvSnapshot}
+                    onCheckedChange={(checked) => setIncludeEnvSnapshot(checked === true)}
+                    disabled={isCreating || loading}
+                  />
+                  <div className="space-y-1">
+                    <Label htmlFor="profiles-include-env-snapshot" className="cursor-pointer">
+                      {t("environments.profiles.includeEnvSnapshot")}
+                    </Label>
+                    {envSnapshotCount != null ? (
+                      <p className="text-xs text-muted-foreground">
+                        {t("environments.profiles.includeEnvSnapshotCount", {
+                          count: envSnapshotCount,
+                        })}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -419,6 +494,22 @@ export function ProfileManager({ open, onOpenChange }: ProfileManagerProps) {
                     ))}
                   </div>
                 )}
+                {applyResult.wsl_snapshot?.skipped?.length ? (
+                  <div className="space-y-1">
+                    {applyResult.wsl_snapshot.skipped.map((entry) => (
+                      <Badge
+                        key={`${entry.distro_name}-${entry.reason}`}
+                        variant="secondary"
+                        className="mr-1 text-xs"
+                      >
+                        {t("environments.profiles.wslApplySkipped", {
+                          name: entry.distro_name,
+                          reason: entry.reason,
+                        })}
+                      </Badge>
+                    ))}
+                  </div>
+                ) : null}
                 <Button
                   variant="ghost"
                   size="sm"
@@ -489,6 +580,12 @@ function ProfileCard({
   t,
 }: ProfileCardProps) {
   const createdDate = new Date(profile.created_at).toLocaleDateString();
+  const envSnapshot = profile.env_snapshot ?? null;
+  const envSnapshotItems = envSnapshot
+    ? Object.entries(envSnapshot).map(([key, value]) => ({ key, value }))
+    : [];
+  const hasWslSnapshot = Boolean(profile.wsl_snapshot);
+  const hasEnvSnapshot = envSnapshotItems.length > 0;
 
   return (
     <div className="flex items-start justify-between p-3 rounded-lg border bg-card hover:bg-muted/30 transition-colors">
@@ -520,7 +617,72 @@ function ProfileCard({
               +{profile.environments.length - 5}
             </Badge>
           )}
+          {hasWslSnapshot && (
+            <Badge variant="secondary" className="text-xs">
+              {t("environments.profiles.wslSnapshot")}
+            </Badge>
+          )}
+          {hasEnvSnapshot && (
+            <Badge variant="secondary" className="text-xs">
+              {t("environments.profiles.envSnapshot")}
+            </Badge>
+          )}
         </div>
+        {hasEnvSnapshot ? (
+          <div className="ml-6 mt-2 space-y-2 rounded-md border bg-muted/30 p-3">
+            <p className="text-xs font-medium text-muted-foreground">
+              {t("environments.profiles.envSnapshotPreview")}
+            </p>
+            <EnvVarKvEditor
+              items={envSnapshotItems}
+              readOnly
+              revealable
+              sensitiveKeys={[/token/i, /secret/i, /password/i, /key/i]}
+              onReveal={async (key) => envSnapshot?.[key] ?? null}
+              labels={{
+                empty: t("envvar.table.noResults"),
+                copy: t("common.copy"),
+                copyError: t("common.copyFailed"),
+                reveal: t("envvar.table.reveal"),
+              }}
+            />
+          </div>
+        ) : null}
+        {profile.wsl_snapshot ? (
+          <div className="ml-6 mt-2 space-y-2 rounded-md border bg-muted/30 p-3">
+            <p className="text-xs font-medium">
+              {t("environments.profiles.wslDefaultDistro", {
+                name: profile.wsl_snapshot.default_distro ?? "N/A",
+              })}
+            </p>
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground">
+                {t("environments.profiles.wslDistros")}
+              </p>
+              <div className="flex flex-wrap gap-1">
+                {profile.wsl_snapshot.distros.map((distro) => (
+                  <Badge
+                    key={`${distro.name}-${distro.version}`}
+                    variant={distro.is_default ? "default" : "outline"}
+                    className="text-xs"
+                  >
+                    {distro.name} ({distro.version})
+                  </Badge>
+                ))}
+              </div>
+            </div>
+            {profile.wsl_snapshot.wslconfig_content ? (
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-muted-foreground">
+                  {t("environments.profiles.wslConfigPreview")}
+                </p>
+                <pre className="overflow-x-auto rounded bg-background p-2 text-[11px]">
+                  {profile.wsl_snapshot.wslconfig_content}
+                </pre>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
         <p className="text-xs text-muted-foreground mt-1 ml-6">
           {t("environments.profiles.createdAt", { date: createdDate })}
         </p>

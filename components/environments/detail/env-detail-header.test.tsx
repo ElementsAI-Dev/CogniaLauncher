@@ -49,4 +49,45 @@ describe("EnvDetailHeader", () => {
     render(<EnvDetailHeader {...defaultProps} />);
     expect(screen.getByRole("link", { name: "environments.title" })).toHaveAttribute("href", "/environments");
   });
+
+  it("renders open in terminal action and forwards clicks", async () => {
+    const onOpenInTerminal = jest.fn();
+    render(
+      <EnvDetailHeader
+        {...defaultProps}
+        onOpenInTerminal={onOpenInTerminal}
+      />,
+    );
+
+    await userEvent.click(screen.getByText("environments.detail.openInTerminal"));
+    expect(onOpenInTerminal).toHaveBeenCalled();
+  });
+
+  it("renders compiler-aware subtitle details for C++ environments", () => {
+    render(
+      <EnvDetailHeader
+        {...defaultProps}
+        envType="cpp"
+        env={{
+          ...defaultProps.env,
+          env_type: "cpp",
+          provider_id: "system-cpp",
+          provider: "C++ (System)",
+          compiler_metadata: {
+            family: "gcc",
+            variant: "g++",
+            version: "13.2.0",
+            target_architecture: "x64",
+            host_architecture: null,
+            target_triple: "x86_64-w64-windows-gnu",
+            subsystem: "ucrt64",
+            discovery_origin: "path",
+            executable_name: "g++.exe",
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByText(/ucrt64 g\+\+ 13\.2\.0 x64/)).toBeInTheDocument();
+  });
 });

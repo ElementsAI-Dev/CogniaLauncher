@@ -24,7 +24,7 @@ import {
 import { isTauri, validatePath } from "@/lib/tauri";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { usePathValidation } from "@/hooks/use-path-validation";
+import { usePathValidation } from "@/hooks/settings/use-path-validation";
 
 interface PathsSettingsProps {
   localConfig: Record<string, string>;

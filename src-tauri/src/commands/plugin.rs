@@ -9,9 +9,11 @@ use crate::plugin::scaffold::{ScaffoldConfig, ScaffoldResult, ValidationResult};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::RwLock;
+use tokio::time::{sleep, Duration};
 
 pub type SharedPluginManager = Arc<RwLock<PluginManager>>;
 
@@ -80,6 +82,121 @@ fn normalize_marketplace_error(action: &str, message: &str) -> PluginMarketplace
         category: "install_execution_failed".to_string(),
         message: message.to_string(),
         retryable,
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ToolExecutionError {
+    Validation { message: String },
+    Runtime { message: String },
+    Timeout { message: String },
+    PermissionDenied { message: String },
+    Cancelled { message: String },
+}
+
+impl ToolExecutionError {
+    fn message(&self) -> &str {
+        match self {
+            Self::Validation { message }
+            | Self::Runtime { message }
+            | Self::Timeout { message }
+            | Self::PermissionDenied { message }
+            | Self::Cancelled { message } => message,
+        }
+    }
+
+    fn phase(&self) -> &'static str {
+        match self {
+            Self::Cancelled { .. } => "cancelled",
+            _ => "failed",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ToolProgressEventPayload {
+    tool_id: String,
+    execution_id: String,
+    phase: String,
+    progress: Option<u8>,
+    message: Option<String>,
+    error: Option<ToolExecutionError>,
+}
+
+fn classify_tool_execution_error(message: &str) -> ToolExecutionError {
+    let normalized = message.trim().to_ascii_lowercase();
+
+    if normalized.contains("timeout") || normalized.contains("timed out") {
+        return ToolExecutionError::Timeout {
+            message: message.to_string(),
+        };
+    }
+
+    if normalized.contains("permission") || normalized.contains("denied") {
+        return ToolExecutionError::PermissionDenied {
+            message: message.to_string(),
+        };
+    }
+
+    if normalized.contains("cancelled")
+        || normalized.contains("canceled")
+        || normalized.contains("aborted")
+    {
+        return ToolExecutionError::Cancelled {
+            message: message.to_string(),
+        };
+    }
+
+    if normalized.contains("not declared")
+        || normalized.contains("not found")
+        || normalized.contains("invalid")
+        || normalized.contains("validation")
+        || normalized.contains("blocked by plugin-point")
+    {
+        return ToolExecutionError::Validation {
+            message: message.to_string(),
+        };
+    }
+
+    ToolExecutionError::Runtime {
+        message: message.to_string(),
+    }
+}
+
+fn emit_tool_progress(
+    app: &AppHandle,
+    tool_id: &str,
+    execution_id: &str,
+    phase: &str,
+    progress: Option<u8>,
+    message: Option<String>,
+    error: Option<ToolExecutionError>,
+) {
+    if let Err(emit_error) = app.emit(
+        "toolbox-tool-progress",
+        ToolProgressEventPayload {
+            tool_id: tool_id.to_string(),
+            execution_id: execution_id.to_string(),
+            phase: phase.to_string(),
+            progress,
+            message,
+            error,
+        },
+    ) {
+        log::warn!(
+            "[plugin-runtime][tool:{}][execution:{}][operation:emit-progress] {}",
+            tool_id,
+            execution_id,
+            emit_error
+        );
+    }
+}
+
+async fn wait_for_tool_cancellation(cancel_token: Arc<std::sync::atomic::AtomicBool>) {
+    while !cancel_token.load(Ordering::SeqCst) {
+        sleep(Duration::from_millis(50)).await;
     }
 }
 
@@ -250,14 +367,62 @@ pub async fn plugin_call_tool(
     plugin_id: String,
     tool_entry: String,
     input: String,
+    execution_id: Option<String>,
+    tool_id: Option<String>,
     manager: State<'_, SharedPluginManager>,
     app: AppHandle,
-) -> Result<String, String> {
-    let mut mgr = manager.write().await;
-    let result = mgr
-        .call_tool(&plugin_id, &tool_entry, &input)
+    tokens: State<'_, crate::CancellationTokens>,
+) -> Result<String, ToolExecutionError> {
+    let resolved_execution_id = execution_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    let resolved_tool_id =
+        tool_id.unwrap_or_else(|| format!("plugin:{}:{}", plugin_id, tool_entry));
+    let cancel_token = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    tokens
+        .write()
         .await
-        .map_err(|e| e.to_string())?;
+        .insert(resolved_execution_id.clone(), cancel_token.clone());
+
+    emit_tool_progress(
+        &app,
+        &resolved_tool_id,
+        &resolved_execution_id,
+        "running",
+        Some(5),
+        Some("Tool execution started".to_string()),
+        None,
+    );
+
+    let result = {
+        let mut mgr = manager.write().await;
+        tokio::select! {
+            outcome = mgr.call_tool(&plugin_id, &tool_entry, &input) => {
+                outcome.map_err(|error| classify_tool_execution_error(&error.to_string()))
+            }
+            _ = wait_for_tool_cancellation(cancel_token.clone()) => {
+                Err(ToolExecutionError::Cancelled {
+                    message: "Tool execution cancelled".to_string(),
+                })
+            }
+        }
+    };
+
+    tokens.write().await.remove(&resolved_execution_id);
+
+    let result = match result {
+        Ok(value) => value,
+        Err(error) => {
+            emit_tool_progress(
+                &app,
+                &resolved_tool_id,
+                &resolved_execution_id,
+                error.phase(),
+                None,
+                Some(error.message().to_string()),
+                Some(error.clone()),
+            );
+            return Err(error);
+        }
+    };
 
     for effect in &result.ui_effects {
         if matches!(effect.effect.as_str(), "toast" | "navigate") {
@@ -272,7 +437,31 @@ pub async fn plugin_call_tool(
         }
     }
 
+    emit_tool_progress(
+        &app,
+        &resolved_tool_id,
+        &resolved_execution_id,
+        "complete",
+        Some(100),
+        Some("Tool execution complete".to_string()),
+        None,
+    );
+
     Ok(result.output)
+}
+
+#[tauri::command]
+pub async fn toolbox_cancel_tool(
+    execution_id: String,
+    tokens: State<'_, crate::CancellationTokens>,
+) -> Result<bool, String> {
+    let token = tokens.read().await.get(&execution_id).cloned();
+    if let Some(token) = token {
+        token.store(true, Ordering::SeqCst);
+        return Ok(true);
+    }
+
+    Ok(false)
 }
 
 /// Get permissions for a plugin

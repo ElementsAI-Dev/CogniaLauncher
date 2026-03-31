@@ -42,6 +42,27 @@ describe('DocsScrollProgress', () => {
     removeSpy.mockRestore();
   });
 
+  it('clamps window-based progress between 0 and 100', async () => {
+    Object.defineProperty(window, 'innerHeight', { value: 100, writable: true, configurable: true });
+    Object.defineProperty(document.documentElement, 'scrollHeight', { value: 200, writable: true, configurable: true });
+    Object.defineProperty(window, 'scrollY', { value: -20, writable: true, configurable: true });
+
+    render(<DocsScrollProgress />);
+    await act(async () => {});
+
+    window.dispatchEvent(new Event('scroll'));
+    await waitFor(() => {
+      expect(screen.getByTestId('progress')).toHaveAttribute('data-value', '0');
+    });
+
+    Object.defineProperty(window, 'scrollY', { value: 999, writable: true, configurable: true });
+    window.dispatchEvent(new Event('scroll'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('progress')).toHaveAttribute('data-value', '100');
+    });
+  });
+
   it('uses ScrollArea viewport scroll when a radix viewport exists under containerRef', async () => {
     const container = document.createElement('div');
     const viewport = document.createElement('div');
@@ -83,5 +104,32 @@ describe('DocsScrollProgress', () => {
     addSpy.mockRestore();
     removeSpy.mockRestore();
   });
-});
 
+  it('falls back to the container element when no radix viewport exists', async () => {
+    const container = document.createElement('div');
+    Object.defineProperty(container, 'scrollTop', { value: 40, writable: true, configurable: true });
+    Object.defineProperty(container, 'scrollHeight', { value: 140, writable: true, configurable: true });
+    Object.defineProperty(container, 'clientHeight', { value: 100, writable: true, configurable: true });
+
+    const addSpy = jest.spyOn(container, 'addEventListener');
+    const removeSpy = jest.spyOn(container, 'removeEventListener');
+
+    const ref = { current: container } as React.RefObject<HTMLElement>;
+    const { unmount } = render(<DocsScrollProgress containerRef={ref} />);
+    await act(async () => {});
+
+    container.dispatchEvent(new Event('scroll'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('progress')).toHaveAttribute('data-value', '100');
+    });
+
+    expect(addSpy).toHaveBeenCalledWith('scroll', expect.any(Function), { passive: true });
+
+    unmount();
+    expect(removeSpy).toHaveBeenCalledWith('scroll', expect.any(Function));
+
+    addSpy.mockRestore();
+    removeSpy.mockRestore();
+  });
+});

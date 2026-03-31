@@ -1,11 +1,22 @@
 # CLAUDE.md - CogniaLauncher Project Context
 
-> Last Updated: 2026-03-03 | v1.7.0
+> Last Updated: 2026-03-30 | v1.8.0
 > This document provides AI context for the CogniaLauncher codebase.
 
 > **IMPORTANT**: Always start by reading [llmdoc/index.md](./llmdoc/index.md) for the complete documentation navigation index.
 
 ## Changelog
+
+### 2026-03-30 (v1.8.0)
+- **Enhanced WSL Cross-System Integration**: WSL is now integrated across more desktop and profile surfaces
+  - Profile snapshots can capture and restore `.wslconfig`, distro inventory, and default distro metadata
+  - WSL runtime health is surfaced in the unified Health Check workspace with dedicated issue grouping
+  - WSL CLI group now supports `list`, `status`, `launch`, `terminate`, `shutdown`, and `exec`
+  - Desktop tray now mirrors WSL state and exposes launch/shutdown/open-manager shortcuts
+  - Command palette now includes WSL quick actions for default launch, shutdown-all, and default terminal handoff
+  - WSL network workflow now supports port-forward rule management and global networking mode switching
+  - WSL backup workflow now includes persisted schedules, missed-run detection, and retention cleanup
+  - WSL documentation updated to cover CLI, tray, health, profiles, networking, and scheduled backups
 
 ### 2026-03-03 (v1.7.0)
 - **NEW: CLI Support**: Complete command-line interface via `tauri-plugin-cli` for headless operation

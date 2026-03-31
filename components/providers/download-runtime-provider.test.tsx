@@ -3,7 +3,7 @@ import { DownloadRuntimeProvider } from "./download-runtime-provider";
 
 const mockUseDownloads = jest.fn();
 
-jest.mock("@/hooks/use-downloads", () => ({
+jest.mock("@/hooks/downloads/use-downloads", () => ({
   useDownloads: (...args: unknown[]) => mockUseDownloads(...args),
 }));
 

@@ -9,16 +9,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import {
   Table,
   TableBody,
   TableCell,
@@ -26,7 +16,6 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Input } from '@/components/ui/input';
 import {
   Network,
   RefreshCw,
@@ -34,47 +23,37 @@ import {
   Server,
   Copy,
   Unplug,
-  Plus,
-  Trash2,
-  ArrowRightLeft,
   WifiOff,
 } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import { toast } from 'sonner';
 import { parseListeningPorts, parseInterfaces } from '@/lib/wsl';
-import type { NetworkInfo, ListeningPort, NetworkInterface, WslDistroNetworkProps } from '@/types/wsl';
-
-interface PortForwardRule {
-  listenAddress: string;
-  listenPort: string;
-  connectAddress: string;
-  connectPort: string;
-}
+import { WslPortForwardCard } from '@/components/wsl/wsl-port-forward-card';
+import { WslNetworkModeCard } from '@/components/wsl/wsl-network-mode-card';
+import type { NetworkInfo, ListeningPort, NetworkInterface, WslDistroNetworkProps, WslPortForwardRule } from '@/types/wsl';
 
 export function WslDistroNetwork({
   distroName,
   isRunning,
+  info,
+  onRefreshInfo,
   getIpAddress,
   onExec,
   listPortForwards,
   addPortForward,
   removePortForward,
+  setNetworkingMode,
+  currentNetworkingMode,
+  runningCount = 0,
+  onShutdownAll,
+  onRefreshRuntime,
   t,
 }: WslDistroNetworkProps) {
-  const [info, setInfo] = useState<NetworkInfo | null>(null);
+  const [networkInfo, setNetworkInfo] = useState<NetworkInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const [portForwards, setPortForwards] = useState<PortForwardRule[]>([]);
-  const [pfListenPort, setPfListenPort] = useState('');
-  const [pfConnectPort, setPfConnectPort] = useState('');
-  const [pfConnectAddr, setPfConnectAddr] = useState('');
-  const [pfAdding, setPfAdding] = useState(false);
-  const [confirmAction, setConfirmAction] = useState<
-    | { type: 'add'; rule: { listenPort: number; connectPort: number; connectAddress: string } }
-    | { type: 'remove'; listenPort: number }
-    | null
-  >(null);
+  const [portForwards, setPortForwards] = useState<WslPortForwardRule[]>(info?.portForwards.data ?? []);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -123,11 +102,10 @@ export function WslDistroNetwork({
         interfaces = [];
       }
 
-      setInfo({ hostname, ipAddress, dns, listeningPorts, interfaces });
-      setPfConnectAddr((prev) => prev || ipAddress);
+      setNetworkInfo({ hostname, ipAddress, dns, listeningPorts, interfaces });
       setLoaded(true);
     } catch {
-      setInfo(null);
+      setNetworkInfo(null);
     } finally {
       setLoading(false);
     }
@@ -137,70 +115,50 @@ export function WslDistroNetwork({
     try {
       const rules = await listPortForwards();
       setPortForwards(rules);
+      await onRefreshInfo?.();
     } catch {
       setPortForwards([]);
     }
-  }, [listPortForwards]);
+  }, [listPortForwards, onRefreshInfo]);
 
   const showMutationError = useCallback((err: unknown) => {
     toast.error(t('wsl.detail.portForward.actionFailed').replace('{error}', String(err)));
   }, [t]);
 
   const performAddPortForward = useCallback(async (rule: {
+    listenAddress: string;
     listenPort: number;
     connectPort: number;
     connectAddress: string;
   }) => {
-    setPfAdding(true);
     try {
-      await addPortForward(rule.listenPort, rule.connectPort, rule.connectAddress);
-      toast.success(t('wsl.detail.portForward.added'));
-      setPfListenPort('');
-      setPfConnectPort('');
-      setPfConnectAddr('');
+      await addPortForward(rule.listenAddress, rule.listenPort, rule.connectPort, rule.connectAddress);
       await refreshPortForwards();
     } catch (err) {
       showMutationError(err);
-    } finally {
-      setPfAdding(false);
     }
   }, [addPortForward, refreshPortForwards, showMutationError, t]);
 
-  const performRemovePortForward = useCallback(async (listenPort: number) => {
+  const performRemovePortForward = useCallback(async (listenAddress: string, listenPort: number) => {
     try {
-      await removePortForward(listenPort);
-      toast.success(t('wsl.detail.portForward.removed'));
+      await removePortForward(listenAddress, listenPort);
       await refreshPortForwards();
     } catch (err) {
       showMutationError(err);
     }
   }, [refreshPortForwards, removePortForward, showMutationError, t]);
 
-  const handleAddPortForward = useCallback(() => {
-    const lp = parseInt(pfListenPort, 10);
-    const cp = parseInt(pfConnectPort, 10);
-    if (!lp || !cp || !pfConnectAddr.trim()) return;
-    setConfirmAction({
-      type: 'add',
-      rule: { listenPort: lp, connectPort: cp, connectAddress: pfConnectAddr.trim() },
-    });
-  }, [pfConnectAddr, pfConnectPort, pfListenPort]);
-
-  const handleRemovePortForward = useCallback((listenPort: string) => {
-    const lp = parseInt(listenPort, 10);
-    if (!lp) return;
-    setConfirmAction({ type: 'remove', listenPort: lp });
-  }, []);
-
-  const confirmAndExecute = useCallback(async () => {
-    if (!confirmAction) return;
-    if (confirmAction.type === 'add') {
-      await performAddPortForward(confirmAction.rule);
-    } else {
-      await performRemovePortForward(confirmAction.listenPort);
+  const handleApplyNetworkingMode = useCallback(async (
+    mode: 'NAT' | 'mirrored' | 'virtioproxy',
+  ) => {
+    if (!setNetworkingMode || !onShutdownAll) {
+      return;
     }
-    setConfirmAction(null);
-  }, [confirmAction, performAddPortForward, performRemovePortForward]);
+
+    await setNetworkingMode(mode);
+    await onShutdownAll();
+    await onRefreshRuntime?.();
+  }, [onRefreshRuntime, onShutdownAll, setNetworkingMode]);
 
   // Auto-load if running
   useEffect(() => {
@@ -209,6 +167,12 @@ export function WslDistroNetwork({
       refreshPortForwards();
     }
   }, [isRunning, loaded, refresh, refreshPortForwards]);
+
+  useEffect(() => {
+    if (info?.portForwards.data) {
+      setPortForwards(info.portForwards.data);
+    }
+  }, [info?.portForwards.data]);
 
   const handleCopy = async (text: string) => {
     await writeClipboard(text);
@@ -270,7 +234,7 @@ export function WslDistroNetwork({
             </div>
           )}
 
-          {!loading && info && (
+          {!loading && networkInfo && (
             <div className="space-y-3">
               {/* Hostname */}
               <div className="flex items-center justify-between">
@@ -279,11 +243,11 @@ export function WslDistroNetwork({
                   {t('wsl.detail.hostname')}
                 </span>
                 <div className="flex items-center gap-1.5">
-                  <span className="text-sm font-mono">{info.hostname || '—'}</span>
-                  {info.hostname && (
+                  <span className="text-sm font-mono">{networkInfo.hostname || '—'}</span>
+                  {networkInfo.hostname && (
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => handleCopy(info.hostname)}>
+                        <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => handleCopy(networkInfo.hostname)}>
                           <Copy className="h-2.5 w-2.5" />
                         </Button>
                       </TooltipTrigger>
@@ -300,11 +264,11 @@ export function WslDistroNetwork({
                   {t('wsl.ipAddress')}
                 </span>
                 <div className="flex items-center gap-1.5">
-                  <span className="text-sm font-mono">{info.ipAddress || '—'}</span>
-                  {info.ipAddress && (
+                  <span className="text-sm font-mono">{networkInfo.ipAddress || '—'}</span>
+                  {networkInfo.ipAddress && (
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => handleCopy(info.ipAddress)}>
+                        <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => handleCopy(networkInfo.ipAddress)}>
                           <Copy className="h-2.5 w-2.5" />
                         </Button>
                       </TooltipTrigger>
@@ -315,11 +279,11 @@ export function WslDistroNetwork({
               </div>
 
               {/* DNS */}
-              {info.dns.length > 0 && (
+              {networkInfo.dns.length > 0 && (
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">DNS</span>
                   <div className="flex items-center gap-1.5 flex-wrap justify-end">
-                    {info.dns.map((dns) => (
+                    {networkInfo.dns.map((dns) => (
                       <Badge key={dns} variant="outline" className="text-xs font-mono">
                         {dns}
                       </Badge>
@@ -333,7 +297,7 @@ export function WslDistroNetwork({
       </Card>
 
       {/* Network Interfaces */}
-      {info && info.interfaces.length > 0 && (
+      {networkInfo && networkInfo.interfaces.length > 0 && (
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base font-semibold">
@@ -343,7 +307,7 @@ export function WslDistroNetwork({
           <CardContent>
             <ScrollArea className="max-h-[300px]">
               <div className="space-y-3">
-                {info.interfaces.map((iface) => (
+                {networkInfo.interfaces.map((iface) => (
                   <div key={iface.name} className="rounded-md border p-3 space-y-1">
                     <div className="flex items-center gap-2">
                       <span className="font-semibold text-sm">{iface.name}</span>
@@ -400,13 +364,13 @@ export function WslDistroNetwork({
       )}
 
       {/* Listening Ports */}
-      {info && info.listeningPorts.length > 0 && (
+      {networkInfo && networkInfo.listeningPorts.length > 0 && (
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base font-semibold flex items-center gap-2">
               {t('wsl.detail.listeningPorts')}
               <Badge variant="secondary" className="text-xs">
-                {info.listeningPorts.length}
+                {networkInfo.listeningPorts.length}
               </Badge>
             </CardTitle>
           </CardHeader>
@@ -422,7 +386,7 @@ export function WslDistroNetwork({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {info.listeningPorts.map((port, i) => (
+                {networkInfo.listeningPorts.map((port, i) => (
                     <TableRow key={i}>
                       <TableCell>
                         <Badge variant="outline" className="text-[10px]">
@@ -442,7 +406,7 @@ export function WslDistroNetwork({
       )}
 
       {/* No ports */}
-      {info && info.listeningPorts.length === 0 && loaded && (
+      {networkInfo && networkInfo.listeningPorts.length === 0 && loaded && (
         <Card>
           <CardContent className="pt-6">
             <Empty className="border-none py-4">
@@ -459,166 +423,30 @@ export function WslDistroNetwork({
         </Card>
       )}
 
-      {/* Port Forwarding */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base font-semibold flex items-center gap-2">
-            <ArrowRightLeft className="h-4 w-4 text-muted-foreground" />
-            {t('wsl.detail.portForward.title')}
-            {portForwards.length > 0 && (
-              <Badge variant="secondary" className="text-xs">
-                {portForwards.length}
-              </Badge>
-            )}
-          </CardTitle>
-          <CardAction>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={refreshPortForwards}
-                  className="h-8 w-8"
-                >
-                  <RefreshCw className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{t('common.refresh')}</TooltipContent>
-            </Tooltip>
-          </CardAction>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-xs text-muted-foreground">{t('wsl.detail.portForward.desc')}</p>
-          <p className="text-xs text-muted-foreground">{t('wsl.detail.portForward.riskHint')}</p>
+      <WslPortForwardCard
+        rules={portForwards}
+        loading={info?.portForwards.state === 'loading'}
+        stale={info?.portForwards.state === 'stale'}
+        defaultConnectAddress={networkInfo?.ipAddress ?? info?.ipAddress.data ?? null}
+        onRefresh={refreshPortForwards}
+        onAdd={(listenAddress, listenPort, connectPort, connectAddress) => performAddPortForward({
+          listenAddress,
+          listenPort,
+          connectPort,
+          connectAddress,
+        })}
+        onRemove={performRemovePortForward}
+        t={t}
+      />
 
-          {portForwards.length > 0 && (
-            <ScrollArea className="max-h-[200px]">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t('wsl.detail.portForward.listenPort')}</TableHead>
-                    <TableHead>{t('wsl.detail.portForward.connectAddr')}</TableHead>
-                    <TableHead>{t('wsl.detail.portForward.connectPort')}</TableHead>
-                    <TableHead className="w-10" />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {portForwards.map((rule, i) => (
-                    <TableRow key={i}>
-                      <TableCell className="font-mono text-xs">{rule.listenPort}</TableCell>
-                      <TableCell className="font-mono text-xs">{rule.connectAddress}</TableCell>
-                      <TableCell className="font-mono text-xs">{rule.connectPort}</TableCell>
-                      <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6"
-                          aria-label={`remove-port-forward-${rule.listenPort}`}
-                          onClick={() => handleRemovePortForward(rule.listenPort)}
-                        >
-                          <Trash2 className="h-3 w-3 text-destructive" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </ScrollArea>
-          )}
-
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-            <div className="flex-1 space-y-1">
-              <span className="text-xs text-muted-foreground">{t('wsl.detail.portForward.listenPort')}</span>
-              <Input
-                className="h-9 text-xs"
-                type="number"
-                placeholder="3000"
-                value={pfListenPort}
-                onChange={(e) => setPfListenPort(e.target.value)}
-              />
-            </div>
-            <div className="flex-1 space-y-1">
-              <span className="text-xs text-muted-foreground">{t('wsl.detail.portForward.connectAddr')}</span>
-              <Input
-                className="h-9 text-xs"
-                placeholder={info?.ipAddress ?? '172.x.x.x'}
-                value={pfConnectAddr}
-                onChange={(e) => setPfConnectAddr(e.target.value)}
-              />
-            </div>
-            <div className="flex-1 space-y-1">
-              <span className="text-xs text-muted-foreground">{t('wsl.detail.portForward.connectPort')}</span>
-              <Input
-                className="h-9 text-xs"
-                type="number"
-                placeholder="3000"
-                value={pfConnectPort}
-                onChange={(e) => setPfConnectPort(e.target.value)}
-              />
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-9 gap-1"
-              aria-label="add-port-forward-rule"
-              disabled={pfAdding || !pfListenPort || !pfConnectPort || !pfConnectAddr}
-              onClick={handleAddPortForward}
-            >
-              <Plus className="h-3 w-3" />
-            </Button>
-          </div>
-
-          <div className="flex gap-1 flex-wrap">
-            {[3000, 5432, 8080, 8443].map((port) => (
-              <Button
-                key={port}
-                variant="outline"
-                size="sm"
-                className="h-6 text-[10px] px-2"
-                onClick={() => {
-                  setPfListenPort(String(port));
-                  setPfConnectPort(String(port));
-                  if (info?.ipAddress) setPfConnectAddr(info.ipAddress);
-                }}
-              >
-                :{port}
-              </Button>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-
-      <AlertDialog open={!!confirmAction} onOpenChange={(open) => !open && setConfirmAction(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {confirmAction?.type === 'add'
-                ? t('wsl.detail.portForward.confirmAddTitle')
-                : t('wsl.detail.portForward.confirmRemoveTitle')}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {confirmAction?.type === 'add'
-                ? t('wsl.detail.portForward.confirmAddDesc')
-                    .replace('{listenPort}', String(confirmAction.rule.listenPort))
-                    .replace('{connectAddress}', confirmAction.rule.connectAddress)
-                    .replace('{connectPort}', String(confirmAction.rule.connectPort))
-                : t('wsl.detail.portForward.confirmRemoveDesc')
-                    .replace('{listenPort}', String(confirmAction?.listenPort ?? ''))}
-              <br />
-              <span className="text-muted-foreground">{t('wsl.detail.portForward.riskHint')}</span>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={confirmAndExecute}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {t('common.confirm')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {setNetworkingMode && currentNetworkingMode ? (
+        <WslNetworkModeCard
+          currentMode={currentNetworkingMode}
+          runningCount={runningCount}
+          onApply={handleApplyNetworkingMode}
+          t={t}
+        />
+      ) : null}
     </div>
   );
 }

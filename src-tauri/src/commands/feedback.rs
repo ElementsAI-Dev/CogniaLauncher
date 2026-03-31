@@ -505,7 +505,9 @@ mod tests {
         }"#;
 
         let req: FeedbackSaveRequest = serde_json::from_str(json).unwrap();
-        let release_context = req.release_context.expect("release context should deserialize");
+        let release_context = req
+            .release_context
+            .expect("release context should deserialize");
         assert_eq!(release_context.version, "1.2.3");
         assert_eq!(release_context.trigger, "changelog");
         assert_eq!(release_context.source, "remote");

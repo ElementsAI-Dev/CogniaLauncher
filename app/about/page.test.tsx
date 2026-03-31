@@ -11,7 +11,7 @@ jest.mock("@/components/docs/markdown-renderer", () => ({
 }));
 
 // Mock changelog hook
-jest.mock("@/hooks/use-changelog", () => ({
+jest.mock("@/hooks/about/use-changelog", () => ({
   useChangelog: () => ({
     entries: [
       {
@@ -272,6 +272,12 @@ const mockMessages = {
       exportDiagnostics: "Export Diagnostics",
       diagnosticsCopied: "Diagnostic report copied",
       diagnosticsFailed: "Failed to generate diagnostics",
+      updateStatus: "Status",
+      versionCopied: "Version copied",
+      refreshComplete: "All data refreshed",
+      refreshFailed: "Refresh failed",
+      quickActions: "Quick Actions",
+      copyVersionInfo: "Copy version info",
     },
   },
   zh: {
@@ -364,24 +370,16 @@ describe("About Page", () => {
         expect(screen.getByText("Runtime Insights")).toBeInTheDocument();
         expect(screen.getByText("Product Context")).toBeInTheDocument();
         expect(screen.getByText("Build Dependencies")).toBeInTheDocument();
-        expect(screen.getByText("Actions")).toBeInTheDocument();
         expect(screen.getAllByText("Support Overview").length).toBeGreaterThanOrEqual(1);
       });
     });
 
-    it("renders product context and support guidance in the reference stage of the page", async () => {
+    it("renders product context collapsible trigger in the reference section", async () => {
       renderWithProviders(<AboutPage />);
 
       await waitFor(() => {
+        // Product Context is now in a collapsed Collapsible — the trigger label is visible
         expect(screen.getByText("Product Context")).toBeInTheDocument();
-        expect(
-          screen.getByText("What CogniaLauncher covers and where to go next."),
-        ).toBeInTheDocument();
-        expect(
-          screen.getByText(
-            "Desktop mode can export a fuller diagnostics bundle with logs, configuration, and runtime context.",
-          ),
-        ).toBeInTheDocument();
       });
     });
 
@@ -402,7 +400,7 @@ describe("About Page", () => {
       });
       const referenceHeading = screen.getByRole("heading", {
         level: 2,
-        name: /build dependencies \/ license & certificates \/ actions/i,
+        name: /build dependencies \/ license & certificates/i,
       });
 
       expect(
@@ -436,7 +434,7 @@ describe("About Page", () => {
         ).toBeInTheDocument();
         expect(
           screen.getByRole("region", {
-            name: /build dependencies \/ license & certificates \/ actions/i,
+            name: /build dependencies \/ license & certificates/i,
           }),
         ).toBeInTheDocument();
       });
@@ -671,8 +669,9 @@ describe("About Page", () => {
       });
       const githubButton = screen.getByRole("button", { name: /github/i });
 
+      // GitHub button is now in SupportOverviewCard (above BuildDepsCard where Tauri link lives)
       expect(
-        tauriLink.compareDocumentPosition(githubButton) &
+        githubButton.compareDocumentPosition(tauriLink) &
           Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy();
     });

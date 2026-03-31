@@ -10,7 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import * as tauri from '@/lib/tauri';
 import { getLogicalEnvType, useEnvironmentStore } from '@/lib/stores/environment';
-import { useEnvironmentDetection } from '@/hooks/use-environment-detection';
+import { useEnvironmentDetection } from '@/hooks/environments/use-environment-detection';
 import { buildProviderDetectionKey, formatDetectionSource } from '@/lib/environment-detection';
 import type { DetectedEnv, EnvironmentDetectionStepProps } from '@/types/onboarding';
 
@@ -276,6 +276,9 @@ export function EnvironmentDetectionStep({
                         )}
                         {env.version && (
                           <div className="text-xs text-muted-foreground">{env.version}</div>
+                        )}
+                        {env.compilerLabel && (
+                          <div className="text-xs text-muted-foreground">{env.compilerLabel}</div>
                         )}
                         {env.source && (
                           <div className="text-xs text-muted-foreground">

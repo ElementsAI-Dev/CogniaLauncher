@@ -1,5 +1,7 @@
 import {
   createBlockedWorkflowAction,
+  getLogicalEnvType,
+  pruneWorkflowSelectedProviders,
   resolveWorkflowProviderSelection,
 } from "./environment-workflow";
 
@@ -41,6 +43,36 @@ describe("environment workflow helpers", () => {
     });
 
     expect(providerId).toBe("fnm");
+  });
+
+  it("falls back to the logical environment type when no compatible providers remain", () => {
+    const providerId = resolveWorkflowProviderSelection({
+      envType: "bun",
+      selectedProviders: { bun: "missing-provider" },
+      availableProviders: providers,
+      fallbackProviderId: null,
+    });
+
+    expect(providerId).toBe("bun");
+  });
+
+  it("maps provider aliases and unknown values to a logical environment type", () => {
+    expect(getLogicalEnvType("system-node")).toBe("node");
+    expect(getLogicalEnvType("custom-provider")).toBe("custom-provider");
+  });
+
+  it("prunes selected providers that are no longer compatible", () => {
+    expect(pruneWorkflowSelectedProviders(
+      {
+        node: "fnm",
+        python: "pyenv",
+        java: "sdkman",
+      },
+      providers,
+    )).toEqual({
+      node: "fnm",
+      python: "pyenv",
+    });
   });
 
   it("creates blocked workflow actions using the logical environment type", () => {

@@ -22,22 +22,21 @@ const mockT = (key: string) => {
   const translations: Record<string, string> = {
     "downloads.toolbar.searchPlaceholder": "Search downloads...",
     "downloads.toolbar.filterAll": "All",
-    "downloads.toolbar.filterDownloading": "Downloading",
+    "downloads.toolbar.filterActive": "Active",
     "downloads.toolbar.filterQueued": "Queued",
-    "downloads.toolbar.filterPaused": "Paused",
-    "downloads.toolbar.filterCompleted": "Completed",
+    "downloads.toolbar.filterDone": "Done",
     "downloads.toolbar.filterFailed": "Failed",
-    "downloads.toolbar.filterCancelled": "Cancelled",
-    "downloads.toolbar.filterExtracting": "Extracting",
     "downloads.actions.pauseAll": "Pause All",
     "downloads.actions.resumeAll": "Resume All",
     "downloads.actions.cancelAll": "Cancel All",
+    "downloads.actions.clearFinished": "Clear Finished",
+    "downloads.actions.retryFailed": "Retry Failed",
     "downloads.actions.pause": "Pause",
     "downloads.actions.resume": "Resume",
     "downloads.actions.cancel": "Cancel",
     "downloads.actions.remove": "Remove",
-    "downloads.actions.clearFinished": "Clear Finished",
-    "downloads.actions.retryFailed": "Retry Failed",
+    "downloads.settings.speedLimit": "Speed Limit",
+    "common.settings": "Settings",
     "common.selected": "selected",
     "common.clear": "Clear",
   };
@@ -61,7 +60,10 @@ describe("DownloadToolbar", () => {
     onCancelAll: jest.fn(),
     onClearFinished: jest.fn(),
     onRetryFailed: jest.fn(),
-    extractingCount: 0,
+    settingsOpen: false,
+    onSettingsToggle: jest.fn(),
+    activeCount: 3,
+    doneCount: 1,
     stats: mockStats,
     isLoading: false,
     t: mockT,
@@ -79,25 +81,18 @@ describe("DownloadToolbar", () => {
     ).toBeInTheDocument();
   });
 
-  it("renders status filter tabs with counts", () => {
+  it("renders simplified status filter tabs with counts", () => {
     render(<DownloadToolbar {...defaultProps} />);
 
     expect(screen.getByRole("tab", { name: /all/i })).toBeInTheDocument();
-    expect(
-      screen.getByRole("tab", { name: /downloading/i }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("tab", { name: /paused/i }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("tab", { name: /cancelled/i }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("tab", { name: /extracting/i }),
-    ).toBeInTheDocument();
-    // Counts are now in Badge components
+    expect(screen.getByRole("tab", { name: /active/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /queued/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /done/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /failed/i })).toBeInTheDocument();
+    // Total tasks count badge
     expect(screen.getByText("5")).toBeInTheDocument();
-    expect(screen.getByText("2")).toBeInTheDocument();
+    // Active count
+    expect(screen.getByText("3")).toBeInTheDocument();
   });
 
   it("calls onSearchChange when typing in search input", async () => {
@@ -109,7 +104,7 @@ describe("DownloadToolbar", () => {
     const searchInput = screen.getByPlaceholderText("Search downloads...");
     await userEvent.type(searchInput, "test");
 
-    expect(onSearchChange).toHaveBeenCalledTimes(4); // Once per character
+    expect(onSearchChange).toHaveBeenCalledTimes(4);
   });
 
   it("calls onStatusChange when clicking status tabs", async () => {
@@ -118,10 +113,10 @@ describe("DownloadToolbar", () => {
       <DownloadToolbar {...defaultProps} onStatusChange={onStatusChange} />,
     );
 
-    const pausedTab = screen.getByRole("tab", { name: /paused/i });
-    await userEvent.click(pausedTab);
+    const activeTab = screen.getByRole("tab", { name: /active/i });
+    await userEvent.click(activeTab);
 
-    expect(onStatusChange).toHaveBeenCalledWith("paused");
+    expect(onStatusChange).toHaveBeenCalledWith("active");
   });
 
   it("disables pause all button when no downloads are active", () => {
@@ -129,13 +124,6 @@ describe("DownloadToolbar", () => {
     render(<DownloadToolbar {...defaultProps} stats={statsNoDownloading} />);
 
     expect(screen.getByRole("button", { name: /pause all/i })).toBeDisabled();
-  });
-
-  it("disables resume all button when no downloads are paused", () => {
-    const statsNoPaused = { ...mockStats, paused: 0 };
-    render(<DownloadToolbar {...defaultProps} stats={statsNoPaused} />);
-
-    expect(screen.getByRole("button", { name: /resume all/i })).toBeDisabled();
   });
 
   it("calls onPauseAll when clicking pause all button", async () => {
@@ -147,21 +135,25 @@ describe("DownloadToolbar", () => {
     expect(onPauseAll).toHaveBeenCalled();
   });
 
-  it("calls onResumeAll when clicking resume all button", async () => {
-    const onResumeAll = jest.fn();
-    render(<DownloadToolbar {...defaultProps} onResumeAll={onResumeAll} />);
+  it("renders settings toggle button", () => {
+    render(<DownloadToolbar {...defaultProps} />);
 
-    await userEvent.click(screen.getByRole("button", { name: /resume all/i }));
+    expect(screen.getByRole("button", { name: /settings/i })).toBeInTheDocument();
+  });
 
-    expect(onResumeAll).toHaveBeenCalled();
+  it("calls onSettingsToggle when settings button is clicked", async () => {
+    const onSettingsToggle = jest.fn();
+    render(<DownloadToolbar {...defaultProps} onSettingsToggle={onSettingsToggle} />);
+
+    await userEvent.click(screen.getByRole("button", { name: /settings/i }));
+
+    expect(onSettingsToggle).toHaveBeenCalled();
   });
 
   it("disables primary action buttons when isLoading is true", () => {
     render(<DownloadToolbar {...defaultProps} isLoading={true} />);
 
     expect(screen.getByRole("button", { name: /pause all/i })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /resume all/i })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /cancel all/i })).toBeDisabled();
   });
 
   it("shows batch action bar when items are selected", () => {

@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { isTauri } from "@/lib/tauri";
-import { useGo } from "@/hooks/use-go";
+import { useGo } from "@/hooks/environments/use-go";
 import { cn } from "@/lib/utils";
 
 function EnvRow({ label, value }: { label: string; value: string }) {

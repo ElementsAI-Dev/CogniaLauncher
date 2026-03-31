@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { DesktopActionId } from "@/lib/desktop-actions";
 import { isTauri } from "@/lib/platform";
+import type { ConflictInfo } from "@/types/tauri";
 
 // Re-export all types from types/tauri.ts
 export type {
@@ -16,6 +17,7 @@ export type {
   MigrateFailure,
   EolCycleInfo,
   EnvironmentInfo,
+  CppCompilerMetadata,
   InstalledVersion,
   DetectedEnvironment,
   EnvironmentProviderInfo,
@@ -36,6 +38,8 @@ export type {
   GoCacheInfo,
   PackageSummary,
   PackageInfo,
+  PackageValidationResult,
+  PackagePreflightSummary,
   VersionInfo,
   InstalledPackage,
   ProviderInfo,
@@ -104,6 +108,8 @@ export type {
   ResolutionResult,
   ResolvedPackage,
   ConflictInfo,
+  ConflictResolutionResult,
+  ConflictResolutionStrategy,
   RequiredVersion,
   AdvancedSearchOptions,
   SearchFilters,
@@ -144,6 +150,7 @@ export type {
   TrayNotificationEvent,
   TrayMenuItemId,
   TrayMenuConfig,
+  TrayTerminalProfileEntry,
   TrayStateInfo,
   ExtractionStrategy,
   VersionTransform,
@@ -168,6 +175,11 @@ export type {
   ProfileEnvironmentResult,
   ProfileEnvironmentError,
   ProfileEnvironmentSkipped,
+  WslProfileSnapshot,
+  WslProfileSnapshotDistro,
+  WslProfileApplyResult,
+  WslProfileApplySkipped,
+  WslPortForwardRule,
   PathValidationResult,
   WslDistroStatus,
   WslStatus,
@@ -181,6 +193,9 @@ export type {
   WslDistroConfig,
   WslMountOptions,
   WslDistroEnvironment,
+  WslExportWindowsEnvResult,
+  WslDistroEnvReadResult,
+  WslEnvEntry,
   GitRepoInfo,
   GitCommitEntry,
   GitBranchInfo,
@@ -242,6 +257,7 @@ export type {
   EnvVarExportResult,
   PersistentEnvVar,
   EnvVarConflict,
+  EnvVarOverview,
   ShellType,
   ShellConfigFile,
   ShellInfo,
@@ -309,6 +325,8 @@ import type {
   GoCacheInfo,
   PackageSummary,
   PackageInfo,
+  PackageValidationResult,
+  PackagePreflightSummary,
   VersionInfo,
   InstalledPackage,
   ProviderInfo,
@@ -357,6 +375,8 @@ import type {
   InstallHistoryQuery,
   PackageHistoryQuery,
   ResolutionResult,
+  ConflictResolutionResult,
+  ConflictResolutionStrategy,
   AdvancedSearchOptions,
   SearchFilters,
   EnhancedSearchResult,
@@ -390,6 +410,7 @@ import type {
   TrayNotificationEvent,
   TrayMenuItemId,
   TrayMenuConfig,
+  TrayTerminalProfileEntry,
   TrayStateInfo,
   CustomDetectionRule,
   CustomDetectionResult,
@@ -404,6 +425,9 @@ import type {
   EnvironmentProfile,
   ProfileEnvironment,
   ProfileApplyResult,
+  WslProfileSnapshot,
+  WslProfileApplyResult,
+  WslPortForwardRule,
   PathValidationResult,
   WslDistroStatus,
   WslStatus,
@@ -420,6 +444,9 @@ import type {
   WslDistroResources,
   WslUser,
   WslPackageUpdateResult,
+  WslExportWindowsEnvResult,
+  WslDistroEnvReadResult,
+  WslEnvEntry,
   GitRepoInfo,
   GitCommitEntry,
   GitBranchInfo,
@@ -481,6 +508,7 @@ import type {
   EnvVarExportResult,
   PersistentEnvVar,
   EnvVarConflict,
+  EnvVarOverview,
   ShellType,
   ShellInfo,
   ShellStartupMeasurement,
@@ -858,6 +886,8 @@ export const packageSearch = (
 ) => invoke<PackageSummary[]>("package_search", { query, provider, force });
 export const packageInfo = (name: string, provider?: string, force?: boolean) =>
   invoke<PackageInfo>("package_info", { name, provider, force });
+export const preInstallValidate = (packages: string[]) =>
+  invoke<PackagePreflightSummary>("pre_install_validate", { packages });
 export const packageInstall = (packages: string[]) =>
   invoke<string[]>("package_install", { packages });
 export const packageUninstall = (packages: string[]) =>
@@ -1405,6 +1435,16 @@ export const clearInstallHistory = () => invoke<void>("clear_install_history");
 // Dependency resolution
 export const resolveDependencies = (packages: string[]) =>
   invoke<ResolutionResult>("resolve_dependencies", { packages });
+export const resolveDependencyConflict = (
+  conflicts: ConflictInfo[],
+  strategy: ConflictResolutionStrategy,
+  manualVersions?: Record<string, string>,
+) =>
+  invoke<ConflictResolutionResult>("resolve_dependency_conflict", {
+    conflicts,
+    strategy,
+    manualVersions,
+  });
 
 // Advanced search
 type InvokeSearchFilters = {
@@ -1767,11 +1807,29 @@ export const trayUpdateTooltip = () => invoke<void>("tray_update_tooltip");
 export const traySetActiveDownloads = (count: number) =>
   invoke<void>("tray_set_active_downloads", { count });
 
+export const traySetWslState = (
+  runningCount: number,
+  defaultDistro: string | null,
+) =>
+  invoke<void>("tray_set_wsl_state", {
+    runningCount,
+    defaultDistro,
+  });
+
 export const traySetHasUpdate = (hasUpdate: boolean) =>
   invoke<void>("tray_set_has_update", { hasUpdate });
 
 export const traySetHasError = (hasError: boolean) =>
   invoke<void>("tray_set_has_error", { hasError });
+
+export const traySetTerminalProfiles = (
+  defaultProfileId: string | null,
+  recentProfiles: TrayTerminalProfileEntry[],
+) =>
+  invoke<void>("tray_set_terminal_profiles", {
+    defaultProfileId,
+    recentProfiles,
+  });
 
 export const traySetLanguage = (language: TrayLanguage) =>
   invoke<void>("tray_set_language", { language });
@@ -1912,6 +1970,14 @@ export async function listenTrayShowNotificationsChanged(
   });
 }
 
+export async function listenTrayTerminalLaunch(
+  callback: (profileId: string) => void,
+): Promise<UnlistenFn> {
+  return listen<{ profileId: string }>("tray-terminal-launch", (event) => {
+    callback(event.payload.profileId);
+  });
+}
+
 export async function listenTrayNotificationEventsChanged(
   callback: (events: TrayNotificationEvent[]) => void,
 ): Promise<UnlistenFn> {
@@ -2037,11 +2103,19 @@ export const profileCreate = (
   name: string,
   description: string | null,
   environments: ProfileEnvironment[],
+  options?: {
+    wslSnapshot?: WslProfileSnapshot | null;
+    includeWslConfiguration?: boolean;
+    envSnapshot?: Record<string, string> | null;
+  },
 ) =>
   invoke<EnvironmentProfile>("profile_create", {
     name,
     description,
     environments,
+    wslSnapshot: options?.wslSnapshot ?? null,
+    captureWslSnapshot: options?.includeWslConfiguration ?? false,
+    envSnapshot: options?.envSnapshot ?? null,
   });
 
 /** Update an existing profile */
@@ -2065,8 +2139,26 @@ export const profileImport = (json: string) =>
   invoke<EnvironmentProfile>("profile_import", { json });
 
 /** Create a profile from current environment state */
-export const profileCreateFromCurrent = (name: string) =>
-  invoke<EnvironmentProfile>("profile_create_from_current", { name });
+export const profileCreateFromCurrent = (
+  name: string,
+  options?: {
+    includeWslConfiguration?: boolean;
+    includeEnvSnapshot?: boolean;
+  },
+) =>
+  invoke<EnvironmentProfile>("profile_create_from_current", {
+    name,
+    includeWslConfiguration: options?.includeWslConfiguration ?? false,
+    includeEnvSnapshot: options?.includeEnvSnapshot ?? false,
+  });
+
+/** Capture the current WSL profile snapshot for profile integration */
+export const profileCaptureWslSnapshot = () =>
+  invoke<WslProfileSnapshot>("profile_capture_wsl_snapshot");
+
+/** Apply a WSL profile snapshot independently of environment versions */
+export const profileApplyWslSnapshot = (snapshot: WslProfileSnapshot) =>
+  invoke<WslProfileApplyResult>("profile_apply_wsl_snapshot", { snapshot });
 
 // ============================================================================
 // GitHub Commands
@@ -2566,6 +2658,22 @@ export const wslListRunning = () => invoke<string[]>("wsl_list_running");
 export const wslExec = (distro: string, command: string, user?: string) =>
   invoke<WslExecResult>("wsl_exec", { distro, command, user });
 
+/** Export Windows user environment variables into ~/.cognia_env inside a distro */
+export const wslExportWindowsEnv = (distro: string) =>
+  invoke<WslExportWindowsEnvResult>("wsl_export_windows_env", { distro });
+
+/** Read environment variables from a distro via printenv */
+export const wslReadDistroEnv = (distro: string) =>
+  invoke<WslDistroEnvReadResult>("wsl_read_distro_env", { distro });
+
+/** Read and parse the WSLENV environment variable from Windows user scope */
+export const wslGetWslenv = () =>
+  invoke<WslEnvEntry[]>("wsl_get_wslenv");
+
+/** Update the WSLENV environment variable in Windows user scope */
+export const wslSetWslenv = (entries: WslEnvEntry[]) =>
+  invoke<void>("wsl_set_wslenv", { entries });
+
 /** Convert a path between Windows and WSL formats */
 export const wslConvertPath = (
   path: string,
@@ -2584,6 +2692,10 @@ export const wslGetConfig = () => invoke<WslConfig>("wsl_get_config");
 /** Write or remove a setting in the global .wslconfig file */
 export const wslSetConfig = (section: string, key: string, value?: string) =>
   invoke<void>("wsl_set_config", { section, key, value });
+
+/** Set the global WSL networking mode in .wslconfig */
+export const wslSetNetworkingMode = (mode: string) =>
+  invoke<void>("wsl_set_networking_mode", { mode });
 
 /** Get disk usage for a WSL distribution */
 export const wslDiskUsage = (name: string) =>
@@ -2696,30 +2808,25 @@ export const wslBatchTerminate = (names: string[]) =>
 
 /** List all Windows port forwarding rules (netsh portproxy) */
 export const wslListPortForwards = () =>
-  invoke<
-    {
-      listenAddress: string;
-      listenPort: string;
-      connectAddress: string;
-      connectPort: string;
-    }[]
-  >("wsl_list_port_forwards");
+  invoke<WslPortForwardRule[]>("wsl_list_port_forwards");
 
 /** Add a port forwarding rule (requires admin) */
 export const wslAddPortForward = (
+  listenAddress: string,
   listenPort: number,
   connectPort: number,
   connectAddress: string,
 ) =>
   invoke<void>("wsl_add_port_forward", {
+    listenAddress,
     listenPort,
     connectPort,
     connectAddress,
   });
 
 /** Remove a port forwarding rule (requires admin) */
-export const wslRemovePortForward = (listenPort: number) =>
-  invoke<void>("wsl_remove_port_forward", { listenPort });
+export const wslRemovePortForward = (listenAddress: string, listenPort: number) =>
+  invoke<void>("wsl_remove_port_forward", { listenAddress, listenPort });
 
 /** Run a health check on a WSL distribution */
 export const wslDistroHealthCheck = (distro: string) =>
@@ -3682,6 +3789,10 @@ export const gitApplyMailbox = (path: string, patchPath: string) =>
 export const envvarListAll = () =>
   invoke<Record<string, string>>("envvar_list_all");
 
+/** Get aggregated overview statistics for envvar surfaces */
+export const envvarGetOverview = () =>
+  invoke<EnvVarOverview>("envvar_get_overview");
+
 /** List process env vars with masked-by-default value summaries */
 export const envvarListProcessSummaries = () =>
   invoke<EnvVarSummary[]>("envvar_list_process_summaries");
@@ -3732,9 +3843,11 @@ export const envvarPreviewSnapshotRestore = (
 export const envvarRestoreSnapshot = (
   snapshotPath: string,
   scopes: EnvVarScope[] = [],
+  previewFingerprint?: string,
 ) => invoke<EnvVarSnapshotRestoreResult>("envvar_restore_snapshot", {
   snapshotPath,
   scopes,
+  previewFingerprint,
 });
 
 /** Delete an envvar snapshot */
@@ -3927,12 +4040,36 @@ export const terminalSetDefaultProfile = (id: string) =>
   invoke<void>("terminal_set_default_profile", { id });
 
 /** Launch a terminal profile */
-export const terminalLaunchProfile = (id: string) =>
-  invoke<string>("terminal_launch_profile", { id });
+export const terminalLaunchProfile = (
+  id: string,
+  options?: {
+    envType?: string;
+    envVersion?: string;
+    cwd?: string;
+  },
+) =>
+  invoke<string>("terminal_launch_profile", {
+    id,
+    envType: options?.envType,
+    envVersion: options?.envVersion,
+    cwd: options?.cwd,
+  });
 
 /** Launch a terminal profile and return structured result */
-export const terminalLaunchProfileDetailed = (id: string) =>
-  invoke<LaunchResult>("terminal_launch_profile_detailed", { id });
+export const terminalLaunchProfileDetailed = (
+  id: string,
+  options?: {
+    envType?: string;
+    envVersion?: string;
+    cwd?: string;
+  },
+) =>
+  invoke<LaunchResult>("terminal_launch_profile_detailed", {
+    id,
+    envType: options?.envType,
+    envVersion: options?.envVersion,
+    cwd: options?.cwd,
+  });
 
 /** Read a shell config file */
 export const terminalReadConfig = (path: string) =>
@@ -4273,7 +4410,48 @@ export const pluginCallTool = (
   pluginId: string,
   toolEntry: string,
   input: string,
-) => invoke<string>("plugin_call_tool", { pluginId, toolEntry, input });
+  executionId?: string,
+  toolId?: string,
+) =>
+  invoke<string>("plugin_call_tool", {
+    pluginId,
+    toolEntry,
+    input,
+    executionId: executionId ?? null,
+    toolId: toolId ?? null,
+  });
+
+/** Cancel an in-flight plugin tool execution. */
+export const pluginCancelTool = (executionId: string) =>
+  invoke<boolean>("toolbox_cancel_tool", { executionId });
+
+/** Subscribe to toolbox plugin execution progress events. */
+export async function listenToolProgress(
+  callback: (progress: import('@/types/toolbox').ToolProgressEvent) => void,
+): Promise<UnlistenFn> {
+  return listen<import('@/types/toolbox').ToolProgressEvent>(
+    "toolbox-tool-progress",
+    (event) => {
+      callback(event.payload);
+    },
+  );
+}
+
+/** Hash a file from disk using the Rust toolbox backend. */
+export const toolboxHashFile = (filePath: string, algorithm: string) =>
+  invoke<string>("toolbox_hash_file", { filePath, algorithm });
+
+/** Read a tool input file through the Rust toolbox backend with an optional size limit. */
+export const toolboxReadFileForTool = (filePath: string, maxSize?: number) =>
+  invoke<string>("toolbox_read_file_for_tool", { filePath, maxSize });
+
+/** Persist tool output to disk through the Rust toolbox backend. */
+export const toolboxWriteToolOutput = (filePath: string, content: string) =>
+  invoke<string>("toolbox_write_tool_output", { filePath, content });
+
+/** Resolve a filesystem path by expanding home and environment variables. */
+export const toolboxResolvePath = (path: string) =>
+  invoke<string>("toolbox_resolve_path", { path });
 
 /** Get permissions for a plugin */
 export const pluginGetPermissions = (pluginId: string) =>

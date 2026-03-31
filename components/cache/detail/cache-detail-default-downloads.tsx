@@ -22,7 +22,7 @@ import {
   ShieldAlert,
   Trash2,
 } from 'lucide-react';
-import { useDefaultDownloadsDetail } from '@/hooks/use-default-downloads-detail';
+import { useDefaultDownloadsDetail } from '@/hooks/cache/use-default-downloads-detail';
 import { deriveCleanTypeMaintenanceMetadata } from '@/lib/cache/maintenance';
 
 export function CacheDetailDefaultDownloadsView() {

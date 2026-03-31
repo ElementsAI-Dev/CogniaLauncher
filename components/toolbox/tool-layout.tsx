@@ -9,7 +9,7 @@ import { useLocale } from '@/components/providers/locale-provider';
 import { cn } from '@/lib/utils';
 import { Copy, ClipboardPaste, Trash2, Check, AlertCircle, Info } from 'lucide-react';
 import { useCallback, useState } from 'react';
-import { useCopyToClipboard } from '@/hooks/use-clipboard';
+import { useCopyToClipboard } from '@/hooks/shared/use-clipboard';
 import type { ReactNode } from 'react';
 
 /* ---------------------------------------------------------------------------

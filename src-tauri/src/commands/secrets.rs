@@ -50,7 +50,8 @@ pub fn build_provider_secret_status(
         .and_then(|key| std::env::var(key).ok())
         .is_some_and(|value| !value.trim().is_empty());
     let legacy_plaintext_present = settings.get_provider_legacy_token(provider).is_some();
-    let configured_in_vault = settings.get_provider_secret_saved(provider) && vault.is_initialized();
+    let configured_in_vault =
+        settings.get_provider_secret_saved(provider) && vault.is_initialized();
     let needs_unlock = configured_in_vault && !vault.is_unlocked();
 
     ProviderSecretStatus {
@@ -98,7 +99,10 @@ async fn migrate_after_unlock(
     let vault_guard = vault.write().await;
     let migrated = vault_guard.migrate_legacy_provider_tokens(&mut settings_guard)?;
     if !migrated.is_empty() {
-        settings_guard.save().await.map_err(|error| error.to_string())?;
+        settings_guard
+            .save()
+            .await
+            .map_err(|error| error.to_string())?;
     }
     Ok(())
 }
@@ -167,7 +171,10 @@ pub async fn secret_vault_reset(
         let mut settings_guard = settings.write().await;
         let mut vault_guard = vault.write().await;
         vault_guard.reset(Some(&mut settings_guard)).await?;
-        settings_guard.save().await.map_err(|error| error.to_string())?;
+        settings_guard
+            .save()
+            .await
+            .map_err(|error| error.to_string())?;
     }
 
     let settings_guard = settings.read().await;
@@ -182,7 +189,11 @@ pub async fn provider_secret_status_internal(
 ) -> Result<ProviderSecretStatus, String> {
     let settings_guard = settings.read().await;
     let vault_guard = vault.read().await;
-    Ok(build_provider_secret_status(provider, &settings_guard, &vault_guard))
+    Ok(build_provider_secret_status(
+        provider,
+        &settings_guard,
+        &vault_guard,
+    ))
 }
 
 pub async fn provider_secret_save_internal(
@@ -197,7 +208,10 @@ pub async fn provider_secret_save_internal(
     {
         let vault_guard = vault.read().await;
         if !vault_guard.is_unlocked() {
-            return Err("Secure storage is locked. Set it up or unlock it before saving tokens.".to_string());
+            return Err(
+                "Secure storage is locked. Set it up or unlock it before saving tokens."
+                    .to_string(),
+            );
         }
     }
 
@@ -207,7 +221,10 @@ pub async fn provider_secret_save_internal(
         vault_guard.save_secret(&provider_secret_key(provider), &token)?;
         settings_guard.clear_provider_legacy_token(provider);
         settings_guard.set_provider_secret_saved(provider, true);
-        settings_guard.save().await.map_err(|error| error.to_string())?;
+        settings_guard
+            .save()
+            .await
+            .map_err(|error| error.to_string())?;
     }
 
     provider_secret_status_internal(provider, settings, vault).await
@@ -224,13 +241,19 @@ pub async fn provider_secret_clear_internal(
 
         if vault_guard.is_unlocked() {
             let _ = vault_guard.remove_secret(&provider_secret_key(provider))?;
-        } else if settings_guard.get_provider_secret_saved(provider) && vault_guard.is_initialized() {
-            return Err("Secure storage is locked. Unlock it before clearing saved tokens.".to_string());
+        } else if settings_guard.get_provider_secret_saved(provider) && vault_guard.is_initialized()
+        {
+            return Err(
+                "Secure storage is locked. Unlock it before clearing saved tokens.".to_string(),
+            );
         }
 
         settings_guard.clear_provider_legacy_token(provider);
         settings_guard.set_provider_secret_saved(provider, false);
-        settings_guard.save().await.map_err(|error| error.to_string())?;
+        settings_guard
+            .save()
+            .await
+            .map_err(|error| error.to_string())?;
     }
 
     provider_secret_status_internal(provider, settings, vault).await
@@ -258,12 +281,8 @@ mod tests {
             .set_provider_legacy_token("github", "ghp_legacy")
             .unwrap();
 
-        let resolved = resolve_provider_secret(
-            "github",
-            Some("ghp_explicit".into()),
-            &settings,
-            &vault,
-        );
+        let resolved =
+            resolve_provider_secret("github", Some("ghp_explicit".into()), &settings, &vault);
         assert_eq!(resolved.as_deref(), Some("ghp_explicit"));
 
         let resolved = resolve_provider_secret("github", None, &settings, &vault);
@@ -300,7 +319,9 @@ mod tests {
         let temp = tempdir().unwrap();
         let vault = SecretVault::new(temp.path().to_path_buf());
         let mut settings = Settings::default();
-        settings.set_provider_legacy_token("gitlab", "glpat_legacy").unwrap();
+        settings
+            .set_provider_legacy_token("gitlab", "glpat_legacy")
+            .unwrap();
 
         let status = build_vault_status(&settings, &vault);
         assert!(!status.initialized);

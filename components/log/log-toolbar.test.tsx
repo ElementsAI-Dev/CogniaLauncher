@@ -44,7 +44,7 @@ jest.mock("@/components/providers/locale-provider", () => ({
   }),
 }));
 
-jest.mock("@/hooks/use-mobile", () => ({
+jest.mock("@/hooks/shared/use-mobile", () => ({
   useDebounce: (value: string) => value,
 }));
 

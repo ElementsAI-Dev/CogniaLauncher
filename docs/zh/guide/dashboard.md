@@ -25,16 +25,34 @@
 首页自定义由两个联动入口组成：
 
 - **Header 编辑模式** — 在网格内启用拖拽排序、尺寸调整、显隐切换、移除操作。
+- **Header 风格摘要** — 在首页直接展示当前使用的风格预设，并提供快速切换入口。
 - **组件设置工具条** — 新的 insight widgets 可以直接在编辑工具条里调整范围、视图模式、分组、共享范围覆盖和条目数量等轻量设置。
-- **自定义对话框** — 管理组件目录、分类过滤、添加操作、可配置组件标记、分析能力标记与恢复默认。
+- **自定义对话框** — 管理组件目录、内置风格预设、分类过滤、添加操作、可配置组件标记、分析能力标记、预设恢复与恢复默认。
 
 行为保障：
 
 - **统一策略来源** — 添加/移除/显隐都基于同一组件注册策略（`allowMultiple`、`required`、`defaultVisible`）。
 - **Registry 驱动的组件设置** — 可配置的 insight widgets 会从 dashboard widget registry 中读取默认设置，并支持一键恢复。
 - **受策略约束的添加** — 达到实例上限的组件在对话框中会显示为不可继续添加。
+- **预设偏离反馈** — 首页会在不丢弃用户修改的前提下，明确提示当前布局已经偏离活动预设。
+- **预设恢复路径** — 用户可以在自定义对话框中恢复活动预设，也可以通过恢复默认回到标准默认预设。
 - **确定性恢复默认** — 恢复默认始终回到同一套标准组件集合与顺序。
 - **持久化与迁移安全** — 布局恢复/迁移时会归一化异常数据（非法尺寸、重复 ID、未知组件、无效载荷回退，以及非法组件设置回退到默认值）。
+
+### Dashboard 风格预设
+
+首页内置了一组风格预设，避免用户每次都从零重新搭首页：
+
+- **均衡工作台** — 默认预设，在概览、操作、诊断与近期动态之间保持平衡。
+- **专注流程** — 更强调待处理事项、快捷操作和跟进行为，适合高频操作阶段。
+- **分析甲板** — 使用更高信息密度的呈现方式，强调趋势、活动和健康扫描。
+
+预设行为遵循显式切换原则：
+
+- **Header 快速切换** — 从首页摘要中应用预设时，会把当前首页替换成该预设的标准快照。
+- **偏离标记** — 之后对 widget 或呈现方式的修改，会提示当前布局已偏离活动预设。
+- **自定义布局保留** — 旧版自定义首页在升级后会继续保留，并以“自定义布局”状态呈现，直到用户主动应用预设。
+- **默认恢复** — 点击恢复默认会回到标准默认预设，并干净地关闭自定义流程。
 
 ### Dashboard Insight 工作台
 
@@ -88,7 +106,7 @@ Insight 数据采用按需加载：
 | useDashboardInsights | `hooks/use-dashboard-insights.ts` | Insight 聚合与按可见组件取数 |
 | WidgetGrid | `components/dashboard/widget-grid.tsx` | 组件网格渲染与编辑操作 |
 | WidgetWrapper | `components/dashboard/widget-wrapper.tsx` | 单组件编辑工具条 |
-| CustomizeDialog | `components/dashboard/customize-dialog.tsx` | 组件目录与恢复默认控制 |
+| CustomizeDialog | `components/dashboard/customize-dialog.tsx` | 组件目录、风格预设与恢复控制 |
 | Widgets | `components/dashboard/widgets/` | 小部件集合 |
 
 ---
@@ -99,6 +117,7 @@ Insight 数据采用按需加载：
 
 - 小部件顺序、尺寸与可见性
 - 共享的 Dashboard 可视分析上下文，例如当前的范围选择
+- 当前 Dashboard 风格预设标识，以及带偏离语义的 presentation token
 - 可配置 insight widgets 的 widget-specific settings
 - Store/UI 共享的组件实例策略 helper
 - 持久化布局迁移与归一化

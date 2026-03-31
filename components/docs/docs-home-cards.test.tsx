@@ -1,6 +1,29 @@
 import { render, screen } from '@testing-library/react';
 import { DocsHomeCards } from './docs-home-cards';
 
+function createMockDocNav() {
+  return [
+    { title: '首页', titleEn: 'Home', slug: 'index' },
+    {
+      title: '快速开始',
+      titleEn: 'Getting Started',
+      children: [
+        { title: '概览', titleEn: 'Overview', slug: 'getting-started' },
+        { title: '安装', titleEn: 'Installation', slug: 'getting-started/installation' },
+      ],
+    },
+    {
+      title: '使用指南',
+      titleEn: 'User Guide',
+      children: [
+        { title: '概览', titleEn: 'Overview', slug: 'guide' },
+      ],
+    },
+  ];
+}
+
+const mockDocNav = createMockDocNav();
+
 jest.mock('next/link', () => {
   function MockLink({ children, href, ...props }: { children: React.ReactNode; href: string; [key: string]: unknown }) {
     return <a href={href} {...props}>{children}</a>;
@@ -18,30 +41,16 @@ jest.mock('@/components/providers/locale-provider', () => ({
 }));
 
 jest.mock('@/lib/docs/navigation', () => ({
-  DOC_NAV: [
-    { title: '首页', titleEn: 'Home', slug: 'index' },
-    {
-      title: '快速开始',
-      titleEn: 'Getting Started',
-      children: [
-        { title: '概览', titleEn: 'Overview', slug: 'getting-started' },
-        { title: '安装', titleEn: 'Installation', slug: 'getting-started/installation' },
-      ],
-    },
-    {
-      title: '使用指南',
-      titleEn: 'User Guide',
-      children: [
-        { title: '概览', titleEn: 'Overview', slug: 'guide' },
-      ],
-    },
-  ],
+  get DOC_NAV() {
+    return mockDocNav;
+  },
   slugToArray: (slug: string) => (slug === 'index' ? [] : slug.split('/')),
 }));
 
 describe('DocsHomeCards', () => {
   beforeEach(() => {
     mockLocale = 'en';
+    mockDocNav.splice(0, mockDocNav.length, ...createMockDocNav());
   });
 
   it('renders card for each section with children', () => {
@@ -102,5 +111,36 @@ describe('DocsHomeCards', () => {
     mockLocale = 'zh';
     render(<DocsHomeCards />);
     expect(screen.getByText('安装、配置、快速上手')).toBeInTheDocument();
+  });
+
+  it('falls back to /docs without a canned description for unknown sections', () => {
+    mockDocNav.push({
+      title: '未知分区',
+      titleEn: 'Unknown Section',
+      children: [
+        { title: '首页', titleEn: 'Home', slug: 'index' },
+      ],
+    });
+
+    render(<DocsHomeCards />);
+
+    const link = screen.getByText('Unknown Section').closest('a');
+    expect(link).toHaveAttribute('href', '/docs');
+    expect(screen.getByText('Unknown Section')).toBeInTheDocument();
+  });
+
+  it('falls back to /docs when a section child has no slug', () => {
+    mockDocNav.push({
+      title: '缺失链接',
+      titleEn: 'Missing Link',
+      children: [
+        { title: '无链接', titleEn: 'No Link' },
+      ],
+    });
+
+    render(<DocsHomeCards />);
+
+    const link = screen.getByText('Missing Link').closest('a');
+    expect(link).toHaveAttribute('href', '/docs');
   });
 });

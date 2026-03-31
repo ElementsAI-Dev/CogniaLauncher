@@ -10,7 +10,7 @@ import { SwitchSettingItem, SelectSettingItem } from "./setting-item";
 import { TrayMenuCustomizer } from "./tray-menu-customizer";
 import type { AppSettings } from "@/lib/stores/settings";
 import { isTauri } from "@/lib/tauri";
-import { useTrayAutostart } from "@/hooks/use-tray-autostart";
+import { useTrayAutostart } from "@/hooks/settings/use-tray-autostart";
 
 interface TraySettingsProps {
   appSettings: AppSettings;

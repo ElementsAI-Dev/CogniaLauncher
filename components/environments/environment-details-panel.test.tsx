@@ -1,20 +1,20 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { EnvironmentDetailsPanel } from "./environment-details-panel";
 import { useEnvironmentStore } from "@/lib/stores/environment";
-import { useEnvironments } from "@/hooks/use-environments";
+import { useEnvironments } from "@/hooks/environments/use-environments";
 
 jest.mock("@/lib/stores/environment", () => ({
   useEnvironmentStore: jest.fn(),
 }));
 
-jest.mock("@/hooks/use-environments", () => ({
+jest.mock("@/hooks/environments/use-environments", () => ({
   useEnvironments: jest.fn(),
 }));
 
 const mockSyncWorkflowContext = jest.fn();
 const mockSetWorkflowActionState = jest.fn();
 
-jest.mock("@/hooks/use-environment-workflow", () => ({
+jest.mock("@/hooks/environments/use-environment-workflow", () => ({
   useEnvironmentWorkflow: () => ({
     syncWorkflowContext: mockSyncWorkflowContext,
     setWorkflowActionState: mockSetWorkflowActionState,
@@ -24,7 +24,7 @@ jest.mock("@/hooks/use-environment-workflow", () => ({
   }),
 }));
 
-jest.mock("@/hooks/use-auto-version", () => ({
+jest.mock("@/hooks/environments/use-auto-version", () => ({
   useProjectPath: () => ({
     projectPath: "/test/project",
     setProjectPath: jest.fn(),

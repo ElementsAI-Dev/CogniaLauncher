@@ -1,14 +1,14 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { useCopyToClipboard } from '@/hooks/use-clipboard';
+import { useCopyToClipboard } from '@/hooks/shared/use-clipboard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useLocale } from '@/components/providers/locale-provider';
-import { useToolPreferences } from '@/hooks/use-tool-preferences';
+import { useToolPreferences } from '@/hooks/toolbox/use-tool-preferences';
 import { TOOLBOX_LIMITS } from '@/lib/constants/toolbox-limits';
 import {
   ToolTextArea,

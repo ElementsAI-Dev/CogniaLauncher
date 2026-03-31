@@ -170,6 +170,7 @@ export interface DetectedEnv {
   providerId?: string;
   providerName?: string;
   version: string;
+  compilerLabel?: string;
   available: boolean;
   source?: string;
   sourcePath?: string | null;

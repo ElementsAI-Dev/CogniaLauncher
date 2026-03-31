@@ -117,16 +117,17 @@ describe('GitStashList', () => {
 
   it('calls onBranchFromStash when branch action confirmed', async () => {
     const onBranchFromStash = jest.fn().mockResolvedValue('branched');
-    const promptSpy = jest.spyOn(window, 'prompt').mockReturnValue('feature/from-stash');
     render(<GitStashList stashes={stashes} onBranchFromStash={onBranchFromStash} />);
 
     fireEvent.click(screen.getAllByTitle('git.stashBranch.title')[0]);
+    fireEvent.change(screen.getByLabelText('git.stashBranch.branchName'), {
+      target: { value: 'feature/from-stash' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'common.confirm' }));
 
     await waitFor(() => {
       expect(onBranchFromStash).toHaveBeenCalledWith('feature/from-stash', 'stash@{0}');
     });
-
-    promptSpy.mockRestore();
   });
 
   it('calls onPushFiles with selected files', async () => {

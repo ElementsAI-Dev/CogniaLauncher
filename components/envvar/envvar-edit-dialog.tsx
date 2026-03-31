@@ -38,6 +38,7 @@ interface EnvVarEditDialogProps {
   onSave: (key: string, value: string, scope: EnvVarScope) => void;
   editKey?: string;
   editValue?: string;
+  defaultScope?: EnvVarScope;
   pending?: boolean;
   t: (key: string) => string;
 }
@@ -48,6 +49,7 @@ export function EnvVarEditDialog({
   onSave,
   editKey,
   editValue,
+  defaultScope = 'process',
   pending = false,
   t,
 }: EnvVarEditDialogProps) {
@@ -60,6 +62,7 @@ export function EnvVarEditDialog({
             onSave={onSave}
             editKey={editKey}
             editValue={editValue}
+            defaultScope={defaultScope}
             pending={pending}
             t={t}
           />
@@ -74,12 +77,13 @@ function EnvVarEditDialogContent({
   onSave,
   editKey,
   editValue,
+  defaultScope = 'process',
   pending = false,
   t,
 }: Omit<EnvVarEditDialogProps, 'open'>) {
   const [key, setKey] = useState(editKey || '');
   const [value, setValue] = useState(editValue || '');
-  const [scope, setScope] = useState<EnvVarScope>('process');
+  const [scope, setScope] = useState<EnvVarScope>(defaultScope);
   const [keyError, setKeyError] = useState<string | null>(null);
   const [splitView, setSplitView] = useState(false);
 

@@ -23,7 +23,7 @@ import {
   SkipForward,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useMigratePackages } from "@/hooks/use-migrate-packages";
+import { useMigratePackages } from "@/hooks/environments/use-migrate-packages";
 
 interface MigratePackagesDialogProps {
   envType: string;

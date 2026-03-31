@@ -22,10 +22,10 @@ import {
   EmptyDescription,
 } from '@/components/ui/empty';
 import { useEnvironmentStore } from '@/lib/stores/environment';
-import { useEnvironments } from '@/hooks/use-environments';
-import { useAutoVersionSwitch, useProjectPath } from '@/hooks/use-auto-version';
-import { useEnvironmentDetection } from '@/hooks/use-environment-detection';
-import { useEnvironmentWorkflow } from '@/hooks/use-environment-workflow';
+import { useEnvironments } from '@/hooks/environments/use-environments';
+import { useAutoVersionSwitch, useProjectPath } from '@/hooks/environments/use-auto-version';
+import { useEnvironmentDetection } from '@/hooks/environments/use-environment-detection';
+import { useEnvironmentWorkflow } from '@/hooks/environments/use-environment-workflow';
 import { useLocale } from '@/components/providers/locale-provider';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';

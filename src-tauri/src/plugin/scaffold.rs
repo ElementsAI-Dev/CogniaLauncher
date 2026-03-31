@@ -193,6 +193,42 @@ pub struct ScaffoldHandoff {
     pub builtin_checksum_command: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub builtin_validation_command: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub authoring_selections: Option<ScaffoldAuthoringSelections>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub builtin_maintainer: Option<ScaffoldBuiltinMaintainerMetadata>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScaffoldAuthoringSelections {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extension_points: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub host_capabilities: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub http_domains: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScaffoldBuiltinMaintainerMetadata {
+    pub catalog_sample_path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub package_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub test_file: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rust_crate: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct BuiltinCatalogEntryContext {
+    plugin_dir_relative: String,
+    sample_path: String,
+    package_name: Option<String>,
+    test_file: Option<String>,
+    rust_crate: Option<String>,
 }
 
 /// Result of scaffold operation
@@ -427,7 +463,9 @@ pub async fn validate_plugin(path: &Path) -> CogniaResult<ValidationResult> {
     // Parse manifest
     match crate::plugin::manifest::PluginManifest::from_file(&manifest_path) {
         Ok(manifest) => {
-            if let Ok(inventory) = crate::plugin::extension_points::derive_plugin_point_inventory(&manifest) {
+            if let Ok(inventory) =
+                crate::plugin::extension_points::derive_plugin_point_inventory(&manifest)
+            {
                 for point in inventory {
                     if !point.discoverable {
                         errors.push(format!(
@@ -630,10 +668,7 @@ fn validate_scaffold_config(config: &ScaffoldConfig) -> CogniaResult<()> {
             .iter()
             .find(|candidate| candidate.id == *point_id)
             .ok_or_else(|| {
-                CogniaError::Plugin(format!(
-                    "Unknown scaffold extension point '{}'",
-                    point_id
-                ))
+                CogniaError::Plugin(format!("Unknown scaffold extension point '{}'", point_id))
             })?;
         let supported = match config.lifecycle_profile {
             ScaffoldLifecycleProfile::BuiltIn => point.scaffold_support.builtin,
@@ -684,6 +719,9 @@ fn build_scaffold_handoff(config: &ScaffoldConfig, plugin_dir: &Path) -> Scaffol
         .join("cognia.scaffold.json")
         .display()
         .to_string();
+    let authoring_selections = build_authoring_selections(config);
+    let builtin_maintainer = matches!(config.lifecycle_profile, ScaffoldLifecycleProfile::BuiltIn)
+        .then(|| build_builtin_maintainer_metadata(config, plugin_dir));
     let mut extension_point_steps = Vec::new();
     if has_extension_point(config, "tool-iframe-ui") {
         extension_point_steps.push(
@@ -722,9 +760,10 @@ fn build_scaffold_handoff(config: &ScaffoldConfig, plugin_dir: &Path) -> Scaffol
             build_commands,
             next_steps: {
                 let mut steps = vec![
-                "Build plugin.wasm using the generated build entrypoint.".to_string(),
-                "Validate the plugin directory in Toolbox > Plugins > Install > Local.".to_string(),
-                "Import the same plugin directory after the build succeeds.".to_string(),
+                    "Build plugin.wasm using the generated build entrypoint.".to_string(),
+                    "Validate the plugin directory in Toolbox > Plugins > Install > Local."
+                        .to_string(),
+                    "Import the same plugin directory after the build succeeds.".to_string(),
                 ];
                 steps.extend(extension_point_steps.clone());
                 steps
@@ -735,6 +774,8 @@ fn build_scaffold_handoff(config: &ScaffoldConfig, plugin_dir: &Path) -> Scaffol
             builtin_catalog_path: None,
             builtin_checksum_command: None,
             builtin_validation_command: None,
+            authoring_selections,
+            builtin_maintainer: None,
         },
         ScaffoldLifecycleProfile::BuiltIn => ScaffoldHandoff {
             profile: ScaffoldLifecycleProfile::BuiltIn,
@@ -742,18 +783,27 @@ fn build_scaffold_handoff(config: &ScaffoldConfig, plugin_dir: &Path) -> Scaffol
             build_commands,
             next_steps: {
                 let mut steps = vec![
-                "Add the generated sample entry to plugins/manifest.json.".to_string(),
-                "Run pnpm plugins:checksums to capture the built artifact checksum.".to_string(),
-                "Run pnpm plugins:validate before treating the plugin as built-in ready."
-                    .to_string(),
+                    "Add the generated sample entry to plugins/manifest.json.".to_string(),
+                    "Run pnpm plugins:checksums to capture the built artifact checksum."
+                        .to_string(),
+                    "Run pnpm plugins:validate before treating the plugin as built-in ready."
+                        .to_string(),
                 ];
-                if matches!(config.language, PluginLanguage::TypeScript) {
-                    steps.push(
-                        format!(
-                            "Keep catalog-entry.sample.json aligned with {} and src/index.test.ts.",
-                            generated_typescript_package_name(config)
-                        ),
-                    );
+                if let Some(maintainer) = builtin_maintainer.as_ref() {
+                    if let (Some(package_name), Some(test_file)) = (
+                        maintainer.package_name.as_deref(),
+                        maintainer.test_file.as_deref(),
+                    ) {
+                        steps.push(format!(
+                            "Keep {} aligned with {} and {}.",
+                            maintainer.catalog_sample_path, package_name, test_file
+                        ));
+                    }
+                } else if matches!(config.language, PluginLanguage::TypeScript) {
+                    steps.push(format!(
+                        "Keep catalog-entry.sample.json aligned with {} and src/index.test.ts.",
+                        generated_typescript_package_name(config)
+                    ));
                 }
                 steps.extend(extension_point_steps);
                 steps
@@ -764,6 +814,8 @@ fn build_scaffold_handoff(config: &ScaffoldConfig, plugin_dir: &Path) -> Scaffol
             builtin_catalog_path: Some("plugins/manifest.json".to_string()),
             builtin_checksum_command: Some("pnpm plugins:checksums".to_string()),
             builtin_validation_command: Some("pnpm plugins:validate".to_string()),
+            authoring_selections,
+            builtin_maintainer,
         },
     }
 }
@@ -811,6 +863,8 @@ fn generate_lifecycle_manifest(config: &ScaffoldConfig, handoff: &ScaffoldHandof
         "builtinCatalogPath": handoff.builtin_catalog_path.clone(),
         "builtinChecksumCommand": handoff.builtin_checksum_command.clone(),
         "builtinValidationCommand": handoff.builtin_validation_command.clone(),
+        "authoringSelections": handoff.authoring_selections.clone(),
+        "builtinMaintainer": handoff.builtin_maintainer.clone(),
     }))
     .unwrap()
 }
@@ -827,10 +881,10 @@ fn builtin_typescript_test_file(plugin_dir_relative: &str) -> String {
     format!("plugins/{}/src/index.test.ts", plugin_dir_relative)
 }
 
-fn generate_builtin_catalog_entry_sample(
+fn build_builtin_catalog_entry_context(
     config: &ScaffoldConfig,
     plugin_dir: &Path,
-) -> serde_json::Value {
+) -> BuiltinCatalogEntryContext {
     let fallback_slug = scaffold_project_slug(config);
     let plugin_dir_name = plugin_dir
         .file_name()
@@ -842,6 +896,37 @@ fn generate_builtin_catalog_entry_sample(
         plugin_dir_name
     );
 
+    BuiltinCatalogEntryContext {
+        plugin_dir_relative: plugin_dir_relative.clone(),
+        sample_path: "catalog-entry.sample.json".to_string(),
+        package_name: matches!(config.language, PluginLanguage::TypeScript)
+            .then(|| generated_typescript_package_name(config)),
+        test_file: matches!(config.language, PluginLanguage::TypeScript)
+            .then(|| builtin_typescript_test_file(&plugin_dir_relative)),
+        rust_crate: matches!(config.language, PluginLanguage::Rust)
+            .then(|| builtin_catalog_rust_crate(config)),
+    }
+}
+
+fn build_builtin_maintainer_metadata(
+    config: &ScaffoldConfig,
+    plugin_dir: &Path,
+) -> ScaffoldBuiltinMaintainerMetadata {
+    let context = build_builtin_catalog_entry_context(config, plugin_dir);
+    ScaffoldBuiltinMaintainerMetadata {
+        catalog_sample_path: context.sample_path,
+        package_name: context.package_name,
+        test_file: context.test_file,
+        rust_crate: context.rust_crate,
+    }
+}
+
+fn generate_builtin_catalog_entry_sample(
+    config: &ScaffoldConfig,
+    plugin_dir: &Path,
+) -> serde_json::Value {
+    let context = build_builtin_catalog_entry_context(config, plugin_dir);
+
     let mut entry = serde_json::json!({
         "id": config.id.clone(),
         "name": config.name.clone(),
@@ -851,7 +936,7 @@ fn generate_builtin_catalog_entry_sample(
             PluginLanguage::JavaScript => "javascript",
         },
         "version": "0.1.0",
-        "pluginDir": plugin_dir_relative,
+        "pluginDir": context.plugin_dir_relative,
         "artifact": "plugin.wasm",
         "checksumSha256": "<run-pnpm-plugins:checksums>",
         "channel": "stable",
@@ -866,13 +951,17 @@ fn generate_builtin_catalog_entry_sample(
 
     match config.language {
         PluginLanguage::Rust => {
-            entry["rustCrate"] = serde_json::Value::String(builtin_catalog_rust_crate(config));
+            if let Some(rust_crate) = context.rust_crate {
+                entry["rustCrate"] = serde_json::Value::String(rust_crate);
+            }
         }
         PluginLanguage::TypeScript => {
-            entry["packageName"] =
-                serde_json::Value::String(generated_typescript_package_name(config));
-            entry["testFile"] =
-                serde_json::Value::String(builtin_typescript_test_file(&plugin_dir_relative));
+            if let Some(package_name) = context.package_name {
+                entry["packageName"] = serde_json::Value::String(package_name);
+            }
+            if let Some(test_file) = context.test_file {
+                entry["testFile"] = serde_json::Value::String(test_file);
+            }
         }
         PluginLanguage::JavaScript => {}
     }
@@ -890,6 +979,20 @@ fn validate_optional_url(field: &str, value: Option<&str>) -> CogniaResult<()> {
         }
     }
     Ok(())
+}
+
+fn normalized_http_domains(config: &ScaffoldConfig) -> Vec<String> {
+    let mut domains = Vec::new();
+    for domain in &config.permissions.http {
+        let trimmed = domain.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if !domains.iter().any(|existing| existing == trimmed) {
+            domains.push(trimmed.to_string());
+        }
+    }
+    domains
 }
 
 // ============================================================================
@@ -934,12 +1037,11 @@ fn generate_manifest(config: &ScaffoldConfig) -> String {
     if config.permissions.process_exec {
         perms.push("process_exec = true".to_string());
     }
-    if !config.permissions.http.is_empty() {
-        let domains: Vec<String> = config
-            .permissions
-            .http
+    let http_domains = normalized_http_domains(config);
+    if !http_domains.is_empty() {
+        let domains: Vec<String> = http_domains
             .iter()
-            .map(|d| format!("\"{}\"", d))
+            .map(|domain| format!("\"{}\"", domain))
             .collect();
         perms.push(format!("http = [{}]", domains.join(", ")));
     }
@@ -1189,10 +1291,25 @@ fn infer_capability_declarations(config: &ScaffoldConfig) -> Vec<String> {
     if config.permissions.process_exec {
         caps.push("process.exec".to_string());
     }
-    if !config.permissions.http.is_empty() {
+    if !normalized_http_domains(config).is_empty() {
         caps.push("http.request".to_string());
     }
     caps
+}
+
+fn build_authoring_selections(config: &ScaffoldConfig) -> Option<ScaffoldAuthoringSelections> {
+    let extension_points = resolved_extension_points(config);
+    let host_capabilities = infer_capability_declarations(config);
+    let http_domains = normalized_http_domains(config);
+    if extension_points.is_empty() && host_capabilities.is_empty() && http_domains.is_empty() {
+        return None;
+    }
+
+    Some(ScaffoldAuthoringSelections {
+        extension_points,
+        host_capabilities,
+        http_domains,
+    })
 }
 
 fn build_ui_mode_line(config: &ScaffoldConfig) -> String {
@@ -2424,7 +2541,8 @@ fn generate_builtin_ts_smoke_test(config: &ScaffoldConfig) -> String {
         entry_fn
     )];
     if has_extension_point(config, "event-listener") {
-        export_checks.push("    expect(typeof plugin.cognia_on_event).toBe('function');".to_string());
+        export_checks
+            .push("    expect(typeof plugin.cognia_on_event).toBe('function');".to_string());
     }
     if has_extension_point(config, "log-listener") {
         export_checks.push("    expect(typeof plugin.cognia_on_log).toBe('function');".to_string());
@@ -2482,7 +2600,10 @@ async fn generate_ts_ink_authoring_files(
     )
     .await
     .map_err(|e| {
-        CogniaError::Plugin(format!("Failed to write authoring/sample-context.ts: {}", e))
+        CogniaError::Plugin(format!(
+            "Failed to write authoring/sample-context.ts: {}",
+            e
+        ))
     })?;
     files.push("authoring/sample-context.ts".to_string());
 
@@ -2769,22 +2890,82 @@ Generated authoring assets:
         .unwrap_or_default();
     let builtin_onboarding = match handoff.profile {
         ScaffoldLifecycleProfile::External => String::new(),
-        ScaffoldLifecycleProfile::BuiltIn => format!(
-            "- Catalog handoff sample: `catalog-entry.sample.json`\n- Catalog path: `{}`\n- Checksum command: `{}`\n- Validation command: `{}`\n",
-            handoff
-                .builtin_catalog_path
-                .as_deref()
-                .unwrap_or("plugins/manifest.json"),
-            handoff
-                .builtin_checksum_command
-                .as_deref()
-                .unwrap_or("pnpm plugins:checksums"),
-            handoff
-                .builtin_validation_command
-                .as_deref()
-                .unwrap_or("pnpm plugins:validate"),
-        ),
+        ScaffoldLifecycleProfile::BuiltIn => {
+            let mut lines = vec![
+                format!(
+                    "- Catalog handoff sample: `{}`",
+                    handoff
+                        .builtin_maintainer
+                        .as_ref()
+                        .map(|metadata| metadata.catalog_sample_path.as_str())
+                        .unwrap_or("catalog-entry.sample.json")
+                ),
+                format!(
+                    "- Catalog path: `{}`",
+                    handoff
+                        .builtin_catalog_path
+                        .as_deref()
+                        .unwrap_or("plugins/manifest.json")
+                ),
+                format!(
+                    "- Checksum command: `{}`",
+                    handoff
+                        .builtin_checksum_command
+                        .as_deref()
+                        .unwrap_or("pnpm plugins:checksums")
+                ),
+                format!(
+                    "- Validation command: `{}`",
+                    handoff
+                        .builtin_validation_command
+                        .as_deref()
+                        .unwrap_or("pnpm plugins:validate")
+                ),
+            ];
+            if let Some(metadata) = handoff.builtin_maintainer.as_ref() {
+                if let Some(package_name) = metadata.package_name.as_deref() {
+                    lines.push(format!("- Package name: `{}`", package_name));
+                }
+                if let Some(test_file) = metadata.test_file.as_deref() {
+                    lines.push(format!("- Maintainer test file: `{}`", test_file));
+                }
+                if let Some(rust_crate) = metadata.rust_crate.as_deref() {
+                    lines.push(format!("- Rust crate: `{}`", rust_crate));
+                }
+            }
+            format!("{}\n", lines.join("\n"))
+        }
     };
+    let authoring_summary = handoff
+        .authoring_selections
+        .as_ref()
+        .map(|selections| {
+            let mut lines = Vec::new();
+            if !selections.extension_points.is_empty() {
+                lines.push(format!(
+                    "- Selected plugin points: `{}`",
+                    selections.extension_points.join("`, `")
+                ));
+            }
+            if !selections.host_capabilities.is_empty() {
+                lines.push(format!(
+                    "- Host capabilities: `{}`",
+                    selections.host_capabilities.join("`, `")
+                ));
+            }
+            if !selections.http_domains.is_empty() {
+                lines.push(format!(
+                    "- HTTP domains: `{}`",
+                    selections.http_domains.join("`, `")
+                ));
+            }
+            if lines.is_empty() {
+                String::new()
+            } else {
+                format!("\n### Selected Authoring Inputs\n\n{}\n", lines.join("\n"))
+            }
+        })
+        .unwrap_or_default();
     let lifecycle_section = format!(
         r#"
 {lifecycle_title}
@@ -2792,6 +2973,7 @@ Generated authoring assets:
 - Lifecycle metadata: `cognia.scaffold.json`
 - Expected artifact: `{artifact_path}`
 {lifecycle_import}{builtin_onboarding}
+{authoring_summary}
 ### Recommended Commands
 
 {lifecycle_commands}
@@ -2804,6 +2986,7 @@ Generated authoring assets:
         artifact_path = handoff.artifact_path,
         lifecycle_import = lifecycle_import,
         builtin_onboarding = builtin_onboarding,
+        authoring_summary = authoring_summary,
         lifecycle_commands = lifecycle_commands,
         lifecycle_steps = lifecycle_steps,
     );
@@ -2967,7 +3150,8 @@ mod tests {
         let result = scaffold_plugin(&config).await.expect("scaffold plugin");
         let plugin_dir = PathBuf::from(&result.plugin_dir);
         let manifest = fs::read_to_string(plugin_dir.join("plugin.toml")).expect("read manifest");
-        let source = fs::read_to_string(plugin_dir.join("src").join("index.ts")).expect("read source");
+        let source =
+            fs::read_to_string(plugin_dir.join("src").join("index.ts")).expect("read source");
 
         assert!(manifest.contains("listen_logs = [\"plugin\"]"));
         assert!(source.contains("function cognia_on_log(): number"));
@@ -3094,6 +3278,30 @@ mod tests {
         assert!(readme.contains("pnpm plugins:validate"));
         assert!(readme.contains("plugins/manifest.json"));
         assert!(readme.contains("catalog-entry.sample.json"));
+        assert!(readme.contains("Package name: `com.cognia.builtin.sample`"));
+        assert!(
+            readme.contains("Maintainer test file: `plugins/typescript/sample/src/index.test.ts`")
+        );
+    }
+
+    #[test]
+    fn test_generate_readme_includes_selected_authoring_inputs() {
+        let mut config = base_scaffold_config("/tmp");
+        config.language = PluginLanguage::TypeScript;
+        config.id = "com.example.advanced".to_string();
+        config.permissions.ui_feedback = true;
+        config.permissions.ui_dialog = true;
+        config.permissions.http = vec!["localhost".to_string(), "api.example.com".to_string()];
+        config.extension_points = vec!["tool-iframe-ui".to_string(), "event-listener".to_string()];
+
+        let plugin_dir = PathBuf::from("/tmp/com.example.advanced");
+        let handoff = build_scaffold_handoff(&config, &plugin_dir);
+        let readme = generate_readme(&config, &handoff);
+
+        assert!(readme.contains("### Selected Authoring Inputs"));
+        assert!(readme.contains("Selected plugin points: `tool-iframe-ui`, `event-listener`"));
+        assert!(readme.contains("Host capabilities: `ui.feedback`, `ui.dialog`, `http.request`"));
+        assert!(readme.contains("HTTP domains: `localhost`, `api.example.com`"));
     }
 
     #[test]
@@ -3348,10 +3556,9 @@ mod tests {
 
         let result = validate_scaffold_config(&config);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("JavaScript scaffold currently supports only the basic tool-text extension point"));
+        assert!(result.unwrap_err().to_string().contains(
+            "JavaScript scaffold currently supports only the basic tool-text extension point"
+        ));
     }
 
     #[test]
@@ -3425,10 +3632,51 @@ mod tests {
             handoff.builtin_validation_command.as_deref(),
             Some("pnpm plugins:validate")
         );
+        assert_eq!(
+            handoff
+                .builtin_maintainer
+                .as_ref()
+                .map(|metadata| metadata.catalog_sample_path.as_str()),
+            Some("catalog-entry.sample.json")
+        );
         assert!(handoff
             .next_steps
             .iter()
             .any(|step| step.contains("pnpm plugins:checksums")));
+    }
+
+    #[test]
+    fn test_generate_lifecycle_manifest_tracks_authoring_and_builtin_metadata() {
+        let mut config = base_scaffold_config("/repo/plugins");
+        config.id = "com.cognia.builtin.matrix".to_string();
+        config.language = PluginLanguage::TypeScript;
+        config.lifecycle_profile = ScaffoldLifecycleProfile::BuiltIn;
+        config.permissions.ui_feedback = true;
+        config.permissions.http = vec!["localhost".to_string(), "api.example.com".to_string()];
+        config.extension_points = vec!["tool-iframe-ui".to_string(), "event-listener".to_string()];
+
+        let plugin_dir = PathBuf::from("/repo/plugins/typescript/matrix");
+        let handoff = build_scaffold_handoff(&config, &plugin_dir);
+        let lifecycle_manifest: serde_json::Value =
+            serde_json::from_str(&generate_lifecycle_manifest(&config, &handoff))
+                .expect("lifecycle manifest parses");
+
+        assert_eq!(
+            lifecycle_manifest["authoringSelections"]["extensionPoints"],
+            serde_json::json!(["tool-iframe-ui", "event-listener"])
+        );
+        assert_eq!(
+            lifecycle_manifest["authoringSelections"]["httpDomains"],
+            serde_json::json!(["localhost", "api.example.com"])
+        );
+        assert_eq!(
+            lifecycle_manifest["builtinMaintainer"]["packageName"],
+            serde_json::json!("com.cognia.builtin.matrix")
+        );
+        assert_eq!(
+            lifecycle_manifest["builtinMaintainer"]["testFile"],
+            serde_json::json!("plugins/typescript/matrix/src/index.test.ts")
+        );
     }
 
     #[test]
@@ -3548,7 +3796,10 @@ mod tests {
 
         assert!(plugin_dir.join("authoring").join("ink-app.tsx").exists());
         assert!(plugin_dir.join("authoring").join("ink.tsx").exists());
-        assert!(plugin_dir.join("authoring").join("sample-context.ts").exists());
+        assert!(plugin_dir
+            .join("authoring")
+            .join("sample-context.ts")
+            .exists());
 
         let package_json =
             fs::read_to_string(plugin_dir.join("package.json")).expect("read package.json");
@@ -3622,6 +3873,22 @@ mod tests {
             catalog_sample
                 .get("testFile")
                 .and_then(serde_json::Value::as_str),
+            Some("plugins/typescript/matrix/src/index.test.ts")
+        );
+        assert_eq!(
+            result
+                .handoff
+                .builtin_maintainer
+                .as_ref()
+                .and_then(|metadata| metadata.package_name.as_deref()),
+            Some("com.cognia.builtin.matrix")
+        );
+        assert_eq!(
+            result
+                .handoff
+                .builtin_maintainer
+                .as_ref()
+                .and_then(|metadata| metadata.test_file.as_deref()),
             Some("plugins/typescript/matrix/src/index.test.ts")
         );
 

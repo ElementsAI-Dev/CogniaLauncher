@@ -119,5 +119,16 @@ describe('DocsBreadcrumb', () => {
     expect(screen.getByText('开发环境搭建')).toBeInTheDocument();
     expect(screen.queryByText('Development')).not.toBeInTheDocument();
   });
-});
 
+  it('falls back to the local title when an English title is unavailable', () => {
+    mockGetBreadcrumbs.mockReturnValue([
+      { title: '文档', titleEn: 'Docs', slug: 'index' },
+      { title: '仅本地标题', slug: 'localized-only' },
+    ]);
+
+    render(<DocsBreadcrumb slug="localized-only" />);
+
+    expect(screen.getByRole('link', { name: 'Docs' })).toHaveAttribute('href', '/docs');
+    expect(screen.getByTestId('breadcrumb-page')).toHaveTextContent('仅本地标题');
+  });
+});

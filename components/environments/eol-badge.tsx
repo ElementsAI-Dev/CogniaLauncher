@@ -7,7 +7,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { ShieldCheck, ShieldAlert, ShieldX, Shield } from "lucide-react";
-import { useEol } from "@/hooks/use-eol";
+import { useEol } from "@/hooks/environments/use-eol";
 
 interface EolBadgeProps {
   envType: string;

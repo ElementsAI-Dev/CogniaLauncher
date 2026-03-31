@@ -10,7 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useLocale } from '@/components/providers/locale-provider';
-import { useToolboxMarketplace } from '@/hooks/use-toolbox-marketplace';
+import { useToolboxMarketplace } from '@/hooks/toolbox/use-toolbox-marketplace';
 import { MarketplaceListingCard } from '@/components/toolbox/marketplace-listing-card';
 import type { ToolboxMarketplaceFilters } from '@/types/toolbox-marketplace';
 
@@ -231,11 +231,21 @@ export default function ToolboxMarketplacePage() {
         <Alert>
           <AlertTitle>{t('toolbox.marketplace.title')}</AlertTitle>
           <AlertDescription>
-            {`Action: ${lastActionProgress.kind} · Phase: ${lastActionProgress.phase}${
-              lastActionProgress.downloadTaskId
-                ? ` · Task: ${lastActionProgress.downloadTaskId}`
-                : ''
-            }`}
+            <div className="space-y-1">
+              <p>
+                {`Action: ${lastActionProgress.kind} · Phase: ${lastActionProgress.phase}${
+                  lastActionProgress.downloadTaskId
+                    ? ` · Task: ${lastActionProgress.downloadTaskId}`
+                    : ''
+                }`}
+              </p>
+              {lastActionProgress.sourceLabel && (
+                <p>{`Source: ${lastActionProgress.sourceLabel}`}</p>
+              )}
+              {lastActionProgress.toolId && (
+                <p>{`Target: ${lastActionProgress.toolId}`}</p>
+              )}
+            </div>
           </AlertDescription>
         </Alert>
       )}

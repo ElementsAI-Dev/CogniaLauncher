@@ -8,12 +8,11 @@ use tauri::State;
 use crate::config::Settings;
 use crate::core::backup::{BackupDeleteResult, BackupManifest};
 use crate::error::CogniaError;
+use crate::platform::env::{
+    self, EnvFileFormat, EnvVarScope, EnvVarSensitivityReason, EnvVarValueSummary, ShellProfileInfo,
+};
 use crate::platform::fs;
 use crate::SharedSettings;
-use crate::platform::env::{
-    self, EnvFileFormat, EnvVarScope, EnvVarSensitivityReason, EnvVarValueSummary,
-    ShellProfileInfo,
-};
 
 // ============================================================================
 // Types
@@ -35,6 +34,8 @@ pub struct EnvVarImportResult {
     pub skipped: usize,
     pub errors: Vec<String>,
     pub scope: EnvVarScope,
+    pub recovery_action: Option<String>,
+    pub protection_state: Option<String>,
     pub success: bool,
     pub verified: bool,
     pub status: String,
@@ -42,6 +43,7 @@ pub struct EnvVarImportResult {
     pub message: Option<String>,
     pub primary_shell_target: Option<String>,
     pub shell_guidance: Vec<EnvVarShellGuidance>,
+    pub snapshot: Option<EnvVarSnapshotInfo>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -59,6 +61,18 @@ pub struct EnvVarConflict {
     pub user_value: String,
     pub system_value: String,
     pub effective_value: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnvVarOverview {
+    pub total_vars: usize,
+    pub process_count: usize,
+    pub user_count: usize,
+    pub system_count: usize,
+    pub conflict_count: usize,
+    pub path_issue_count: usize,
+    pub latest_snapshot_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -121,6 +135,8 @@ pub struct EnvVarConflictResolutionResult {
     pub target_scope: EnvVarScope,
     pub applied_value: String,
     pub applied_value_summary: EnvVarValueSummary,
+    pub recovery_action: Option<String>,
+    pub protection_state: Option<String>,
     pub success: bool,
     pub verified: bool,
     pub status: String,
@@ -128,6 +144,7 @@ pub struct EnvVarConflictResolutionResult {
     pub message: Option<String>,
     pub primary_shell_target: Option<String>,
     pub shell_guidance: Vec<EnvVarShellGuidance>,
+    pub snapshot: Option<EnvVarSnapshotInfo>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -201,6 +218,8 @@ pub struct EnvVarMutationResult {
     pub operation: String,
     pub key: String,
     pub scope: EnvVarScope,
+    pub recovery_action: Option<String>,
+    pub protection_state: Option<String>,
     pub success: bool,
     pub verified: bool,
     pub status: String,
@@ -209,6 +228,7 @@ pub struct EnvVarMutationResult {
     pub effective_value_summary: Option<EnvVarValueSummary>,
     pub primary_shell_target: Option<String>,
     pub shell_guidance: Vec<EnvVarShellGuidance>,
+    pub snapshot: Option<EnvVarSnapshotInfo>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -216,6 +236,8 @@ pub struct EnvVarMutationResult {
 pub struct EnvVarPathMutationResult {
     pub operation: String,
     pub scope: EnvVarScope,
+    pub recovery_action: Option<String>,
+    pub protection_state: Option<String>,
     pub success: bool,
     pub verified: bool,
     pub status: String,
@@ -225,6 +247,7 @@ pub struct EnvVarPathMutationResult {
     pub path_entries: Vec<PathEntryInfo>,
     pub primary_shell_target: Option<String>,
     pub shell_guidance: Vec<EnvVarShellGuidance>,
+    pub snapshot: Option<EnvVarSnapshotInfo>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -309,6 +332,7 @@ pub struct EnvVarSnapshotRestorePreviewSegment {
 #[serde(rename_all = "camelCase")]
 pub struct EnvVarSnapshotRestorePreview {
     pub created_at: String,
+    pub fingerprint: String,
     pub segments: Vec<EnvVarSnapshotRestorePreviewSegment>,
 }
 
@@ -357,9 +381,7 @@ fn build_action_support(action: &str, scope: Option<EnvVarScope>) -> EnvVarActio
     }
 }
 
-fn derive_support_snapshot_state(
-    actions: &[EnvVarActionSupport],
-) -> (String, String, String) {
+fn derive_support_snapshot_state(actions: &[EnvVarActionSupport]) -> (String, String, String) {
     if let Some(action) = actions.iter().find(|item| item.state == "blocked") {
         return (
             "degraded".to_string(),
@@ -415,18 +437,13 @@ fn mutation_status_from_verification(
             "manual_followup_required".to_string(),
             Some("shell_sync_required".to_string()),
             Some(
-                "The change was persisted, but manual shell follow-up is still required.".to_string(),
+                "The change was persisted, but manual shell follow-up is still required."
+                    .to_string(),
             ),
         );
     }
 
-    (
-        true,
-        true,
-        "verified".to_string(),
-        None,
-        None,
-    )
+    (true, true, "verified".to_string(), None, None)
 }
 
 fn blocked_mutation_result(
@@ -439,6 +456,8 @@ fn blocked_mutation_result(
         operation: operation.to_string(),
         key: key.to_string(),
         scope,
+        recovery_action: Some(operation.to_string()),
+        protection_state: Some("blocked".to_string()),
         success: false,
         verified: false,
         status: "blocked".to_string(),
@@ -447,6 +466,7 @@ fn blocked_mutation_result(
         effective_value_summary: None,
         primary_shell_target: None,
         shell_guidance: Vec::new(),
+        snapshot: None,
     }
 }
 
@@ -458,6 +478,8 @@ fn blocked_path_mutation_result(
     EnvVarPathMutationResult {
         operation: operation.to_string(),
         scope,
+        recovery_action: Some(operation.to_string()),
+        protection_state: Some("blocked".to_string()),
         success: false,
         verified: false,
         status: "blocked".to_string(),
@@ -467,6 +489,7 @@ fn blocked_path_mutation_result(
         path_entries: Vec::new(),
         primary_shell_target: None,
         shell_guidance: Vec::new(),
+        snapshot: None,
     }
 }
 
@@ -505,12 +528,18 @@ pub fn envvar_get_support_snapshot() -> Result<EnvVarSupportSnapshot, CogniaErro
         build_action_support("set", Some(EnvVarScope::Process)),
         build_action_support("set", Some(EnvVarScope::User)),
         build_action_support("set", Some(EnvVarScope::System)),
+        build_action_support("persistent_set", Some(EnvVarScope::User)),
+        build_action_support("persistent_set", Some(EnvVarScope::System)),
         build_action_support("remove", Some(EnvVarScope::Process)),
         build_action_support("remove", Some(EnvVarScope::User)),
         build_action_support("remove", Some(EnvVarScope::System)),
+        build_action_support("persistent_remove", Some(EnvVarScope::User)),
+        build_action_support("persistent_remove", Some(EnvVarScope::System)),
         build_action_support("import", Some(EnvVarScope::Process)),
         build_action_support("import", Some(EnvVarScope::User)),
         build_action_support("import", Some(EnvVarScope::System)),
+        build_action_support("import_apply", Some(EnvVarScope::User)),
+        build_action_support("import_apply", Some(EnvVarScope::System)),
         build_action_support("export", Some(EnvVarScope::Process)),
         build_action_support("export", Some(EnvVarScope::User)),
         build_action_support("export", Some(EnvVarScope::System)),
@@ -526,11 +555,11 @@ pub fn envvar_get_support_snapshot() -> Result<EnvVarSupportSnapshot, CogniaErro
         build_action_support("path_deduplicate", Some(EnvVarScope::Process)),
         build_action_support("path_deduplicate", Some(EnvVarScope::User)),
         build_action_support("path_deduplicate", Some(EnvVarScope::System)),
-        build_action_support("path_repair", Some(EnvVarScope::Process)),
-        build_action_support("path_repair", Some(EnvVarScope::User)),
-        build_action_support("path_repair", Some(EnvVarScope::System)),
-        build_action_support("resolve_conflict", Some(EnvVarScope::User)),
-        build_action_support("resolve_conflict", Some(EnvVarScope::System)),
+        build_action_support("path_repair_apply", Some(EnvVarScope::Process)),
+        build_action_support("path_repair_apply", Some(EnvVarScope::User)),
+        build_action_support("path_repair_apply", Some(EnvVarScope::System)),
+        build_action_support("conflict_resolve", Some(EnvVarScope::User)),
+        build_action_support("conflict_resolve", Some(EnvVarScope::System)),
         build_action_support("read_shell_profile", None),
         build_action_support("shell_guidance", None),
     ];
@@ -550,6 +579,44 @@ pub fn envvar_get_support_snapshot() -> Result<EnvVarSupportSnapshot, CogniaErro
 #[tauri::command]
 pub fn envvar_list_all() -> Result<HashMap<String, String>, CogniaError> {
     Ok(env::get_all_vars())
+}
+
+#[tauri::command]
+pub async fn envvar_get_overview(
+    settings: State<'_, SharedSettings>,
+) -> Result<EnvVarOverview, CogniaError> {
+    let process_count = envvar_list_process_summaries()?.len();
+    let user_count = envvar_list_persistent_typed_summaries(EnvVarScope::User)
+        .await?
+        .len();
+    let system_count = envvar_list_persistent_typed_summaries(EnvVarScope::System)
+        .await?
+        .len();
+    let conflict_count = envvar_detect_conflicts().await?.len();
+
+    let path_issue_count = envvar_get_path(EnvVarScope::User)
+        .await?
+        .into_iter()
+        .chain(envvar_get_path(EnvVarScope::System).await?.into_iter())
+        .filter(|entry| !entry.exists || entry.is_duplicate)
+        .count();
+
+    let settings = settings.read().await;
+    let latest_snapshot_at = list_envvar_snapshot_bundles(&settings)
+        .await?
+        .into_iter()
+        .map(|snapshot| snapshot.created_at)
+        .max();
+
+    Ok(EnvVarOverview {
+        total_vars: process_count + user_count + system_count,
+        process_count,
+        user_count,
+        system_count,
+        conflict_count,
+        path_issue_count,
+        latest_snapshot_at,
+    })
 }
 
 #[tauri::command]
@@ -605,7 +672,12 @@ pub async fn envvar_set_process(
     let key = env::normalize_env_var_key(&key)?;
     let support = build_action_support("set", Some(EnvVarScope::Process));
     if !support.supported {
-        return Ok(blocked_mutation_result("set", &key, EnvVarScope::Process, &support));
+        return Ok(blocked_mutation_result(
+            "set",
+            &key,
+            EnvVarScope::Process,
+            &support,
+        ));
     }
 
     env::set_var(&key, &value);
@@ -618,6 +690,8 @@ pub async fn envvar_set_process(
         operation: "set".to_string(),
         key,
         scope: EnvVarScope::Process,
+        recovery_action: None,
+        protection_state: None,
         success,
         verified: verified_flag,
         status,
@@ -626,6 +700,7 @@ pub async fn envvar_set_process(
         effective_value_summary: summary,
         primary_shell_target: None,
         shell_guidance: Vec::new(),
+        snapshot: None,
     })
 }
 
@@ -643,7 +718,8 @@ pub async fn envvar_remove_process(key: String) -> Result<EnvVarMutationResult, 
     }
 
     env::remove_var(&key);
-    let (verified, summary) = env::verify_envvar_value_state(&key, EnvVarScope::Process, None).await?;
+    let (verified, summary) =
+        env::verify_envvar_value_state(&key, EnvVarScope::Process, None).await?;
     let (success, verified_flag, status, reason_code, message) =
         mutation_status_from_verification(verified, EnvVarScope::Process, &[]);
 
@@ -651,6 +727,8 @@ pub async fn envvar_remove_process(key: String) -> Result<EnvVarMutationResult, 
         operation: "remove".to_string(),
         key,
         scope: EnvVarScope::Process,
+        recovery_action: None,
+        protection_state: None,
         success,
         verified: verified_flag,
         status,
@@ -659,6 +737,7 @@ pub async fn envvar_remove_process(key: String) -> Result<EnvVarMutationResult, 
         effective_value_summary: summary,
         primary_shell_target: None,
         shell_guidance: Vec::new(),
+        snapshot: None,
     })
 }
 
@@ -677,9 +756,9 @@ pub async fn envvar_set_persistent(
     scope: EnvVarScope,
 ) -> Result<EnvVarMutationResult, CogniaError> {
     let key = env::normalize_env_var_key(&key)?;
-    let support = build_action_support("set", Some(scope));
+    let support = build_action_support("persistent_set", Some(scope));
     if !support.supported {
-        return Ok(blocked_mutation_result("set", &key, scope, &support));
+        return Ok(blocked_mutation_result("persistent_set", &key, scope, &support));
     }
 
     env::set_persistent_var(&key, &value, scope).await?;
@@ -695,9 +774,11 @@ pub async fn envvar_set_persistent(
         mutation_status_from_verification(verified, scope, &shell_guidance);
 
     Ok(EnvVarMutationResult {
-        operation: "set".to_string(),
+        operation: "persistent_set".to_string(),
         key,
         scope,
+        recovery_action: Some("persistent_set".to_string()),
+        protection_state: None,
         success,
         verified: verified_flag,
         status,
@@ -706,6 +787,7 @@ pub async fn envvar_set_persistent(
         effective_value_summary: summary,
         primary_shell_target,
         shell_guidance,
+        snapshot: None,
     })
 }
 
@@ -715,9 +797,9 @@ pub async fn envvar_remove_persistent(
     scope: EnvVarScope,
 ) -> Result<EnvVarMutationResult, CogniaError> {
     let key = env::normalize_env_var_key(&key)?;
-    let support = build_action_support("remove", Some(scope));
+    let support = build_action_support("persistent_remove", Some(scope));
     if !support.supported {
-        return Ok(blocked_mutation_result("remove", &key, scope, &support));
+        return Ok(blocked_mutation_result("persistent_remove", &key, scope, &support));
     }
 
     env::remove_persistent_var(&key, scope).await?;
@@ -728,9 +810,11 @@ pub async fn envvar_remove_persistent(
         mutation_status_from_verification(verified, scope, &shell_guidance);
 
     Ok(EnvVarMutationResult {
-        operation: "remove".to_string(),
+        operation: "persistent_remove".to_string(),
         key,
         scope,
+        recovery_action: Some("persistent_remove".to_string()),
+        protection_state: None,
         success,
         verified: verified_flag,
         status,
@@ -739,6 +823,7 @@ pub async fn envvar_remove_persistent(
         effective_value_summary: summary,
         primary_shell_target,
         shell_guidance,
+        snapshot: None,
     })
 }
 
@@ -786,6 +871,8 @@ pub async fn envvar_add_path_entry(
         return Ok(EnvVarPathMutationResult {
             operation: "path_add".to_string(),
             scope,
+            recovery_action: Some("path_add".to_string()),
+            protection_state: None,
             success: true,
             verified: true,
             status: "verified".to_string(),
@@ -800,6 +887,7 @@ pub async fn envvar_add_path_entry(
                 auto_applied_shell_for_scope(scope).as_deref(),
                 false,
             ),
+            snapshot: None,
         });
     }
 
@@ -822,6 +910,8 @@ pub async fn envvar_add_path_entry(
     Ok(EnvVarPathMutationResult {
         operation: "path_add".to_string(),
         scope,
+        recovery_action: Some("path_add".to_string()),
+        protection_state: None,
         success,
         verified: verified_flag,
         status,
@@ -831,6 +921,7 @@ pub async fn envvar_add_path_entry(
         path_entries: summarize_path_entries(actual_entries),
         primary_shell_target: primary_shell_target_for_scope(scope),
         shell_guidance,
+        snapshot: None,
     })
 }
 
@@ -863,6 +954,8 @@ pub async fn envvar_remove_path_entry(
     Ok(EnvVarPathMutationResult {
         operation: "path_remove".to_string(),
         scope,
+        recovery_action: Some("path_remove".to_string()),
+        protection_state: None,
         success,
         verified: verified_flag,
         status,
@@ -872,6 +965,7 @@ pub async fn envvar_remove_path_entry(
         path_entries: summarize_path_entries(actual_entries),
         primary_shell_target: primary_shell_target_for_scope(scope),
         shell_guidance,
+        snapshot: None,
     })
 }
 
@@ -882,7 +976,11 @@ pub async fn envvar_reorder_path(
 ) -> Result<EnvVarPathMutationResult, CogniaError> {
     let support = build_action_support("path_reorder", Some(scope));
     if !support.supported {
-        return Ok(blocked_path_mutation_result("path_reorder", scope, &support));
+        return Ok(blocked_path_mutation_result(
+            "path_reorder",
+            scope,
+            &support,
+        ));
     }
 
     env::set_persistent_path(&entries, scope).await?;
@@ -899,6 +997,8 @@ pub async fn envvar_reorder_path(
     Ok(EnvVarPathMutationResult {
         operation: "path_reorder".to_string(),
         scope,
+        recovery_action: Some("path_reorder".to_string()),
+        protection_state: None,
         success,
         verified: verified_flag,
         status,
@@ -908,6 +1008,7 @@ pub async fn envvar_reorder_path(
         path_entries: summarize_path_entries(actual_entries),
         primary_shell_target: primary_shell_target_for_scope(scope),
         shell_guidance,
+        snapshot: None,
     })
 }
 
@@ -956,6 +1057,8 @@ pub async fn envvar_import_env_file(
             skipped: 0,
             errors: Vec::new(),
             scope,
+            recovery_action: Some("import_apply".to_string()),
+            protection_state: Some("blocked".to_string()),
             success: false,
             verified: false,
             status: "blocked".to_string(),
@@ -963,6 +1066,7 @@ pub async fn envvar_import_env_file(
             message: Some(support.reason),
             primary_shell_target: None,
             shell_guidance: Vec::new(),
+            snapshot: None,
         });
     }
 
@@ -995,6 +1099,8 @@ pub async fn envvar_import_env_file(
         skipped,
         errors,
         scope,
+        recovery_action: Some("import_apply".to_string()),
+        protection_state: Some("unprotected".to_string()),
         success: true,
         verified: true,
         status: "verified".to_string(),
@@ -1007,6 +1113,7 @@ pub async fn envvar_import_env_file(
             auto_applied_shell_for_scope(scope).as_deref(),
             false,
         ),
+        snapshot: None,
     })
 }
 
@@ -1031,6 +1138,8 @@ pub async fn envvar_apply_import_preview(
             skipped: 0,
             errors: Vec::new(),
             scope,
+            recovery_action: Some("import_apply".to_string()),
+            protection_state: Some("blocked".to_string()),
             success: false,
             verified: false,
             status: "blocked".to_string(),
@@ -1038,6 +1147,7 @@ pub async fn envvar_apply_import_preview(
             message: Some(support.reason),
             primary_shell_target: None,
             shell_guidance: Vec::new(),
+            snapshot: None,
         });
     }
 
@@ -1050,13 +1160,15 @@ pub async fn envvar_apply_import_preview(
 
     for item in &build.apply_items {
         match item.action.as_str() {
-            "add" | "update" => match env::set_persistent_var(&item.key, &item.raw_value, scope).await {
-                Ok(()) => imported += 1,
-                Err(error) => {
-                    skipped += 1;
-                    errors.push(format_import_error(&item.key, &error));
+            "add" | "update" => {
+                match env::set_persistent_var(&item.key, &item.raw_value, scope).await {
+                    Ok(()) => imported += 1,
+                    Err(error) => {
+                        skipped += 1;
+                        errors.push(format_import_error(&item.key, &error));
+                    }
                 }
-            },
+            }
             "invalid" | "skipped" => {
                 skipped += 1;
                 if let Some(reason) = &item.reason {
@@ -1073,6 +1185,8 @@ pub async fn envvar_apply_import_preview(
         skipped,
         errors,
         scope,
+        recovery_action: Some("import_apply".to_string()),
+        protection_state: Some("unprotected".to_string()),
         success: true,
         verified: true,
         status: "verified".to_string(),
@@ -1080,6 +1194,7 @@ pub async fn envvar_apply_import_preview(
         message: None,
         primary_shell_target: build.preview.primary_shell_target,
         shell_guidance: build.preview.shell_guidance,
+        snapshot: None,
     })
 }
 
@@ -1253,7 +1368,7 @@ pub async fn envvar_resolve_conflict(
     target_scope: EnvVarScope,
 ) -> Result<EnvVarConflictResolutionResult, CogniaError> {
     let key = env::normalize_env_var_key(&key)?;
-    let support = build_action_support("resolve_conflict", Some(target_scope));
+    let support = build_action_support("conflict_resolve", Some(target_scope));
     if !support.supported {
         return Ok(EnvVarConflictResolutionResult {
             key,
@@ -1261,6 +1376,8 @@ pub async fn envvar_resolve_conflict(
             target_scope,
             applied_value: String::new(),
             applied_value_summary: env::summarize_env_value("UNAVAILABLE", ""),
+            recovery_action: Some("conflict_resolve".to_string()),
+            protection_state: Some("blocked".to_string()),
             success: false,
             verified: false,
             status: "blocked".to_string(),
@@ -1268,6 +1385,7 @@ pub async fn envvar_resolve_conflict(
             message: Some(support.reason),
             primary_shell_target: None,
             shell_guidance: Vec::new(),
+            snapshot: None,
         });
     }
     let value = env::get_persistent_var(&key, source_scope)
@@ -1291,6 +1409,8 @@ pub async fn envvar_resolve_conflict(
         target_scope,
         applied_value_summary,
         applied_value: value,
+        recovery_action: Some("conflict_resolve".to_string()),
+        protection_state: Some("unprotected".to_string()),
         success: true,
         verified: true,
         status: "verified".to_string(),
@@ -1298,6 +1418,7 @@ pub async fn envvar_resolve_conflict(
         message: None,
         primary_shell_target,
         shell_guidance,
+        snapshot: None,
     })
 }
 
@@ -1318,9 +1439,9 @@ pub async fn envvar_apply_path_repair(
     scope: EnvVarScope,
     fingerprint: String,
 ) -> Result<EnvVarPathMutationResult, CogniaError> {
-    let support = build_action_support("path_repair", Some(scope));
+    let support = build_action_support("path_repair_apply", Some(scope));
     if !support.supported {
-        return Ok(blocked_path_mutation_result("path_repair", scope, &support));
+        return Ok(blocked_path_mutation_result("path_repair_apply", scope, &support));
     }
 
     let preview = build_path_repair_preview(scope).await?;
@@ -1331,8 +1452,10 @@ pub async fn envvar_apply_path_repair(
     }
 
     Ok(EnvVarPathMutationResult {
-        operation: "path_repair".to_string(),
+        operation: "path_repair_apply".to_string(),
         scope,
+        recovery_action: Some("path_repair_apply".to_string()),
+        protection_state: None,
         success: true,
         verified: true,
         status: "verified".to_string(),
@@ -1342,6 +1465,7 @@ pub async fn envvar_apply_path_repair(
         path_entries: summarize_path_entries(preview.repaired_entries),
         primary_shell_target: preview.primary_shell_target,
         shell_guidance: preview.shell_guidance,
+        snapshot: None,
     })
 }
 
@@ -1414,6 +1538,8 @@ pub async fn envvar_deduplicate_path(
     Ok(EnvVarPathMutationResult {
         operation: "path_deduplicate".to_string(),
         scope,
+        recovery_action: Some("path_deduplicate".to_string()),
+        protection_state: None,
         success: true,
         verified: true,
         status: "verified".to_string(),
@@ -1428,6 +1554,7 @@ pub async fn envvar_deduplicate_path(
             auto_applied_shell_for_scope(scope).as_deref(),
             false,
         ),
+        snapshot: None,
     })
 }
 
@@ -1580,7 +1707,9 @@ async fn build_import_preview_internal(
     })
 }
 
-async fn build_path_repair_preview(scope: EnvVarScope) -> Result<EnvVarPathRepairPreview, CogniaError> {
+async fn build_path_repair_preview(
+    scope: EnvVarScope,
+) -> Result<EnvVarPathRepairPreview, CogniaError> {
     let current_entries = env::get_persistent_path(scope).await?;
     let mut duplicate_count = 0usize;
     let mut missing_count = 0usize;
@@ -1782,13 +1911,15 @@ fn shell_guidance_for_path(
     env::list_shell_profiles()
         .into_iter()
         .filter_map(|profile| {
-            env::render_shell_path_command(&profile.shell, entries).map(|command| EnvVarShellGuidance {
-                shell: profile.shell.clone(),
-                config_path: profile.config_path,
-                command,
-                auto_applied: auto_applied_shell == Some(profile.shell.as_str()),
-                contains_sensitive_value: false,
-                redacted: false,
+            env::render_shell_path_command(&profile.shell, entries).map(|command| {
+                EnvVarShellGuidance {
+                    shell: profile.shell.clone(),
+                    config_path: profile.config_path,
+                    command,
+                    auto_applied: auto_applied_shell == Some(profile.shell.as_str()),
+                    contains_sensitive_value: false,
+                    redacted: false,
+                }
             })
         })
         .collect()
@@ -1841,6 +1972,21 @@ fn snapshot_scope_signature(scope: &EnvVarSnapshotScopePayload) -> (&str, &str) 
     (&scope.variable_fingerprint, &scope.path_fingerprint)
 }
 
+fn build_snapshot_restore_preview_fingerprint(
+    snapshot_path: &str,
+    snapshot: &EnvVarSnapshotPayload,
+    requested_scopes: &[EnvVarScope],
+) -> String {
+    let mut parts = vec![snapshot_path.to_string(), snapshot.created_at.clone()];
+    let mut scope_parts = requested_scopes
+        .iter()
+        .map(|scope| format!("{scope:?}"))
+        .collect::<Vec<_>>();
+    scope_parts.sort();
+    parts.extend(scope_parts);
+    stable_fingerprint(&parts)
+}
+
 fn risky_envvar_action(action: &str, scope: EnvVarScope) -> bool {
     if scope == EnvVarScope::Process {
         return false;
@@ -1849,25 +1995,33 @@ fn risky_envvar_action(action: &str, scope: EnvVarScope) -> bool {
     matches!(
         action,
         "set"
+            | "persistent_set"
             | "remove"
+            | "persistent_remove"
             | "import_apply"
             | "path_add"
             | "path_remove"
             | "path_reorder"
             | "path_deduplicate"
             | "path_repair_apply"
-            | "resolve_conflict"
+            | "conflict_resolve"
     )
 }
 
-async fn write_backup_manifest(bundle_dir: &Path, manifest: &BackupManifest) -> Result<(), CogniaError> {
-    let manifest_json = serde_json::to_string_pretty(manifest)
-        .map_err(|e| CogniaError::Internal(format!("Failed to serialize snapshot manifest: {}", e)))?;
+async fn write_backup_manifest(
+    bundle_dir: &Path,
+    manifest: &BackupManifest,
+) -> Result<(), CogniaError> {
+    let manifest_json = serde_json::to_string_pretty(manifest).map_err(|e| {
+        CogniaError::Internal(format!("Failed to serialize snapshot manifest: {}", e))
+    })?;
     fs::write_file_string(&bundle_dir.join("manifest.json"), &manifest_json).await?;
     Ok(())
 }
 
-async fn read_envvar_snapshot_payload(snapshot_dir: &Path) -> Result<EnvVarSnapshotPayload, CogniaError> {
+async fn read_envvar_snapshot_payload(
+    snapshot_dir: &Path,
+) -> Result<EnvVarSnapshotPayload, CogniaError> {
     let payload_path = envvar_snapshot_payload_path(snapshot_dir);
     let content = fs::read_file_string(&payload_path).await?;
     serde_json::from_str(&content)
@@ -1939,7 +2093,10 @@ pub(crate) async fn write_envvar_snapshot_bundle(
     materialized.note = note.map(|value| value.to_string());
 
     let payload_json = serde_json::to_string_pretty(&materialized).map_err(|e| {
-        CogniaError::Internal(format!("Failed to serialize envvar snapshot payload: {}", e))
+        CogniaError::Internal(format!(
+            "Failed to serialize envvar snapshot payload: {}",
+            e
+        ))
     })?;
     let payload_path = envvar_snapshot_payload_path(&snapshot_dir);
     fs::write_file_string(&payload_path, &payload_json).await?;
@@ -2008,6 +2165,35 @@ pub(crate) async fn list_envvar_snapshot_bundles(
 
     snapshots.sort_by(|left, right| right.created_at.cmp(&left.created_at));
     Ok(snapshots)
+}
+
+pub(crate) async fn create_envvar_snapshot_for_settings(
+    settings: &Settings,
+    scopes: &[EnvVarScope],
+    creation_mode: EnvVarSnapshotCreationMode,
+    source_action: Option<&str>,
+    note: Option<&str>,
+) -> Result<EnvVarSnapshotCreateResult, CogniaError> {
+    let _gate = crate::core::backup::try_acquire_backup_mutation_gate("create")
+        .map_err(CogniaError::Config)?;
+    let payload = capture_envvar_snapshot_payload(scopes).await?;
+    let snapshot = write_envvar_snapshot_bundle(
+        settings,
+        &payload,
+        creation_mode,
+        source_action,
+        note,
+        None,
+    )
+    .await?;
+
+    Ok(EnvVarSnapshotCreateResult {
+        success: true,
+        status: "verified".to_string(),
+        reason_code: None,
+        message: None,
+        snapshot: Some(snapshot),
+    })
 }
 
 pub(crate) async fn cleanup_envvar_snapshot_bundles(
@@ -2095,7 +2281,8 @@ pub(crate) fn build_envvar_backup_protection_state(
         .find(|item| {
             item.snapshot.scopes.iter().any(|scope_payload| {
                 scope_payload.scope == scope
-                    && snapshot_scope_signature(scope_payload) == snapshot_scope_signature(current_scope)
+                    && snapshot_scope_signature(scope_payload)
+                        == snapshot_scope_signature(current_scope)
             })
         })
         .cloned();
@@ -2106,7 +2293,8 @@ pub(crate) fn build_envvar_backup_protection_state(
             scope,
             state: "will_reuse".to_string(),
             reason_code: "compatible_snapshot_available".to_string(),
-            reason: "A compatible automatic envvar snapshot already protects the current state.".to_string(),
+            reason: "A compatible automatic envvar snapshot already protects the current state."
+                .to_string(),
             next_steps: Vec::new(),
             snapshot: Some(snapshot),
         };
@@ -2117,7 +2305,8 @@ pub(crate) fn build_envvar_backup_protection_state(
         scope,
         state: "will_create".to_string(),
         reason_code: "new_snapshot_required".to_string(),
-        reason: "A fresh envvar safety snapshot should be created before this mutation runs.".to_string(),
+        reason: "A fresh envvar safety snapshot should be created before this mutation runs."
+            .to_string(),
         next_steps: vec![
             "Create a safety snapshot before applying the risky envvar mutation.".to_string(),
         ],
@@ -2126,6 +2315,7 @@ pub(crate) fn build_envvar_backup_protection_state(
 }
 
 pub(crate) fn build_envvar_snapshot_restore_preview(
+    snapshot_path: &str,
     snapshot: &EnvVarSnapshotPayload,
     current_scopes: &[EnvVarSnapshotScopePayload],
     requested_scopes: &[EnvVarScope],
@@ -2158,7 +2348,9 @@ pub(crate) fn build_envvar_snapshot_restore_preview(
                 removed_path_entries: 0,
                 skipped: true,
                 reason_code: Some("scope_not_restorable".to_string()),
-                reason: Some("This scope is stored for diagnostics only and is not restorable.".to_string()),
+                reason: Some(
+                    "This scope is stored for diagnostics only and is not restorable.".to_string(),
+                ),
             });
             continue;
         }
@@ -2189,7 +2381,11 @@ pub(crate) fn build_envvar_snapshot_restore_preview(
             .count();
         let changed_variables = target_var_map
             .iter()
-            .filter(|(key, value)| current_var_map.get(*key).is_some_and(|current| current != *value))
+            .filter(|(key, value)| {
+                current_var_map
+                    .get(*key)
+                    .is_some_and(|current| current != *value)
+            })
             .count();
 
         let current_paths = current
@@ -2228,11 +2424,18 @@ pub(crate) fn build_envvar_snapshot_restore_preview(
 
     EnvVarSnapshotRestorePreview {
         created_at: snapshot.created_at.clone(),
+        fingerprint: build_snapshot_restore_preview_fingerprint(
+            snapshot_path,
+            snapshot,
+            requested_scopes,
+        ),
         segments,
     }
 }
 
-async fn capture_snapshot_scope_payload(scope: EnvVarScope) -> Result<EnvVarSnapshotScopePayload, CogniaError> {
+async fn capture_snapshot_scope_payload(
+    scope: EnvVarScope,
+) -> Result<EnvVarSnapshotScopePayload, CogniaError> {
     let variables = match scope {
         EnvVarScope::Process => {
             let mut values = env::get_all_vars()
@@ -2261,7 +2464,9 @@ async fn capture_snapshot_scope_payload(scope: EnvVarScope) -> Result<EnvVarSnap
     })
 }
 
-pub(crate) async fn capture_envvar_snapshot_payload(scopes: &[EnvVarScope]) -> Result<EnvVarSnapshotPayload, CogniaError> {
+pub(crate) async fn capture_envvar_snapshot_payload(
+    scopes: &[EnvVarScope],
+) -> Result<EnvVarSnapshotPayload, CogniaError> {
     let mut requested = scopes.to_vec();
     if requested.is_empty() {
         requested = vec![EnvVarScope::User, EnvVarScope::System];
@@ -2327,6 +2532,7 @@ pub(crate) async fn preview_envvar_snapshot_for_settings(
     };
     let current = capture_envvar_snapshot_payload(&requested_scopes).await?;
     Ok(build_envvar_snapshot_restore_preview(
+        &snapshot.path,
         &snapshot.snapshot,
         &current.scopes,
         &requested_scopes,
@@ -2337,13 +2543,25 @@ pub(crate) async fn restore_envvar_snapshot_for_settings(
     settings: &Settings,
     snapshot_path: &str,
     scopes: &[EnvVarScope],
+    preview_fingerprint: Option<&str>,
 ) -> Result<EnvVarSnapshotRestoreResult, CogniaError> {
+    let _gate = crate::core::backup::try_acquire_backup_mutation_gate("restore")
+        .map_err(CogniaError::Config)?;
     let snapshot = find_envvar_snapshot_by_path(settings, snapshot_path).await?;
     let requested_scopes = if scopes.is_empty() {
         snapshot.scopes.clone()
     } else {
         scopes.to_vec()
     };
+    let expected_fingerprint = build_snapshot_restore_preview_fingerprint(
+        &snapshot.path,
+        &snapshot.snapshot,
+        &requested_scopes,
+    );
+    let provided_fingerprint = preview_fingerprint.ok_or_else(|| {
+        CogniaError::Conflict("stale_preview: restore preview is required before restore".into())
+    })?;
+    ensure_preview_fingerprint(&expected_fingerprint, provided_fingerprint)?;
 
     let mut restored_scopes = Vec::new();
     let mut skipped = Vec::new();
@@ -2351,7 +2569,12 @@ pub(crate) async fn restore_envvar_snapshot_for_settings(
     let mut primary_shell_target = None;
 
     for scope in requested_scopes {
-        let Some(scope_payload) = snapshot.snapshot.scopes.iter().find(|item| item.scope == scope) else {
+        let Some(scope_payload) = snapshot
+            .snapshot
+            .scopes
+            .iter()
+            .find(|item| item.scope == scope)
+        else {
             skipped.push(EnvVarSnapshotRestoreSkipped {
                 scope,
                 reason_code: Some("scope_not_in_snapshot".to_string()),
@@ -2485,27 +2708,17 @@ pub async fn envvar_create_snapshot(
     settings: State<'_, SharedSettings>,
 ) -> Result<EnvVarSnapshotCreateResult, String> {
     let settings = settings.read().await;
-    let payload = capture_envvar_snapshot_payload(&scopes)
-        .await
-        .map_err(|error| error.to_string())?;
     let creation_mode = creation_mode.unwrap_or(EnvVarSnapshotCreationMode::Manual);
-    match write_envvar_snapshot_bundle(
+    match create_envvar_snapshot_for_settings(
         &settings,
-        &payload,
+        &scopes,
         creation_mode,
         source_action.as_deref(),
         note.as_deref(),
-        None,
     )
     .await
     {
-        Ok(snapshot) => Ok(EnvVarSnapshotCreateResult {
-            success: true,
-            status: "verified".to_string(),
-            reason_code: None,
-            message: None,
-            snapshot: Some(snapshot),
-        }),
+        Ok(result) => Ok(result),
         Err(error) => Ok(EnvVarSnapshotCreateResult {
             success: false,
             status: "failed".to_string(),
@@ -2544,25 +2757,33 @@ pub async fn envvar_preview_snapshot_restore(
 pub async fn envvar_restore_snapshot(
     snapshot_path: String,
     scopes: Vec<EnvVarScope>,
+    preview_fingerprint: Option<String>,
     settings: State<'_, SharedSettings>,
 ) -> Result<EnvVarSnapshotRestoreResult, String> {
     let settings = settings.read().await;
-    restore_envvar_snapshot_for_settings(&settings, &snapshot_path, &scopes)
+    restore_envvar_snapshot_for_settings(
+        &settings,
+        &snapshot_path,
+        &scopes,
+        preview_fingerprint.as_deref(),
+    )
         .await
         .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
-pub async fn envvar_delete_snapshot(
-    snapshot_path: String,
-) -> Result<BackupDeleteResult, String> {
+pub async fn envvar_delete_snapshot(snapshot_path: String) -> Result<BackupDeleteResult, String> {
     Ok(crate::core::backup::delete_backup_with_result(Path::new(&snapshot_path)).await)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use once_cell::sync::Lazy;
     use tempfile::tempdir;
+    use tokio::sync::Mutex;
+
+    static PROCESS_ENV_TEST_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
     fn snapshot_test_settings(root: &Path) -> crate::config::Settings {
         let mut settings = crate::config::Settings::default();
@@ -2620,6 +2841,7 @@ mod tests {
 
     #[tokio::test]
     async fn import_env_file_reports_invalid_key_as_skipped() {
+        let _guard = PROCESS_ENV_TEST_LOCK.lock().await;
         let result = envvar_import_env_file("BAD KEY=1\nGOOD_KEY=2".into(), EnvVarScope::Process)
             .await
             .expect("import should not crash");
@@ -2633,11 +2855,11 @@ mod tests {
 
     #[tokio::test]
     async fn process_summaries_mask_sensitive_values() {
+        let _guard = PROCESS_ENV_TEST_LOCK.lock().await;
         env::set_var("COGNIA_MASKED_TOKEN", "ghp_super_secret_token");
         env::set_var("COGNIA_VISIBLE_MODE", "development");
 
-        let summaries = envvar_list_process_summaries()
-            .expect("list summaries should succeed");
+        let summaries = envvar_list_process_summaries().expect("list summaries should succeed");
 
         let sensitive = summaries
             .iter()
@@ -2660,6 +2882,7 @@ mod tests {
 
     #[tokio::test]
     async fn export_redacts_sensitive_values_by_default() {
+        let _guard = PROCESS_ENV_TEST_LOCK.lock().await;
         env::set_var("COGNIA_EXPORT_TOKEN", "glpat-secret-value");
 
         let result = envvar_export_env_file(EnvVarScope::Process, EnvFileFormat::Dotenv, None)
@@ -2697,6 +2920,7 @@ mod tests {
 
     #[tokio::test]
     async fn deduplicate_path_is_idempotent() {
+        let _guard = PROCESS_ENV_TEST_LOCK.lock().await;
         let original = env::get_persistent_path(EnvVarScope::Process)
             .await
             .expect("read original PATH");
@@ -2727,6 +2951,7 @@ mod tests {
 
     #[tokio::test]
     async fn preview_import_classifies_add_update_noop_invalid_and_skipped_entries() {
+        let _guard = PROCESS_ENV_TEST_LOCK.lock().await;
         env::set_var("ENVVAR_PREVIEW_EXISTING", "same");
         env::set_var("ENVVAR_PREVIEW_UPDATE", "before");
 
@@ -2751,6 +2976,7 @@ mod tests {
 
     #[tokio::test]
     async fn apply_import_preview_rejects_stale_fingerprint() {
+        let _guard = PROCESS_ENV_TEST_LOCK.lock().await;
         env::set_var("ENVVAR_STALE_IMPORT", "before");
 
         let preview = envvar_preview_import_env_file(
@@ -2769,13 +2995,16 @@ mod tests {
         )
         .await;
 
-        assert!(matches!(result, Err(CogniaError::Conflict(message)) if message.contains("stale_preview")));
+        assert!(
+            matches!(result, Err(CogniaError::Conflict(message)) if message.contains("stale_preview"))
+        );
 
         env::remove_var("ENVVAR_STALE_IMPORT");
     }
 
     #[tokio::test]
     async fn apply_import_preview_returns_verification_metadata() {
+        let _guard = PROCESS_ENV_TEST_LOCK.lock().await;
         let result = envvar_apply_import_preview(
             "ENVVAR_IMPORT_VERIFY=after".into(),
             EnvVarScope::Process,
@@ -2800,6 +3029,7 @@ mod tests {
 
     #[tokio::test]
     async fn preview_path_repair_reports_missing_and_duplicate_entries() {
+        let _guard = PROCESS_ENV_TEST_LOCK.lock().await;
         let original = env::get_persistent_path(EnvVarScope::Process)
             .await
             .expect("read original PATH");
@@ -2832,6 +3062,7 @@ mod tests {
 
     #[tokio::test]
     async fn apply_path_repair_rejects_stale_fingerprint() {
+        let _guard = PROCESS_ENV_TEST_LOCK.lock().await;
         let original = env::get_persistent_path(EnvVarScope::Process)
             .await
             .expect("read original PATH");
@@ -2848,12 +3079,49 @@ mod tests {
             .await
             .expect("path preview should succeed");
 
-        env::set_persistent_path(&["__COGNIA_PATH_STALE_B__".to_string()], EnvVarScope::Process)
-            .await
-            .expect("mutate PATH after preview");
+        env::set_persistent_path(
+            &["__COGNIA_PATH_STALE_B__".to_string()],
+            EnvVarScope::Process,
+        )
+        .await
+        .expect("mutate PATH after preview");
 
         let result = envvar_apply_path_repair(EnvVarScope::Process, preview.fingerprint).await;
-        assert!(matches!(result, Err(CogniaError::Conflict(message)) if message.contains("stale_preview")));
+        assert!(
+            matches!(result, Err(CogniaError::Conflict(message)) if message.contains("stale_preview"))
+        );
+
+        env::set_persistent_path(&original, EnvVarScope::Process)
+            .await
+            .expect("restore PATH");
+    }
+
+    #[tokio::test]
+    async fn apply_path_repair_reports_canonical_operation_id() {
+        let _guard = PROCESS_ENV_TEST_LOCK.lock().await;
+        let original = env::get_persistent_path(EnvVarScope::Process)
+            .await
+            .expect("read original PATH");
+        let existing_dir = tempdir().expect("temp dir for existing PATH entry");
+        let existing_path = existing_dir.path().display().to_string();
+        let test_entries = vec![
+            existing_path.clone(),
+            existing_path.clone(),
+            "__COGNIA_PATH_MISSING_CANONICAL__".to_string(),
+        ];
+
+        env::set_persistent_path(&test_entries, EnvVarScope::Process)
+            .await
+            .expect("set temporary PATH");
+
+        let preview = envvar_preview_path_repair(EnvVarScope::Process)
+            .await
+            .expect("path preview should succeed");
+        let result = envvar_apply_path_repair(EnvVarScope::Process, preview.fingerprint)
+            .await
+            .expect("path repair should succeed");
+
+        assert_eq!(result.operation, "path_repair_apply");
 
         env::set_persistent_path(&original, EnvVarScope::Process)
             .await
@@ -2862,6 +3130,7 @@ mod tests {
 
     #[tokio::test]
     async fn resolve_conflict_copies_source_value_to_target_scope() {
+        let _guard = PROCESS_ENV_TEST_LOCK.lock().await;
         env::set_var("ENVVAR_RESOLVE_KEY", "from-source");
 
         let result = envvar_resolve_conflict(
@@ -2880,6 +3149,7 @@ mod tests {
 
     #[tokio::test]
     async fn resolve_conflict_returns_verification_metadata() {
+        let _guard = PROCESS_ENV_TEST_LOCK.lock().await;
         env::set_var("ENVVAR_RESOLVE_VERIFY", "from-source");
 
         let result = envvar_resolve_conflict(
@@ -2894,6 +3164,8 @@ mod tests {
         assert_eq!(json["status"], "verified");
         assert_eq!(json["verified"], true);
         assert_eq!(json["reasonCode"], serde_json::Value::Null);
+        assert_eq!(json["recoveryAction"], "conflict_resolve");
+        assert_eq!(json["protectionState"], "unprotected");
 
         env::remove_var("ENVVAR_RESOLVE_VERIFY");
     }
@@ -2910,10 +3182,19 @@ mod tests {
         .expect("guidance generation should succeed");
 
         assert!(!guidance.is_empty());
-        assert!(guidance.iter().any(|entry| entry.shell == "bash" && entry.command.contains("export ENVVAR_GUIDE_KEY")));
-        assert!(guidance.iter().any(|entry| entry.shell == "fish" && entry.command.contains("set -gx ENVVAR_GUIDE_KEY")));
-        assert!(guidance.iter().any(|entry| entry.shell == "powershell" && entry.command.contains("$env:ENVVAR_GUIDE_KEY")));
-        assert!(guidance.iter().any(|entry| entry.shell == "bash" && entry.auto_applied));
+        assert!(guidance.iter().any(
+            |entry| entry.shell == "bash" && entry.command.contains("export ENVVAR_GUIDE_KEY")
+        ));
+        assert!(guidance.iter().any(
+            |entry| entry.shell == "fish" && entry.command.contains("set -gx ENVVAR_GUIDE_KEY")
+        ));
+        assert!(guidance
+            .iter()
+            .any(|entry| entry.shell == "powershell"
+                && entry.command.contains("$env:ENVVAR_GUIDE_KEY")));
+        assert!(guidance
+            .iter()
+            .any(|entry| entry.shell == "bash" && entry.auto_applied));
         assert!(guidance.iter().all(|entry| !entry.redacted));
     }
 
@@ -2966,14 +3247,16 @@ mod tests {
             .actions
             .iter()
             .any(|item| item.action == "import_apply" && item.scope == Some(EnvVarScope::User)));
-        assert!(snapshot
-            .actions
-            .iter()
-            .any(|item| item.action == "path_repair_apply" && item.scope == Some(EnvVarScope::User)));
-        assert!(snapshot
-            .actions
-            .iter()
-            .any(|item| item.action == "conflict_resolve" && item.scope == Some(EnvVarScope::User)));
+        assert!(snapshot.actions.iter().any(
+            |item| item.action == "path_repair_apply" && item.scope == Some(EnvVarScope::User)
+        ));
+        assert!(
+            snapshot
+                .actions
+                .iter()
+                .any(|item| item.action == "conflict_resolve"
+                    && item.scope == Some(EnvVarScope::User))
+        );
 
         crate::platform::env::reset_env_test_overrides();
     }
@@ -3004,8 +3287,57 @@ mod tests {
         assert!(result.success);
         assert!(!result.verified);
         assert_eq!(result.reason_code.as_deref(), Some("shell_sync_required"));
+        assert_eq!(result.recovery_action.as_deref(), Some("persistent_set"));
+        assert_eq!(result.protection_state, None);
+        assert!(result.snapshot.is_none());
 
         crate::platform::env::reset_env_test_overrides();
+    }
+
+    #[tokio::test]
+    async fn apply_import_preview_reports_recovery_contract_fields() {
+        let _guard = PROCESS_ENV_TEST_LOCK.lock().await;
+        env::remove_var("ENVVAR_IMPORT_CONTRACT");
+
+        let preview = envvar_preview_import_env_file(
+            "ENVVAR_IMPORT_CONTRACT=after".into(),
+            EnvVarScope::Process,
+        )
+        .await
+        .expect("preview should succeed");
+
+        let result = envvar_apply_import_preview(
+            "ENVVAR_IMPORT_CONTRACT=after".into(),
+            EnvVarScope::Process,
+            preview.fingerprint,
+        )
+        .await
+        .expect("apply import preview should succeed");
+
+        let json = serde_json::to_value(&result).expect("serialize result");
+        assert_eq!(json["recoveryAction"], "import_apply");
+        assert_eq!(json["protectionState"], "unprotected");
+        assert!(json["snapshot"].is_null());
+
+        env::remove_var("ENVVAR_IMPORT_CONTRACT");
+    }
+
+    #[tokio::test]
+    async fn create_envvar_snapshot_reports_operation_in_progress_when_backup_gate_is_held() {
+        let dir = tempdir().expect("temp dir");
+        let settings = snapshot_test_settings(dir.path());
+        let _gate = crate::core::backup::lock_backup_mutation_gate_for_test().await;
+
+        let result = create_envvar_snapshot_for_settings(
+            &settings,
+            &[EnvVarScope::User],
+            EnvVarSnapshotCreationMode::Manual,
+            Some("manual_snapshot"),
+            Some("blocked by gate"),
+        )
+        .await;
+
+        assert!(matches!(result, Err(CogniaError::Config(message)) if message.contains("already running")));
     }
 
     #[cfg(not(windows))]
@@ -3034,8 +3366,14 @@ mod tests {
 
         assert_eq!(result.action.as_deref(), Some("persistent_set"));
         assert_eq!(result.protection_state.as_deref(), Some("will_create"));
-        let snapshot = result.snapshot.as_ref().expect("automatic snapshot reference");
-        assert_eq!(snapshot.creation_mode, EnvVarSnapshotCreationMode::Automatic);
+        let snapshot = result
+            .snapshot
+            .as_ref()
+            .expect("automatic snapshot reference");
+        assert_eq!(
+            snapshot.creation_mode,
+            EnvVarSnapshotCreationMode::Automatic
+        );
         assert_eq!(snapshot.source_action.as_deref(), Some("persistent_set"));
 
         let listed = list_envvar_snapshot_bundles(&settings)
@@ -3182,8 +3520,12 @@ mod tests {
             .await
             .expect("list snapshot bundles");
         assert_eq!(listed.len(), 2);
-        assert!(listed.iter().any(|item| item.creation_mode == EnvVarSnapshotCreationMode::Manual));
-        assert!(listed.iter().any(|item| item.note.as_deref() == Some("new auto")));
+        assert!(listed
+            .iter()
+            .any(|item| item.creation_mode == EnvVarSnapshotCreationMode::Manual));
+        assert!(listed
+            .iter()
+            .any(|item| item.note.as_deref() == Some("new auto")));
     }
 
     #[test]
@@ -3232,6 +3574,118 @@ mod tests {
     }
 
     #[test]
+    fn backup_protection_accepts_current_workflow_action_ids() {
+        let scope_payload = EnvVarSnapshotScopePayload {
+            scope: EnvVarScope::User,
+            variables: vec![PersistentEnvVar {
+                key: "API_TOKEN".to_string(),
+                value: "secret".to_string(),
+                reg_type: None,
+            }],
+            path_entries: vec!["/tmp/bin".to_string()],
+            variable_fingerprint: "vars:user:token".to_string(),
+            path_fingerprint: "path:user:/tmp/bin".to_string(),
+            restorable: true,
+        };
+
+        for action in [
+            "persistent_set",
+            "persistent_remove",
+            "path_repair_apply",
+            "conflict_resolve",
+        ] {
+            let state = build_envvar_backup_protection_state(
+                action,
+                EnvVarScope::User,
+                &scope_payload,
+                &[],
+            );
+
+            assert_eq!(
+                state.state, "will_create",
+                "action {action} should request protection"
+            );
+            assert_eq!(state.reason_code, "new_snapshot_required");
+        }
+    }
+
+    #[test]
+    fn support_snapshot_exposes_current_recovery_action_ids() {
+        let snapshot = envvar_get_support_snapshot().expect("support snapshot");
+
+        assert!(snapshot
+            .actions
+            .iter()
+            .any(|item| item.action == "persistent_set" && item.scope == Some(EnvVarScope::User)));
+        assert!(snapshot
+            .actions
+            .iter()
+            .any(|item| item.action == "persistent_remove" && item.scope == Some(EnvVarScope::User)));
+        assert!(snapshot
+            .actions
+            .iter()
+            .any(|item| item.action == "import_apply" && item.scope == Some(EnvVarScope::User)));
+        assert!(snapshot.actions.iter().any(
+            |item| item.action == "path_repair_apply" && item.scope == Some(EnvVarScope::User)
+        ));
+        assert!(
+            snapshot
+                .actions
+                .iter()
+                .any(|item| item.action == "conflict_resolve"
+                    && item.scope == Some(EnvVarScope::User))
+        );
+    }
+
+    #[test]
+    fn blocked_mutation_result_exposes_recovery_metadata() {
+        let support = EnvVarActionSupport {
+            action: "persistent_remove".to_string(),
+            scope: Some(EnvVarScope::User),
+            supported: false,
+            state: "blocked".to_string(),
+            reason_code: "blocked".to_string(),
+            reason: "blocked".to_string(),
+            next_steps: vec![],
+        };
+
+        let result = blocked_mutation_result(
+            "persistent_remove",
+            "JAVA_HOME",
+            EnvVarScope::User,
+            &support,
+        );
+
+        assert_eq!(result.recovery_action.as_deref(), Some("persistent_remove"));
+        assert_eq!(result.protection_state.as_deref(), Some("blocked"));
+        assert!(result.snapshot.is_none());
+    }
+
+    #[tokio::test]
+    async fn restore_envvar_snapshot_reports_operation_in_progress_when_backup_gate_is_held() {
+        let dir = tempdir().expect("temp dir");
+        let settings = snapshot_test_settings(dir.path());
+        let payload = sample_snapshot_payload(EnvVarScope::User, "RESTORE_TOKEN", "before");
+        let created = write_envvar_snapshot_bundle(
+            &settings,
+            &payload,
+            EnvVarSnapshotCreationMode::Manual,
+            Some("manual_snapshot"),
+            Some("before restore"),
+            None,
+        )
+        .await
+        .expect("create snapshot bundle");
+        let _gate = crate::core::backup::lock_backup_mutation_gate_for_test().await;
+
+        let result =
+            restore_envvar_snapshot_for_settings(&settings, &created.path, &[], Some("missing"))
+                .await;
+
+        assert!(matches!(result, Err(CogniaError::Config(message)) if message.contains("already running")));
+    }
+
+    #[test]
     fn restore_preview_marks_process_scope_as_unsupported() {
         let snapshot = EnvVarSnapshotPayload {
             format_version: 1,
@@ -3253,13 +3707,76 @@ mod tests {
             }],
         };
 
-        let preview = build_envvar_snapshot_restore_preview(&snapshot, &[], &[EnvVarScope::Process]);
+        let preview = build_envvar_snapshot_restore_preview(
+            "D:/snapshots/process-only",
+            &snapshot,
+            &[],
+            &[EnvVarScope::Process],
+        );
         assert_eq!(preview.segments.len(), 1);
         assert_eq!(preview.segments[0].scope, EnvVarScope::Process);
         assert!(preview.segments[0].skipped);
         assert_eq!(
             preview.segments[0].reason_code.as_deref(),
             Some("scope_not_restorable")
+        );
+    }
+
+    #[tokio::test]
+    async fn preview_snapshot_restore_returns_fingerprint_for_selected_scopes() {
+        let dir = tempdir().expect("temp dir");
+        let settings = snapshot_test_settings(dir.path());
+        let payload = sample_snapshot_payload(EnvVarScope::User, "RESTORE_TOKEN", "before");
+        let created = write_envvar_snapshot_bundle(
+            &settings,
+            &payload,
+            EnvVarSnapshotCreationMode::Manual,
+            Some("manual_snapshot"),
+            Some("before restore"),
+            None,
+        )
+        .await
+        .expect("create snapshot bundle");
+
+        let preview = preview_envvar_snapshot_for_settings(&settings, &created.path, &[EnvVarScope::User])
+            .await
+            .expect("preview snapshot restore");
+
+        assert!(!preview.fingerprint.is_empty());
+        assert_eq!(preview.segments.len(), 1);
+        assert_eq!(preview.segments[0].scope, EnvVarScope::User);
+    }
+
+    #[tokio::test]
+    async fn restore_snapshot_rejects_stale_preview_fingerprint() {
+        let dir = tempdir().expect("temp dir");
+        let settings = snapshot_test_settings(dir.path());
+        let payload = sample_snapshot_payload(EnvVarScope::User, "RESTORE_TOKEN", "before");
+        let created = write_envvar_snapshot_bundle(
+            &settings,
+            &payload,
+            EnvVarSnapshotCreationMode::Manual,
+            Some("manual_snapshot"),
+            Some("before restore"),
+            None,
+        )
+        .await
+        .expect("create snapshot bundle");
+
+        let preview = preview_envvar_snapshot_for_settings(&settings, &created.path, &[EnvVarScope::User])
+            .await
+            .expect("preview snapshot restore");
+
+        let result = restore_envvar_snapshot_for_settings(
+            &settings,
+            &created.path,
+            &[EnvVarScope::User],
+            Some(&format!("{}-stale", preview.fingerprint)),
+        )
+        .await;
+
+        assert!(
+            matches!(result, Err(CogniaError::Conflict(message)) if message.contains("stale_preview"))
         );
     }
 }

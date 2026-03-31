@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -14,7 +14,7 @@ import {
   ToolOptionGroup,
 } from '@/components/toolbox/tool-layout';
 import { useLocale } from '@/components/providers/locale-provider';
-import { useToolPreferences } from '@/hooks/use-tool-preferences';
+import { useToolPreferences } from '@/hooks/toolbox/use-tool-preferences';
 import { TOOLBOX_LIMITS } from '@/lib/constants/toolbox-limits';
 import type { ToolComponentProps } from '@/types/toolbox';
 
@@ -25,9 +25,13 @@ const BASES = [
   { labelKey: 'toolbox.tools.numberBaseConverter.baseHexadecimal', base: 16, prefix: '0x' },
 ] as const;
 
+type BaseValue = (typeof BASES)[number]['base'];
+
 const DEFAULT_PREFERENCES = {
   uppercaseHex: true,
   showPrefix: false,
+  sourceBase: 10,
+  targetBase: 16,
 } as const;
 
 const QUICK_VALUES = [
@@ -49,6 +53,8 @@ export default function NumberBaseConverter({ className }: ToolComponentProps) {
   const { preferences, setPreferences } = useToolPreferences('number-base-converter', DEFAULT_PREFERENCES);
   const [values, setValues] = useState<Record<number, string>>({ 2: '', 8: '', 10: '', 16: '' });
   const [error, setError] = useState<string | null>(null);
+  const sourceBase = preferences.sourceBase as BaseValue;
+  const targetBase = preferences.targetBase as BaseValue;
 
   const handleChange = useCallback((base: number, value: string) => {
     const rawValue = value.trim();
@@ -107,6 +113,15 @@ export default function NumberBaseConverter({ className }: ToolComponentProps) {
   const formattedBinary = values[2] ? groupDigits(values[2], 4) : '';
   const formattedDecimal = values[10] ? groupDigits(values[10], 3) : '';
   const formattedHex = values[16] ? groupDigits(values[16], 2) : '';
+  const orderedBases = useMemo(() => {
+    const ordered = [sourceBase, ...(targetBase === sourceBase ? [] : [targetBase])] as BaseValue[];
+    for (const item of BASES) {
+      if (!ordered.includes(item.base)) {
+        ordered.push(item.base);
+      }
+    }
+    return ordered.map((base) => BASES.find((item) => item.base === base)!);
+  }, [sourceBase, targetBase]);
 
   return (
     <div className={className}>
@@ -131,6 +146,46 @@ export default function NumberBaseConverter({ className }: ToolComponentProps) {
             </div>
           </ToolOptionGroup>
 
+          <div className="mt-3 space-y-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">{t('toolbox.tools.numberBaseConverter.sourceBase')}</Label>
+              <div className="flex flex-wrap gap-2">
+                {BASES.map(({ labelKey, base }) => (
+                  <Button
+                    key={`source-${base}`}
+                    type="button"
+                    size="sm"
+                    variant={sourceBase === base ? 'default' : 'outline'}
+                    aria-pressed={sourceBase === base}
+                    aria-label={`${t('toolbox.tools.numberBaseConverter.sourceBase')}: ${t(labelKey)}`}
+                    onClick={() => setPreferences({ sourceBase: base })}
+                  >
+                    {t(labelKey)}
+                  </Button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">{t('toolbox.tools.numberBaseConverter.targetBase')}</Label>
+              <div className="flex flex-wrap gap-2">
+                {BASES.map(({ labelKey, base }) => (
+                  <Button
+                    key={`target-${base}`}
+                    type="button"
+                    size="sm"
+                    variant={targetBase === base ? 'default' : 'outline'}
+                    aria-pressed={targetBase === base}
+                    aria-label={`${t('toolbox.tools.numberBaseConverter.targetBase')}: ${t(labelKey)}`}
+                    onClick={() => setPreferences({ targetBase: base })}
+                  >
+                    {t(labelKey)}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          </div>
+
           <ToolActionRow className="mt-3">
             {QUICK_VALUES.map((item) => (
               <Button
@@ -145,10 +200,16 @@ export default function NumberBaseConverter({ className }: ToolComponentProps) {
           </ToolActionRow>
         </ToolSection>
 
-        <ToolSection title={t('toolbox.tools.numberBaseConverter.values')}>
+        <ToolSection
+          title={t('toolbox.tools.numberBaseConverter.values')}
+          description={t('toolbox.tools.numberBaseConverter.pairSummary', {
+            source: t(BASES.find((item) => item.base === sourceBase)?.labelKey ?? ''),
+            target: t(BASES.find((item) => item.base === targetBase)?.labelKey ?? ''),
+          })}
+        >
           <Card>
             <CardContent className="p-4 space-y-4">
-              {BASES.map(({ labelKey, base, prefix }) => (
+              {orderedBases.map(({ labelKey, base, prefix }) => (
                 <div key={base} className="space-y-1.5">
                   <Label htmlFor={`number-base-input-${base}`} className="text-sm">{t(labelKey)}</Label>
                   <Input

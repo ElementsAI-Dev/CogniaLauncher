@@ -2,13 +2,14 @@ import { render, screen, fireEvent, waitFor, within, act } from '@testing-librar
 import userEvent from '@testing-library/user-event';
 import DownloadsPage from './page';
 import { LocaleProvider } from '@/components/providers/locale-provider';
-import type { DownloadTask, HistoryRecord, QueueStats } from '@/lib/stores/download';
+import type { DownloadTask, QueueStats } from '@/lib/stores/download';
 
 let mockGitHubDialogProps: { open: boolean; checkDiskSpace?: unknown } | null = null;
 let mockGitLabDialogProps: { open: boolean; checkDiskSpace?: unknown } | null = null;
 let mockCheckDiskSpace: jest.Mock;
+const mockFsExists = jest.fn();
 
-jest.mock('@/hooks/use-downloads', () => ({
+jest.mock('@/hooks/downloads/use-downloads', () => ({
   useDownloads: jest.fn(),
 }));
 
@@ -16,11 +17,25 @@ jest.mock('@/lib/tauri', () => ({
   isTauri: jest.fn(),
 }));
 
+jest.mock('@tauri-apps/plugin-fs', () => ({
+  exists: (...args: unknown[]) => mockFsExists(...args),
+}));
+
 jest.mock('sonner', () => ({
   toast: {
     success: jest.fn(),
     error: jest.fn(),
   },
+}));
+
+jest.mock('@/lib/stores/download', () => ({
+  useDownloadStore: jest.fn((selector: (s: unknown) => unknown) =>
+    selector({
+      tasks: [],
+      progressMap: {},
+      speedHistory: [],
+    })
+  ),
 }));
 
 jest.mock('@/components/downloads', () => {
@@ -61,6 +76,7 @@ const mockMessages = {
       actions: 'Actions',
       clear: 'Clear',
       selected: 'selected',
+      settings: 'Settings',
     },
     downloads: {
       title: 'Downloads',
@@ -75,6 +91,7 @@ const mockMessages = {
       batchImport: 'Batch Import',
       fromGitHub: 'From GitHub',
       fromGitLab: 'From GitLab',
+      dropUrl: 'Drop URL to download',
       url: 'URL',
       destination: 'Destination',
       name: 'Name',
@@ -96,6 +113,8 @@ const mockMessages = {
         cancel: 'Cancel',
         remove: 'Remove',
         retry: 'Retry',
+        open: 'Open',
+        reveal: 'Reveal',
         pauseAll: 'Pause All',
         resumeAll: 'Resume All',
         cancelAll: 'Cancel All',
@@ -115,6 +134,8 @@ const mockMessages = {
         unlimited: 'Unlimited',
         maxConcurrent: 'Max Concurrent',
         maxConcurrentDesc: 'Maximum simultaneous downloads',
+        clipboardMonitor: 'Clipboard Monitor',
+        clipboardMonitorDesc: 'Auto-detect download URLs in clipboard',
       },
       stats: {
         total: 'Total',
@@ -125,20 +146,13 @@ const mockMessages = {
         failed: 'Failed',
         cancelled: 'Cancelled',
       },
-      historyPanel: {
-        title: 'Download History',
-        search: 'Search history...',
-        clear: 'Clear History',
-        duration: 'Duration',
-        averageSpeed: 'Avg Speed',
-        successRate: 'Success Rate',
-        totalDownloaded: 'Total Downloaded',
-      },
       toolbar: {
         searchPlaceholder: 'Search downloads...',
         filterAll: 'All',
+        filterActive: 'Active',
         filterDownloading: 'Downloading',
         filterQueued: 'Queued',
+        filterDone: 'Done',
         filterPaused: 'Paused',
         filterCompleted: 'Completed',
         filterFailed: 'Failed',
@@ -150,6 +164,9 @@ const mockMessages = {
       },
       preflight: {
         unknownSizeWarning: 'File size unknown, continuing with caution',
+      },
+      historyPanel: {
+        reuse: 'Reuse Download',
       },
       provider: 'Provider',
       providerPlaceholder: 'Optional: e.g., npm, github',
@@ -167,6 +184,7 @@ const mockMessages = {
         cleared: 'Cleared {count} downloads',
         speedLimitSet: 'Speed limit set to {speed}',
         speedLimitRemoved: 'Speed limit removed',
+        batchAdded: 'Added {count} downloads',
       },
     },
     about: {
@@ -240,30 +258,11 @@ const mockTaskPaused: DownloadTask = {
   serverFilename: null,
 };
 
-const mockHistory: HistoryRecord = {
-  id: 'history-1',
-  url: 'https://example.com/history.zip',
-  filename: 'history.zip',
-  destination: '/downloads/history.zip',
-  size: 1024,
-  sizeHuman: '1 KB',
-  checksum: null,
-  startedAt: '2024-01-01T10:00:00Z',
-  completedAt: '2024-01-01T10:02:00Z',
-  durationSecs: 120,
-  durationHuman: '2m',
-  averageSpeed: 128,
-  speedHuman: '128 KB/s',
-  status: 'completed',
-  error: null,
-  provider: null,
-};
-
 const mockStats: QueueStats = {
-  totalTasks: 1,
+  totalTasks: 2,
   queued: 0,
   downloading: 1,
-  paused: 0,
+  paused: 1,
   completed: 0,
   failed: 0,
   cancelled: 0,
@@ -283,7 +282,7 @@ function renderWithProviders(ui: React.ReactElement) {
 }
 
 function setupMocks() {
-  const { useDownloads } = jest.requireMock('@/hooks/use-downloads') as {
+  const { useDownloads } = jest.requireMock('@/hooks/downloads/use-downloads') as {
     useDownloads: jest.Mock;
   };
   const { isTauri } = jest.requireMock('@/lib/tauri') as {
@@ -294,19 +293,16 @@ function setupMocks() {
   isTauri.mockReturnValue(true);
   useDownloads.mockReturnValue({
     tasks: [mockTask, mockTaskPaused],
-    stats: { ...mockStats, totalTasks: 2, paused: 1 },
-    history: [mockHistory],
+    stats: mockStats,
+    history: [],
     historyStats: null,
     speedLimit: 0,
     maxConcurrent: 4,
     isLoading: false,
     error: null,
     selectedTaskIds: new Set<string>(),
-    showHistory: false,
-    activeTasks: [mockTask],
-    pausedTasks: [],
-    completedTasks: [],
-    failedTasks: [],
+    clipboardMonitor: false,
+    setClipboardMonitor: jest.fn(),
     addDownload: jest.fn(),
     pauseDownload: jest.fn(),
     resumeDownload: jest.fn(),
@@ -327,6 +323,7 @@ function setupMocks() {
     removeHistoryRecord: jest.fn(),
     getDiskSpace: jest.fn(),
     checkDiskSpace: mockCheckDiskSpace,
+    checkDestinationAvailability: (...args: unknown[]) => mockFsExists(...args),
     getSpeedLimit: jest.fn(),
     getMaxConcurrent: jest.fn(),
     verifyFile: jest.fn(),
@@ -344,8 +341,7 @@ function setupMocks() {
     deselectTask: jest.fn(),
     selectAllTasks: jest.fn(),
     deselectAllTasks: jest.fn(),
-    toggleShowHistory: jest.fn(),
-    clearError: jest.fn(),
+    extractArchive: jest.fn(),
   });
 }
 
@@ -354,6 +350,7 @@ describe('DownloadsPage', () => {
     jest.clearAllMocks();
     mockGitHubDialogProps = null;
     mockGitLabDialogProps = null;
+    mockFsExists.mockResolvedValue(true);
     setupMocks();
   });
 
@@ -364,14 +361,14 @@ describe('DownloadsPage', () => {
     expect(screen.getByText(/manage download tasks/i)).toBeInTheDocument();
   });
 
-  it('uses downloads hook with runtime enabled on page', () => {
-    const { useDownloads } = jest.requireMock('@/hooks/use-downloads') as {
+  it('uses downloads hook on page without enabling a second runtime owner', () => {
+    const { useDownloads } = jest.requireMock('@/hooks/downloads/use-downloads') as {
       useDownloads: jest.Mock;
     };
 
     renderWithProviders(<DownloadsPage />);
 
-    expect(useDownloads).toHaveBeenCalledWith();
+    expect(useDownloads).toHaveBeenCalledWith({ enableRuntime: false });
   });
 
   it('passes checkDiskSpace down to provider dialogs', () => {
@@ -381,22 +378,24 @@ describe('DownloadsPage', () => {
     expect(mockGitLabDialogProps?.checkDiskSpace).toBe(mockCheckDiskSpace);
   });
 
-  it('renders queue task rows', () => {
+  it('renders task cards in grouped sections', () => {
     renderWithProviders(<DownloadsPage />);
 
+    // Both tasks should be visible
     expect(screen.getByText('file.zip')).toBeInTheDocument();
-    expect(screen.getByText('https://example.com/file.zip')).toBeInTheDocument();
-    expect(screen.getAllByText('Downloading').length).toBeGreaterThan(0);
+    expect(screen.getByText('other.zip')).toBeInTheDocument();
+
+    // Section headers should be present
+    expect(screen.getByText(/Downloading \(1\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Paused \(1\)/)).toBeInTheDocument();
   });
 
-  it('shows history entries when switching tabs', async () => {
+  it('renders stats strip with metric values', () => {
     renderWithProviders(<DownloadsPage />);
 
-    await userEvent.click(screen.getByRole('tab', { name: /download history/i }));
-
-    await waitFor(() => {
-      expect(screen.getByText('history.zip')).toBeInTheDocument();
-    });
+    // Stats strip shows downloading count
+    const downloadingMetric = screen.getAllByText('1');
+    expect(downloadingMetric.length).toBeGreaterThan(0);
   });
 
   it('opens add download dialog', async () => {
@@ -405,38 +404,24 @@ describe('DownloadsPage', () => {
     await userEvent.click(screen.getByRole('button', { name: /add download/i }));
 
     await waitFor(() => {
-      // Check for the dialog by looking for the URL input field
       expect(screen.getByLabelText('URL')).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
   });
 
-  it('renders the download toolbar with search and filters', () => {
+  it('renders the toolbar with search and simplified filter tabs', () => {
     renderWithProviders(<DownloadsPage />);
 
     expect(screen.getByPlaceholderText('Search downloads...')).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /all/i })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /downloading/i })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /paused/i })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /cancelled/i })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /extracting/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /active/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /queued/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /done/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /failed/i })).toBeInTheDocument();
   });
 
-  it('keeps queue/settings sections in stable order for responsive layout', () => {
-    renderWithProviders(<DownloadsPage />);
-
-    const queueLayout = screen.getByTestId('downloads-queue-layout');
-    const queueCard = screen.getByTestId('downloads-queue-card');
-    const settingsRegion = screen.getByTestId('downloads-settings-region');
-
-    expect(queueLayout).toBeInTheDocument();
-    expect(
-      queueCard.compareDocumentPosition(settingsRegion) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-  });
-
-  it('keeps source actions discoverable and opens provider dialogs', async () => {
+  it('opens provider dialogs', async () => {
     renderWithProviders(<DownloadsPage />);
 
     await userEvent.click(screen.getByRole('button', { name: /from github/i }));
@@ -458,24 +443,18 @@ describe('DownloadsPage', () => {
     });
   });
 
-  it('filters tasks by status', async () => {
+  it('filters tasks by active status', async () => {
     renderWithProviders(<DownloadsPage />);
 
-    // Click on paused filter tab
-    const pausedTab = screen.getByRole('tab', { name: /paused/i });
-    await userEvent.click(pausedTab);
+    // Click on active filter tab (includes downloading + extracting + paused)
+    const activeTab = screen.getByRole('tab', { name: /active/i });
+    await userEvent.click(activeTab);
 
     await waitFor(() => {
+      // Both downloading and paused tasks should show under "active"
+      expect(screen.getByText('file.zip')).toBeInTheDocument();
       expect(screen.getByText('other.zip')).toBeInTheDocument();
-      expect(screen.queryByText('file.zip')).not.toBeInTheDocument();
     });
-  });
-
-  it('displays provider badge for tasks with provider', () => {
-    renderWithProviders(<DownloadsPage />);
-
-    expect(screen.getByText('npm')).toBeInTheDocument();
-    expect(screen.getByText('github')).toBeInTheDocument();
   });
 
   it('shows empty state when no tasks match filters', async () => {
@@ -523,8 +502,48 @@ describe('DownloadsPage', () => {
     });
   });
 
+  it('reuses a completed task from detail when its destination is unavailable', async () => {
+    const { useDownloads } = jest.requireMock('@/hooks/downloads/use-downloads') as {
+      useDownloads: jest.Mock;
+    };
+    const completedTask = {
+      ...mockTask,
+      id: 'task-completed',
+      name: 'completed-build.zip',
+      state: 'completed' as const,
+      completedAt: '2024-01-01T10:02:00Z',
+    };
+    const existing = useDownloads();
+    useDownloads.mockReturnValue({
+      ...existing,
+      tasks: [completedTask],
+    });
+    mockFsExists.mockResolvedValue(false);
+
+    renderWithProviders(<DownloadsPage />);
+
+    const detailCard = screen.getByText('completed-build.zip').closest('[role="button"]');
+    expect(detailCard).toBeTruthy();
+    await userEvent.click(detailCard as HTMLElement);
+
+    await waitFor(() => {
+      expect(mockFsExists).toHaveBeenCalledWith('/downloads/file.zip');
+      expect(screen.getByText('Reuse Download')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText('Open File')).not.toBeInTheDocument();
+    expect(screen.queryByText('Show in Folder')).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByText('Reuse Download'));
+
+    await waitFor(() => {
+      const input = screen.getByLabelText('URL') as HTMLInputElement;
+      expect(input.value).toBe('https://example.com/file.zip');
+    });
+  });
+
   it('triggers batch actions from toolbar when tasks are selected', async () => {
-    const { useDownloads } = jest.requireMock('@/hooks/use-downloads') as {
+    const { useDownloads } = jest.requireMock('@/hooks/downloads/use-downloads') as {
       useDownloads: jest.Mock;
     };
     const existing = useDownloads();
@@ -556,5 +575,22 @@ describe('DownloadsPage', () => {
     expect(batchResume).toHaveBeenCalled();
     expect(batchCancel).toHaveBeenCalled();
     expect(batchRemove).toHaveBeenCalled();
+  });
+
+  it('toggles settings panel visibility', async () => {
+    renderWithProviders(<DownloadsPage />);
+
+    const settingsBtn = screen.getByRole('button', { name: /settings/i });
+    expect(settingsBtn).toBeInTheDocument();
+
+    // Settings panel should be collapsed by default (not in DOM)
+    expect(screen.queryByLabelText('Speed Limit')).not.toBeInTheDocument();
+
+    // Click to open
+    await userEvent.click(settingsBtn);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Speed Limit')).toBeInTheDocument();
+    });
   });
 });

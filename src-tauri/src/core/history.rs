@@ -810,6 +810,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_history_manager_recovers_from_malformed_history_file() {
+        let _guard = HISTORY_MUTATION_LOCK.lock().await;
         let history_path = InstallHistory::history_path();
         if history_path.is_none() {
             return;

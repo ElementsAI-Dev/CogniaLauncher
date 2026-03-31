@@ -79,6 +79,33 @@ Notes:
 - `builtin` with `javascript` is rejected.
 - For built-ins, do not target `plugins/rust` or `plugins/typescript` directly as output root.
 
+### Advanced Scaffold Authoring Inputs
+
+Toolbox > Plugins > Create Plugin now forwards the supported advanced scaffold
+inputs end-to-end instead of requiring manual manifest edits after generation.
+
+- `extensionPoints` drive generated manifest fragments such as iframe UI,
+  event-listener, log-listener, and settings-schema stubs.
+- Host UI permissions and other capability toggles map directly to
+  `plugin.toml` permission/capability declarations.
+- HTTP domains are preserved into both `plugin.toml` and
+  `cognia.scaffold.json`, so the generated handoff matches the authored input.
+
+For successful scaffolds, the same selections are also echoed in the generated
+README and lifecycle manifest so maintainers can see what was scaffolded
+without diffing the manifest by hand.
+
+### Built-in TypeScript Maintainer Handoff
+
+Built-in TypeScript scaffolds are expected to be maintainer-ready immediately
+after generation.
+
+- `catalog-entry.sample.json` includes `packageName` and `testFile`.
+- `src/index.test.ts` is generated as the minimum smoke-test asset referenced by
+  the catalog sample.
+- `README.md` and `cognia.scaffold.json` reuse the same build/checksum/validate
+  commands and sample-entry metadata.
+
 ### Scaffold Import-Readiness Contract
 
 Scaffolded projects should be validated before import:
@@ -134,7 +161,13 @@ script that launches a local Ink companion through `tsx`.
     "strict": true,
     "noEmit": true
   },
-  "include": ["src/**/*.ts", "node_modules/@cognia/plugin-sdk/cognia.d.ts"]
+  "include": [
+    "src/**/*.ts",
+    "authoring/**/*.ts",
+    "authoring/**/*.tsx",
+    "plugin.d.ts",
+    "node_modules/@cognia/plugin-sdk/cognia.d.ts"
+  ]
 }
 ```
 
@@ -149,6 +182,22 @@ declare module "main" {
 ```
 
 ### Build
+
+For scaffold-generated projects, prefer the generated entrypoints first:
+
+```bash
+pnpm install
+pnpm setup:toolchain
+pnpm build
+```
+
+For built-in TypeScript scaffolds, the minimum maintainer smoke test is:
+
+```bash
+pnpm exec jest --runInBand src/index.test.ts
+```
+
+The manual equivalent of the build pipeline is:
 
 ```bash
 # Bundle TypeScript → CJS with esbuild
@@ -420,8 +469,9 @@ The built-in plugin workspace and official examples now provide full stable SDK 
 Governance source:
 
 - `plugins/sdk-capability-matrix.json` defines required plugin IDs, expected permissions, and primary entrypoints used by built-in validation.
-- `plugins/sdk-usage-inventory.json` defines the full stable SDK capability inventory, permission guidance, maintained usage paths, and toolbox/runtime prerequisite hints.
+- `plugins/sdk-usage-inventory.json` defines the full stable SDK capability inventory, permission guidance, maintained usage paths, preferred guided workflow metadata, and toolbox/runtime prerequisite hints.
 - `plugins/sdk-usage-inventory.json` can now distinguish `runtime` paths from `ink-authoring` companion paths, including launch commands and local prerequisites.
+- Built-in runtime paths may additionally distinguish `coverage: "reference"` from `coverage: "builtin-primary"`, plus `toolId`, `interactionMode`, and supported workflow intents for the preferred guided Toolbox entry.
 - `plugins/extension-point-matrix.json` defines officially supported plugin points, prerequisites, SDK coverage, and scaffold support.
 
 ## Host Contract Compatibility

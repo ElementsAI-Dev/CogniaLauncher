@@ -6,7 +6,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { useLocale } from '@/components/providers/locale-provider';
-import { usePlugins } from '@/hooks/use-plugins';
+import { usePlugins } from '@/hooks/plugins/use-plugins';
 import { isInternalNavigationPath } from '@/lib/plugin-navigation';
 import { pluginGetUiEntry } from '@/lib/tauri';
 import { writeClipboard, readClipboard } from '@/lib/clipboard';

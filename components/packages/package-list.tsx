@@ -68,6 +68,7 @@ export function PackageList({
   onResolveDependencies,
   onPin,
   onUnpin,
+  onRollback,
   onBookmark,
   selectable = true,
   showSelectAll = true,
@@ -470,6 +471,14 @@ export function PackageList({
                       {isPinned ? t("packages.unpinVersion") : t("packages.pinVersion")}
                     </ContextMenuItem>
                   )}
+                  {isInstalled && onRollback ? (
+                    <ContextMenuItem
+                      onClick={() => onRollback(pkg.name, pinVersion, pkg.provider)}
+                    >
+                      <GitBranch className="h-4 w-4" />
+                      {t("packages.rollback")}
+                    </ContextMenuItem>
+                  ) : null}
                   {onBookmark && (
                     <ContextMenuItem
                       onClick={() => onBookmark(pkg.name, pkg.provider)}

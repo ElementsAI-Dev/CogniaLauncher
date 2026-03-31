@@ -259,7 +259,10 @@ fn resolve_conflict_destination(path: &Path) -> PathBuf {
         .and_then(|name| name.to_str())
         .filter(|name| !name.is_empty())
         .unwrap_or("download");
-    let ext = path.extension().and_then(|name| name.to_str()).unwrap_or("");
+    let ext = path
+        .extension()
+        .and_then(|name| name.to_str())
+        .unwrap_or("");
 
     let mut idx: u64 = 1;
     loop {
@@ -1028,16 +1031,12 @@ impl DownloadManager {
                         });
                     }
 
-                    let extract_dest = task
-                        .config
-                        .extract_dest
-                        .clone()
-                        .unwrap_or_else(|| {
-                            effective_destination
-                                .parent()
-                                .unwrap_or(&effective_destination)
-                                .to_path_buf()
-                        });
+                    let extract_dest = task.config.extract_dest.clone().unwrap_or_else(|| {
+                        effective_destination
+                            .parent()
+                            .unwrap_or(&effective_destination)
+                            .to_path_buf()
+                    });
 
                     match crate::core::installer::extract_archive(
                         &effective_destination,
@@ -1056,7 +1055,8 @@ impl DownloadManager {
                             }
                             // Delete the archive after successful extraction if configured
                             if task.config.delete_after_extract {
-                                if let Err(e) = tokio::fs::remove_file(&effective_destination).await {
+                                if let Err(e) = tokio::fs::remove_file(&effective_destination).await
+                                {
                                     log::warn!(
                                         "Failed to delete archive after extraction for {}: {}",
                                         task_id,
@@ -1421,11 +1421,11 @@ impl DownloadManager {
 
             // Pre-allocate file
             {
-                let file = File::create(&effective_destination)
-                    .await
-                    .map_err(|e| DownloadError::FileSystem {
+                let file = File::create(&effective_destination).await.map_err(|e| {
+                    DownloadError::FileSystem {
                         message: e.to_string(),
-                    })?;
+                    }
+                })?;
                 file.set_len(total)
                     .await
                     .map_err(|e| DownloadError::FileSystem {
@@ -1625,11 +1625,11 @@ impl DownloadManager {
                         message: e.to_string(),
                     })?
             } else {
-                File::create(&effective_destination)
-                    .await
-                    .map_err(|e| DownloadError::FileSystem {
+                File::create(&effective_destination).await.map_err(|e| {
+                    DownloadError::FileSystem {
                         message: e.to_string(),
-                    })?
+                    }
+                })?
             };
 
             let mut downloaded = resume_baseline;
@@ -2359,22 +2359,16 @@ mod tests {
     #[test]
     fn test_resolve_effective_destination_base_auto_rename() {
         let requested = PathBuf::from("/tmp/requested.zip");
-        let resolved = resolve_effective_destination_base(
-            &requested,
-            Some("server-name.zip"),
-            true,
-        );
+        let resolved =
+            resolve_effective_destination_base(&requested, Some("server-name.zip"), true);
         assert_eq!(resolved, PathBuf::from("/tmp/server-name.zip"));
     }
 
     #[test]
     fn test_resolve_effective_destination_base_no_auto_rename() {
         let requested = PathBuf::from("/tmp/requested.zip");
-        let resolved = resolve_effective_destination_base(
-            &requested,
-            Some("server-name.zip"),
-            false,
-        );
+        let resolved =
+            resolve_effective_destination_base(&requested, Some("server-name.zip"), false);
         assert_eq!(resolved, requested);
     }
 

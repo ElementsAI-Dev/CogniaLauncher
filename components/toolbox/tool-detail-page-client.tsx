@@ -6,7 +6,7 @@ import { PageHeader } from '@/components/layout/page-header';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useLocale } from '@/components/providers/locale-provider';
-import { useToolbox } from '@/hooks/use-toolbox';
+import { useToolbox } from '@/hooks/toolbox/use-toolbox';
 import { useToolboxStore } from '@/lib/stores/toolbox';
 import { usePluginStore } from '@/lib/stores/plugin';
 import { PluginToolRunner } from '@/components/toolbox/plugin-tool-runner';
@@ -22,6 +22,7 @@ import Link from 'next/link';
 import { getPluginMarketplaceHref } from '@/lib/plugin-source';
 import { resolveToolDetailRuntimeContext } from '@/lib/toolbox/tool-detail-runtime';
 import { isTauri } from '@/lib/tauri';
+import type { PluginSdkCapabilityCoverage } from '@/types/plugin';
 
 export function ToolDetailPageClient({ toolId }: { toolId: string }) {
   const router = useRouter();
@@ -226,12 +227,34 @@ export function ToolDetailPageClient({ toolId }: { toolId: string }) {
             <div className="space-y-1">
               <p className="font-medium">SDK capability coverage</p>
               {pluginGovernance.sdkCapabilityCoverage.map((coverage) => (
-                <p
-                  key={`${coverage.capabilityId}:${coverage.status}`}
-                  className={coverage.status === 'covered' ? 'font-mono break-all' : 'break-all text-red-700 dark:text-red-300'}
-                >
-                  {coverage.reason ?? `${coverage.capabilityId}: ${coverage.status}`}
-                </p>
+                <div key={`${coverage.capabilityId}:${coverage.status}`} className="rounded-md border p-2 text-xs">
+                  <p
+                    className={coverage.status === 'covered' ? 'font-mono break-all' : 'break-all text-red-700 dark:text-red-300'}
+                  >
+                    {coverage.reason ?? `${coverage.capabilityId}: ${coverage.status}`}
+                  </p>
+                  {coverage.preferredWorkflow && (
+                    <>
+                      <p className="mt-1 text-muted-foreground">
+                        {formatPreferredWorkflowLabel(coverage)}
+                      </p>
+                      {coverage.preferredWorkflow.workflowIntents?.length ? (
+                        <p className="text-muted-foreground">
+                          Intents: {coverage.preferredWorkflow.workflowIntents.join(', ')}
+                        </p>
+                      ) : null}
+                    </>
+                  )}
+                  {coverage.status !== 'covered' && coverage.recoveryActions.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {coverage.recoveryActions.map((action) => (
+                        <Link key={`${coverage.capabilityId}:${action}`} href="/toolbox/plugins" className="underline">
+                          {formatRecoveryActionLabel(action)}
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </div>
               ))}
             </div>
           )}
@@ -256,6 +279,30 @@ export function ToolDetailPageClient({ toolId }: { toolId: string }) {
       ) : null}
     </div>
   );
+}
+
+function formatPreferredWorkflowLabel(coverage: PluginSdkCapabilityCoverage): string {
+  const preferredWorkflow = coverage.preferredWorkflow;
+  if (!preferredWorkflow) {
+    return 'Preferred workflow: unavailable';
+  }
+
+  const workflowId = preferredWorkflow.toolId ?? preferredWorkflow.path;
+  const interactionMode = preferredWorkflow.interactionMode ?? preferredWorkflow.surface;
+  return `Preferred workflow: ${workflowId} (${interactionMode})`;
+}
+
+function formatRecoveryActionLabel(action: string): string {
+  if (action === 'manage-plugin') {
+    return 'Manage Plugin';
+  }
+  if (action === 'grant-permissions') {
+    return 'Grant Permissions';
+  }
+  if (action === 'use-desktop') {
+    return 'Use Desktop';
+  }
+  return 'Open Guidance';
 }
 
 function getHealthStatusLabelKey(status: PluginHealthStatus): string {

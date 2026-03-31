@@ -5,8 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardAction, 
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { useLocale } from '@/components/providers/locale-provider';
-import { useHealthCheck } from '@/hooks/use-health-check';
+import { useHealthCheck } from '@/hooks/health/use-health-check';
 import { isTauri } from '@/lib/tauri';
+import { cn } from '@/lib/utils';
 import {
   RefreshCw,
   ExternalLink,
@@ -15,6 +16,7 @@ import {
 import Link from 'next/link';
 import { HEALTH_STATUS_CONFIG } from '@/lib/constants/dashboard';
 import type { HealthStatus } from '@/types/tauri';
+import type { DashboardPresentation } from '@/lib/stores/dashboard';
 import {
   DashboardMetricGrid,
   DashboardMetricItem,
@@ -24,9 +26,13 @@ import {
 
 interface HealthCheckWidgetProps {
   className?: string;
+  presentation?: DashboardPresentation;
 }
 
-export function HealthCheckWidget({ className }: HealthCheckWidgetProps) {
+export function HealthCheckWidget({
+  className,
+  presentation = { density: 'comfortable', emphasis: 'balanced' },
+}: HealthCheckWidgetProps) {
   const { t } = useLocale();
   const { systemHealth, loading, error, summary, checkAll } = useHealthCheck();
   const hasAutoCheckedRef = useRef(false);
@@ -47,10 +53,21 @@ export function HealthCheckWidget({ className }: HealthCheckWidgetProps) {
   const errorCount = summary.errorCount;
   const unavailableCount = summary.unavailableCount;
   const issueCount = summary.issueCount;
+  const topIssues = [
+    ...(systemHealth?.envvar_issues ?? []),
+    ...(systemHealth?.system_issues ?? []),
+  ];
 
   return (
-    <Card className={className}>
-      <CardHeader className="pb-3">
+    <Card
+      className={cn(
+        presentation.emphasis === 'strong' && 'border-primary/20 shadow-sm',
+        className,
+      )}
+      data-density={presentation.density}
+      data-emphasis={presentation.emphasis}
+    >
+      <CardHeader className={cn('pb-3', presentation.density === 'compact' && 'pb-2')}>
         <CardTitle className="text-base font-medium">
           {t('dashboard.widgets.healthCheck')}
         </CardTitle>
@@ -74,7 +91,7 @@ export function HealthCheckWidget({ className }: HealthCheckWidgetProps) {
           </Button>
         </CardAction>
       </CardHeader>
-      <CardContent>
+      <CardContent className={cn(presentation.density === 'compact' && 'pt-0')}>
         {error && (
           <Alert variant="destructive" className="mb-3">
             <AlertTitle>{t('dashboard.widgets.sectionNeedsAttention')}</AlertTitle>
@@ -121,34 +138,53 @@ export function HealthCheckWidget({ className }: HealthCheckWidgetProps) {
 
             {/* Environment Breakdown */}
             {envCount > 0 && (
-              <DashboardMetricGrid columns={4} className="mb-3">
+              <DashboardMetricGrid
+                columns={4}
+                className={cn('mb-3', presentation.density === 'compact' && 'gap-2')}
+              >
                 <DashboardMetricItem
                   label={t('dashboard.widgets.healthHealthy')}
                   value={healthyCount}
-                  valueClassName="text-lg text-green-600"
+                  className={cn(presentation.density === 'compact' && 'px-2.5 py-2')}
+                  valueClassName={cn(
+                    'text-lg text-green-600',
+                    presentation.density === 'compact' && 'text-base',
+                  )}
                 />
                 <DashboardMetricItem
                   label={t('dashboard.widgets.healthWarnings')}
                   value={warningCount}
-                  valueClassName="text-lg text-yellow-600"
+                  className={cn(presentation.density === 'compact' && 'px-2.5 py-2')}
+                  valueClassName={cn(
+                    'text-lg text-yellow-600',
+                    presentation.density === 'compact' && 'text-base',
+                  )}
                 />
                 <DashboardMetricItem
                   label={t('dashboard.widgets.healthErrors')}
                   value={errorCount}
-                  valueClassName="text-lg text-red-600"
+                  className={cn(presentation.density === 'compact' && 'px-2.5 py-2')}
+                  valueClassName={cn(
+                    'text-lg text-red-600',
+                    presentation.density === 'compact' && 'text-base',
+                  )}
                 />
                 <DashboardMetricItem
                   label={t('dashboard.widgets.healthUnavailable')}
                   value={unavailableCount}
-                  valueClassName="text-lg text-slate-600"
+                  className={cn(presentation.density === 'compact' && 'px-2.5 py-2')}
+                  valueClassName={cn(
+                    'text-lg text-slate-600',
+                    presentation.density === 'compact' && 'text-base',
+                  )}
                 />
               </DashboardMetricGrid>
             )}
 
             {/* Top Issues */}
-            {systemHealth.system_issues.length > 0 && (
-              <div className="space-y-1.5 mb-3">
-                {systemHealth.system_issues.slice(0, 3).map((issue, i) => (
+            {topIssues.length > 0 && (
+              <div className={cn('mb-3 space-y-1.5', presentation.density === 'compact' && 'space-y-1')}>
+                {topIssues.slice(0, 3).map((issue, i) => (
                   <div key={i} className="flex items-start gap-2 text-xs">
                     <DashboardStatusBadge
                       tone={issue.severity === 'critical' || issue.severity === 'error'
@@ -168,7 +204,7 @@ export function HealthCheckWidget({ className }: HealthCheckWidgetProps) {
           </>
         )}
       </CardContent>
-      <CardFooter className="border-t pt-4">
+      <CardFooter className={cn('border-t pt-4', presentation.density === 'compact' && 'pt-3')}>
         <Button variant="outline" size="sm" className="w-full gap-2" asChild>
           <Link href="/health">
             <ExternalLink className="h-3.5 w-3.5" />

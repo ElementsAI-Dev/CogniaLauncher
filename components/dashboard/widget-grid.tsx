@@ -43,6 +43,7 @@ import { ProviderHealthMatrixWidget } from "@/components/dashboard/widgets/provi
 import { SystemInfoWidget } from "@/components/dashboard/widgets/system-info-widget";
 import { DownloadStatsWidget } from "@/components/dashboard/widgets/download-stats-widget";
 import { WslStatusWidget } from "@/components/dashboard/widgets/wsl-status-widget";
+import { EnvVarStatusWidget } from "@/components/dashboard/widgets/envvar-status-widget";
 import { HealthCheckWidget } from "@/components/dashboard/widgets/health-check-widget";
 import { UpdatesWidget } from "@/components/dashboard/widgets/updates-widget";
 import { WelcomeWidget } from "@/components/dashboard/widgets/welcome-widget";
@@ -59,7 +60,7 @@ import type {
   DashboardHealthMatrixModel,
   DashboardInsightsResult,
   DashboardTrendModel,
-} from "@/hooks/use-dashboard-insights";
+} from "@/hooks/dashboard/use-dashboard-insights";
 
 interface WidgetRenderProps {
   environments: EnvironmentInfo[];
@@ -260,9 +261,11 @@ const WIDGET_RENDERERS: Record<WidgetType, (p: WidgetRenderProps, widget: Widget
       isLoading={p.feedback.packages.isLoading}
       error={p.feedback.packages.error}
       onRecover={p.onRefreshAll}
+      presentation={p.presentation}
     />
   ),
   "wsl-status": () => <WslStatusWidget />,
+  "envvar-status": () => <EnvVarStatusWidget />,
   "quick-actions": (p) => (
     <QuickActions
       onRefreshAll={p.onRefreshAll}
@@ -270,7 +273,7 @@ const WIDGET_RENDERERS: Record<WidgetType, (p: WidgetRenderProps, widget: Widget
       presentation={p.presentation}
     />
   ),
-  "health-check": () => <HealthCheckWidget />,
+  "health-check": (p) => <HealthCheckWidget presentation={p.presentation} />,
   "updates-available": () => <UpdatesWidget />,
   "welcome": (p) => <WelcomeWidget hasEnvironments={p.environments.length > 0} hasPackages={p.packages.length > 0} />,
   "toolbox-favorites": () => <ToolboxFavoritesWidget />,
@@ -322,6 +325,7 @@ export function WidgetGrid({
   const { t } = useLocale();
   const widgets = useDashboardStore((s) => s.widgets);
   const isEditMode = useDashboardStore((s) => s.isEditMode);
+  const presentation = useDashboardStore((s) => s.presentation);
   const reorderWidgets = useDashboardStore((s) => s.reorderWidgets);
   const removeWidget = useDashboardStore((s) => s.removeWidget);
   const toggleWidgetVisibility = useDashboardStore((s) => s.toggleWidgetVisibility);
@@ -402,11 +406,11 @@ export function WidgetGrid({
   const renderProps = useMemo<WidgetRenderProps>(
     () => ({
       environments, packages, providers, cacheInfo, platformInfo, cogniaDir,
-      isLoading, onRefreshAll, isRefreshing, t, activeEnvs, totalVersions, feedback, insights,
+      isLoading, onRefreshAll, isRefreshing, t, activeEnvs, totalVersions, presentation, feedback, insights,
     }),
     [
       environments, packages, providers, cacheInfo, platformInfo, cogniaDir,
-      isLoading, onRefreshAll, isRefreshing, t, activeEnvs, totalVersions, feedback, insights,
+      isLoading, onRefreshAll, isRefreshing, t, activeEnvs, totalVersions, presentation, feedback, insights,
     ],
   );
 
@@ -454,6 +458,7 @@ export function WidgetGrid({
               onRemove={handleRemove}
               onToggleVisibility={handleToggleVisibility}
               onResize={handleResize}
+              presentation={presentation}
               toolbarExtras={(
                 <WidgetSettingsToolbar
                   widget={widget}

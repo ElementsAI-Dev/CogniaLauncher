@@ -44,12 +44,16 @@ export type TerminalReadoutStatus =
   | 'failed'
   | 'stale';
 
+export type TerminalReadoutFreshness = 'fresh' | 'stale';
+
 export interface TerminalShellReadout {
   shellId: string;
   status: TerminalReadoutStatus;
   degradedReason: string | null;
   startupStatus: 'idle' | 'ready' | 'failed';
+  startupFreshness: TerminalReadoutFreshness | null;
   healthStatus: 'idle' | 'ready' | 'failed';
+  healthFreshness: TerminalReadoutFreshness | null;
   frameworkSummaryCount: number;
   pluginSummaryCount: number;
   lastUpdatedAt: number | null;
@@ -61,6 +65,7 @@ export interface TerminalFrameworkReadout {
   status: TerminalReadoutStatus;
   degradedReason: string | null;
   pluginCount: number;
+  freshness: TerminalReadoutFreshness;
   lastUpdatedAt: number | null;
 }
 

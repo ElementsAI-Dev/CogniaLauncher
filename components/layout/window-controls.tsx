@@ -27,7 +27,7 @@ import {
   TooltipTrigger,
   TooltipContent,
 } from "@/components/ui/tooltip";
-import type { WindowControlsState } from "@/hooks/use-window-controls";
+import type { WindowControlsState } from "@/hooks/desktop/use-window-controls";
 
 interface WindowControlsProps {
   controls: WindowControlsState;

@@ -256,12 +256,14 @@ async function openMockedGitPage(page: Page): Promise<void> {
 test.describe('Git Graph (Mocked Desktop Runtime)', () => {
   test('can switch scope, load more, and select commit', async ({ page }) => {
     await openMockedGitPage(page);
+    const graphList = page.locator('[role="listbox"][aria-label="Commit Graph"]:visible').first();
+    const firstCommit = graphList.locator('[data-hash="h000000"]').first();
 
     await page.getByRole('tab', { name: 'Graph' }).click();
     await expect(page.getByText('Commit Graph').first()).toBeVisible();
 
     // Ensure initial graph load happened.
-    await expect(page.getByText('Commit 0').first()).toBeVisible();
+    await expect(firstCommit).toBeVisible();
 
     // Switch to a specific branch scope.
     await page.getByRole('combobox').click();
@@ -289,7 +291,7 @@ test.describe('Git Graph (Mocked Desktop Runtime)', () => {
     }).toBe(true);
 
     // Select a commit and ensure detail panel populates.
-    await page.getByText('Commit 0').first().click();
+    await firstCommit.click();
     await expect(page.getByText('Commit Detail').first()).toBeVisible();
     await expect(page.getByText(/Detail for h000000/).first()).toBeVisible();
   });

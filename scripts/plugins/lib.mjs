@@ -39,6 +39,8 @@ export const DEFAULT_SUPPORTED_SDK_CAPABILITIES = [
 ];
 export const SDK_USAGE_PATH_TYPES = ['builtin-plugin', 'official-example', 'scaffold-workflow'];
 export const SDK_USAGE_SURFACES = ['runtime', 'ink-authoring'];
+export const SDK_USAGE_COVERAGES = ['reference', 'builtin-primary'];
+export const SDK_WORKFLOW_INTERACTION_MODES = ['text', 'declarative', 'iframe'];
 
 export function readCatalog() {
   const raw = readFileSync(CATALOG_PATH, 'utf8');
@@ -256,6 +258,7 @@ export function validateSdkUsageInventoryShape(inventory, context = {}) {
 
       const usageType = typeof usagePath.type === 'string' ? usagePath.type.trim() : '';
       const usageSurface = typeof usagePath.surface === 'string' ? usagePath.surface.trim() : 'runtime';
+      const usageCoverage = typeof usagePath.coverage === 'string' ? usagePath.coverage.trim() : 'reference';
       const usageRefPath = typeof usagePath.path === 'string' ? usagePath.path.trim() : '';
       if (!SDK_USAGE_PATH_TYPES.includes(usageType)) {
         errors.push(
@@ -266,6 +269,12 @@ export function validateSdkUsageInventoryShape(inventory, context = {}) {
       if (!SDK_USAGE_SURFACES.includes(usageSurface)) {
         errors.push(
           `capabilities[${capabilityId}].usagePaths[${usageIndex}] has unsupported surface '${usageSurface || '<missing>'}'.`,
+        );
+        continue;
+      }
+      if (!SDK_USAGE_COVERAGES.includes(usageCoverage)) {
+        errors.push(
+          `capabilities[${capabilityId}].usagePaths[${usageIndex}] has unsupported coverage '${usageCoverage || '<missing>'}'.`,
         );
         continue;
       }
@@ -283,6 +292,10 @@ export function validateSdkUsageInventoryShape(inventory, context = {}) {
       const localPrerequisites = ensureStringArray(
         usagePath.localPrerequisites ?? [],
         `capabilities[${capabilityId}].usagePaths[${usageIndex}].localPrerequisites`,
+      );
+      const workflowIntents = ensureStringArray(
+        usagePath.workflowIntents ?? [],
+        `capabilities[${capabilityId}].usagePaths[${usageIndex}].workflowIntents`,
       );
       void localPrerequisites;
 
@@ -308,6 +321,15 @@ export function validateSdkUsageInventoryShape(inventory, context = {}) {
         usagePath.requiredPermissions ?? [],
         `capabilities[${capabilityId}].usagePaths[${usageIndex}].requiredPermissions`,
       );
+      const toolId = typeof usagePath.toolId === 'string'
+        ? usagePath.toolId.trim()
+        : '';
+      const interactionMode = typeof usagePath.interactionMode === 'string'
+        ? usagePath.interactionMode.trim()
+        : '';
+      const discoverable = typeof usagePath.discoverable === 'boolean'
+        ? usagePath.discoverable
+        : undefined;
       const undeclaredPermissions = requiredPermissions.filter(
         (permission) => !permissionGuidance.includes(permission),
       );
@@ -325,6 +347,41 @@ export function validateSdkUsageInventoryShape(inventory, context = {}) {
         usagePath.pluginPointIds ?? [],
         `capabilities[${capabilityId}].usagePaths[${usageIndex}].pluginPointIds`,
       );
+      const declaresRuntimeWorkflowMetadata =
+        usageCoverage === 'builtin-primary'
+        || toolId.length > 0
+        || interactionMode.length > 0
+        || discoverable !== undefined
+        || workflowIntents.length > 0;
+
+      if (declaresRuntimeWorkflowMetadata && (usageType !== 'builtin-plugin' || usageSurface !== 'runtime')) {
+        errors.push(
+          `${capabilityId} toolbox workflow metadata is only supported for builtin-plugin runtime usage paths.`,
+        );
+      }
+      if (
+        usageSurface === 'runtime'
+        && usageCoverage === 'builtin-primary'
+        && usageType === 'builtin-plugin'
+      ) {
+        if (!toolId) {
+          errors.push(`${capabilityId} builtin-primary runtime usage path must declare a non-empty toolId.`);
+        }
+        if (!interactionMode) {
+          errors.push(`${capabilityId} builtin-primary runtime usage path must declare a non-empty interactionMode.`);
+        } else if (!SDK_WORKFLOW_INTERACTION_MODES.includes(interactionMode)) {
+          errors.push(`${capabilityId} builtin-primary runtime usage path has unsupported interactionMode '${interactionMode}'.`);
+        }
+        if (discoverable !== true) {
+          errors.push(`${capabilityId} builtin-primary runtime usage path must declare discoverable=true.`);
+        }
+        if (workflowIntents.length === 0) {
+          errors.push(`${capabilityId} builtin-primary runtime usage path must declare at least one workflowIntent.`);
+        }
+      } else if (interactionMode && !SDK_WORKFLOW_INTERACTION_MODES.includes(interactionMode)) {
+        errors.push(`${capabilityId} runtime usage path has unsupported interactionMode '${interactionMode}'.`);
+      }
+
       for (const pluginPointId of pluginPointIdsForUsage) {
         if (!pluginPointIds.has(pluginPointId)) {
           errors.push(
@@ -364,9 +421,25 @@ export function validateSdkUsageInventoryShape(inventory, context = {}) {
         if (!(matrixEntry.sdkCapabilities ?? []).includes(capabilityId)) {
           errors.push(`${pluginId} built-in usage path is missing capability '${capabilityId}' in sdk-capability-matrix.`);
         }
+        const pluginTomlPath = path.join(resolvePluginRoot(catalogPlugin, context), 'plugin.toml');
+        ensureFileExists(pluginTomlPath, `plugin.toml for ${pluginId}`);
+        const pluginTomlRaw = readFileSync(pluginTomlPath, 'utf8');
+        const declaredTools = parsePluginTomlTools(pluginTomlRaw);
         const expectedPermissions = ensureStringArray(
           matrixEntry.expectedPermissions ?? [],
           `plugins[${pluginId}].expectedPermissions`,
+        );
+        const expectedPrimaryEntrypoints = ensureStringArray(
+          matrixEntry.primaryEntrypoints ?? [],
+          `plugins[${pluginId}].primaryEntrypoints`,
+        );
+        const expectedGuidedWorkflowEntrypoints = ensureStringArray(
+          matrixEntry.guidedWorkflowEntrypoints ?? [],
+          `plugins[${pluginId}].guidedWorkflowEntrypoints`,
+        );
+        const expectedGuidedWorkflowToolIds = ensureStringArray(
+          matrixEntry.guidedWorkflowToolIds ?? [],
+          `plugins[${pluginId}].guidedWorkflowToolIds`,
         );
         if (usageSurface === 'ink-authoring') {
           const undeclaredPermissions = requiredPermissions.filter(
@@ -378,11 +451,38 @@ export function validateSdkUsageInventoryShape(inventory, context = {}) {
         } else if (!equalStringSets(requiredPermissions, expectedPermissions)) {
           errors.push(`${pluginId} usage path permissions drift from sdk-capability-matrix expectedPermissions.`);
         }
-        if (entrypoints.length > 0 && !equalStringSets(entrypoints, ensureStringArray(
-          matrixEntry.primaryEntrypoints ?? [],
-          `plugins[${pluginId}].primaryEntrypoints`,
-        ))) {
+        if (usageCoverage === 'builtin-primary') {
+          if (expectedGuidedWorkflowEntrypoints.length === 0) {
+            errors.push(`${pluginId} guided workflow usage path is missing sdk-capability-matrix guidedWorkflowEntrypoints.`);
+          } else if (entrypoints.length > 0 && !equalStringSets(entrypoints, expectedGuidedWorkflowEntrypoints)) {
+            errors.push(`${pluginId} guided workflow entrypoints drift from sdk-capability-matrix guidedWorkflowEntrypoints.`);
+          }
+          if (expectedGuidedWorkflowToolIds.length === 0) {
+            errors.push(`${pluginId} guided workflow usage path is missing sdk-capability-matrix guidedWorkflowToolIds.`);
+          } else if (toolId && !expectedGuidedWorkflowToolIds.includes(toolId)) {
+            errors.push(`${pluginId} guided workflow toolId drift from sdk-capability-matrix guidedWorkflowToolIds.`);
+          }
+        } else if (entrypoints.length > 0 && !equalStringSets(entrypoints, expectedPrimaryEntrypoints)) {
           errors.push(`${pluginId} usage path entrypoints drift from sdk-capability-matrix primaryEntrypoints.`);
+        }
+        if (declaresRuntimeWorkflowMetadata && usageSurface === 'runtime') {
+          if (!toolId) {
+            continue;
+          }
+          const tool = declaredTools.find((entry) => entry.id === toolId);
+          if (!tool) {
+            errors.push(`${pluginId} workflow tool '${toolId}' not found in plugin.toml [[tools]].`);
+            continue;
+          }
+          if (interactionMode && tool.uiMode !== interactionMode) {
+            errors.push(`${pluginId} workflow interactionMode drift for tool '${toolId}'.`);
+          }
+          if (discoverable === false) {
+            errors.push(`${pluginId} workflow discoverable drift for tool '${toolId}'.`);
+          }
+          if (entrypoints.length > 0 && !entrypoints.includes(tool.entry)) {
+            errors.push(`${pluginId} workflow entrypoint drift for tool '${toolId}'.`);
+          }
         }
       }
     }
@@ -436,6 +536,16 @@ export function validateSdkCapabilityMatrixShape(matrix, catalog) {
     const sdkCapabilities = ensureStringArray(entry.sdkCapabilities ?? [], `plugins[${entry.id}].sdkCapabilities`);
     const expectedPermissions = ensureStringArray(entry.expectedPermissions ?? [], `plugins[${entry.id}].expectedPermissions`);
     const primaryEntrypoints = ensureStringArray(entry.primaryEntrypoints ?? [], `plugins[${entry.id}].primaryEntrypoints`);
+    const guidedWorkflowEntrypoints = ensureStringArray(
+      entry.guidedWorkflowEntrypoints ?? [],
+      `plugins[${entry.id}].guidedWorkflowEntrypoints`,
+    );
+    const guidedWorkflowToolIds = ensureStringArray(
+      entry.guidedWorkflowToolIds ?? [],
+      `plugins[${entry.id}].guidedWorkflowToolIds`,
+    );
+    void guidedWorkflowEntrypoints;
+    void guidedWorkflowToolIds;
 
     if (sdkCapabilities.length === 0) {
       throw new Error(`plugins[${entry.id}].sdkCapabilities must not be empty.`);
@@ -900,18 +1010,64 @@ export function parsePluginTomlEnabledPermissions(raw) {
 }
 
 export function parsePluginTomlEntrypoints(raw) {
-  const entries = [];
+  return [...new Set(parsePluginTomlTools(raw).map((tool) => tool.entry).filter(Boolean))];
+}
+
+export function parsePluginTomlTools(raw) {
+  const tools = [];
+  let currentTool = null;
+
   for (const line of raw.split(/\r?\n/)) {
     const trimmed = line.trim();
     if (trimmed.length === 0 || trimmed.startsWith('#')) {
       continue;
     }
-    const match = trimmed.match(/^entry\s*=\s*"([^"]+)"$/);
-    if (match && match[1].trim() !== '') {
-      entries.push(match[1].trim());
+
+    if (trimmed === '[[tools]]') {
+      if (currentTool) {
+        tools.push(currentTool);
+      }
+      currentTool = {
+        id: '',
+        entry: '',
+        uiMode: 'text',
+      };
+      continue;
+    }
+
+    if (trimmed.startsWith('[')) {
+      if (currentTool) {
+        tools.push(currentTool);
+        currentTool = null;
+      }
+      continue;
+    }
+
+    if (!currentTool) {
+      continue;
+    }
+
+    const match = trimmed.match(/^([A-Za-z0-9_.-]+)\s*=\s*"([^"]*)"$/);
+    if (!match) {
+      continue;
+    }
+
+    const [, key, value] = match;
+    const normalized = value.trim();
+    if (key === 'id') {
+      currentTool.id = normalized;
+    } else if (key === 'entry') {
+      currentTool.entry = normalized;
+    } else if (key === 'ui_mode' && SDK_WORKFLOW_INTERACTION_MODES.includes(normalized)) {
+      currentTool.uiMode = normalized;
     }
   }
-  return [...new Set(entries)];
+
+  if (currentTool) {
+    tools.push(currentTool);
+  }
+
+  return tools.filter((tool) => tool.id || tool.entry);
 }
 
 export function validatePluginCapabilityMatrixEntry(plugin, matrix, options = {}) {

@@ -14,6 +14,11 @@ import type {
   WslDistroResources,
   WslPackageUpdateResult,
   WslUser,
+  WslProfileSnapshot as TauriWslProfileSnapshot,
+  WslProfileApplyResult as TauriWslProfileApplyResult,
+  WslProfileApplySkipped as TauriWslProfileApplySkipped,
+  WslProfileSnapshotDistro as TauriWslProfileSnapshotDistro,
+  WslPortForwardRule as TauriWslPortForwardRule,
 } from '@/types/tauri';
 
 // ============================================================================
@@ -386,7 +391,25 @@ export interface WslRuntimeInfoSnapshot {
   status: WslInfoSection<WslStatus>;
   capabilities: WslInfoSection<WslCapabilities>;
   versionInfo: WslInfoSection<WslVersionInfo>;
+  is_healthy: boolean | null;
+  running_count: number;
+  default_distro: string | null;
+  kernel_up_to_date: boolean | null;
   lastUpdatedAt: string | null;
+}
+
+export type WslProfileSnapshot = TauriWslProfileSnapshot;
+export type WslProfileSnapshotDistro = TauriWslProfileSnapshotDistro;
+export type WslProfileApplyResult = TauriWslProfileApplyResult;
+export type WslProfileApplySkipped = TauriWslProfileApplySkipped;
+
+export interface WslBackupSchedule {
+  distro_name: string;
+  interval: 'daily' | 'weekly';
+  time: string;
+  retention: number;
+  last_run: string | null;
+  next_run: string | null;
 }
 
 export interface WslDistroInfoSnapshot {
@@ -397,8 +420,11 @@ export interface WslDistroInfoSnapshot {
   ipAddress: WslInfoSection<string>;
   environment: WslInfoSection<WslDistroEnvironment>;
   resources: WslInfoSection<WslDistroResources>;
+  portForwards: WslInfoSection<TauriWslPortForwardRule[]>;
   lastUpdatedAt: string | null;
 }
+
+export type WslPortForwardRule = TauriWslPortForwardRule;
 
 // ============================================================================
 // WSL config setting definitions
@@ -610,7 +636,7 @@ export interface WslEmptyStateProps {
 
 export interface WslNotAvailableProps {
   t: (key: string, params?: Record<string, string | number>) => string;
-  onInstallWsl?: () => Promise<string>;
+  onInstallWsl?: () => Promise<string | null>;
 }
 
 export interface WslDistroDetailPageProps {
@@ -653,16 +679,47 @@ export interface WslDistroFilesystemProps {
 export interface WslDistroNetworkProps {
   distroName: string;
   isRunning: boolean;
+  info?: WslDistroInfoSnapshot | null;
+  onRefreshInfo?: () => Promise<void>;
   getIpAddress: (distro?: string) => Promise<string>;
   onExec: (distro: string, command: string, user?: string) => Promise<WslExecResult>;
-  listPortForwards: () => Promise<{
-    listenAddress: string;
-    listenPort: string;
-    connectAddress: string;
-    connectPort: string;
-  }[]>;
-  addPortForward: (listenPort: number, connectPort: number, connectAddress: string) => Promise<void>;
-  removePortForward: (listenPort: number) => Promise<void>;
+  listPortForwards: () => Promise<WslPortForwardRule[]>;
+  addPortForward: (
+    listenAddress: string,
+    listenPort: number,
+    connectPort: number,
+    connectAddress: string
+  ) => Promise<void>;
+  removePortForward: (listenAddress: string, listenPort: number) => Promise<void>;
+  setNetworkingMode?: (mode: 'NAT' | 'mirrored' | 'virtioproxy') => Promise<void>;
+  currentNetworkingMode?: string | null;
+  runningCount?: number;
+  onShutdownAll?: () => Promise<void>;
+  onRefreshRuntime?: () => Promise<void>;
+  t: (key: string, params?: Record<string, string | number>) => string;
+}
+
+export interface WslPortForwardCardProps {
+  rules: WslPortForwardRule[];
+  loading?: boolean;
+  stale?: boolean;
+  defaultConnectAddress?: string | null;
+  onRefresh: () => Promise<void> | void;
+  onAdd: (
+    listenAddress: string,
+    listenPort: number,
+    connectPort: number,
+    connectAddress: string
+  ) => Promise<void>;
+  onRemove: (listenAddress: string, listenPort: number) => Promise<void>;
+  t: (key: string, params?: Record<string, string | number>) => string;
+}
+
+export interface WslNetworkModeCardProps {
+  currentMode: string;
+  runningCount: number;
+  onApply: (mode: 'NAT' | 'mirrored' | 'virtioproxy') => Promise<void>;
+  disabled?: boolean;
   t: (key: string, params?: Record<string, string | number>) => string;
 }
 

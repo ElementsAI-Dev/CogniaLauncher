@@ -5,18 +5,11 @@ import type {
   EnvVarImportResult,
   EnvVarPathRepairPreview,
   EnvVarScope,
+  EnvVarSnapshotRestoreResult,
 } from '@/types/tauri';
 import { resolveRefreshScope, type EnvVarAction } from './page-helpers';
 
 type TranslateFn = (key: string, params?: Record<string, string | number>) => string;
-
-interface ActionContext {
-  setActionError: (message: string | null) => void;
-  setActionNotice: (message: string | null) => void;
-  setActiveAction: (action: EnvVarAction | null) => void;
-  formatActionError: (action: EnvVarAction, message: string) => string;
-  t: TranslateFn;
-}
 
 interface ToastApi {
   success: (message: string) => void;
@@ -24,15 +17,64 @@ interface ToastApi {
   error: (message: string) => void;
 }
 
+interface ActionContext {
+  setActiveAction: (action: EnvVarAction | null) => void;
+  toastApi?: ToastApi;
+  setActionError?: (message: string | null) => void;
+  setActionNotice?: (message: string | null) => void;
+  formatActionError: (action: EnvVarAction, message: string) => string;
+  t: TranslateFn;
+}
+
 type BasicMutationResult =
   | boolean
   | { success: boolean; status: string; message?: string | null; removedCount?: number | null }
   | null;
 
+function clearActionFeedback({
+  setActionError,
+  setActionNotice,
+}: Pick<ActionContext, 'setActionError' | 'setActionNotice'>) {
+  setActionError?.(null);
+  setActionNotice?.(null);
+}
+
+function reportActionError(
+  message: string,
+  {
+    toastApi,
+    setActionError,
+    setActionNotice,
+  }: Pick<ActionContext, 'toastApi' | 'setActionError' | 'setActionNotice'>,
+) {
+  setActionNotice?.(null);
+  setActionError?.(message);
+  toastApi?.error(message);
+}
+
+function reportActionNotice(
+  message: string,
+  {
+    toastApi,
+    setActionError,
+    setActionNotice,
+  }: Pick<ActionContext, 'toastApi' | 'setActionError' | 'setActionNotice'>,
+  level: 'success' | 'warning' = 'warning',
+) {
+  setActionError?.(null);
+  setActionNotice?.(message);
+  if (level === 'success') {
+    toastApi?.success(message);
+    return;
+  }
+  toastApi?.warning(message);
+}
+
 export async function handleScopeFilterChangeAction({
   scope,
   refreshVariables,
   setScopeFilter,
+  toastApi,
   setActionError,
   setActionNotice,
   setActiveAction,
@@ -40,18 +82,22 @@ export async function handleScopeFilterChangeAction({
   scope: EnvVarScope | 'all';
   refreshVariables: (scope: EnvVarScope | 'all', options?: { forceRefresh?: boolean }) => Promise<unknown>;
   setScopeFilter: (scope: EnvVarScope | 'all') => void;
-  setActionError: (message: string | null) => void;
-  setActionNotice: (message: string | null) => void;
+  toastApi?: ToastApi;
+  setActionError?: (message: string | null) => void;
+  setActionNotice?: (message: string | null) => void;
   setActiveAction: (action: EnvVarAction | null) => void;
 }): Promise<void> {
-  setActionError(null);
-  setActionNotice(null);
+  clearActionFeedback({ setActionError, setActionNotice });
   setActiveAction('refresh');
   setScopeFilter(scope);
   try {
     await refreshVariables(scope);
   } catch (err) {
-    setActionError(err instanceof Error ? err.message : String(err));
+    reportActionError(err instanceof Error ? err.message : String(err), {
+      toastApi,
+      setActionError,
+      setActionNotice,
+    });
   } finally {
     setActiveAction(null);
   }
@@ -60,23 +106,28 @@ export async function handleScopeFilterChangeAction({
 export async function handleRefreshAction({
   scopeFilter,
   refreshVariables,
+  toastApi,
   setActionError,
   setActionNotice,
   setActiveAction,
 }: {
   scopeFilter: EnvVarScope | 'all';
   refreshVariables: (scope: EnvVarScope | 'all', options?: { forceRefresh?: boolean }) => Promise<unknown>;
-  setActionError: (message: string | null) => void;
-  setActionNotice: (message: string | null) => void;
+  toastApi?: ToastApi;
+  setActionError?: (message: string | null) => void;
+  setActionNotice?: (message: string | null) => void;
   setActiveAction: (action: EnvVarAction | null) => void;
 }): Promise<void> {
-  setActionError(null);
-  setActionNotice(null);
+  clearActionFeedback({ setActionError, setActionNotice });
   setActiveAction('refresh');
   try {
     await refreshVariables(scopeFilter, { forceRefresh: true });
   } catch (err) {
-    setActionError(err instanceof Error ? err.message : String(err));
+    reportActionError(err instanceof Error ? err.message : String(err), {
+      toastApi,
+      setActionError,
+      setActionNotice,
+    });
   } finally {
     setActiveAction(null);
   }
@@ -102,15 +153,17 @@ export async function runVarMutationAction({
   successMessage: string;
   scopeFilter: EnvVarScope | 'all';
   refreshVariables: (scope: EnvVarScope | 'all', options?: { forceRefresh?: boolean }) => Promise<unknown>;
-  toastApi: ToastApi;
 } & ActionContext): Promise<boolean> {
-  setActionError(null);
-  setActionNotice(null);
+  clearActionFeedback({ setActionError, setActionNotice });
   setActiveAction(action);
   try {
     const result = await mutate();
     if (result == null) {
-      setActionError(formatActionError(action, t('common.error')));
+      reportActionError(formatActionError(action, t('common.error')), {
+        toastApi,
+        setActionError,
+        setActionNotice,
+      });
       return false;
     }
 
@@ -119,7 +172,11 @@ export async function runVarMutationAction({
       : result;
 
     if (!normalized.success) {
-      setActionError(formatActionError(action, normalized.message || t('envvar.workflow.verificationFailed')));
+      reportActionError(formatActionError(action, normalized.message || t('envvar.workflow.verificationFailed')), {
+        toastApi,
+        setActionError,
+        setActionNotice,
+      });
       return false;
     }
 
@@ -127,17 +184,20 @@ export async function runVarMutationAction({
 
     if (normalized.status === 'manual_followup_required') {
       const message = normalized.message || t('envvar.workflow.manualFollowup');
-      setActionNotice(message);
-      toastApi.warning(message);
+      reportActionNotice(message, { toastApi, setActionError, setActionNotice });
     } else {
-      toastApi.success(successMessage);
+      clearActionFeedback({ setActionError, setActionNotice });
+      toastApi?.success(successMessage);
     }
 
     return true;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    setActionError(formatActionError(action, message));
-    toastApi.error(message);
+    reportActionError(formatActionError(action, message), {
+      toastApi,
+      setActionError,
+      setActionNotice,
+    });
     return false;
   } finally {
     setActiveAction(null);
@@ -147,6 +207,7 @@ export async function runVarMutationAction({
 export async function runPathMutationAction({
   action,
   mutation,
+  toastApi,
   setActionError,
   setActionNotice,
   setActiveAction,
@@ -156,13 +217,16 @@ export async function runPathMutationAction({
   action: EnvVarAction;
   mutation: () => Promise<BasicMutationResult>;
 } & ActionContext): Promise<boolean> {
-  setActionError(null);
-  setActionNotice(null);
+  clearActionFeedback({ setActionError, setActionNotice });
   setActiveAction(action);
   try {
     const result = await mutation();
     if (result == null) {
-      setActionError(formatActionError(action, t('common.error')));
+      reportActionError(formatActionError(action, t('common.error')), {
+        toastApi,
+        setActionError,
+        setActionNotice,
+      });
       return false;
     }
 
@@ -171,18 +235,30 @@ export async function runPathMutationAction({
       : result;
 
     if (!normalized.success) {
-      setActionError(formatActionError(action, normalized.message || t('envvar.workflow.verificationFailed')));
+      reportActionError(formatActionError(action, normalized.message || t('envvar.workflow.verificationFailed')), {
+        toastApi,
+        setActionError,
+        setActionNotice,
+      });
       return false;
     }
 
     if (normalized.status === 'manual_followup_required') {
-      setActionNotice(normalized.message || t('envvar.workflow.manualFollowup'));
+      reportActionNotice(normalized.message || t('envvar.workflow.manualFollowup'), {
+        toastApi,
+        setActionError,
+        setActionNotice,
+      });
     }
 
     return true;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    setActionError(formatActionError(action, message));
+    reportActionError(formatActionError(action, message), {
+      toastApi,
+      setActionError,
+      setActionNotice,
+    });
     return false;
   } finally {
     setActiveAction(null);
@@ -192,6 +268,7 @@ export async function runPathMutationAction({
 export async function handlePathDeduplicateAction({
   pathScope,
   deduplicatePath,
+  toastApi,
   setActionError,
   setActionNotice,
   setActiveAction,
@@ -199,22 +276,30 @@ export async function handlePathDeduplicateAction({
 }: {
   pathScope: EnvVarScope;
   deduplicatePath: (scope: EnvVarScope) => Promise<{ status?: string; message?: string | null; removedCount?: number | null } | null>;
-  setActionError: (message: string | null) => void;
-  setActionNotice: (message: string | null) => void;
+  toastApi?: ToastApi;
+  setActionError?: (message: string | null) => void;
+  setActionNotice?: (message: string | null) => void;
   setActiveAction: (action: EnvVarAction | null) => void;
   t: TranslateFn;
 }): Promise<number> {
-  setActionError(null);
-  setActionNotice(null);
+  clearActionFeedback({ setActionError, setActionNotice });
   setActiveAction('path-deduplicate');
   try {
     const result = await deduplicatePath(pathScope);
     if (result?.status === 'manual_followup_required') {
-      setActionNotice(result.message || t('envvar.workflow.manualFollowup'));
+      reportActionNotice(result.message || t('envvar.workflow.manualFollowup'), {
+        toastApi,
+        setActionError,
+        setActionNotice,
+      });
     }
     return result?.removedCount ?? 0;
   } catch (err) {
-    setActionError(err instanceof Error ? err.message : String(err));
+    reportActionError(err instanceof Error ? err.message : String(err), {
+      toastApi,
+      setActionError,
+      setActionNotice,
+    });
     return 0;
   } finally {
     setActiveAction(null);
@@ -225,6 +310,8 @@ export async function handlePreviewImportAction({
   content,
   scope,
   previewImportEnvFile,
+  beforeAction,
+  toastApi,
   setActionError,
   setActionNotice,
   setActiveAction,
@@ -234,19 +321,28 @@ export async function handlePreviewImportAction({
   content: string;
   scope: EnvVarScope;
   previewImportEnvFile: (content: string, scope: EnvVarScope) => Promise<EnvVarImportPreview | null>;
+  beforeAction?: (scope: EnvVarScope) => Promise<unknown> | unknown;
 } & ActionContext): Promise<EnvVarImportPreview | null> {
-  setActionError(null);
-  setActionNotice(null);
+  clearActionFeedback({ setActionError, setActionNotice });
   setActiveAction('import-preview');
   try {
+    await beforeAction?.(scope);
     const preview = await previewImportEnvFile(content, scope);
     if (!preview) {
-      setActionError(formatActionError('import-preview', t('common.error')));
+      reportActionError(formatActionError('import-preview', t('common.error')), {
+        toastApi,
+        setActionError,
+        setActionNotice,
+      });
     }
     return preview;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    setActionError(formatActionError('import-preview', message));
+    reportActionError(formatActionError('import-preview', message), {
+      toastApi,
+      setActionError,
+      setActionNotice,
+    });
     return null;
   } finally {
     setActiveAction(null);
@@ -259,6 +355,8 @@ export async function handleApplyImportPreviewAction({
   fingerprint,
   importPreviewStale,
   applyImportPreview,
+  beforeAction,
+  toastApi,
   setActionError,
   setActionNotice,
   setActiveAction,
@@ -270,22 +368,35 @@ export async function handleApplyImportPreviewAction({
   fingerprint: string;
   importPreviewStale: boolean;
   applyImportPreview: (content: string, scope: EnvVarScope, fingerprint: string) => Promise<EnvVarImportResult | null>;
+  beforeAction?: (scope: EnvVarScope) => Promise<unknown> | unknown;
 } & ActionContext): Promise<EnvVarImportResult | null> {
-  setActionError(null);
-  setActionNotice(null);
+  clearActionFeedback({ setActionError, setActionNotice });
   setActiveAction('import');
   try {
+    await beforeAction?.(scope);
     const result = await applyImportPreview(content, scope, fingerprint);
     if (!result) {
       const message = importPreviewStale ? t('envvar.importExport.previewStale') : t('common.error');
-      setActionError(formatActionError('import', message));
+      reportActionError(formatActionError('import', message), {
+        toastApi,
+        setActionError,
+        setActionNotice,
+      });
     } else if (result.status === 'manual_followup_required') {
-      setActionNotice(result.message || t('envvar.workflow.manualFollowup'));
+      reportActionNotice(result.message || t('envvar.workflow.manualFollowup'), {
+        toastApi,
+        setActionError,
+        setActionNotice,
+      });
     }
     return result;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    setActionError(formatActionError('import', message));
+    reportActionError(formatActionError('import', message), {
+      toastApi,
+      setActionError,
+      setActionNotice,
+    });
     return null;
   } finally {
     setActiveAction(null);
@@ -295,6 +406,8 @@ export async function handleApplyImportPreviewAction({
 export async function handlePreviewPathRepairAction({
   pathScope,
   previewPathRepair,
+  beforeAction,
+  toastApi,
   setActionError,
   setActionNotice,
   setActiveAction,
@@ -303,19 +416,28 @@ export async function handlePreviewPathRepairAction({
 }: {
   pathScope: EnvVarScope;
   previewPathRepair: (scope: EnvVarScope) => Promise<EnvVarPathRepairPreview | null>;
+  beforeAction?: (scope: EnvVarScope) => Promise<unknown> | unknown;
 } & ActionContext): Promise<EnvVarPathRepairPreview | null> {
-  setActionError(null);
-  setActionNotice(null);
+  clearActionFeedback({ setActionError, setActionNotice });
   setActiveAction('path-repair');
   try {
+    await beforeAction?.(pathScope);
     const preview = await previewPathRepair(pathScope);
     if (!preview) {
-      setActionError(formatActionError('path-repair', t('common.error')));
+      reportActionError(formatActionError('path-repair', t('common.error')), {
+        toastApi,
+        setActionError,
+        setActionNotice,
+      });
     }
     return preview;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    setActionError(formatActionError('path-repair', message));
+    reportActionError(formatActionError('path-repair', message), {
+      toastApi,
+      setActionError,
+      setActionNotice,
+    });
     return null;
   } finally {
     setActiveAction(null);
@@ -327,6 +449,8 @@ export async function handleApplyPathRepairAction({
   pathScope,
   pathRepairPreviewStale,
   applyPathRepair,
+  beforeAction,
+  toastApi,
   setActionError,
   setActionNotice,
   setActiveAction,
@@ -337,22 +461,35 @@ export async function handleApplyPathRepairAction({
   pathScope: EnvVarScope;
   pathRepairPreviewStale: boolean;
   applyPathRepair: (scope: EnvVarScope, fingerprint: string) => Promise<{ removedCount?: number | null; status?: string; message?: string | null } | null>;
+  beforeAction?: (scope: EnvVarScope) => Promise<unknown> | unknown;
 } & ActionContext): Promise<number | null> {
-  setActionError(null);
-  setActionNotice(null);
+  clearActionFeedback({ setActionError, setActionNotice });
   setActiveAction('path-repair');
   try {
+    await beforeAction?.(pathScope);
     const result = await applyPathRepair(pathScope, fingerprint);
     if (result === null) {
       const message = pathRepairPreviewStale ? t('envvar.pathEditor.repairPreviewStale') : t('common.error');
-      setActionError(formatActionError('path-repair', message));
+      reportActionError(formatActionError('path-repair', message), {
+        toastApi,
+        setActionError,
+        setActionNotice,
+      });
     } else if (result.status === 'manual_followup_required') {
-      setActionNotice(result.message || t('envvar.workflow.manualFollowup'));
+      reportActionNotice(result.message || t('envvar.workflow.manualFollowup'), {
+        toastApi,
+        setActionError,
+        setActionNotice,
+      });
     }
     return result?.removedCount ?? null;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    setActionError(formatActionError('path-repair', message));
+    reportActionError(formatActionError('path-repair', message), {
+      toastApi,
+      setActionError,
+      setActionNotice,
+    });
     return null;
   } finally {
     setActiveAction(null);
@@ -364,6 +501,7 @@ export async function handleResolveConflictAction({
   sourceScope,
   targetScope,
   resolveConflict,
+  beforeAction,
   toastApi,
   setActionError,
   setActionNotice,
@@ -375,26 +513,39 @@ export async function handleResolveConflictAction({
   sourceScope: EnvVarScope;
   targetScope: EnvVarScope;
   resolveConflict: (key: string, sourceScope: EnvVarScope, targetScope: EnvVarScope) => Promise<{ status?: string; message?: string | null } | null>;
-  toastApi: ToastApi;
+  beforeAction?: (targetScope: EnvVarScope) => Promise<unknown> | unknown;
 } & ActionContext): Promise<boolean> {
-  setActionError(null);
-  setActionNotice(null);
+  clearActionFeedback({ setActionError, setActionNotice });
   setActiveAction('conflict-resolve');
   try {
+    await beforeAction?.(targetScope);
     const result = await resolveConflict(key, sourceScope, targetScope);
     if (!result) {
-      setActionError(formatActionError('conflict-resolve', t('common.error')));
+      reportActionError(formatActionError('conflict-resolve', t('common.error')), {
+        toastApi,
+        setActionError,
+        setActionNotice,
+      });
       return false;
     }
     if (result.status === 'manual_followup_required') {
-      setActionNotice(result.message || t('envvar.workflow.manualFollowup'));
+      reportActionNotice(result.message || t('envvar.workflow.manualFollowup'), {
+        toastApi,
+        setActionError,
+        setActionNotice,
+      });
     } else {
-      toastApi.success(t('common.saved'));
+      clearActionFeedback({ setActionError, setActionNotice });
+      toastApi?.success(t('common.saved'));
     }
     return true;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    setActionError(formatActionError('conflict-resolve', message));
+    reportActionError(formatActionError('conflict-resolve', message), {
+      toastApi,
+      setActionError,
+      setActionNotice,
+    });
     return false;
   } finally {
     setActiveAction(null);
@@ -407,6 +558,8 @@ export async function handleImportAction({
   scopeFilter,
   importEnvFile,
   refreshVariables,
+  beforeAction,
+  toastApi,
   setActionError,
   setActionNotice,
   setActiveAction,
@@ -418,23 +571,38 @@ export async function handleImportAction({
   scopeFilter: EnvVarScope | 'all';
   importEnvFile: (content: string, scope: EnvVarScope) => Promise<EnvVarImportResult | null>;
   refreshVariables: (scope: EnvVarScope | 'all', options?: { forceRefresh?: boolean }) => Promise<unknown>;
+  beforeAction?: (scope: EnvVarScope) => Promise<unknown> | unknown;
 } & ActionContext): Promise<EnvVarImportResult | null> {
-  setActionError(null);
-  setActionNotice(null);
+  clearActionFeedback({ setActionError, setActionNotice });
   setActiveAction('import');
   try {
+    await beforeAction?.(scope);
     const result = await importEnvFile(content, scope);
     if (result?.success) {
       await refreshVariables(resolveRefreshScope(scopeFilter, scope), { forceRefresh: true });
       if (result.status === 'manual_followup_required') {
-        setActionNotice(result.message || t('envvar.workflow.manualFollowup'));
+        reportActionNotice(result.message || t('envvar.workflow.manualFollowup'), {
+          toastApi,
+          setActionError,
+          setActionNotice,
+        });
+      } else {
+        clearActionFeedback({ setActionError, setActionNotice });
       }
     } else {
-      setActionError(formatActionError('import', result?.message || t('envvar.workflow.verificationFailed')));
+      reportActionError(formatActionError('import', result?.message || t('envvar.workflow.verificationFailed')), {
+        toastApi,
+        setActionError,
+        setActionNotice,
+      });
     }
     return result;
   } catch (err) {
-    setActionError(formatActionError('import', err instanceof Error ? err.message : String(err)));
+    reportActionError(formatActionError('import', err instanceof Error ? err.message : String(err)), {
+      toastApi,
+      setActionError,
+      setActionNotice,
+    });
     return null;
   } finally {
     setActiveAction(null);
@@ -446,6 +614,7 @@ export async function handleExportAction({
   format,
   includeSensitive = false,
   exportEnvFile,
+  toastApi,
   setActionError,
   setActionNotice,
   setActiveAction,
@@ -457,17 +626,101 @@ export async function handleExportAction({
   includeSensitive?: boolean;
   exportEnvFile: (scope: EnvVarScope, format: EnvFileFormat, includeSensitive?: boolean) => Promise<EnvVarExportResult | null>;
 } & ActionContext): Promise<EnvVarExportResult | null> {
-  setActionError(null);
-  setActionNotice(null);
+  clearActionFeedback({ setActionError, setActionNotice });
   setActiveAction('export');
   try {
     const result = await exportEnvFile(scope, format, includeSensitive);
     if (!result) {
-      setActionError(formatActionError('export', t('common.error')));
+      reportActionError(formatActionError('export', t('common.error')), {
+        toastApi,
+        setActionError,
+        setActionNotice,
+      });
     }
     return result;
   } catch (err) {
-    setActionError(formatActionError('export', err instanceof Error ? err.message : String(err)));
+    reportActionError(formatActionError('export', err instanceof Error ? err.message : String(err)), {
+      toastApi,
+      setActionError,
+      setActionNotice,
+    });
+    return null;
+  } finally {
+    setActiveAction(null);
+  }
+}
+
+export async function handleRestoreSnapshotAction({
+  snapshotPath,
+  scopes = [],
+  previewFingerprint,
+  restoreSnapshot,
+  afterRestore,
+  toastApi,
+  setActionError,
+  setActionNotice,
+  setActiveAction,
+  formatActionError,
+  t,
+}: {
+  snapshotPath: string;
+  scopes?: EnvVarScope[];
+  previewFingerprint?: string;
+  restoreSnapshot: (
+    snapshotPath: string,
+    scopes?: EnvVarScope[],
+    previewFingerprint?: string,
+  ) => Promise<EnvVarSnapshotRestoreResult | null>;
+  afterRestore?: (
+    result: EnvVarSnapshotRestoreResult,
+  ) => Promise<unknown> | unknown;
+} & ActionContext): Promise<EnvVarSnapshotRestoreResult | null> {
+  clearActionFeedback({ setActionError, setActionNotice });
+  setActiveAction('snapshot-restore');
+  try {
+    const result = await restoreSnapshot(
+      snapshotPath,
+      scopes.length > 0 ? scopes : undefined,
+      previewFingerprint,
+    );
+    if (!result) {
+      reportActionError(formatActionError('snapshot-restore', t('common.error')), {
+        toastApi,
+        setActionError,
+        setActionNotice,
+      });
+      return null;
+    }
+
+    if (!result.success) {
+      reportActionError(
+        formatActionError('snapshot-restore', result.message || t('envvar.workflow.verificationFailed')),
+        {
+          toastApi,
+          setActionError,
+          setActionNotice,
+        },
+      );
+      return result;
+    }
+
+    await afterRestore?.(result);
+    const notice = result.message || t('envvar.snapshots.restoreComplete');
+    reportActionNotice(
+      notice,
+      { toastApi, setActionError, setActionNotice },
+      result.message ? 'warning' : 'success',
+    );
+    return result;
+  } catch (err) {
+    reportActionError(
+      formatActionError('snapshot-restore', err instanceof Error ? err.message : String(err)),
+      {
+        toastApi,
+        setActionError,
+        setActionNotice,
+      },
+    );
     return null;
   } finally {
     setActiveAction(null);
@@ -558,5 +811,16 @@ export function createExportHandler(
     scope,
     format,
     includeSensitive,
+  });
+}
+
+export function createRestoreSnapshotHandler(
+  args: Omit<Parameters<typeof handleRestoreSnapshotAction>[0], 'snapshotPath' | 'scopes' | 'previewFingerprint'>,
+) {
+  return (snapshotPath: string, scopes: EnvVarScope[] = [], previewFingerprint?: string) => handleRestoreSnapshotAction({
+    ...args,
+    snapshotPath,
+    scopes,
+    previewFingerprint,
   });
 }

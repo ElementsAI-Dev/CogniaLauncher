@@ -25,6 +25,7 @@ export interface CacheStatsStripProps {
   };
   scopeSummaries: CacheScopeInsight[];
   loading: boolean;
+  onScopeSelect?: (scopeId: CacheScopeInsight['id']) => void;
 }
 
 const SCOPE_ICONS = {
@@ -70,6 +71,7 @@ export function CacheStatsStrip({
   freshness,
   scopeSummaries,
   loading,
+  onScopeSelect,
 }: CacheStatsStripProps) {
   const { t } = useLocale();
 
@@ -129,6 +131,45 @@ export function CacheStatsStrip({
 
       {scopeSummaries.map((scope) => {
         const Icon = SCOPE_ICONS[scope.id];
+        const scopeBody = (
+          <div className="space-y-4">
+            <div className="flex items-start justify-between gap-2">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Icon className="h-4 w-4" />
+                  {t(scope.titleKey)}
+                </div>
+                <p className="text-2xl font-semibold leading-none">{scope.sizeHuman}</p>
+              </div>
+              <span
+                className={cn(
+                  'inline-flex items-center rounded-full border px-2 py-1 text-[10px] font-medium',
+                  STATUS_TONE_CLASSES[scope.tone],
+                )}
+              >
+                {t(scope.statusLabelKey)}
+              </span>
+            </div>
+
+            <DashboardMetricGrid columns={2}>
+              <DashboardMetricItem
+                label={t('cache.statsStripEntries')}
+                value={
+                  scope.entryCount !== null
+                    ? scope.entryCount.toLocaleString()
+                    : '—'
+                }
+                valueClassName="text-base"
+              />
+              <DashboardMetricItem
+                label={t('cache.insightCoverageLabel')}
+                value={t(scope.coverageLabelKey)}
+                valueClassName="text-sm"
+              />
+            </DashboardMetricGrid>
+          </div>
+        );
+
         return (
           <Card key={scope.id}>
             <CardContent className="space-y-4 pt-5 pb-4 px-5">
@@ -138,43 +179,16 @@ export function CacheStatsStrip({
                   <Skeleton className="h-8 w-20" />
                   <Skeleton className="h-5 w-28" />
                 </div>
+              ) : onScopeSelect ? (
+                <button
+                  type="button"
+                  className="w-full text-left rounded-md outline-none transition-colors hover:bg-muted/30 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  onClick={() => onScopeSelect(scope.id)}
+                >
+                  {scopeBody}
+                </button>
               ) : (
-                <>
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <Icon className="h-4 w-4" />
-                        {t(scope.titleKey)}
-                      </div>
-                      <p className="text-2xl font-semibold leading-none">{scope.sizeHuman}</p>
-                    </div>
-                    <span
-                      className={cn(
-                        'inline-flex items-center rounded-full border px-2 py-1 text-[10px] font-medium',
-                        STATUS_TONE_CLASSES[scope.tone],
-                      )}
-                    >
-                      {t(scope.statusLabelKey)}
-                    </span>
-                  </div>
-
-                  <DashboardMetricGrid columns={2}>
-                    <DashboardMetricItem
-                      label={t('cache.statsStripEntries')}
-                      value={
-                        scope.entryCount !== null
-                          ? scope.entryCount.toLocaleString()
-                          : '—'
-                      }
-                      valueClassName="text-base"
-                    />
-                    <DashboardMetricItem
-                      label={t('cache.insightCoverageLabel')}
-                      value={t(scope.coverageLabelKey)}
-                      valueClassName="text-sm"
-                    />
-                  </DashboardMetricGrid>
-                </>
+                scopeBody
               )}
             </CardContent>
           </Card>

@@ -5,6 +5,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import CachePage from "./page";
@@ -254,7 +255,7 @@ jest.mock("@/lib/cache/invalidation", () => ({
 }));
 
 // Mock useSettings hook
-jest.mock("@/hooks/use-settings", () => ({
+jest.mock("@/hooks/settings/use-settings", () => ({
   useSettings: jest.fn().mockReturnValue({
     cacheInfo: {
       download_cache: {
@@ -761,6 +762,61 @@ describe("CachePage", () => {
       await waitFor(() => {
         expect(
           screen.getByRole("tab", { name: /entries|cache\.tabEntries/i }),
+        ).toHaveAttribute("data-state", "active");
+      });
+    });
+
+    it("switches to the external tab from the external summary card", async () => {
+      const user = userEvent.setup();
+      const tauri = jest.requireMock("@/lib/tauri") as {
+        cacheSizeMonitor: jest.Mock;
+      };
+      tauri.cacheSizeMonitor.mockResolvedValueOnce({
+        internalSize: 6291456,
+        internalSizeHuman: "6 MB",
+        defaultDownloadsSize: 1048576,
+        defaultDownloadsSizeHuman: "1 MB",
+        defaultDownloadsCount: 2,
+        defaultDownloadsPath: "/downloads",
+        defaultDownloadsAvailable: true,
+        defaultDownloadsReason: null,
+        externalSize: 314572800,
+        externalSizeHuman: "300 MB",
+        totalSize: 320864256,
+        totalSizeHuman: "306 MB",
+        maxSize: 10737418240,
+        maxSizeHuman: "10 GB",
+        usagePercent: 3,
+        threshold: 80,
+        exceedsThreshold: false,
+        diskTotal: 0,
+        diskAvailable: 0,
+        diskAvailableHuman: "0 B",
+        externalCaches: [
+          {
+            provider: "npm",
+            displayName: "npm",
+            size: 314572800,
+            sizeHuman: "300 MB",
+            cachePath: "/cache/npm",
+          },
+        ],
+      });
+
+      renderWithProviders(<CachePage />);
+
+      const summarySection = await screen.findByText("Visual Summary");
+      const summaryButton = within(summarySection.closest("section")!).getByRole(
+        "button",
+        {
+          name: /cache\.externalPanelTitle|external caches/i,
+        },
+      );
+      await user.click(summaryButton);
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole("tab", { name: /external|cache\.tabExternal/i }),
         ).toHaveAttribute("data-state", "active");
       });
     });

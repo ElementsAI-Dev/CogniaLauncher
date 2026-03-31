@@ -68,7 +68,7 @@ const mockUseGitLabDownloads = {
   reset: jest.fn(),
 };
 
-jest.mock("@/hooks/use-gitlab-downloads", () => ({
+jest.mock("@/hooks/downloads/use-gitlab-downloads", () => ({
   useGitLabDownloads: () => mockUseGitLabDownloads,
 }));
 

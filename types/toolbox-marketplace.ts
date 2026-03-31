@@ -131,6 +131,8 @@ export interface ToolboxMarketplaceActionProgress {
   pluginId: string;
   phase: PluginMarketplaceActionPhase;
   downloadTaskId: string | null;
+  toolId: string | null;
+  sourceLabel: string | null;
   timestamp: number;
 }
 

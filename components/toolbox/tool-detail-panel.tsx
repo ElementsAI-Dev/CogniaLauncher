@@ -21,7 +21,7 @@ import {
 } from '@/lib/plugin-governance';
 import { Plug, Maximize2 } from 'lucide-react';
 import Link from 'next/link';
-import type { UnifiedTool } from '@/hooks/use-toolbox';
+import type { UnifiedTool } from '@/hooks/toolbox/use-toolbox';
 import { getToolboxDetailPath } from '@/lib/toolbox-route';
 
 interface ToolDetailPanelProps {

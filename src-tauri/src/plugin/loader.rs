@@ -90,7 +90,9 @@ impl PluginLoader {
         input: &str,
     ) -> CogniaResult<String> {
         // Set current plugin ID for host function permission checks
-        self.host_context.set_current_call(plugin_id, function_name).await;
+        self.host_context
+            .set_current_call(plugin_id, function_name)
+            .await;
 
         let plugin = self
             .instances
@@ -188,7 +190,9 @@ impl PluginLoader {
         function_name: &str,
         input: &str,
     ) -> Option<String> {
-        self.host_context.set_current_call(plugin_id, function_name).await;
+        self.host_context
+            .set_current_call(plugin_id, function_name)
+            .await;
         let plugin = self.instances.get_mut(plugin_id)?;
         if !plugin.function_exists(function_name) {
             return None;

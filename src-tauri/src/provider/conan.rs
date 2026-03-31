@@ -108,7 +108,7 @@ impl ConanProvider {
 
     /// Parse `conan list` output (text format)
     /// Output format:
-    /// ```
+    /// ```text
     /// Local Cache
     ///   name/version
     ///     revisions

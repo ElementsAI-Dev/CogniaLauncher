@@ -5,7 +5,8 @@ This matrix is the regression baseline for envvar feature wiring:
 
 Notes:
 - Rows are grouped by workflow. A row can include multiple commands.
-- Hook APIs are from `hooks/use-envvar.ts`.
+- Hook APIs are from `hooks/envvar/use-envvar.ts`.
+- Recovery-sensitive rows are expected to use canonical recovery action ids such as `persistent_set`, `persistent_remove`, `import_apply`, `path_repair_apply`, and `conflict_resolve`.
 - UI entry is the main integration in `app/envvar/page.tsx` and `components/envvar/*`.
 
 ## Wiring Baseline
@@ -20,6 +21,7 @@ Notes:
 | Import (direct) | `envvar_import_env_file` | `envvarImportEnvFile` | `useEnvVar.importEnvFile` | `EnvVarImportExport` (import tab, no-preview mode) |
 | Import preview/apply | `envvar_preview_import_env_file`, `envvar_apply_import_preview` | `envvarPreviewImportEnvFile`, `envvarApplyImportPreview` | `useEnvVar.previewImportEnvFile`, `useEnvVar.applyImportPreview` | `EnvVarImportExport` (preview -> apply, stale preview handling) |
 | Export | `envvar_export_env_file` | `envvarExportEnvFile` | `useEnvVar.exportEnvFile` | `EnvVarImportExport` (includeSensitive + redacted warnings) |
+| Snapshot history / protection / restore | `envvar_list_snapshots`, `envvar_create_snapshot`, `envvar_get_backup_protection`, `envvar_preview_snapshot_restore`, `envvar_restore_snapshot`, `envvar_delete_snapshot` | `envvarListSnapshots`, `envvarCreateSnapshot`, `envvarGetBackupProtection`, `envvarPreviewSnapshotRestore`, `envvarRestoreSnapshot`, `envvarDeleteSnapshot` | `useEnvVar.fetchSnapshotHistory`, `createSnapshot`, `getBackupProtection`, `previewSnapshotRestore`, `restoreSnapshot`, `deleteSnapshot` | `app/envvar/page.tsx` (snapshot history card, exact-action protection notice, scope-aware restore preview, restore/delete actions) |
 | PATH read/mutate | `envvar_get_path`, `envvar_add_path_entry`, `envvar_remove_path_entry`, `envvar_reorder_path`, `envvar_deduplicate_path` | `envvarGetPath`, `envvarAddPathEntry`, `envvarRemovePathEntry`, `envvarReorderPath`, `envvarDeduplicatePath` | `useEnvVar.fetchPath`, `addPathEntry`, `removePathEntry`, `reorderPath`, `deduplicatePath` | `EnvVarPathEditor` (add/remove/reorder/deduplicate) |
 | PATH repair preview/apply | `envvar_preview_path_repair`, `envvar_apply_path_repair` | `envvarPreviewPathRepair`, `envvarApplyPathRepair` | `useEnvVar.previewPathRepair`, `useEnvVar.applyPathRepair` | `EnvVarPathEditor` (preview -> apply, stale preview handling) |
 | Shell profiles | `envvar_list_shell_profiles`, `envvar_read_shell_profile` | `envvarListShellProfiles`, `envvarReadShellProfile` | `useEnvVar.fetchShellProfiles`, `readShellProfile` | `EnvVarShellProfiles` |
@@ -29,7 +31,7 @@ Notes:
 
 | Module | Critical Behaviors (must stay working) | Primary Jest Tests |
 |---|---|---|
-| `app/envvar/page.tsx` | Desktop gating, init refresh, status banners, header actions, tabs, shell guidance banner, support blocked disable state | `app/envvar/page.test.tsx` |
+| `app/envvar/page.tsx` | Desktop gating, init refresh, status banners, exact-action snapshot protection notices, scope-aware restore preview/confirm, header actions, tabs, shell guidance banner, support blocked disable state | `app/envvar/page.test.tsx` |
 | `app/envvar/loading.tsx` | Skeleton renders without crashing | `app/envvar/loading.test.tsx` |
 | `components/envvar/envvar-toolbar.tsx` | Search input, clear button, scope filter, count text, disabled state | `components/envvar/envvar-toolbar.test.tsx` |
 | `components/envvar/envvar-table.tsx` | Filter, copy/edit/delete, masked reveal before copy/edit, PATH open/reveal gating, compact/desktop layouts | `components/envvar/envvar-table.test.tsx` |
@@ -38,6 +40,5 @@ Notes:
 | `components/envvar/envvar-path-editor.tsx` | Add/remove/reorder, deduplicate, repair preview/apply + stale, search filter, disabled state | `components/envvar/envvar-path-editor.test.tsx` |
 | `components/envvar/envvar-shell-profiles.tsx` | List/empty state, view/collapse, loading skeleton, copy profile content, guidance rendering | `components/envvar/envvar-shell-profiles.test.tsx` |
 | `components/envvar/envvar-conflict-panel.tsx` | Ignore defaults/custom ignores, collapse/dismiss/restore, compact/desktop layout, resolve disabled on busy | `components/envvar/envvar-conflict-panel.test.tsx` |
-| `hooks/use-envvar.ts` | Detection cache + concurrency, refresh invalidation, stale preview flags, mutation normalization, reveal cache | `hooks/use-envvar.test.ts` |
+| `hooks/envvar/use-envvar.ts` | Detection cache + concurrency, shared recovery reconcile, exact-action protection preflight, stale preview flags, mutation normalization, reveal cache | `hooks/envvar/use-envvar.test.ts` |
 | `lib/envvar.ts` | Key validation, row building, file extension mapping, download helper | `lib/envvar.test.ts` |
-

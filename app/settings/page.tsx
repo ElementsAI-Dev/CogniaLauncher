@@ -2,14 +2,8 @@
 
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { Button } from "@/components/ui/button";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,8 +15,13 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Progress } from "@/components/ui/progress";
-import { useSettings } from "@/hooks/use-settings";
+import { ToolbarRow, ToolbarCluster } from "@/components/ui/toolbar";
+import {
+  DashboardMetricGrid,
+  DashboardMetricItem,
+  DashboardStatusBadge,
+} from "@/components/dashboard/dashboard-primitives";
+import { useSettings } from "@/hooks/settings/use-settings";
 import { useLocale } from "@/components/providers/locale-provider";
 import { useTheme } from "next-themes";
 import {
@@ -54,12 +53,12 @@ import {
 import {
   useSettingsShortcuts,
   useSectionNavigation,
-} from "@/hooks/use-settings-shortcuts";
-import { useUnsavedChanges } from "@/hooks/use-unsaved-changes";
+} from "@/hooks/settings/use-settings-shortcuts";
+import { useUnsavedChanges } from "@/hooks/settings/use-unsaved-changes";
 import {
   useSettingsSearch,
   useActiveSection,
-} from "@/hooks/use-settings-search";
+} from "@/hooks/settings/use-settings-search";
 import {
   validateField,
   GeneralSettings,
@@ -70,6 +69,7 @@ import {
   AppearanceWorkbench,
   UpdateSettings,
   TraySettings,
+  EnvVarSettings,
   SidebarOrderCustomizer,
   PathsSettings,
   ProviderSettings,
@@ -103,6 +103,8 @@ import {
   Copy,
   ChevronDown,
   PanelLeft,
+  Undo2,
+  RefreshCw,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -115,7 +117,12 @@ import { BUBBLE_HINTS } from "@/lib/constants/onboarding";
 import { getOnboardingSurfaceState } from "@/lib/onboarding-surface";
 import { toast } from "sonner";
 import { readClipboard, writeClipboard } from "@/lib/clipboard";
-import { type SettingsSection } from "@/lib/constants/settings-registry";
+import {
+  type SettingsSection,
+  type SettingsSectionGroupId,
+  SETTINGS_SECTION_GROUPS,
+  getGroupForSection,
+} from "@/lib/constants/settings-registry";
 import {
   APP_SETTINGS_CONFIG_KEY_MAP,
   appSettingKeyToConfigKey,
@@ -147,20 +154,9 @@ import {
 import { emitInvalidations } from "@/lib/cache/invalidation";
 import {
   getAffectedSections,
-  getSectionForConfigKey,
   SETTINGS_SECTION_CONFIG_PREFIXES,
   SETTINGS_SECTION_IDS,
 } from "@/lib/settings/section-utils";
-
-interface SaveProgress {
-  current: number;
-  total: number;
-}
-
-interface PendingSaveSnapshot {
-  entries: Array<[string, string]>;
-  source: "all" | "retry";
-}
 
 interface ImportPreviewState {
   payload: SettingsImportPayload;
@@ -257,9 +253,6 @@ export default function SettingsPage() {
     Record<string, string | null>
   >({});
   const [saving, setSaving] = useState(false);
-  const [saveProgress, setSaveProgress] = useState<SaveProgress | null>(null);
-  const [pendingSaveSnapshot, setPendingSaveSnapshot] =
-    useState<PendingSaveSnapshot | null>(null);
   const [failedSaveKeys, setFailedSaveKeys] = useState<string[]>([]);
   const [failedSaveMessages, setFailedSaveMessages] = useState<
     Record<string, string>
@@ -273,6 +266,7 @@ export default function SettingsPage() {
     Set<SettingsSection>
   >(new Set());
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<SettingsSectionGroupId>("core");
   const [supportedWindowEffects, setSupportedWindowEffects] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -348,10 +342,6 @@ export default function SettingsPage() {
     () => getAffectedSections(draftConflictKeys),
     [draftConflictKeys],
   );
-  const failedSaveSections = useMemo(
-    () => getAffectedSections(failedSaveKeys),
-    [failedSaveKeys],
-  );
 
   // Track which sections have changes
   const sectionHasChanges = useCallback(
@@ -378,6 +368,16 @@ export default function SettingsPage() {
       sectionHasChanges(sectionId) || sectionHasConflict(sectionId),
     [sectionHasChanges, sectionHasConflict],
   );
+
+  const groupHasChanges = useCallback(
+    (groupId: SettingsSectionGroupId): boolean => {
+      const group = SETTINGS_SECTION_GROUPS.find((g) => g.id === groupId);
+      return group?.sections.some((s) => sectionHasDraftState(s)) ?? false;
+    },
+    [sectionHasDraftState],
+  );
+
+  const totalPendingChanges = configDiffEntries.length + appSettingsDiffEntries.length;
 
   useUnsavedChanges("settings-page", hasChanges);
 
@@ -495,11 +495,9 @@ export default function SettingsPage() {
       }
 
       setSaving(true);
-      setPendingSaveSnapshot({
-        entries: changedKeys,
-        source: retryFailedOnly ? "retry" : "all",
-      });
-      setSaveProgress({ current: 0, total: changedKeys.length });
+      const saveToastId = toast.loading(
+        t("settings.savingProgress", { current: 0, total: changedKeys.length }),
+      );
 
       const failed: Record<string, string> = {};
       const succeeded: Array<[string, string]> = [];
@@ -512,7 +510,10 @@ export default function SettingsPage() {
         } catch (err) {
           failed[key] = err instanceof Error ? err.message : String(err);
         } finally {
-          setSaveProgress({ current: i + 1, total: changedKeys.length });
+          toast.loading(
+            t("settings.savingProgress", { current: i + 1, total: changedKeys.length }),
+            { id: saveToastId },
+          );
         }
       }
 
@@ -547,8 +548,7 @@ export default function SettingsPage() {
       );
 
       setSaving(false);
-      setPendingSaveSnapshot(null);
-      setSaveProgress(null);
+      toast.dismiss(saveToastId);
 
       if (nextFailedKeys.length === 0) {
         toast.success(t("settings.settingsSaved"));
@@ -1604,6 +1604,12 @@ export default function SettingsPage() {
   // Navigate to setting from search
   const handleNavigateToSetting = useCallback(
     (section: SettingsSection, key: string, focusId?: string) => {
+      // Switch to the correct tab
+      const targetGroup = getGroupForSection(section);
+      if (targetGroup) {
+        setActiveTab(targetGroup);
+      }
+
       // Expand the section if collapsed
       setCollapsedSections((prev) => {
         const next = new Set(prev);
@@ -1611,23 +1617,23 @@ export default function SettingsPage() {
         return next;
       });
 
-      // Scroll to section
-      scrollToSection(section);
-
       // Clear search
       search.clearSearch();
 
-      // Expand first, then focus with retries until the target control is mounted.
+      // Wait for tab switch to render, then scroll and focus
       window.setTimeout(() => {
+        scrollToSection(section);
         focusSearchTarget(key, focusId);
-      }, 0);
+      }, 50);
     },
     [focusSearchTarget, scrollToSection, search],
   );
 
   const handleMobileSectionSelect = useCallback(
     (section: SettingsSection) => {
-      scrollToSection(section);
+      const targetGroup = getGroupForSection(section);
+      if (targetGroup) setActiveTab(targetGroup);
+      window.setTimeout(() => scrollToSection(section), 50);
       setMobileNavOpen(false);
     },
     [scrollToSection],
@@ -1724,26 +1730,6 @@ export default function SettingsPage() {
     setImportPreview(null);
   }, []);
 
-  const conflictSectionSummary = useMemo(
-    () => conflictSections.map((section) => t(`settings.sections.${section}`)).join(", "),
-    [conflictSections, t],
-  );
-
-  const failedSectionSummary = useMemo(
-    () => failedSaveSections.map((section) => t(`settings.sections.${section}`)).join(", "),
-    [failedSaveSections, t],
-  );
-
-  const failedSaveDetails = useMemo(
-    () =>
-      failedSaveKeys.map((key) => ({
-        key,
-        section: getSectionForConfigKey(key),
-        error: failedSaveMessages[key] ?? t("settings.saveFailed"),
-      })),
-    [failedSaveKeys, failedSaveMessages, t],
-  );
-
   const canSave = hasChanges && !loading && !saving && !hasValidationErrors();
   const canReset = !loading && !saving;
 
@@ -1762,75 +1748,109 @@ export default function SettingsPage() {
               className="hidden"
               aria-label={t("settings.importSettings")}
             />
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline">
-                  <Upload className="h-4 w-4 mr-2" aria-hidden="true" />
-                  {t("settings.import")}
-                  <ChevronDown className="h-3 w-3 ml-1 opacity-50" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
-                  <Upload className="h-4 w-4 mr-2" />
-                  {t("settings.importFromFile")}
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleImportFromClipboard}>
-                  <ClipboardPaste className="h-4 w-4 mr-2" />
-                  {t("settings.importFromClipboard")}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline">
-                  <Download className="h-4 w-4 mr-2" aria-hidden="true" />
-                  {t("settings.export")}
-                  <ChevronDown className="h-3 w-3 ml-1 opacity-50" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={handleExport}>
-                  <Download className="h-4 w-4 mr-2" />
-                  {t("settings.exportAsFile")}
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleExportToClipboard}>
-                  <Copy className="h-4 w-4 mr-2" />
-                  {t("settings.exportToClipboard")}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="outline" disabled={!canReset}>
-                  <RotateCcw className="h-4 w-4 mr-2" aria-hidden="true" />
-                  {t("common.reset")}
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>
-                    {t("settings.resetConfirmTitle")}
-                  </AlertDialogTitle>
-                  <AlertDialogDescription>
-                    {t("settings.resetConfirmDesc")}
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
-                  <AlertDialogAction
-                    onClick={handleReset}
-                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            <ToolbarRow>
+              <ToolbarCluster compact>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="sm" className="h-9">
+                      <Upload className="h-4 w-4 mr-1.5" aria-hidden="true" />
+                      {t("settings.import")}
+                      <ChevronDown className="h-3 w-3 ml-1 opacity-50" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
+                      <Upload className="h-4 w-4 mr-2" />
+                      {t("settings.importFromFile")}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={handleImportFromClipboard}>
+                      <ClipboardPaste className="h-4 w-4 mr-2" />
+                      {t("settings.importFromClipboard")}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="sm" className="h-9">
+                      <Download className="h-4 w-4 mr-1.5" aria-hidden="true" />
+                      {t("settings.export")}
+                      <ChevronDown className="h-3 w-3 ml-1 opacity-50" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={handleExport}>
+                      <Download className="h-4 w-4 mr-2" />
+                      {t("settings.exportAsFile")}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={handleExportToClipboard}>
+                      <Copy className="h-4 w-4 mr-2" />
+                      {t("settings.exportToClipboard")}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </ToolbarCluster>
+              <ToolbarCluster compact>
+                {hasChanges && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-9"
+                    onClick={handleDiscardChanges}
                   >
-                    {t("common.reset")}
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-            <Button onClick={() => void handleSave(false)} disabled={!canSave}>
-              <Save className="h-4 w-4 mr-2" aria-hidden="true" />
-              {saving ? t("settings.saving") : t("settings.saveChanges")}
-            </Button>
+                    <Undo2 className="h-4 w-4 mr-1.5" aria-hidden="true" />
+                    {t("settings.discard")}
+                  </Button>
+                )}
+                {failedSaveKeys.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-9"
+                    onClick={handleRetryFailedSaves}
+                    disabled={saving}
+                  >
+                    <RefreshCw className="h-4 w-4 mr-1.5" aria-hidden="true" />
+                    {t("settings.retryFailedOnly")}
+                  </Button>
+                )}
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="ghost" size="sm" className="h-9" disabled={!canReset}>
+                      <RotateCcw className="h-4 w-4 mr-1.5" aria-hidden="true" />
+                      {t("common.reset")}
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>
+                        {t("settings.resetConfirmTitle")}
+                      </AlertDialogTitle>
+                      <AlertDialogDescription>
+                        {t("settings.resetConfirmDesc")}
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={handleReset}
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      >
+                        {t("common.reset")}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+                <Button size="sm" className="h-9" onClick={() => void handleSave(false)} disabled={!canSave}>
+                  <Save className="h-4 w-4 mr-1.5" aria-hidden="true" />
+                  {saving ? t("settings.saving") : t("settings.saveChanges")}
+                  {hasChanges && (
+                    <DashboardStatusBadge tone="warning" className="ml-1.5">
+                      {totalPendingChanges}
+                    </DashboardStatusBadge>
+                  )}
+                </Button>
+              </ToolbarCluster>
+            </ToolbarRow>
           </>
         }
       />
@@ -1882,95 +1902,39 @@ export default function SettingsPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {saveProgress && (
-        <div className="space-y-2" role="status" aria-live="polite">
-          <div className="flex items-center justify-between text-sm">
-            <span>
-              {t("settings.savingProgress", {
-                current: saveProgress.current,
-                total: saveProgress.total,
-              })}
-            </span>
-            <span>
-              {Math.round((saveProgress.current / saveProgress.total) * 100)}%
-            </span>
-          </div>
-          {pendingSaveSnapshot && (
-            <p className="text-xs text-muted-foreground">
-              {t("settings.pendingSaveItems", {
-                count: pendingSaveSnapshot.entries.length,
-              })}
-            </p>
+      {(hasChanges || draftConflictKeys.length > 0 || failedSaveKeys.length > 0 || error) && (
+        <DashboardMetricGrid columns={error ? 2 : 3}>
+          {error ? (
+            <DashboardMetricItem
+              label={t("common.error")}
+              value={error}
+              valueClassName="text-sm text-destructive font-normal truncate"
+              icon={<AlertCircle className="h-3 w-3 text-destructive" />}
+              className="col-span-2 border-destructive/30"
+            />
+          ) : (
+            <>
+              <DashboardMetricItem
+                label={t("settings.pendingChanges")}
+                value={totalPendingChanges}
+                valueClassName={hasChanges ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}
+                icon={<AlertCircle className="h-3 w-3" />}
+              />
+              <DashboardMetricItem
+                label={t("settings.conflicts")}
+                value={draftConflictKeys.length}
+                valueClassName={draftConflictKeys.length > 0 ? "text-orange-600 dark:text-orange-400" : "text-muted-foreground"}
+                icon={<AlertCircle className="h-3 w-3" />}
+              />
+              <DashboardMetricItem
+                label={t("settings.failedSaves")}
+                value={failedSaveKeys.length}
+                valueClassName={failedSaveKeys.length > 0 ? "text-red-600 dark:text-red-400" : "text-muted-foreground"}
+                icon={<AlertCircle className="h-3 w-3" />}
+              />
+            </>
           )}
-          <Progress value={(saveProgress.current / saveProgress.total) * 100} />
-        </div>
-      )}
-
-      {error && (
-        <Alert variant="destructive" role="alert">
-          <AlertCircle className="h-4 w-4" aria-hidden="true" />
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-
-      {hasChanges && (
-        <Alert role="status">
-          <AlertCircle className="h-4 w-4" aria-hidden="true" />
-          <AlertDescription>
-            {t("settings.unsavedChanges")}
-            <span className="text-muted-foreground ml-2">
-              ({t("settings.shortcutHint")})
-            </span>
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {draftConflictKeys.length > 0 && (
-        <Alert role="status">
-          <AlertCircle className="h-4 w-4" aria-hidden="true" />
-          <AlertDescription>
-            {t("settings.refreshConflictDetected", {
-              count: draftConflictKeys.length,
-            })}
-            {conflictSectionSummary ? (
-              <span className="text-muted-foreground ml-2">
-                ({conflictSectionSummary})
-              </span>
-            ) : null}
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {failedSaveKeys.length > 0 && (
-        <Alert variant="destructive" role="alert">
-          <AlertCircle className="h-4 w-4" aria-hidden="true" />
-          <AlertDescription className="space-y-2">
-            <p>
-              {t("settings.saveRetryHint", { count: failedSaveKeys.length })}
-              {failedSectionSummary ? (
-                <span className="text-destructive/80 ml-2">
-                  ({failedSectionSummary})
-                </span>
-              ) : null}
-            </p>
-            <div className="rounded-md border border-destructive/30 bg-destructive/10 p-2 text-xs space-y-1">
-              {failedSaveDetails.slice(0, 6).map((detail) => (
-                <p key={detail.key}>
-                  {detail.key}: {detail.error}
-                </p>
-              ))}
-            </div>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={handleRetryFailedSaves}
-              disabled={saving}
-            >
-              {t("settings.retryFailedOnly")}
-            </Button>
-          </AlertDescription>
-        </Alert>
+        </DashboardMetricGrid>
       )}
 
       {!initialLoadComplete ? (
@@ -1981,7 +1945,11 @@ export default function SettingsPage() {
           <aside className="hidden w-56 shrink-0 lg:block">
             <SettingsNav
               activeSection={activeSection}
-              onSectionClick={scrollToSection}
+              onSectionClick={(section) => {
+                const targetGroup = getGroupForSection(section);
+                if (targetGroup) setActiveTab(targetGroup);
+                window.setTimeout(() => scrollToSection(section), 50);
+              }}
               matchingSections={search.matchingSections}
               isSearching={search.isSearching}
               collapsedSections={collapsedSections}
@@ -2030,290 +1998,123 @@ export default function SettingsPage() {
               />
             </div>
 
-            {/* Settings Sections */}
-            <CollapsibleSection
-              id="general"
-              title={t("settings.general")}
-              description={t("settings.generalDesc")}
-              icon="Settings2"
-              open={!collapsedSections.has("general")}
-              hasChanges={sectionHasDraftState("general")}
-              onResetSection={handleResetSection}
-              onOpenChange={handleSectionOpenChange}
-              t={t}
-            >
-              <GeneralSettings
-                localConfig={localConfig}
-                errors={validationErrors}
-                onValueChange={handleChange}
-                t={t}
-              />
-            </CollapsibleSection>
+            {/* Tabbed Settings Sections */}
+            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as SettingsSectionGroupId)}>
+              <TabsList className="w-full">
+                {SETTINGS_SECTION_GROUPS.map((group) => (
+                  <TabsTrigger key={group.id} value={group.id}>
+                    {t(group.labelKey)}
+                    {groupHasChanges(group.id) && (
+                      <DashboardStatusBadge tone="warning" className="ml-1.5">
+                        {t("settings.modified")}
+                      </DashboardStatusBadge>
+                    )}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
 
-            <CollapsibleSection
-              id="network"
-              title={t("settings.network")}
-              description={t("settings.networkDesc")}
-              icon="Network"
-              open={!collapsedSections.has("network")}
-              hasChanges={sectionHasDraftState("network")}
-              onResetSection={handleResetSection}
-              onOpenChange={handleSectionOpenChange}
-              t={t}
-            >
-              <NetworkSettings
-                localConfig={localConfig}
-                errors={validationErrors}
-                onValueChange={handleChange}
-                t={t}
-              />
-            </CollapsibleSection>
+              {/* Core: general, network, security, mirrors */}
+              <TabsContent value="core" className="flex flex-col gap-6">
+                <CollapsibleSection id="general" title={t("settings.general")} description={t("settings.generalDesc")} icon="Settings2" open={!collapsedSections.has("general")} hasChanges={sectionHasDraftState("general")} onResetSection={handleResetSection} onOpenChange={handleSectionOpenChange} t={t}>
+                  <GeneralSettings localConfig={localConfig} errors={validationErrors} onValueChange={handleChange} t={t} />
+                </CollapsibleSection>
+                <CollapsibleSection id="network" title={t("settings.network")} description={t("settings.networkDesc")} icon="Network" open={!collapsedSections.has("network")} hasChanges={sectionHasDraftState("network")} onResetSection={handleResetSection} onOpenChange={handleSectionOpenChange} t={t}>
+                  <NetworkSettings localConfig={localConfig} errors={validationErrors} onValueChange={handleChange} t={t} />
+                </CollapsibleSection>
+                <CollapsibleSection id="security" title={t("settings.security")} description={t("settings.securityDesc")} icon="Shield" open={!collapsedSections.has("security")} hasChanges={sectionHasDraftState("security")} onResetSection={handleResetSection} onOpenChange={handleSectionOpenChange} t={t}>
+                  <SecuritySettings localConfig={localConfig} onValueChange={handleChange} t={t} />
+                </CollapsibleSection>
+                <CollapsibleSection id="mirrors" title={t("settings.mirrors")} description={t("settings.mirrorsDesc")} icon="Server" open={!collapsedSections.has("mirrors")} hasChanges={sectionHasDraftState("mirrors")} onResetSection={handleResetSection} onOpenChange={handleSectionOpenChange} t={t} data-hint="settings-mirrors">
+                  <MirrorsSettings localConfig={localConfig} errors={validationErrors} onValueChange={handleChange} t={t} />
+                </CollapsibleSection>
+              </TabsContent>
 
-            <CollapsibleSection
-              id="security"
-              title={t("settings.security")}
-              description={t("settings.securityDesc")}
-              icon="Shield"
-              open={!collapsedSections.has("security")}
-              hasChanges={sectionHasDraftState("security")}
-              onResetSection={handleResetSection}
-              onOpenChange={handleSectionOpenChange}
-              t={t}
-            >
-              <SecuritySettings
-                localConfig={localConfig}
-                onValueChange={handleChange}
-                t={t}
-              />
-            </CollapsibleSection>
+              {/* Interface: appearance, shortcuts */}
+              <TabsContent value="interface" className="flex flex-col gap-6">
+                <CollapsibleSection id="appearance" title={t("settings.appearance")} description={t("settings.appearanceDesc")} icon="Palette" open={!collapsedSections.has("appearance")} hasChanges={sectionHasDraftState("appearance")} onResetSection={handleResetSection} onOpenChange={handleSectionOpenChange} t={t}>
+                  <AppearanceWorkbench
+                    presets={presets}
+                    activePresetId={activePresetId}
+                    hasAppearanceChanges={hasAppearancePresetDivergence}
+                    onSelectPreset={setActivePresetId}
+                    onApplyPreset={handleApplyAppearancePreset}
+                    onSavePreset={handleSaveAppearancePreset}
+                    onRenamePreset={handleRenameAppearancePreset}
+                    onDeletePreset={handleDeleteAppearancePreset}
+                    onResetAppearance={() => handleResetSection("appearance")}
+                    t={t}
+                  >
+                    <AppearanceSettings
+                      theme={theme}
+                      setTheme={handleThemeChange}
+                      locale={locale}
+                      setLocale={handleLocaleChange}
+                      accentColor={accentColor}
+                      setAccentColor={handleAccentColorChange}
+                      chartColorTheme={chartColorTheme}
+                      setChartColorTheme={handleChartColorThemeChange}
+                      interfaceRadius={interfaceRadius}
+                      setInterfaceRadius={handleInterfaceRadiusChange}
+                      interfaceDensity={interfaceDensity}
+                      setInterfaceDensity={handleInterfaceDensityChange}
+                      reducedMotion={reducedMotion}
+                      setReducedMotion={handleReducedMotionChange}
+                      windowEffect={windowEffect}
+                      setWindowEffect={handleWindowEffectChange}
+                      windowEffectRuntime={windowEffectRuntime}
+                      t={t}
+                    />
+                    <Separator />
+                    <SidebarOrderCustomizer
+                      t={t}
+                      primaryOrder={sidebarOrder.primary}
+                      secondaryOrder={sidebarOrder.secondary}
+                      onMovePrimary={handleMovePrimarySidebarItem}
+                      onMoveSecondary={handleMoveSecondarySidebarItem}
+                      onReset={handleResetSidebarOrder}
+                    />
+                  </AppearanceWorkbench>
+                </CollapsibleSection>
+                <CollapsibleSection id="shortcuts" title={t("settings.shortcuts")} description={t("settings.shortcutsDesc")} icon="Keyboard" open={!collapsedSections.has("shortcuts")} hasChanges={sectionHasDraftState("shortcuts")} onResetSection={handleResetSection} onOpenChange={handleSectionOpenChange} t={t}>
+                  <ShortcutSettings localConfig={localConfig} errors={validationErrors} onValueChange={handleChange} t={t} />
+                </CollapsibleSection>
+              </TabsContent>
 
-            <CollapsibleSection
-              id="mirrors"
-              title={t("settings.mirrors")}
-              description={t("settings.mirrorsDesc")}
-              icon="Server"
-              open={!collapsedSections.has("mirrors")}
-              hasChanges={sectionHasDraftState("mirrors")}
-              onResetSection={handleResetSection}
-              onOpenChange={handleSectionOpenChange}
-              t={t}
-              data-hint="settings-mirrors"
-            >
-              <MirrorsSettings
-                localConfig={localConfig}
-                errors={validationErrors}
-                onValueChange={handleChange}
-                t={t}
-              />
-            </CollapsibleSection>
+              {/* Platform: updates, tray, envvar, paths, startup */}
+              <TabsContent value="platform" className="flex flex-col gap-6">
+                <CollapsibleSection id="updates" title={t("settings.updates")} description={t("settings.updatesDesc")} icon="RefreshCw" open={!collapsedSections.has("updates")} hasChanges={sectionHasDraftState("updates")} onOpenChange={handleSectionOpenChange} t={t}>
+                  <UpdateSettings appSettings={appSettings} onValueChange={handleAppSettingsChange} t={t} />
+                </CollapsibleSection>
+                <CollapsibleSection id="tray" title={t("settings.tray")} description={t("settings.trayDesc")} icon="Monitor" open={!collapsedSections.has("tray")} hasChanges={sectionHasDraftState("tray")} onOpenChange={handleSectionOpenChange} t={t}>
+                  <TraySettings appSettings={appSettings} onValueChange={handleAppSettingsChange} t={t} />
+                </CollapsibleSection>
+                <CollapsibleSection id="envvar" title={t("settings.envvar")} description={t("settings.envvarDesc")} icon="Variable" open={!collapsedSections.has("envvar")} hasChanges={sectionHasDraftState("envvar")} onOpenChange={handleSectionOpenChange} t={t}>
+                  <EnvVarSettings appSettings={appSettings} onValueChange={handleAppSettingsChange} t={t} />
+                </CollapsibleSection>
+                <CollapsibleSection id="paths" title={t("settings.paths")} description={t("settings.pathsDesc")} icon="FolderOpen" open={!collapsedSections.has("paths")} hasChanges={sectionHasDraftState("paths")} onResetSection={handleResetSection} onOpenChange={handleSectionOpenChange} t={t}>
+                  <PathsSettings localConfig={localConfig} errors={validationErrors} onValueChange={handleChange} t={t} />
+                </CollapsibleSection>
+                <CollapsibleSection id="startup" title={t("settings.startup")} description={t("settings.startupDesc")} icon="Zap" open={!collapsedSections.has("startup")} hasChanges={sectionHasDraftState("startup")} onResetSection={handleResetSection} onOpenChange={handleSectionOpenChange} t={t}>
+                  <StartupSettings localConfig={localConfig} errors={validationErrors} onValueChange={handleChange} t={t} />
+                </CollapsibleSection>
+              </TabsContent>
 
-            <CollapsibleSection
-              id="appearance"
-              title={t("settings.appearance")}
-              description={t("settings.appearanceDesc")}
-              icon="Palette"
-              open={!collapsedSections.has("appearance")}
-              hasChanges={sectionHasDraftState("appearance")}
-              onResetSection={handleResetSection}
-              onOpenChange={handleSectionOpenChange}
-              t={t}
-            >
-              <AppearanceWorkbench
-                presets={presets}
-                activePresetId={activePresetId}
-                hasAppearanceChanges={hasAppearancePresetDivergence}
-                onSelectPreset={setActivePresetId}
-                onApplyPreset={handleApplyAppearancePreset}
-                onSavePreset={handleSaveAppearancePreset}
-                onRenamePreset={handleRenameAppearancePreset}
-                onDeletePreset={handleDeleteAppearancePreset}
-                onResetAppearance={() => handleResetSection("appearance")}
-                t={t}
-              >
-                <AppearanceSettings
-                  theme={theme}
-                  setTheme={handleThemeChange}
-                  locale={locale}
-                  setLocale={handleLocaleChange}
-                  accentColor={accentColor}
-                  setAccentColor={handleAccentColorChange}
-                  chartColorTheme={chartColorTheme}
-                  setChartColorTheme={handleChartColorThemeChange}
-                  interfaceRadius={interfaceRadius}
-                  setInterfaceRadius={handleInterfaceRadiusChange}
-                  interfaceDensity={interfaceDensity}
-                  setInterfaceDensity={handleInterfaceDensityChange}
-                  reducedMotion={reducedMotion}
-                  setReducedMotion={handleReducedMotionChange}
-                  windowEffect={windowEffect}
-                  setWindowEffect={handleWindowEffectChange}
-                  windowEffectRuntime={windowEffectRuntime}
-                  t={t}
-                />
-                <Separator />
-                <SidebarOrderCustomizer
-                  t={t}
-                  primaryOrder={sidebarOrder.primary}
-                  secondaryOrder={sidebarOrder.secondary}
-                  onMovePrimary={handleMovePrimarySidebarItem}
-                  onMoveSecondary={handleMoveSecondarySidebarItem}
-                  onReset={handleResetSidebarOrder}
-                />
-              </AppearanceWorkbench>
-            </CollapsibleSection>
-
-            <CollapsibleSection
-              id="updates"
-              title={t("settings.updates")}
-              description={t("settings.updatesDesc")}
-              icon="RefreshCw"
-              open={!collapsedSections.has("updates")}
-              hasChanges={sectionHasDraftState("updates")}
-              onOpenChange={handleSectionOpenChange}
-              t={t}
-            >
-              <UpdateSettings
-                appSettings={appSettings}
-                onValueChange={handleAppSettingsChange}
-                t={t}
-              />
-            </CollapsibleSection>
-
-            <CollapsibleSection
-              id="tray"
-              title={t("settings.tray")}
-              description={t("settings.trayDesc")}
-              icon="Monitor"
-              open={!collapsedSections.has("tray")}
-              hasChanges={sectionHasDraftState("tray")}
-              onOpenChange={handleSectionOpenChange}
-              t={t}
-            >
-              <TraySettings
-                appSettings={appSettings}
-                onValueChange={handleAppSettingsChange}
-                t={t}
-              />
-            </CollapsibleSection>
-
-            <CollapsibleSection
-              id="shortcuts"
-              title={t("settings.shortcuts")}
-              description={t("settings.shortcutsDesc")}
-              icon="Keyboard"
-              open={!collapsedSections.has("shortcuts")}
-              hasChanges={sectionHasDraftState("shortcuts")}
-              onResetSection={handleResetSection}
-              onOpenChange={handleSectionOpenChange}
-              t={t}
-            >
-              <ShortcutSettings
-                localConfig={localConfig}
-                errors={validationErrors}
-                onValueChange={handleChange}
-                t={t}
-              />
-            </CollapsibleSection>
-
-            <CollapsibleSection
-              id="paths"
-              title={t("settings.paths")}
-              description={t("settings.pathsDesc")}
-              icon="FolderOpen"
-              open={!collapsedSections.has("paths")}
-              hasChanges={sectionHasDraftState("paths")}
-              onResetSection={handleResetSection}
-              onOpenChange={handleSectionOpenChange}
-              t={t}
-            >
-              <PathsSettings
-                localConfig={localConfig}
-                errors={validationErrors}
-                onValueChange={handleChange}
-                t={t}
-              />
-            </CollapsibleSection>
-
-            <CollapsibleSection
-              id="provider"
-              title={t("settings.providerSettings")}
-              description={t("settings.providerSettingsDesc")}
-              icon="Package"
-              open={!collapsedSections.has("provider")}
-              hasChanges={sectionHasDraftState("provider")}
-              onResetSection={handleResetSection}
-              onOpenChange={handleSectionOpenChange}
-              t={t}
-            >
-              <ProviderSettings
-                localConfig={localConfig}
-                savedConfig={originalConfig}
-                errors={validationErrors}
-                onValueChange={handleChange}
-                t={t}
-              />
-            </CollapsibleSection>
-
-            <CollapsibleSection
-              id="backup"
-              title={t("backup.title")}
-              description={t("backup.description")}
-              icon="Archive"
-              open={!collapsedSections.has("backup")}
-              hasChanges={sectionHasDraftState("backup")}
-              onResetSection={handleResetSection}
-              onOpenChange={handleSectionOpenChange}
-              t={t}
-            >
-              <BackupPolicySettings
-                localConfig={localConfig}
-                errors={validationErrors}
-                onValueChange={handleChange}
-                t={t}
-              />
-              <Separator />
-              <BackupSettings t={t} />
-            </CollapsibleSection>
-
-            <CollapsibleSection
-              id="startup"
-              title={t("settings.startup")}
-              description={t("settings.startupDesc")}
-              icon="Zap"
-              open={!collapsedSections.has("startup")}
-              hasChanges={sectionHasDraftState("startup")}
-              onResetSection={handleResetSection}
-              onOpenChange={handleSectionOpenChange}
-              t={t}
-            >
-              <StartupSettings
-                localConfig={localConfig}
-                errors={validationErrors}
-                onValueChange={handleChange}
-                t={t}
-              />
-            </CollapsibleSection>
-
-            <CollapsibleSection
-              id="system"
-              title={t("settings.systemInfo")}
-              description={t("settings.systemInfoDesc")}
-              icon="Info"
-              open={!collapsedSections.has("system")}
-              hasChanges={false}
-              onOpenChange={handleSectionOpenChange}
-              t={t}
-            >
-              <SystemInfo
-                loading={loading}
-                platformInfo={platformInfo}
-                cogniaDir={cogniaDir}
-                t={t}
-              />
-            </CollapsibleSection>
-
-            {/* Onboarding Controls */}
-            <OnboardingSettingsCard t={t} />
+              {/* Advanced: provider, backup, system, onboarding */}
+              <TabsContent value="advanced" className="flex flex-col gap-6">
+                <CollapsibleSection id="provider" title={t("settings.providerSettings")} description={t("settings.providerSettingsDesc")} icon="Package" open={!collapsedSections.has("provider")} hasChanges={sectionHasDraftState("provider")} onResetSection={handleResetSection} onOpenChange={handleSectionOpenChange} t={t}>
+                  <ProviderSettings localConfig={localConfig} savedConfig={originalConfig} errors={validationErrors} onValueChange={handleChange} t={t} />
+                </CollapsibleSection>
+                <CollapsibleSection id="backup" title={t("backup.title")} description={t("backup.description")} icon="Archive" open={!collapsedSections.has("backup")} hasChanges={sectionHasDraftState("backup")} onResetSection={handleResetSection} onOpenChange={handleSectionOpenChange} t={t}>
+                  <BackupPolicySettings localConfig={localConfig} errors={validationErrors} onValueChange={handleChange} t={t} />
+                  <Separator />
+                  <BackupSettings t={t} />
+                </CollapsibleSection>
+                <CollapsibleSection id="system" title={t("settings.systemInfo")} description={t("settings.systemInfoDesc")} icon="Info" open={!collapsedSections.has("system")} hasChanges={false} onOpenChange={handleSectionOpenChange} t={t}>
+                  <SystemInfo loading={loading} platformInfo={platformInfo} cogniaDir={cogniaDir} t={t} />
+                </CollapsibleSection>
+                <OnboardingSettingsCard t={t} />
+              </TabsContent>
+            </Tabs>
           </div>
         </div>
       )}

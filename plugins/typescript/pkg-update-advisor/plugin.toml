@@ -18,6 +18,18 @@ keywords = ["package", "update", "advisor", "provider", "dependency", "maintenan
 icon = "PackageSearch"
 entry = "pkg_update_advisor"
 
+[[tools]]
+id = "pkg-update-advisor-guided"
+name_en = "Package Update Advisor Guided"
+name_zh = "包更新顾问向导"
+description_en = "Guided workflow for dependency update review with structured summaries and export actions."
+description_zh = "带结构化摘要与导出动作的依赖更新审阅向导工作流。"
+category = "developer"
+keywords = ["package", "update", "workflow", "guided", "summary", "maintenance"]
+icon = "Workflow"
+entry = "pkg_update_advisor_guided"
+ui_mode = "declarative"
+
 [permissions]
 pkg_search = true
 clipboard = true

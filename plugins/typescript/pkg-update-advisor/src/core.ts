@@ -152,6 +152,17 @@ export function runPackageUpdateAdvisor(
   input: Required<PackageUpdateAdvisorInput>,
   host: PackageUpdateAdvisorHost,
 ): PackageUpdateAdvisorSuccess {
+  const result = buildPackageUpdateAdvisorSuccess(input, host);
+  copyPackageUpdateSummary(input, result, host);
+  notifyPackageUpdates(input, result, host);
+  emitPackageUpdateCompletion(input, result, host);
+  return result;
+}
+
+export function buildPackageUpdateAdvisorSuccess(
+  input: Required<PackageUpdateAdvisorInput>,
+  host: PackageUpdateAdvisorHost,
+): PackageUpdateAdvisorSuccess {
   const installed = host.pkg.listInstalled(input.provider);
   const targetPackages = selectTargetPackages(
     installed.map((pkg) => pkg.name),
@@ -174,23 +185,6 @@ export function runPackageUpdateAdvisor(
     updates,
   );
 
-  if (input.copySummary) {
-    host.clipboard.write(summary);
-  }
-  if (input.notifyOnUpdates && updates.length > 0) {
-    host.notification.send(
-      'Package updates available',
-      `${updates.length} update(s) detected for provider ${input.provider}.`,
-    );
-  }
-  if (input.emitEvent) {
-    host.event.emit('builtin.pkg_update_advisor.completed', {
-      provider: input.provider,
-      targetCount: targetPackages.length,
-      updateCount: updates.length,
-    });
-  }
-
   return {
     ok: true,
     provider: input.provider,
@@ -205,6 +199,46 @@ export function runPackageUpdateAdvisor(
         ? `Found ${updates.length} update(s) for provider ${input.provider}.`
         : `No updates detected for provider ${input.provider}.`,
   };
+}
+
+export function copyPackageUpdateSummary(
+  input: Required<PackageUpdateAdvisorInput>,
+  result: PackageUpdateAdvisorSuccess,
+  host: PackageUpdateAdvisorHost,
+): void {
+  if (!input.copySummary) {
+    return;
+  }
+  host.clipboard.write(result.summary);
+}
+
+export function notifyPackageUpdates(
+  input: Required<PackageUpdateAdvisorInput>,
+  result: PackageUpdateAdvisorSuccess,
+  host: PackageUpdateAdvisorHost,
+): void {
+  if (!input.notifyOnUpdates || result.updates.length === 0) {
+    return;
+  }
+  host.notification.send(
+    'Package updates available',
+    `${result.updates.length} update(s) detected for provider ${input.provider}.`,
+  );
+}
+
+export function emitPackageUpdateCompletion(
+  input: Required<PackageUpdateAdvisorInput>,
+  result: PackageUpdateAdvisorSuccess,
+  host: PackageUpdateAdvisorHost,
+): void {
+  if (!input.emitEvent) {
+    return;
+  }
+  host.event.emit('builtin.pkg_update_advisor.completed', {
+    provider: input.provider,
+    targetCount: result.targetPackages.length,
+    updateCount: result.updates.length,
+  });
 }
 
 export function selectTargetPackages(

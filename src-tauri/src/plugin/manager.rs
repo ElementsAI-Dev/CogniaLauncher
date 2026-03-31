@@ -1761,7 +1761,8 @@ impl PluginManager {
             let emitted_events = self.loader.drain_emitted_events().await;
             let emitted_logs = self.loader.drain_emitted_logs().await;
             let emitted_ui_effects = self.loader.drain_emitted_ui_effects().await;
-            if emitted_events.is_empty() && emitted_logs.is_empty() && emitted_ui_effects.is_empty() {
+            if emitted_events.is_empty() && emitted_logs.is_empty() && emitted_ui_effects.is_empty()
+            {
                 break;
             }
 
@@ -1896,12 +1897,9 @@ impl PluginManager {
             reg.iter()
                 .filter(|(_, plugin)| {
                     plugin.enabled
-                        && plugin
-                            .manifest
-                            .plugin
-                            .listen_logs
-                            .iter()
-                            .any(|filter| Self::matches_log_listener_filter(filter, &record.source_type))
+                        && plugin.manifest.plugin.listen_logs.iter().any(|filter| {
+                            Self::matches_log_listener_filter(filter, &record.source_type)
+                        })
                 })
                 .map(|(id, plugin)| (id.clone(), plugin.wasm_path.clone()))
                 .collect()
@@ -1948,7 +1946,6 @@ impl PluginManager {
                 listeners.len()
             );
         }
-
     }
 
     async fn dispatch_event_with_meta(
@@ -2744,7 +2741,10 @@ mod tests {
 
     fn make_log_listener_manifest(plugin_id: &str, filters: Vec<&str>) -> PluginManifest {
         let mut manifest = make_listener_manifest(plugin_id, vec![]);
-        manifest.plugin.listen_logs = filters.into_iter().map(|filter| filter.to_string()).collect();
+        manifest.plugin.listen_logs = filters
+            .into_iter()
+            .map(|filter| filter.to_string())
+            .collect();
         manifest
     }
 
@@ -3074,7 +3074,10 @@ mod tests {
             let mut reg = manager.registry.write().await;
             reg.register(
                 make_log_listener_manifest(plugin_id, vec!["plugin"]),
-                temp_dir.path().join("missing-log-listener").join("plugin.wasm"),
+                temp_dir
+                    .path()
+                    .join("missing-log-listener")
+                    .join("plugin.wasm"),
                 temp_dir.path().join("missing-log-listener"),
                 PluginSource::BuiltIn,
             );
@@ -3107,7 +3110,10 @@ mod tests {
             let mut reg = manager.registry.write().await;
             reg.register(
                 make_log_listener_manifest(plugin_id, vec!["plugin"]),
-                temp_dir.path().join("missing-log-listener").join("plugin.wasm"),
+                temp_dir
+                    .path()
+                    .join("missing-log-listener")
+                    .join("plugin.wasm"),
                 temp_dir.path().join("missing-log-listener"),
                 PluginSource::BuiltIn,
             );

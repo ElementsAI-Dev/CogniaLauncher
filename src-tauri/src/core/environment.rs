@@ -1,7 +1,8 @@
 use crate::error::{CogniaError, CogniaResult};
 use crate::platform::env::{current_platform, EnvModifications};
 use crate::provider::{
-    EnvironmentProvider, InstalledVersion, ProviderRegistry, SystemEnvironmentType, VersionInfo,
+    CppCompilerMetadata, EnvironmentProvider, InstalledVersion, ProviderRegistry,
+    SystemEnvironmentProvider, SystemEnvironmentType, VersionInfo,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -26,6 +27,8 @@ pub struct EnvironmentInfo {
     /// Number of installed versions.
     #[serde(default)]
     pub version_count: usize,
+    #[serde(default)]
+    pub compiler_metadata: Option<CppCompilerMetadata>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -328,6 +331,19 @@ fn version_matches(installed: &str, requested: &str) -> bool {
     boundary_prefix_match(installed, requested) || boundary_prefix_match(requested, installed)
 }
 
+async fn environment_provider_cpp_metadata(
+    provider: &Arc<dyn EnvironmentProvider>,
+) -> Option<CppCompilerMetadata> {
+    let system_provider = provider
+        .as_any()
+        .downcast_ref::<SystemEnvironmentProvider>()?;
+    system_provider
+        .current_cpp_compiler_metadata()
+        .await
+        .ok()
+        .flatten()
+}
+
 impl EnvironmentManager {
     pub fn new(registry: Arc<RwLock<ProviderRegistry>>) -> Self {
         Self { registry }
@@ -477,6 +493,7 @@ impl EnvironmentManager {
                         available: false,
                         total_size: 0,
                         version_count: 0,
+                        compiler_metadata: None,
                     }),
                 }
             }));
@@ -513,6 +530,7 @@ impl EnvironmentManager {
 
         let total_size: u64 = installed.iter().filter_map(|v| v.size).sum();
         let version_count = installed.len();
+        let compiler_metadata = environment_provider_cpp_metadata(&provider).await;
 
         Ok(EnvironmentInfo {
             env_type: logical,
@@ -523,6 +541,7 @@ impl EnvironmentManager {
             available,
             total_size,
             version_count,
+            compiler_metadata,
         })
     }
 

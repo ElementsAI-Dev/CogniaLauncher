@@ -30,6 +30,10 @@ const mockUseWslData = {
   getIpAddress: jest.fn().mockResolvedValue(""),
   changeDefaultUser: jest.fn().mockResolvedValue(undefined),
   detectDistroEnv: jest.fn().mockResolvedValue(null),
+  exportWindowsEnv: jest.fn().mockResolvedValue({ distro: 'Ubuntu', targetPath: '~/.cognia_env', variableCount: 2 }),
+  readDistroEnv: jest.fn().mockResolvedValue({ distro: 'Ubuntu', variables: [] }),
+  getWslenv: jest.fn().mockResolvedValue([]),
+  setWslenv: jest.fn().mockResolvedValue(undefined),
   getDiskUsage: jest.fn().mockResolvedValue(null),
   listUsers: jest.fn().mockResolvedValue([]),
   getDistroResources: jest.fn().mockResolvedValue(null),
@@ -42,6 +46,16 @@ const mockUseWslData = {
   listPortForwards: jest.fn().mockResolvedValue([]),
   addPortForward: jest.fn().mockResolvedValue(undefined),
   removePortForward: jest.fn().mockResolvedValue(undefined),
+  backupDistro: jest.fn().mockResolvedValue({
+    fileName: 'ubuntu-backup.tar',
+    filePath: 'C:\\WSL-Backups\\ubuntu-backup.tar',
+    sizeBytes: 1024,
+    createdAt: '2026-03-29T00:00:00.000Z',
+    distroName: 'Ubuntu',
+  }),
+  listBackups: jest.fn().mockResolvedValue([]),
+  restoreBackup: jest.fn().mockResolvedValue(undefined),
+  deleteBackup: jest.fn().mockResolvedValue(undefined),
   getAssistanceActions: jest.fn().mockReturnValue([
     {
       id: "distro.preflight",
@@ -96,6 +110,17 @@ jest.mock("@/components/providers/locale-provider", () => ({
         "wsl.detail.tabFilesystem": "Filesystem",
         "wsl.detail.tabNetwork": "Network",
         "wsl.detail.tabServices": "Services",
+        "wsl.detail.tabEnvVars": "Env Vars",
+        "wsl.detail.tabBackup": "Backup",
+        "wsl.detail.envvarsTitle": "Environment Variables",
+        "wsl.detail.envvarsDesc": "Read distro env and manage WSLENV",
+        "wsl.detail.importWindowsEnv": "Import Windows Env",
+        "wsl.detail.noEnvVars": "No env vars",
+        "wsl.detail.wslenvDesc": "Shared Windows/Linux variable bridge",
+        "wsl.detail.noWslenvEntries": "No WSLENV entries",
+        "wsl.detail.wslenvKey": "WSLENV Key",
+        "wsl.detail.wslenvFlags": "WSLENV Flags",
+        "wsl.detail.removeWslenv": "Remove {key}",
         "wsl.detail.healthCheckRun": "Run Check",
         "wsl.detail.healthCheckRunning": "Checking...",
         "wsl.detail.healthCheckedAt": "Checked at:",
@@ -141,7 +166,27 @@ jest.mock("@/components/providers/locale-provider", () => ({
   }),
 }));
 
-jest.mock("@/hooks/use-wsl", () => ({
+jest.mock("@/lib/stores/wsl", () => ({
+  useWslStore: (selector: (state: {
+    backupSchedules: Array<{
+      distro_name: string;
+      interval: string;
+      time: string;
+      retention: number;
+      last_run: string | null;
+      next_run: string | null;
+    }>;
+    upsertBackupSchedule: jest.Mock;
+    removeBackupSchedule: jest.Mock;
+  }) => unknown) =>
+    selector({
+      backupSchedules: [],
+      upsertBackupSchedule: jest.fn(),
+      removeBackupSchedule: jest.fn(),
+    }),
+}));
+
+jest.mock("@/hooks/wsl/use-wsl", () => ({
   useWsl: () => mockUseWslData,
 }));
 
@@ -239,6 +284,8 @@ describe("WslDistroDetailPage", () => {
       expect(screen.getByText("Filesystem")).toBeInTheDocument();
       expect(screen.getByText("Network")).toBeInTheDocument();
       expect(screen.getByText("Services")).toBeInTheDocument();
+      expect(screen.getByText("Env Vars")).toBeInTheDocument();
+      expect(screen.getByText("Backup")).toBeInTheDocument();
     });
 
     it("renders distro name in header", () => {
@@ -466,6 +513,21 @@ describe("WslDistroDetailPage", () => {
 
       expect(screen.getByTestId("wsl-distro-lifecycle-feedback")).toBeInTheDocument();
       expect(screen.getByText("Launch completed")).toBeInTheDocument();
+    });
+
+    it("loads envvar tab content and bridge actions", async () => {
+      const user = userEvent.setup();
+      mockUseWslData.available = true;
+      mockUseWslData.distros = [
+        { name: "Ubuntu", state: "Running", wslVersion: "2", isDefault: false },
+      ];
+
+      render(<WslDistroDetailPage distroName="Ubuntu" />);
+      await user.click(screen.getByText("Env Vars"));
+
+      expect(await screen.findByText("Environment Variables")).toBeInTheDocument();
+      expect(mockUseWslData.readDistroEnv).toHaveBeenCalledWith("Ubuntu");
+      expect(mockUseWslData.getWslenv).toHaveBeenCalled();
     });
   });
 });

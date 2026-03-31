@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useDownloads } from "@/hooks/use-downloads";
+import { useDownloads } from "@/hooks/downloads/use-downloads";
 
 interface DownloadRuntimeProviderProps {
   children: ReactNode;

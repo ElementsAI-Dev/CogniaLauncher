@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useLocale } from "@/components/providers/locale-provider";
-import { useFeedback } from "@/hooks/use-feedback";
+import { useFeedback } from "@/hooks/feedback/use-feedback";
 import { isTauri } from "@/lib/platform";
 import { toast } from "sonner";
 import {

@@ -17,8 +17,8 @@ import {
   useEnvironmentStore,
   type EnvironmentSettings,
 } from "@/lib/stores/environment";
-import { useEnvironments } from "@/hooks/use-environments";
-import { useProjectPath } from "@/hooks/use-auto-version";
+import { useEnvironments } from "@/hooks/environments/use-environments";
+import { useProjectPath } from "@/hooks/environments/use-auto-version";
 import { toast } from "sonner";
 import { EnvVarsEditor } from "@/components/environments/shared/env-vars-editor";
 import { DetectionFilesList } from "@/components/environments/shared/detection-files-list";

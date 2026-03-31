@@ -42,8 +42,9 @@ import {
 import { useLocale } from "@/components/providers/locale-provider";
 import { formatSize } from "@/lib/utils";
 import { DEPTH_COLORS } from "@/lib/constants/packages";
-import type { DependencyNode } from "@/lib/tauri";
+import type { ConflictInfo, DependencyNode } from "@/lib/tauri";
 import type { DependencyResolveRequest, DependencyTreeProps } from "@/types/packages";
+import { ConflictResolutionDialog } from "@/components/packages/shared/conflict-resolution-dialog";
 
 function DependencyNodeItem({
   node,
@@ -51,12 +52,14 @@ function DependencyNodeItem({
   expandedNodes,
   onToggleNode,
   searchTerm,
+  onResolveConflict,
 }: {
   node: DependencyNode;
   nodeId: string;
   expandedNodes: Set<string>;
   onToggleNode: (nodeId: string) => void;
   searchTerm: string;
+  onResolveConflict?: (node: DependencyNode) => void;
 }) {
   const { t } = useLocale();
   const hasChildren = node.dependencies.length > 0;
@@ -133,6 +136,20 @@ function DependencyNodeItem({
             </Badge>
           )}
 
+          {node.is_conflict && onResolveConflict ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 shrink-0"
+              onClick={(event) => {
+                event.stopPropagation();
+                onResolveConflict(node);
+              }}
+            >
+              {t("packages.resolveConflict")}
+            </Button>
+          ) : null}
+
           {hasChildren && (
             <span className="text-xs text-muted-foreground shrink-0">
               ({node.dependencies.length})
@@ -155,6 +172,7 @@ function DependencyNodeItem({
               expandedNodes={expandedNodes}
               onToggleNode={onToggleNode}
               searchTerm={searchTerm}
+              onResolveConflict={onResolveConflict}
             />
           ))}
         </CollapsibleContent>
@@ -171,6 +189,7 @@ export function DependencyTree({
   error,
   loading,
   onResolve,
+  onResolveConflict,
   onRetry,
 }: DependencyTreeProps) {
   const [searchTerm, setSearchTerm] = useState("");
@@ -179,6 +198,10 @@ export function DependencyTree({
     selectedContext?.packageName ?? packageId ?? "",
   );
   const [useManualInput, setUseManualInput] = useState(false);
+  const [selectedConflict, setSelectedConflict] = useState<ConflictInfo | null>(
+    null,
+  );
+  const [isConflictDialogOpen, setIsConflictDialogOpen] = useState(false);
   const { t } = useLocale();
 
   const activePackageLabel = useMemo(() => {
@@ -250,6 +273,17 @@ export function DependencyTree({
       });
     }
   }, [inputPackage, onResolve, selectedContext, useManualInput]);
+
+  const openConflictResolution = useCallback(
+    async (conflict: ConflictInfo) => {
+      setSelectedConflict(conflict);
+      setIsConflictDialogOpen(true);
+      if (onResolveConflict) {
+        await onResolveConflict(conflict, "latest_compatible");
+      }
+    },
+    [onResolveConflict],
+  );
 
   return (
     <Card>
@@ -443,17 +477,27 @@ export function DependencyTree({
                       {conflict.versions.join(", ")}
                     </div>
                     <div className="text-sm text-muted-foreground">
-                      {t("packages.requiredBy")}{" "}
-                      {conflict.required_by.join(", ")}
-                    </div>
-                    {conflict.resolution && (
-                      <div className="text-sm text-primary mt-2">
-                        {t("packages.suggestion")} {conflict.resolution}
-                      </div>
-                    )}
+                    {t("packages.requiredBy")}{" "}
+                    {conflict.required_by.join(", ")}
                   </div>
-                ))}
-              </div>
+                  {conflict.resolution && (
+                    <div className="text-sm text-primary mt-2">
+                      {t("packages.suggestion")} {conflict.resolution}
+                    </div>
+                  )}
+                  {onResolveConflict ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-3"
+                      onClick={() => void openConflictResolution(conflict)}
+                    >
+                      {t("packages.resolveConflict")}
+                    </Button>
+                  ) : null}
+                </div>
+              ))}
+            </div>
             )}
 
             {/* Search & Controls */}
@@ -502,6 +546,18 @@ export function DependencyTree({
                       expandedNodes={expandedNodes}
                       onToggleNode={toggleNode}
                       searchTerm={searchTerm}
+                      onResolveConflict={
+                        onResolveConflict
+                          ? (node) =>
+                              void openConflictResolution({
+                                package_name: node.name,
+                                package: node.name,
+                                required_by: [],
+                                versions: node.constraint ? [node.constraint] : [],
+                                message: node.conflict_reason ?? undefined,
+                              })
+                          : undefined
+                      }
                     />
                   ))}
                 </div>
@@ -548,6 +604,18 @@ export function DependencyTree({
           </Empty>
         )}
       </CardContent>
+
+      <ConflictResolutionDialog
+        open={isConflictDialogOpen}
+        conflict={selectedConflict}
+        onOpenChange={setIsConflictDialogOpen}
+        onResolve={(strategy, manualVersion) => {
+          if (!selectedConflict || !onResolveConflict) {
+            return Promise.resolve();
+          }
+          return onResolveConflict(selectedConflict, strategy, manualVersion).then(() => undefined);
+        }}
+      />
     </Card>
   );
 }

@@ -139,7 +139,11 @@ impl ZigProvider {
         )
     }
 
-    async fn run_zig_with_executable(&self, executable: &str, args: &[&str]) -> CogniaResult<String> {
+    async fn run_zig_with_executable(
+        &self,
+        executable: &str,
+        args: &[&str],
+    ) -> CogniaResult<String> {
         let opts = ProcessOptions::new().with_timeout(Duration::from_secs(30));
         let output = process::execute(executable, args, Some(opts))
             .await
@@ -177,10 +181,9 @@ impl ZigProvider {
             if let Some(path_str) = path.to_str() {
                 match self.run_zig_with_executable(path_str, args).await {
                     Ok(output) => return Ok(output),
-                    Err(err) => failures.push(format!(
-                        "managed current zig '{}' failed: {}",
-                        display, err
-                    )),
+                    Err(err) => {
+                        failures.push(format!("managed current zig '{}' failed: {}", display, err))
+                    }
                 }
             } else {
                 failures.push(format!(
@@ -791,10 +794,7 @@ impl Provider for ZigProvider {
             )));
         }
 
-        let current_link = self
-            .zig_dir
-            .as_ref()
-            .map(|dir| dir.join("current"));
+        let current_link = self.zig_dir.as_ref().map(|dir| dir.join("current"));
         let removed_was_current = current_link
             .as_ref()
             .map(|link| Self::path_points_to(link, &install_path))

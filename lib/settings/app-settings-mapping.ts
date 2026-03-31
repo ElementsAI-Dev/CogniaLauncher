@@ -18,6 +18,9 @@ export const APP_SETTINGS_CONFIG_KEY_MAP = {
   trayClickBehavior: "tray.click_behavior",
   showNotifications: "tray.show_notifications",
   trayNotificationLevel: "tray.notification_level",
+  envvarDefaultScope: "envvar.default_scope",
+  envvarAutoSnapshot: "envvar.auto_snapshot",
+  envvarMaskSensitive: "envvar.mask_sensitive",
 } as const satisfies Record<ConfigBackedAppSettingKey, string>;
 
 export const CONFIG_KEY_TO_APP_SETTING = Object.fromEntries(
@@ -67,6 +70,17 @@ function parseUpdateSourceMode(
 ): AppSettings["updateSourceMode"] {
   if (!value) return fallback;
   if (value === "official" || value === "mirror" || value === "custom") {
+    return value;
+  }
+  return fallback;
+}
+
+function parseEnvvarDefaultScope(
+  value: string | undefined,
+  fallback: AppSettings["envvarDefaultScope"],
+): AppSettings["envvarDefaultScope"] {
+  if (!value) return fallback;
+  if (value === "all" || value === "process" || value === "user" || value === "system") {
     return value;
   }
   return fallback;
@@ -160,6 +174,18 @@ export function configToAppSettings(
       config[APP_SETTINGS_CONFIG_KEY_MAP.trayNotificationLevel],
       fallback.trayNotificationLevel,
     ),
+    envvarDefaultScope: parseEnvvarDefaultScope(
+      config[APP_SETTINGS_CONFIG_KEY_MAP.envvarDefaultScope],
+      fallback.envvarDefaultScope,
+    ),
+    envvarAutoSnapshot: parseBoolean(
+      config[APP_SETTINGS_CONFIG_KEY_MAP.envvarAutoSnapshot],
+      fallback.envvarAutoSnapshot,
+    ),
+    envvarMaskSensitive: parseBoolean(
+      config[APP_SETTINGS_CONFIG_KEY_MAP.envvarMaskSensitive],
+      fallback.envvarMaskSensitive,
+    ),
   };
 }
 
@@ -179,6 +205,7 @@ export function appSettingValueToConfigValue(
   if (key === "updateCustomEndpoints") {
     return JSON.stringify(Array.isArray(value) ? value : []);
   }
+  if (key === "envvarDefaultScope") return String(value);
   if (key === "trayClickBehavior") return String(value);
   if (key === "trayNotificationLevel") return String(value);
   if (typeof value === "boolean") return String(value);

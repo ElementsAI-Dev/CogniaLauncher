@@ -539,8 +539,7 @@ pub fn reset_env_test_overrides() {
 pub fn configure_env_test_fixture(
     home_dir: PathBuf,
     shell_type: ShellType,
-    #[cfg(not(windows))]
-    system_environment_path: PathBuf,
+    #[cfg(not(windows))] system_environment_path: PathBuf,
 ) {
     set_env_test_overrides(EnvTestOverrides {
         home_dir: Some(home_dir),
@@ -558,10 +557,7 @@ pub fn get_all_vars() -> HashMap<String, String> {
     env::vars().collect()
 }
 
-pub fn classify_env_var_sensitivity(
-    key: &str,
-    value: &str,
-) -> Option<EnvVarSensitivityReason> {
+pub fn classify_env_var_sensitivity(key: &str, value: &str) -> Option<EnvVarSensitivityReason> {
     let normalized_key = key.trim().to_uppercase();
     let normalized_value = value.trim();
     let normalized_value_upper = normalized_value.to_uppercase();
@@ -570,9 +566,7 @@ pub fn classify_env_var_sensitivity(
         return Some(EnvVarSensitivityReason::PasswordKey);
     }
 
-    if normalized_key.contains("CLIENT_SECRET")
-        || normalized_key.contains("SECRET")
-    {
+    if normalized_key.contains("CLIENT_SECRET") || normalized_key.contains("SECRET") {
         return Some(EnvVarSensitivityReason::SecretKey);
     }
 
@@ -593,18 +587,18 @@ pub fn classify_env_var_sensitivity(
         return Some(EnvVarSensitivityReason::TokenKey);
     }
 
-    if normalized_key.contains("CREDENTIAL")
-        || normalized_key.contains("CRED")
-    {
+    if normalized_key.contains("CREDENTIAL") || normalized_key.contains("CRED") {
         return Some(EnvVarSensitivityReason::CredentialKey);
     }
 
-    if normalized_value_upper.contains("-----BEGIN") && normalized_value_upper.contains("PRIVATE KEY")
+    if normalized_value_upper.contains("-----BEGIN")
+        && normalized_value_upper.contains("PRIVATE KEY")
     {
         return Some(EnvVarSensitivityReason::PrivateKeyValue);
     }
 
-    if normalized_value_upper.contains("-----BEGIN") && normalized_value_upper.contains("CERTIFICATE")
+    if normalized_value_upper.contains("-----BEGIN")
+        && normalized_value_upper.contains("CERTIFICATE")
     {
         return Some(EnvVarSensitivityReason::CertificateValue);
     }
@@ -693,7 +687,10 @@ fn redact_shell_assignment_line(line: &str) -> Option<String> {
         let eq_index = rest.find('=')?;
         let key = rest[..eq_index].trim();
         if classify_env_var_sensitivity(key, rest[eq_index + 1..].trim()).is_some() {
-            return Some(format!("export {}=\"{}\"", key, REDACTED_ENV_VALUE_PLACEHOLDER));
+            return Some(format!(
+                "export {}=\"{}\"",
+                key, REDACTED_ENV_VALUE_PLACEHOLDER
+            ));
         }
         return None;
     }
@@ -702,7 +699,10 @@ fn redact_shell_assignment_line(line: &str) -> Option<String> {
         let eq_index = rest.find('=')?;
         let key = rest[..eq_index].trim();
         if classify_env_var_sensitivity(key, rest[eq_index + 1..].trim()).is_some() {
-            return Some(format!("$env:{} = \"{}\"", key, REDACTED_ENV_VALUE_PLACEHOLDER));
+            return Some(format!(
+                "$env:{} = \"{}\"",
+                key, REDACTED_ENV_VALUE_PLACEHOLDER
+            ));
         }
         return None;
     }
@@ -711,7 +711,10 @@ fn redact_shell_assignment_line(line: &str) -> Option<String> {
         let space_index = rest.find(' ')?;
         let key = rest[..space_index].trim();
         if classify_env_var_sensitivity(key, rest[space_index + 1..].trim()).is_some() {
-            return Some(format!("set -gx {} \"{}\"", key, REDACTED_ENV_VALUE_PLACEHOLDER));
+            return Some(format!(
+                "set -gx {} \"{}\"",
+                key, REDACTED_ENV_VALUE_PLACEHOLDER
+            ));
         }
         return None;
     }
@@ -2021,9 +2024,7 @@ pub fn evaluate_envvar_action_readiness(
                     state: "unavailable".to_string(),
                     reason_code: "shell_profile_unavailable".to_string(),
                     reason: "No shell profile was detected on this host.".to_string(),
-                    next_steps: vec![
-                        "Configure a supported shell profile, then retry.".to_string(),
-                    ],
+                    next_steps: vec!["Configure a supported shell profile, then retry.".to_string()],
                 }
             }
         }
@@ -2040,7 +2041,9 @@ pub fn evaluate_envvar_action_readiness(
                     supported: false,
                     state: "blocked".to_string(),
                     reason_code: "shell_profile_unavailable".to_string(),
-                    reason: "No writable shell startup file is available for user-scope envvar changes.".to_string(),
+                    reason:
+                        "No writable shell startup file is available for user-scope envvar changes."
+                            .to_string(),
                     next_steps: vec![
                         "Create or select a supported shell profile before retrying.".to_string(),
                     ],
@@ -2074,12 +2077,14 @@ pub fn evaluate_envvar_action_readiness(
                 "system_scope_requires_permissions".to_string()
             },
             reason: if cfg!(windows) {
-                "System-scope envvar changes may require elevation before they can be verified.".to_string()
+                "System-scope envvar changes may require elevation before they can be verified."
+                    .to_string()
             } else {
                 "System-scope envvar changes depend on host-level permissions.".to_string()
             },
             next_steps: vec![
-                "Retry with the required system permissions if the mutation is blocked.".to_string(),
+                "Retry with the required system permissions if the mutation is blocked."
+                    .to_string(),
             ],
         },
     }
@@ -2282,11 +2287,7 @@ mod tests {
             std::fs::create_dir_all(&home_dir).expect("create home dir");
             let system_env_path = dir.path().join("etc-environment");
 
-            configure_env_test_fixture(
-                home_dir.clone(),
-                shell_type,
-                system_env_path.clone(),
-            );
+            configure_env_test_fixture(home_dir.clone(), shell_type, system_env_path.clone());
 
             let fixture = Self {
                 _dir: dir,
@@ -2837,7 +2838,10 @@ mod tests {
         let summary = summarize_env_value("GITHUB_TOKEN", "ghp_super_secret_token_value");
         assert!(summary.is_sensitive);
         assert!(summary.masked);
-        assert_eq!(summary.sensitivity_reason, Some(EnvVarSensitivityReason::TokenKey));
+        assert_eq!(
+            summary.sensitivity_reason,
+            Some(EnvVarSensitivityReason::TokenKey)
+        );
         assert_ne!(summary.display_value, "ghp_super_secret_token_value");
         assert!(summary.display_value.contains("hidden"));
     }
@@ -2847,7 +2851,10 @@ mod tests {
         let jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature";
         let summary = summarize_env_value("SESSION", jwt);
         assert!(summary.is_sensitive);
-        assert_eq!(summary.sensitivity_reason, Some(EnvVarSensitivityReason::JwtValue));
+        assert_eq!(
+            summary.sensitivity_reason,
+            Some(EnvVarSensitivityReason::JwtValue)
+        );
         assert!(summary.masked);
     }
 
@@ -2935,9 +2942,13 @@ mod tests {
     async fn test_user_scope_persistent_var_uses_isolated_shell_fixture() {
         let fixture = EnvTestFixture::new(ShellType::Bash, true);
 
-        set_persistent_var("COGNIA_USER_FIXTURE_KEY", "fixture-value", EnvVarScope::User)
-            .await
-            .expect("set user var");
+        set_persistent_var(
+            "COGNIA_USER_FIXTURE_KEY",
+            "fixture-value",
+            EnvVarScope::User,
+        )
+        .await
+        .expect("set user var");
 
         let stored = get_persistent_var("COGNIA_USER_FIXTURE_KEY", EnvVarScope::User)
             .await
@@ -2964,9 +2975,13 @@ mod tests {
     async fn test_system_scope_persistent_var_uses_isolated_environment_fixture() {
         let fixture = EnvTestFixture::new(ShellType::Bash, true);
 
-        set_persistent_var("COGNIA_SYSTEM_FIXTURE_KEY", "system-value", EnvVarScope::System)
-            .await
-            .expect("set system var");
+        set_persistent_var(
+            "COGNIA_SYSTEM_FIXTURE_KEY",
+            "system-value",
+            EnvVarScope::System,
+        )
+        .await
+        .expect("set system var");
 
         let stored = get_persistent_var("COGNIA_SYSTEM_FIXTURE_KEY", EnvVarScope::System)
             .await

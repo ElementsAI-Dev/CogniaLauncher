@@ -43,6 +43,18 @@ export function GeneralSettings({
         />
         <Separator />
         <SettingItem
+          id="package-download-threshold"
+          label={t("settings.packageDownloadThreshold")}
+          description={t("settings.packageDownloadThresholdDesc")}
+          value={localConfig["general.package_download_threshold_mb"] || "50"}
+          onChange={(v) => onValueChange("general.package_download_threshold_mb", v)}
+          type="number"
+          min={0}
+          max={10240}
+          error={errors["general.package_download_threshold_mb"]}
+        />
+        <Separator />
+        <SettingItem
           id="metadata-cache-ttl"
           label={t("settings.metadataCacheTtl")}
           description={t("settings.metadataCacheTtlDesc")}

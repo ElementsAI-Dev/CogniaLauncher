@@ -1,5 +1,4 @@
 import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { TerminalDetectedShells } from './terminal-detected-shells';
 import type { ShellInfo } from '@/types/tauri';
 import type { TerminalShellReadout } from '@/types/terminal';
@@ -30,7 +29,26 @@ const shells: ShellInfo[] = [
 ];
 
 describe('TerminalDetectedShells', () => {
-  it('renders shell cards with name and version', () => {
+  it('does not emit fragment prop warnings when rendering shell rows', () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    render(<TerminalDetectedShells shells={shells} loading={false} />);
+
+    const invalidFragmentWarning = errorSpy.mock.calls.some((call) =>
+      call.some(
+        (arg) =>
+          typeof arg === 'string'
+          && arg.includes('React.Fragment')
+          && arg.includes('data-state'),
+      ),
+    );
+
+    errorSpy.mockRestore();
+
+    expect(invalidFragmentWarning).toBe(false);
+  });
+
+  it('renders shell table rows with name and version', () => {
     render(<TerminalDetectedShells shells={shells} loading={false} />);
 
     expect(screen.getAllByText('Bash').length).toBeGreaterThan(0);
@@ -56,60 +74,58 @@ describe('TerminalDetectedShells', () => {
     expect(screen.getByText('terminal.default')).toBeInTheDocument();
   });
 
-  it('renders config files with exists indicator and size', async () => {
-    const user = userEvent.setup();
-    const shellsWithConfig: ShellInfo[] = [
-      {
-        id: 'zsh',
-        name: 'Zsh',
-        shellType: 'zsh',
-        version: null,
-        executablePath: '/bin/zsh',
-        configFiles: [
-          { path: '/home/user/.zshrc', exists: true, sizeBytes: 512 },
-          { path: '/home/user/.zprofile', exists: false, sizeBytes: 0 },
-        ],
-        isDefault: false,
-      },
-    ];
-    render(<TerminalDetectedShells shells={shellsWithConfig} loading={false} />);
+  it('renders table headers', () => {
+    render(<TerminalDetectedShells shells={shells} loading={false} />);
 
-    await user.click(screen.getByRole('button', { name: 'terminal.configFilesCount' }));
-    expect(screen.getByText('.zshrc')).toBeInTheDocument();
-    expect(screen.getByText('.zprofile')).toBeInTheDocument();
-    expect(screen.getByText('(0.5 KB)')).toBeInTheDocument();
-    expect(screen.queryByText(/^v\d/)).not.toBeInTheDocument();
+    expect(screen.getByText('terminal.shell')).toBeInTheDocument();
+    expect(screen.getByText('terminal.path')).toBeInTheDocument();
+    expect(screen.getByText('terminal.startup')).toBeInTheDocument();
+    expect(screen.getByText('terminal.health')).toBeInTheDocument();
+    expect(screen.getByText('terminal.actions')).toBeInTheDocument();
   });
 
-  it('opens a shell detail drilldown with executable path and config targets', async () => {
-    const user = userEvent.setup();
-    const onGetShellInfo = jest.fn().mockResolvedValue(shells[1]);
+  it('displays startup measurement inline', () => {
+    const measurements = {
+      bash: { withProfileMs: 45, withoutProfileMs: 30, differenceMs: 15 },
+    };
 
     render(
       <TerminalDetectedShells
         shells={shells}
         loading={false}
-        onGetShellInfo={onGetShellInfo}
+        startupMeasurements={measurements}
       />,
     );
 
-    await user.click(screen.getAllByRole('button', { name: /terminal\.viewShellDetails/i })[1]);
-
-    expect(onGetShellInfo).toHaveBeenCalledWith('powershell');
-    expect(await screen.findByText('terminal.shellDetailsTitle')).toBeInTheDocument();
-    expect(screen.getByText('C:/pwsh.exe')).toBeInTheDocument();
-    expect(screen.getByText('C:/profile.ps1')).toBeInTheDocument();
+    expect(screen.getByText('45ms')).toBeInTheDocument();
   });
 
-  it('surfaces degraded shell readout reasons without discarding shell details', async () => {
-    const user = userEvent.setup();
+  it('displays health status inline', () => {
+    const healthResults = {
+      bash: { status: 'healthy' as const, issues: [] },
+    };
+
+    render(
+      <TerminalDetectedShells
+        shells={shells}
+        loading={false}
+        healthResults={healthResults}
+      />,
+    );
+
+    expect(screen.getByText('healthy')).toBeInTheDocument();
+  });
+
+  it('surfaces degraded shell readout reasons', () => {
     const shellReadouts: Record<string, TerminalShellReadout> = {
       bash: {
         shellId: 'bash',
         status: 'failed',
         degradedReason: 'Health check failed: timeout',
         startupStatus: 'ready',
+        startupFreshness: 'fresh',
         healthStatus: 'failed',
+        healthFreshness: null,
         frameworkSummaryCount: 0,
         pluginSummaryCount: 0,
         lastUpdatedAt: Date.now(),
@@ -121,15 +137,60 @@ describe('TerminalDetectedShells', () => {
         shells={[shells[0]]}
         loading={false}
         shellReadouts={shellReadouts}
-        onGetShellInfo={jest.fn().mockResolvedValue(shells[0])}
       />,
     );
 
-    expect(screen.getByText('Health check failed: timeout')).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: 'terminal.viewShellDetails' }));
-    expect((await screen.findAllByText('Health check failed: timeout')).length).toBeGreaterThan(1);
-    expect(screen.getByText('/bin/bash')).toBeInTheDocument();
+    // Degraded reason is shown in the expandable row
+    // Need to expand it first - find the chevron button
+    const expandButton = screen.getAllByRole('button').find(btn =>
+      btn.querySelector('svg.lucide-chevron-down')
+    );
+    expect(expandButton).toBeDefined();
   });
 
+  it('shows explicit readout status badges for stale shell diagnostics', () => {
+    const shellReadouts: Record<string, TerminalShellReadout> = {
+      bash: {
+        shellId: 'bash',
+        status: 'stale',
+        degradedReason: 'Startup measurement is stale after the latest probe failed.',
+        startupStatus: 'ready',
+        startupFreshness: 'stale',
+        healthStatus: 'ready',
+        healthFreshness: 'fresh',
+        frameworkSummaryCount: 1,
+        pluginSummaryCount: 2,
+        lastUpdatedAt: Date.now(),
+      },
+    };
+
+    render(
+      <TerminalDetectedShells
+        shells={[shells[0]]}
+        loading={false}
+        shellReadouts={shellReadouts}
+      />,
+    );
+
+    expect(screen.getByText('terminal.readoutStatusStale')).toBeInTheDocument();
+  });
+
+  it('provides action dropdown triggers in table rows', () => {
+    render(
+      <TerminalDetectedShells
+        shells={shells}
+        loading={false}
+        onMeasureStartup={jest.fn()}
+        onCheckShellHealth={jest.fn()}
+        onGetShellInfo={jest.fn()}
+      />,
+    );
+
+    // Each shell row has a dropdown trigger (icon-only button in td)
+    const iconButtons = screen.getAllByRole('button').filter(btn => {
+      const text = btn.textContent?.trim() ?? '';
+      return text === '' && btn.closest('td');
+    });
+    expect(iconButtons.length).toBeGreaterThan(0);
+  });
 });

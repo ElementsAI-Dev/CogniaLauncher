@@ -292,6 +292,33 @@ fn legacy_launch_stdout(result: LaunchResult) -> String {
     result.stdout
 }
 
+fn apply_launch_overrides(
+    mut profile: TerminalProfile,
+    env_type: Option<String>,
+    env_version: Option<String>,
+    cwd: Option<String>,
+) -> TerminalProfile {
+    if let Some(env_type) = env_type.map(|value| value.trim().to_string()) {
+        if !env_type.is_empty() {
+            profile.env_type = Some(env_type);
+        }
+    }
+
+    if let Some(env_version) = env_version.map(|value| value.trim().to_string()) {
+        if !env_version.is_empty() {
+            profile.env_version = Some(env_version);
+        }
+    }
+
+    if let Some(cwd) = cwd.map(|value| value.trim().to_string()) {
+        if !cwd.is_empty() {
+            profile.cwd = Some(cwd);
+        }
+    }
+
+    profile
+}
+
 // ============================================================================
 // Shell Detection
 // ============================================================================
@@ -417,6 +444,9 @@ pub async fn terminal_set_default_profile(
 #[tauri::command]
 pub async fn terminal_launch_profile(
     id: String,
+    env_type: Option<String>,
+    env_version: Option<String>,
+    cwd: Option<String>,
     manager: State<'_, SharedTerminalProfileManager>,
     settings: State<'_, SharedSettings>,
     registry: State<'_, crate::SharedRegistry>,
@@ -428,6 +458,7 @@ pub async fn terminal_launch_profile(
             .cloned()
             .ok_or_else(|| format!("Profile '{}' not found", id))?
     };
+    let profile = apply_launch_overrides(profile, env_type, env_version, cwd);
     let settings_snapshot = settings.read().await.clone();
     let result =
         launch_profile_internal(&profile, &settings_snapshot, registry.inner().clone()).await?;
@@ -437,6 +468,9 @@ pub async fn terminal_launch_profile(
 #[tauri::command]
 pub async fn terminal_launch_profile_detailed(
     id: String,
+    env_type: Option<String>,
+    env_version: Option<String>,
+    cwd: Option<String>,
     manager: State<'_, SharedTerminalProfileManager>,
     settings: State<'_, SharedSettings>,
     registry: State<'_, crate::SharedRegistry>,
@@ -448,6 +482,7 @@ pub async fn terminal_launch_profile_detailed(
             .cloned()
             .ok_or_else(|| format!("Profile '{}' not found", id))?
     };
+    let profile = apply_launch_overrides(profile, env_type, env_version, cwd);
     let settings_snapshot = settings.read().await.clone();
     launch_profile_internal(&profile, &settings_snapshot, registry.inner().clone()).await
 }
@@ -857,9 +892,11 @@ pub async fn terminal_get_shell_env_vars() -> Result<Vec<TerminalEnvVarSummary>,
 }
 
 #[tauri::command]
-pub async fn terminal_reveal_shell_env_var(key: String) -> Result<TerminalEnvVarRevealResult, String> {
-    let normalized = crate::platform::env::normalize_env_var_key(&key)
-        .map_err(|e| e.to_string())?;
+pub async fn terminal_reveal_shell_env_var(
+    key: String,
+) -> Result<TerminalEnvVarRevealResult, String> {
+    let normalized =
+        crate::platform::env::normalize_env_var_key(&key).map_err(|e| e.to_string())?;
     let value = std::env::var(&normalized).ok();
     let (is_sensitive, sensitivity_reason) = value
         .as_deref()

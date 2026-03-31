@@ -3,6 +3,25 @@ import userEvent from "@testing-library/user-event";
 import { GitLabPipelinesTab } from "./gitlab-pipelines-tab";
 import type { GitLabPipelineInfo, GitLabJobInfo } from "@/types/gitlab";
 
+const mockUseAssetMatcher = jest.fn();
+
+jest.mock("@/hooks/downloads/use-asset-matcher", () => ({
+  useAssetMatcher: () => mockUseAssetMatcher(),
+  getPlatformLabel: (platform: string) =>
+    ({
+      windows: "Windows",
+      linux: "Linux",
+      macos: "macOS",
+    }[platform] ?? ""),
+  getArchLabel: (arch: string) =>
+    ({
+      x64: "x64",
+      arm64: "ARM64",
+      x86: "x86",
+      universal: "Universal",
+    }[arch] ?? ""),
+}));
+
 beforeAll(() => {
   global.ResizeObserver = class {
     observe() {}
@@ -26,7 +45,7 @@ describe("GitLabPipelinesTab", () => {
   const jobs: GitLabJobInfo[] = [
     {
       id: 201,
-      name: "build",
+      name: "build-windows-x64",
       stage: "build",
       status: "success",
       refName: "main",
@@ -60,6 +79,10 @@ describe("GitLabPipelinesTab", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockUseAssetMatcher.mockReturnValue({
+      currentPlatform: "windows",
+      currentArch: "x64",
+    });
   });
 
   it("renders empty pipelines message", () => {
@@ -164,10 +187,23 @@ describe("GitLabPipelinesTab", () => {
 
     await userEvent.click(checkboxes[0]);
     expect(onToggleJob).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 201, name: "build" }),
+      expect.objectContaining({ id: 201, name: "build-windows-x64" }),
     );
 
     expect(screen.getByText("downloads.gitlab.downloadArtifacts")).toBeInTheDocument();
     expect(screen.getByText("common.none")).toBeInTheDocument();
+  });
+
+  it("shows recommended platform cues for matching pipeline artifacts", () => {
+    render(
+      <GitLabPipelinesTab
+        {...defaultProps}
+        selectedPipelineId={101}
+      />,
+    );
+
+    expect(screen.getByText("downloads.gitlab.recommended")).toBeInTheDocument();
+    expect(screen.getByText("Windows")).toBeInTheDocument();
+    expect(screen.getAllByText("x64").length).toBeGreaterThan(0);
   });
 });

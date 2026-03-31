@@ -22,6 +22,7 @@ pub struct Settings {
     pub appearance: AppearanceSettings,
     pub updates: UpdateSettings,
     pub tray: TraySettings,
+    pub envvar: EnvVarSettings,
     pub terminal: TerminalSettings,
     pub log: LogSettings,
     pub backup: BackupSettings,
@@ -120,6 +121,24 @@ impl Default for TraySettings {
                 TrayMenuItemId::Quit,
             ],
             menu_priority_items: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct EnvVarSettings {
+    pub default_scope: String,
+    pub auto_snapshot: bool,
+    pub mask_sensitive: bool,
+}
+
+impl Default for EnvVarSettings {
+    fn default() -> Self {
+        Self {
+            default_scope: "all".to_string(),
+            auto_snapshot: false,
+            mask_sensitive: true,
         }
     }
 }
@@ -325,6 +344,8 @@ pub struct GeneralSettings {
     pub cache_max_age_days: u32,
     pub auto_clean_cache: bool,
     pub min_install_space_mb: u64,
+    /// Queue package downloads larger than this size in MB (0 = disabled)
+    pub package_download_threshold_mb: u64,
     /// Threshold percentage (0-100) to trigger auto-cleanup when cache usage exceeds this
     pub cache_auto_clean_threshold: u8,
     /// Size monitoring interval in seconds (0 = disabled)
@@ -354,6 +375,7 @@ impl Default for GeneralSettings {
             cache_max_age_days: 30,
             auto_clean_cache: true,
             min_install_space_mb: 100,
+            package_download_threshold_mb: 50,
             cache_auto_clean_threshold: 80,
             cache_monitor_interval: 300, // 5 minutes
             cache_monitor_external: false,
@@ -534,7 +556,9 @@ impl Settings {
     }
 
     pub fn get_provider_enabled_override(&self, provider: &str) -> Option<bool> {
-        self.providers.get(provider).and_then(|settings| settings.enabled)
+        self.providers
+            .get(provider)
+            .and_then(|settings| settings.enabled)
     }
 
     pub fn get_provider_legacy_token(&self, provider: &str) -> Option<String> {
@@ -629,7 +653,9 @@ impl Settings {
     }
 
     pub fn get_provider_priority_override(&self, provider: &str) -> Option<i32> {
-        self.providers.get(provider).and_then(|settings| settings.priority)
+        self.providers
+            .get(provider)
+            .and_then(|settings| settings.priority)
     }
 
     pub fn set_provider_priority_override(&mut self, provider: &str, priority: Option<i32>) {
@@ -1152,6 +1178,9 @@ impl Settings {
             ["general", "min_install_space_mb"] => {
                 Some(self.general.min_install_space_mb.to_string())
             }
+            ["general", "package_download_threshold_mb"] => {
+                Some(self.general.package_download_threshold_mb.to_string())
+            }
             ["general", "cache_auto_clean_threshold"] => {
                 Some(self.general.cache_auto_clean_threshold.to_string())
             }
@@ -1279,6 +1308,9 @@ impl Settings {
             ["tray", "menu_items"] => {
                 Some(serde_json::to_string(&self.tray.menu_items).unwrap_or_else(|_| "[]".into()))
             }
+            ["envvar", "default_scope"] => Some(self.envvar.default_scope.clone()),
+            ["envvar", "auto_snapshot"] => Some(self.envvar.auto_snapshot.to_string()),
+            ["envvar", "mask_sensitive"] => Some(self.envvar.mask_sensitive.to_string()),
             ["tray", "menu_priority_items"] => Some(
                 serde_json::to_string(&self.tray.menu_priority_items)
                     .unwrap_or_else(|_| "[]".into()),
@@ -1408,6 +1440,11 @@ impl Settings {
             ["general", "min_install_space_mb"] => {
                 self.general.min_install_space_mb = value.parse().map_err(|_| {
                     CogniaError::Config("Invalid value for min_install_space_mb".into())
+                })?;
+            }
+            ["general", "package_download_threshold_mb"] => {
+                self.general.package_download_threshold_mb = value.parse().map_err(|_| {
+                    CogniaError::Config("Invalid value for package_download_threshold_mb".into())
                 })?;
             }
             ["general", "cache_auto_clean_threshold"] => {
@@ -1697,6 +1734,24 @@ impl Settings {
             }
             ["tray", "menu_priority_items"] => {
                 self.tray.menu_priority_items = Self::parse_tray_menu_priority_items(value)?;
+            }
+            ["envvar", "default_scope"] => {
+                if !["all", "process", "user", "system"].contains(&value) {
+                    return Err(CogniaError::Config(
+                        "Invalid envvar default scope value".into(),
+                    ));
+                }
+                self.envvar.default_scope = value.to_string();
+            }
+            ["envvar", "auto_snapshot"] => {
+                self.envvar.auto_snapshot = value
+                    .parse()
+                    .map_err(|_| CogniaError::Config("Invalid boolean value".into()))?;
+            }
+            ["envvar", "mask_sensitive"] => {
+                self.envvar.mask_sensitive = value
+                    .parse()
+                    .map_err(|_| CogniaError::Config("Invalid boolean value".into()))?;
             }
             ["terminal", "default_shell"] => {
                 self.terminal.default_shell = value.to_string();
@@ -2524,7 +2579,10 @@ mod tests {
         let mut s = Settings::default();
 
         s.set_provider_legacy_token("github", "ghp_abc123").unwrap();
-        assert_eq!(s.get_provider_legacy_token("github"), Some("ghp_abc123".into()));
+        assert_eq!(
+            s.get_provider_legacy_token("github"),
+            Some("ghp_abc123".into())
+        );
         assert_eq!(s.get_value("providers.github.token"), None);
 
         s.clear_provider_legacy_token("github");
@@ -3037,7 +3095,10 @@ mod tests {
         );
         assert_eq!(parsed.appearance.theme, "dark");
         assert_eq!(parsed.network.proxy, Some("http://proxy:8080".into()));
-        assert_eq!(parsed.get_provider_legacy_token("github"), Some("ghp_test".into()));
+        assert_eq!(
+            parsed.get_provider_legacy_token("github"),
+            Some("ghp_test".into())
+        );
         assert_eq!(
             parsed.mirrors.get("npm").unwrap().url,
             "https://npm.example.com"
@@ -3276,7 +3337,8 @@ mod tests {
             r#"["https://updates.example.com/{{target}}/{{current_version}}"]"#,
         )
         .unwrap();
-        s.set_value("updates.fallback_to_official", "false").unwrap();
+        s.set_value("updates.fallback_to_official", "false")
+            .unwrap();
 
         assert!(!s.updates.check_on_start);
         assert!(s.updates.auto_install);
@@ -3293,13 +3355,12 @@ mod tests {
     fn test_parse_updates_custom_endpoints_rejects_invalid_values_non_destructive() {
         let mut s = Settings::default();
         let original = s.updates.custom_endpoints.clone();
-        assert!(
-            s.set_value(
+        assert!(s
+            .set_value(
                 "updates.custom_endpoints",
                 r#"["ftp://updates.example.com/latest.json"]"#
             )
-            .is_err()
-        );
+            .is_err());
         assert_eq!(s.updates.custom_endpoints, original);
     }
 
@@ -3512,18 +3573,11 @@ menu_items = "not-an-array"
     fn test_set_tray_expanded_action_values() {
         let mut s = Settings::default();
 
-        s.set_value("tray.quick_action", "open_downloads")
+        s.set_value("tray.quick_action", "open_downloads").unwrap();
+        s.set_value("tray.menu_items", r#"["show_hide","downloads","quit"]"#)
             .unwrap();
-        s.set_value(
-            "tray.menu_items",
-            r#"["show_hide","downloads","quit"]"#,
-        )
-        .unwrap();
-        s.set_value(
-            "tray.menu_priority_items",
-            r#"["downloads","quit"]"#,
-        )
-        .unwrap();
+        s.set_value("tray.menu_priority_items", r#"["downloads","quit"]"#)
+            .unwrap();
 
         assert_eq!(s.tray.quick_action, TrayQuickAction::OpenDownloads);
         assert_eq!(
@@ -3534,10 +3588,7 @@ menu_items = "not-an-array"
                 TrayMenuItemId::Quit,
             ]
         );
-        assert_eq!(
-            s.tray.menu_priority_items,
-            vec![TrayMenuItemId::Downloads]
-        );
+        assert_eq!(s.tray.menu_priority_items, vec![TrayMenuItemId::Downloads]);
     }
 
     #[test]
@@ -3556,10 +3607,12 @@ menu_items = "not-an-array"
         let mut s = Settings::default();
         assert!(s.set_value("updates.check_on_start", "yes").is_err());
         assert!(s.set_value("updates.source_mode", "edge").is_err());
-        assert!(
-            s.set_value("updates.custom_endpoints", r#"["http://insecure.example.com"]"#)
-                .is_err()
-        );
+        assert!(s
+            .set_value(
+                "updates.custom_endpoints",
+                r#"["http://insecure.example.com"]"#
+            )
+            .is_err());
         assert!(s
             .set_value("updates.fallback_to_official", "sometimes")
             .is_err());

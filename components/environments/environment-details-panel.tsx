@@ -18,9 +18,9 @@ import {
   type EnvironmentSettings,
   type EnvVariable,
 } from "@/lib/stores/environment";
-import { useEnvironments } from "@/hooks/use-environments";
-import { useProjectPath } from "@/hooks/use-auto-version";
-import { useEnvironmentWorkflow } from "@/hooks/use-environment-workflow";
+import { useEnvironments } from "@/hooks/environments/use-environments";
+import { useProjectPath } from "@/hooks/environments/use-auto-version";
+import { useEnvironmentWorkflow } from "@/hooks/environments/use-environment-workflow";
 import { EnvironmentWorkflowBanner } from "@/components/environments/environment-workflow-banner";
 import {
   Globe,

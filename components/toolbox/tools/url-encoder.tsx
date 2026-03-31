@@ -13,7 +13,7 @@ import {
   ToolValidationMessage,
 } from '@/components/toolbox/tool-layout';
 import { useLocale } from '@/components/providers/locale-provider';
-import { useToolPreferences } from '@/hooks/use-tool-preferences';
+import { useToolPreferences } from '@/hooks/toolbox/use-tool-preferences';
 import { TOOLBOX_LIMITS } from '@/lib/constants/toolbox-limits';
 import { ArrowDown, ArrowUp, ArrowDownUp } from 'lucide-react';
 import type { ToolComponentProps } from '@/types/toolbox';

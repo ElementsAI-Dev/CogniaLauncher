@@ -129,6 +129,26 @@ describe('DocsSearch', () => {
     await waitFor(() => expect(input).toHaveFocus());
   });
 
+  it('focuses search on Cmd+K', async () => {
+    render(<DocsSearch />);
+    fireEvent.keyDown(document, { key: 'k', metaKey: true });
+    const input = await screen.findByPlaceholderText('Search docs...');
+    await waitFor(() => expect(input).toHaveFocus());
+  });
+
+  it('ignores slash shortcuts while typing in another input', () => {
+    render(
+      <>
+        <input aria-label="outside-input" />
+        <DocsSearch />
+      </>
+    );
+
+    fireEvent.keyDown(screen.getByLabelText('outside-input'), { key: '/' });
+
+    expect(screen.queryByPlaceholderText('Search docs...')).not.toBeInTheDocument();
+  });
+
   it('passes searchIndex to searchDocs', () => {
     const index = [{ slug: 'test', pageSlug: 'test', anchorId: 'intro', sectionTitle: 'Intro', locale: 'en', excerpt: 'intro section' }];
     render(<DocsSearch searchIndex={index} />);

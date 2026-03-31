@@ -27,7 +27,7 @@ import {
   RefreshCw,
   ShieldCheck,
 } from "lucide-react";
-import { useHealthCheck } from "@/hooks/use-health-check";
+import { useHealthCheck } from "@/hooks/health/use-health-check";
 import type { HealthStatus } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import {
@@ -79,6 +79,15 @@ export function HealthCheckPanel({ className }: HealthCheckPanelProps) {
   const copyToClipboard = (text: string) => {
     writeClipboard(text);
   };
+
+  const isEnvvarSystemIssue = (issue: { check_id?: string | null }) =>
+    issue.check_id?.startsWith("envvar_") ?? false;
+  const envvarSystemIssues = systemHealth?.envvar_issues?.length
+    ? systemHealth.envvar_issues
+    : systemHealth?.system_issues.filter(isEnvvarSystemIssue) ?? [];
+  const otherSystemIssues =
+    systemHealth?.system_issues.filter((issue) => !isEnvvarSystemIssue(issue)) ?? [];
+  const wslIssues = systemHealth?.wsl_health?.issues ?? [];
 
   return (
     <Card className={cn("", className)}>
@@ -146,12 +155,46 @@ export function HealthCheckPanel({ className }: HealthCheckPanelProps) {
             </div>
 
             {/* System Issues */}
-            {systemHealth.system_issues.length > 0 && (
+            {envvarSystemIssues.length > 0 && (
+              <div className="space-y-2">
+                <h4 className="text-sm font-medium">{t("envvarIssues")}</h4>
+                {envvarSystemIssues.map((issue, idx) => (
+                  <IssueCard
+                    key={`envvar-${idx}`}
+                    issue={issue}
+                    onCopy={copyToClipboard}
+                    onPreviewRemediation={previewRemediation}
+                    onApplyRemediation={applyRemediation}
+                    activeRemediationId={activeRemediationId}
+                    t={t}
+                  />
+                ))}
+              </div>
+            )}
+
+            {otherSystemIssues.length > 0 && (
               <div className="space-y-2">
                 <h4 className="text-sm font-medium">{t("systemIssues")}</h4>
-                {systemHealth.system_issues.map((issue, idx) => (
+                {otherSystemIssues.map((issue, idx) => (
                   <IssueCard
                     key={idx}
+                    issue={issue}
+                    onCopy={copyToClipboard}
+                    onPreviewRemediation={previewRemediation}
+                    onApplyRemediation={applyRemediation}
+                    activeRemediationId={activeRemediationId}
+                    t={t}
+                  />
+                ))}
+              </div>
+            )}
+
+            {wslIssues.length > 0 && (
+              <div className="space-y-2">
+                <h4 className="text-sm font-medium">{t("wslIssues")}</h4>
+                {wslIssues.map((issue, idx) => (
+                  <IssueCard
+                    key={`wsl-${idx}`}
                     issue={issue}
                     onCopy={copyToClipboard}
                     onPreviewRemediation={previewRemediation}

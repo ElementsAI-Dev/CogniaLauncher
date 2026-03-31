@@ -23,9 +23,13 @@ export { RefListSelector } from "./ref-list-selector";
 export type { RefItem } from "./ref-list-selector";
 
 export { DownloadTaskRow } from "./download-task-row";
+export { DownloadTaskCard } from "./download-task-card";
 
 export { DownloadSettingsCard } from "./download-settings-card";
 export type { SpeedUnit } from "./download-settings-card";
+
+export { DownloadSettingsPanel } from "./download-settings-panel";
+export { DownloadStatsStrip } from "./download-stats-strip";
 
 export { SpeedChart } from "./speed-chart";
 

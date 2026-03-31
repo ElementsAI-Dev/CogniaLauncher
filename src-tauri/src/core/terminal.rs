@@ -2455,10 +2455,7 @@ fn plugin_support_from_config(
 }
 
 fn unsupported_plugin_support(reason: &str) -> (PluginSupportStatus, Option<String>) {
-    (
-        PluginSupportStatus::Unsupported,
-        Some(reason.to_string()),
-    )
+    (PluginSupportStatus::Unsupported, Some(reason.to_string()))
 }
 
 /// Detect installed shell frameworks for a given shell type.
@@ -2660,9 +2657,8 @@ fn detect_zsh_frameworks(
             .as_ref()
             .map(|p| p.display().to_string())
             .unwrap_or_else(|| p10k_config.display().to_string());
-        let (plugin_support_status, plugin_support_reason) = unsupported_plugin_support(
-            "Plugin inventory is unavailable for prompt engines.",
-        );
+        let (plugin_support_status, plugin_support_reason) =
+            unsupported_plugin_support("Plugin inventory is unavailable for prompt engines.");
         frameworks.push(ShellFrameworkInfo {
             name: "Powerlevel10k".to_string(),
             version: None,
@@ -2803,9 +2799,8 @@ fn detect_fish_frameworks(
     let tide_path = home.join(".config/fish/functions/_tide_init.fish");
     if tide_path.exists() {
         let config_path = home.join(".config/fish/config.fish");
-        let (plugin_support_status, plugin_support_reason) = unsupported_plugin_support(
-            "Plugin inventory is unavailable for prompt engines.",
-        );
+        let (plugin_support_status, plugin_support_reason) =
+            unsupported_plugin_support("Plugin inventory is unavailable for prompt engines.");
         frameworks.push(ShellFrameworkInfo {
             name: "Tide".to_string(),
             version: None,
@@ -2852,9 +2847,8 @@ async fn detect_prompt_engines(shell_type: ShellType, frameworks: &mut Vec<Shell
 
         let themes_path = std::env::var("POSH_THEMES_PATH").ok();
         let config_path = std::env::var("POSH_THEME").ok();
-        let (plugin_support_status, plugin_support_reason) = unsupported_plugin_support(
-            "Plugin inventory is unavailable for prompt engines.",
-        );
+        let (plugin_support_status, plugin_support_reason) =
+            unsupported_plugin_support("Plugin inventory is unavailable for prompt engines.");
 
         frameworks.push(ShellFrameworkInfo {
             name: "Oh My Posh".to_string(),
@@ -2903,9 +2897,8 @@ async fn detect_prompt_engines(shell_type: ShellType, frameworks: &mut Vec<Shell
                 }
             })
         });
-        let (plugin_support_status, plugin_support_reason) = unsupported_plugin_support(
-            "Plugin inventory is unavailable for prompt engines.",
-        );
+        let (plugin_support_status, plugin_support_reason) =
+            unsupported_plugin_support("Plugin inventory is unavailable for prompt engines.");
 
         frameworks.push(ShellFrameworkInfo {
             name: "Starship".to_string(),

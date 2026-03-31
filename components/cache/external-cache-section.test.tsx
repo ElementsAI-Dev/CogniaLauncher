@@ -28,7 +28,7 @@ jest.mock('next/link', () => {
   return MockLink;
 });
 
-jest.mock('@/hooks/use-external-cache', () => ({
+jest.mock('@/hooks/cache/use-external-cache', () => ({
   useExternalCache: (...args: unknown[]) => mockUseExternalCache(...args),
 }));
 

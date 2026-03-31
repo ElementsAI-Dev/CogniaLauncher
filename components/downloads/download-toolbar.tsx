@@ -24,18 +24,17 @@ import {
   RefreshCw,
   Trash2,
   MoreHorizontal,
+  Settings,
 } from "lucide-react";
 import type { QueueStats } from "@/lib/stores/download";
 
+/** Simplified status filter with merged categories. */
 export type StatusFilter =
   | "all"
-  | "downloading"
+  | "active"
   | "queued"
-  | "paused"
-  | "completed"
-  | "failed"
-  | "cancelled"
-  | "extracting";
+  | "done"
+  | "failed";
 
 export interface DownloadToolbarProps {
   searchQuery: string;
@@ -53,7 +52,12 @@ export interface DownloadToolbarProps {
   onCancelAll: () => void;
   onClearFinished: () => void;
   onRetryFailed: () => void;
-  extractingCount: number;
+  settingsOpen: boolean;
+  onSettingsToggle: () => void;
+  /** Number of active tasks (downloading + extracting + paused) */
+  activeCount: number;
+  /** Number of done tasks (completed + cancelled) */
+  doneCount: number;
   stats: QueueStats;
   isLoading: boolean;
   t: (key: string) => string;
@@ -75,18 +79,20 @@ export function DownloadToolbar({
   onCancelAll,
   onClearFinished,
   onRetryFailed,
-  extractingCount,
+  settingsOpen,
+  onSettingsToggle,
+  activeCount,
+  doneCount,
   stats,
   isLoading,
   t,
 }: DownloadToolbarProps) {
-  const finishedCount = stats.completed + stats.cancelled + stats.failed;
-  const activeCount = stats.downloading + stats.queued + stats.paused;
   const hasSelection = selectedCount > 0;
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <div className="space-y-3">
+      {/* Row 1: Search + Actions */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -98,6 +104,20 @@ export function DownloadToolbar({
           />
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant={settingsOpen ? "secondary" : "outline"}
+                size="sm"
+                onClick={onSettingsToggle}
+                className="gap-2"
+              >
+                <Settings className="h-4 w-4" />
+                {t("common.settings")}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{t("downloads.settings.speedLimit")}</TooltipContent>
+          </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -118,30 +138,15 @@ export function DownloadToolbar({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={onResumeAll}
-                disabled={stats.paused === 0 || isLoading}
+                onClick={onClearFinished}
+                disabled={doneCount === 0 || isLoading}
                 className="gap-2"
               >
-                <Play className="h-4 w-4" />
-                {t("downloads.actions.resumeAll")}
+                <Trash2 className="h-4 w-4" />
+                {t("downloads.actions.clearFinished")}
               </Button>
             </TooltipTrigger>
-            <TooltipContent>{t("downloads.actions.resumeAll")}</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={onCancelAll}
-                disabled={activeCount === 0 || isLoading}
-                className="gap-2"
-              >
-                <X className="h-4 w-4" />
-                {t("downloads.actions.cancelAll")}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{t("downloads.actions.cancelAll")}</TooltipContent>
+            <TooltipContent>{t("downloads.actions.clearFinished")}</TooltipContent>
           </Tooltip>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -151,82 +156,32 @@ export function DownloadToolbar({
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem
+                onClick={onResumeAll}
+                disabled={stats.paused === 0 || isLoading}
+              >
+                <Play className="h-4 w-4 mr-2" />
+                {t("downloads.actions.resumeAll")}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={onCancelAll}
+                disabled={activeCount === 0 || isLoading}
+              >
+                <X className="h-4 w-4 mr-2" />
+                {t("downloads.actions.cancelAll")}
+              </DropdownMenuItem>
+              <DropdownMenuItem
                 onClick={onRetryFailed}
                 disabled={stats.failed === 0 || isLoading}
               >
                 <RefreshCw className="h-4 w-4 mr-2" />
                 {t("downloads.actions.retryFailed")}
               </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={onClearFinished}
-                disabled={finishedCount === 0 || isLoading}
-              >
-                <Trash2 className="h-4 w-4 mr-2" />
-                {t("downloads.actions.clearFinished")}
-              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
       </div>
 
-      <Separator />
-
-      {hasSelection && (
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="secondary">
-            {selectedCount} {t("common.selected")}
-          </Badge>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onBatchPause}
-            disabled={isLoading}
-            className="gap-2"
-          >
-            <Pause className="h-4 w-4" />
-            {t("downloads.actions.pause")}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onBatchResume}
-            disabled={isLoading}
-            className="gap-2"
-          >
-            <Play className="h-4 w-4" />
-            {t("downloads.actions.resume")}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onBatchCancel}
-            disabled={isLoading}
-            className="gap-2"
-          >
-            <X className="h-4 w-4" />
-            {t("downloads.actions.cancel")}
-          </Button>
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={onBatchRemove}
-            disabled={isLoading}
-            className="gap-2"
-          >
-            <Trash2 className="h-4 w-4" />
-            {t("downloads.actions.remove")}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onClearSelection}
-            disabled={isLoading}
-          >
-            {t("common.clear")}
-          </Button>
-        </div>
-      )}
-
+      {/* Row 2: Filter Tabs */}
       <Tabs
         value={statusFilter}
         onValueChange={(value) => onStatusChange(value as StatusFilter)}
@@ -239,10 +194,10 @@ export function DownloadToolbar({
                 {stats.totalTasks}
               </Badge>
             </TabsTrigger>
-            <TabsTrigger value="downloading" className="gap-1.5">
-              {t("downloads.toolbar.filterDownloading")}
+            <TabsTrigger value="active" className="gap-1.5">
+              {t("downloads.toolbar.filterActive")}
               <Badge variant="secondary" className="px-1.5 py-0 text-xs">
-                {stats.downloading}
+                {activeCount}
               </Badge>
             </TabsTrigger>
             <TabsTrigger value="queued" className="gap-1.5">
@@ -251,16 +206,10 @@ export function DownloadToolbar({
                 {stats.queued}
               </Badge>
             </TabsTrigger>
-            <TabsTrigger value="paused" className="gap-1.5">
-              {t("downloads.toolbar.filterPaused")}
+            <TabsTrigger value="done" className="gap-1.5">
+              {t("downloads.toolbar.filterDone")}
               <Badge variant="secondary" className="px-1.5 py-0 text-xs">
-                {stats.paused}
-              </Badge>
-            </TabsTrigger>
-            <TabsTrigger value="completed" className="gap-1.5">
-              {t("downloads.toolbar.filterCompleted")}
-              <Badge variant="secondary" className="px-1.5 py-0 text-xs">
-                {stats.completed}
+                {doneCount}
               </Badge>
             </TabsTrigger>
             <TabsTrigger value="failed" className="gap-1.5">
@@ -269,21 +218,69 @@ export function DownloadToolbar({
                 {stats.failed}
               </Badge>
             </TabsTrigger>
-            <TabsTrigger value="cancelled" className="gap-1.5">
-              {t("downloads.toolbar.filterCancelled")}
-              <Badge variant="secondary" className="px-1.5 py-0 text-xs">
-                {stats.cancelled}
-              </Badge>
-            </TabsTrigger>
-            <TabsTrigger value="extracting" className="gap-1.5">
-              {t("downloads.toolbar.filterExtracting")}
-              <Badge variant="secondary" className="px-1.5 py-0 text-xs">
-                {extractingCount}
-              </Badge>
-            </TabsTrigger>
           </TabsList>
         </div>
       </Tabs>
+
+      {/* Row 3: Batch Selection Bar */}
+      {hasSelection && (
+        <>
+          <Separator />
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="secondary">
+              {selectedCount} {t("common.selected")}
+            </Badge>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onBatchPause}
+              disabled={isLoading}
+              className="gap-2"
+            >
+              <Pause className="h-4 w-4" />
+              {t("downloads.actions.pause")}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onBatchResume}
+              disabled={isLoading}
+              className="gap-2"
+            >
+              <Play className="h-4 w-4" />
+              {t("downloads.actions.resume")}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onBatchCancel}
+              disabled={isLoading}
+              className="gap-2"
+            >
+              <X className="h-4 w-4" />
+              {t("downloads.actions.cancel")}
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={onBatchRemove}
+              disabled={isLoading}
+              className="gap-2"
+            >
+              <Trash2 className="h-4 w-4" />
+              {t("downloads.actions.remove")}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onClearSelection}
+              disabled={isLoading}
+            >
+              {t("common.clear")}
+            </Button>
+          </div>
+        </>
+      )}
     </div>
   );
 }

@@ -1,13 +1,13 @@
 import { render } from "@testing-library/react";
 import { InstallationProgressDialog } from "./installation-progress-dialog";
 import { useEnvironmentStore } from "@/lib/stores/environment";
-import { useEnvironments } from "@/hooks/use-environments";
+import { useEnvironments } from "@/hooks/environments/use-environments";
 
 jest.mock("@/lib/stores/environment", () => ({
   useEnvironmentStore: jest.fn(),
 }));
 
-jest.mock("@/hooks/use-environments", () => ({
+jest.mock("@/hooks/environments/use-environments", () => ({
   useEnvironments: jest.fn(),
 }));
 

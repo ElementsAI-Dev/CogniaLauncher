@@ -1,6 +1,8 @@
 'use client';
 
+import { Suspense } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useLocale } from '@/components/providers/locale-provider';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -67,8 +69,9 @@ import {
   Trash2,
   Zap,
 } from 'lucide-react';
-import { useCacheDetail } from '@/hooks/use-cache-detail';
+import { useCacheDetail } from '@/hooks/cache/use-cache-detail';
 import { ENTRIES_PER_PAGE } from '@/lib/constants/cache';
+import { parseExternalCacheDetailTarget } from '@/lib/cache/scopes';
 import type { CacheDetailPageClientProps } from '@/types/cache';
 
 import { CacheDetailExternalView } from './cache-detail-external';
@@ -106,7 +109,11 @@ export function CacheDetailPageClient({
   }
 
   if (cacheType === 'external') {
-    return <CacheDetailExternalView targetId={targetId} targetType={targetType} />;
+    return (
+      <Suspense fallback={<CacheDetailExternalView targetId={targetId} targetType={targetType} />}>
+        <ExternalCacheDetailResolver targetId={targetId} targetType={targetType} />
+      </Suspense>
+    );
   }
 
   if (cacheType === 'default_downloads') {
@@ -114,6 +121,35 @@ export function CacheDetailPageClient({
   }
 
   return <InternalCacheDetailView cacheType={cacheType as 'download' | 'metadata'} />;
+}
+
+function getSearchParamValue(
+  searchParams: ReturnType<typeof useSearchParams>,
+  key: string,
+): string | string[] | undefined {
+  const values = searchParams.getAll(key);
+  if (values.length === 0) {
+    return undefined;
+  }
+  return values.length === 1 ? values[0] : values;
+}
+
+function ExternalCacheDetailResolver({
+  targetId,
+  targetType,
+}: Pick<CacheDetailPageClientProps, 'targetId' | 'targetType'>) {
+  const searchParams = useSearchParams();
+  const resolvedTarget = parseExternalCacheDetailTarget({
+    target: getSearchParamValue(searchParams, 'target'),
+    targetType: getSearchParamValue(searchParams, 'targetType'),
+  });
+
+  return (
+    <CacheDetailExternalView
+      targetId={resolvedTarget.targetId ?? targetId}
+      targetType={resolvedTarget.targetType ?? targetType}
+    />
+  );
 }
 
 // =============================================================================

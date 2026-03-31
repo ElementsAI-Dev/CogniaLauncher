@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { ToolGrid } from './tool-grid';
-import type { UnifiedTool } from '@/hooks/use-toolbox';
+import type { UnifiedTool } from '@/hooks/toolbox/use-toolbox';
 
 jest.mock('@/components/providers/locale-provider', () => ({
   useLocale: () => ({

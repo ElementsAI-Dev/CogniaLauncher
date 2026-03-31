@@ -28,6 +28,7 @@ pub mod search;
 pub mod secrets;
 pub mod shim;
 pub mod terminal;
+pub mod toolbox;
 pub mod updater;
 pub mod uv;
 pub mod window_effect;
@@ -108,14 +109,14 @@ pub use environment::{
     rustup_set_profile, rustup_show, rustup_update_all, rustup_which,
 };
 pub use envvar::{
-    envvar_add_path_entry, envvar_deduplicate_path, envvar_detect_conflicts, envvar_expand,
-    envvar_create_snapshot, envvar_delete_snapshot, envvar_export_env_file, envvar_get,
-    envvar_get_backup_protection, envvar_get_path, envvar_get_persistent,
+    envvar_add_path_entry, envvar_create_snapshot, envvar_deduplicate_path, envvar_delete_snapshot,
+    envvar_detect_conflicts, envvar_expand, envvar_export_env_file, envvar_get,
+    envvar_get_backup_protection, envvar_get_overview, envvar_get_path, envvar_get_persistent,
     envvar_get_support_snapshot, envvar_import_env_file, envvar_list_all, envvar_list_persistent,
     envvar_list_persistent_typed, envvar_list_shell_profiles, envvar_list_snapshots,
     envvar_preview_snapshot_restore, envvar_read_shell_profile, envvar_remove_path_entry,
-    envvar_remove_persistent, envvar_remove_process, envvar_reorder_path,
-    envvar_restore_snapshot, envvar_set_persistent, envvar_set_process,
+    envvar_remove_persistent, envvar_remove_process, envvar_reorder_path, envvar_restore_snapshot,
+    envvar_set_persistent, envvar_set_process,
 };
 pub use feedback::{
     feedback_count, feedback_delete, feedback_export, feedback_get, feedback_list, feedback_save,
@@ -136,31 +137,32 @@ pub use git::{
     git_get_gitignore, git_get_graph_log, git_get_hook_content, git_get_local_config,
     git_get_local_config_value, git_get_log, git_get_merge_rebase_state,
     git_get_rebase_todo_preview, git_get_reflog, git_get_remotes, git_get_repo_info,
-    git_get_repo_stats, git_get_stashes, git_get_status, git_get_tags, git_get_version, git_init,
-    git_install, git_is_available, git_is_shallow, git_is_sparse_checkout, git_lfs_get_version,
-    git_lfs_install, git_lfs_is_available, git_lfs_ls_files, git_lfs_track,
-    git_lfs_tracked_patterns, git_lfs_untrack, git_list_aliases, git_list_hooks,
-    git_list_submodules, git_list_worktrees, git_merge, git_merge_abort, git_merge_continue,
-    git_open_config_in_editor, git_probe_editor_capability, git_prune_worktrees, git_pull,
-    git_push, git_push_tags, git_rebase, git_rebase_abort, git_rebase_continue, git_rebase_skip,
-    git_remote_add, git_remote_prune, git_remote_remove, git_remote_rename, git_remote_set_url,
-    git_remove_config, git_remove_local_config, git_remove_submodule, git_remove_worktree,
-    git_reset, git_resolve_file_mark, git_resolve_file_ours, git_resolve_file_theirs, git_revert,
-    git_revert_abort, git_search_commits, git_set_config, git_set_config_if_unset,
-    git_set_gitignore, git_set_hook_content, git_set_local_config, git_sparse_checkout_add,
+    git_get_repo_stats, git_get_stashes, git_get_status, git_get_support_snapshot, git_get_tags,
+    git_get_version, git_init, git_install, git_is_available, git_is_shallow,
+    git_is_sparse_checkout, git_lfs_get_version, git_lfs_install, git_lfs_is_available,
+    git_lfs_ls_files, git_lfs_track, git_lfs_tracked_patterns, git_lfs_untrack, git_list_aliases,
+    git_list_hooks, git_list_submodules, git_list_worktrees, git_merge, git_merge_abort,
+    git_merge_continue, git_open_config_in_editor, git_probe_editor_capability,
+    git_prune_worktrees, git_pull, git_push, git_push_tags, git_rebase, git_rebase_abort,
+    git_rebase_continue, git_rebase_skip, git_remote_add, git_remote_prune, git_remote_remove,
+    git_remote_rename, git_remote_set_url, git_remove_config, git_remove_local_config,
+    git_remove_submodule, git_remove_worktree, git_reset, git_resolve_file_mark,
+    git_resolve_file_ours, git_resolve_file_theirs, git_revert, git_revert_abort,
+    git_search_commits, git_set_config, git_set_config_if_unset, git_set_gitignore,
+    git_set_hook_content, git_set_local_config, git_sparse_checkout_add,
     git_sparse_checkout_disable, git_sparse_checkout_init, git_sparse_checkout_list,
     git_sparse_checkout_set, git_squash, git_stage_all, git_stage_files,
     git_start_interactive_rebase, git_stash_apply, git_stash_branch, git_stash_drop, git_stash_pop,
     git_stash_push_files, git_stash_save, git_stash_show, git_sync_submodules, git_toggle_hook,
     git_unshallow, git_unstage_files, git_update, git_update_submodules, git_validate_url,
-    git_verify_commit, git_verify_tag, git_get_support_snapshot,
+    git_verify_commit, git_verify_tag,
 };
 pub use github::{
     github_clear_token, github_download_asset, github_download_source,
     github_download_workflow_artifact, github_get_release_assets, github_get_repo_info,
-    github_get_token, github_list_branches, github_list_releases,
-    github_list_tags, github_list_workflow_artifacts, github_parse_url, github_set_token,
-    github_validate_repo, github_validate_token,
+    github_get_token, github_list_branches, github_list_releases, github_list_tags,
+    github_list_workflow_artifacts, github_parse_url, github_set_token, github_validate_repo,
+    github_validate_token,
 };
 pub use gitlab::{
     gitlab_clear_token, gitlab_download_asset, gitlab_download_job_artifacts,
@@ -191,8 +193,9 @@ pub use macports::{
 pub use manifest::{manifest_init, manifest_read};
 pub use package::{
     package_check_installed, package_info, package_install, package_list, package_search,
-    package_uninstall, package_versions, provider_check, provider_disable, provider_enable,
-    provider_list, provider_status_all, provider_system_list,
+    package_uninstall, package_versions, pre_install_validate, provider_check, provider_disable,
+    provider_enable, provider_list, provider_status_all, provider_system_list,
+    resolve_dependency_conflict,
 };
 pub use pipx::{
     pipx_ensurepath, pipx_inject, pipx_list_json, pipx_reinstall_all, pipx_run, pipx_upgrade,
@@ -208,15 +211,16 @@ pub use plugin::{
     plugin_list_all_tools, plugin_open_scaffold_folder, plugin_open_scaffold_in_vscode,
     plugin_reload, plugin_reset_health, plugin_revoke_permission, plugin_scaffold,
     plugin_set_setting, plugin_uninstall, plugin_update_all, plugin_update_with_result,
-    plugin_validate, SharedPluginManager,
+    plugin_validate, toolbox_cancel_tool, SharedPluginManager,
 };
 pub use poetry::{
     poetry_check, poetry_env_list, poetry_env_remove, poetry_env_use, poetry_export, poetry_lock,
     poetry_run, poetry_update, poetry_version,
 };
 pub use profiles::{
-    profile_apply, profile_create, profile_create_from_current, profile_delete, profile_export,
-    profile_get, profile_import, profile_list, profile_update,
+    profile_apply, profile_apply_wsl_snapshot, profile_capture_wsl_snapshot, profile_create,
+    profile_create_from_current, profile_delete, profile_export, profile_get, profile_import,
+    profile_list, profile_update,
 };
 pub use search::{advanced_search, compare_packages, search_suggestions};
 pub use secrets::{
@@ -249,6 +253,9 @@ pub use terminal::{
     terminal_validate_config_content, terminal_write_config, terminal_write_config_verified,
     SharedTerminalProfileManager,
 };
+pub use toolbox::{
+    toolbox_hash_file, toolbox_read_file_for_tool, toolbox_resolve_path, toolbox_write_tool_output,
+};
 pub use updater::{self_check_update, self_update};
 pub use uv::{
     uv_add, uv_cache_clean, uv_cache_dir, uv_init, uv_lock, uv_pip_compile, uv_python_install,
@@ -265,14 +272,16 @@ pub use winget::{
 pub use wsl::{
     wsl_add_port_forward, wsl_backup_distro, wsl_batch_launch, wsl_batch_terminate,
     wsl_change_default_user, wsl_clone_distro, wsl_convert_path, wsl_debug_detection,
-    wsl_delete_backup, wsl_disk_usage, wsl_distro_health_check, wsl_exec, wsl_export,
-    wsl_get_capabilities, wsl_get_config, wsl_get_distro_config, wsl_get_ip, wsl_get_version_info,
-    wsl_import, wsl_import_in_place, wsl_install_with_location, wsl_install_wsl_only,
-    wsl_is_available, wsl_launch, wsl_list_backups, wsl_list_distros, wsl_list_online,
-    wsl_list_port_forwards, wsl_list_running, wsl_mount, wsl_move_distro, wsl_open_in_explorer,
-    wsl_open_in_terminal, wsl_remove_port_forward, wsl_resize_distro, wsl_restore_backup,
-    wsl_set_config, wsl_set_default, wsl_set_default_version, wsl_set_distro_config,
-    wsl_set_sparse, wsl_set_version, wsl_shutdown, wsl_status, wsl_terminate, wsl_total_disk_usage,
+    wsl_delete_backup, wsl_detect_distro_env, wsl_disk_usage, wsl_distro_health_check, wsl_exec,
+    wsl_export, wsl_export_windows_env, wsl_get_capabilities, wsl_get_config,
+    wsl_get_distro_config, wsl_get_ip, wsl_get_runtime_snapshot, wsl_get_version_info,
+    wsl_get_wslenv, wsl_import, wsl_import_in_place, wsl_install_with_location,
+    wsl_install_wsl_only, wsl_is_available, wsl_launch, wsl_list_backups, wsl_list_distros,
+    wsl_list_online, wsl_list_port_forwards, wsl_list_running, wsl_mount, wsl_move_distro,
+    wsl_open_in_explorer, wsl_open_in_terminal, wsl_read_distro_env, wsl_remove_port_forward,
+    wsl_resize_distro, wsl_restore_backup, wsl_set_config, wsl_set_default,
+    wsl_set_default_version, wsl_set_distro_config, wsl_set_networking_mode, wsl_set_sparse,
+    wsl_set_version, wsl_set_wslenv, wsl_shutdown, wsl_status, wsl_terminate, wsl_total_disk_usage,
     wsl_unmount, wsl_update,
 };
 pub use xmake::{

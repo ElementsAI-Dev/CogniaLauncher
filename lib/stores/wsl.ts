@@ -1,7 +1,11 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { WslNetworkPreset } from '@/lib/constants/wsl';
-import type { WslBatchWorkflowPreset, WslBatchWorkflowSummary } from '@/types/wsl';
+import type {
+  WslBackupSchedule,
+  WslBatchWorkflowPreset,
+  WslBatchWorkflowSummary,
+} from '@/types/wsl';
 import {
   DEFAULT_WSL_OVERVIEW_CONTEXT,
   normalizeWslBatchWorkflowPreset,
@@ -50,6 +54,13 @@ interface WslStoreState {
   addCustomProfile: (profile: WslNetworkPreset) => void;
   removeCustomProfile: (id: string) => void;
   updateCustomProfile: (id: string, updates: Partial<WslNetworkPreset>) => void;
+
+  backupSchedules: WslBackupSchedule[];
+  upsertBackupSchedule: (schedule: WslBackupSchedule) => void;
+  removeBackupSchedule: (
+    key: Pick<WslBackupSchedule, 'distro_name' | 'interval' | 'time'>
+  ) => void;
+  replaceBackupSchedules: (schedules: WslBackupSchedule[]) => void;
 
   workflowPresets: WslBatchWorkflowPreset[];
   workflowSummaries: WslBatchWorkflowSummary[];
@@ -143,6 +154,37 @@ export const useWslStore = create<WslStoreState>()(
           ),
         })),
 
+      backupSchedules: [],
+      upsertBackupSchedule: (schedule) =>
+        set((state) => {
+          const nextSchedules = state.backupSchedules.filter(
+            (entry) =>
+              !(
+                entry.distro_name === schedule.distro_name
+                && entry.interval === schedule.interval
+                && entry.time === schedule.time
+              ),
+          );
+          return {
+            backupSchedules: [...nextSchedules, schedule],
+          };
+        }),
+      removeBackupSchedule: (key) =>
+        set((state) => ({
+          backupSchedules: state.backupSchedules.filter(
+            (entry) =>
+              !(
+                entry.distro_name === key.distro_name
+                && entry.interval === key.interval
+                && entry.time === key.time
+              ),
+          ),
+        })),
+      replaceBackupSchedules: (schedules) =>
+        set(() => ({
+          backupSchedules: schedules,
+        })),
+
       workflowPresets: [],
       workflowSummaries: [],
       addWorkflowPreset: (preset) =>
@@ -196,7 +238,7 @@ export const useWslStore = create<WslStoreState>()(
     }),
     {
       name: 'cognia-wsl-store',
-      version: 4,
+      version: 5,
       migrate: (persisted, version) => {
         if (!persisted || typeof persisted !== 'object') {
           return persisted as WslStoreState;
@@ -242,8 +284,19 @@ export const useWslStore = create<WslStoreState>()(
           } as WslStoreState;
         }
 
+        if (version < 5) {
+          return {
+            ...typed,
+            backupSchedules: typed.backupSchedules ?? [],
+            workflowPresets: normalizedWorkflowPresets,
+            workflowSummaries: normalizedWorkflowSummaries,
+            overviewContext: normalizedOverviewContext,
+          } as WslStoreState;
+        }
+
         return {
           ...typed,
+          backupSchedules: typed.backupSchedules ?? [],
           workflowPresets: normalizedWorkflowPresets,
           workflowSummaries: normalizedWorkflowSummaries,
           overviewContext: normalizedOverviewContext,

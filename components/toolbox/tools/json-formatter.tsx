@@ -15,9 +15,9 @@ import {
   ToolOptionGroup,
 } from '@/components/toolbox/tool-layout';
 import { useLocale } from '@/components/providers/locale-provider';
-import { useCopyToClipboard } from '@/hooks/use-clipboard';
+import { useCopyToClipboard } from '@/hooks/shared/use-clipboard';
 import { TOOLBOX_LIMITS } from '@/lib/constants/toolbox-limits';
-import { useToolPreferences } from '@/hooks/use-tool-preferences';
+import { useToolPreferences } from '@/hooks/toolbox/use-tool-preferences';
 import { Minimize2, Maximize2, Copy, Check } from 'lucide-react';
 import type { ToolComponentProps } from '@/types/toolbox';
 

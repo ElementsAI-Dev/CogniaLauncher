@@ -3,6 +3,25 @@ import userEvent from "@testing-library/user-event";
 import { GitLabPackagesTab } from "./gitlab-packages-tab";
 import type { GitLabPackageInfo, GitLabPackageFileInfo } from "@/types/gitlab";
 
+const mockUseAssetMatcher = jest.fn();
+
+jest.mock("@/hooks/downloads/use-asset-matcher", () => ({
+  useAssetMatcher: () => mockUseAssetMatcher(),
+  getPlatformLabel: (platform: string) =>
+    ({
+      windows: "Windows",
+      linux: "Linux",
+      macos: "macOS",
+    }[platform] ?? ""),
+  getArchLabel: (arch: string) =>
+    ({
+      x64: "x64",
+      arm64: "ARM64",
+      x86: "x86",
+      universal: "Universal",
+    }[arch] ?? ""),
+}));
+
 beforeAll(() => {
   global.ResizeObserver = class {
     observe() {}
@@ -50,6 +69,10 @@ describe("GitLabPackagesTab", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockUseAssetMatcher.mockReturnValue({
+      currentPlatform: "linux",
+      currentArch: "x64",
+    });
   });
 
   it("renders empty packages message", () => {
@@ -205,5 +228,18 @@ describe("GitLabPackagesTab", () => {
     const checkbox = screen.getByRole("checkbox");
     await userEvent.click(checkbox);
     expect(onToggleFile).toHaveBeenCalledWith(401);
+  });
+
+  it("shows recommended platform cues for matching package files", () => {
+    render(
+      <GitLabPackagesTab
+        {...defaultProps}
+        selectedPackageId={301}
+      />,
+    );
+
+    expect(screen.getByText("downloads.gitlab.recommended")).toBeInTheDocument();
+    expect(screen.getByText("Linux")).toBeInTheDocument();
+    expect(screen.getAllByText("x64").length).toBeGreaterThan(0);
   });
 });

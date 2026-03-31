@@ -15,7 +15,7 @@ import {
   useEnvironmentStore,
   type InstallationProgress,
 } from "@/lib/stores/environment";
-import { useEnvironments } from "@/hooks/use-environments";
+import { useEnvironments } from "@/hooks/environments/use-environments";
 import { cn } from "@/lib/utils";
 import { Download, Check, Loader2, AlertCircle, Minimize2 } from "lucide-react";
 import {

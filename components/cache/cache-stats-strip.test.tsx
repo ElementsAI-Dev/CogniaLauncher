@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { CacheStatsStrip } from "./cache-stats-strip";
 import type { CacheScopeInsight } from "@/lib/cache/insights";
 
@@ -117,5 +118,29 @@ describe("CacheStatsStrip", () => {
     expect(
       screen.queryByText("cache.statsStripTotalSize"),
     ).not.toBeInTheDocument();
+  });
+
+  it("supports selecting a scope summary for drilldown navigation", async () => {
+    const user = userEvent.setup();
+    const onScopeSelect = jest.fn();
+
+    render(
+      <CacheStatsStrip
+        totalSizeHuman="1.5 GB"
+        usagePercent={45}
+        totalEntries={12345}
+        diskAvailableHuman="80 GB"
+        freshness={{ state: "fresh", lastUpdatedAt: Date.now() }}
+        scopeSummaries={scopeSummaries}
+        loading={false}
+        onScopeSelect={onScopeSelect}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: /cache\.externalPanelTitle/i }),
+    );
+
+    expect(onScopeSelect).toHaveBeenCalledWith("external");
   });
 });

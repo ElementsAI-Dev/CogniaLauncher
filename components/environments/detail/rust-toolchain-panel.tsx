@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRustup } from "@/hooks/use-rustup";
+import { useRustup } from "@/hooks/environments/use-rustup";
 import { isTauri } from "@/lib/tauri";
 import {
   Card,

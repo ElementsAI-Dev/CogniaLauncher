@@ -53,7 +53,7 @@ jest.mock('@/lib/constants/toolbox', () => ({
   getToolById: (toolId: string) => mockToolRegistry.find((tool) => tool.id === toolId),
 }));
 
-jest.mock('@/hooks/use-toolbox', () => ({
+jest.mock('@/hooks/toolbox/use-toolbox', () => ({
   useToolbox: () => ({
     allTools: mockAllTools,
   }),
@@ -216,6 +216,19 @@ describe('ToolDetailPageClient', () => {
               status: 'blocked',
               reason: 'Missing permissions: process_exec',
               missingPermissions: ['process_exec'],
+              preferredWorkflow: {
+                type: 'builtin-plugin',
+                coverage: 'builtin-primary',
+                surface: 'runtime',
+                path: 'plugins/typescript/port-inspector',
+                pluginId: 'com.example',
+                toolId: 'port-inspect-guided',
+                entrypoints: ['port_inspect_guided'],
+                requiredPermissions: ['process_exec'],
+                interactionMode: 'declarative',
+                discoverable: true,
+                workflowIntents: ['inspect-local-ports'],
+              },
             },
           ],
         },
@@ -256,5 +269,8 @@ describe('ToolDetailPageClient', () => {
     expect(screen.getAllByText('process.exec').length).toBeGreaterThan(0);
     expect(screen.getByText('deprecated capability use new one')).toBeInTheDocument();
     expect(screen.getByText('Missing permissions: process_exec')).toBeInTheDocument();
+    expect(screen.getByText('Preferred workflow: port-inspect-guided (declarative)')).toBeInTheDocument();
+    expect(screen.getByText('Intents: inspect-local-ports')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Manage Plugin' })).toBeInTheDocument();
   });
 });

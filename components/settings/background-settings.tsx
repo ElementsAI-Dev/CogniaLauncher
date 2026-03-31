@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { SwitchSettingItem, SliderSettingItem, SelectSettingItem } from "./setting-item";
 import { AlertCircle, ImagePlus, RotateCcw, Trash2 } from "lucide-react";
-import { useBackgroundImage } from "@/hooks/use-background-image";
+import { useBackgroundImage } from "@/hooks/settings/use-background-image";
 import type { BackgroundFit } from "@/lib/stores/appearance";
 
 interface BackgroundSettingsProps {

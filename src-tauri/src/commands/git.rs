@@ -152,9 +152,7 @@ pub async fn git_get_executable_path() -> Result<Option<String>, String> {
 
 /// Get structured Git feature support snapshot for capability gating.
 #[tauri::command]
-pub async fn git_get_support_snapshot(
-    path: Option<String>,
-) -> Result<GitSupportSnapshot, String> {
+pub async fn git_get_support_snapshot(path: Option<String>) -> Result<GitSupportSnapshot, String> {
     get_provider()
         .get_support_snapshot(path.as_deref())
         .await
@@ -1792,8 +1790,7 @@ mod tests {
 
     #[test]
     fn normalize_git_error_maps_timeout() {
-        let normalized =
-            normalize_git_error_message("git command timed out after 30s".to_string());
+        let normalized = normalize_git_error_message("git command timed out after 30s".to_string());
         assert!(normalized.starts_with("[git:timeout]"));
     }
 

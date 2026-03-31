@@ -77,6 +77,9 @@ const mockMessages = {
         reveal: 'Show in Folder',
         extract: 'Extract Archive',
       },
+      historyPanel: {
+        reuse: 'Reuse Download',
+      },
       toast: {
         started: 'Download started',
         extracted: 'Archive extracted successfully',
@@ -128,12 +131,14 @@ function TestWrapper({ children }: { children: React.ReactNode }) {
 }
 
 function renderDialog(props: Partial<React.ComponentProps<typeof DownloadDetailDialog>> = {}) {
+  const task = props.task ?? baseTask;
   return render(
     <TestWrapper>
       <DownloadDetailDialog
-        task={baseTask}
+        task={task}
         open={true}
         onOpenChange={jest.fn()}
+        destinationAvailable={props.destinationAvailable ?? task.state === 'completed'}
         {...props}
       />
     </TestWrapper>
@@ -210,6 +215,23 @@ describe('DownloadDetailDialog', () => {
     expect(screen.getByText('Show in Folder')).toBeInTheDocument();
   });
 
+  it('shows reuse instead of file actions when the completed destination is unavailable', async () => {
+    const onReuseTask = jest.fn();
+    renderDialog({
+      onOpenFile: jest.fn(),
+      onRevealFile: jest.fn(),
+      onReuseTask,
+      destinationAvailable: false,
+    });
+
+    expect(screen.queryByText('Open File')).not.toBeInTheDocument();
+    expect(screen.queryByText('Show in Folder')).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByText('Reuse Download'));
+
+    expect(onReuseTask).toHaveBeenCalledWith(baseTask);
+  });
+
   it('shows calculate checksum button for completed task', () => {
     renderDialog({
       onCalculateChecksum: jest.fn().mockResolvedValue('abc123'),
@@ -251,7 +273,20 @@ describe('DownloadDetailDialog', () => {
 
   it('extracts archive when extract button is clicked', async () => {
     const onExtract = jest.fn().mockResolvedValue(['/downloads/out/file.txt']);
-    renderDialog({ onExtractArchive: onExtract });
+    renderDialog({
+      task: {
+        ...baseTask,
+        artifactProfile: {
+          artifactKind: 'archive',
+          sourceKind: 'direct_url',
+          platform: 'windows',
+          arch: 'x64',
+          installIntent: 'extract_then_continue',
+          suggestedFollowUps: ['extract'],
+        },
+      } as DownloadTask,
+      onExtractArchive: onExtract,
+    });
 
     await userEvent.click(screen.getByText('Extract Archive'));
 

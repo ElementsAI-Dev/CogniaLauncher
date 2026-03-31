@@ -171,7 +171,7 @@ jest.mock("@/lib/stores/settings", () => ({
     }),
 }));
 
-jest.mock("@/hooks/use-wsl", () => ({
+jest.mock("@/hooks/wsl/use-wsl", () => ({
   useWsl: () => ({
     distros: [
       { name: "Ubuntu", state: "Running", wslVersion: "2", isDefault: true },
@@ -257,6 +257,17 @@ describe("AppSidebar", () => {
 
     const packagesItem = screen.getByText("Packages").closest("[data-active]");
     expect(packagesItem).toHaveAttribute("data-active", "true");
+  });
+
+  it("keeps toolbox navigation highlighted on toolbox detail sub-routes", () => {
+    mockPathname.mockReturnValue("/toolbox/tool");
+    render(<AppSidebar />);
+
+    const toolboxLink = screen
+      .getAllByRole("link")
+      .find((link) => link.getAttribute("href") === "/toolbox");
+
+    expect(toolboxLink?.closest("[data-active]")).toHaveAttribute("data-active", "true");
   });
 
   it("renders navigation links with correct hrefs", () => {

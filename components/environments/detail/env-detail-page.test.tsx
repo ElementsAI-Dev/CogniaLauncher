@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { EnvDetailPageClient } from "./env-detail-page";
 
 const mockFetchEnvironments = jest.fn().mockResolvedValue(undefined);
@@ -15,6 +16,9 @@ const mockSetSelectedProvider = jest.fn();
 const mockSetWorkflowContext = jest.fn();
 const mockSetWorkflowAction = jest.fn();
 const mockSyncWorkflowContext = jest.fn();
+const mockTerminalLaunchProfile = jest.fn();
+const mockTerminalHydrate = jest.fn();
+const mockToastError = jest.fn();
 const mockEnvironmentStoreState = {
   workflowContext: null as
     | {
@@ -23,6 +27,12 @@ const mockEnvironmentStoreState = {
         returnHref?: string | null;
       }
     | null,
+};
+let mockTerminalStoreState = {
+  defaultProfileId: null as string | null,
+  loading: false,
+  hydrate: mockTerminalHydrate,
+  markProfileLaunched: jest.fn(),
 };
 const mockUseEnvironmentsState = {
   environments: [] as Array<{
@@ -44,9 +54,21 @@ const mockUseEnvironmentsState = {
 
 jest.mock("@/lib/tauri", () => ({
   isTauri: () => mockIsTauri(),
+  terminalLaunchProfile: (...args: unknown[]) => mockTerminalLaunchProfile(...args),
 }));
 
-jest.mock("@/hooks/use-environments", () => ({
+jest.mock("@/lib/stores/terminal", () => ({
+  useTerminalStore: (selector: (state: typeof mockTerminalStoreState) => unknown) =>
+    selector(mockTerminalStoreState),
+}));
+
+jest.mock("sonner", () => ({
+  toast: {
+    error: (...args: unknown[]) => mockToastError(...args),
+  },
+}));
+
+jest.mock("@/hooks/environments/use-environments", () => ({
   useEnvironments: () => ({
     ...mockUseEnvironmentsState,
     fetchEnvironments: mockFetchEnvironments,
@@ -60,13 +82,13 @@ jest.mock("@/hooks/use-environments", () => ({
   }),
 }));
 
-jest.mock("@/hooks/use-environment-detection", () => ({
+jest.mock("@/hooks/environments/use-environment-detection", () => ({
   useEnvironmentDetection: () => ({
     getProjectDetectedForEnv: mockGetProjectDetectedForEnv,
   }),
 }));
 
-jest.mock("@/hooks/use-environment-workflow", () => ({
+jest.mock("@/hooks/environments/use-environment-workflow", () => ({
   useEnvironmentWorkflow: () => ({
     syncWorkflowContext: mockSyncWorkflowContext,
     setWorkflowActionState: jest.fn(),
@@ -95,7 +117,17 @@ jest.mock("@/lib/stores/environment", () => ({
 }));
 
 jest.mock("@/components/environments/detail", () => ({
-  EnvDetailHeader: () => <div data-testid="env-detail-header" />,
+  EnvDetailHeader: ({
+    onOpenInTerminal,
+  }: {
+    onOpenInTerminal?: () => void;
+  }) => (
+    <div data-testid="env-detail-header">
+      <button type="button" onClick={onOpenInTerminal}>
+        open-in-terminal
+      </button>
+    </div>
+  ),
   EnvDetailOverview: () => <div data-testid="env-detail-overview" />,
   EnvDetailVersions: () => <div data-testid="env-detail-versions" />,
   EnvDetailPackages: () => <div data-testid="env-detail-packages" />,
@@ -119,7 +151,7 @@ jest.mock("@/components/environments/environment-workflow-banner", () => ({
   EnvironmentWorkflowBanner: () => <div data-testid="workflow-banner" />,
 }));
 
-jest.mock("@/hooks/use-auto-version", () => ({
+jest.mock("@/hooks/environments/use-auto-version", () => ({
   useAutoVersionSwitch: jest.fn(),
   useProjectPath: () => ({ projectPath: "/test/project" }),
 }));
@@ -145,6 +177,12 @@ describe("EnvDetailPageClient", () => {
     mockUseEnvironmentsState.environments = [];
     mockUseEnvironmentsState.availableProviders = [];
     mockUseEnvironmentsState.detectedVersions = [];
+    mockTerminalStoreState = {
+      defaultProfileId: null,
+      loading: false,
+      hydrate: mockTerminalHydrate,
+      markProfileLaunched: jest.fn(),
+    };
   });
 
   it("renders desktop-only fallback in web mode and skips fetching", () => {
@@ -190,5 +228,59 @@ describe("EnvDetailPageClient", () => {
         }),
       );
     });
+  });
+
+  it("launches the default terminal profile with environment context", async () => {
+    mockIsTauri.mockReturnValue(true);
+    mockUseEnvironmentsState.environments = [
+      {
+        env_type: "node",
+        provider_id: "fnm",
+        provider: "fnm",
+        current_version: "20.0.0",
+        installed_versions: [],
+        available: true,
+      },
+    ];
+    mockUseEnvironmentsState.availableProviders = [
+      { id: "fnm", display_name: "fnm", env_type: "node" },
+    ];
+    mockTerminalStoreState.defaultProfileId = "terminal-default";
+
+    render(<EnvDetailPageClient envType="node" />);
+
+    await userEvent.click(screen.getByText("open-in-terminal"));
+
+    expect(mockTerminalLaunchProfile).toHaveBeenCalledWith("terminal-default", {
+      envType: "node",
+      envVersion: "20.0.0",
+      cwd: "/test/project",
+    });
+  });
+
+  it("shows guidance when no default terminal profile exists", async () => {
+    mockIsTauri.mockReturnValue(true);
+    mockUseEnvironmentsState.environments = [
+      {
+        env_type: "node",
+        provider_id: "fnm",
+        provider: "fnm",
+        current_version: "20.0.0",
+        installed_versions: [],
+        available: true,
+      },
+    ];
+    mockUseEnvironmentsState.availableProviders = [
+      { id: "fnm", display_name: "fnm", env_type: "node" },
+    ];
+
+    render(<EnvDetailPageClient envType="node" />);
+
+    await userEvent.click(screen.getByText("open-in-terminal"));
+
+    expect(mockTerminalLaunchProfile).not.toHaveBeenCalled();
+    expect(mockToastError).toHaveBeenCalledWith(
+      "environments.detail.openInTerminalMissingDefaultProfile",
+    );
   });
 });

@@ -15,8 +15,8 @@ import {
   ProviderListItem,
   ProviderGridSkeleton,
 } from '@/components/provider-management';
-import { usePackages } from '@/hooks/use-packages';
-import { useProviderFilters } from '@/hooks/use-provider-filters';
+import { usePackages } from '@/hooks/packages/use-packages';
+import { useProviderFilters } from '@/hooks/providers/use-provider-filters';
 import { useLocale } from '@/components/providers/locale-provider';
 import { AlertCircle, ChevronDown, ChevronRight } from 'lucide-react';
 import * as tauri from '@/lib/tauri';

@@ -9,12 +9,14 @@ import { Globe, Plus, Trash2, Pencil, Link2, Scissors } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { toast } from 'sonner';
 import type { GitRemoteCardProps } from '@/types/git';
+import { useGitActionDialogs } from './use-git-action-dialogs';
 
 export function GitRemoteCard({ remotes, onAdd, onRemove, onRename, onSetUrl, onPrune }: GitRemoteCardProps) {
   const { t } = useLocale();
   const [newName, setNewName] = useState('');
   const [newUrl, setNewUrl] = useState('');
   const [adding, setAdding] = useState(false);
+  const { prompt, dialogs } = useGitActionDialogs();
 
   const handleAdd = async () => {
     if (!onAdd || !newName.trim() || !newUrl.trim()) return;
@@ -43,7 +45,12 @@ export function GitRemoteCard({ remotes, onAdd, onRemove, onRename, onSetUrl, on
 
   const handleRename = async (name: string) => {
     if (!onRename) return;
-    const next = window.prompt(t('git.remoteAction.rename'), name);
+    const next = await prompt({
+      title: t('git.remoteAction.rename'),
+      label: t('git.remoteAction.rename'),
+      defaultValue: name,
+      placeholder: t('git.remoteAction.namePlaceholder'),
+    });
     if (!next || next.trim() === '' || next.trim() === name) return;
     try {
       const msg = await onRename(name, next.trim());
@@ -55,7 +62,12 @@ export function GitRemoteCard({ remotes, onAdd, onRemove, onRename, onSetUrl, on
 
   const handleSetUrl = async (name: string, currentUrl: string) => {
     if (!onSetUrl) return;
-    const next = window.prompt(t('git.remoteAction.setUrl'), currentUrl);
+    const next = await prompt({
+      title: t('git.remoteAction.setUrl'),
+      label: t('git.remoteAction.setUrl'),
+      defaultValue: currentUrl,
+      placeholder: t('git.remoteAction.urlPlaceholder'),
+    });
     if (!next || next.trim() === '' || next.trim() === currentUrl) return;
     try {
       const msg = await onSetUrl(name, next.trim());
@@ -76,6 +88,7 @@ export function GitRemoteCard({ remotes, onAdd, onRemove, onRename, onSetUrl, on
   };
 
   return (
+    <>
     <Card>
       <CardHeader className="pb-3">
         <CardTitle className="text-sm flex items-center gap-2">
@@ -188,5 +201,7 @@ export function GitRemoteCard({ remotes, onAdd, onRemove, onRename, onSetUrl, on
         )}
       </CardContent>
     </Card>
+    {dialogs}
+    </>
   );
 }

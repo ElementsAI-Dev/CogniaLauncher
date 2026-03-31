@@ -39,11 +39,11 @@ jest.mock('@/components/providers/locale-provider', () => ({
   useLocale: () => ({ t: (key: string) => key }),
 }));
 
-jest.mock('@/hooks/use-toolbox', () => ({
+jest.mock('@/hooks/toolbox/use-toolbox', () => ({
   useToolbox: () => mockToolboxState,
 }));
 
-jest.mock('@/hooks/use-toolbox-marketplace', () => ({
+jest.mock('@/hooks/toolbox/use-toolbox-marketplace', () => ({
   useToolboxMarketplace: () => mockMarketplaceState,
 }));
 

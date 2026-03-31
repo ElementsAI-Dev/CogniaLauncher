@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useLocale } from "@/components/providers/locale-provider";
-import { useSettings } from "@/hooks/use-settings";
+import { useSettings } from "@/hooks/settings/use-settings";
 import { isTauri } from "@/lib/tauri";
 import { normalizeThemeMode, syncAppearanceConfigValue } from "@/lib/theme";
 import type { ThemeMode } from "@/lib/theme/types";

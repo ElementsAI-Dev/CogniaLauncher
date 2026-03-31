@@ -20,6 +20,7 @@ describe('Settings Registry', () => {
         'appearance',
         'updates',
         'tray',
+        'envvar',
         'shortcuts',
         'paths',
         'provider',
@@ -137,6 +138,9 @@ describe('Settings Registry', () => {
       settings.forEach((setting) => {
         expect(setting.section).toBe('general');
       });
+      expect(
+        settings.some((setting) => setting.key === 'general.package_download_threshold_mb'),
+      ).toBe(true);
     });
 
     it('returns settings for network section', () => {
@@ -170,6 +174,7 @@ describe('Settings Registry', () => {
         'appearance',
         'updates',
         'tray',
+        'envvar',
         'shortcuts',
         'paths',
         'provider',
@@ -203,6 +208,7 @@ describe('Settings Registry', () => {
         'appearance',
         'updates',
         'tray',
+        'envvar',
         'shortcuts',
         'paths',
         'provider',

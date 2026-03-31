@@ -359,4 +359,66 @@ describe("AddDownloadDialog", () => {
       );
     });
   });
+
+  it("recomputes stale preserved metadata after the user edits the source URL", async () => {
+    const onSubmit = jest.fn().mockResolvedValue(undefined);
+    render(
+      <TestWrapper>
+        <AddDownloadDialog
+          {...defaultProps}
+          onSubmit={onSubmit}
+          initialRequest={{
+            url: "https://example.com/history.zip",
+            destination: "/downloads/history.zip",
+            name: "history.zip",
+            sourceDescriptor: {
+              kind: "github_workflow_artifact",
+              provider: "github",
+              repo: "owner/repo",
+              workflowRunId: "42",
+              artifactId: "88",
+            },
+            artifactProfile: {
+              artifactKind: "ci_artifact",
+              sourceKind: "github_workflow_artifact",
+              platform: "windows",
+              arch: "x64",
+              installIntent: "extract_then_continue",
+              suggestedFollowUps: ["extract"],
+            },
+            installIntent: "extract_then_continue",
+          }}
+        />
+      </TestWrapper>,
+    );
+
+    const urlInput = screen.getByLabelText("URL");
+    await userEvent.clear(urlInput);
+    await userEvent.type(urlInput, "https://example.com/setup.msi");
+
+    await waitFor(() => {
+      expect(screen.getByText("Installer")).toBeInTheDocument();
+      expect(screen.getByText("Open Installer")).toBeInTheDocument();
+      expect(screen.getByLabelText("Name")).toHaveValue("setup.msi");
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: "Add" }));
+
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          url: "https://example.com/setup.msi",
+          name: "setup.msi",
+          installIntent: "open_installer",
+          sourceDescriptor: expect.objectContaining({
+            kind: "direct_url",
+          }),
+          artifactProfile: expect.objectContaining({
+            artifactKind: "installer",
+            sourceKind: "direct_url",
+          }),
+        }),
+      );
+    });
+  });
 });

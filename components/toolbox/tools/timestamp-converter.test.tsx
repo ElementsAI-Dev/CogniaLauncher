@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import TimestampConverter from './timestamp-converter';
+import { useToolboxStore } from '@/lib/stores/toolbox';
 
 jest.mock('@/components/providers/locale-provider', () => ({
   useLocale: () => ({
@@ -7,7 +8,7 @@ jest.mock('@/components/providers/locale-provider', () => ({
   }),
 }));
 
-jest.mock('@/hooks/use-clipboard', () => ({
+jest.mock('@/hooks/shared/use-clipboard', () => ({
   useCopyToClipboard: () => ({
     copied: false,
     error: null,
@@ -18,6 +19,10 @@ jest.mock('@/hooks/use-clipboard', () => ({
 }));
 
 describe('TimestampConverter', () => {
+  beforeEach(() => {
+    useToolboxStore.setState({ toolPreferences: {} });
+  });
+
   it('renders output formats for a valid unix timestamp', () => {
     render(<TimestampConverter />);
 
@@ -25,8 +30,8 @@ describe('TimestampConverter', () => {
       target: { value: '1700000000' },
     });
 
-    expect(screen.getByText('toolbox.tools.timestampConverter.formatIso')).toBeInTheDocument();
-    expect(screen.getByText('toolbox.tools.timestampConverter.formatUnixSeconds')).toBeInTheDocument();
+    expect(screen.getAllByText('toolbox.tools.timestampConverter.formatIso').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('toolbox.tools.timestampConverter.formatUnixSeconds').length).toBeGreaterThan(0);
   });
 
   it('shows validation feedback for invalid timestamp input', () => {
@@ -37,5 +42,26 @@ describe('TimestampConverter', () => {
     });
 
     expect(screen.getByText('toolbox.tools.timestampConverter.invalidTimestamp')).toBeInTheDocument();
+  });
+
+  it('persists preferred timezone and primary format across renders', () => {
+    const { unmount } = render(<TimestampConverter />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'toolbox.tools.timestampConverter.timezoneUtc' }));
+    fireEvent.click(screen.getByRole('button', { name: 'toolbox.tools.timestampConverter.formatLocal' }));
+
+    expect(useToolboxStore.getState().toolPreferences['timestamp-converter']).toEqual(
+      expect.objectContaining({ timezone: 'utc', primaryFormat: 'local' }),
+    );
+
+    unmount();
+    render(<TimestampConverter />);
+
+    expect(
+      screen.getByRole('button', { name: 'toolbox.tools.timestampConverter.timezoneUtc' }),
+    ).toHaveAttribute('aria-pressed', 'true');
+    expect(
+      screen.getByRole('button', { name: 'toolbox.tools.timestampConverter.formatLocal' }),
+    ).toHaveAttribute('aria-pressed', 'true');
   });
 });

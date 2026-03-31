@@ -177,4 +177,53 @@ describe('DocsPage', () => {
       description: expect.stringContaining('日志页面目前只有中文文档'),
     }));
   });
+
+  it('generateMetadata keeps the root docs title for the index page', async () => {
+    mockGetDocsRouteData.mockReturnValue({
+      docEn: {
+        locale: 'en',
+        content: '# Docs Home\n\nWelcome to the docs.',
+        sourcePath: 'docs/en/index.md',
+        lastModified: '2026-01-15T12:00:00.000Z',
+      },
+      docZh: {
+        locale: 'zh',
+        content: '# 文档首页\n\n欢迎来到文档。',
+        sourcePath: 'docs/zh/index.md',
+        lastModified: '2026-01-15T12:00:00.000Z',
+      },
+      renderedDoc: {
+        locale: 'en',
+        content: '# Docs Home\n\nWelcome to the docs.',
+        sourcePath: 'docs/en/index.md',
+        lastModified: '2026-01-15T12:00:00.000Z',
+      },
+      basePath: undefined,
+      searchIndex: [],
+    });
+
+    const metadata = await generateMetadata({ params: Promise.resolve({ slug: [] }) });
+
+    expect(metadata).toEqual(expect.objectContaining({
+      title: 'CogniaLauncher Docs',
+      description: expect.stringContaining('Welcome to the docs.'),
+    }));
+  });
+
+  it('generateMetadata falls back to the generic docs description when no doc is resolved', async () => {
+    mockGetDocsRouteData.mockReturnValue({
+      docEn: null,
+      docZh: null,
+      renderedDoc: null,
+      basePath: undefined,
+      searchIndex: [],
+    });
+
+    const metadata = await generateMetadata({ params: Promise.resolve({ slug: ['missing'] }) });
+
+    expect(metadata).toEqual(expect.objectContaining({
+      title: 'CogniaLauncher Docs',
+      description: 'Documentation for CogniaLauncher',
+    }));
+  });
 });

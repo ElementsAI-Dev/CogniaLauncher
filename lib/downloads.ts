@@ -133,7 +133,7 @@ function normalizeSourceDescriptor(
     kind: descriptor.kind,
   };
 
-  const stringKeys: Array<keyof DownloadSourceDescriptor> = [
+  const stringKeys: Array<Exclude<keyof DownloadSourceDescriptor, "kind">> = [
     "provider",
     "label",
     "repo",
@@ -339,6 +339,21 @@ export function createHistoryDownloadDraft(
     sourceDescriptor: record.sourceDescriptor ?? undefined,
     artifactProfile: record.artifactProfile ?? undefined,
     installIntent: record.installIntent ?? undefined,
+  });
+}
+
+export function createTaskDownloadDraft(
+  task: Pick<DownloadTask, "url" | "destination" | "name" | "provider"> &
+    Partial<Pick<DownloadTask, "sourceDescriptor" | "artifactProfile" | "installIntent">>
+): DownloadRequest {
+  return createDownloadRequestDraft({
+    url: task.url,
+    destination: task.destination,
+    name: task.name,
+    provider: task.provider ?? undefined,
+    sourceDescriptor: task.sourceDescriptor ?? undefined,
+    artifactProfile: task.artifactProfile ?? undefined,
+    installIntent: task.installIntent ?? undefined,
   });
 }
 

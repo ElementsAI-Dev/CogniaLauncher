@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ProviderPackagesTab } from "./provider-packages-tab";
 import type { InstalledPackage, PackageSummary } from "@/types/tauri";
@@ -9,20 +9,54 @@ global.ResizeObserver = class ResizeObserver {
   disconnect() {}
 };
 
+const mockClearPackageSelection = jest.fn();
+const mockPackageStoreState = {
+  selectedPackages: [] as string[],
+  clearPackageSelection: mockClearPackageSelection,
+  togglePackageSelection: jest.fn(),
+  selectAllPackages: jest.fn(),
+};
+
 jest.mock("sonner", () => ({
   toast: { success: jest.fn(), error: jest.fn() },
 }));
 
-jest.mock('@/components/providers/locale-provider', () => ({ useLocale: () => ({ t: (key: string) => key }) }));
+jest.mock("@/components/providers/locale-provider", () => ({
+  useLocale: () => ({ t: (key: string) => key }),
+}));
+
+jest.mock("@/lib/stores/packages", () => ({
+  usePackageStore: (
+    selector?: (state: typeof mockPackageStoreState) => unknown,
+  ) => (selector ? selector(mockPackageStoreState) : mockPackageStoreState),
+}));
 
 const installedPkgs: InstalledPackage[] = [
-  { name: "lodash", version: "4.17.21", provider: "npm", install_path: "/node_modules/lodash", installed_at: "2024-01-01T00:00:00Z", is_global: false },
-  { name: "express", version: "4.18.2", provider: "npm", install_path: "/node_modules/express", installed_at: "2024-01-02T00:00:00Z", is_global: true },
+  {
+    name: "lodash",
+    version: "4.17.21",
+    provider: "npm",
+    install_path: "/node_modules/lodash",
+    installed_at: "2024-01-01T00:00:00Z",
+    is_global: false,
+  },
+  {
+    name: "express",
+    version: "4.18.2",
+    provider: "npm",
+    install_path: "/node_modules/express",
+    installed_at: "2024-01-02T00:00:00Z",
+    is_global: true,
+  },
 ];
 
 const searchPkgs: PackageSummary[] = [
-  { name: "axios", description: "Promise based HTTP client", latest_version: "1.6.0", provider: "npm" },
-  { name: "lodash", description: "Utility library", latest_version: "4.17.21", provider: "npm" },
+  {
+    name: "axios",
+    description: "Promise based HTTP client",
+    latest_version: "1.6.0",
+    provider: "npm",
+  },
 ];
 
 describe("ProviderPackagesTab", () => {
@@ -37,145 +71,167 @@ describe("ProviderPackagesTab", () => {
     onInstallPackage: jest.fn(() => Promise.resolve()),
     onUninstallPackage: jest.fn(() => Promise.resolve()),
     onRefreshPackages: jest.fn(() => Promise.resolve([] as InstalledPackage[])),
+    onConfirmPreflight: jest.fn(),
+    onDismissPreflight: jest.fn(),
   };
 
-  beforeEach(() => jest.clearAllMocks());
-
-  it("renders without crashing", () => {
-    const { container } = render(<ProviderPackagesTab {...defaultProps} />);
-    expect(container).toBeInTheDocument();
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPackageStoreState.selectedPackages = [];
   });
 
-  it("shows empty state when no installed packages", () => {
+  it("renders the provider package header and shared panel tabs", () => {
     render(<ProviderPackagesTab {...defaultProps} />);
-    expect(screen.getByText("providerDetail.noInstalledPackages")).toBeInTheDocument();
+
+    expect(screen.getByText("providerDetail.searchPackages")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "packages.installed" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "packages.searchResults" })).toBeInTheDocument();
   });
 
-  it("shows loading skeleton when loading packages", () => {
-    render(<ProviderPackagesTab {...defaultProps} loadingPackages={true} />);
-    expect(screen.queryByText("providerDetail.noInstalledPackages")).not.toBeInTheDocument();
+  it("shows shared installed empty state when no packages are installed", () => {
+    render(<ProviderPackagesTab {...defaultProps} />);
+
+    expect(screen.getByText("packages.noPackagesInstalled")).toBeInTheDocument();
   });
 
-  it("renders installed packages in a table", () => {
-    const { container } = render(<ProviderPackagesTab {...defaultProps} installedPackages={installedPkgs} />);
+  it("renders installed packages through the shared panel", () => {
+    render(
+      <ProviderPackagesTab {...defaultProps} installedPackages={installedPkgs} />,
+    );
+
     expect(screen.getByText("lodash")).toBeInTheDocument();
     expect(screen.getByText("4.17.21")).toBeInTheDocument();
     expect(screen.getByText("express")).toBeInTheDocument();
-    expect(screen.getByText("4.18.2")).toBeInTheDocument();
-
-    const scrollAreas = container.querySelectorAll('[data-slot="scroll-area"]');
-    const installedScrollArea = scrollAreas[0];
-    expect(installedScrollArea).toBeInTheDocument();
-    expect(installedScrollArea).toHaveClass("max-h-[65dvh]");
-    expect(installedScrollArea).not.toHaveClass("max-h-[500px]");
   });
 
-  it("shows Global badge for global packages", () => {
-    render(<ProviderPackagesTab {...defaultProps} installedPackages={installedPkgs} />);
-    expect(screen.getByText("providerDetail.global")).toBeInTheDocument();
-  });
-
-  it("shows installed count badge", () => {
-    render(<ProviderPackagesTab {...defaultProps} installedPackages={installedPkgs} />);
-    expect(screen.getByText("2")).toBeInTheDocument();
-  });
-
-  it("renders search results table", () => {
-    const { container } = render(<ProviderPackagesTab {...defaultProps} searchResults={searchPkgs} searchQuery="axios" />);
-    expect(screen.getByText("axios")).toBeInTheDocument();
-    expect(screen.getByText("Promise based HTTP client")).toBeInTheDocument();
-
-    const scrollAreas = container.querySelectorAll('[data-slot="scroll-area"]');
-    const searchScrollArea = scrollAreas[0];
-    expect(searchScrollArea).toBeInTheDocument();
-    expect(searchScrollArea).toHaveClass("max-h-[50dvh]");
-    expect(searchScrollArea).not.toHaveClass("max-h-[400px]");
-  });
-
-  it("marks already-installed packages in search results", () => {
-    render(
-      <ProviderPackagesTab
-        {...defaultProps}
-        installedPackages={installedPkgs}
-        searchResults={searchPkgs}
-        searchQuery="lodash"
-      />,
-    );
-    // "Installed" badge in search results for lodash
-    expect(screen.getAllByText("providerDetail.installed").length).toBeGreaterThan(0);
-  });
-
-  it("shows no search results message", () => {
-    render(<ProviderPackagesTab {...defaultProps} searchQuery="nonexistent" searchResults={[]} />);
-    expect(screen.getByText("providerDetail.noSearchResults")).toBeInTheDocument();
-  });
-
-  it("renders search input and button", () => {
-    render(<ProviderPackagesTab {...defaultProps} />);
-    expect(screen.getByPlaceholderText("providerDetail.searchPlaceholder")).toBeInTheDocument();
-    expect(screen.getByText("providerDetail.search")).toBeInTheDocument();
-  });
-
-  it("disables search button when input is empty", () => {
-    render(<ProviderPackagesTab {...defaultProps} />);
-    const searchBtn = screen.getByText("providerDetail.search").closest("button")!;
-    expect(searchBtn).toBeDisabled();
-  });
-
-  it("calls onSearchPackages when search button clicked with input", async () => {
-    const user = userEvent.setup();
-    render(<ProviderPackagesTab {...defaultProps} />);
-    const input = screen.getByPlaceholderText("providerDetail.searchPlaceholder");
-    await user.type(input, "axios");
-    const searchBtn = screen.getByText("providerDetail.search").closest("button")!;
-    await user.click(searchBtn);
-    expect(defaultProps.onSearchPackages).toHaveBeenCalledWith("axios");
-  });
-
-  it("calls onRefreshPackages when refresh button clicked", async () => {
-    const user = userEvent.setup();
-    render(<ProviderPackagesTab {...defaultProps} installedPackages={installedPkgs} />);
-    const refreshBtn = screen.getByText("providers.refresh").closest("button")!;
-    await user.click(refreshBtn);
-    expect(defaultProps.onRefreshPackages).toHaveBeenCalled();
-  });
-
-  it("triggers search on Enter key press", async () => {
-    const user = userEvent.setup();
-    render(<ProviderPackagesTab {...defaultProps} />);
-    const input = screen.getByPlaceholderText("providerDetail.searchPlaceholder");
-    await user.type(input, "axios{Enter}");
-    expect(defaultProps.onSearchPackages).toHaveBeenCalledWith("axios");
-  });
-
-  it("shows filter input when more than 5 installed packages", () => {
-    const manyPkgs: InstalledPackage[] = Array.from({ length: 6 }, (_, i) => ({
-      name: `pkg-${i}`,
+  it("shows the installed filter when the provider has many installed packages", async () => {
+    const manyPkgs: InstalledPackage[] = Array.from({ length: 6 }, (_, index) => ({
+      name: `pkg-${index}`,
       version: "1.0.0",
       provider: "npm",
-      install_path: `/node_modules/pkg-${i}`,
+      install_path: `/node_modules/pkg-${index}`,
       installed_at: "2024-01-01T00:00:00Z",
       is_global: false,
     }));
-    render(<ProviderPackagesTab {...defaultProps} installedPackages={manyPkgs} />);
-    expect(screen.getByPlaceholderText("providerDetail.filterInstalled")).toBeInTheDocument();
-  });
 
-  it("shows uninstall confirmation dialog when uninstall button clicked", async () => {
-    const user = userEvent.setup();
-    render(<ProviderPackagesTab {...defaultProps} installedPackages={installedPkgs} />);
-    // Click the first uninstall (trash) button via its tooltip trigger
-    const trashButtons = screen.getAllByRole("button").filter(
-      (btn) => btn.querySelector(".lucide-trash-2"),
+    render(
+      <ProviderPackagesTab {...defaultProps} installedPackages={manyPkgs} />,
     );
-    expect(trashButtons.length).toBeGreaterThan(0);
-    await user.click(trashButtons[0]);
-    expect(screen.getByText("providerDetail.confirmUninstall")).toBeInTheDocument();
+
+    expect(screen.getByPlaceholderText("packages.filterInstalled")).toBeInTheDocument();
   });
 
-  it("shows loading search skeleton when loadingSearch is true", () => {
-    render(<ProviderPackagesTab {...defaultProps} loadingSearch={true} />);
-    // Search skeletons should render instead of results
-    expect(screen.queryByText("No results found")).not.toBeInTheDocument();
+  it("refreshes installed packages from the shared header action", async () => {
+    const user = userEvent.setup();
+    render(
+      <ProviderPackagesTab {...defaultProps} installedPackages={installedPkgs} />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "providers.refresh" }));
+
+    expect(defaultProps.onRefreshPackages).toHaveBeenCalled();
+  });
+
+  it("runs provider-scoped search from the shared search tab", async () => {
+    const user = userEvent.setup();
+    render(<ProviderPackagesTab {...defaultProps} />);
+
+    await user.click(screen.getByRole("tab", { name: "packages.searchResults" }));
+    await user.type(
+      screen.getByPlaceholderText("packages.searchPlaceholder"),
+      "axios{Enter}",
+    );
+
+    await waitFor(() => {
+      expect(defaultProps.onSearchPackages).toHaveBeenCalledWith("axios");
+    });
+  });
+
+  it("renders provider search results inside the shared search surface", async () => {
+    const user = userEvent.setup();
+    render(
+      <ProviderPackagesTab
+        {...defaultProps}
+        searchResults={searchPkgs}
+        searchQuery="axios"
+      />,
+    );
+
+    await user.click(screen.getByRole("tab", { name: "packages.searchResults" }));
+
+    expect(screen.getByText("axios")).toBeInTheDocument();
+    expect(screen.getByText("Promise based HTTP client")).toBeInTheDocument();
+  });
+
+  it("renders pre-flight dialog when validation warnings are open", () => {
+    render(
+      <ProviderPackagesTab
+        {...defaultProps}
+        preflightSummary={{
+          results: [
+            {
+              validator_id: "provider_health",
+              validator_name: "Provider health",
+              status: "warning",
+              summary: "Provider health check returned warnings.",
+              details: ["Provider status is degraded."],
+              remediation: "Review provider diagnostics before proceeding.",
+              package: "npm:axios",
+              provider_id: "npm",
+              blocking: false,
+              timed_out: false,
+            },
+          ],
+          can_proceed: true,
+          has_warnings: true,
+          has_failures: false,
+          checked_at: "2026-03-29T00:00:00.000Z",
+        }}
+        preflightPackages={["npm:axios"]}
+        isPreflightOpen={true}
+      />,
+    );
+
+    expect(screen.getByText("packages.preflight.title")).toBeInTheDocument();
+    expect(screen.getByText("Provider health check returned warnings.")).toBeInTheDocument();
+    expect(screen.getAllByText("npm:axios").length).toBeGreaterThan(0);
+  });
+
+  it("wires provider pre-flight dialog confirm and cancel actions", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <ProviderPackagesTab
+        {...defaultProps}
+        preflightSummary={{
+          results: [
+            {
+              validator_id: "provider_health",
+              validator_name: "Provider health",
+              status: "warning",
+              summary: "Provider health check returned warnings.",
+              details: ["Provider status is degraded."],
+              remediation: "Review provider diagnostics before proceeding.",
+              package: "npm:axios",
+              provider_id: "npm",
+              blocking: false,
+              timed_out: false,
+            },
+          ],
+          can_proceed: true,
+          has_warnings: true,
+          has_failures: false,
+          checked_at: "2026-03-29T00:00:00.000Z",
+        }}
+        preflightPackages={["npm:axios"]}
+        isPreflightOpen={true}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "packages.preflight.confirm" }));
+    expect(defaultProps.onConfirmPreflight).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole("button", { name: "packages.preflight.cancel" }));
+    expect(defaultProps.onDismissPreflight).toHaveBeenCalledTimes(1);
   });
 });

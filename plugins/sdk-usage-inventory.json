@@ -47,10 +47,27 @@
       "usagePaths": [
         {
           "type": "builtin-plugin",
+          "coverage": "reference",
           "pluginId": "com.cognia.builtin.pkg-update-advisor",
           "path": "plugins/typescript/pkg-update-advisor",
+          "toolId": "pkg-update-advisor",
+          "interactionMode": "text",
+          "discoverable": true,
           "entrypoints": ["pkg_update_advisor"],
-          "requiredPermissions": ["pkg_search", "clipboard", "notification"]
+          "requiredPermissions": ["pkg_search", "clipboard", "notification"],
+          "workflowIntents": ["review-package-updates", "share-update-summary"]
+        },
+        {
+          "type": "builtin-plugin",
+          "coverage": "builtin-primary",
+          "pluginId": "com.cognia.builtin.pkg-update-advisor",
+          "path": "plugins/typescript/pkg-update-advisor",
+          "toolId": "pkg-update-advisor-guided",
+          "interactionMode": "declarative",
+          "discoverable": true,
+          "entrypoints": ["pkg_update_advisor_guided"],
+          "requiredPermissions": ["pkg_search", "clipboard", "notification"],
+          "workflowIntents": ["review-package-updates", "share-update-summary"]
         }
       ]
     },
@@ -65,10 +82,27 @@
       "usagePaths": [
         {
           "type": "builtin-plugin",
+          "coverage": "reference",
           "pluginId": "com.cognia.builtin.file-config-assistant",
           "path": "plugins/rust/file-config-assistant",
+          "toolId": "file-config-assistant",
+          "interactionMode": "text",
+          "discoverable": true,
           "entrypoints": ["file_config_assistant"],
-          "requiredPermissions": ["fs_read", "fs_write", "config_read", "config_write"]
+          "requiredPermissions": ["fs_read", "fs_write", "config_read", "config_write"],
+          "workflowIntents": ["manage-config-profiles", "switch-active-profile"]
+        },
+        {
+          "type": "builtin-plugin",
+          "coverage": "builtin-primary",
+          "pluginId": "com.cognia.builtin.file-config-assistant",
+          "path": "plugins/rust/file-config-assistant",
+          "toolId": "file-config-assistant-guided",
+          "interactionMode": "declarative",
+          "discoverable": true,
+          "entrypoints": ["file_config_assistant_guided"],
+          "requiredPermissions": ["fs_read", "fs_write", "config_read", "config_write"],
+          "workflowIntents": ["manage-config-profiles", "switch-active-profile"]
         }
       ]
     },
@@ -100,11 +134,29 @@
       "usagePaths": [
         {
           "type": "builtin-plugin",
+          "coverage": "reference",
           "pluginId": "com.cognia.builtin.env-provider-audit",
           "surface": "runtime",
           "path": "plugins/typescript/env-provider-audit",
+          "toolId": "env-provider-audit",
+          "interactionMode": "text",
+          "discoverable": true,
           "entrypoints": ["env_provider_audit"],
-          "requiredPermissions": ["env_read", "notification"]
+          "requiredPermissions": ["env_read", "notification"],
+          "workflowIntents": ["audit-environment-providers", "review-provider-health"]
+        },
+        {
+          "type": "builtin-plugin",
+          "coverage": "builtin-primary",
+          "pluginId": "com.cognia.builtin.env-provider-audit",
+          "surface": "runtime",
+          "path": "plugins/typescript/env-provider-audit",
+          "toolId": "env-provider-audit-guided",
+          "interactionMode": "declarative",
+          "discoverable": true,
+          "entrypoints": ["env_provider_audit_guided"],
+          "requiredPermissions": ["env_read", "notification"],
+          "workflowIntents": ["audit-environment-providers", "review-provider-health"]
         },
         {
           "type": "builtin-plugin",
@@ -147,10 +199,27 @@
       "usagePaths": [
         {
           "type": "builtin-plugin",
+          "coverage": "reference",
           "pluginId": "com.cognia.builtin.file-config-assistant",
           "path": "plugins/rust/file-config-assistant",
+          "toolId": "file-config-assistant",
+          "interactionMode": "text",
+          "discoverable": true,
           "entrypoints": ["file_config_assistant"],
-          "requiredPermissions": ["fs_read", "fs_write", "config_read", "config_write"]
+          "requiredPermissions": ["fs_read", "fs_write", "config_read", "config_write"],
+          "workflowIntents": ["manage-config-profiles", "switch-active-profile"]
+        },
+        {
+          "type": "builtin-plugin",
+          "coverage": "builtin-primary",
+          "pluginId": "com.cognia.builtin.file-config-assistant",
+          "path": "plugins/rust/file-config-assistant",
+          "toolId": "file-config-assistant-guided",
+          "interactionMode": "declarative",
+          "discoverable": true,
+          "entrypoints": ["file_config_assistant_guided"],
+          "requiredPermissions": ["fs_read", "fs_write", "config_read", "config_write"],
+          "workflowIntents": ["manage-config-profiles", "switch-active-profile"]
         }
       ]
     },
@@ -199,10 +268,15 @@
       "usagePaths": [
         {
           "type": "builtin-plugin",
+          "coverage": "reference",
           "pluginId": "com.cognia.builtin.local-api-workbench",
           "path": "plugins/typescript/local-api-workbench",
+          "toolId": "local-api-workbench",
+          "interactionMode": "text",
+          "discoverable": true,
           "entrypoints": ["local_api_workbench"],
-          "requiredPermissions": ["http"]
+          "requiredPermissions": ["http"],
+          "workflowIntents": ["probe-local-api", "inspect-http-response"]
         }
       ]
     },
@@ -279,10 +353,27 @@
       "usagePaths": [
         {
           "type": "builtin-plugin",
+          "coverage": "reference",
           "pluginId": "com.cognia.builtin.env-provider-audit",
           "path": "plugins/typescript/env-provider-audit",
+          "toolId": "env-provider-audit",
+          "interactionMode": "text",
+          "discoverable": true,
           "entrypoints": ["env_provider_audit"],
-          "requiredPermissions": ["env_read", "notification"]
+          "requiredPermissions": ["env_read", "notification"],
+          "workflowIntents": ["audit-environment-providers", "review-provider-health"]
+        },
+        {
+          "type": "builtin-plugin",
+          "coverage": "builtin-primary",
+          "pluginId": "com.cognia.builtin.env-provider-audit",
+          "path": "plugins/typescript/env-provider-audit",
+          "toolId": "env-provider-audit-guided",
+          "interactionMode": "declarative",
+          "discoverable": true,
+          "entrypoints": ["env_provider_audit_guided"],
+          "requiredPermissions": ["env_read", "notification"],
+          "workflowIntents": ["audit-environment-providers", "review-provider-health"]
         }
       ]
     },
@@ -297,11 +388,29 @@
       "usagePaths": [
         {
           "type": "builtin-plugin",
+          "coverage": "reference",
           "pluginId": "com.cognia.builtin.pkg-update-advisor",
           "surface": "runtime",
           "path": "plugins/typescript/pkg-update-advisor",
+          "toolId": "pkg-update-advisor",
+          "interactionMode": "text",
+          "discoverable": true,
           "entrypoints": ["pkg_update_advisor"],
-          "requiredPermissions": ["pkg_search", "clipboard", "notification"]
+          "requiredPermissions": ["pkg_search", "clipboard", "notification"],
+          "workflowIntents": ["review-package-updates", "share-update-summary"]
+        },
+        {
+          "type": "builtin-plugin",
+          "coverage": "builtin-primary",
+          "pluginId": "com.cognia.builtin.pkg-update-advisor",
+          "surface": "runtime",
+          "path": "plugins/typescript/pkg-update-advisor",
+          "toolId": "pkg-update-advisor-guided",
+          "interactionMode": "declarative",
+          "discoverable": true,
+          "entrypoints": ["pkg_update_advisor_guided"],
+          "requiredPermissions": ["pkg_search", "clipboard", "notification"],
+          "workflowIntents": ["review-package-updates", "share-update-summary"]
         },
         {
           "type": "builtin-plugin",
@@ -355,10 +464,15 @@
       "usagePaths": [
         {
           "type": "builtin-plugin",
+          "coverage": "reference",
           "pluginId": "com.cognia.builtin.port-inspector",
           "path": "plugins/typescript/port-inspector",
+          "toolId": "port-inspect",
+          "interactionMode": "text",
+          "discoverable": true,
           "entrypoints": ["port_inspect"],
-          "requiredPermissions": ["process_exec"]
+          "requiredPermissions": ["process_exec"],
+          "workflowIntents": ["inspect-local-ports", "review-port-owners"]
         }
       ]
     },

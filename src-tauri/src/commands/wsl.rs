@@ -1,3 +1,4 @@
+use crate::platform::EnvVarScope;
 use crate::provider::wsl::{
     WslCapabilities, WslDistroResources, WslPackageUpdateResult, WslProvider, WslUser,
 };
@@ -111,6 +112,90 @@ pub struct WslExecResult {
     pub stdout: String,
     pub stderr: String,
     pub exit_code: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WslEnvVarEntry {
+    pub key: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WslExportWindowsEnvResult {
+    pub distro: String,
+    pub target_path: String,
+    pub variable_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WslDistroEnvReadResult {
+    pub distro: String,
+    pub variables: Vec<WslEnvVarEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WslEnvEntry {
+    pub key: String,
+    pub flags: Vec<String>,
+}
+
+fn escape_shell_single_quotes(value: &str) -> String {
+    value.replace('\'', r#"'"'"'"#)
+}
+
+fn parse_printenv_output(raw: &str) -> Vec<WslEnvVarEntry> {
+    let mut variables = raw
+        .lines()
+        .filter_map(|line| {
+            let (key, value) = line.split_once('=')?;
+            if key.trim().is_empty() {
+                return None;
+            }
+            Some(WslEnvVarEntry {
+                key: key.to_string(),
+                value: value.to_string(),
+            })
+        })
+        .collect::<Vec<_>>();
+    variables.sort_by(|left, right| left.key.cmp(&right.key));
+    variables
+}
+
+fn parse_wslenv_entries(raw: &str) -> Vec<WslEnvEntry> {
+    let mut entries = raw
+        .split(':')
+        .filter(|entry| !entry.trim().is_empty())
+        .map(|entry| {
+            let mut parts = entry.split('/');
+            let key = parts.next().unwrap_or_default().to_string();
+            let flags = parts
+                .filter(|flag| !flag.trim().is_empty())
+                .map(|flag| flag.to_string())
+                .collect::<Vec<_>>();
+            WslEnvEntry { key, flags }
+        })
+        .filter(|entry| !entry.key.is_empty())
+        .collect::<Vec<_>>();
+    entries.sort_by(|left, right| left.key.cmp(&right.key));
+    entries
+}
+
+fn encode_wslenv_entries(entries: &[WslEnvEntry]) -> String {
+    entries
+        .iter()
+        .map(|entry| {
+            if entry.flags.is_empty() {
+                entry.key.clone()
+            } else {
+                format!("{}/{}", entry.key, entry.flags.join("/"))
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(":")
 }
 
 /// Disk usage information for a WSL distribution
@@ -537,7 +622,9 @@ pub async fn wsl_get_runtime_snapshot() -> Result<WslRuntimeSnapshotDto, String>
             status_probe: WslRuntimeStageDto {
                 ready: false,
                 reason_code: "runtime_unavailable".to_string(),
-                detail: Some("Runtime status probe skipped because runtime is unavailable.".to_string()),
+                detail: Some(
+                    "Runtime status probe skipped because runtime is unavailable.".to_string(),
+                ),
             },
             capability_probe: WslRuntimeStageDto {
                 ready: false,
@@ -560,16 +647,16 @@ pub async fn wsl_get_runtime_snapshot() -> Result<WslRuntimeSnapshotDto, String>
         Ok(_) => {
             let running = provider.list_running().await.unwrap_or_default();
             (
-            WslRuntimeStageDto {
-                ready: true,
-                reason_code: "ok".to_string(),
-                detail: Some(format!(
-                    "Runtime status available; running distros={}.",
-                    running.len()
-                )),
-            },
-            true,
-        )
+                WslRuntimeStageDto {
+                    ready: true,
+                    reason_code: "ok".to_string(),
+                    detail: Some(format!(
+                        "Runtime status available; running distros={}.",
+                        running.len()
+                    )),
+                },
+                true,
+            )
         }
         Err(err) => (
             WslRuntimeStageDto {
@@ -834,6 +921,93 @@ pub async fn wsl_exec(
     })
 }
 
+#[tauri::command]
+pub async fn wsl_export_windows_env(distro: String) -> Result<WslExportWindowsEnvResult, String> {
+    let provider = get_provider();
+    ensure_runtime_available(&provider, "distro.exportWindowsEnv").await?;
+    ensure_distro_exists(&provider, "distro.exportWindowsEnv", &distro).await?;
+
+    let vars = crate::platform::env::list_persistent_vars(EnvVarScope::User)
+        .await
+        .map_err(|e| normalize_wsl_error(e.to_string()))?;
+
+    let script = vars
+        .iter()
+        .map(|(key, value)| format!("export {}='{}'", key, escape_shell_single_quotes(value)))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let command = format!(
+        "cat > ~/.cognia_env <<'EOF'\n{}\nEOF\nchmod 600 ~/.cognia_env",
+        script
+    );
+
+    let (_, stderr, exit_code) = provider
+        .exec_command(&distro, &command, None)
+        .await
+        .map_err(|e| normalize_wsl_error(e.to_string()))?;
+
+    if exit_code != 0 {
+        return Err(runtime_precondition_error(
+            "distro.exportWindowsEnv",
+            &format!("Failed to write ~/.cognia_env: {}", stderr),
+        ));
+    }
+
+    Ok(WslExportWindowsEnvResult {
+        distro,
+        target_path: "~/.cognia_env".to_string(),
+        variable_count: vars.len(),
+    })
+}
+
+#[tauri::command]
+pub async fn wsl_read_distro_env(distro: String) -> Result<WslDistroEnvReadResult, String> {
+    let provider = get_provider();
+    ensure_runtime_available(&provider, "distro.readEnv").await?;
+    ensure_distro_exists(&provider, "distro.readEnv", &distro).await?;
+
+    let (stdout, stderr, exit_code) = provider
+        .exec_command(&distro, "printenv", None)
+        .await
+        .map_err(|e| normalize_wsl_error(e.to_string()))?;
+
+    if exit_code != 0 {
+        return Err(runtime_precondition_error(
+            "distro.readEnv",
+            &format!("Failed to read distro env: {}", stderr),
+        ));
+    }
+
+    Ok(WslDistroEnvReadResult {
+        distro,
+        variables: parse_printenv_output(&stdout),
+    })
+}
+
+#[tauri::command]
+pub async fn wsl_get_wslenv() -> Result<Vec<WslEnvEntry>, String> {
+    let raw = crate::platform::env::get_persistent_var("WSLENV", EnvVarScope::User)
+        .await
+        .map_err(|e| normalize_wsl_error(e.to_string()))?
+        .unwrap_or_default();
+    Ok(parse_wslenv_entries(&raw))
+}
+
+#[tauri::command]
+pub async fn wsl_set_wslenv(entries: Vec<WslEnvEntry>) -> Result<(), String> {
+    let encoded = encode_wslenv_entries(&entries);
+    if encoded.is_empty() {
+        crate::platform::env::remove_persistent_var("WSLENV", EnvVarScope::User)
+            .await
+            .map_err(|e| normalize_wsl_error(e.to_string()))
+    } else {
+        crate::platform::env::set_persistent_var("WSLENV", &encoded, EnvVarScope::User)
+            .await
+            .map_err(|e| normalize_wsl_error(e.to_string()))
+    }
+}
+
 /// Convert a path between Windows and WSL formats
 #[tauri::command]
 pub async fn wsl_convert_path(
@@ -871,6 +1045,28 @@ pub async fn wsl_set_config(
             .map(|_| ())
             .map_err(|e| normalize_wsl_error(e.to_string()))
     }
+}
+
+/// Set the global WSL networking mode in .wslconfig [wsl2].
+#[tauri::command]
+pub async fn wsl_set_networking_mode(mode: String) -> Result<(), String> {
+    let provider = get_provider();
+    ensure_runtime_available(&provider, "runtime.setConfig").await?;
+
+    let normalized = match mode.as_str() {
+        "NAT" | "nat" => "NAT",
+        "mirrored" => "mirrored",
+        "virtioproxy" => "virtioproxy",
+        other => {
+            return Err(normalize_wsl_error(format!(
+                "Unsupported networking mode: {}",
+                other
+            )))
+        }
+    };
+
+    WslProvider::write_wslconfig("wsl2", "networkingMode", normalized)
+        .map_err(|e| normalize_wsl_error(e.to_string()))
 }
 
 /// Get disk usage for a WSL distribution
@@ -1272,6 +1468,7 @@ pub async fn wsl_list_port_forwards() -> Result<Vec<crate::provider::wsl::PortFo
 /// Requires administrator privileges.
 #[tauri::command]
 pub async fn wsl_add_port_forward(
+    listen_address: String,
     listen_port: u16,
     connect_port: u16,
     connect_address: String,
@@ -1279,7 +1476,7 @@ pub async fn wsl_add_port_forward(
     let provider = get_provider();
     ensure_runtime_available(&provider, "network.portForward").await?;
     provider
-        .add_port_forward(listen_port, connect_port, &connect_address)
+        .add_port_forward(&listen_address, listen_port, connect_port, &connect_address)
         .await
         .map_err(|e| normalize_wsl_error(e.to_string()))
 }
@@ -1287,11 +1484,14 @@ pub async fn wsl_add_port_forward(
 /// Remove a port forwarding rule (netsh interface portproxy delete v4tov4).
 /// Requires administrator privileges.
 #[tauri::command]
-pub async fn wsl_remove_port_forward(listen_port: u16) -> Result<(), String> {
+pub async fn wsl_remove_port_forward(
+    listen_address: String,
+    listen_port: u16,
+) -> Result<(), String> {
     let provider = get_provider();
     ensure_runtime_available(&provider, "network.portForward").await?;
     provider
-        .remove_port_forward(listen_port)
+        .remove_port_forward(&listen_address, listen_port)
         .await
         .map_err(|e| normalize_wsl_error(e.to_string()))
 }
@@ -1299,8 +1499,9 @@ pub async fn wsl_remove_port_forward(listen_port: u16) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        classify_wsl_error_category, evaluate_runtime_state, normalize_wsl_error,
-        runtime_precondition_error, unsupported_feature_error,
+        classify_wsl_error_category, encode_wslenv_entries, escape_shell_single_quotes,
+        evaluate_runtime_state, normalize_wsl_error, parse_printenv_output, parse_wslenv_entries,
+        runtime_precondition_error, unsupported_feature_error, WslEnvEntry,
     };
 
     #[test]
@@ -1342,23 +1543,15 @@ mod tests {
 
     #[test]
     fn runtime_precondition_error_contains_feature_id() {
-        let message = runtime_precondition_error(
-            "distro.detectEnvironment",
-            "Distribution is unavailable.",
-        );
+        let message =
+            runtime_precondition_error("distro.detectEnvironment", "Distribution is unavailable.");
         assert!(message.contains("[WSL_RUNTIME:distro.detectEnvironment]"));
     }
 
     #[test]
     fn evaluate_runtime_state_reports_unavailable() {
-        let (state, reason_code, degraded_reasons, _) = evaluate_runtime_state(
-            false,
-            false,
-            false,
-            false,
-            0,
-            "runtime unavailable",
-        );
+        let (state, reason_code, degraded_reasons, _) =
+            evaluate_runtime_state(false, false, false, false, 0, "runtime unavailable");
         assert_eq!(state, "unavailable");
         assert_eq!(reason_code, "runtime_unavailable");
         assert_eq!(degraded_reasons.len(), 1);
@@ -1390,5 +1583,59 @@ mod tests {
         assert_eq!(state, "ready");
         assert_eq!(reason_code, "runtime_ready");
         assert!(degraded_reasons.is_empty());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn parse_printenv_output_splits_key_value_lines() {
+        let parsed = parse_printenv_output("PATH=/usr/bin\nHOME=/home/user\nBROKEN\n");
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0].key, "HOME");
+        assert_eq!(parsed[0].value, "/home/user");
+        assert_eq!(parsed[1].key, "PATH");
+        assert_eq!(parsed[1].value, "/usr/bin");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn parse_wslenv_entries_extracts_flags() {
+        let parsed = parse_wslenv_entries("GOPATH/p:JAVA_HOME/p/u:TMP");
+        assert_eq!(parsed.len(), 3);
+        assert_eq!(parsed[0].key, "GOPATH");
+        assert_eq!(parsed[0].flags, vec!["p"]);
+        assert_eq!(parsed[1].key, "JAVA_HOME");
+        assert_eq!(parsed[1].flags, vec!["p", "u"]);
+        assert_eq!(parsed[2].key, "TMP");
+        assert!(parsed[2].flags.is_empty());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn encode_wslenv_entries_round_trips_entries() {
+        let encoded = encode_wslenv_entries(&[
+            WslEnvEntry {
+                key: "JAVA_HOME".to_string(),
+                flags: vec!["p".to_string(), "u".to_string()],
+            },
+            WslEnvEntry {
+                key: "TMP".to_string(),
+                flags: Vec::new(),
+            },
+        ]);
+
+        assert_eq!(encoded, "JAVA_HOME/p/u:TMP");
+        let reparsed = parse_wslenv_entries(&encoded);
+        assert_eq!(reparsed.len(), 2);
+        assert_eq!(reparsed[0].key, "JAVA_HOME");
+        assert_eq!(reparsed[0].flags, vec!["p", "u"]);
+        assert_eq!(reparsed[1].key, "TMP");
+        assert!(reparsed[1].flags.is_empty());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn escape_shell_single_quotes_preserves_shell_safety() {
+        let escaped = escape_shell_single_quotes("O'Reilly");
+        assert_eq!(escaped, "O'\"'\"'Reilly");
     }
 }

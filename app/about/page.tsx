@@ -3,13 +3,28 @@
 import { useState, useEffect } from 'react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { PageHeader } from '@/components/layout/page-header';
-import { useAboutData } from '@/hooks/use-about-data';
-import { useChangelog } from '@/hooks/use-changelog';
+import { Button } from '@/components/ui/button';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
+import { useAboutData } from '@/hooks/about/use-about-data';
+import { useChangelog } from '@/hooks/about/use-changelog';
 import { useChangelogStore } from '@/lib/stores/changelog';
 import { useFeedbackStore } from '@/lib/stores/feedback';
 import { compareVersions } from '@/lib/constants/changelog-utils';
 import { APP_VERSION } from '@/lib/app-version';
 import { buildAboutSupportState } from '@/lib/about-support';
+import { toast } from 'sonner';
+import {
+  RefreshCw,
+  FileText,
+  ClipboardList,
+  Bug,
+  ChevronDown,
+  Info,
+} from 'lucide-react';
 import {
   VersionCards,
   UpdateBanner,
@@ -19,7 +34,6 @@ import {
   AboutProductContextCard,
   BuildDepsCard,
   LicenseCard,
-  ActionsCard,
   ErrorAlert,
   ChangelogDialog,
   WhatsNewDialog,
@@ -28,8 +42,9 @@ import {
 export default function AboutPage() {
   const { t, locale } = useLocale();
   const [changelogOpen, setChangelogOpen] = useState(false);
+  const [productContextOpen, setProductContextOpen] = useState(false);
   const { openDialog } = useFeedbackStore();
-  
+
   const {
     updateInfo,
     loading,
@@ -90,6 +105,15 @@ export default function AboutPage() {
     supportFreshness,
   });
 
+  const handleRefreshAll = async () => {
+    try {
+      await refreshAllSupportData();
+      toast.success(t("about.refreshComplete"));
+    } catch {
+      toast.error(t("about.refreshFailed"));
+    }
+  };
+
   return (
     <main className="p-4 md:p-6 space-y-6" aria-labelledby="about-page-title">
       <PageHeader
@@ -98,21 +122,71 @@ export default function AboutPage() {
       />
 
       {/* Error Alert */}
-      <ErrorAlert 
-        error={error} 
-        onRetry={checkForUpdate} 
-        onDismiss={clearError} 
-        t={t} 
+      <ErrorAlert
+        error={error}
+        onRetry={checkForUpdate}
+        onDismiss={clearError}
+        t={t}
       />
 
-      {/* Summary Section */}
+      {/* Version Strip + Quick Actions */}
       <section
         aria-labelledby="about-summary-heading"
-        className="space-y-4"
+        className="space-y-3"
         data-testid="about-summary-section"
       >
         <h2 id="about-summary-heading" className="sr-only">{t("about.versionInfo")}</h2>
-        <VersionCards loading={loading} updateInfo={updateInfo} t={t} />
+        <VersionCards
+          loading={loading}
+          updateInfo={updateInfo}
+          updateStatus={updateStatus}
+          t={t}
+        />
+
+        {/* Quick Actions Row */}
+        <div
+          className="flex flex-wrap gap-2"
+          role="group"
+          aria-label={t("about.quickActions")}
+          data-testid="about-quick-actions"
+        >
+          <Button
+            size="sm"
+            onClick={checkForUpdate}
+            disabled={loading || supportRefreshing}
+          >
+            <RefreshCw
+              className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`}
+              aria-hidden="true"
+            />
+            {t("about.checkForUpdates")}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setChangelogOpen(true)}
+          >
+            <FileText className="h-3.5 w-3.5" aria-hidden="true" />
+            {t("about.changelog")}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => exportDiagnostics(t)}
+          >
+            <ClipboardList className="h-3.5 w-3.5" aria-hidden="true" />
+            {t("about.exportDiagnostics")}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => openDialog({ category: "bug" })}
+          >
+            <Bug className="h-3.5 w-3.5" aria-hidden="true" />
+            {t("about.reportBug")}
+          </Button>
+        </div>
+
         <UpdateBanner
           updateInfo={updateInfo}
           updating={updating}
@@ -137,7 +211,7 @@ export default function AboutPage() {
           supportState={supportState}
           supportRefreshing={supportRefreshing}
           locale={locale}
-          onRefreshAll={refreshAllSupportData}
+          onRefreshAll={handleRefreshAll}
           onOpenChangelog={() => setChangelogOpen(true)}
           onExportDiagnostics={() => exportDiagnostics(t)}
           onReportBug={() => openDialog({ category: "bug" })}
@@ -183,18 +257,15 @@ export default function AboutPage() {
         </div>
       </section>
 
-      {/* Reference And Actions Section */}
+      {/* Reference Section */}
       <section
         aria-labelledby="about-reference-heading"
         className="space-y-4"
         data-testid="about-reference-section"
       >
         <h2 id="about-reference-heading" className="sr-only">
-          {t("about.buildDependencies")} / {t("about.licenseCertificates")} / {t("about.actions")}
+          {t("about.buildDependencies")} / {t("about.licenseCertificates")}
         </h2>
-        <section aria-label={t("about.productContextTitle")}>
-          <AboutProductContextCard isDesktop={isDesktop} t={t} />
-        </section>
         <div
           className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start"
           data-testid="about-reference-grid"
@@ -206,16 +277,31 @@ export default function AboutPage() {
             <LicenseCard t={t} />
           </section>
         </div>
-        <section aria-label={t('about.actions')}>
-          <ActionsCard
-            loading={loading || supportRefreshing}
-            isDesktop={isDesktop}
-            onCheckUpdate={checkForUpdate}
-            onOpenChangelog={() => setChangelogOpen(true)}
-            onExportDiagnostics={() => exportDiagnostics(t)}
-            t={t}
-          />
-        </section>
+
+        {/* Product Context (collapsed by default) */}
+        <Collapsible open={productContextOpen} onOpenChange={setProductContextOpen}>
+          <CollapsibleTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full justify-between text-muted-foreground hover:text-foreground"
+            >
+              <span className="flex items-center gap-2">
+                <Info className="h-4 w-4" aria-hidden="true" />
+                {t("about.productContextTitle")}
+              </span>
+              <ChevronDown
+                className={`h-4 w-4 transition-transform ${productContextOpen ? "rotate-180" : ""}`}
+                aria-hidden="true"
+              />
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <section aria-label={t("about.productContextTitle")} className="mt-2">
+              <AboutProductContextCard isDesktop={isDesktop} t={t} />
+            </section>
+          </CollapsibleContent>
+        </Collapsible>
       </section>
 
       {/* Changelog Dialog */}

@@ -2,12 +2,13 @@ import { Badge } from "@/components/ui/badge";
 import { Empty, EmptyDescription, EmptyMedia } from "@/components/ui/empty";
 import { cn } from "@/lib/utils";
 
-type DashboardMetricColumns = 2 | 3 | 4;
+type DashboardMetricColumns = 2 | 3 | 4 | 5;
 
 const METRIC_GRID_COLUMNS: Record<DashboardMetricColumns, string> = {
   2: "grid-cols-2",
   3: "grid-cols-3",
   4: "grid-cols-2 md:grid-cols-4",
+  5: "grid-cols-2 sm:grid-cols-3 md:grid-cols-5",
 };
 
 interface DashboardMetricGridProps extends React.ComponentProps<"div"> {

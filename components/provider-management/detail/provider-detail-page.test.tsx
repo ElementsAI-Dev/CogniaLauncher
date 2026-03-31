@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ProviderDetailPageClient } from "./provider-detail-page";
-import { useProviderDetail } from "@/hooks/use-provider-detail";
+import { useProviderDetail } from "@/hooks/providers/use-provider-detail";
 
 jest.mock("@/components/providers/locale-provider", () => ({
   useLocale: () => ({ t: (key: string) => key }),
@@ -12,7 +12,7 @@ jest.mock("next/navigation", () => ({
   useSearchParams: () => ({ get: () => null }),
 }));
 
-jest.mock("@/hooks/use-provider-detail");
+jest.mock("@/hooks/providers/use-provider-detail");
 const mockUseProviderDetail = useProviderDetail as jest.MockedFunction<typeof useProviderDetail>;
 
 jest.mock("sonner", () => ({
@@ -49,6 +49,9 @@ const baseHookReturn = {
   availableVersions: [],
   loadingEnvironment: false,
   pinnedPackages: [],
+  preflightSummary: null,
+  preflightPackages: [],
+  isPreflightOpen: false,
   initialize: jest.fn(),
   refreshAll: jest.fn(),
   refreshPackageSurface: jest.fn(),
@@ -73,6 +76,8 @@ const baseHookReturn = {
   applyHealthRemediation: jest.fn(),
   fetchHistory: jest.fn(),
   fetchEnvironmentInfo: jest.fn(),
+  confirmPreflight: jest.fn(),
+  dismissPreflight: jest.fn(),
 };
 
 const loadedProvider = {
@@ -174,7 +179,7 @@ describe("ProviderDetailPage", () => {
     expect(screen.getByText("providerDetail.tabOverview")).toBeInTheDocument();
   });
 
-  it("wires advanced package actions into the packages tab", async () => {
+  it("wires shared package panel and pre-flight state into the packages tab", async () => {
     const user = userEvent.setup();
 
     mockUseProviderDetail.mockReturnValue({
@@ -191,23 +196,36 @@ describe("ProviderDetailPage", () => {
         },
       ],
       pinnedPackages: [["lodash", "4.17.21"]],
+      preflightSummary: {
+        results: [
+          {
+            validator_id: "provider_health",
+            validator_name: "Provider health",
+            status: "warning",
+            summary: "Provider health check returned warnings.",
+            details: ["Provider status is degraded."],
+            remediation: "Review provider diagnostics before proceeding.",
+            package: "npm:lodash",
+            provider_id: "npm",
+            blocking: false,
+            timed_out: false,
+          },
+        ],
+        can_proceed: true,
+        has_warnings: true,
+        has_failures: false,
+        checked_at: "2026-03-29T00:00:00.000Z",
+      },
+      preflightPackages: ["npm:lodash"],
+      isPreflightOpen: true,
     } as never);
 
     render(<ProviderDetailPageClient providerId="npm" />);
     await user.click(screen.getByRole("tab", { name: /providerDetail\.tabPackages/ }));
 
-    expect(screen.getByText("providerDetail.pinned")).toBeInTheDocument();
-    expect(screen.getByLabelText("providerDetail.selectAll")).toBeInTheDocument();
-
-    const moreButtons = screen
-      .getAllByRole("button")
-      .filter((button) => button.querySelector(".lucide-ellipsis"));
-    expect(moreButtons.length).toBeGreaterThan(0);
-
-    await user.click(moreButtons[0]);
-
-    expect(await screen.findByText("providerDetail.unpinPackage")).toBeInTheDocument();
-    expect(await screen.findByText("providerDetail.rollbackPackage")).toBeInTheDocument();
-    expect(await screen.findByText("providerDetail.packageDetails")).toBeInTheDocument();
+    expect(screen.getByText("providerDetail.searchPackages")).toBeInTheDocument();
+    expect(screen.getByText("lodash")).toBeInTheDocument();
+    expect(screen.getByText("packages.preflight.title")).toBeInTheDocument();
+    expect(screen.getByText("Provider health check returned warnings.")).toBeInTheDocument();
   });
 });

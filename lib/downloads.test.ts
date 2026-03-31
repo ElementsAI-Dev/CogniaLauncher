@@ -9,6 +9,7 @@ import {
   runDownloadPreflightWithUi,
   createDownloadRequestDraft,
   createHistoryDownloadDraft,
+  createTaskDownloadDraft,
   createArtifactProfilePreview,
   getDownloadFollowUpActions,
 } from './downloads';
@@ -262,6 +263,81 @@ describe('createHistoryDownloadDraft', () => {
   });
 });
 
+describe('createTaskDownloadDraft', () => {
+  it('builds a reusable draft from a task snapshot', () => {
+    expect(
+      createTaskDownloadDraft({
+        id: 'task-1',
+        url: 'https://example.com/build.zip',
+        name: 'build.zip',
+        destination: '/downloads/build.zip',
+        state: 'failed',
+        progress: {
+          downloadedBytes: 1024,
+          totalBytes: 2048,
+          speed: 0,
+          speedHuman: '0 B/s',
+          percent: 50,
+          etaSecs: null,
+          etaHuman: null,
+          downloadedHuman: '1 KB',
+          totalHuman: '2 KB',
+        },
+        error: 'checksum mismatch',
+        provider: 'github:owner/repo',
+        createdAt: '2026-01-01T00:00:00Z',
+        startedAt: '2026-01-01T00:00:01Z',
+        completedAt: null,
+        retries: 1,
+        priority: 5,
+        expectedChecksum: null,
+        supportsResume: true,
+        metadata: {},
+        serverFilename: null,
+        sourceDescriptor: {
+          kind: 'github_workflow_artifact',
+          provider: 'github',
+          label: 'owner/repo workflow build',
+          repo: 'owner/repo',
+          workflowRunId: '99',
+          artifactId: '123',
+        },
+        artifactProfile: {
+          artifactKind: 'ci_artifact',
+          sourceKind: 'github_workflow_artifact',
+          platform: 'windows',
+          arch: 'x64',
+          installIntent: 'extract_then_continue',
+          suggestedFollowUps: ['extract'],
+        },
+        installIntent: 'extract_then_continue',
+      }),
+    ).toEqual({
+      url: 'https://example.com/build.zip',
+      destination: '/downloads/build.zip',
+      name: 'build.zip',
+      provider: 'github:owner/repo',
+      installIntent: 'extract_then_continue',
+      sourceDescriptor: {
+        kind: 'github_workflow_artifact',
+        provider: 'github',
+        label: 'owner/repo workflow build',
+        repo: 'owner/repo',
+        workflowRunId: '99',
+        artifactId: '123',
+      },
+      artifactProfile: {
+        artifactKind: 'ci_artifact',
+        sourceKind: 'github_workflow_artifact',
+        platform: 'windows',
+        arch: 'x64',
+        installIntent: 'extract_then_continue',
+        suggestedFollowUps: ['extract'],
+      },
+    });
+  });
+});
+
 describe('createArtifactProfilePreview', () => {
   it('classifies installer artifacts and suggests install follow-up', () => {
     expect(
@@ -330,6 +406,25 @@ describe('getDownloadFollowUpActions', () => {
           arch: 'x64',
           installIntent: 'extract_then_continue',
           suggestedFollowUps: ['extract'],
+        },
+      }),
+    ).toEqual([
+      expect.objectContaining({ kind: 'reuse', enabled: true }),
+    ]);
+  });
+
+  it('falls back to reuse when a completed download no longer has an available destination', () => {
+    expect(
+      getDownloadFollowUpActions({
+        status: 'completed',
+        destinationAvailable: false,
+        artifactProfile: {
+          artifactKind: 'installer',
+          sourceKind: 'direct_url',
+          platform: 'windows',
+          arch: 'x64',
+          installIntent: 'open_installer',
+          suggestedFollowUps: ['install'],
         },
       }),
     ).toEqual([

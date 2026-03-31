@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useCallback } from 'react';
-import { useCopyToClipboard } from '@/hooks/use-clipboard';
+import { useCopyToClipboard } from '@/hooks/shared/use-clipboard';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -12,9 +12,9 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { ToolSection, ToolValidationMessage } from '@/components/toolbox/tool-layout';
+import { ToolOptionGroup, ToolSection, ToolValidationMessage } from '@/components/toolbox/tool-layout';
 import { useLocale } from '@/components/providers/locale-provider';
-import { useToolPreferences } from '@/hooks/use-tool-preferences';
+import { useToolPreferences } from '@/hooks/toolbox/use-tool-preferences';
 import { Copy, Check, Palette, Pipette } from 'lucide-react';
 import type { ToolComponentProps } from '@/types/toolbox';
 
@@ -90,8 +90,19 @@ const PALETTE = [
   '#000000', '#374151', '#6b7280', '#9ca3af', '#d1d5db', '#f3f4f6', '#ffffff',
 ];
 
+const PREFERRED_FORMATS = ['hex', 'rgb', 'hsl', 'oklch'] as const;
+type PreferredFormat = (typeof PREFERRED_FORMATS)[number];
+
+const FORMAT_LABEL_KEYS: Record<PreferredFormat, string> = {
+  hex: 'toolbox.tools.colorPicker.formatHex',
+  rgb: 'toolbox.tools.colorPicker.formatRgb',
+  hsl: 'toolbox.tools.colorPicker.formatHsl',
+  oklch: 'toolbox.tools.colorPicker.formatOklch',
+};
+
 const DEFAULT_PREFERENCES = {
   hex: '#3b82f6',
+  preferredFormat: 'hex',
 } as const;
 
 /* -------------------------------------------------------------------------- */
@@ -149,6 +160,7 @@ export default function ColorPicker({ className }: ToolComponentProps) {
   const [hex, setHex] = useState(preferences.hex);
   const { copy, error: clipboardError } = useCopyToClipboard();
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const preferredFormat = preferences.preferredFormat as PreferredFormat;
 
   const rgb = hexToRgb(hex);
   const hsl = rgb ? rgbToHsl(rgb.r, rgb.g, rgb.b) : null;
@@ -189,13 +201,23 @@ export default function ColorPicker({ className }: ToolComponentProps) {
     setTimeout(() => setCopiedKey(null), 1500);
   }, [copy]);
 
-  const formats = useMemo(() => [
-    { key: 'hex', label: t('toolbox.tools.colorPicker.formatHex'), value: validHex ? hex.toUpperCase() : '-' },
-    { key: 'rgb', label: t('toolbox.tools.colorPicker.formatRgb'), value: rgb ? `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})` : '-' },
-    { key: 'hsl', label: t('toolbox.tools.colorPicker.formatHsl'), value: hsl ? `hsl(${hsl.h}, ${hsl.s}%, ${hsl.l}%)` : '-' },
-    { key: 'oklch', label: t('toolbox.tools.colorPicker.formatOklch'), value: oklch ? `oklch(${oklch.L}% ${oklch.C} ${oklch.H})` : '-' },
-    { key: 'css-var', label: t('toolbox.tools.colorPicker.formatCssVariable'), value: validHex ? 'var(--color-primary)' : '-' },
-  ], [hex, rgb, hsl, oklch, t, validHex]);
+  const formats = useMemo(() => {
+    const entries = [
+      { key: 'hex', label: t('toolbox.tools.colorPicker.formatHex'), value: validHex ? hex.toUpperCase() : '-' },
+      { key: 'rgb', label: t('toolbox.tools.colorPicker.formatRgb'), value: rgb ? `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})` : '-' },
+      { key: 'hsl', label: t('toolbox.tools.colorPicker.formatHsl'), value: hsl ? `hsl(${hsl.h}, ${hsl.s}%, ${hsl.l}%)` : '-' },
+      { key: 'oklch', label: t('toolbox.tools.colorPicker.formatOklch'), value: oklch ? `oklch(${oklch.L}% ${oklch.C} ${oklch.H})` : '-' },
+      { key: 'css-var', label: t('toolbox.tools.colorPicker.formatCssVariable'), value: validHex ? 'var(--color-primary)' : '-' },
+    ];
+
+    return [...entries].sort((left, right) => {
+      if (left.key === preferredFormat) return -1;
+      if (right.key === preferredFormat) return 1;
+      return 0;
+    });
+  }, [hex, hsl, oklch, preferredFormat, rgb, t, validHex]);
+
+  const preferredFormatValue = formats.find((entry) => entry.key === preferredFormat)?.value ?? '-';
 
   const bgColor = validHex ? hex : '#000000';
 
@@ -308,17 +330,41 @@ export default function ColorPicker({ className }: ToolComponentProps) {
             </Button>
           }
         >
-          <div className="divide-y divide-border">
-            {formats.map(({ key, label, value }) => (
-              <FormatRow
-                key={key}
-                label={label}
-                value={value}
-                copiedKey={copiedKey}
-                onCopy={handleCopy}
-                formatKey={key}
-              />
-            ))}
+          <div className="space-y-3">
+            <ToolOptionGroup>
+              {PREFERRED_FORMATS.map((format) => (
+                <Button
+                  key={format}
+                  type="button"
+                  size="sm"
+                  variant={preferredFormat === format ? 'default' : 'outline'}
+                  aria-pressed={preferredFormat === format}
+                  onClick={() => setPreferences({ preferredFormat: format })}
+                >
+                  {t(FORMAT_LABEL_KEYS[format])}
+                </Button>
+              ))}
+            </ToolOptionGroup>
+
+            <div className="rounded-md border bg-muted/20 px-3 py-2">
+              <p className="text-xs font-medium text-muted-foreground">
+                {t('toolbox.tools.colorPicker.preferredFormat')}
+              </p>
+              <code className="mt-1 block text-sm font-mono">{preferredFormatValue}</code>
+            </div>
+
+            <div className="divide-y divide-border">
+              {formats.map(({ key, label, value }) => (
+                <FormatRow
+                  key={key}
+                  label={label}
+                  value={value}
+                  copiedKey={copiedKey}
+                  onCopy={handleCopy}
+                  formatKey={key}
+                />
+              ))}
+            </div>
           </div>
         </ToolSection>
 

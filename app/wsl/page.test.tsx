@@ -255,7 +255,7 @@ jest.mock("@/lib/tauri", () => ({
   packageUninstall: jest.fn().mockResolvedValue(undefined),
 }));
 
-jest.mock("@/hooks/use-wsl", () => ({
+jest.mock("@/hooks/wsl/use-wsl", () => ({
   useWsl: () => ({
     available: mockAvailable,
     distros: mockDistros,

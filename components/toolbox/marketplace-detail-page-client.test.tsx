@@ -82,7 +82,7 @@ jest.mock('@/components/layout/page-header', () => ({
   ),
 }));
 
-jest.mock('@/hooks/use-toolbox-marketplace', () => ({
+jest.mock('@/hooks/toolbox/use-toolbox-marketplace', () => ({
   useToolboxMarketplace: () => ({
     getListingById: (listingId: string) => (listingId === 'hello-world-rust' ? mockListing : null),
     refreshCatalog: mockRefreshCatalog,

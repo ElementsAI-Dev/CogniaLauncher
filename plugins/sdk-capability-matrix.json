@@ -36,19 +36,25 @@
       "id": "com.cognia.builtin.env-provider-audit",
       "sdkCapabilities": ["env", "platform", "event", "notification"],
       "expectedPermissions": ["env_read", "notification"],
-      "primaryEntrypoints": ["env_provider_audit"]
+      "primaryEntrypoints": ["env_provider_audit"],
+      "guidedWorkflowEntrypoints": ["env_provider_audit_guided"],
+      "guidedWorkflowToolIds": ["env-provider-audit-guided"]
     },
     {
       "id": "com.cognia.builtin.pkg-update-advisor",
       "sdkCapabilities": ["pkg", "clipboard", "notification", "event"],
       "expectedPermissions": ["pkg_search", "clipboard", "notification"],
-      "primaryEntrypoints": ["pkg_update_advisor"]
+      "primaryEntrypoints": ["pkg_update_advisor"],
+      "guidedWorkflowEntrypoints": ["pkg_update_advisor_guided"],
+      "guidedWorkflowToolIds": ["pkg-update-advisor-guided"]
     },
     {
       "id": "com.cognia.builtin.file-config-assistant",
       "sdkCapabilities": ["fs", "config"],
       "expectedPermissions": ["fs_read", "fs_write", "config_read", "config_write"],
-      "primaryEntrypoints": ["file_config_assistant"]
+      "primaryEntrypoints": ["file_config_assistant"],
+      "guidedWorkflowEntrypoints": ["file_config_assistant_guided"],
+      "guidedWorkflowToolIds": ["file-config-assistant-guided"]
     },
     {
       "id": "com.cognia.builtin.local-api-workbench",

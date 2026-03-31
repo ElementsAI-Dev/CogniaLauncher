@@ -129,7 +129,7 @@ jest.mock("@/lib/stores/feedback", () => ({
   }),
 }));
 
-jest.mock("@/hooks/use-feedback", () => ({
+jest.mock("@/hooks/feedback/use-feedback", () => ({
   useFeedback: () => ({
     submitFeedback: mockSubmitFeedback,
     submitting: false,

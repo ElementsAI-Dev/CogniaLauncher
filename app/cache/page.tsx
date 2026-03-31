@@ -35,7 +35,7 @@ import {
   FolderOpen,
   History,
 } from 'lucide-react';
-import { useCachePage } from '@/hooks/use-cache-page';
+import { useCachePage } from '@/hooks/cache/use-cache-page';
 import { PageHeader } from '@/components/layout/page-header';
 import { CacheStatsStrip } from '@/components/cache/cache-stats-strip';
 import { CacheTypesSection } from '@/components/cache/cache-types-section';
@@ -51,6 +51,7 @@ import {
   DashboardClickableRow,
   DashboardStatusBadge,
 } from '@/components/dashboard/dashboard-primitives';
+import type { CacheScopeInsight } from '@/lib/cache/insights';
 
 export default function CachePage() {
   const { t } = useLocale();
@@ -156,16 +157,58 @@ export default function CachePage() {
     : null;
 
   const handleOverviewAction = (action: typeof overviewInsights.primaryAction) => {
-    if (action.targetTab !== activeTab) {
+    const navigateToOverviewTarget = (
+      targetTab: typeof activeTab,
+      targetId: string | null,
+    ) => {
+      if (targetTab !== activeTab) {
+        flushSync(() => {
+          setActiveTab(targetTab);
+        });
+      } else {
+        setActiveTab(targetTab);
+      }
+
+      if (!targetId) return;
+      const scrollToTarget = () => {
+        document.getElementById(targetId)?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start',
+        });
+      };
+      setTimeout(scrollToTarget, 0);
+    };
+
+    navigateToOverviewTarget(action.targetTab, action.targetId);
+  };
+
+  const handleOverviewScopeSelect = (scopeId: CacheScopeInsight['id']) => {
+    const scopeTargets: Record<CacheScopeInsight['id'], { targetTab: typeof activeTab; targetId: string | null }> = {
+      internal: {
+        targetTab: 'overview',
+        targetId: 'cache-types',
+      },
+      default_downloads: {
+        targetTab: 'overview',
+        targetId: 'cache-types',
+      },
+      external: {
+        targetTab: 'external',
+        targetId: null,
+      },
+    };
+
+    const target = scopeTargets[scopeId];
+    if (target.targetTab !== activeTab) {
       flushSync(() => {
-        setActiveTab(action.targetTab);
+        setActiveTab(target.targetTab);
       });
     } else {
-      setActiveTab(action.targetTab);
+      setActiveTab(target.targetTab);
     }
 
-    const targetId = action.targetId;
-    if (!targetId) return;
+    if (!target.targetId) return;
+    const targetId = target.targetId;
     const scrollToTarget = () => {
       document.getElementById(targetId)?.scrollIntoView({
         behavior: 'smooth',
@@ -294,6 +337,7 @@ export default function CachePage() {
               freshness={overviewInsights.freshness}
               scopeSummaries={overviewInsights.scopeSummaries}
               loading={loading && !cacheInfo}
+              onScopeSelect={handleOverviewScopeSelect}
             />
           </section>
 

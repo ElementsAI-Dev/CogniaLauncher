@@ -139,30 +139,34 @@ describe('GitBranchCard', () => {
 
   it('calls onRename when rename action is confirmed', async () => {
     const onRename = jest.fn().mockResolvedValue('renamed');
-    const promptSpy = jest.spyOn(window, 'prompt').mockReturnValue('feature/renamed');
     render(<GitBranchCard branches={branches} onRename={onRename} />);
 
     fireEvent.click(screen.getAllByTitle('git.branchAction.rename')[0]);
+    const dialogInput = screen.getByDisplayValue('main');
+    expect(dialogInput).toHaveFocus();
+    fireEvent.change(dialogInput, {
+      target: { value: 'feature/renamed' },
+    });
+    fireEvent.keyDown(dialogInput, { key: 'Enter', code: 'Enter' });
 
     await waitFor(() => {
       expect(onRename).toHaveBeenCalledWith('main', 'feature/renamed');
     });
-
-    promptSpy.mockRestore();
   });
 
   it('calls onSetUpstream when upstream value is entered', async () => {
     const onSetUpstream = jest.fn().mockResolvedValue('set');
-    const promptSpy = jest.spyOn(window, 'prompt').mockReturnValue('origin/feature-test');
     render(<GitBranchCard branches={branches} onSetUpstream={onSetUpstream} />);
 
     fireEvent.click(screen.getAllByTitle('git.branchAction.setUpstream')[1]);
+    fireEvent.change(screen.getByDisplayValue('origin/feature/test'), {
+      target: { value: 'origin/feature-test' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'common.confirm' }));
 
     await waitFor(() => {
       expect(onSetUpstream).toHaveBeenCalledWith('feature/test', 'origin/feature-test');
     });
-
-    promptSpy.mockRestore();
   });
 
   it('passes force delete flag when enabled', async () => {
@@ -178,16 +182,14 @@ describe('GitBranchCard', () => {
   });
 
   it('calls delete remote branch action', async () => {
-    const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(true);
     const onDeleteRemote = jest.fn().mockResolvedValue('deleted remote');
     render(<GitBranchCard branches={branches} onDeleteRemote={onDeleteRemote} />);
 
     fireEvent.click(screen.getByTitle('git.branchAction.deleteRemote'));
+    fireEvent.click(screen.getByRole('button', { name: 'common.confirm' }));
 
     await waitFor(() => {
       expect(onDeleteRemote).toHaveBeenCalledWith('origin', 'main');
     });
-
-    confirmSpy.mockRestore();
   });
 });

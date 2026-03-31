@@ -12,7 +12,8 @@ import { PackageOverviewCard } from '@/components/packages/detail/package-overvi
 import { PackageVersionList } from '@/components/packages/detail/package-version-list';
 import { PackageDependencyView } from '@/components/packages/detail/package-dependency-view';
 import { PackageHistoryList } from '@/components/packages/detail/package-history-list';
-import { usePackages } from '@/hooks/use-packages';
+import { PreFlightDialog } from '@/components/packages/shared/pre-flight-dialog';
+import { usePackages } from '@/hooks/packages/use-packages';
 import { usePackageStore } from '@/lib/stores/packages';
 import { useLocale } from '@/components/providers/locale-provider';
 import {
@@ -55,6 +56,11 @@ export function PackageDetailPage({ packageName, providerId }: PackageDetailPage
     pinnedPackages,
     installing,
     error,
+    preflightSummary,
+    preflightPackages,
+    isPreflightOpen,
+    confirmPreflight,
+    dismissPreflight,
   } = usePackages();
 
   const { bookmarkedPackages, toggleBookmark } = usePackageStore();
@@ -408,6 +414,18 @@ export function PackageDetailPage({ packageName, providerId }: PackageDetailPage
           />
         </TabsContent>
       </Tabs>
+
+      <PreFlightDialog
+        open={isPreflightOpen}
+        packages={preflightPackages}
+        summary={preflightSummary}
+        onConfirm={confirmPreflight}
+        onOpenChange={(open) => {
+          if (!open) {
+            dismissPreflight();
+          }
+        }}
+      />
     </div>
   );
 }

@@ -21,7 +21,10 @@ export type DesktopActionId =
   | "go_dashboard"
   | "go_toolbox"
   | "report_bug"
-  | "feature_request";
+  | "feature_request"
+  | "wsl_launch_default"
+  | "wsl_shutdown_all"
+  | "wsl_open_terminal";
 
 export interface DesktopActionDefinition {
   id: DesktopActionId;
@@ -40,6 +43,9 @@ export interface DesktopActionExecutionContext {
   openQuickSearch?: () => void;
   openFeedback?: (options: { category: "bug" | "feature" }) => void;
   toggleWindow?: () => Promise<void>;
+  wslLaunchDefault?: () => Promise<boolean>;
+  wslShutdownAll?: () => Promise<boolean>;
+  wslOpenTerminal?: () => Promise<boolean>;
 }
 
 export const DESKTOP_ACTION_EVENT = "cognia:desktop-action";
@@ -156,6 +162,27 @@ const DESKTOP_ACTIONS: Record<DesktopActionId, DesktopActionDefinition> = {
     execution: "callback",
     requiresWindow: true,
   },
+  wsl_launch_default: {
+    id: "wsl_launch_default",
+    titleKey: "commandPalette.actions.wslLaunchDefault",
+    surfaces: ["command_palette"],
+    execution: "callback",
+    requiresWindow: true,
+  },
+  wsl_shutdown_all: {
+    id: "wsl_shutdown_all",
+    titleKey: "commandPalette.actions.wslShutdownAll",
+    surfaces: ["command_palette"],
+    execution: "callback",
+    requiresWindow: true,
+  },
+  wsl_open_terminal: {
+    id: "wsl_open_terminal",
+    titleKey: "commandPalette.actions.wslOpenTerminal",
+    surfaces: ["command_palette"],
+    execution: "callback",
+    requiresWindow: true,
+  },
 };
 
 export function getDesktopAction(id: DesktopActionId): DesktopActionDefinition {
@@ -218,6 +245,15 @@ export async function executeDesktopAction(
       if (!context.openFeedback) return false;
       context.openFeedback({ category: "feature" });
       return true;
+    case "wsl_launch_default":
+      if (!context.wslLaunchDefault) return false;
+      return context.wslLaunchDefault();
+    case "wsl_shutdown_all":
+      if (!context.wslShutdownAll) return false;
+      return context.wslShutdownAll();
+    case "wsl_open_terminal":
+      if (!context.wslOpenTerminal) return false;
+      return context.wslOpenTerminal();
     default:
       return false;
   }

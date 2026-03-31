@@ -76,4 +76,80 @@ describe('pkg-update-advisor helpers', () => {
       'No target packages were selected. Pass packages explicitly or ensure provider has installed packages.',
     ]);
   });
+
+  it('renders guided workflow form for the initial declarative state', () => {
+    const response = testApi.renderGuided('');
+
+    expect(response.ui).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'heading', content: 'Package Update Advisor Workflow' }),
+        expect.objectContaining({
+          type: 'form',
+          id: 'pkg-update-advisor-guided-form',
+        }),
+      ]),
+    );
+    expect(response.state).toMatchObject({
+      lastInput: {
+        provider: 'npm',
+        limit: 30,
+      },
+    });
+    expect(response.outputChannels?.summary).toEqual(
+      expect.objectContaining({
+        status: 'info',
+      }),
+    );
+  });
+
+  it('keeps structured update results when clipboard export fails in guided workflow mode', () => {
+    clipboardWriteMock.mockImplementation(() => {
+      throw new Error('clipboard permission denied');
+    });
+
+    const response = testApi.renderGuided(JSON.stringify({
+      action: 'form_submit',
+      formId: 'pkg-update-advisor-guided-form',
+      formData: {
+        provider: 'npm',
+        packages: ['react', 'next'],
+        limit: 20,
+        copySummary: true,
+        notifyOnUpdates: true,
+        emitEvent: true,
+      },
+    }));
+
+    expect(response.outputChannels?.summary).toEqual(
+      expect.objectContaining({
+        status: 'warning',
+        message: expect.stringContaining('Found 1 update'),
+      }),
+    );
+    expect(response.outputChannels?.stream).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          level: 'warning',
+          message: expect.stringContaining('clipboard'),
+        }),
+      ]),
+    );
+    expect(response.outputChannels?.artifacts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'pkg-update-summary',
+          action: 'copy',
+        }),
+      ]),
+    );
+    expect(response.state).toMatchObject({
+      degradedCapabilities: [
+        expect.objectContaining({ capability: 'clipboard' }),
+      ],
+      lastSuccess: expect.objectContaining({
+        ok: true,
+        updates: expect.any(Array),
+      }),
+    });
+  });
 });

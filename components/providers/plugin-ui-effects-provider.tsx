@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { usePluginUiEffects } from "@/hooks/use-plugin-ui-effects";
+import { usePluginUiEffects } from "@/hooks/plugins/use-plugin-ui-effects";
 
 interface PluginUiEffectsProviderProps {
   children: ReactNode;

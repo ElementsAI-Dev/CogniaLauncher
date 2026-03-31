@@ -1,4 +1,6 @@
 import type { LogCleanupPreviewResult, LogCleanupResult } from '@/types/tauri';
+import { ALL_LEVELS } from '@/lib/constants/log';
+import type { LogLevel } from '@/types/log';
 import type {
   LogBackendBridgeState,
   LogDiagnosticActionResult,
@@ -9,6 +11,10 @@ import type {
 export type LogsWorkspaceTab = 'realtime' | 'files' | 'management';
 export type LogsWorkspaceTone = 'default' | 'success' | 'warning' | 'danger';
 export type LogsWorkspaceMutationMode = 'delete' | 'cleanup';
+
+interface SearchParamsLike {
+  get(name: string): string | null;
+}
 
 export interface LogsWorkspaceMutationRecord {
   mode: LogsWorkspaceMutationMode;
@@ -46,6 +52,14 @@ export interface LogsWorkspaceOverview {
   attention: LogsWorkspaceAttention[];
 }
 
+export interface LogsWorkspaceRouteContext {
+  tab?: LogsWorkspaceTab;
+  search?: string;
+  levels?: LogLevel[];
+  selectedFile?: string;
+  showBookmarksOnly?: boolean;
+}
+
 interface BuildLogsWorkspaceOverviewArgs {
   activeTab: LogsWorkspaceTab;
   fileCount: number;
@@ -55,14 +69,14 @@ interface BuildLogsWorkspaceOverviewArgs {
   observability: LogObservabilitySummary;
   cleanupPreview: LogCleanupPreviewResult | null;
   isCleanupPreviewStale: boolean;
-  t: (key: string, params?: Record<string, unknown>) => string;
+  t: (key: string, params?: Record<string, string | number>) => string;
   formatBytes: (value: number) => string;
 }
 
 interface GetLatestLogsWorkspaceActionArgs {
   lastMutationSummary: LogsWorkspaceMutationRecord | null;
   latestDiagnosticAction: LogDiagnosticActionResult | null;
-  t: (key: string, params?: Record<string, unknown>) => string;
+  t: (key: string, params?: Record<string, string | number>) => string;
   formatBytes: (value: number) => string;
 }
 
@@ -71,11 +85,126 @@ const ACTION_STATUS_KEYS = {
   partial_success: 'logs.statusPartialSuccess',
   failed: 'logs.statusFailed',
 } as const;
+const LOGS_WORKSPACE_PATH = '/logs';
+const ROUTE_TAB_VALUES: ReadonlySet<LogsWorkspaceTab> = new Set([
+  'realtime',
+  'files',
+  'management',
+]);
+const ROUTE_LEVEL_VALUES: ReadonlySet<LogLevel> = new Set(ALL_LEVELS);
+
+function normalizeWorkspaceTab(value: string | null): LogsWorkspaceTab | undefined {
+  if (!value) {
+    return undefined;
+  }
+  return ROUTE_TAB_VALUES.has(value as LogsWorkspaceTab)
+    ? (value as LogsWorkspaceTab)
+    : undefined;
+}
 
 function getActionTone(status: 'success' | 'partial_success' | 'failed'): Exclude<LogsWorkspaceTone, 'default'> {
   if (status === 'failed') return 'danger';
   if (status === 'partial_success') return 'warning';
   return 'success';
+}
+
+function normalizeRouteLevels(value: string | null): LogLevel[] | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const levels = value
+    .split(',')
+    .map((level) => level.trim())
+    .filter((level): level is LogLevel => ROUTE_LEVEL_VALUES.has(level as LogLevel));
+  if (levels.length === 0) {
+    return undefined;
+  }
+  return Array.from(new Set(levels));
+}
+
+function normalizeRouteBoolean(value: string | null): boolean | undefined {
+  if (!value) {
+    return undefined;
+  }
+  if (value === '1' || value === 'true') {
+    return true;
+  }
+  if (value === '0' || value === 'false') {
+    return false;
+  }
+  return undefined;
+}
+
+export function buildLogsWorkspaceHref(
+  context: LogsWorkspaceRouteContext = {},
+): string {
+  const params = new URLSearchParams();
+
+  if (context.tab && ROUTE_TAB_VALUES.has(context.tab)) {
+    params.set('tab', context.tab);
+  }
+
+  const normalizedSearch = context.search?.trim();
+  if (normalizedSearch) {
+    params.set('q', normalizedSearch);
+  }
+
+  if (Array.isArray(context.levels) && context.levels.length > 0) {
+    const levels = context.levels.filter((level): level is LogLevel =>
+      ROUTE_LEVEL_VALUES.has(level),
+    );
+    if (levels.length > 0) {
+      params.set('levels', Array.from(new Set(levels)).join(','));
+    }
+  }
+
+  const normalizedFile = context.selectedFile?.trim();
+  if (normalizedFile) {
+    params.set('file', normalizedFile);
+  }
+
+  if (context.showBookmarksOnly === true) {
+    params.set('bookmarks', '1');
+  }
+  if (context.showBookmarksOnly === false) {
+    params.set('bookmarks', '0');
+  }
+
+  const query = params.toString();
+  return query.length > 0 ? `${LOGS_WORKSPACE_PATH}?${query}` : LOGS_WORKSPACE_PATH;
+}
+
+export function parseLogsWorkspaceRouteContext(
+  searchParams: SearchParamsLike | null | undefined,
+): LogsWorkspaceRouteContext | null {
+  if (!searchParams) {
+    return null;
+  }
+
+  const tab = normalizeWorkspaceTab(searchParams.get('tab'));
+  const search = searchParams.get('q')?.trim();
+  const levels = normalizeRouteLevels(searchParams.get('levels'));
+  const selectedFile = searchParams.get('file')?.trim();
+  const showBookmarksOnly = normalizeRouteBoolean(searchParams.get('bookmarks'));
+
+  const context: LogsWorkspaceRouteContext = {};
+  if (tab) {
+    context.tab = tab;
+  }
+  if (search) {
+    context.search = search;
+  }
+  if (levels && levels.length > 0) {
+    context.levels = levels;
+  }
+  if (selectedFile) {
+    context.selectedFile = selectedFile;
+  }
+  if (typeof showBookmarksOnly === 'boolean') {
+    context.showBookmarksOnly = showBookmarksOnly;
+  }
+
+  return Object.keys(context).length > 0 ? context : null;
 }
 
 export function getLogRuntimeModeLabel(
@@ -123,7 +252,7 @@ function getContextLabel(activeTab: LogsWorkspaceTab, t: (key: string) => string
 function formatMutationDescription(
   mode: LogsWorkspaceMutationMode,
   summary: LogCleanupResult,
-  t: (key: string, params?: Record<string, unknown>) => string,
+  t: (key: string, params?: Record<string, string | number>) => string,
   formatBytes: (value: number) => string,
 ): { title: string; description: string; detail?: string | null; tone: Exclude<LogsWorkspaceTone, 'default'>; statusLabel: string } {
   const titleKey =
@@ -162,7 +291,7 @@ function formatMutationDescription(
 
 function formatDiagnosticDescription(
   result: LogDiagnosticActionResult,
-  t: (key: string, params?: Record<string, unknown>) => string,
+  t: (key: string, params?: Record<string, string | number>) => string,
   formatBytes: (value: number) => string,
 ): { title: string; description: string; detail?: string | null; tone: Exclude<LogsWorkspaceTone, 'default'>; statusLabel: string } {
   const tone: Exclude<LogsWorkspaceTone, 'default'> =

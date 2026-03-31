@@ -8,6 +8,7 @@ import type { ValidationRule } from "@/types/settings";
 export const VALIDATION_RULES: Record<string, ValidationRule> = {
   "general.parallel_downloads": { min: 1, max: 16 },
   "general.min_install_space_mb": { min: 10, max: 10240 },
+  "general.package_download_threshold_mb": { min: 0, max: 10240 },
   "general.metadata_cache_ttl": { min: 60, max: 86400 },
   "network.timeout": { min: 5, max: 300 },
   "network.retries": { min: 0, max: 10 },

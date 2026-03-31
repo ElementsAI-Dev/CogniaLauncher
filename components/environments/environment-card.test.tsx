@@ -58,7 +58,7 @@ jest.mock("sonner", () => ({
 
 const mockSyncWorkflowContext = jest.fn();
 
-jest.mock("@/hooks/use-environment-workflow", () => ({
+jest.mock("@/hooks/environments/use-environment-workflow", () => ({
   useEnvironmentWorkflow: () => ({
     syncWorkflowContext: mockSyncWorkflowContext,
     setWorkflowActionState: jest.fn(),

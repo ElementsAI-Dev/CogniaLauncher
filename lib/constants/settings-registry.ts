@@ -11,6 +11,7 @@ import {
   Palette,
   RefreshCw,
   Monitor,
+  Variable,
   FolderOpen,
   Package,
   Archive,
@@ -29,6 +30,7 @@ export const SECTION_ICONS: Record<string, LucideIcon> = {
   Palette,
   RefreshCw,
   Monitor,
+  Variable,
   FolderOpen,
   Package,
   Archive,
@@ -45,6 +47,7 @@ export type SettingsSection =
   | 'appearance'
   | 'updates'
   | 'tray'
+  | 'envvar'
   | 'paths'
   | 'provider'
   | 'backup'
@@ -87,6 +90,7 @@ const SETTING_FOCUS_IDS: Record<string, string> = {
   // General
   "general.parallel_downloads": "parallel-downloads",
   "general.min_install_space_mb": "min-install-space",
+  "general.package_download_threshold_mb": "package-download-threshold",
   "general.metadata_cache_ttl": "metadata-cache-ttl",
   "general.resolve_strategy": "resolve-strategy",
   "general.auto_update_metadata": "auto-update-metadata",
@@ -144,6 +148,11 @@ const SETTING_FOCUS_IDS: Record<string, string> = {
   "tray.show_notifications": "show-notifications",
   "tray.click_behavior": "tray-click-behavior",
   "tray.menu_customize": "tray-menu-customize",
+
+  // EnvVar
+  "envvar.default_scope": "envvar-default-scope",
+  "envvar.auto_snapshot": "envvar-auto-snapshot",
+  "envvar.mask_sensitive": "envvar-mask-sensitive",
 
   // Paths
   "paths.root": "paths-root",
@@ -228,46 +237,53 @@ export const SETTINGS_SECTIONS: SectionDefinition[] = [
     order: 7,
   },
   {
+    id: 'envvar',
+    labelKey: 'settings.envvar',
+    descKey: 'settings.envvarDesc',
+    icon: 'Variable',
+    order: 8,
+  },
+  {
     id: 'shortcuts',
     labelKey: 'settings.shortcuts',
     descKey: 'settings.shortcutsDesc',
     icon: 'Keyboard',
-    order: 8,
+    order: 9,
   },
   {
     id: 'paths',
     labelKey: 'settings.paths',
     descKey: 'settings.pathsDesc',
     icon: 'FolderOpen',
-    order: 9,
+    order: 10,
   },
   {
     id: 'provider',
     labelKey: 'settings.providerSettings',
     descKey: 'settings.providerSettingsDesc',
     icon: 'Package',
-    order: 10,
+    order: 11,
   },
   {
     id: 'backup',
     labelKey: 'backup.title',
     descKey: 'backup.description',
     icon: 'Archive',
-    order: 11,
+    order: 12,
   },
   {
     id: 'startup',
     labelKey: 'settings.startup',
     descKey: 'settings.startupDesc',
     icon: 'Zap',
-    order: 12,
+    order: 13,
   },
   {
     id: 'system',
     labelKey: 'settings.systemInfo',
     descKey: 'settings.systemInfoDesc',
     icon: 'Info',
-    order: 13,
+    order: 14,
   },
 ];
 
@@ -291,6 +307,15 @@ const SETTINGS_REGISTRY_BASE: SettingDefinition[] = [
     descKey: 'settings.minInstallSpaceDesc',
     type: 'input',
     keywords: ['disk', 'space', 'install', 'minimum', '磁盘', '空间', '安装'],
+  },
+  {
+    key: 'general.package_download_threshold_mb',
+    section: 'general',
+    labelKey: 'settings.packageDownloadThreshold',
+    descKey: 'settings.packageDownloadThresholdDesc',
+    type: 'input',
+    keywords: ['download', 'threshold', 'package', 'queue', 'mb', '下载', '阈值', '包', '队列'],
+    advanced: true,
   },
   {
     key: 'general.metadata_cache_ttl',
@@ -681,6 +706,35 @@ const SETTINGS_REGISTRY_BASE: SettingDefinition[] = [
     tauriOnly: true,
   },
 
+  // EnvVar Settings
+  {
+    key: 'envvar.default_scope',
+    section: 'envvar',
+    labelKey: 'settings.envvarDefaultScope',
+    descKey: 'settings.envvarDefaultScopeDesc',
+    type: 'select',
+    keywords: ['envvar', 'environment variable', 'scope', 'default', '环境变量', '作用域', '默认'],
+    tauriOnly: true,
+  },
+  {
+    key: 'envvar.auto_snapshot',
+    section: 'envvar',
+    labelKey: 'settings.envvarAutoSnapshot',
+    descKey: 'settings.envvarAutoSnapshotDesc',
+    type: 'switch',
+    keywords: ['envvar', 'snapshot', 'backup', 'automatic', '环境变量', '快照', '备份', '自动'],
+    tauriOnly: true,
+  },
+  {
+    key: 'envvar.mask_sensitive',
+    section: 'envvar',
+    labelKey: 'settings.envvarMaskSensitive',
+    descKey: 'settings.envvarMaskSensitiveDesc',
+    type: 'switch',
+    keywords: ['envvar', 'mask', 'secret', 'sensitive', '环境变量', '遮蔽', '敏感', '密钥'],
+    tauriOnly: true,
+  },
+
   // Paths Settings
   {
     key: 'paths.root',
@@ -865,4 +919,23 @@ export function getSectionById(id: SettingsSection): SectionDefinition | undefin
  */
 export function getOrderedSectionIds(): SettingsSection[] {
   return [...SETTINGS_SECTIONS].sort((a, b) => a.order - b.order).map((s) => s.id);
+}
+
+export type SettingsSectionGroupId = 'core' | 'interface' | 'platform' | 'advanced';
+
+export interface SettingsSectionGroup {
+  id: SettingsSectionGroupId;
+  labelKey: string;
+  sections: SettingsSection[];
+}
+
+export const SETTINGS_SECTION_GROUPS: SettingsSectionGroup[] = [
+  { id: 'core', labelKey: 'settings.groupCore', sections: ['general', 'network', 'security', 'mirrors'] },
+  { id: 'interface', labelKey: 'settings.groupInterface', sections: ['appearance', 'shortcuts'] },
+  { id: 'platform', labelKey: 'settings.groupPlatform', sections: ['updates', 'tray', 'envvar', 'paths', 'startup'] },
+  { id: 'advanced', labelKey: 'settings.groupAdvanced', sections: ['provider', 'backup', 'system'] },
+];
+
+export function getGroupForSection(sectionId: SettingsSection): SettingsSectionGroupId | undefined {
+  return SETTINGS_SECTION_GROUPS.find((g) => g.sections.includes(sectionId))?.id;
 }

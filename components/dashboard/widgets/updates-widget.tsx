@@ -5,7 +5,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { useLocale } from '@/components/providers/locale-provider';
-import { useUpdateCheck } from '@/hooks/use-update-check';
+import { useUpdateCheck } from '@/hooks/packages/use-update-check';
 import {
   ArrowUpCircle,
   RefreshCw,

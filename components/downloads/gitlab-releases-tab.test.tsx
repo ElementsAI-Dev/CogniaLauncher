@@ -3,6 +3,25 @@ import userEvent from "@testing-library/user-event";
 import { GitLabReleasesTab } from "./gitlab-releases-tab";
 import type { GitLabReleaseInfo, GitLabAssetInfo } from "@/types/gitlab";
 
+const mockUseAssetMatcher = jest.fn();
+
+jest.mock("@/hooks/downloads/use-asset-matcher", () => ({
+  useAssetMatcher: () => mockUseAssetMatcher(),
+  getPlatformLabel: (platform: string) =>
+    ({
+      windows: "Windows",
+      linux: "Linux",
+      macos: "macOS",
+    }[platform] ?? ""),
+  getArchLabel: (arch: string) =>
+    ({
+      x64: "x64",
+      arm64: "ARM64",
+      x86: "x86",
+      universal: "Universal",
+    }[arch] ?? ""),
+}));
+
 beforeAll(() => {
   global.ResizeObserver = class {
     observe() {}
@@ -62,6 +81,29 @@ describe("GitLabReleasesTab", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockUseAssetMatcher.mockReturnValue({
+      currentPlatform: "windows",
+      currentArch: "x64",
+      parseAssets: (assets: GitLabAssetInfo[]) => [
+        {
+          asset: assets[1],
+          platform: "windows",
+          arch: "x64",
+          score: 150,
+          isRecommended: true,
+          isFallback: false,
+        },
+        {
+          asset: assets[0],
+          platform: "linux",
+          arch: "x64",
+          score: 60,
+          isRecommended: false,
+          isFallback: false,
+        },
+      ],
+      getRecommendedAsset: jest.fn(),
+    });
   });
 
   it("renders empty message when releases are empty", () => {
@@ -127,7 +169,20 @@ describe("GitLabReleasesTab", () => {
     const checkboxes = screen.getAllByRole("checkbox");
     await userEvent.click(checkboxes[0]);
     expect(onAssetToggle).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 1, name: "cli-linux-x64.tar.gz" }),
+      expect.objectContaining({ id: 2, name: "cli-windows-x64.zip" }),
     );
+  });
+
+  it("surfaces recommended and platform-aware cues for GitLab assets", () => {
+    render(
+      <GitLabReleasesTab
+        {...defaultProps}
+        selectedRelease="v1.0.0"
+      />,
+    );
+
+    expect(screen.getByText("downloads.gitlab.recommended")).toBeInTheDocument();
+    expect(screen.getByText("Windows")).toBeInTheDocument();
+    expect(screen.getAllByText("x64").length).toBeGreaterThan(0);
   });
 });

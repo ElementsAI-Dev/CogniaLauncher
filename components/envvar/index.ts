@@ -5,3 +5,4 @@ export { EnvVarShellProfiles } from './envvar-shell-profiles';
 export { EnvVarImportExport } from './envvar-import-export';
 export { EnvVarToolbar } from './envvar-toolbar';
 export { EnvVarConflictPanel } from './envvar-conflict-panel';
+export { EnvVarKvEditor } from './shared/env-var-kv-editor';

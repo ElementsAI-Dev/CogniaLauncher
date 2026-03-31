@@ -221,4 +221,17 @@ describe("PackageList", () => {
     fireEvent.click(screen.getByText("Retry"));
     expect(onRecover).toHaveBeenCalledTimes(1);
   });
+
+  it("applies compact presentation styling attributes", () => {
+    render(
+      <PackageList
+        packages={mockPackages}
+        presentation={{ density: "compact", emphasis: "strong" }}
+      />,
+    );
+
+    const card = screen.getByText("Installed Packages").closest("[data-density]");
+    expect(card).toHaveAttribute("data-density", "compact");
+    expect(card).toHaveAttribute("data-emphasis", "strong");
+  });
 });

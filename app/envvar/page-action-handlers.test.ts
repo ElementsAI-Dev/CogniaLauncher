@@ -1,4 +1,3 @@
-import type { EnvVarScope } from '@/types/tauri';
 import {
   handleApplyImportPreviewAction,
   handleApplyPathRepairAction,
@@ -8,6 +7,7 @@ import {
   handlePreviewImportAction,
   handlePreviewPathRepairAction,
   handleRefreshAction,
+  handleRestoreSnapshotAction,
   handleResolveConflictAction,
   handleScopeFilterChangeAction,
   runPathMutationAction,
@@ -70,7 +70,7 @@ describe('page action handlers', () => {
       ...context,
     });
 
-    expect(context.setActionError).toHaveBeenCalledWith('scope refresh failed');
+    expect(context.toastApi.error).toHaveBeenCalledWith('scope refresh failed');
 
     await handleRefreshAction({
       scopeFilter: 'system',
@@ -78,7 +78,7 @@ describe('page action handlers', () => {
       ...context,
     });
 
-    expect(context.setActionError).toHaveBeenLastCalledWith('button refresh failed');
+    expect(context.toastApi.error).toHaveBeenLastCalledWith('button refresh failed');
   });
 
   it('handles variable mutations across success, manual follow-up, failure, and thrown errors', async () => {
@@ -100,7 +100,7 @@ describe('page action handlers', () => {
     });
 
     expect(refreshVariables).toHaveBeenCalledWith('all', { forceRefresh: true });
-    expect(context.setActionNotice).toHaveBeenCalledWith('manual follow-up required');
+    expect(context.toastApi.warning).toHaveBeenCalledWith('manual follow-up required');
     expect(context.toastApi.warning).toHaveBeenCalledWith('manual follow-up required');
 
     await runVarMutationAction({
@@ -126,7 +126,7 @@ describe('page action handlers', () => {
     });
 
     expect(failedResult).toBe(false);
-    expect(context.setActionError).toHaveBeenLastCalledWith('delete: not deleted');
+    expect(context.toastApi.error).toHaveBeenLastCalledWith('delete: not deleted');
 
     const thrownResult = await runVarMutationAction({
       action: 'delete',
@@ -139,8 +139,8 @@ describe('page action handlers', () => {
     });
 
     expect(thrownResult).toBe(false);
-    expect(context.setActionError).toHaveBeenLastCalledWith('delete: mutation exploded');
-    expect(context.toastApi.error).toHaveBeenCalledWith('mutation exploded');
+    expect(context.toastApi.error).toHaveBeenLastCalledWith('delete: mutation exploded');
+    expect(context.toastApi.error).not.toHaveBeenCalledWith('mutation exploded');
   });
 
   it('falls back to generic messages for null and boolean-false variable mutations', async () => {
@@ -159,7 +159,7 @@ describe('page action handlers', () => {
     });
 
     expect(nullResult).toBe(false);
-    expect(context.setActionError).toHaveBeenCalledWith('add: common.error');
+    expect(context.toastApi.error).toHaveBeenCalledWith('add: common.error');
 
     const falseResult = await runVarMutationAction({
       action: 'edit',
@@ -173,7 +173,7 @@ describe('page action handlers', () => {
     });
 
     expect(falseResult).toBe(false);
-    expect(context.setActionError).toHaveBeenLastCalledWith('edit: envvar.workflow.verificationFailed');
+    expect(context.toastApi.error).toHaveBeenLastCalledWith('edit: envvar.workflow.verificationFailed');
   });
 
   it('handles path mutations and deduplicate follow-up states', async () => {
@@ -185,7 +185,7 @@ describe('page action handlers', () => {
       ...context,
     });
 
-    expect(context.setActionNotice).toHaveBeenCalledWith('update shell profile');
+    expect(context.toastApi.warning).toHaveBeenCalledWith('update shell profile');
 
     const failedResult = await runPathMutationAction({
       action: 'path-remove',
@@ -194,7 +194,7 @@ describe('page action handlers', () => {
     });
 
     expect(failedResult).toBe(false);
-    expect(context.setActionError).toHaveBeenLastCalledWith('path-remove: common.error');
+    expect(context.toastApi.error).toHaveBeenLastCalledWith('path-remove: common.error');
 
     const deduplicateResult = await handlePathDeduplicateAction({
       pathScope: 'user',
@@ -207,7 +207,7 @@ describe('page action handlers', () => {
     });
 
     expect(deduplicateResult).toBe(2);
-    expect(context.setActionNotice).toHaveBeenLastCalledWith('restart shell');
+    expect(context.toastApi.warning).toHaveBeenLastCalledWith('restart shell');
   });
 
   it('falls back to default path mutation messages and deduplicate errors', async () => {
@@ -220,7 +220,7 @@ describe('page action handlers', () => {
     });
 
     expect(falseResult).toBe(false);
-    expect(context.setActionError).toHaveBeenCalledWith('path-reorder: envvar.workflow.verificationFailed');
+    expect(context.toastApi.error).toHaveBeenCalledWith('path-reorder: envvar.workflow.verificationFailed');
 
     const thrownResult = await runPathMutationAction({
       action: 'path-remove',
@@ -229,7 +229,7 @@ describe('page action handlers', () => {
     });
 
     expect(thrownResult).toBe(false);
-    expect(context.setActionError).toHaveBeenLastCalledWith('path-remove: path mutation exploded');
+    expect(context.toastApi.error).toHaveBeenLastCalledWith('path-remove: path mutation exploded');
 
     const deduplicateResult = await handlePathDeduplicateAction({
       pathScope: 'process',
@@ -238,21 +238,70 @@ describe('page action handlers', () => {
     });
 
     expect(deduplicateResult).toBe(0);
-    expect(context.setActionError).toHaveBeenLastCalledWith('deduplicate exploded');
+    expect(context.toastApi.error).toHaveBeenLastCalledWith('deduplicate exploded');
+  });
+
+  it('maps snapshot restore outcomes into stable notices and errors', async () => {
+    const context = createContext();
+    const afterRestore = jest.fn().mockResolvedValue(undefined);
+
+    const successResult = await handleRestoreSnapshotAction({
+      snapshotPath: 'D:/snapshots/envvar-snapshot-1',
+      restoreSnapshot: jest.fn().mockResolvedValue({
+        success: true,
+        verified: true,
+        status: 'verified',
+        reasonCode: null,
+        message: null,
+        restoredScopes: ['user'],
+        skipped: [],
+        primaryShellTarget: null,
+        shellGuidance: [],
+      }),
+      afterRestore,
+      ...context,
+    });
+
+    expect(successResult).toMatchObject({ success: true, status: 'verified' });
+    expect(afterRestore).toHaveBeenCalledWith(expect.objectContaining({ restoredScopes: ['user'] }));
+    expect(context.setActionNotice).toHaveBeenLastCalledWith('envvar.snapshots.restoreComplete');
+
+    const failedResult = await handleRestoreSnapshotAction({
+      snapshotPath: 'D:/snapshots/envvar-snapshot-1',
+      restoreSnapshot: jest.fn().mockResolvedValue({
+        success: false,
+        verified: false,
+        status: 'restore_failed',
+        reasonCode: 'restore_failed',
+        message: 'restore failed',
+        restoredScopes: [],
+        skipped: [],
+        primaryShellTarget: null,
+        shellGuidance: [],
+      }),
+      afterRestore,
+      ...context,
+    });
+
+    expect(failedResult).toMatchObject({ success: false, status: 'restore_failed' });
+    expect(context.setActionError).toHaveBeenLastCalledWith('snapshot-restore: restore failed');
   });
 
   it('surfaces preview and apply import errors, including stale previews', async () => {
     const context = createContext();
+    const beforeAction = jest.fn().mockResolvedValue(undefined);
 
     const previewResult = await handlePreviewImportAction({
       content: 'FOO=bar',
       scope: 'user',
       previewImportEnvFile: jest.fn().mockResolvedValue(null),
+      beforeAction,
       ...context,
     });
 
     expect(previewResult).toBeNull();
-    expect(context.setActionError).toHaveBeenCalledWith('import-preview: common.error');
+    expect(beforeAction).toHaveBeenCalledWith('user');
+    expect(context.toastApi.error).toHaveBeenCalledWith('import-preview: common.error');
 
     const staleApplyResult = await handleApplyImportPreviewAction({
       content: 'FOO=bar',
@@ -264,7 +313,7 @@ describe('page action handlers', () => {
     });
 
     expect(staleApplyResult).toBeNull();
-    expect(context.setActionError).toHaveBeenLastCalledWith('import: envvar.importExport.previewStale');
+    expect(context.toastApi.error).toHaveBeenLastCalledWith('import: envvar.importExport.previewStale');
 
     const manualResult = await handleApplyImportPreviewAction({
       content: 'FOO=bar',
@@ -280,7 +329,7 @@ describe('page action handlers', () => {
     });
 
     expect(manualResult).toMatchObject({ status: 'manual_followup_required' });
-    expect(context.setActionNotice).toHaveBeenLastCalledWith('run shell sync');
+    expect(context.toastApi.warning).toHaveBeenLastCalledWith('run shell sync');
   });
 
   it('handles thrown import preview and apply preview errors', async () => {
@@ -294,7 +343,7 @@ describe('page action handlers', () => {
     });
 
     expect(previewResult).toBeNull();
-    expect(context.setActionError).toHaveBeenCalledWith('import-preview: preview exploded');
+    expect(context.toastApi.error).toHaveBeenCalledWith('import-preview: preview exploded');
 
     const applyResult = await handleApplyImportPreviewAction({
       content: 'FOO=bar',
@@ -306,20 +355,23 @@ describe('page action handlers', () => {
     });
 
     expect(applyResult).toBeNull();
-    expect(context.setActionError).toHaveBeenLastCalledWith('import: apply preview exploded');
+    expect(context.toastApi.error).toHaveBeenLastCalledWith('import: apply preview exploded');
   });
 
   it('surfaces path repair preview and apply errors, including stale previews', async () => {
     const context = createContext();
+    const beforeAction = jest.fn().mockResolvedValue(undefined);
 
     const previewResult = await handlePreviewPathRepairAction({
       pathScope: 'user',
       previewPathRepair: jest.fn().mockRejectedValue(new Error('repair preview failed')),
+      beforeAction,
       ...context,
     });
 
     expect(previewResult).toBeNull();
-    expect(context.setActionError).toHaveBeenCalledWith('path-repair: repair preview failed');
+    expect(beforeAction).toHaveBeenCalledWith('user');
+    expect(context.toastApi.error).toHaveBeenCalledWith('path-repair: repair preview failed');
 
     const staleApplyResult = await handleApplyPathRepairAction({
       fingerprint: 'repair-fp',
@@ -330,7 +382,7 @@ describe('page action handlers', () => {
     });
 
     expect(staleApplyResult).toBeNull();
-    expect(context.setActionError).toHaveBeenLastCalledWith('path-repair: envvar.pathEditor.repairPreviewStale');
+    expect(context.toastApi.error).toHaveBeenLastCalledWith('path-repair: envvar.pathEditor.repairPreviewStale');
 
     const manualResult = await handleApplyPathRepairAction({
       fingerprint: 'repair-fp',
@@ -345,7 +397,7 @@ describe('page action handlers', () => {
     });
 
     expect(manualResult).toBe(1);
-    expect(context.setActionNotice).toHaveBeenLastCalledWith('repair requires restart');
+    expect(context.toastApi.warning).toHaveBeenLastCalledWith('repair requires restart');
   });
 
   it('handles null and thrown path repair branches', async () => {
@@ -358,7 +410,7 @@ describe('page action handlers', () => {
     });
 
     expect(previewResult).toBeNull();
-    expect(context.setActionError).toHaveBeenCalledWith('path-repair: common.error');
+    expect(context.toastApi.error).toHaveBeenCalledWith('path-repair: common.error');
 
     const applyResult = await handleApplyPathRepairAction({
       fingerprint: 'repair-fp',
@@ -369,22 +421,25 @@ describe('page action handlers', () => {
     });
 
     expect(applyResult).toBeNull();
-    expect(context.setActionError).toHaveBeenLastCalledWith('path-repair: apply repair exploded');
+    expect(context.toastApi.error).toHaveBeenLastCalledWith('path-repair: apply repair exploded');
   });
 
   it('handles conflict resolution outcomes', async () => {
     const context = createContext();
+    const beforeAction = jest.fn().mockResolvedValue(undefined);
 
     const nullResult = await handleResolveConflictAction({
       key: 'JAVA_HOME',
       sourceScope: 'system',
       targetScope: 'user',
       resolveConflict: jest.fn().mockResolvedValue(null),
+      beforeAction,
       ...context,
     });
 
     expect(nullResult).toBe(false);
-    expect(context.setActionError).toHaveBeenCalledWith('conflict-resolve: common.error');
+    expect(beforeAction).toHaveBeenCalledWith('user');
+    expect(context.toastApi.error).toHaveBeenCalledWith('conflict-resolve: common.error');
 
     await handleResolveConflictAction({
       key: 'JAVA_HOME',
@@ -398,7 +453,7 @@ describe('page action handlers', () => {
       ...context,
     });
 
-    expect(context.setActionNotice).toHaveBeenLastCalledWith('conflict follow-up');
+    expect(context.toastApi.warning).toHaveBeenLastCalledWith('conflict follow-up');
 
     await handleResolveConflictAction({
       key: 'JAVA_HOME',
@@ -426,7 +481,7 @@ describe('page action handlers', () => {
     });
 
     expect(result).toBe(false);
-    expect(context.setActionError).toHaveBeenCalledWith('conflict-resolve: conflict exploded');
+    expect(context.toastApi.error).toHaveBeenCalledWith('conflict-resolve: conflict exploded');
   });
 
   it('handles direct import workflows across success, failure, and thrown errors', async () => {
@@ -447,7 +502,7 @@ describe('page action handlers', () => {
     });
 
     expect(refreshVariables).toHaveBeenCalledWith('all', { forceRefresh: true });
-    expect(context.setActionNotice).toHaveBeenLastCalledWith('manual import follow-up');
+    expect(context.toastApi.warning).toHaveBeenLastCalledWith('manual import follow-up');
 
     const failedResult = await handleImportAction({
       content: 'FOO=bar',
@@ -463,7 +518,7 @@ describe('page action handlers', () => {
     });
 
     expect(failedResult).toMatchObject({ success: false });
-    expect(context.setActionError).toHaveBeenLastCalledWith('import: import failed');
+    expect(context.toastApi.error).toHaveBeenLastCalledWith('import: import failed');
 
     const thrownResult = await handleImportAction({
       content: 'FOO=bar',
@@ -475,7 +530,7 @@ describe('page action handlers', () => {
     });
 
     expect(thrownResult).toBeNull();
-    expect(context.setActionError).toHaveBeenLastCalledWith('import: import exploded');
+    expect(context.toastApi.error).toHaveBeenLastCalledWith('import: import exploded');
   });
 
   it('handles export workflows across null and thrown results', async () => {
@@ -489,7 +544,7 @@ describe('page action handlers', () => {
     });
 
     expect(nullResult).toBeNull();
-    expect(context.setActionError).toHaveBeenCalledWith('export: common.error');
+    expect(context.toastApi.error).toHaveBeenCalledWith('export: common.error');
 
     const thrownResult = await handleExportAction({
       scope: 'process',
@@ -500,7 +555,7 @@ describe('page action handlers', () => {
     });
 
     expect(thrownResult).toBeNull();
-    expect(context.setActionError).toHaveBeenLastCalledWith('export: export exploded');
+    expect(context.toastApi.error).toHaveBeenLastCalledWith('export: export exploded');
   });
 
   it('covers default fallback branches for action handlers', async () => {
@@ -514,20 +569,18 @@ describe('page action handlers', () => {
       scope: 'all',
       refreshVariables,
       setScopeFilter: jest.fn(),
-      setActionError: context.setActionError,
-      setActionNotice: context.setActionNotice,
+      toastApi: context.toastApi,
       setActiveAction: context.setActiveAction,
     });
-    expect(context.setActionError).toHaveBeenLastCalledWith('scope string failure');
+    expect(context.toastApi.error).toHaveBeenLastCalledWith('scope string failure');
 
     await handleRefreshAction({
       scopeFilter: 'all',
       refreshVariables,
-      setActionError: context.setActionError,
-      setActionNotice: context.setActionNotice,
+      toastApi: context.toastApi,
       setActiveAction: context.setActiveAction,
     });
-    expect(context.setActionError).toHaveBeenLastCalledWith('refresh string failure');
+    expect(context.toastApi.error).toHaveBeenLastCalledWith('refresh string failure');
 
     await runVarMutationAction({
       action: 'add',
@@ -539,7 +592,7 @@ describe('page action handlers', () => {
       toastApi: context.toastApi,
       ...context,
     });
-    expect(context.setActionNotice).toHaveBeenLastCalledWith('envvar.workflow.manualFollowup');
+    expect(context.toastApi.warning).toHaveBeenLastCalledWith('envvar.workflow.manualFollowup');
 
     await runVarMutationAction({
       action: 'delete',
@@ -551,28 +604,28 @@ describe('page action handlers', () => {
       toastApi: context.toastApi,
       ...context,
     });
-    expect(context.setActionError).toHaveBeenLastCalledWith('delete: delete string failure');
+    expect(context.toastApi.error).toHaveBeenLastCalledWith('delete: delete string failure');
 
     await runPathMutationAction({
       action: 'path-add',
       mutation: jest.fn().mockResolvedValue({ success: true, status: 'manual_followup_required' }),
       ...context,
     });
-    expect(context.setActionNotice).toHaveBeenLastCalledWith('envvar.workflow.manualFollowup');
+    expect(context.toastApi.warning).toHaveBeenLastCalledWith('envvar.workflow.manualFollowup');
 
     await runPathMutationAction({
       action: 'path-remove',
       mutation: jest.fn().mockRejectedValue('path string failure'),
       ...context,
     });
-    expect(context.setActionError).toHaveBeenLastCalledWith('path-remove: path string failure');
+    expect(context.toastApi.error).toHaveBeenLastCalledWith('path-remove: path string failure');
 
     await handlePathDeduplicateAction({
       pathScope: 'user',
       deduplicatePath: jest.fn().mockResolvedValue({ status: 'manual_followup_required', removedCount: 0 }),
       ...context,
     });
-    expect(context.setActionNotice).toHaveBeenLastCalledWith('envvar.workflow.manualFollowup');
+    expect(context.toastApi.warning).toHaveBeenLastCalledWith('envvar.workflow.manualFollowup');
 
     await handlePreviewImportAction({
       content: 'A=1',
@@ -580,7 +633,7 @@ describe('page action handlers', () => {
       previewImportEnvFile: jest.fn().mockRejectedValue('preview string failure'),
       ...context,
     });
-    expect(context.setActionError).toHaveBeenLastCalledWith('import-preview: preview string failure');
+    expect(context.toastApi.error).toHaveBeenLastCalledWith('import-preview: preview string failure');
 
     await handleApplyImportPreviewAction({
       content: 'A=1',
@@ -590,14 +643,14 @@ describe('page action handlers', () => {
       applyImportPreview: jest.fn().mockResolvedValue(null),
       ...context,
     });
-    expect(context.setActionError).toHaveBeenLastCalledWith('import: common.error');
+    expect(context.toastApi.error).toHaveBeenLastCalledWith('import: common.error');
 
     await handlePreviewPathRepairAction({
       pathScope: 'process',
       previewPathRepair: jest.fn().mockResolvedValue(null),
       ...context,
     });
-    expect(context.setActionError).toHaveBeenLastCalledWith('path-repair: common.error');
+    expect(context.toastApi.error).toHaveBeenLastCalledWith('path-repair: common.error');
 
     await handleApplyPathRepairAction({
       fingerprint: 'fp',
@@ -606,7 +659,7 @@ describe('page action handlers', () => {
       applyPathRepair: jest.fn().mockResolvedValue({ removedCount: 0, status: 'manual_followup_required' }),
       ...context,
     });
-    expect(context.setActionNotice).toHaveBeenLastCalledWith('envvar.workflow.manualFollowup');
+    expect(context.toastApi.warning).toHaveBeenLastCalledWith('envvar.workflow.manualFollowup');
 
     await handleResolveConflictAction({
       key: 'JAVA_HOME',
@@ -615,7 +668,7 @@ describe('page action handlers', () => {
       resolveConflict: jest.fn().mockResolvedValue({ status: 'manual_followup_required' }),
       ...context,
     });
-    expect(context.setActionNotice).toHaveBeenLastCalledWith('envvar.workflow.manualFollowup');
+    expect(context.toastApi.warning).toHaveBeenLastCalledWith('envvar.workflow.manualFollowup');
 
     await handleResolveConflictAction({
       key: 'JAVA_HOME',
@@ -624,7 +677,7 @@ describe('page action handlers', () => {
       resolveConflict: jest.fn().mockRejectedValue('conflict string failure'),
       ...context,
     });
-    expect(context.setActionError).toHaveBeenLastCalledWith('conflict-resolve: conflict string failure');
+    expect(context.toastApi.error).toHaveBeenLastCalledWith('conflict-resolve: conflict string failure');
 
     await handleImportAction({
       content: 'A=1',
@@ -634,7 +687,7 @@ describe('page action handlers', () => {
       refreshVariables: jest.fn().mockResolvedValue(undefined),
       ...context,
     });
-    expect(context.setActionNotice).toHaveBeenLastCalledWith('envvar.workflow.manualFollowup');
+    expect(context.toastApi.warning).toHaveBeenLastCalledWith('envvar.workflow.manualFollowup');
 
     await handleImportAction({
       content: 'A=1',
@@ -644,7 +697,7 @@ describe('page action handlers', () => {
       refreshVariables: jest.fn().mockResolvedValue(undefined),
       ...context,
     });
-    expect(context.setActionError).toHaveBeenLastCalledWith('import: envvar.workflow.verificationFailed');
+    expect(context.toastApi.error).toHaveBeenLastCalledWith('import: envvar.workflow.verificationFailed');
 
     await handleImportAction({
       content: 'A=1',
@@ -654,7 +707,7 @@ describe('page action handlers', () => {
       refreshVariables: jest.fn().mockResolvedValue(undefined),
       ...context,
     });
-    expect(context.setActionError).toHaveBeenLastCalledWith('import: import string failure');
+    expect(context.toastApi.error).toHaveBeenLastCalledWith('import: import string failure');
 
     await handleExportAction({
       scope: 'process',
@@ -662,6 +715,6 @@ describe('page action handlers', () => {
       exportEnvFile: jest.fn().mockRejectedValue('export string failure'),
       ...context,
     });
-    expect(context.setActionError).toHaveBeenLastCalledWith('export: export string failure');
+    expect(context.toastApi.error).toHaveBeenLastCalledWith('export: export string failure');
   });
 });

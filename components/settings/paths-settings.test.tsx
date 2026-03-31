@@ -175,6 +175,106 @@ describe("PathsSettings", () => {
     });
   });
 
+  it("shows a warning state when the selected path validates with warnings", async () => {
+    mockIsTauri.mockReturnValue(true);
+    mockValidatePath.mockResolvedValueOnce({
+      normalizedPath: "/chosen/path",
+      isValid: true,
+      exists: false,
+      isDirectory: true,
+      isFile: false,
+      writable: false,
+      readable: true,
+      isAbsolute: true,
+      parentExists: true,
+      parentWritable: false,
+      hasTraversal: false,
+      hasSuspiciousChars: false,
+      diskAvailable: 1024,
+      diskAvailableHuman: "1 KB",
+      warnings: ["Needs elevated permissions"],
+      errors: [],
+    });
+    const dialogModule = jest.requireMock("@tauri-apps/plugin-dialog");
+    dialogModule.open.mockResolvedValueOnce("/chosen/path");
+
+    render(<PathsSettings {...defaultProps} />);
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Browse" })[0]);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Has warnings")).toBeInTheDocument();
+      expect(screen.getByLabelText("Root Directory")).toHaveClass("border-amber-500");
+      expect(screen.getByText("Parent not writable")).toBeInTheDocument();
+    });
+  });
+
+  it("shows an error state when the selected path fails validation", async () => {
+    mockIsTauri.mockReturnValue(true);
+    const dialogModule = jest.requireMock("@tauri-apps/plugin-dialog");
+    dialogModule.open.mockResolvedValueOnce("/chosen/path");
+    mockValidatePath.mockResolvedValueOnce({
+      normalizedPath: "/chosen/path",
+      isValid: false,
+      exists: false,
+      isDirectory: true,
+      isFile: false,
+      writable: false,
+      readable: true,
+      isAbsolute: true,
+      parentExists: true,
+      parentWritable: false,
+      hasTraversal: false,
+      hasSuspiciousChars: false,
+      diskAvailable: 1024,
+      diskAvailableHuman: "1 KB",
+      warnings: [],
+      errors: ["Permission denied"],
+    });
+
+    render(<PathsSettings {...defaultProps} />);
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Browse" })[0]);
+
+    await waitFor(() => {
+      expect(screen.getByText("Permission denied")).toBeInTheDocument();
+      expect(screen.getByLabelText("Invalid")).toBeInTheDocument();
+    });
+  });
+
+  it("shows the parent writable badge when a new path can be created safely", async () => {
+    mockIsTauri.mockReturnValue(true);
+    const dialogModule = jest.requireMock("@tauri-apps/plugin-dialog");
+    dialogModule.open.mockResolvedValueOnce("/chosen/path");
+    mockValidatePath.mockResolvedValueOnce({
+      normalizedPath: "/chosen/path",
+      isValid: true,
+      exists: false,
+      isDirectory: true,
+      isFile: false,
+      writable: false,
+      readable: true,
+      isAbsolute: true,
+      parentExists: true,
+      parentWritable: true,
+      hasTraversal: false,
+      hasSuspiciousChars: false,
+      diskAvailable: 1024,
+      diskAvailableHuman: "1 KB",
+      warnings: [],
+      errors: [],
+    });
+
+    render(<PathsSettings {...defaultProps} />);
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Browse" })[0]);
+
+    await waitFor(() => {
+      expect(screen.getByText("Parent writable")).toBeInTheDocument();
+      expect(screen.getByLabelText("Root Directory")).toHaveClass("border-green-500");
+    });
+  });
+
 
   it("clears an existing path value", () => {
     const onValueChange = jest.fn();

@@ -15,7 +15,7 @@ import {
 import { useLocale } from '@/components/providers/locale-provider';
 import { cn } from '@/lib/utils';
 import { TOOLBOX_LIMITS } from '@/lib/constants/toolbox-limits';
-import { useToolPreferences } from '@/hooks/use-tool-preferences';
+import { useToolPreferences } from '@/hooks/toolbox/use-tool-preferences';
 import type { ToolComponentProps } from '@/types/toolbox';
 
 type DiffLine = { type: 'equal' | 'add' | 'remove'; text: string; lineNum: number };

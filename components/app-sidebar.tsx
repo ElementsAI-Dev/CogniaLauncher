@@ -54,7 +54,7 @@ import {
   type SidebarItemId,
 } from "@/lib/sidebar/order";
 import { isTauri } from "@/lib/tauri";
-import { useWsl } from "@/hooks/use-wsl";
+import { useWsl } from "@/hooks/wsl/use-wsl";
 import { useWslStore } from "@/lib/stores/wsl";
 import { buildWslDistroHref, buildWslOverviewHref } from "@/lib/wsl/workflow";
 
@@ -120,7 +120,7 @@ const SIDEBAR_LINK_ITEMS: Record<
     href: "/toolbox",
     labelKey: "nav.toolbox",
     icon: Wrench,
-    match: "exact",
+    match: "prefix",
   },
   logs: {
     href: "/logs",

@@ -17,7 +17,7 @@ let mockShimState = {
   error: null as string | null,
 };
 
-jest.mock("@/hooks/use-shim", () => ({
+jest.mock("@/hooks/environments/use-shim", () => ({
   useShim: () => ({
     ...mockShimState,
     fetchShims: mockFetchShims,

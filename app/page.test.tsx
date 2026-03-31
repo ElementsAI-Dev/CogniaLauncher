@@ -51,7 +51,7 @@ let mockDashboardActiveStylePresetId = "balanced-workbench";
 let mockDashboardHasPresetDiverged = false;
 
 // Mock hooks used by the dashboard page
-jest.mock("@/hooks/use-environments", () => ({
+jest.mock("@/hooks/environments/use-environments", () => ({
   useEnvironments: () => ({
     environments: [
       {
@@ -70,7 +70,7 @@ jest.mock("@/hooks/use-environments", () => ({
   }),
 }));
 
-jest.mock("@/hooks/use-packages", () => ({
+jest.mock("@/hooks/packages/use-packages", () => ({
   usePackages: () => ({
     installedPackages: [
       { name: "typescript", version: "5.0.0", provider: "npm" },
@@ -85,7 +85,7 @@ jest.mock("@/hooks/use-packages", () => ({
   }),
 }));
 
-jest.mock("@/hooks/use-settings", () => ({
+jest.mock("@/hooks/settings/use-settings", () => ({
   useSettings: () => ({
     cacheInfo: {
       download_cache: { entry_count: 5, size: 1024, size_human: "1 KB", location: "" },
@@ -104,7 +104,7 @@ jest.mock("@/hooks/use-settings", () => ({
   }),
 }));
 
-jest.mock("@/hooks/use-dashboard-insights", () => ({
+jest.mock("@/hooks/dashboard/use-dashboard-insights", () => ({
   useDashboardInsights: (...args: unknown[]) => mockUseDashboardInsights(...args),
 }));
 

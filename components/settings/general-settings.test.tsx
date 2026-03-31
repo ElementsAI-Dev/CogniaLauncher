@@ -11,6 +11,8 @@ const mockT = (key: string) => {
     "settings.parallelDownloadsDesc": "Number of concurrent downloads",
     "settings.minInstallSpace": "Minimum Install Space",
     "settings.minInstallSpaceDesc": "Minimum free disk space required",
+    "settings.packageDownloadThreshold": "Package Download Threshold",
+    "settings.packageDownloadThresholdDesc": "Queue package downloads larger than this size",
     "settings.metadataCacheTtl": "Metadata Cache TTL",
     "settings.metadataCacheTtlDesc": "Seconds before metadata cache expires",
     "settings.resolveStrategy": "Resolve Strategy",
@@ -67,6 +69,15 @@ describe("GeneralSettings", () => {
     expect(screen.getByText("Minimum Install Space")).toBeInTheDocument();
     expect(
       screen.getByText("Minimum free disk space required"),
+    ).toBeInTheDocument();
+  });
+
+  it("should render package download threshold setting", () => {
+    render(<GeneralSettings {...defaultProps} />);
+
+    expect(screen.getByText("Package Download Threshold")).toBeInTheDocument();
+    expect(
+      screen.getByText("Queue package downloads larger than this size"),
     ).toBeInTheDocument();
   });
 
@@ -139,7 +150,8 @@ describe("GeneralSettings", () => {
     const inputs = screen.getAllByRole("spinbutton");
     expect(inputs[0]).toHaveValue(4); // default parallel downloads
     expect(inputs[1]).toHaveValue(100); // default min install space
-    expect(inputs[2]).toHaveValue(3600); // default cache TTL
+    expect(inputs[2]).toHaveValue(50); // default package download threshold
+    expect(inputs[3]).toHaveValue(3600); // default cache TTL
   });
 
   it("should render cache max size setting", () => {
@@ -287,14 +299,16 @@ describe("GeneralSettings", () => {
 
     const spinbuttons = screen.getAllByRole("spinbutton");
     fireEvent.change(spinbuttons[1], { target: { value: "250" } });
-    fireEvent.change(spinbuttons[2], { target: { value: "7200" } });
-    fireEvent.change(spinbuttons[3], { target: { value: "1073741824" } });
-    fireEvent.change(spinbuttons[4], { target: { value: "90" } });
-    fireEvent.change(spinbuttons[5], { target: { value: "85" } });
-    fireEvent.change(spinbuttons[6], { target: { value: "600" } });
-    fireEvent.change(spinbuttons[7], { target: { value: "2048" } });
+    fireEvent.change(spinbuttons[2], { target: { value: "512" } });
+    fireEvent.change(spinbuttons[3], { target: { value: "7200" } });
+    fireEvent.change(spinbuttons[4], { target: { value: "1073741824" } });
+    fireEvent.change(spinbuttons[5], { target: { value: "90" } });
+    fireEvent.change(spinbuttons[6], { target: { value: "85" } });
+    fireEvent.change(spinbuttons[7], { target: { value: "600" } });
+    fireEvent.change(spinbuttons[8], { target: { value: "2048" } });
 
     expect(onValueChange).toHaveBeenCalledWith("general.min_install_space_mb", "250");
+    expect(onValueChange).toHaveBeenCalledWith("general.package_download_threshold_mb", "512");
     expect(onValueChange).toHaveBeenCalledWith("general.metadata_cache_ttl", "7200");
     expect(onValueChange).toHaveBeenCalledWith("general.cache_max_size", "1073741824");
     expect(onValueChange).toHaveBeenCalledWith("general.cache_max_age_days", "90");

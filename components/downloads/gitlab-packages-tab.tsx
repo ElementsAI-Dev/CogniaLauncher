@@ -9,6 +9,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Label } from "@/components/ui/label";
 import { createArtifactProfilePreview } from "@/lib/downloads";
+import {
+  useAssetMatcher,
+  getArchLabel,
+  getPlatformLabel,
+} from "@/hooks/downloads/use-asset-matcher";
 import { formatBytes } from "@/lib/utils";
 import { selectableCheckboxRowClass, SelectableCardButton } from "./selectable-list-patterns";
 import type { GitLabPackageInfo, GitLabPackageFileInfo } from "@/types/gitlab";
@@ -44,6 +49,8 @@ export function GitLabPackagesTab({
   onFilterKeyDown,
   t,
 }: GitLabPackagesTabProps) {
+  const { currentPlatform, currentArch } = useAssetMatcher();
+
   return (
     <>
       <div className="flex items-center justify-between">
@@ -139,11 +146,17 @@ export function GitLabPackagesTab({
                 fileName: file.fileName,
                 sourceKind: "gitlab_package_file",
               });
+              const isRecommended =
+                currentPlatform !== "unknown" &&
+                currentArch !== "unknown" &&
+                profile.platform === currentPlatform &&
+                profile.arch === currentArch;
               return (
                 <label
                   key={file.id}
                   className={selectableCheckboxRowClass({
-                    selected: checked,
+                    selected: checked || isRecommended,
+                    tone: isRecommended ? "success" : "default",
                   })}
                 >
                   <Checkbox
@@ -161,6 +174,23 @@ export function GitLabPackagesTab({
                   <Badge variant="outline" className="text-xs">
                     {t(`downloads.artifactKind.${profile.artifactKind}`)}
                   </Badge>
+                  {profile.platform !== "unknown" && (
+                    <Badge variant="outline" className="text-xs">
+                      {profile.platform === "universal"
+                        ? getArchLabel("universal")
+                        : getPlatformLabel(profile.platform)}
+                    </Badge>
+                  )}
+                  {profile.arch !== "unknown" && (
+                    <Badge variant="secondary" className="text-xs">
+                      {getArchLabel(profile.arch)}
+                    </Badge>
+                  )}
+                  {isRecommended && (
+                    <Badge variant="secondary" className="text-xs">
+                      {t("downloads.gitlab.recommended")}
+                    </Badge>
+                  )}
                 </label>
               );
             })}

@@ -1,5 +1,9 @@
+use crate::commands::envvar::{
+    envvar_detect_conflicts, envvar_get_path, envvar_list_persistent_typed_summaries,
+    EnvVarConflict, PathEntryInfo,
+};
 use crate::error::{CogniaError, CogniaResult};
-use crate::platform::env::current_platform;
+use crate::platform::env::{current_platform, EnvVarScope};
 use crate::provider::support::{
     classify_provider_scope, provider_health_probe_timeout, provider_timeout_reason,
     ProviderAvailabilityProbe, ProviderHealthScope,
@@ -7,10 +11,19 @@ use crate::provider::support::{
 use crate::provider::{EnvironmentProvider, Provider, ProviderRegistry};
 
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
+use std::sync::LazyLock;
+use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
+
+#[cfg(target_os = "windows")]
+use crate::provider::wsl::{WslDistroInfo, WslProvider};
+
+static WSL_HEALTH_CACHE: LazyLock<RwLock<Option<(Instant, WslHealthResult)>>> =
+    LazyLock::new(|| RwLock::new(None));
+const WSL_HEALTH_CACHE_TTL: Duration = Duration::from_secs(60);
 
 /// Health status of an environment
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -307,13 +320,59 @@ impl PackageManagerHealthResult {
     }
 }
 
+/// Result of a health check for the WSL subsystem.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WslHealthResult {
+    pub status: HealthStatus,
+    pub issues: Vec<HealthIssue>,
+    pub checked_at: String,
+}
+
+impl WslHealthResult {
+    pub fn new() -> Self {
+        Self {
+            status: HealthStatus::Unknown,
+            issues: Vec::new(),
+            checked_at: chrono::Utc::now().to_rfc3339(),
+        }
+    }
+
+    pub fn add_issue(&mut self, issue: HealthIssue) {
+        let verified_for_escalation = issue.is_verified_for_escalation();
+        match (&issue.severity, verified_for_escalation) {
+            (Severity::Critical | Severity::Error, true) => {
+                self.status = HealthStatus::Error;
+            }
+            (Severity::Warning, true) => {
+                if self.status != HealthStatus::Error {
+                    self.status = HealthStatus::Warning;
+                }
+            }
+            _ => {}
+        }
+        self.issues.push(issue);
+    }
+
+    pub fn finalize(&mut self) {
+        if self.status == HealthStatus::Unknown {
+            self.status = if self.issues.is_empty() {
+                HealthStatus::Healthy
+            } else {
+                HealthStatus::Unknown
+            };
+        }
+    }
+}
+
 /// Result of a full system health check
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SystemHealthResult {
     pub overall_status: HealthStatus,
     pub environments: Vec<EnvironmentHealthResult>,
     pub package_managers: Vec<PackageManagerHealthResult>,
+    pub envvar_issues: Vec<HealthIssue>,
     pub system_issues: Vec<HealthIssue>,
+    pub wsl_health: Option<WslHealthResult>,
     pub skipped_providers: Vec<String>,
     pub checked_at: String,
 }
@@ -324,7 +383,9 @@ impl SystemHealthResult {
             overall_status: HealthStatus::Healthy,
             environments: Vec::new(),
             package_managers: Vec::new(),
+            envvar_issues: Vec::new(),
             system_issues: Vec::new(),
+            wsl_health: None,
             skipped_providers: Vec::new(),
             checked_at: chrono::Utc::now().to_rfc3339(),
         }
@@ -362,6 +423,22 @@ impl SystemHealthResult {
         self.package_managers.push(result);
     }
 
+    pub fn add_envvar_issue(&mut self, issue: HealthIssue) {
+        let verified_for_escalation = issue.is_verified_for_escalation();
+        match (&issue.severity, verified_for_escalation) {
+            (Severity::Critical | Severity::Error, true) => {
+                self.overall_status = HealthStatus::Error;
+            }
+            (Severity::Warning, true) => {
+                if self.overall_status != HealthStatus::Error {
+                    self.overall_status = HealthStatus::Warning;
+                }
+            }
+            _ => {}
+        }
+        self.envvar_issues.push(issue);
+    }
+
     pub fn add_system_issue(&mut self, issue: HealthIssue) {
         let verified_for_escalation = issue.is_verified_for_escalation();
         match (&issue.severity, verified_for_escalation) {
@@ -376,6 +453,21 @@ impl SystemHealthResult {
             _ => {}
         }
         self.system_issues.push(issue);
+    }
+
+    pub fn add_wsl_health(&mut self, result: WslHealthResult) {
+        match result.status {
+            HealthStatus::Error => {
+                self.overall_status = HealthStatus::Error;
+            }
+            HealthStatus::Warning => {
+                if self.overall_status != HealthStatus::Error {
+                    self.overall_status = HealthStatus::Warning;
+                }
+            }
+            _ => {}
+        }
+        self.wsl_health = Some(result);
     }
 }
 
@@ -1294,11 +1386,14 @@ impl HealthCheckManager {
 
     /// Check system-level health
     async fn check_system_health(&self, result: &mut SystemHealthResult) {
-        // Check PATH environment variable
-        if let Some(path_issues) = self.check_path_variable().await {
-            for issue in path_issues {
-                result.add_system_issue(issue);
+        if let Ok(envvar_issues) = self.check_envvar_health().await {
+            for issue in envvar_issues {
+                result.add_envvar_issue(issue);
             }
+        }
+
+        if let Some(wsl_health) = self.check_wsl_health().await {
+            result.add_wsl_health(wsl_health);
         }
 
         // Check shell configuration
@@ -1321,6 +1416,299 @@ impl HealthCheckManager {
                 result.add_system_issue(issue);
             }
         }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    async fn check_wsl_health(&self) -> Option<WslHealthResult> {
+        None
+    }
+
+    #[cfg(target_os = "windows")]
+    async fn cached_wsl_health_result(&self) -> Option<WslHealthResult> {
+        let cache = WSL_HEALTH_CACHE.read().await;
+        if let Some((captured_at, cached)) = &*cache {
+            if captured_at.elapsed() < WSL_HEALTH_CACHE_TTL {
+                return Some(cached.clone());
+            }
+        }
+        None
+    }
+
+    #[cfg(target_os = "windows")]
+    async fn store_wsl_health_result(&self, result: &WslHealthResult) {
+        let mut cache = WSL_HEALTH_CACHE.write().await;
+        *cache = Some((Instant::now(), result.clone()));
+    }
+
+    #[cfg(target_os = "windows")]
+    fn build_wsl_issue(
+        &self,
+        severity: Severity,
+        category: IssueCategory,
+        message: impl Into<String>,
+        signal_source: HealthSignalSource,
+        check_id: impl Into<String>,
+    ) -> HealthIssue {
+        HealthIssue::new(severity, category, message).with_evidence(
+            signal_source,
+            HealthEvidenceConfidence::Verified,
+            check_id,
+        )
+    }
+
+    #[cfg(target_os = "windows")]
+    async fn apply_wsl_update_check(&self, provider: &WslProvider, result: &mut WslHealthResult) {
+        if let Ok(update_check_output) = provider.run_wsl_lenient(&["--update", "--check"]).await {
+            let lower = update_check_output.to_lowercase();
+            let no_update = lower.contains("up to date")
+                || lower.contains("already")
+                || lower.contains("no update")
+                || lower.contains("最新")
+                || lower.contains("没有可用更新");
+            let unsupported = lower.contains("unknown option")
+                || lower.contains("unrecognized option")
+                || lower.contains("invalid option")
+                || lower.contains("未识别")
+                || lower.contains("不支持");
+
+            if !no_update && !unsupported && !update_check_output.trim().is_empty() {
+                result.add_issue(
+                    self.build_wsl_issue(
+                        Severity::Warning,
+                        IssueCategory::VersionMismatch,
+                        "WSL kernel update is available",
+                        HealthSignalSource::RuntimeProbe,
+                        "wsl_kernel_update_available",
+                    )
+                    .with_details(update_check_output),
+                );
+            }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    async fn load_wsl_distro_inventory(
+        &self,
+        provider: &WslProvider,
+    ) -> (Option<String>, Vec<WslDistroInfo>) {
+        let default_distro = provider
+            .get_wsl_status()
+            .await
+            .ok()
+            .and_then(|status_output| WslProvider::parse_status_output(&status_output).0);
+
+        let distros = provider
+            .run_wsl_lenient(&["--list", "--verbose"])
+            .await
+            .ok()
+            .as_deref()
+            .map(WslProvider::parse_list_verbose)
+            .unwrap_or_default();
+
+        (default_distro, distros)
+    }
+
+    #[cfg(target_os = "windows")]
+    async fn probe_wsl_default_distro_dns(
+        &self,
+        provider: &WslProvider,
+        distro_name: &str,
+        result: &mut WslHealthResult,
+    ) {
+        match provider
+            .exec_command(
+                distro_name,
+                "getent hosts microsoft.com >/dev/null 2>&1 || nslookup microsoft.com >/dev/null 2>&1",
+                None,
+            )
+            .await
+        {
+            Ok((_, stderr, exit_code)) if exit_code != 0 => {
+                result.add_issue(
+                    self.build_wsl_issue(
+                        Severity::Warning,
+                        IssueCategory::NetworkError,
+                        format!("WSL DNS resolution failed in {}", distro_name),
+                        HealthSignalSource::NetworkProbe,
+                        "wsl_dns_resolution",
+                    )
+                    .with_details(stderr),
+                );
+            }
+            Err(err) => {
+                result.add_issue(
+                    self.build_wsl_issue(
+                        Severity::Warning,
+                        IssueCategory::NetworkError,
+                        format!("WSL networking probe failed in {}", distro_name),
+                        HealthSignalSource::NetworkProbe,
+                        "wsl_network_probe_failed",
+                    )
+                    .with_details(err.to_string()),
+                );
+            }
+            _ => {}
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    async fn inspect_wsl_distro(
+        &self,
+        provider: &WslProvider,
+        distro: &WslDistroInfo,
+        result: &mut WslHealthResult,
+    ) {
+        if distro.wsl_version != "2" {
+            result.add_issue(
+                self.build_wsl_issue(
+                    Severity::Warning,
+                    IssueCategory::VersionMismatch,
+                    format!("{} is using WSL {}", distro.name, distro.wsl_version),
+                    HealthSignalSource::RuntimeProbe,
+                    format!("wsl_distro_version:{}", distro.name),
+                )
+                .with_details(
+                    "Upgrade this distro to WSL 2 to align with the recommended runtime.",
+                ),
+            );
+        }
+
+        match provider.detect_distro_environment(&distro.name).await {
+            Ok(environment) => {
+                if environment
+                    .default_user
+                    .as_deref()
+                    .unwrap_or_default()
+                    .trim()
+                    .is_empty()
+                {
+                    result.add_issue(
+                        self.build_wsl_issue(
+                            Severity::Warning,
+                            IssueCategory::ConfigError,
+                            format!("{} has no detectable default user", distro.name),
+                            HealthSignalSource::RuntimeProbe,
+                            format!("wsl_default_user_missing:{}", distro.name),
+                        )
+                        .with_details(
+                            "Configure a stable default user to avoid shell and tooling mismatches.",
+                        ),
+                    );
+                }
+            }
+            Err(err) => {
+                result.add_issue(
+                    self.build_wsl_issue(
+                        Severity::Warning,
+                        IssueCategory::ConfigError,
+                        format!("{} environment metadata could not be read", distro.name),
+                        HealthSignalSource::RuntimeProbe,
+                        format!("wsl_environment_probe_failed:{}", distro.name),
+                    )
+                    .with_details(err.to_string()),
+                );
+            }
+        }
+
+        match provider
+            .exec_command(
+                &distro.name,
+                "stat -f -c %T / 2>/dev/null || echo unknown",
+                None,
+            )
+            .await
+        {
+            Ok((stdout, _, exit_code)) => {
+                let filesystem_type = stdout.trim();
+                if exit_code != 0 || filesystem_type.is_empty() || filesystem_type == "unknown" {
+                    result.add_issue(self.build_wsl_issue(
+                        Severity::Warning,
+                        IssueCategory::ConfigError,
+                        format!("{} filesystem type could not be determined", distro.name),
+                        HealthSignalSource::RuntimeProbe,
+                        format!("wsl_filesystem_type_unknown:{}", distro.name),
+                    ));
+                }
+            }
+            Err(err) => {
+                result.add_issue(
+                    self.build_wsl_issue(
+                        Severity::Warning,
+                        IssueCategory::ConfigError,
+                        format!("{} filesystem probe failed", distro.name),
+                        HealthSignalSource::RuntimeProbe,
+                        format!("wsl_filesystem_probe_failed:{}", distro.name),
+                    )
+                    .with_details(err.to_string()),
+                );
+            }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    async fn check_wsl_health(&self) -> Option<WslHealthResult> {
+        if let Some(cached) = self.cached_wsl_health_result().await {
+            return Some(cached);
+        }
+
+        let provider = WslProvider::new();
+        let snapshot = provider.detect_runtime_snapshot().await;
+        let mut result = WslHealthResult::new();
+
+        if !snapshot.available {
+            result.add_issue(
+                HealthIssue::new(
+                    Severity::Error,
+                    IssueCategory::MissingDependency,
+                    "WSL runtime is unavailable",
+                )
+                .with_evidence(
+                    HealthSignalSource::RuntimeProbe,
+                    HealthEvidenceConfidence::Verified,
+                    "wsl_runtime_unavailable",
+                )
+                .with_details(snapshot.reason),
+            );
+            result.finalize();
+            self.store_wsl_health_result(&result).await;
+            return Some(result);
+        }
+
+        self.apply_wsl_update_check(&provider, &mut result).await;
+
+        let (default_distro, distros) = self.load_wsl_distro_inventory(&provider).await;
+
+        if default_distro.is_none() && !distros.is_empty() {
+            result.add_issue(
+                self.build_wsl_issue(
+                    Severity::Warning,
+                    IssueCategory::ConfigError,
+                    "No default WSL distribution is configured",
+                    HealthSignalSource::RuntimeProbe,
+                    "wsl_default_distro_missing",
+                )
+                .with_details(
+                    "Set a default distro to improve WSL command and health check reliability.",
+                ),
+            );
+        }
+
+        let network_target = default_distro
+            .clone()
+            .or_else(|| distros.first().map(|entry| entry.name.clone()));
+        if let Some(distro_name) = network_target {
+            self.probe_wsl_default_distro_dns(&provider, &distro_name, &mut result)
+                .await;
+        }
+
+        for distro in &distros {
+            self.inspect_wsl_distro(&provider, distro, &mut result)
+                .await;
+        }
+
+        result.finalize();
+        self.store_wsl_health_result(&result).await;
+        Some(result)
     }
 
     /// Check available disk space on the home partition
@@ -1450,14 +1838,15 @@ impl HealthCheckManager {
 
         // Check 1: Provider availability
         if !provider.is_available().await {
-            result.set_scope_state(
-                HealthScopeState::Unavailable,
-                crate::provider::support::REASON_PROVIDER_UNAVAILABLE,
-            );
+            let unavailable_reason = provider
+                .unavailable_reason()
+                .await
+                .unwrap_or_else(crate::provider::support::provider_unavailable_reason);
+            result.set_scope_state(HealthScopeState::Unavailable, unavailable_reason.code);
             result.add_issue(self.build_install_issue(
                 provider.id(),
                 provider.display_name(),
-                format!("The {} command was not found in your PATH", provider.id()),
+                unavailable_reason.message,
                 format!(
                     "Install {} to enable {} version management",
                     provider.id(),
@@ -1559,69 +1948,266 @@ impl HealthCheckManager {
     async fn check_path_variable(&self) -> Option<Vec<HealthIssue>> {
         let mut issues = Vec::new();
 
-        let path = std::env::var("PATH").unwrap_or_default();
-        let paths: Vec<&str> = if cfg!(windows) {
-            path.split(';').collect()
-        } else {
-            path.split(':').collect()
-        };
+        for scope in [EnvVarScope::User, EnvVarScope::System] {
+            let entries = match envvar_get_path(scope).await {
+                Ok(entries) => entries,
+                Err(_) => continue,
+            };
 
-        // Check for duplicate paths
-        let mut seen = std::collections::HashSet::new();
-        let mut duplicates = Vec::new();
-        for p in &paths {
-            if !seen.insert(*p) && !p.is_empty() {
-                duplicates.push(*p);
+            if let Some(issue) = Self::build_envvar_path_validity_issue(scope, &entries) {
+                issues.push(issue);
             }
-        }
-
-        if !duplicates.is_empty() {
-            issues.push(
-                HealthIssue::new(
-                    Severity::Warning,
-                    IssueCategory::PathConflict,
-                    "Duplicate entries found in PATH",
-                )
-                .with_evidence(
-                    HealthSignalSource::PathHeuristic,
-                    HealthEvidenceConfidence::Inferred,
-                    "path_duplicate_entries",
-                )
-                .with_details(format!("Duplicates: {}", duplicates.join(", "))),
-            );
-        }
-
-        // Check for non-existent paths
-        let mut missing_paths = Vec::new();
-        for p in &paths {
-            if !p.is_empty() {
-                let path = PathBuf::from(p);
-                if !path.exists() {
-                    missing_paths.push(*p);
-                }
+            if let Some(issue) = Self::build_envvar_path_duplicate_issue(scope, &entries) {
+                issues.push(issue);
             }
-        }
-
-        if !missing_paths.is_empty() && missing_paths.len() <= 5 {
-            issues.push(
-                HealthIssue::new(
-                    Severity::Info,
-                    IssueCategory::PathConflict,
-                    "Some PATH entries point to non-existent directories",
-                )
-                .with_evidence(
-                    HealthSignalSource::PathHeuristic,
-                    HealthEvidenceConfidence::Inferred,
-                    "path_missing_entries",
-                )
-                .with_details(format!("Missing: {}", missing_paths.join(", "))),
-            );
         }
 
         if issues.is_empty() {
             None
         } else {
             Some(issues)
+        }
+    }
+
+    async fn check_required_envvars(&self) -> Option<Vec<HealthIssue>> {
+        let mut available_keys: HashSet<String> = std::env::vars_os()
+            .map(|(key, _)| Self::normalize_envvar_key(&key.to_string_lossy()))
+            .collect();
+
+        for scope in [EnvVarScope::User, EnvVarScope::System] {
+            let vars = match envvar_list_persistent_typed_summaries(scope).await {
+                Ok(vars) => vars,
+                Err(_) => continue,
+            };
+            available_keys.extend(
+                vars.into_iter()
+                    .map(|item| Self::normalize_envvar_key(&item.key)),
+            );
+        }
+
+        Self::build_envvar_required_vars_issue(&available_keys).map(|issue| vec![issue])
+    }
+
+    async fn check_envvar_scope_conflicts(&self) -> Option<Vec<HealthIssue>> {
+        let conflicts = envvar_detect_conflicts().await.ok()?;
+        Self::build_envvar_scope_conflict_issue(&conflicts).map(|issue| vec![issue])
+    }
+
+    pub async fn check_envvar_health(&self) -> CogniaResult<Vec<HealthIssue>> {
+        let mut issues = Vec::new();
+
+        if let Some(path_issues) = self.check_path_variable().await {
+            issues.extend(path_issues);
+        }
+
+        if let Some(required_var_issues) = self.check_required_envvars().await {
+            issues.extend(required_var_issues);
+        }
+
+        if let Some(conflict_issues) = self.check_envvar_scope_conflicts().await {
+            issues.extend(conflict_issues);
+        }
+
+        Ok(issues)
+    }
+
+    fn build_envvar_path_validity_issue(
+        scope: EnvVarScope,
+        entries: &[PathEntryInfo],
+    ) -> Option<HealthIssue> {
+        let missing_paths = Self::dedupe_display_items(
+            entries
+                .iter()
+                .filter(|entry| !entry.exists)
+                .map(|entry| entry.path.as_str()),
+        );
+
+        if missing_paths.is_empty() {
+            return None;
+        }
+
+        let scope_label = Self::envvar_scope_label(scope);
+        Some(
+            HealthIssue::new(
+                Severity::Warning,
+                IssueCategory::PathConflict,
+                format!("{scope_label} PATH contains invalid entries"),
+            )
+            .with_evidence(
+                HealthSignalSource::SystemProbe,
+                HealthEvidenceConfidence::Verified,
+                format!("envvar_path_validity:{}", Self::envvar_scope_key(scope)),
+            )
+            .with_details(format!(
+                "Missing directories: {}",
+                Self::format_limited_list(&missing_paths)
+            )),
+        )
+    }
+
+    fn build_envvar_path_duplicate_issue(
+        scope: EnvVarScope,
+        entries: &[PathEntryInfo],
+    ) -> Option<HealthIssue> {
+        let mut counts: HashMap<String, (String, usize)> = HashMap::new();
+        for entry in entries {
+            let normalized = Self::normalize_envvar_path(&entry.path);
+            let slot = counts
+                .entry(normalized)
+                .or_insert_with(|| (entry.path.clone(), 0usize));
+            slot.1 += 1;
+        }
+
+        let mut duplicates = counts
+            .into_values()
+            .filter(|(_, count)| *count > 1)
+            .map(|(path, count)| format!("{path} ({count}x)"))
+            .collect::<Vec<_>>();
+        duplicates.sort();
+
+        if duplicates.is_empty() {
+            return None;
+        }
+
+        let scope_label = Self::envvar_scope_label(scope);
+        Some(
+            HealthIssue::new(
+                Severity::Info,
+                IssueCategory::PathConflict,
+                format!("{scope_label} PATH contains duplicate entries"),
+            )
+            .with_evidence(
+                HealthSignalSource::SystemProbe,
+                HealthEvidenceConfidence::Verified,
+                format!("envvar_path_duplicates:{}", Self::envvar_scope_key(scope)),
+            )
+            .with_details(format!(
+                "Duplicate entries: {}",
+                Self::format_limited_list(&duplicates)
+            )),
+        )
+    }
+
+    fn build_envvar_required_vars_issue(available_keys: &HashSet<String>) -> Option<HealthIssue> {
+        let required_keys = if cfg!(windows) {
+            vec!["PATH", "USERPROFILE", "TEMP", "TMP", "SYSTEMROOT"]
+        } else {
+            vec!["PATH", "HOME"]
+        };
+
+        let missing = required_keys
+            .into_iter()
+            .filter(|key| !available_keys.contains(&Self::normalize_envvar_key(key)))
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+
+        if missing.is_empty() {
+            return None;
+        }
+
+        Some(
+            HealthIssue::new(
+                Severity::Error,
+                IssueCategory::ConfigError,
+                "Required environment variables are missing",
+            )
+            .with_evidence(
+                HealthSignalSource::SystemProbe,
+                HealthEvidenceConfidence::Verified,
+                "envvar_required_vars",
+            )
+            .with_details(format!("Missing variables: {}", missing.join(", "))),
+        )
+    }
+
+    fn build_envvar_scope_conflict_issue(conflicts: &[EnvVarConflict]) -> Option<HealthIssue> {
+        if conflicts.is_empty() {
+            return None;
+        }
+
+        let keys = conflicts
+            .iter()
+            .map(|conflict| conflict.key.as_str())
+            .collect::<Vec<_>>();
+
+        Some(
+            HealthIssue::new(
+                Severity::Warning,
+                IssueCategory::ConfigError,
+                "User and system environment variables conflict",
+            )
+            .with_evidence(
+                HealthSignalSource::SystemProbe,
+                HealthEvidenceConfidence::Verified,
+                "envvar_scope_conflicts",
+            )
+            .with_details(format!(
+                "Conflicting variables: {}",
+                Self::format_limited_list(&Self::dedupe_display_items(keys.into_iter()))
+            )),
+        )
+    }
+
+    fn envvar_scope_label(scope: EnvVarScope) -> &'static str {
+        match scope {
+            EnvVarScope::Process => "Process",
+            EnvVarScope::User => "User",
+            EnvVarScope::System => "System",
+        }
+    }
+
+    fn envvar_scope_key(scope: EnvVarScope) -> &'static str {
+        match scope {
+            EnvVarScope::Process => "process",
+            EnvVarScope::User => "user",
+            EnvVarScope::System => "system",
+        }
+    }
+
+    fn normalize_envvar_key(key: &str) -> String {
+        if cfg!(windows) {
+            key.to_ascii_uppercase()
+        } else {
+            key.to_string()
+        }
+    }
+
+    fn normalize_envvar_path(path: &str) -> String {
+        if cfg!(windows) {
+            let normalized = path.replace('/', "\\").trim().to_string();
+            if normalized.ends_with('\\') && normalized.len() > 3 {
+                normalized.trim_end_matches('\\').to_ascii_lowercase()
+            } else {
+                normalized.to_ascii_lowercase()
+            }
+        } else {
+            path.trim().to_string()
+        }
+    }
+
+    fn dedupe_display_items<'a>(items: impl IntoIterator<Item = &'a str>) -> Vec<String> {
+        let mut seen = HashSet::new();
+        let mut ordered = Vec::new();
+        for item in items {
+            let trimmed = item.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let normalized = Self::normalize_envvar_path(trimmed);
+            if seen.insert(normalized) {
+                ordered.push(trimmed.to_string());
+            }
+        }
+        ordered
+    }
+
+    fn format_limited_list(items: &[String]) -> String {
+        const LIMIT: usize = 5;
+        let preview = items.iter().take(LIMIT).cloned().collect::<Vec<_>>();
+        if items.len() > LIMIT {
+            format!("{} (+{} more)", preview.join(", "), items.len() - LIMIT)
+        } else {
+            preview.join(", ")
         }
     }
 
@@ -1988,7 +2574,16 @@ impl HealthCheckManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::{CogniaError, CogniaResult};
+    use crate::platform::env::{EnvModifications, Platform};
+    use crate::provider::support::SupportReason;
     use crate::provider::support::REASON_HEALTH_CHECK_TIMEOUT;
+    use crate::provider::{
+        Capability, EnvironmentProvider, InstallReceipt, InstallRequest, InstalledFilter,
+        InstalledPackage, InstalledVersion, PackageInfo, PackageSummary, Provider, SearchOptions,
+        UninstallRequest, UpdateInfo, VersionDetection, VersionInfo,
+    };
+    use async_trait::async_trait;
 
     #[test]
     fn test_health_status_default() {
@@ -2168,8 +2763,30 @@ mod tests {
         assert!(matches!(result.overall_status, HealthStatus::Healthy));
         assert!(result.environments.is_empty());
         assert!(result.package_managers.is_empty());
+        assert!(result.envvar_issues.is_empty());
         assert!(result.system_issues.is_empty());
+        assert!(result.wsl_health.is_none());
         assert!(result.skipped_providers.is_empty());
+    }
+
+    #[test]
+    fn test_system_health_result_add_wsl_health_warning() {
+        let mut system_result = SystemHealthResult::new();
+        let mut wsl_result = WslHealthResult::new();
+        wsl_result.add_issue(HealthIssue::new(
+            Severity::Warning,
+            IssueCategory::NetworkError,
+            "WSL DNS resolution failed",
+        ));
+        wsl_result.finalize();
+
+        system_result.add_wsl_health(wsl_result);
+
+        assert!(matches!(
+            system_result.overall_status,
+            HealthStatus::Warning
+        ));
+        assert!(system_result.wsl_health.is_some());
     }
 
     #[test]
@@ -2515,6 +3132,92 @@ mod tests {
     }
 
     #[test]
+    fn test_build_envvar_path_validity_issue_reports_missing_entries() {
+        let issue = HealthCheckManager::build_envvar_path_validity_issue(
+            EnvVarScope::User,
+            &[
+                PathEntryInfo {
+                    path: "C:\\Valid".to_string(),
+                    exists: true,
+                    is_directory: true,
+                    is_duplicate: false,
+                },
+                PathEntryInfo {
+                    path: "C:\\Ghost".to_string(),
+                    exists: false,
+                    is_directory: false,
+                    is_duplicate: false,
+                },
+            ],
+        )
+        .expect("missing path issue");
+
+        assert_eq!(issue.check_id.as_deref(), Some("envvar_path_validity:user"));
+        assert!(matches!(issue.severity, Severity::Warning));
+        assert!(issue.message.contains("User PATH"));
+        assert!(issue.details.unwrap_or_default().contains("C:\\Ghost"));
+    }
+
+    #[test]
+    fn test_build_envvar_path_duplicate_issue_reports_counts() {
+        let issue = HealthCheckManager::build_envvar_path_duplicate_issue(
+            EnvVarScope::System,
+            &[
+                PathEntryInfo {
+                    path: "C:\\Tools".to_string(),
+                    exists: true,
+                    is_directory: true,
+                    is_duplicate: false,
+                },
+                PathEntryInfo {
+                    path: "C:\\Tools".to_string(),
+                    exists: true,
+                    is_directory: true,
+                    is_duplicate: true,
+                },
+            ],
+        )
+        .expect("duplicate path issue");
+
+        assert_eq!(
+            issue.check_id.as_deref(),
+            Some("envvar_path_duplicates:system")
+        );
+        assert!(matches!(issue.severity, Severity::Info));
+        assert!(issue.details.unwrap_or_default().contains("C:\\Tools (2x)"));
+    }
+
+    #[test]
+    fn test_build_envvar_required_vars_issue_reports_missing_keys() {
+        let available = ["PATH", "USERPROFILE", "TMP", "SYSTEMROOT"]
+            .into_iter()
+            .map(HealthCheckManager::normalize_envvar_key)
+            .collect::<HashSet<_>>();
+
+        let issue = HealthCheckManager::build_envvar_required_vars_issue(&available)
+            .expect("required envvar issue");
+
+        assert_eq!(issue.check_id.as_deref(), Some("envvar_required_vars"));
+        assert!(matches!(issue.severity, Severity::Error));
+        assert!(issue.details.unwrap_or_default().contains("TEMP"));
+    }
+
+    #[test]
+    fn test_build_envvar_scope_conflict_issue_reports_keys() {
+        let issue = HealthCheckManager::build_envvar_scope_conflict_issue(&[EnvVarConflict {
+            key: "JAVA_HOME".to_string(),
+            user_value: "C:\\Users\\me\\java".to_string(),
+            system_value: "C:\\Java".to_string(),
+            effective_value: "C:\\Users\\me\\java".to_string(),
+        }])
+        .expect("scope conflict issue");
+
+        assert_eq!(issue.check_id.as_deref(), Some("envvar_scope_conflicts"));
+        assert!(matches!(issue.severity, Severity::Warning));
+        assert!(issue.details.unwrap_or_default().contains("JAVA_HOME"));
+    }
+
+    #[test]
     fn test_environment_finalize_unknown_when_scope_unavailable() {
         let mut result = EnvironmentHealthResult::new("node");
         result.set_scope_state(HealthScopeState::Unavailable, "provider_not_installed");
@@ -2722,5 +3425,137 @@ mod tests {
         pm.set_scope_state(HealthScopeState::Timeout, "health_check_timeout");
         assert!(matches!(pm.scope_state, HealthScopeState::Unsupported));
         assert_eq!(pm.scope_reason.as_deref(), Some("platform_unsupported"));
+    }
+
+    #[derive(Debug)]
+    struct DummyUnavailableCppProvider;
+
+    #[async_trait]
+    impl Provider for DummyUnavailableCppProvider {
+        fn id(&self) -> &str {
+            "system-cpp"
+        }
+
+        fn display_name(&self) -> &str {
+            "C++ (System)"
+        }
+
+        fn capabilities(&self) -> HashSet<Capability> {
+            HashSet::from([Capability::List])
+        }
+
+        fn supported_platforms(&self) -> Vec<Platform> {
+            vec![Platform::Windows, Platform::MacOS, Platform::Linux]
+        }
+
+        async fn is_available(&self) -> bool {
+            false
+        }
+
+        async fn unavailable_reason(&self) -> Option<SupportReason> {
+            Some(SupportReason {
+                code: "cpp-compiler-not-found",
+                message:
+                    "No runnable C++ compiler was found in PATH (checked clang-cl, clang++, g++, c++)"
+                        .into(),
+            })
+        }
+
+        async fn search(
+            &self,
+            _query: &str,
+            _options: SearchOptions,
+        ) -> CogniaResult<Vec<PackageSummary>> {
+            Ok(vec![])
+        }
+
+        async fn get_package_info(&self, _name: &str) -> CogniaResult<PackageInfo> {
+            Err(CogniaError::Provider("not implemented".into()))
+        }
+
+        async fn get_versions(&self, _name: &str) -> CogniaResult<Vec<VersionInfo>> {
+            Ok(vec![])
+        }
+
+        async fn install(&self, _request: InstallRequest) -> CogniaResult<InstallReceipt> {
+            Err(CogniaError::Provider("not implemented".into()))
+        }
+
+        async fn uninstall(&self, _request: UninstallRequest) -> CogniaResult<()> {
+            Err(CogniaError::Provider("not implemented".into()))
+        }
+
+        async fn list_installed(
+            &self,
+            _filter: InstalledFilter,
+        ) -> CogniaResult<Vec<InstalledPackage>> {
+            Ok(vec![])
+        }
+
+        async fn check_updates(&self, _packages: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
+            Ok(vec![])
+        }
+    }
+
+    #[async_trait]
+    impl EnvironmentProvider for DummyUnavailableCppProvider {
+        async fn list_installed_versions(&self) -> CogniaResult<Vec<InstalledVersion>> {
+            Ok(vec![])
+        }
+
+        async fn get_current_version(&self) -> CogniaResult<Option<String>> {
+            Ok(None)
+        }
+
+        async fn set_global_version(&self, _version: &str) -> CogniaResult<()> {
+            Err(CogniaError::Provider("not implemented".into()))
+        }
+
+        async fn set_local_version(
+            &self,
+            _project_path: &std::path::Path,
+            _version: &str,
+        ) -> CogniaResult<()> {
+            Err(CogniaError::Provider("not implemented".into()))
+        }
+
+        async fn detect_version(
+            &self,
+            _start_path: &std::path::Path,
+        ) -> CogniaResult<Option<VersionDetection>> {
+            Ok(None)
+        }
+
+        fn get_env_modifications(&self, _version: &str) -> CogniaResult<EnvModifications> {
+            Ok(EnvModifications::new())
+        }
+
+        fn version_file_name(&self) -> &str {
+            ".tool-versions"
+        }
+
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+    }
+
+    #[tokio::test]
+    async fn test_environment_health_prefers_custom_unavailable_reason() {
+        let mgr = make_test_manager();
+        let provider = DummyUnavailableCppProvider;
+
+        let result = mgr.check_environment_health(&provider).await;
+
+        assert!(matches!(result.scope_state, HealthScopeState::Unavailable));
+        assert_eq!(
+            result.scope_reason.as_deref(),
+            Some("cpp-compiler-not-found")
+        );
+        assert_eq!(result.issues.len(), 1);
+        assert!(result.issues[0]
+            .details
+            .as_deref()
+            .unwrap_or_default()
+            .contains("No runnable C++ compiler"));
     }
 }

@@ -2,7 +2,7 @@ use super::traits::*;
 use crate::download::{AssetLike, AssetPicker, LibcType};
 use crate::error::{CogniaError, CogniaResult};
 use crate::platform::{
-    env::{Architecture, Platform, current_arch, current_platform, detect_libc},
+    env::{current_arch, current_platform, detect_libc, Architecture, Platform},
     fs,
     network::HttpClient,
 };

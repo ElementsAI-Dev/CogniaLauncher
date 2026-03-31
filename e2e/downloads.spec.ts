@@ -14,17 +14,20 @@ test.describe('Downloads Page', () => {
     await expect(appPage.getByText('Downloads').first()).toBeVisible();
   });
 
-  test('tabs render (active/history)', async ({ appPage }) => {
-    const tabList = appPage.getByRole('tablist').first();
-    await expect(tabList).toBeVisible();
+  test('toolbar actions and search render', async ({ appPage }) => {
+    await expect(appPage.getByRole('button', { name: /add download/i })).toBeVisible();
+    await expect(appPage.getByRole('button', { name: /batch import/i })).toBeVisible();
+    await expect(appPage.getByRole('button', { name: /from github/i })).toBeVisible();
+    await expect(appPage.getByRole('button', { name: /from gitlab/i })).toBeVisible();
+    await expect(appPage.getByPlaceholder(/search downloads/i)).toBeVisible();
   });
 
-  test('switches between queue and history tabs', async ({ appPage }) => {
-    const historyTab = appPage.getByRole('tab', { name: /download history|history/i }).first();
-    await historyTab.click();
-    await expect(historyTab).toHaveAttribute('aria-selected', 'true');
+  test('opens settings panel and add download dialog', async ({ appPage }) => {
+    await appPage.getByRole('button', { name: /settings/i }).first().click();
+    await expect(appPage.getByText(/clipboard monitor/i)).toBeVisible();
 
-    await expect(appPage.getByPlaceholder(/search history/i)).toBeVisible();
+    await appPage.getByRole('button', { name: /add download/i }).click();
+    await expect(appPage.getByLabel(/url/i)).toBeVisible();
   });
 
   test('page remains stable in web mode', async ({ appPage }) => {

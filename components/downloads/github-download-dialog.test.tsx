@@ -41,11 +41,11 @@ jest.mock("@/components/providers/locale-provider", () => ({
   useLocale: () => ({ t: (key: string) => key }),
 }));
 
-jest.mock("@/hooks/use-github-downloads", () => ({
+jest.mock("@/hooks/downloads/use-github-downloads", () => ({
   useGitHubDownloads: () => mockUseGitHubDownloads,
 }));
 
-jest.mock("@/hooks/use-asset-matcher", () => ({
+jest.mock("@/hooks/downloads/use-asset-matcher", () => ({
   useAssetMatcher: () => ({
     parseAssets: mockParseAssets,
     currentPlatform: "windows",

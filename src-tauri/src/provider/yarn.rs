@@ -1,9 +1,9 @@
 use super::api::{get_api_client, DEFAULT_NPM_REGISTRY};
+#[cfg(test)]
+use super::node_base::parse_node_list_json_line;
 use super::node_base::{
     parse_dependency_constraints_from_json_output, parse_node_list_json_output,
 };
-#[cfg(test)]
-use super::node_base::parse_node_list_json_line;
 use super::traits::*;
 use crate::error::{CogniaError, CogniaResult};
 use crate::platform::{

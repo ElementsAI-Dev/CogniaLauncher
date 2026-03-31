@@ -61,3 +61,30 @@ export interface ToolDefinition {
 export interface ToolDefinitionWithMeta extends ToolDefinition {
   readonly isNew: boolean;
 }
+
+// ============================================================================
+// Execution lifecycle
+// ============================================================================
+
+export type ToolExecutionErrorKind =
+  | 'validation'
+  | 'runtime'
+  | 'timeout'
+  | 'permission_denied'
+  | 'cancelled';
+
+export interface ToolExecutionError {
+  kind: ToolExecutionErrorKind;
+  message: string;
+}
+
+export type ToolProgressPhase = 'running' | 'complete' | 'failed' | 'cancelled';
+
+export interface ToolProgressEvent {
+  toolId: string;
+  executionId: string;
+  phase: ToolProgressPhase;
+  progress?: number;
+  message?: string;
+  error?: ToolExecutionError;
+}

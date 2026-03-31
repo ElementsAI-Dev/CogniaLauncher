@@ -21,6 +21,9 @@ const fallback: AppSettings = {
   trayClickBehavior: "toggle_window",
   showNotifications: true,
   trayNotificationLevel: "all",
+  envvarDefaultScope: "all",
+  envvarAutoSnapshot: false,
+  envvarMaskSensitive: true,
   sidebarItemOrder: [...DEFAULT_SIDEBAR_ITEM_ORDER],
 };
 
@@ -44,6 +47,9 @@ describe("app-settings-mapping", () => {
         "tray.click_behavior": "show_menu",
         "tray.show_notifications": "false",
         "tray.notification_level": "important_only",
+        "envvar.default_scope": "user",
+        "envvar.auto_snapshot": "true",
+        "envvar.mask_sensitive": "false",
       },
       fallback,
     );
@@ -61,6 +67,9 @@ describe("app-settings-mapping", () => {
     expect(mapped.trayClickBehavior).toBe("show_menu");
     expect(mapped.showNotifications).toBe(false);
     expect(mapped.trayNotificationLevel).toBe("important_only");
+    expect(mapped.envvarDefaultScope).toBe("user");
+    expect(mapped.envvarAutoSnapshot).toBe(true);
+    expect(mapped.envvarMaskSensitive).toBe(false);
     expect(mapped.autostart).toBe(false);
   });
 
@@ -72,6 +81,7 @@ describe("app-settings-mapping", () => {
         "updates.custom_endpoints": "[invalid",
         "tray.click_behavior": "mystery",
         "tray.notification_level": "mystery",
+        "envvar.default_scope": "mystery",
       },
       {
         ...fallback,
@@ -84,6 +94,7 @@ describe("app-settings-mapping", () => {
     expect(mapped.updateCustomEndpoints).toEqual(["https://fallback.example.com"]);
     expect(mapped.trayClickBehavior).toBe("toggle_window");
     expect(mapped.trayNotificationLevel).toBe("all");
+    expect(mapped.envvarDefaultScope).toBe("all");
   });
 
   it("normalizes custom endpoints from newline and comma separated values", () => {
@@ -117,6 +128,7 @@ describe("app-settings-mapping", () => {
     expect(appSettingValueToConfigValue("notifyOnUpdates", false)).toBe("false");
     expect(appSettingValueToConfigValue("trayNotificationLevel", "none")).toBe("none");
     expect(appSettingValueToConfigValue("updateSourceMode", "mirror")).toBe("mirror");
+    expect(appSettingValueToConfigValue("envvarDefaultScope", "system")).toBe("system");
     expect(
       appSettingValueToConfigValue("updateCustomEndpoints", [
         "https://updates.example.com/{{target}}/{{current_version}}",
@@ -133,6 +145,9 @@ describe("app-settings-mapping", () => {
       ],
       trayClickBehavior: "do_nothing",
       trayNotificationLevel: "important_only",
+      envvarDefaultScope: "process",
+      envvarAutoSnapshot: true,
+      envvarMaskSensitive: false,
     });
     expect(entries).toContainEqual(["updates.check_on_start", "false"]);
     expect(entries).toContainEqual(["updates.source_mode", "mirror"]);
@@ -142,6 +157,9 @@ describe("app-settings-mapping", () => {
     ]);
     expect(entries).toContainEqual(["tray.click_behavior", "do_nothing"]);
     expect(entries).toContainEqual(["tray.notification_level", "important_only"]);
+    expect(entries).toContainEqual(["envvar.default_scope", "process"]);
+    expect(entries).toContainEqual(["envvar.auto_snapshot", "true"]);
+    expect(entries).toContainEqual(["envvar.mask_sensitive", "false"]);
   });
 
   it("reads legacy app settings from both persist and direct payload shapes", () => {

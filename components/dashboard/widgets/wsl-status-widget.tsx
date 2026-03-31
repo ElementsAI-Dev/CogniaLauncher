@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter }
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { useLocale } from '@/components/providers/locale-provider';
-import { useWslStatus } from '@/hooks/use-wsl-status';
+import { useWslStatus } from '@/hooks/wsl/use-wsl-status';
 import { useWslStore } from '@/lib/stores/wsl';
 import { buildWslOverviewHref } from '@/lib/wsl/workflow';
 import { Terminal, ExternalLink, Loader2 } from 'lucide-react';

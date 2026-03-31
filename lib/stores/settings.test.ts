@@ -28,6 +28,9 @@ describe('useSettingsStore', () => {
     trayClickBehavior: 'toggle_window',
     showNotifications: true,
     trayNotificationLevel: 'all',
+    envvarDefaultScope: 'all',
+    envvarAutoSnapshot: false,
+    envvarMaskSensitive: true,
     sidebarItemOrder: [...DEFAULT_SIDEBAR_ITEM_ORDER],
   };
 
@@ -73,6 +76,9 @@ describe('useSettingsStore', () => {
       expect(appSettings.trayClickBehavior).toBe('toggle_window');
       expect(appSettings.showNotifications).toBe(true);
       expect(appSettings.trayNotificationLevel).toBe('all');
+      expect(appSettings.envvarDefaultScope).toBe('all');
+      expect(appSettings.envvarAutoSnapshot).toBe(false);
+      expect(appSettings.envvarMaskSensitive).toBe(true);
       expect(appSettings.sidebarItemOrder).toEqual(DEFAULT_SIDEBAR_ITEM_ORDER);
     });
   });
@@ -304,6 +310,19 @@ describe('useSettingsStore', () => {
         expect(useSettingsStore.getState().appSettings.trayNotificationLevel).toBe('important_only');
       });
 
+      it('should update envvar preferences', () => {
+        useSettingsStore.getState().setAppSettings({
+          envvarDefaultScope: 'user',
+          envvarAutoSnapshot: true,
+          envvarMaskSensitive: false,
+        });
+
+        const { appSettings } = useSettingsStore.getState();
+        expect(appSettings.envvarDefaultScope).toBe('user');
+        expect(appSettings.envvarAutoSnapshot).toBe(true);
+        expect(appSettings.envvarMaskSensitive).toBe(false);
+      });
+
       it('should update sidebarItemOrder', () => {
         useSettingsStore.getState().setAppSettings({
           sidebarItemOrder: ['packages', ...DEFAULT_SIDEBAR_ITEM_ORDER.filter((id) => id !== 'packages')],
@@ -388,6 +407,9 @@ describe('useSettingsStore', () => {
       expect(migrated.appSettings.updateSourceMode).toBe('official');
       expect(migrated.appSettings.updateCustomEndpoints).toEqual([]);
       expect(migrated.appSettings.updateFallbackToOfficial).toBe(true);
+      expect(migrated.appSettings.envvarDefaultScope).toBe('all');
+      expect(migrated.appSettings.envvarAutoSnapshot).toBe(false);
+      expect(migrated.appSettings.envvarMaskSensitive).toBe(true);
       expect(migrated.appSettings.sidebarItemOrder).toEqual(DEFAULT_SIDEBAR_ITEM_ORDER);
     });
 
@@ -445,6 +467,46 @@ describe('useSettingsStore', () => {
         'https://two.example',
       ]);
       expect(migrated.appSettings.sidebarItemOrder[0]).toBe('packages');
+    });
+
+    it('should fall back invalid envvar scopes to defaults for current persisted versions', () => {
+      const persistApi = (useSettingsStore as unknown as {
+        persist?: { getOptions: () => { migrate?: (state: unknown, version: number) => unknown } };
+      }).persist;
+      const migrate = persistApi?.getOptions().migrate;
+      expect(migrate).toBeDefined();
+
+      const migrated = migrate?.(
+        {
+          appSettings: {
+            envvarDefaultScope: 'mystery',
+          },
+        },
+        5,
+      ) as { appSettings: AppSettings };
+
+      expect(migrated.appSettings.envvarDefaultScope).toBe('all');
+    });
+
+    it('should preserve valid envvar scopes for current persisted versions', () => {
+      const persistApi = (useSettingsStore as unknown as {
+        persist?: { getOptions: () => { migrate?: (state: unknown, version: number) => unknown } };
+      }).persist;
+      const migrate = persistApi?.getOptions().migrate;
+      expect(migrate).toBeDefined();
+
+      const migrated = migrate?.(
+        {
+          appSettings: {
+            envvarDefaultScope: 'system',
+            sidebarItemOrder: DEFAULT_SIDEBAR_ITEM_ORDER,
+          },
+        },
+        5,
+      ) as { appSettings: AppSettings };
+
+      expect(migrated.appSettings.envvarDefaultScope).toBe('system');
+      expect(migrated.appSettings.sidebarItemOrder).toEqual(DEFAULT_SIDEBAR_ITEM_ORDER);
     });
   });
 });

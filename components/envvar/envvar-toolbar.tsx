@@ -2,13 +2,7 @@
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Search, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { EnvVarScope } from '@/types/tauri';
@@ -69,51 +63,36 @@ export function EnvVarToolbar({
         )}
       </div>
       <div className="flex items-center gap-2">
-        <Select
+        <ToggleGroup
+          type="single"
           value={scopeFilter}
           onValueChange={(v) => {
-            void onScopeFilterChange(v as EnvVarScope | 'all');
+            if (v) void onScopeFilterChange(v as EnvVarScope | 'all');
           }}
+          variant="outline"
+          size="sm"
+          className="h-9"
+          aria-label={t('envvar.table.scope')}
+          data-testid="envvar-scope-filter"
           disabled={disabled}
         >
-          <SelectTrigger className="h-9 w-full sm:w-[160px]" aria-label={t('envvar.table.scope')}>
-            <div className="flex items-center gap-2">
-              <span
-                className={cn(
-                  'inline-block h-2 w-2 shrink-0 rounded-full',
-                  SCOPE_COLORS[scopeFilter],
-                )}
-              />
-              <SelectValue />
-            </div>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">
-              <div className="flex items-center gap-2">
-                <span className={cn('inline-block h-2 w-2 rounded-full', SCOPE_COLORS.all)} />
-                {t('common.all')}
-              </div>
-            </SelectItem>
-            <SelectItem value="process">
-              <div className="flex items-center gap-2">
-                <span className={cn('inline-block h-2 w-2 rounded-full', SCOPE_COLORS.process)} />
-                {t('envvar.scopes.process')}
-              </div>
-            </SelectItem>
-            <SelectItem value="user">
-              <div className="flex items-center gap-2">
-                <span className={cn('inline-block h-2 w-2 rounded-full', SCOPE_COLORS.user)} />
-                {t('envvar.scopes.user')}
-              </div>
-            </SelectItem>
-            <SelectItem value="system">
-              <div className="flex items-center gap-2">
-                <span className={cn('inline-block h-2 w-2 rounded-full', SCOPE_COLORS.system)} />
-                {t('envvar.scopes.system')}
-              </div>
-            </SelectItem>
-          </SelectContent>
-        </Select>
+          <ToggleGroupItem value="all" className="gap-1.5 text-xs">
+            <span className={cn('inline-block h-2 w-2 shrink-0 rounded-full', SCOPE_COLORS.all)} />
+            {t('common.all')}
+          </ToggleGroupItem>
+          <ToggleGroupItem value="process" className="gap-1.5 text-xs">
+            <span className={cn('inline-block h-2 w-2 shrink-0 rounded-full', SCOPE_COLORS.process)} />
+            {t('envvar.scopes.process')}
+          </ToggleGroupItem>
+          <ToggleGroupItem value="user" className="gap-1.5 text-xs">
+            <span className={cn('inline-block h-2 w-2 shrink-0 rounded-full', SCOPE_COLORS.user)} />
+            {t('envvar.scopes.user')}
+          </ToggleGroupItem>
+          <ToggleGroupItem value="system" className="gap-1.5 text-xs">
+            <span className={cn('inline-block h-2 w-2 shrink-0 rounded-full', SCOPE_COLORS.system)} />
+            {t('envvar.scopes.system')}
+          </ToggleGroupItem>
+        </ToggleGroup>
         {showCount && (
           <span className="shrink-0 text-xs text-muted-foreground">
             {isFiltered

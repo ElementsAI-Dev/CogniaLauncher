@@ -106,6 +106,13 @@ describe('DocsNavFooter', () => {
     expect(screen.getByText('首页')).toBeInTheDocument();
   });
 
+  it('uses Chinese titles for next links when locale is zh', () => {
+    mockLocale = 'zh';
+    render(<DocsNavFooter next={{ title: '安装', titleEn: 'Installation', slug: 'getting-started/installation' }} />);
+    expect(screen.getByText('安装')).toBeInTheDocument();
+    expect(screen.queryByText('Installation')).not.toBeInTheDocument();
+  });
+
   it('falls back to title when titleEn is missing and locale is en', () => {
     mockLocale = 'en';
     render(<DocsNavFooter prev={{ title: '首页', slug: 'index' }} />);

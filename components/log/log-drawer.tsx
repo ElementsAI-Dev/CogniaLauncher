@@ -8,20 +8,45 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { LogPanel } from "./log-panel";
 import { useLogStore } from "@/lib/stores/log";
 import { useLocale } from "@/components/providers/locale-provider";
 import { cn } from "@/lib/utils";
-import { ScrollText } from "lucide-react";
+import { buildLogsWorkspaceHref } from "@/lib/log-workspace";
+import { ArrowUpRight, ScrollText } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useCallback, useMemo } from "react";
 
 interface LogDrawerProps {
   side?: "right" | "bottom";
 }
 
 export function LogDrawer({ side = "right" }: LogDrawerProps) {
+  const router = useRouter();
   const { t } = useLocale();
-  const { drawerOpen, closeDrawer, getLogStats } = useLogStore();
+  const {
+    drawerOpen,
+    closeDrawer,
+    getLogStats,
+    filter,
+    showBookmarksOnly,
+  } = useLogStore();
   const stats = getLogStats();
+  const workspaceHref = useMemo(
+    () =>
+      buildLogsWorkspaceHref({
+        tab: "realtime",
+        search: filter.search,
+        levels: filter.levels,
+        showBookmarksOnly,
+      }),
+    [filter.levels, filter.search, showBookmarksOnly],
+  );
+  const handleOpenWorkspace = useCallback(() => {
+    closeDrawer();
+    router.push(workspaceHref);
+  }, [closeDrawer, router, workspaceHref]);
 
   return (
     <Sheet open={drawerOpen} onOpenChange={(open) => !open && closeDrawer()}>
@@ -45,6 +70,18 @@ export function LogDrawer({ side = "right" }: LogDrawerProps) {
           <SheetDescription className="sr-only">
             {t("logs.description")}
           </SheetDescription>
+          <div className="flex items-center justify-end pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8"
+              onClick={handleOpenWorkspace}
+            >
+              <ArrowUpRight className="mr-1.5 h-3.5 w-3.5" />
+              {t("logs.openWorkspace")}
+            </Button>
+          </div>
         </SheetHeader>
 
         <section className="min-h-0 flex-1 p-4" aria-label={t("logs.title")}>

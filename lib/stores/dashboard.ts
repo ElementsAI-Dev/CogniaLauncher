@@ -7,6 +7,7 @@ export type DashboardDataSource =
   | 'activity'
   | 'downloads'
   | 'environments'
+  | 'envvar'
   | 'health'
   | 'packages'
   | 'settings'
@@ -103,6 +104,7 @@ export type WidgetType =
   | 'package-list'
   | 'quick-actions'
   | 'wsl-status'
+  | 'envvar-status'
   | 'health-check'
   | 'updates-available'
   | 'welcome'
@@ -292,6 +294,17 @@ export const WIDGET_DEFINITIONS: Record<WidgetType, WidgetDefinition> = {
     minSize: 'sm',
     category: 'overview',
     dataSources: ['settings'],
+    ...SINGLE_INSTANCE_POLICY,
+  },
+  'envvar-status': {
+    type: 'envvar-status',
+    titleKey: 'dashboard.widgets.envvarStatus',
+    descriptionKey: 'dashboard.widgets.envvarStatusDesc',
+    icon: 'Variable',
+    defaultSize: 'md',
+    minSize: 'sm',
+    category: 'overview',
+    dataSources: ['envvar'],
     ...SINGLE_INSTANCE_POLICY,
   },
   'health-check': {

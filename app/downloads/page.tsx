@@ -3,74 +3,79 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { PageHeader } from '@/components/layout/page-header';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Table, TableBody, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Checkbox } from '@/components/ui/checkbox';
 import { useLocale } from '@/components/providers/locale-provider';
-import { useDownloads } from '@/hooks/use-downloads';
+import { useDownloads } from '@/hooks/downloads/use-downloads';
 import { isTauri } from '@/lib/tauri';
 import {
   AddDownloadDialog,
   GitHubDownloadDialog,
   GitLabDownloadDialog,
-  DownloadToolbar,
   DownloadEmptyState,
   DownloadDetailDialog,
-  DownloadTaskRow,
-  DownloadSettingsCard,
-  DownloadHistoryPanel,
   BatchImportDialog,
   SpeedChart,
-  type StatusFilter,
-  type SpeedUnit,
 } from '@/components/downloads';
+import { DownloadToolbar, type StatusFilter } from '@/components/downloads/download-toolbar';
+import { DownloadTaskCard } from '@/components/downloads/download-task-card';
+import { DownloadStatsStrip } from '@/components/downloads/download-stats-strip';
+import { DownloadSettingsPanel } from '@/components/downloads/download-settings-panel';
+import type { SpeedUnit } from '@/components/downloads/download-settings-card';
+import { DashboardSectionLabel } from '@/components/dashboard/dashboard-primitives';
 import { toast } from 'sonner';
 import {
   AlertCircle,
   ArrowDownToLine,
   RefreshCw,
-  History,
   Github,
   Gitlab,
   ListPlus,
 } from 'lucide-react';
 import { EMPTY_QUEUE_STATS } from '@/lib/constants/downloads';
-import {
-  createHistoryDownloadDraft,
-  runDownloadPreflightWithUi,
-} from '@/lib/downloads';
-import type { DownloadRequest, DownloadTask, HistoryRecord } from '@/lib/stores/download';
+import { createTaskDownloadDraft, runDownloadPreflightWithUi } from '@/lib/downloads';
+import { useDownloadStore } from '@/lib/stores/download';
+import type { DownloadRequest, DownloadTask } from '@/lib/stores/download';
+
+/** Group key → display order and state matcher. */
+const STATE_GROUPS = [
+  { key: 'downloading', states: ['downloading', 'extracting'] as const },
+  { key: 'paused', states: ['paused'] as const },
+  { key: 'queued', states: ['queued'] as const },
+  { key: 'completed', states: ['completed'] as const },
+  { key: 'failed', states: ['failed'] as const },
+  { key: 'cancelled', states: ['cancelled'] as const },
+] as const;
 
 export default function DownloadsPage() {
   const { t } = useLocale();
   const isDesktop = isTauri();
-  const [activeTab, setActiveTab] = useState<'queue' | 'history'>('queue');
+
+  // Dialog states
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [githubDialogOpen, setGithubDialogOpen] = useState(false);
   const [gitlabDialogOpen, setGitlabDialogOpen] = useState(false);
-  const [historyQuery, setHistoryQuery] = useState('');
-  const [historyResults, setHistoryResults] = useState<HistoryRecord[] | null>(null);
+  const [batchImportOpen, setBatchImportOpen] = useState(false);
+  const [detailTask, setDetailTask] = useState<DownloadTask | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailDestinationAvailable, setDetailDestinationAvailable] = useState(false);
+  const [initialRequest, setInitialRequest] = useState<Partial<DownloadRequest> | null>(null);
+
+  // Settings states
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [speedLimitInput, setSpeedLimitInput] = useState('0');
   const [speedUnit, setSpeedUnit] = useState<SpeedUnit>('B/s');
   const [maxConcurrentInput, setMaxConcurrentInput] = useState('4');
+
+  // Filter states
   const [queueSearchQuery, setQueueSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
-  const [detailTask, setDetailTask] = useState<DownloadTask | null>(null);
-  const [detailOpen, setDetailOpen] = useState(false);
-  const [batchImportOpen, setBatchImportOpen] = useState(false);
+
+  // Drag & drop
   const [isDragging, setIsDragging] = useState(false);
-  const [initialRequest, setInitialRequest] = useState<Partial<DownloadRequest> | null>(null);
-  const [historyDestinationAvailability, setHistoryDestinationAvailability] = useState<
-    Record<string, boolean>
-  >({});
 
   const {
     tasks,
     stats,
-    history,
     historyStats,
     speedLimit,
     maxConcurrent,
@@ -99,10 +104,6 @@ export default function DownloadsPage() {
     calculateChecksum,
     refreshTasks,
     refreshStats,
-    refreshHistory,
-    searchHistory,
-    clearHistory,
-    removeHistoryRecord,
     batchPause,
     batchResume,
     batchCancel,
@@ -111,18 +112,19 @@ export default function DownloadsPage() {
     deselectTask,
     deselectAllTasks,
     checkDiskSpace,
+    checkDestinationAvailability,
     verifyFile,
     extractArchive,
-  } = useDownloads();
+  } = useDownloads({ enableRuntime: false });
 
   const queueStats = stats ?? EMPTY_QUEUE_STATS;
-  const extractingCount = useMemo(
-    () => tasks.filter((task) => task.state === 'extracting').length,
-    [tasks]
-  );
 
+  // Current speed from store for stats strip
+  const speedHistory = useDownloadStore((s) => s.speedHistory);
+  const currentSpeed = speedHistory.length > 0 ? speedHistory[speedHistory.length - 1] : 0;
+
+  // Sync settings from backend
   useEffect(() => {
-    // Auto-select best unit when syncing from backend
     if (speedLimit >= 1024 * 1024) {
       setSpeedUnit('MB/s');
       setSpeedLimitInput(String(Math.round((speedLimit / (1024 * 1024)) * 100) / 100));
@@ -139,78 +141,24 @@ export default function DownloadsPage() {
     setMaxConcurrentInput(String(maxConcurrent));
   }, [maxConcurrent]);
 
-  useEffect(() => {
-    if (activeTab === 'history') {
-      refreshHistory();
-    }
-  }, [activeTab, refreshHistory]);
+  // Computed counts for toolbar
+  const activeCount = useMemo(
+    () =>
+      tasks.filter(
+        (t) => t.state === 'downloading' || t.state === 'extracting' || t.state === 'paused'
+      ).length,
+    [tasks]
+  );
 
-  useEffect(() => {
-    if (!historyQuery.trim()) {
-      setHistoryResults(null);
-      return;
-    }
+  const doneCount = useMemo(
+    () => tasks.filter((t) => t.state === 'completed' || t.state === 'cancelled').length,
+    [tasks]
+  );
 
-    const handler = window.setTimeout(async () => {
-      try {
-        const results = await searchHistory(historyQuery.trim());
-        setHistoryResults(results);
-      } catch (err) {
-        console.error('Failed to search history', err);
-      }
-    }, 300);
-
-    return () => window.clearTimeout(handler);
-  }, [historyQuery, searchHistory]);
-
-  const activeHistory = historyResults ?? history;
-
-  useEffect(() => {
-    if (activeTab !== 'history' || !isDesktop) {
-      setHistoryDestinationAvailability({});
-      return;
-    }
-
-    let disposed = false;
-
-    const loadAvailability = async () => {
-      try {
-        const fsModule = await import('@tauri-apps/plugin-fs').catch(() => null);
-        if (!fsModule?.exists) {
-          if (!disposed) {
-            setHistoryDestinationAvailability({});
-          }
-          return;
-        }
-
-        const entries = await Promise.all(
-          activeHistory.map(async (record) => [
-            record.id,
-            record.status === 'completed' ? await fsModule.exists(record.destination) : false,
-          ] as const)
-        );
-
-        if (!disposed) {
-          setHistoryDestinationAvailability(Object.fromEntries(entries));
-        }
-      } catch {
-        if (!disposed) {
-          setHistoryDestinationAvailability({});
-        }
-      }
-    };
-
-    void loadAvailability();
-
-    return () => {
-      disposed = true;
-    };
-  }, [activeHistory, activeTab, isDesktop]);
-
+  // Filter tasks
   const filteredTasks = useMemo(() => {
     let result = tasks;
 
-    // Search filter
     if (queueSearchQuery.trim()) {
       const query = queueSearchQuery.toLowerCase();
       result = result.filter(
@@ -221,28 +169,89 @@ export default function DownloadsPage() {
       );
     }
 
-    // Status filter
     if (statusFilter !== 'all') {
-      result = result.filter((task) => task.state === statusFilter);
+      result = result.filter((task) => {
+        switch (statusFilter) {
+          case 'active':
+            return task.state === 'downloading' || task.state === 'extracting' || task.state === 'paused';
+          case 'queued':
+            return task.state === 'queued';
+          case 'done':
+            return task.state === 'completed' || task.state === 'cancelled';
+          case 'failed':
+            return task.state === 'failed';
+          default:
+            return true;
+        }
+      });
     }
 
     return result;
   }, [tasks, queueSearchQuery, statusFilter]);
 
-  const hasQueueFilters = queueSearchQuery !== '' || statusFilter !== 'all';
+  // Group filtered tasks by state
+  const groupedSections = useMemo(() => {
+    return STATE_GROUPS.map((group) => ({
+      key: group.key,
+      label: t(`downloads.state.${group.key}`),
+      tasks: filteredTasks.filter((task) =>
+        (group.states as readonly string[]).includes(task.state)
+      ),
+    })).filter((section) => section.tasks.length > 0);
+  }, [filteredTasks, t]);
 
+  const hasQueueFilters = queueSearchQuery !== '' || statusFilter !== 'all';
   const selectedCount = selectedTaskIds.size;
-  const selectedVisibleCount = filteredTasks.filter((task) =>
-    selectedTaskIds.has(task.id)
-  ).length;
-  const allVisibleSelected =
-    filteredTasks.length > 0 && selectedVisibleCount === filteredTasks.length;
+  const showCheckbox = selectedCount > 0;
+
+  // Stable callbacks for card props (avoid inline closures that defeat memo)
+  const handleSelectChange = useCallback(
+    (taskId: string, selected: boolean) => {
+      if (selected) selectTask(taskId);
+      else deselectTask(taskId);
+    },
+    [selectTask, deselectTask]
+  );
+
+  const handleOpenDetail = useCallback(
+    (task: DownloadTask) => {
+      setDetailTask(task);
+      setDetailOpen(true);
+    },
+    []
+  );
+
+  const handleReuseTask = useCallback((task: DownloadTask) => {
+    setDetailOpen(false);
+    setInitialRequest(createTaskDownloadDraft(task));
+    setAddDialogOpen(true);
+  }, []);
+
+  useEffect(() => {
+    if (!detailOpen || !detailTask || detailTask.state !== 'completed' || !isDesktop) {
+      setDetailDestinationAvailable(false);
+      return;
+    }
+
+    let cancelled = false;
+    void checkDestinationAvailability(detailTask.destination)
+      .then((available) => {
+        if (!cancelled) {
+          setDetailDestinationAvailable(Boolean(available));
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [checkDestinationAvailability, detailOpen, detailTask, isDesktop]);
 
   const handleClearQueueFilters = useCallback(() => {
     setQueueSearchQuery('');
     setStatusFilter('all');
   }, []);
 
+  // Drag & drop handlers
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -260,9 +269,10 @@ export default function DownloadsPage() {
     e.stopPropagation();
     setIsDragging(false);
 
-    const url = e.dataTransfer.getData('text/uri-list')
-      || e.dataTransfer.getData('text/plain')
-      || e.dataTransfer.getData('text');
+    const url =
+      e.dataTransfer.getData('text/uri-list') ||
+      e.dataTransfer.getData('text/plain') ||
+      e.dataTransfer.getData('text');
 
     if (url && /^https?:\/\//i.test(url.trim())) {
       setInitialRequest({ url: url.trim() });
@@ -270,20 +280,16 @@ export default function DownloadsPage() {
     }
   }, []);
 
+  // Clipboard URL listener
   useEffect(() => {
     const handleClipboardDownloadUrl = (event: Event) => {
       const customEvent = event as CustomEvent<string>;
-      if (typeof customEvent.detail !== 'string' || !customEvent.detail.trim()) {
-        return;
-      }
+      if (typeof customEvent.detail !== 'string' || !customEvent.detail.trim()) return;
       setInitialRequest({ url: customEvent.detail.trim() });
       setAddDialogOpen(true);
     };
 
-    window.addEventListener(
-      'clipboard-download-url',
-      handleClipboardDownloadUrl as EventListener
-    );
+    window.addEventListener('clipboard-download-url', handleClipboardDownloadUrl as EventListener);
     return () => {
       window.removeEventListener(
         'clipboard-download-url',
@@ -292,14 +298,12 @@ export default function DownloadsPage() {
     };
   }, []);
 
+  // Handlers
   const handleAdd = useCallback(
     async (request: DownloadRequest) => {
       try {
         const pass = await runDownloadPreflightWithUi(
-          {
-            destinationPath: request.destination,
-            checkDiskSpace,
-          },
+          { destinationPath: request.destination, checkDiskSpace },
           {
             t,
             onInfo: (message) => toast(message),
@@ -320,25 +324,16 @@ export default function DownloadsPage() {
   );
 
   const handlePauseAll = useCallback(async () => {
-    const paused = await pauseAll();
-    if (paused > 0) {
-      toast.success(t('downloads.toast.paused'));
-    }
-  }, [pauseAll, t]);
+    await pauseAll();
+  }, [pauseAll]);
 
   const handleResumeAll = useCallback(async () => {
-    const resumed = await resumeAll();
-    if (resumed > 0) {
-      toast.success(t('downloads.toast.resumed'));
-    }
-  }, [resumeAll, t]);
+    await resumeAll();
+  }, [resumeAll]);
 
   const handleCancelAll = useCallback(async () => {
-    const cancelled = await cancelAll();
-    if (cancelled > 0) {
-      toast.success(t('downloads.toast.cancelled'));
-    }
-  }, [cancelAll, t]);
+    await cancelAll();
+  }, [cancelAll]);
 
   const handleClearFinished = useCallback(async () => {
     const cleared = await clearFinished();
@@ -348,18 +343,14 @@ export default function DownloadsPage() {
   }, [clearFinished, t]);
 
   const handleRetryFailed = useCallback(async () => {
-    const retried = await retryFailed();
-    if (retried > 0) {
-      toast.success(t('downloads.toast.started'));
-    }
-  }, [retryFailed, t]);
+    await retryFailed();
+  }, [retryFailed]);
 
   const handleApplySettings = useCallback(async () => {
     const inputValue = Number(speedLimitInput);
     const concurrent = Number(maxConcurrentInput);
 
     if (!Number.isNaN(inputValue)) {
-      // Convert from display unit to bytes
       const multiplier = speedUnit === 'MB/s' ? 1024 * 1024 : speedUnit === 'KB/s' ? 1024 : 1;
       const speedBytes = Math.round(inputValue * multiplier);
       await setSpeedLimit(speedBytes);
@@ -377,33 +368,24 @@ export default function DownloadsPage() {
 
   const handleBatchPause = useCallback(async () => {
     if (selectedCount === 0) return;
-    const count = await batchPause();
+    await batchPause();
     await Promise.all([refreshTasks(), refreshStats()]);
-    if (count > 0) {
-      toast.success(t('downloads.toast.paused'));
-    }
     deselectAllTasks();
-  }, [batchPause, deselectAllTasks, refreshStats, refreshTasks, selectedCount, t]);
+  }, [batchPause, deselectAllTasks, refreshStats, refreshTasks, selectedCount]);
 
   const handleBatchResume = useCallback(async () => {
     if (selectedCount === 0) return;
-    const count = await batchResume();
+    await batchResume();
     await Promise.all([refreshTasks(), refreshStats()]);
-    if (count > 0) {
-      toast.success(t('downloads.toast.resumed'));
-    }
     deselectAllTasks();
-  }, [batchResume, deselectAllTasks, refreshStats, refreshTasks, selectedCount, t]);
+  }, [batchResume, deselectAllTasks, refreshStats, refreshTasks, selectedCount]);
 
   const handleBatchCancel = useCallback(async () => {
     if (selectedCount === 0) return;
-    const count = await batchCancel();
+    await batchCancel();
     await Promise.all([refreshTasks(), refreshStats()]);
-    if (count > 0) {
-      toast.success(t('downloads.toast.cancelled'));
-    }
     deselectAllTasks();
-  }, [batchCancel, deselectAllTasks, refreshStats, refreshTasks, selectedCount, t]);
+  }, [batchCancel, deselectAllTasks, refreshStats, refreshTasks, selectedCount]);
 
   const handleBatchRemove = useCallback(async () => {
     if (selectedCount === 0) return;
@@ -415,25 +397,6 @@ export default function DownloadsPage() {
     deselectAllTasks();
   }, [batchRemove, deselectAllTasks, refreshStats, selectedCount, t]);
 
-  const handleToggleSelectAllVisible = useCallback(
-    (checked: boolean) => {
-      if (checked) {
-        filteredTasks.forEach((task) => {
-          if (!selectedTaskIds.has(task.id)) {
-            selectTask(task.id);
-          }
-        });
-      } else {
-        filteredTasks.forEach((task) => {
-          if (selectedTaskIds.has(task.id)) {
-            deselectTask(task.id);
-          }
-        });
-      }
-    },
-    [deselectTask, filteredTasks, selectTask, selectedTaskIds]
-  );
-
   return (
     <div
       className="p-6 space-y-6 relative"
@@ -442,6 +405,7 @@ export default function DownloadsPage() {
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
+      {/* Drag overlay */}
       {isDragging && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 border-2 border-dashed border-primary rounded-lg pointer-events-none">
           <div className="text-center">
@@ -450,10 +414,12 @@ export default function DownloadsPage() {
           </div>
         </div>
       )}
+
+      {/* Page Header */}
       <PageHeader
         title={t('downloads.title')}
         description={t('downloads.description')}
-        actions={(
+        actions={
           <>
             <Button
               size="sm"
@@ -490,16 +456,16 @@ export default function DownloadsPage() {
               {t('common.refresh')}
             </Button>
           </>
-        )}
+        }
       />
 
+      {/* Error alerts */}
       {error && (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
-
       {!isDesktop && (
         <Alert>
           <AlertCircle className="h-4 w-4" />
@@ -507,182 +473,95 @@ export default function DownloadsPage() {
         </Alert>
       )}
 
-      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as typeof activeTab)}>
-        <TabsList>
-          <TabsTrigger value="queue" className="gap-2">
-            <ArrowDownToLine className="h-4 w-4" />
-            {t('downloads.queue')}
-            <span className="text-xs text-muted-foreground">({tasks.length})</span>
-          </TabsTrigger>
-          <TabsTrigger value="history" className="gap-2">
-            <History className="h-4 w-4" />
-            {t('downloads.historyTab')}
-            <span className="text-xs text-muted-foreground">({history.length})</span>
-          </TabsTrigger>
-        </TabsList>
+      {/* Stats Strip */}
+      <DownloadStatsStrip stats={queueStats} historyStats={historyStats} currentSpeed={currentSpeed} t={t} />
 
-        <TabsContent value="queue" className="space-y-6">
-          <DownloadToolbar
-            searchQuery={queueSearchQuery}
-            onSearchChange={setQueueSearchQuery}
-            statusFilter={statusFilter}
-            onStatusChange={setStatusFilter}
-            selectedCount={selectedCount}
-            onBatchPause={handleBatchPause}
-            onBatchResume={handleBatchResume}
-            onBatchCancel={handleBatchCancel}
-            onBatchRemove={handleBatchRemove}
-            onClearSelection={deselectAllTasks}
-            onPauseAll={handlePauseAll}
-            onResumeAll={handleResumeAll}
-            onCancelAll={handleCancelAll}
-            onClearFinished={handleClearFinished}
-            onRetryFailed={handleRetryFailed}
-            extractingCount={extractingCount}
-            stats={queueStats}
-            isLoading={isLoading}
-            t={t}
-          />
+      {/* Toolbar */}
+      <DownloadToolbar
+        searchQuery={queueSearchQuery}
+        onSearchChange={setQueueSearchQuery}
+        statusFilter={statusFilter}
+        onStatusChange={setStatusFilter}
+        selectedCount={selectedCount}
+        onBatchPause={handleBatchPause}
+        onBatchResume={handleBatchResume}
+        onBatchCancel={handleBatchCancel}
+        onBatchRemove={handleBatchRemove}
+        onClearSelection={deselectAllTasks}
+        onPauseAll={handlePauseAll}
+        onResumeAll={handleResumeAll}
+        onCancelAll={handleCancelAll}
+        onClearFinished={handleClearFinished}
+        onRetryFailed={handleRetryFailed}
+        settingsOpen={settingsOpen}
+        onSettingsToggle={() => setSettingsOpen((prev) => !prev)}
+        activeCount={activeCount}
+        doneCount={doneCount}
+        stats={queueStats}
+        isLoading={isLoading}
+        t={t}
+      />
 
-          <div
-            data-testid="downloads-queue-layout"
-            className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]"
-          >
-            <div className="space-y-6">
-              <Card data-testid="downloads-queue-card">
-                <CardHeader className="pb-2">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <CardTitle>{t('downloads.queue')}</CardTitle>
-                      <CardDescription>
-                        {t('downloads.progress.percent')}: {queueStats.overallProgress.toFixed(1)}%
-                        {filteredTasks.length !== tasks.length && (
-                          <span className="ml-2">({filteredTasks.length} / {tasks.length})</span>
-                        )}
-                      </CardDescription>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  {filteredTasks.length === 0 ? (
-                    <DownloadEmptyState
-                      hasFilters={hasQueueFilters}
-                      onClearFilters={handleClearQueueFilters}
-                      t={t}
-                    />
-                  ) : (
-                    <ScrollArea className="h-[420px] w-full">
-                      <Table className="min-w-[920px]">
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead className="w-10">
-                              <Checkbox
-                                checked={
-                                  allVisibleSelected
-                                    ? true
-                                    : selectedVisibleCount > 0
-                                      ? 'indeterminate'
-                                      : false
-                                }
-                                onCheckedChange={(checked) =>
-                                  handleToggleSelectAllVisible(checked === true)
-                                }
-                                aria-label="Select all visible tasks"
-                              />
-                            </TableHead>
-                            <TableHead>{t('downloads.name')}</TableHead>
-                            <TableHead>{t('downloads.provider')}</TableHead>
-                            <TableHead>{t('downloads.status')}</TableHead>
-                            <TableHead>{t('downloads.progress.percent')}</TableHead>
-                            <TableHead>{t('downloads.progress.speed')}</TableHead>
-                            <TableHead>{t('downloads.progress.eta')}</TableHead>
-                            <TableHead className="text-right">{t('common.actions')}</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {filteredTasks.map((task) => (
-                            <DownloadTaskRow
-                              key={task.id}
-                              task={task}
-                              selected={selectedTaskIds.has(task.id)}
-                              onSelectedChange={(selected) => {
-                                if (selected) {
-                                  selectTask(task.id);
-                                } else {
-                                  deselectTask(task.id);
-                                }
-                              }}
-                              onPause={pauseDownload}
-                              onResume={resumeDownload}
-                              onCancel={cancelDownload}
-                              onRemove={removeDownload}
-                              onOpen={openFile}
-                              onReveal={revealFile}
-                              onDetail={(task) => {
-                                setDetailTask(task);
-                                setDetailOpen(true);
-                              }}
-                              t={t}
-                            />
-                          ))}
-                        </TableBody>
-                      </Table>
-                      <ScrollBar orientation="horizontal" />
-                    </ScrollArea>
-                  )}
-                </CardContent>
-              </Card>
+      {/* Collapsible Settings Panel */}
+      <DownloadSettingsPanel
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        speedLimitInput={speedLimitInput}
+        onSpeedLimitChange={setSpeedLimitInput}
+        speedUnit={speedUnit}
+        onSpeedUnitChange={setSpeedUnit}
+        maxConcurrentInput={maxConcurrentInput}
+        onMaxConcurrentChange={setMaxConcurrentInput}
+        onApply={handleApplySettings}
+        disabled={!isDesktop}
+        clipboardMonitor={clipboardMonitor}
+        onClipboardMonitorChange={setClipboardMonitor}
+        t={t}
+      />
 
-              <SpeedChart t={t} />
+      {/* Grouped Card List */}
+      {filteredTasks.length === 0 ? (
+        <DownloadEmptyState
+          hasFilters={hasQueueFilters}
+          onClearFilters={handleClearQueueFilters}
+          t={t}
+        />
+      ) : (
+        <div className="space-y-6">
+          {groupedSections.map((section) => (
+            <div key={section.key}>
+              <DashboardSectionLabel className="uppercase tracking-wider">
+                {section.label} ({section.tasks.length})
+              </DashboardSectionLabel>
+              <div className="space-y-2">
+                {section.tasks.map((task) => (
+                  <DownloadTaskCard
+                    key={task.id}
+                    task={task}
+                    selected={selectedTaskIds.has(task.id)}
+                    showCheckbox={showCheckbox}
+                    onSelectedChange={(selected) => handleSelectChange(task.id, selected)}
+                    onPause={pauseDownload}
+                    onResume={resumeDownload}
+                    onCancel={cancelDownload}
+                    onRemove={removeDownload}
+                    onRetry={retryTask}
+                    onOpen={openFile}
+                    onReveal={revealFile}
+                    onDetail={handleOpenDetail}
+                    t={t}
+                  />
+                ))}
+              </div>
             </div>
+          ))}
+        </div>
+      )}
 
-            <div
-              data-testid="downloads-settings-region"
-              className="xl:sticky xl:top-6 xl:self-start"
-            >
-              <DownloadSettingsCard
-                speedLimitInput={speedLimitInput}
-                onSpeedLimitChange={setSpeedLimitInput}
-                speedUnit={speedUnit}
-                onSpeedUnitChange={setSpeedUnit}
-                maxConcurrentInput={maxConcurrentInput}
-                onMaxConcurrentChange={setMaxConcurrentInput}
-                onApply={handleApplySettings}
-                disabled={!isDesktop}
-                clipboardMonitor={clipboardMonitor}
-                onClipboardMonitorChange={setClipboardMonitor}
-                t={t}
-              />
-            </div>
-          </div>
-        </TabsContent>
+      {/* Speed Chart */}
+      <SpeedChart t={t} />
 
-        <TabsContent value="history" className="space-y-6">
-          <DownloadHistoryPanel
-            history={activeHistory}
-            historyStats={historyStats}
-            historyQuery={historyQuery}
-            onHistoryQueryChange={setHistoryQuery}
-            onClearHistory={async (days) => void clearHistory(days)}
-            onRemoveRecord={async (id) => void removeHistoryRecord(id)}
-            onOpenRecord={async (record) => void openFile(record.destination)}
-            onInstallRecord={async (record) => void openFile(record.destination)}
-            onRevealRecord={async (record) => void revealFile(record.destination)}
-            onExtractRecord={async (record) => {
-              const destinationDir =
-                record.destination.replace(/[\\/][^\\/]+$/, "") || record.destination;
-              void extractArchive(record.destination, destinationDir);
-            }}
-            onReuseRecord={async (record) => {
-              setInitialRequest(createHistoryDownloadDraft(record));
-              setAddDialogOpen(true);
-            }}
-            destinationAvailability={historyDestinationAvailability}
-            t={t}
-          />
-        </TabsContent>
-      </Tabs>
-
+      {/* Dialogs */}
       <AddDownloadDialog
         open={addDialogOpen}
         onOpenChange={(open) => {
@@ -715,10 +594,12 @@ export default function DownloadsPage() {
 
       <DownloadDetailDialog
         task={detailTask}
+        destinationAvailable={detailDestinationAvailable}
         open={detailOpen}
         onOpenChange={setDetailOpen}
         onRetry={retryTask}
         onSetPriority={setPriority}
+        onReuseTask={handleReuseTask}
         onOpenFile={openFile}
         onRevealFile={revealFile}
         onCalculateChecksum={calculateChecksum}
@@ -737,10 +618,7 @@ export default function DownloadsPage() {
           for (const req of requests) {
             try {
               const pass = await runDownloadPreflightWithUi(
-                {
-                  destinationPath: req.destination,
-                  checkDiskSpace,
-                },
+                { destinationPath: req.destination, checkDiskSpace },
                 {
                   t,
                   onInfo: (message) => toast(message),

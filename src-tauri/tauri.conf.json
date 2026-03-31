@@ -940,7 +940,7 @@
                   "name": "action",
                   "index": 1,
                   "takesValue": true,
-                  "description": "Risky action id"
+                  "description": "Canonical risky action id (for example: persistent_set, persistent_remove, import_apply, path_repair_apply, conflict_resolve)"
                 },
                 {
                   "name": "scope",
@@ -959,10 +959,15 @@
                   "description": "Snapshot path"
                 },
                 {
+                  "name": "fingerprint",
+                  "takesValue": true,
+                  "description": "Preview fingerprint returned by snapshot-preview"
+                },
+                {
                   "name": "scopes",
                   "takesValue": true,
                   "multiple": true,
-                  "description": "Optional scopes to preview"
+                  "description": "Optional scopes to preview; omit to preview all snapshot scopes"
                 }
               ]
             },
@@ -979,7 +984,7 @@
                   "name": "scopes",
                   "takesValue": true,
                   "multiple": true,
-                  "description": "Optional scopes to restore"
+                  "description": "Optional scopes to restore; omit to restore all snapshot scopes"
                 }
               ]
             },
@@ -1132,6 +1137,69 @@
                   "index": 1,
                   "takesValue": true,
                   "description": "Task ID"
+                }
+              ]
+            }
+          }
+        },
+        "wsl": {
+          "description": "Manage Windows Subsystem for Linux",
+          "subcommands": {
+            "list": {
+              "description": "List installed WSL distributions"
+            },
+            "status": {
+              "description": "Show WSL runtime status"
+            },
+            "launch": {
+              "description": "Launch a WSL distribution",
+              "args": [
+                {
+                  "name": "distro",
+                  "index": 1,
+                  "takesValue": true,
+                  "description": "Distribution name"
+                },
+                {
+                  "name": "user",
+                  "takesValue": true,
+                  "description": "Optional Linux user"
+                }
+              ]
+            },
+            "terminate": {
+              "description": "Terminate a running WSL distribution",
+              "args": [
+                {
+                  "name": "distro",
+                  "index": 1,
+                  "takesValue": true,
+                  "description": "Distribution name"
+                }
+              ]
+            },
+            "shutdown": {
+              "description": "Shut down all running WSL distributions"
+            },
+            "exec": {
+              "description": "Execute a shell command inside a WSL distribution",
+              "args": [
+                {
+                  "name": "distro",
+                  "index": 1,
+                  "takesValue": true,
+                  "description": "Distribution name"
+                },
+                {
+                  "name": "command",
+                  "index": 2,
+                  "takesValue": true,
+                  "description": "Shell command to execute"
+                },
+                {
+                  "name": "user",
+                  "takesValue": true,
+                  "description": "Optional Linux user"
                 }
               ]
             }

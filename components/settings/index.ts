@@ -8,6 +8,7 @@ export { AppearanceSettings } from "./appearance-settings";
 export { AppearanceWorkbench } from "./appearance-workbench";
 export { UpdateSettings } from "./update-settings";
 export { TraySettings } from "./tray-settings";
+export { EnvVarSettings } from "./envvar-settings";
 export { SidebarOrderCustomizer } from "./sidebar-order-customizer";
 export { PathsSettings } from "./paths-settings";
 export { ProviderSettings } from "./provider-settings";

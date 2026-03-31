@@ -31,7 +31,7 @@ import type {
   LogActionResult,
   LogCleanupPreviewSummary,
   LogMutationSummary,
-} from "@/hooks/use-logs";
+} from "@/hooks/logs/use-logs";
 import type { LogCleanupOptions, LogCleanupPolicyInput } from "@/types/tauri";
 import { formatBytes } from "@/lib/utils";
 import { Loader2, Settings2, Trash2 } from "lucide-react";

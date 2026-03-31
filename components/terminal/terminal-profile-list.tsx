@@ -12,7 +12,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
-import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
@@ -32,21 +32,12 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { Play, Pencil, Trash2, Star, Plus, Loader2, Copy, Download, Upload, MoreVertical, Terminal, LayoutTemplate, Bookmark, Search, Shield, Fish, Monitor, Atom, ChevronDown } from 'lucide-react';
+import { Play, Pencil, Trash2, Star, Plus, Loader2, Copy, Download, Upload, MoreHorizontal, Terminal, LayoutTemplate, Bookmark, Search, ChevronDown } from 'lucide-react';
 import type { LaunchResult, TerminalProfile } from '@/types/tauri';
+import { getShellIcon } from '@/components/terminal/shared/shell-icon';
 import { useLocale } from '@/components/providers/locale-provider';
 import { toast } from 'sonner';
 import { writeClipboard } from '@/lib/clipboard';
-
-function getShellIcon(shellType: string) {
-  const lower = shellType.toLowerCase();
-  if (lower.includes('powershell')) return <Shield className="h-4 w-4 text-blue-500" />;
-  if (lower.includes('fish')) return <Fish className="h-4 w-4 text-orange-500" />;
-  if (lower.includes('cmd')) return <Monitor className="h-4 w-4 text-gray-500" />;
-  if (lower.includes('nushell')) return <Atom className="h-4 w-4 text-purple-500" />;
-  if (lower.includes('zsh')) return <Terminal className="h-4 w-4 text-emerald-500" />;
-  return <Terminal className="h-4 w-4" />;
-}
 
 function getRelativeTime(dateStr: string): string {
   const date = new Date(dateStr);
@@ -57,13 +48,13 @@ function getRelativeTime(dateStr: string): string {
   const seconds = Math.floor(diffMs / 1000);
   if (seconds < 60) return 'just now';
   const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes} minute${minutes !== 1 ? 's' : ''} ago`;
+  if (minutes < 60) return `${minutes}m ago`;
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} hour${hours !== 1 ? 's' : ''} ago`;
+  if (hours < 24) return `${hours}h ago`;
   const days = Math.floor(hours / 24);
-  if (days < 30) return `${days} day${days !== 1 ? 's' : ''} ago`;
+  if (days < 30) return `${days}d ago`;
   const months = Math.floor(days / 30);
-  return `${months} month${months !== 1 ? 's' : ''} ago`;
+  return `${months}mo ago`;
 }
 
 type ImportStrategy = 'merge' | 'replace';
@@ -202,12 +193,7 @@ export function TerminalProfileList({
     }
 
     setImportPayload(raw);
-    setImportSummary({
-      total: entries.length,
-      valid,
-      conflicts,
-      invalid,
-    });
+    setImportSummary({ total: entries.length, valid, conflicts, invalid });
     setImportStrategy('merge');
     setImportDialogOpen(true);
   };
@@ -227,9 +213,9 @@ export function TerminalProfileList({
 
   return (
     <div className="space-y-4">
+      {/* Action bar */}
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3 flex-1 min-w-0">
-          <h3 className="text-lg font-medium shrink-0">{t('terminal.profiles')}</h3>
           {profiles.length > 0 && (
             <div className="relative flex-1 max-w-xs">
               <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
@@ -243,12 +229,6 @@ export function TerminalProfileList({
           )}
         </div>
         <div className="flex items-center gap-2">
-          {onExportAll && profiles.length > 0 && (
-            <Button size="sm" variant="outline" onClick={onExportAll}>
-              <Download className="mr-1 h-3.5 w-3.5" />
-              {t('terminal.exportProfiles')}
-            </Button>
-          )}
           {onImport && (
             <Button
               size="sm"
@@ -259,15 +239,19 @@ export function TerminalProfileList({
                 input.accept = '.json';
                 input.onchange = async (e) => {
                   const file = (e.target as HTMLInputElement).files?.[0];
-                  if (file) {
-                    await handlePrepareImport(file);
-                  }
+                  if (file) await handlePrepareImport(file);
                 };
                 input.click();
               }}
             >
               <Upload className="mr-1 h-3.5 w-3.5" />
               {t('terminal.importProfiles')}
+            </Button>
+          )}
+          {onExportAll && profiles.length > 0 && (
+            <Button size="sm" variant="outline" onClick={onExportAll}>
+              <Download className="mr-1 h-3.5 w-3.5" />
+              {t('terminal.exportProfiles')}
             </Button>
           )}
           {onFromTemplate && (
@@ -277,12 +261,13 @@ export function TerminalProfileList({
             </Button>
           )}
           <Button size="sm" onClick={onCreateNew}>
-            <Plus className="mr-2 h-4 w-4" />
+            <Plus className="mr-1.5 h-3.5 w-3.5" />
             {t('terminal.createProfile')}
           </Button>
         </div>
       </div>
 
+      {/* Launch result card */}
       {lastLaunchResult && (
         <Card aria-live="polite">
           <CardHeader className="pb-2">
@@ -357,6 +342,7 @@ export function TerminalProfileList({
         </Card>
       )}
 
+      {/* Delete confirmation */}
       <AlertDialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -375,6 +361,7 @@ export function TerminalProfileList({
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* Import dialog */}
       <Dialog
         open={importDialogOpen}
         onOpenChange={(open) => {
@@ -405,20 +392,10 @@ export function TerminalProfileList({
               <div className="space-y-2">
                 <p className="text-sm font-medium">{t('terminal.importStrategyLabel')}</p>
                 <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={importStrategy === 'merge' ? 'default' : 'outline'}
-                    onClick={() => setImportStrategy('merge')}
-                  >
+                  <Button type="button" size="sm" variant={importStrategy === 'merge' ? 'default' : 'outline'} onClick={() => setImportStrategy('merge')}>
                     {t('terminal.importMerge')}
                   </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={importStrategy === 'replace' ? 'default' : 'outline'}
-                    onClick={() => setImportStrategy('replace')}
-                  >
+                  <Button type="button" size="sm" variant={importStrategy === 'replace' ? 'default' : 'outline'} onClick={() => setImportStrategy('replace')}>
                     {t('terminal.importReplace')}
                   </Button>
                 </div>
@@ -436,6 +413,7 @@ export function TerminalProfileList({
         </DialogContent>
       </Dialog>
 
+      {/* Profile table */}
       {sortedProfiles.length === 0 && profiles.length === 0 ? (
         <Empty>
           <EmptyHeader>
@@ -461,103 +439,127 @@ export function TerminalProfileList({
           </EmptyHeader>
         </Empty>
       ) : (
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          {sortedProfiles.map((profile) => {
-            const isLaunching = launchingProfileId === profile.id;
+        <div className="rounded-lg border">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b bg-muted/30 text-xs text-muted-foreground">
+                <th className="px-4 py-2.5 text-left font-medium">{t('terminal.profile')}</th>
+                <th className="px-3 py-2.5 text-left font-medium">{t('terminal.shell')}</th>
+                <th className="px-3 py-2.5 text-left font-medium">{t('terminal.environment')}</th>
+                <th className="hidden px-3 py-2.5 text-left font-medium md:table-cell">{t('terminal.workingDir')}</th>
+                <th className="hidden px-3 py-2.5 text-right font-medium sm:table-cell">{t('terminal.updated')}</th>
+                <th className="px-4 py-2.5 text-right font-medium">{t('terminal.actions')}</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {sortedProfiles.map((profile) => {
+                const isLaunching = launchingProfileId === profile.id;
 
-            return (
-              <Card key={profile.id} className="relative overflow-hidden">
-                {profile.color && (
-                  <div className="absolute left-0 top-0 bottom-0 w-1 rounded-l-lg" style={{ backgroundColor: profile.color }} />
-                )}
-                <CardHeader className="pb-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      {getShellIcon(profile.shellId)}
-                      <CardTitle className="text-base">{profile.name}</CardTitle>
-                    </div>
-                    {profile.isDefault && (
-                      <Badge variant="secondary" className="gap-1">
-                        <Star className="h-3 w-3" />
-                        {t('terminal.default')}
-                      </Badge>
-                    )}
-                  </div>
-                  <CardDescription>
-                    {profile.shellId}
-                    {profile.envType && ` + ${profile.envType}${profile.envVersion ? ` ${profile.envVersion}` : ''}`}
-                  </CardDescription>
-                  {profile.cwd && (
-                    <p className="text-xs font-mono text-muted-foreground truncate" title={profile.cwd}>{profile.cwd}</p>
-                  )}
-                  {profile.updatedAt && getRelativeTime(profile.updatedAt) && (
-                    <p className="text-xs text-muted-foreground">{getRelativeTime(profile.updatedAt)}</p>
-                  )}
-                </CardHeader>
-                <CardContent />
-                <CardFooter className="flex items-center gap-2 border-t pt-3">
-                    <Button
-                      size="sm"
-                      variant="default"
-                      onClick={() => onLaunch(profile.id)}
-                      disabled={isLaunching}
-                    >
-                      {isLaunching ? (
-                        <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                return (
+                  <tr key={profile.id} className="group">
+                    <td className="px-4 py-2.5">
+                      <div className="flex items-center gap-2">
+                        {profile.color && (
+                          <div className="h-6 w-0.5 shrink-0 rounded-full" style={{ backgroundColor: profile.color }} />
+                        )}
+                        <span className="font-medium">{profile.name}</span>
+                        {profile.isDefault && (
+                          <Badge variant="secondary" className="h-4 px-1 text-[10px]">
+                            <Star className="mr-0.5 h-2.5 w-2.5" />
+                            {t('terminal.default')}
+                          </Badge>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <div className="flex items-center gap-1.5 text-muted-foreground">
+                        {getShellIcon(profile.shellId)}
+                        <span className="text-xs">{profile.shellId}</span>
+                      </div>
+                    </td>
+                    <td className="px-3 py-2.5">
+                      {profile.envType ? (
+                        <span className="text-xs text-muted-foreground">
+                          {profile.envType}{profile.envVersion ? ` ${profile.envVersion}` : ''}
+                        </span>
                       ) : (
-                        <Play className="mr-1 h-3 w-3" />
+                        <span className="text-xs text-muted-foreground">—</span>
                       )}
-                      {isLaunching ? t('terminal.launching') : t('terminal.launch')}
-                    </Button>
-
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
+                    </td>
+                    <td className="hidden px-3 py-2.5 md:table-cell">
+                      {profile.cwd ? (
+                        <code className="text-xs text-muted-foreground truncate block max-w-[180px]" title={profile.cwd}>{profile.cwd}</code>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </td>
+                    <td className="hidden px-3 py-2.5 text-right sm:table-cell">
+                      <span className="text-xs text-muted-foreground">
+                        {profile.updatedAt ? getRelativeTime(profile.updatedAt) : '—'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 text-right">
+                      <div className="flex items-center justify-end gap-1">
                         <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8"
-                          aria-label={`${profile.name} actions`}
+                          size="sm"
+                          variant="default"
+                          className="h-7 text-xs"
+                          onClick={() => onLaunch(profile.id)}
+                          disabled={isLaunching}
                         >
-                          <MoreVertical className="h-4 w-4" />
+                          {isLaunching ? (
+                            <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                          ) : (
+                            <Play className="mr-1 h-3 w-3" />
+                          )}
+                          {t('terminal.launch')}
                         </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => onEdit(profile)}>
-                          <Pencil className="h-4 w-4 mr-2" />
-                          {t('terminal.edit')}
-                        </DropdownMenuItem>
-                        {onDuplicate && (
-                          <DropdownMenuItem onClick={() => onDuplicate(profile.id)}>
-                            <Copy className="h-4 w-4 mr-2" />
-                            {t('terminal.duplicate')}
-                          </DropdownMenuItem>
-                        )}
-                        {onSaveAsTemplate && (
-                          <DropdownMenuItem onClick={() => onSaveAsTemplate(profile.id)}>
-                            <Bookmark className="h-4 w-4 mr-2" />
-                            {t('terminal.saveAsTemplate')}
-                          </DropdownMenuItem>
-                        )}
-                        {!profile.isDefault && (
-                          <DropdownMenuItem onClick={() => onSetDefault(profile.id)}>
-                            <Star className="h-4 w-4 mr-2" />
-                            {t('terminal.setDefault')}
-                          </DropdownMenuItem>
-                        )}
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          onClick={() => setDeleteId(profile.id)}
-                          className="text-destructive focus:text-destructive"
-                        >
-                          <Trash2 className="h-4 w-4 mr-2" />
-                          {t('terminal.delete')}
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                </CardFooter>
-              </Card>
-            );
-          })}
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-7 w-7">
+                              <MoreHorizontal className="h-3.5 w-3.5" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => onEdit(profile)}>
+                              <Pencil className="h-4 w-4 mr-2" />
+                              {t('terminal.edit')}
+                            </DropdownMenuItem>
+                            {onDuplicate && (
+                              <DropdownMenuItem onClick={() => onDuplicate(profile.id)}>
+                                <Copy className="h-4 w-4 mr-2" />
+                                {t('terminal.duplicate')}
+                              </DropdownMenuItem>
+                            )}
+                            {onSaveAsTemplate && (
+                              <DropdownMenuItem onClick={() => onSaveAsTemplate(profile.id)}>
+                                <Bookmark className="h-4 w-4 mr-2" />
+                                {t('terminal.saveAsTemplate')}
+                              </DropdownMenuItem>
+                            )}
+                            {!profile.isDefault && (
+                              <DropdownMenuItem onClick={() => onSetDefault(profile.id)}>
+                                <Star className="h-4 w-4 mr-2" />
+                                {t('terminal.setDefault')}
+                              </DropdownMenuItem>
+                            )}
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={() => setDeleteId(profile.id)}
+                              className="text-destructive focus:text-destructive"
+                            >
+                              <Trash2 className="h-4 w-4 mr-2" />
+                              {t('terminal.delete')}
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
     </div>

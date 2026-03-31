@@ -4,6 +4,7 @@ import type {
   CacheInfo,
   CacheSettings,
   CacheVerificationResult,
+  EnvVarScope,
   PlatformInfo,
   TrayClickBehavior,
   TrayNotificationLevel,
@@ -29,6 +30,9 @@ export interface AppSettings {
   trayClickBehavior: TrayClickBehavior;
   showNotifications: boolean;
   trayNotificationLevel: TrayNotificationLevel;
+  envvarDefaultScope: EnvVarScope | 'all';
+  envvarAutoSnapshot: boolean;
+  envvarMaskSensitive: boolean;
   sidebarItemOrder: SidebarItemId[];
 }
 
@@ -68,6 +72,9 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   trayClickBehavior: 'toggle_window',
   showNotifications: true,
   trayNotificationLevel: 'all',
+  envvarDefaultScope: 'all',
+  envvarAutoSnapshot: false,
+  envvarMaskSensitive: true,
   sidebarItemOrder: [...DEFAULT_SIDEBAR_ITEM_ORDER],
 };
 
@@ -102,7 +109,7 @@ export const useSettingsStore = create<SettingsState>()(
     {
       name: 'cognia-settings',
       storage: createJSONStorage(() => localStorage),
-      version: 4,
+      version: 5,
       migrate: (persistedState, version) => {
         const state = (persistedState ?? {}) as Partial<SettingsState> & {
           appSettings?: Partial<AppSettings>;
@@ -174,6 +181,17 @@ export const useSettingsStore = create<SettingsState>()(
             appSettings.showNotifications ?? DEFAULT_APP_SETTINGS.showNotifications,
           trayNotificationLevel:
             appSettings.trayNotificationLevel ?? DEFAULT_APP_SETTINGS.trayNotificationLevel,
+          envvarDefaultScope:
+            appSettings.envvarDefaultScope === 'process'
+            || appSettings.envvarDefaultScope === 'user'
+            || appSettings.envvarDefaultScope === 'system'
+            || appSettings.envvarDefaultScope === 'all'
+              ? appSettings.envvarDefaultScope
+              : DEFAULT_APP_SETTINGS.envvarDefaultScope,
+          envvarAutoSnapshot:
+            appSettings.envvarAutoSnapshot ?? DEFAULT_APP_SETTINGS.envvarAutoSnapshot,
+          envvarMaskSensitive:
+            appSettings.envvarMaskSensitive ?? DEFAULT_APP_SETTINGS.envvarMaskSensitive,
           sidebarItemOrder: normalizeSidebarItemOrder(
             Array.isArray(rawSidebarItemOrder)
               ? (rawSidebarItemOrder as string[])
@@ -181,7 +199,7 @@ export const useSettingsStore = create<SettingsState>()(
           ),
         };
 
-        if (version < 4) {
+        if (version < 5) {
           return { ...state, appSettings: migrated } as SettingsState;
         }
 

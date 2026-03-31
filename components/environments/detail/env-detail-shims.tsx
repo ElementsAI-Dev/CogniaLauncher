@@ -36,7 +36,7 @@ import {
   Copy,
   Route,
 } from "lucide-react";
-import { useShim } from "@/hooks/use-shim";
+import { useShim } from "@/hooks/environments/use-shim";
 import { isTauri } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";

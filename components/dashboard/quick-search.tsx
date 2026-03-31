@@ -23,7 +23,7 @@ import {
   DASHBOARD_QUICK_SEARCH_FOCUS_EVENT,
 } from "@/lib/dashboard-quick-search-focus";
 import { cn } from "@/lib/utils";
-import { useDashboardSearch } from "@/hooks/use-dashboard-search";
+import { useDashboardSearch } from "@/hooks/dashboard/use-dashboard-search";
 import type { EnvironmentInfo, InstalledPackage } from "@/lib/tauri";
 
 interface QuickSearchProps {

@@ -199,6 +199,23 @@ export function buildMarketplaceListings(
       installState = 'not-installed';
     }
 
+    const isInstalledStorePlugin =
+      installedPlugin !== null && installedPlugin.source.type === 'store';
+    const hasMatchingAcquisition =
+      acquisition !== null
+      && acquisition.storeId === listing.source.storeId
+      && acquisition.listingId === listing.id;
+    const provenanceState = isInstalledStorePlugin && !hasMatchingAcquisition
+      ? 'degraded'
+      : 'resolved';
+    const provenanceReason = !isInstalledStorePlugin
+      ? null
+      : acquisition === null
+        ? 'Installed plugin is missing marketplace acquisition provenance.'
+        : hasMatchingAcquisition
+          ? null
+          : 'Installed plugin acquisition provenance no longer matches the current catalog listing.';
+
     return {
       ...listing,
       installState,
@@ -207,8 +224,8 @@ export function buildMarketplaceListings(
       installedPlugin,
       pendingUpdate,
       acquisition,
-      provenanceState: acquisition ? 'resolved' : 'resolved',
-      provenanceReason: null,
+      provenanceState,
+      provenanceReason,
     };
   });
 }

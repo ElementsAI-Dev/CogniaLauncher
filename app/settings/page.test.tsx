@@ -101,7 +101,7 @@ const baseConfig: Record<string, string> = {
   'provider_settings.disabled_providers': '',
 };
 
-jest.mock('@/hooks/use-settings', () => ({
+jest.mock('@/hooks/settings/use-settings', () => ({
   useSettings: jest.fn(),
 }));
 
@@ -149,6 +149,8 @@ jest.mock('sonner', () => ({
     error: jest.fn(),
     warning: jest.fn(),
     info: jest.fn(),
+    loading: jest.fn().mockReturnValue('toast-id'),
+    dismiss: jest.fn(),
   },
 }));
 
@@ -478,6 +480,23 @@ function renderWithProviders(ui: React.ReactElement) {
   return render(ui, { wrapper: TestWrapper });
 }
 
+const INTERFACE_TAB_PATTERN = /settings\.groupInterface|Interface/i;
+const PLATFORM_TAB_PATTERN = /settings\.groupPlatform|Platform/i;
+const ADVANCED_TAB_PATTERN = /settings\.groupAdvanced|Advanced/i;
+
+async function openSettingsTab(name: RegExp) {
+  await userEvent.click(await screen.findByRole('tab', { name }));
+}
+
+function getMetricCard(label: string): HTMLElement {
+  const metricLabel = screen.getByText(label);
+  const valueContainer = metricLabel.closest('div');
+  if (!valueContainer?.parentElement) {
+    throw new Error(`Unable to locate metric card for ${label}`);
+  }
+  return valueContainer.parentElement as HTMLElement;
+}
+
 function setupMocks(
   overrides?: Partial<{
     config: Record<string, string>;
@@ -486,7 +505,7 @@ function setupMocks(
     appearance: Record<string, unknown>;
   }>,
 ) {
-  const { useSettings } = jest.requireMock('@/hooks/use-settings') as {
+  const { useSettings } = jest.requireMock('@/hooks/settings/use-settings') as {
     useSettings: jest.Mock;
   };
   const { useSettingsStore } = jest.requireMock('@/lib/stores/settings') as {
@@ -754,6 +773,7 @@ describe('SettingsPage', () => {
 
   it('renders the appearance customization workbench', async () => {
     renderWithProviders(<SettingsPage />);
+    await openSettingsTab(INTERFACE_TAB_PATTERN);
 
     await waitFor(() => {
       expect(screen.getByText('Customization Workbench')).toBeInTheDocument();
@@ -765,6 +785,7 @@ describe('SettingsPage', () => {
 
   it('does not show preset divergence badge when current appearance matches selected preset', async () => {
     renderWithProviders(<SettingsPage />);
+    await openSettingsTab(INTERFACE_TAB_PATTERN);
 
     await waitFor(() => {
       expect(screen.getByText('Customization Workbench')).toBeInTheDocument();
@@ -785,6 +806,7 @@ describe('SettingsPage', () => {
     });
 
     renderWithProviders(<SettingsPage />);
+    await openSettingsTab(INTERFACE_TAB_PATTERN);
 
     await waitFor(() => {
       expect(screen.getByText('Customization Workbench')).toBeInTheDocument();
@@ -801,6 +823,7 @@ describe('SettingsPage', () => {
     });
 
     renderWithProviders(<SettingsPage />);
+    await openSettingsTab(INTERFACE_TAB_PATTERN);
 
     await waitFor(() => {
       expect(screen.getByText('Customization Workbench')).toBeInTheDocument();
@@ -811,6 +834,7 @@ describe('SettingsPage', () => {
 
   it('applies selected appearance preset from workbench', async () => {
     renderWithProviders(<SettingsPage />);
+    await openSettingsTab(INTERFACE_TAB_PATTERN);
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /apply preset/i })).toBeInTheDocument();
@@ -828,6 +852,7 @@ describe('SettingsPage', () => {
     tauriMock.isTauri.mockReturnValue(true);
 
     renderWithProviders(<SettingsPage />);
+    await openSettingsTab(INTERFACE_TAB_PATTERN);
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /apply preset/i })).toBeInTheDocument();
@@ -844,6 +869,7 @@ describe('SettingsPage', () => {
 
   it('resets only appearance group from workbench', async () => {
     renderWithProviders(<SettingsPage />);
+    await openSettingsTab(INTERFACE_TAB_PATTERN);
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /reset appearance group/i })).toBeInTheDocument();
@@ -866,7 +892,7 @@ describe('SettingsPage', () => {
     fireEvent.change(parallelDownloads, { target: { value: '6' } });
 
     await waitFor(() => {
-      expect(screen.getByText('You have unsaved changes')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /save changes/i })).toHaveTextContent('1');
     });
 
     await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
@@ -896,9 +922,7 @@ describe('SettingsPage', () => {
     rerender(<SettingsPage />);
 
     await waitFor(() => {
-      expect(
-        screen.getByText('Detected baseline refresh while you had local drafts'),
-      ).toBeInTheDocument();
+      expect(within(getMetricCard('settings.conflicts')).getByText('1')).toBeInTheDocument();
     });
   });
 
@@ -926,7 +950,7 @@ describe('SettingsPage', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText('You have unsaved changes')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /save changes/i })).toHaveTextContent('2');
     });
 
     await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
@@ -1141,6 +1165,7 @@ describe('SettingsPage', () => {
 
   it('persists config-backed update app settings through config writes', async () => {
     renderWithProviders(<SettingsPage />);
+    await openSettingsTab(PLATFORM_TAB_PATTERN);
 
     await waitFor(() => {
       expect(screen.getByRole('switch', { name: /check on start/i })).toBeInTheDocument();
@@ -1157,6 +1182,7 @@ describe('SettingsPage', () => {
 
   it('persists update source mode through config writes', async () => {
     renderWithProviders(<SettingsPage />);
+    await openSettingsTab(PLATFORM_TAB_PATTERN);
 
     await waitFor(() => {
       expect(screen.getByRole('combobox', { name: /update source/i })).toBeInTheDocument();
@@ -1173,6 +1199,7 @@ describe('SettingsPage', () => {
 
   it('keeps minimize-to-tray on dedicated runtime path without duplicate config write', async () => {
     renderWithProviders(<SettingsPage />);
+    await openSettingsTab(PLATFORM_TAB_PATTERN);
 
     await waitFor(() => {
       expect(screen.getByRole('switch', { name: /minimize to tray/i })).toBeInTheDocument();
@@ -1187,6 +1214,7 @@ describe('SettingsPage', () => {
 
   it('renders backup policy controls and reset actions for backup/startup sections', async () => {
     renderWithProviders(<SettingsPage />);
+    await openSettingsTab(ADVANCED_TAB_PATTERN);
 
     await waitFor(() => {
       expect(document.getElementById('section-backup')).toBeInTheDocument();
@@ -1195,13 +1223,18 @@ describe('SettingsPage', () => {
     expect(screen.getByLabelText('Auto Backup Enabled')).toBeInTheDocument();
 
     const backupSection = document.getElementById('section-backup');
-    const startupSection = document.getElementById('section-startup');
-
     expect(backupSection).toBeTruthy();
-    expect(startupSection).toBeTruthy();
 
     const moreActionsLabel = /more actions|settings\.section\.moreActions/i;
     expect(within(backupSection as HTMLElement).getByLabelText(moreActionsLabel)).toBeInTheDocument();
+
+    await openSettingsTab(PLATFORM_TAB_PATTERN);
+    await waitFor(() => {
+      expect(document.getElementById('section-startup')).toBeInTheDocument();
+    });
+
+    const startupSection = document.getElementById('section-startup');
+    expect(startupSection).toBeTruthy();
     expect(within(startupSection as HTMLElement).getByLabelText(moreActionsLabel)).toBeInTheDocument();
   });
 
@@ -1254,13 +1287,13 @@ describe('SettingsPage', () => {
     const parallelDownloads = screen.getByLabelText('Parallel Downloads');
     fireEvent.change(parallelDownloads, { target: { value: '7' } });
 
-    expect(screen.getByText('You have unsaved changes')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /save changes/i })).toHaveTextContent('1');
 
     // Discard changes via Escape
     fireEvent.keyDown(document, { key: 'Escape' });
 
     await waitFor(() => {
-      expect(screen.queryByText('You have unsaved changes')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /save changes/i })).not.toHaveTextContent('1');
     });
     expect((parallelDownloads as HTMLInputElement).value).toBe('4');
 
@@ -1419,6 +1452,7 @@ describe('SettingsPage', () => {
     });
 
     renderWithProviders(<SettingsPage />);
+    await openSettingsTab(ADVANCED_TAB_PATTERN);
 
     expect(await screen.findByRole('button', { name: 'Continue Setup' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Start Guided Tour' })).not.toBeInTheDocument();
@@ -1435,6 +1469,7 @@ describe('SettingsPage', () => {
     });
 
     renderWithProviders(<SettingsPage />);
+    await openSettingsTab(ADVANCED_TAB_PATTERN);
 
     await userEvent.click(await screen.findByRole('button', { name: 'Continue Setup' }));
     await userEvent.click(screen.getByRole('button', { name: 'Re-run Setup Wizard' }));
@@ -1456,6 +1491,7 @@ describe('SettingsPage', () => {
     });
 
     renderWithProviders(<SettingsPage />);
+    await openSettingsTab(ADVANCED_TAB_PATTERN);
 
     expect(await screen.findByRole('button', { name: 'Start Guided Tour' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Continue Setup' })).not.toBeInTheDocument();
@@ -1475,6 +1511,7 @@ describe('SettingsPage', () => {
 
     renderWithProviders(<SettingsPage />);
 
+    await openSettingsTab(ADVANCED_TAB_PATTERN);
     await userEvent.click(await screen.findByRole('button', { name: 'Start Guided Tour' }));
     await userEvent.click(screen.getByRole('button', { name: 'Reset Hints' }));
     await userEvent.click(screen.getByRole('button', { name: 'Dismiss All' }));
@@ -1487,6 +1524,7 @@ describe('SettingsPage', () => {
   it('updates and resets sidebar order from the settings page', async () => {
     renderWithProviders(<SettingsPage />);
 
+    await openSettingsTab(INTERFACE_TAB_PATTERN);
     await waitFor(() => {
       expect(screen.getByText('Sidebar Content Order')).toBeInTheDocument();
     });

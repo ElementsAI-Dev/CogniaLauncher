@@ -9,7 +9,7 @@ use std::collections::HashMap;
 const PROFILE_DIR: &str = "profiles";
 const ACTIVE_PROFILE_KEY: &str = "active_profile_id";
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct AssistantInput {
     action: String,
@@ -48,6 +48,27 @@ struct PluginError {
     message: String,
     #[cfg_attr(test, allow(dead_code))]
     recommendations: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GuidedCapabilityDegradation {
+    capability: &'static str,
+    message: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GuidedStreamEntry {
+    level: &'static str,
+    message: String,
+}
+
+#[derive(Debug)]
+struct GuidedExecution {
+    success: AssistantSuccess,
+    degraded_capabilities: Vec<GuidedCapabilityDegradation>,
+    stream: Vec<GuidedStreamEntry>,
 }
 
 impl PluginError {
@@ -140,6 +161,567 @@ fn execute_file_config_assistant(raw: String) -> FnResult<String> {
 #[plugin_fn]
 pub fn file_config_assistant(input: String) -> FnResult<String> {
     execute_file_config_assistant(input)
+}
+
+#[cfg(not(test))]
+#[plugin_fn]
+pub fn file_config_assistant_guided(input: String) -> FnResult<String> {
+    let mut runtime = HostRuntime;
+    Ok(render_guided_with_runtime(&input, &mut runtime).to_string())
+}
+
+fn render_guided_with_runtime(raw: &str, runtime: &mut dyn RuntimeOps) -> serde_json::Value {
+    let action = parse_guided_action(raw);
+
+    if is_reset_action(action.as_ref()) {
+        let input = parse_input("").expect("default guided input");
+        return build_guided_response(
+            &input,
+            None,
+            Some(("info", "Guided file workflow ready", "Choose an action and run the workflow.")),
+            vec![GuidedStreamEntry {
+                level: "info",
+                message: "Waiting for guided file configuration input.".to_string(),
+            }],
+            None,
+        );
+    }
+
+    let input = match resolve_guided_input(action.as_ref()) {
+        Ok(input) => input,
+        Err(error) => {
+            let fallback_input = parse_input("").expect("default guided input");
+            return build_guided_response(
+                &fallback_input,
+                None,
+                Some(("error", "File configuration workflow blocked", error.message.as_str())),
+                vec![GuidedStreamEntry {
+                    level: "error",
+                    message: error.message.clone(),
+                }],
+                Some((&error.code, &error.recommendations)),
+            );
+        }
+    };
+
+    if action.is_none() || (!is_form_submit(action.as_ref()) && !is_rerun_action(action.as_ref())) {
+        return build_guided_response(
+            &input,
+            None,
+            Some(("info", "Guided file workflow ready", "Choose an action and run the workflow.")),
+            vec![GuidedStreamEntry {
+                level: "info",
+                message: "Waiting for guided file configuration input.".to_string(),
+            }],
+            None,
+        );
+    }
+
+    match run_guided_action_with_runtime(&input, runtime) {
+        Ok(execution) => {
+            let status = if execution.degraded_capabilities.is_empty() {
+                "success"
+            } else {
+                "warning"
+            };
+            build_guided_response(
+                &input,
+                Some(&execution),
+                Some((status, "File Config Assistant", execution.success.message.as_str())),
+                execution.stream.clone(),
+                None,
+            )
+        }
+        Err(error) => build_guided_response(
+            &input,
+            None,
+            Some(("error", "File configuration workflow blocked", error.message.as_str())),
+            vec![GuidedStreamEntry {
+                level: "error",
+                message: error.message.clone(),
+            }],
+            Some((&error.code, &error.recommendations)),
+        ),
+    }
+}
+
+fn parse_guided_action(raw: &str) -> Option<serde_json::Value> {
+    if raw.trim().is_empty() {
+        return None;
+    }
+
+    let parsed: serde_json::Value = serde_json::from_str(raw).ok()?;
+    if parsed.get("action").and_then(serde_json::Value::as_str).is_some() {
+        Some(parsed)
+    } else {
+        None
+    }
+}
+
+fn resolve_guided_input(action: Option<&serde_json::Value>) -> Result<AssistantInput, PluginError> {
+    let Some(action) = action else {
+        return parse_input("");
+    };
+
+    if is_rerun_action(Some(action)) {
+        return match action.get("state").and_then(|state| state.get("lastInput")) {
+            Some(value) => parse_assistant_input_from_value(value),
+            None => parse_input(""),
+        };
+    }
+
+    if is_form_submit(Some(action)) {
+        return match action.get("formData") {
+            Some(value) => parse_assistant_input_from_value(value),
+            None => parse_input(""),
+        };
+    }
+
+    parse_input("")
+}
+
+fn parse_assistant_input_from_value(value: &serde_json::Value) -> Result<AssistantInput, PluginError> {
+    let raw = serde_json::to_string(value).map_err(|error| {
+        PluginError::new(
+            "INVALID_INPUT",
+            format!("Failed to serialize guided input: {}", error),
+            vec!["Retry the workflow with a valid form payload.".to_string()],
+        )
+    })?;
+    parse_input(&raw)
+}
+
+fn is_form_submit(action: Option<&serde_json::Value>) -> bool {
+    action
+        .and_then(|value| value.get("action"))
+        .and_then(serde_json::Value::as_str)
+        == Some("form_submit")
+}
+
+fn is_rerun_action(action: Option<&serde_json::Value>) -> bool {
+    action
+        .and_then(|value| value.get("action"))
+        .and_then(serde_json::Value::as_str)
+        == Some("button_click")
+        && action
+            .and_then(|value| value.get("buttonId"))
+            .and_then(serde_json::Value::as_str)
+            == Some("rerun-last-file-config-action")
+}
+
+fn is_reset_action(action: Option<&serde_json::Value>) -> bool {
+    action
+        .and_then(|value| value.get("action"))
+        .and_then(serde_json::Value::as_str)
+        == Some("button_click")
+        && action
+            .and_then(|value| value.get("buttonId"))
+            .and_then(serde_json::Value::as_str)
+            == Some("reset-file-config-action")
+}
+
+fn build_guided_response(
+    input: &AssistantInput,
+    execution: Option<&GuidedExecution>,
+    summary: Option<(&str, &str, &str)>,
+    stream: Vec<GuidedStreamEntry>,
+    failure_details: Option<(&str, &Vec<String>)>,
+) -> serde_json::Value {
+    let mut ui = vec![
+        serde_json::json!({
+            "type": "heading",
+            "content": "File Config Assistant Workflow",
+            "level": 1
+        }),
+        serde_json::json!({
+            "type": "text",
+            "content": "Run profile file actions with guided defaults, structured outputs, and staged recovery hints.",
+            "variant": "muted"
+        }),
+        build_guided_form(input),
+    ];
+
+    if let Some((code, recommendations)) = failure_details {
+        ui.push(serde_json::json!({
+            "type": "alert",
+            "title": "Workflow blocked",
+            "message": format!("{}: {}", code, recommendations.join(" ")),
+            "variant": "destructive"
+        }));
+    }
+
+    if let Some(execution) = execution {
+        if !execution.degraded_capabilities.is_empty() {
+            ui.push(serde_json::json!({
+                "type": "alert",
+                "title": "Partial follow-up degradation",
+                "message": execution
+                    .degraded_capabilities
+                    .iter()
+                    .map(|item| format!("{}: {}", item.capability, item.message))
+                    .collect::<Vec<String>>()
+                    .join(" | ")
+            }));
+        }
+
+        ui.push(serde_json::json!({
+            "type": "result",
+            "title": "Action result",
+            "message": execution.success.message,
+            "status": if execution.degraded_capabilities.is_empty() { "success" } else { "warning" }
+        }));
+        ui.push(serde_json::json!({
+            "type": "key-value",
+            "items": [
+                { "key": "Action", "value": execution.success.action },
+                { "key": "Profile", "value": execution.success.profile_id.clone().unwrap_or_else(|| "none".to_string()) },
+                { "key": "Active Profile", "value": execution.success.active_profile_id.clone().unwrap_or_else(|| "none".to_string()) }
+            ]
+        }));
+
+        if let Some(profiles) = &execution.success.profiles {
+            ui.push(serde_json::json!({
+                "type": "table",
+                "headers": ["Profile"],
+                "rows": profiles.iter().map(|profile| vec![profile.clone()]).collect::<Vec<Vec<String>>>()
+            }));
+        }
+
+        if let Some(content) = &execution.success.content {
+            ui.push(serde_json::json!({
+                "type": "code",
+                "language": "json",
+                "code": content
+            }));
+        }
+
+        ui.push(serde_json::json!({
+            "type": "markdown",
+            "content": execution
+                .success
+                .recommendations
+                .iter()
+                .map(|item| format!("- {}", item))
+                .collect::<Vec<String>>()
+                .join("\n")
+        }));
+        ui.push(serde_json::json!({
+            "type": "actions",
+            "buttons": [
+                { "id": "rerun-last-file-config-action", "label": "Run Previous Input", "variant": "default" },
+                { "id": "reset-file-config-action", "label": "Reset", "variant": "outline" }
+            ]
+        }));
+    }
+
+    let artifacts = execution.map(build_guided_artifacts).unwrap_or_default();
+
+    serde_json::json!({
+        "ui": ui,
+        "state": {
+            "lastInput": input,
+            "lastSuccess": execution.map(|item| serde_json::to_value(&item.success).expect("assistant success json")),
+            "degradedCapabilities": execution.map(|item| serde_json::to_value(&item.degraded_capabilities).expect("degradations json")).unwrap_or_else(|| serde_json::json!([]))
+        },
+        "outputChannels": {
+            "summary": summary.map(|(status, title, message)| serde_json::json!({
+                "status": status,
+                "title": title,
+                "message": message
+            })),
+            "stream": stream,
+            "artifacts": artifacts
+        }
+    })
+}
+
+fn build_guided_form(input: &AssistantInput) -> serde_json::Value {
+    serde_json::json!({
+        "type": "form",
+        "id": "file-config-assistant-guided-form",
+        "submitLabel": "Run Action",
+        "fields": [
+            {
+                "type": "select",
+                "id": "action",
+                "label": "Action",
+                "options": [
+                    { "label": "List Profiles", "value": "list_profiles" },
+                    { "label": "Read Profile", "value": "read_profile" },
+                    { "label": "Write Profile", "value": "write_profile" },
+                    { "label": "Delete Profile", "value": "delete_profile" },
+                    { "label": "Set Active Profile", "value": "set_active_profile" },
+                    { "label": "Get Active Profile", "value": "get_active_profile" }
+                ],
+                "defaultValue": input.action
+            },
+            {
+                "type": "input",
+                "id": "profileId",
+                "label": "Profile ID",
+                "defaultValue": input.profile_id.clone().unwrap_or_default(),
+                "placeholder": "default"
+            },
+            {
+                "type": "textarea",
+                "id": "content",
+                "label": "Profile Content",
+                "rows": 8,
+                "placeholder": "{\"region\":\"us\"}"
+            },
+            {
+                "type": "switch",
+                "id": "setActive",
+                "label": "Set as active profile after write",
+                "defaultChecked": input.set_active.unwrap_or(false)
+            }
+        ]
+    })
+}
+
+fn build_guided_artifacts(execution: &GuidedExecution) -> Vec<serde_json::Value> {
+    let mut artifacts = vec![serde_json::json!({
+        "id": "file-config-result",
+        "label": "Copy action result JSON",
+        "action": "copy",
+        "content": serde_json::to_string_pretty(&execution.success).expect("assistant success string")
+    })];
+
+    if let Some(content) = &execution.success.content {
+        artifacts.push(serde_json::json!({
+            "id": "file-config-content",
+            "label": "Copy profile content",
+            "action": "copy",
+            "content": content
+        }));
+    }
+
+    if let Some(active_profile_id) = &execution.success.active_profile_id {
+        artifacts.push(serde_json::json!({
+            "id": "file-config-active-profile",
+            "label": "Copy active profile id",
+            "action": "copy",
+            "content": active_profile_id
+        }));
+    }
+
+    artifacts
+}
+
+fn run_guided_action_with_runtime(
+    input: &AssistantInput,
+    runtime: &mut dyn RuntimeOps,
+) -> Result<GuidedExecution, PluginError> {
+    match input.action.as_str() {
+        "write_profile" => guided_write_profile(runtime, input),
+        "delete_profile" => guided_delete_profile(runtime, input),
+        "list_profiles" => {
+            let success = list_profiles(runtime)?;
+            Ok(GuidedExecution {
+                stream: vec![GuidedStreamEntry {
+                    level: "info",
+                    message: "Listed available profiles.".to_string(),
+                }],
+                success,
+                degraded_capabilities: vec![],
+            })
+        }
+        "read_profile" => {
+            let success = read_profile(runtime, input.profile_id.clone())?;
+            Ok(GuidedExecution {
+                stream: vec![GuidedStreamEntry {
+                    level: "info",
+                    message: "Read profile content.".to_string(),
+                }],
+                success,
+                degraded_capabilities: vec![],
+            })
+        }
+        "set_active_profile" => {
+            let success = set_active_profile(runtime, input.profile_id.clone())?;
+            Ok(GuidedExecution {
+                stream: vec![GuidedStreamEntry {
+                    level: "info",
+                    message: "Updated the active profile pointer.".to_string(),
+                }],
+                success,
+                degraded_capabilities: vec![],
+            })
+        }
+        "get_active_profile" => {
+            let success = get_active_profile(runtime)?;
+            Ok(GuidedExecution {
+                stream: vec![GuidedStreamEntry {
+                    level: "info",
+                    message: "Read the active profile pointer.".to_string(),
+                }],
+                success,
+                degraded_capabilities: vec![],
+            })
+        }
+        _ => {
+            let success = run_with_runtime(&serde_json::to_string(input).expect("assistant input"), runtime)?;
+            Ok(GuidedExecution {
+                stream: vec![GuidedStreamEntry {
+                    level: "info",
+                    message: format!("Completed {}.", success.action),
+                }],
+                success,
+                degraded_capabilities: vec![],
+            })
+        }
+    }
+}
+
+fn guided_write_profile(
+    runtime: &mut dyn RuntimeOps,
+    input: &AssistantInput,
+) -> Result<GuidedExecution, PluginError> {
+    let profile_id = require_profile_id(input.profile_id.clone())?;
+    let content = input.content.clone().unwrap_or_default();
+    let set_active = input.set_active.unwrap_or(false);
+
+    ensure_profile_dir(runtime)?;
+    runtime
+        .fs_write(&profile_path(&profile_id), &content)
+        .map_err(|e| host_error("Failed to write profile content.", e))?;
+
+    let mut degraded_capabilities = vec![];
+    let mut stream = vec![GuidedStreamEntry {
+        level: "info",
+        message: format!("Profile '{}' content written.", profile_id),
+    }];
+    let mut message = "Profile write completed.".to_string();
+    let mut recommendations = vec![
+        "Use read_profile to verify persisted content.".to_string(),
+        "Use list_profiles to inspect the full profile inventory.".to_string(),
+    ];
+    let mut active_profile_id = None;
+
+    if set_active {
+        match runtime.config_set(ACTIVE_PROFILE_KEY, &profile_id) {
+            Ok(()) => {
+                active_profile_id = Some(profile_id.clone());
+                stream.push(GuidedStreamEntry {
+                    level: "info",
+                    message: "Active profile pointer updated.".to_string(),
+                });
+            }
+            Err(error) => {
+                degraded_capabilities.push(GuidedCapabilityDegradation {
+                    capability: "config",
+                    message: error.clone(),
+                });
+                stream.push(GuidedStreamEntry {
+                    level: "warning",
+                    message: format!("config follow-up degraded: {}", error),
+                });
+                message = "Profile write completed, but activating it was blocked.".to_string();
+                recommendations.push(
+                    "Retry set_active_profile after restoring config_write access.".to_string(),
+                );
+            }
+        }
+    }
+
+    Ok(GuidedExecution {
+        success: AssistantSuccess {
+            ok: true,
+            action: "write_profile".to_string(),
+            profile_id: Some(profile_id),
+            profiles: None,
+            content: None,
+            active_profile_id,
+            message,
+            recommendations,
+        },
+        degraded_capabilities,
+        stream,
+    })
+}
+
+fn guided_delete_profile(
+    runtime: &mut dyn RuntimeOps,
+    input: &AssistantInput,
+) -> Result<GuidedExecution, PluginError> {
+    let profile_id = require_profile_id(input.profile_id.clone())?;
+    let profile_path = profile_path(&profile_id);
+    ensure_profile_exists(runtime, &profile_id, &profile_path)?;
+
+    runtime
+        .fs_delete(&profile_path)
+        .map_err(|e| host_error("Failed to delete profile file.", e))?;
+
+    let mut degraded_capabilities = vec![];
+    let mut stream = vec![GuidedStreamEntry {
+        level: "info",
+        message: format!("Deleted profile '{}'.", profile_id),
+    }];
+    let mut active_profile_id = None;
+    let mut message = "Profile delete completed.".to_string();
+    let mut recommendations = vec![
+        "Use set_active_profile to point to another profile if needed.".to_string(),
+    ];
+
+    match runtime.config_get(ACTIVE_PROFILE_KEY) {
+        Ok(current_active_profile) => {
+            let normalized = normalize_optional(current_active_profile);
+            if normalized.as_deref() == Some(profile_id.as_str()) {
+                match runtime.config_set(ACTIVE_PROFILE_KEY, "") {
+                    Ok(()) => {
+                        stream.push(GuidedStreamEntry {
+                            level: "info",
+                            message: "Cleared the active profile pointer.".to_string(),
+                        });
+                    }
+                    Err(error) => {
+                        active_profile_id = Some(profile_id.clone());
+                        degraded_capabilities.push(GuidedCapabilityDegradation {
+                            capability: "config",
+                            message: error.clone(),
+                        });
+                        stream.push(GuidedStreamEntry {
+                            level: "warning",
+                            message: format!("config follow-up degraded: {}", error),
+                        });
+                        message = "Profile delete completed, but clearing the active pointer was blocked.".to_string();
+                        recommendations.push(
+                            "Retry set_active_profile or clear the pointer after restoring config_write access.".to_string(),
+                        );
+                    }
+                }
+            }
+        }
+        Err(error) => {
+            degraded_capabilities.push(GuidedCapabilityDegradation {
+                capability: "config",
+                message: error.clone(),
+            });
+            stream.push(GuidedStreamEntry {
+                level: "warning",
+                message: format!("config follow-up degraded: {}", error),
+            });
+            message = "Profile delete completed, but reading active pointer state was blocked.".to_string();
+            recommendations.push(
+                "Retry get_active_profile after restoring config_read access.".to_string(),
+            );
+        }
+    }
+
+    Ok(GuidedExecution {
+        success: AssistantSuccess {
+            ok: true,
+            action: "delete_profile".to_string(),
+            profile_id: Some(profile_id),
+            profiles: None,
+            content: None,
+            active_profile_id,
+            message,
+            recommendations,
+        },
+        degraded_capabilities,
+        stream,
+    })
 }
 
 fn run_with_runtime(raw: &str, runtime: &mut dyn RuntimeOps) -> Result<AssistantSuccess, PluginError> {
@@ -459,6 +1041,7 @@ struct MockRuntime {
     files: HashMap<String, String>,
     dirs: HashMap<String, bool>,
     config: HashMap<String, String>,
+    fail_config_set: bool,
 }
 
 #[cfg(test)]
@@ -514,6 +1097,9 @@ impl RuntimeOps for MockRuntime {
     }
 
     fn config_set(&mut self, key: &str, value: &str) -> Result<(), String> {
+        if self.fail_config_set {
+            return Err("config_write permission denied".to_string());
+        }
         self.config.insert(key.to_string(), value.to_string());
         Ok(())
     }
@@ -548,5 +1134,52 @@ mod tests {
 
         assert_eq!(err.code, "PROFILE_NOT_FOUND");
         assert!(err.message.contains("missing"));
+    }
+
+    #[test]
+    fn guided_workflow_renders_initial_form() {
+        let mut runtime = MockRuntime::default();
+        let response = render_guided_with_runtime("", &mut runtime);
+
+        let ui = response["ui"].as_array().expect("guided ui array");
+        assert!(ui.iter().any(|block| block["type"] == "heading"));
+        assert!(ui.iter().any(|block| block["type"] == "form"));
+        assert_eq!(response["outputChannels"]["summary"]["status"], "info");
+        assert_eq!(response["state"]["lastInput"]["action"], "list_profiles");
+    }
+
+    #[test]
+    fn guided_workflow_preserves_written_profile_when_active_pointer_update_fails() {
+        let mut runtime = MockRuntime::default();
+        runtime.fail_config_set = true;
+
+        let raw = serde_json::json!({
+            "action": "form_submit",
+            "formId": "file-config-assistant-guided-form",
+            "formData": {
+                "action": "write_profile",
+                "profileId": "default",
+                "content": "{\"region\":\"us\"}",
+                "setActive": true
+            }
+        })
+        .to_string();
+
+        let response = render_guided_with_runtime(&raw, &mut runtime);
+
+        assert_eq!(
+            runtime.files.get("profiles/default.json").map(String::as_str),
+            Some("{\"region\":\"us\"}"),
+        );
+        assert_eq!(response["outputChannels"]["summary"]["status"], "warning");
+        assert_eq!(
+            response["state"]["degradedCapabilities"][0]["capability"],
+            "config"
+        );
+        assert_eq!(response["state"]["lastSuccess"]["action"], "write_profile");
+        assert_eq!(
+            response["outputChannels"]["artifacts"][0]["action"],
+            "copy"
+        );
     }
 }

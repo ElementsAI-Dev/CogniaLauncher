@@ -18,6 +18,8 @@ const mockPinPackage = jest.fn().mockResolvedValue(undefined);
 const mockUnpinPackage = jest.fn().mockResolvedValue(undefined);
 const mockRollbackPackage = jest.fn().mockResolvedValue(undefined);
 const mockFetchPinnedPackages = jest.fn().mockResolvedValue([]);
+const mockConfirmPreflight = jest.fn();
+const mockDismissPreflight = jest.fn();
 const mockUseKeyboardShortcuts = jest.fn();
 const mockPush = jest.fn();
 let mockPackageDetailsDialogProps: Record<string, unknown> | null = null;
@@ -82,8 +84,28 @@ let mockSearchResults: Array<{
     };
   },
 };
+let mockPreflightSummary: null | {
+  results: Array<{
+    validator_id: string;
+    validator_name: string;
+    status: 'pass' | 'warning' | 'failure';
+    summary: string;
+    details: string[];
+    remediation: string | null;
+    package: string | null;
+    provider_id: string | null;
+    blocking: boolean;
+    timed_out: boolean;
+  }>;
+  can_proceed: boolean;
+  has_warnings: boolean;
+  has_failures: boolean;
+  checked_at: string;
+} = null;
+let mockPreflightPackages: string[] = [];
+let mockIsPreflightOpen = false;
 
-jest.mock('@/hooks/use-packages', () => ({
+jest.mock('@/hooks/packages/use-packages', () => ({
   usePackages: () => ({
     searchResults: mockSearchResults,
     installedPackages: mockInstalledPackages,
@@ -114,6 +136,11 @@ jest.mock('@/hooks/use-packages', () => ({
     fetchPinnedPackages: mockFetchPinnedPackages,
     getInstallHistory: mockGetInstallHistory,
     clearInstallHistory: mockClearInstallHistory,
+    preflightSummary: mockPreflightSummary,
+    preflightPackages: mockPreflightPackages,
+    isPreflightOpen: mockIsPreflightOpen,
+    confirmPreflight: mockConfirmPreflight,
+    dismissPreflight: mockDismissPreflight,
   }),
 }));
 
@@ -121,7 +148,7 @@ jest.mock('@/lib/stores/packages', () => ({
   usePackageStore: () => mockPackageStoreState,
 }));
 
-jest.mock('@/hooks/use-keyboard-shortcuts', () => ({
+jest.mock('@/hooks/shared/use-keyboard-shortcuts', () => ({
   useKeyboardShortcuts: (...args: unknown[]) => mockUseKeyboardShortcuts(...args),
 }));
 
@@ -150,6 +177,15 @@ jest.mock('@/components/providers/locale-provider', () => ({
         'packages.searchFacets': 'Search facets',
         'packages.searchFacetProviders': 'Providers',
         'packages.searchFacetLicenses': 'Licenses',
+        'packages.searchWorkspace': 'Search Workspace',
+        'packages.searchWorkspaceDescription': 'Find packages with quick and advanced filters',
+        'packages.activeSearchTitle': 'Active Search',
+        'packages.activeSearchDescription': 'Current query and filters',
+        'packages.searchContextQuery': `Query: ${params?.value ?? ''}`,
+        'packages.searchContextProviders': `Providers: ${params?.value ?? ''}`,
+        'packages.searchContextSort': `Sort: ${params?.value ?? ''}`,
+        'packages.searchContextFilterCount': `${params?.count ?? 0} filters active`,
+        'packages.advancedSearch': 'Advanced Search',
         'packages.searchPrevPage': 'Previous page',
         'packages.searchNextPage': 'Next page',
         'packages.clickToCheck': 'Click to check for updates',
@@ -177,6 +213,15 @@ jest.mock('@/components/providers/locale-provider', () => ({
         'packages.updateCheckUnsupported': `${params?.count ?? 0} providers unsupported`,
         'packages.dependencyResolveFailedFor': `Failed to resolve dependencies for ${params?.name ?? ""}: ${params?.error ?? ""}`,
         'packages.dependencyResolveFailedWithManualHint': `Failed to resolve dependencies for ${params?.name ?? ""}: ${params?.error ?? ""}`,
+        'packages.preflight.title': 'Pre-flight summary',
+        'packages.preflight.description': 'Review package validation findings before install.',
+        'packages.preflight.passCount': `Passed ${params?.count ?? 0}`,
+        'packages.preflight.warningCount': `Warnings ${params?.count ?? 0}`,
+        'packages.preflight.failureCount': `Failures ${params?.count ?? 0}`,
+        'packages.preflight.packages': 'Packages',
+        'packages.preflight.blockingMessage': 'Resolve blocking issues before continuing.',
+        'packages.preflight.confirm': 'Continue install',
+        'packages.preflight.cancel': 'Cancel',
         'providers.refresh': 'Refresh',
         'common.unknown': 'unknown',
       };
@@ -308,6 +353,22 @@ jest.mock('@/components/packages/stats-overview', () => ({
   StatsOverview: () => <div data-testid="stats-overview">Stats</div>,
 }));
 
+jest.mock('@/components/dashboard/dashboard-primitives', () => ({
+  DashboardMetricGrid: ({ children, ...props }: { children: React.ReactNode; [key: string]: unknown }) => (
+    <div data-testid="metrics-strip" {...props}>{children}</div>
+  ),
+  DashboardMetricItem: ({ label, value }: { label: string; value: React.ReactNode }) => (
+    <div data-testid={`metric-${label}`}>{label}: {value}</div>
+  ),
+  DashboardEmptyState: ({ message }: { message: string }) => (
+    <div data-testid="empty-state">{message}</div>
+  ),
+}));
+
+jest.mock('@/lib/constants/providers', () => ({
+  isPackageSurfaceProvider: () => true,
+}));
+
 describe('PackagesPage', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -336,6 +397,9 @@ describe('PackagesPage', () => {
     mockPackageStoreState.updateCheckProviderOutcomes = [];
     mockPackageStoreState.updateCheckCoverage = null;
     mockPackageStoreState.lastUpdateCheck = null;
+    mockPreflightSummary = null;
+    mockPreflightPackages = [];
+    mockIsPreflightOpen = false;
   });
 
   it('renders page title and description', () => {
@@ -346,11 +410,11 @@ describe('PackagesPage', () => {
 
   it('renders all 5 tabs', () => {
     render(<PackagesPage />);
-    expect(screen.getByText(/Installed/)).toBeInTheDocument();
-    expect(screen.getByText(/Updates/)).toBeInTheDocument();
-    expect(screen.getByText(/Search Results/)).toBeInTheDocument();
-    expect(screen.getByText(/Dependencies/)).toBeInTheDocument();
-    expect(screen.getByText(/History/)).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Installed/ })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Updates/ })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Search Results/ })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Dependencies/ })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /History/ })).toBeInTheDocument();
   });
 
   it('renders search bar', () => {
@@ -380,6 +444,21 @@ describe('PackagesPage', () => {
     });
   });
 
+  it('shows active search context after a search runs', async () => {
+    const user = userEvent.setup();
+    render(<PackagesPage />);
+
+    await user.click(screen.getByTestId('trigger-advanced-search'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('active-search-summary')).toBeInTheDocument();
+      expect(screen.getByText('Active Search')).toBeInTheDocument();
+      expect(screen.getByText('Query: vite')).toBeInTheDocument();
+      expect(screen.getByText('Providers: npm')).toBeInTheDocument();
+      expect(screen.getByText('1 filters active')).toBeInTheDocument();
+    });
+  });
+
   it('focuses package search input when keyboard shortcut action runs', () => {
     render(<PackagesPage />);
 
@@ -396,9 +475,9 @@ describe('PackagesPage', () => {
     expect(screen.getByTestId('packages-search-input')).toHaveFocus();
   });
 
-  it('renders stats overview', () => {
+  it('renders metrics strip', () => {
     render(<PackagesPage />);
-    expect(screen.getByTestId('stats-overview')).toBeInTheDocument();
+    expect(screen.getByTestId('metrics-strip')).toBeInTheDocument();
   });
 
   it('renders installed packages list by default', () => {
@@ -840,5 +919,99 @@ describe('PackagesPage', () => {
       expect(screen.getByText('npm (20)')).toBeInTheDocument();
       expect(screen.getByText('MIT (15)')).toBeInTheDocument();
     });
+  });
+
+  it('refreshes the active search after installing from search results', async () => {
+    mockSearchResults = [
+      {
+        name: 'vite',
+        provider: 'npm',
+        description: 'Build tool',
+        latest_version: '6.0.0',
+      },
+    ];
+
+    const user = userEvent.setup();
+    render(<PackagesPage />);
+
+    await user.click(screen.getByTestId('trigger-advanced-search'));
+    await waitFor(() => {
+      expect(mockAdvancedSearch).toHaveBeenCalledTimes(1);
+    });
+
+    await user.click(screen.getByText(/Search Results/));
+    await user.click(screen.getByTestId('install-search'));
+
+    await waitFor(() => {
+      expect(mockInstallPackages).toHaveBeenCalledWith(['lodash']);
+    });
+    await waitFor(() => {
+      expect(mockAdvancedSearch).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it('renders the pre-flight dialog when validation warnings are open', () => {
+    mockPreflightSummary = {
+      results: [
+        {
+          validator_id: 'provider_health',
+          validator_name: 'Provider health',
+          status: 'warning',
+          summary: 'Provider health check returned warnings.',
+          details: ['Provider status is degraded.'],
+          remediation: 'Review provider diagnostics before proceeding.',
+          package: 'npm:react',
+          provider_id: 'npm',
+          blocking: false,
+          timed_out: false,
+        },
+      ],
+      can_proceed: true,
+      has_warnings: true,
+      has_failures: false,
+      checked_at: '2026-03-29T00:00:00.000Z',
+    };
+    mockPreflightPackages = ['npm:react'];
+    mockIsPreflightOpen = true;
+
+    render(<PackagesPage />);
+
+    expect(screen.getByText('Pre-flight summary')).toBeInTheDocument();
+    expect(screen.getByText('Provider health check returned warnings.')).toBeInTheDocument();
+    expect(screen.getAllByText('npm:react').length).toBeGreaterThan(0);
+  });
+
+  it('wires pre-flight dialog confirm and cancel actions', async () => {
+    const user = userEvent.setup();
+    mockPreflightSummary = {
+      results: [
+        {
+          validator_id: 'provider_health',
+          validator_name: 'Provider health',
+          status: 'warning',
+          summary: 'Provider health check returned warnings.',
+          details: ['Provider status is degraded.'],
+          remediation: 'Review provider diagnostics before proceeding.',
+          package: 'npm:react',
+          provider_id: 'npm',
+          blocking: false,
+          timed_out: false,
+        },
+      ],
+      can_proceed: true,
+      has_warnings: true,
+      has_failures: false,
+      checked_at: '2026-03-29T00:00:00.000Z',
+    };
+    mockPreflightPackages = ['npm:react'];
+    mockIsPreflightOpen = true;
+
+    render(<PackagesPage />);
+
+    await user.click(screen.getByRole('button', { name: 'Continue install' }));
+    expect(mockConfirmPreflight).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(mockDismissPreflight).toHaveBeenCalledTimes(1);
   });
 });

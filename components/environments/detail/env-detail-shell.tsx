@@ -23,7 +23,7 @@ import {
   Trash2,
   Info,
 } from "lucide-react";
-import { useLaunch } from "@/hooks/use-launch";
+import { useLaunch } from "@/hooks/environments/use-launch";
 import { isTauri } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";

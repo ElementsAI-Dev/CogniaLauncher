@@ -1,8 +1,19 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { writeClipboard } from "@/lib/clipboard";
+import { toast } from "sonner";
 import { VersionCards } from "./version-cards";
 
 jest.mock("@/lib/app-version", () => ({
   APP_VERSION: "0.1.0",
+}));
+
+jest.mock("@/lib/clipboard", () => ({
+  writeClipboard: jest.fn().mockResolvedValue(undefined),
+}));
+
+jest.mock("sonner", () => ({
+  toast: { success: jest.fn(), error: jest.fn() },
 }));
 
 const mockT = (key: string) => {
@@ -13,6 +24,11 @@ const mockT = (key: string) => {
     "about.latestVersion": "Latest Version",
     "about.upToDate": "Up to date",
     "about.updateAvailable": "Update available",
+    "about.updateStatus": "Status",
+    "about.errorTitle": "Error",
+    "about.copyVersionInfo": "Copy version info",
+    "about.versionCopied": "Version copied",
+    "about.copyFailed": "Copy failed",
     "common.loading": "Loading",
   };
   return translations[key] || key;
@@ -26,6 +42,7 @@ const defaultProps = {
     latest_version: "1.0.0",
     release_notes: null,
   },
+  updateStatus: "up_to_date" as const,
   t: mockT,
 };
 
@@ -56,6 +73,7 @@ describe("VersionCards", () => {
           latest_version: "1.1.0",
           release_notes: null,
         }}
+        updateStatus="update_available"
       />,
     );
     expect(screen.getByText("Update available")).toBeInTheDocument();
@@ -73,6 +91,7 @@ describe("VersionCards", () => {
           error_category: "source_unavailable",
           error_message: "mirror unavailable",
         }}
+        updateStatus="error"
       />,
     );
     expect(screen.queryByText("Up to date")).not.toBeInTheDocument();
@@ -87,12 +106,20 @@ describe("VersionCards", () => {
   });
 
   it("falls back to APP_VERSION when updateInfo is null", () => {
-    render(<VersionCards {...defaultProps} updateInfo={null} />);
+    render(<VersionCards {...defaultProps} updateInfo={null} updateStatus="idle" />);
     expect(screen.getAllByText("v0.1.0")).toHaveLength(2);
   });
 
   it("has correct aria group role", () => {
     render(<VersionCards {...defaultProps} />);
     expect(screen.getByRole("group")).toBeInTheDocument();
+  });
+
+  it("copies version info on click", async () => {
+    render(<VersionCards {...defaultProps} />);
+    const copyButton = screen.getByLabelText("Copy version info");
+    await userEvent.click(copyButton);
+    expect(writeClipboard).toHaveBeenCalledWith("CogniaLauncher v1.0.0");
+    expect(toast.success).toHaveBeenCalledWith("Version copied");
   });
 });

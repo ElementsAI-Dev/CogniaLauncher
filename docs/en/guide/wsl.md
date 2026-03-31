@@ -55,6 +55,9 @@ CogniaLauncher provides comprehensive Windows Subsystem for Linux (WSL) manageme
 - **Open in Terminal** — Open distribution directly in Windows Terminal (or fallback shell)
 - **Inline lifecycle feedback** — Long-running, batch, and high-risk operations remain visible in-page with running, success, failure, and retry guidance
 - **Workflow continuation** — Distro detail links preserve a return path back to the originating overview, sidebar, or widget workflow
+- **Tray quick actions** — The desktop tray now mirrors WSL runtime state and can launch the default distro, shut down all running distros, or jump straight into the WSL manager
+- **Command palette actions** — When WSL is available on Windows, the command palette exposes quick actions for launching the default distro, shutting down all distros, and opening the default distro terminal
+- **CLI management** — `cognia wsl list|status|launch|terminate|shutdown|exec` provides headless WSL control with both table and JSON output paths
 
 ### Disk Management
 
@@ -74,6 +77,7 @@ CogniaLauncher provides comprehensive Windows Subsystem for Linux (WSL) manageme
 - **Change Default User** — Modify default login user for a distribution
 - **Health Check** — Run distro health diagnostics and inspect structured issues/timestamp in detail workflow
 - **Port Forwarding** — Add/remove `netsh portproxy` rules with explicit confirmation and risk guidance
+- **Network Mode Switching** — Switch global WSL networking mode (`NAT`, `mirrored`, `virtioproxy`) from the distro network tab with restart confirmation and automatic `wsl --shutdown` follow-through
 
 ### Assistance Facilities
 
@@ -98,6 +102,12 @@ Manage per-distribution configuration via `/etc/wsl.conf`:
 
 - Check for WSL component updates
 - Execute WSL updates
+
+### Profiles, Health, And Backup Automation
+
+- **Profile snapshots** — Environment profiles can now capture and restore WSL state, including `.wslconfig`, distro inventory, and default distro metadata
+- **WSL health in unified checks** — The global Health Check workspace now surfaces WSL runtime issues separately from envvar and generic system issues
+- **Scheduled backups** — Distro detail includes backup schedules with persisted cadence, startup missed-run detection, and retention cleanup after successful scheduled backups
 
 ### Information Readouts & Refresh
 
@@ -143,8 +153,12 @@ The following operations show a confirmation dialog in the UI with admin privile
 | `wsl_change_default_user` | Change default user |
 | `wsl_get_distro_config` | Read distribution configuration |
 | `wsl_set_distro_config` | Write distribution configuration |
+| `wsl_set_networking_mode` | Change global WSL networking mode |
 | `wsl_get_capabilities` | Get runtime command capabilities |
 | `wsl_get_version_info` | Get detailed WSL component versions |
 | `wsl_total_disk_usage` | Get total disk usage across distributions |
 | `wsl_move_distro` | Migrate distribution disk location |
 | `wsl_resize_distro` | Resize distribution virtual disk |
+| `profile_capture_wsl_snapshot` | Capture WSL state for environment profiles |
+| `profile_apply_wsl_snapshot` | Apply a captured WSL profile snapshot |
+| `tray_set_wsl_state` | Sync WSL runtime state into the desktop tray |

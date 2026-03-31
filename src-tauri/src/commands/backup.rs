@@ -87,15 +87,10 @@ pub async fn backup_create(
     let pm = profile_manager.read().await;
     let cdm = custom_detection_manager.read().await;
 
-    Ok(backup::create_backup_with_result(
-        &s,
-        &content_types,
-        note.as_deref(),
-        &tm,
-        &pm,
-        &cdm,
+    Ok(
+        backup::create_backup_with_result(&s, &content_types, note.as_deref(), &tm, &pm, &cdm)
+            .await,
     )
-    .await)
 }
 
 #[tauri::command]

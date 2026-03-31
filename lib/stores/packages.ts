@@ -5,6 +5,7 @@ import {
   togglePackageBookmark,
 } from '../packages';
 import type {
+  ConflictInfo,
   PackageSummary,
   PackageInfo,
   InstalledPackage,
@@ -46,6 +47,8 @@ interface PackageState {
   isCheckingUpdates: boolean;
   lastUpdateCheck: number | null;
   lastScanTimestamp: number | null;
+  pendingConflicts: ConflictInfo[];
+  resolvedVersions: Record<string, string>;
 
   setSearchResults: (results: PackageSummary[]) => void;
   setInstalledPackages: (packages: InstalledPackage[]) => void;
@@ -77,6 +80,10 @@ interface PackageState {
   setIsCheckingUpdates: (checking: boolean) => void;
   setLastUpdateCheck: (timestamp: number | null) => void;
   setLastScanTimestamp: (timestamp: number | null) => void;
+  setPendingConflicts: (conflicts: ConflictInfo[]) => void;
+  clearPendingConflicts: () => void;
+  setResolvedVersion: (packageName: string, version: string) => void;
+  clearResolvedVersion: (packageName: string) => void;
   isScanFresh: () => boolean;
 }
 
@@ -104,6 +111,8 @@ export const usePackageStore = create<PackageState>()(
       isCheckingUpdates: false,
       lastUpdateCheck: null,
       lastScanTimestamp: null,
+      pendingConflicts: [],
+      resolvedVersions: {},
 
       setSearchResults: (searchResults) => set({ searchResults }),
       setInstalledPackages: (installedPackages) => set((state) => ({
@@ -160,6 +169,19 @@ export const usePackageStore = create<PackageState>()(
       setIsCheckingUpdates: (isCheckingUpdates) => set({ isCheckingUpdates }),
       setLastUpdateCheck: (lastUpdateCheck) => set({ lastUpdateCheck }),
       setLastScanTimestamp: (lastScanTimestamp) => set({ lastScanTimestamp }),
+      setPendingConflicts: (pendingConflicts) => set({ pendingConflicts }),
+      clearPendingConflicts: () => set({ pendingConflicts: [] }),
+      setResolvedVersion: (packageName, version) => set((state) => ({
+        resolvedVersions: {
+          ...state.resolvedVersions,
+          [packageName]: version,
+        },
+      })),
+      clearResolvedVersion: (packageName) => set((state) => {
+        const next = { ...state.resolvedVersions };
+        delete next[packageName];
+        return { resolvedVersions: next };
+      }),
       isScanFresh: () => {
         const ts = get().lastScanTimestamp;
         if (!ts) return false;
@@ -168,7 +190,7 @@ export const usePackageStore = create<PackageState>()(
     }),
     {
       name: 'cognia-packages',
-      version: 3,
+      version: 4,
       migrate: (persisted) => {
         const state = persisted as Partial<PackageState>;
         const installedPackages = Array.isArray(state.installedPackages)
@@ -187,6 +209,11 @@ export const usePackageStore = create<PackageState>()(
           ),
           installedPackages,
           lastScanTimestamp: typeof state.lastScanTimestamp === 'number' ? state.lastScanTimestamp : null,
+          pendingConflicts: Array.isArray(state.pendingConflicts) ? state.pendingConflicts : [],
+          resolvedVersions:
+            state.resolvedVersions && typeof state.resolvedVersions === 'object'
+              ? state.resolvedVersions
+              : {},
         };
       },
       partialize: (state) => ({
@@ -195,6 +222,8 @@ export const usePackageStore = create<PackageState>()(
         bookmarkedPackages: state.bookmarkedPackages,
         installedPackages: state.installedPackages,
         lastScanTimestamp: state.lastScanTimestamp,
+        pendingConflicts: state.pendingConflicts,
+        resolvedVersions: state.resolvedVersions,
       }),
     }
   )

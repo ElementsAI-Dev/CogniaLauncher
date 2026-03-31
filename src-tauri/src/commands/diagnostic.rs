@@ -514,10 +514,7 @@ fn format_system_time_rfc3339(value: SystemTime) -> String {
     chrono::DateTime::<chrono::Utc>::from(value).to_rfc3339()
 }
 
-fn build_crash_report_info_from_pending(
-    record: &PendingCrashRecord,
-    size: u64,
-) -> CrashReportInfo {
+fn build_crash_report_info_from_pending(record: &PendingCrashRecord, size: u64) -> CrashReportInfo {
     CrashReportInfo {
         id: record.id.clone(),
         source: record.source.clone(),
@@ -545,7 +542,11 @@ fn build_crash_report_info_from_manifest(
     }
 }
 
-fn build_fallback_crash_report_info(path: &Path, size: u64, modified: Option<SystemTime>) -> CrashReportInfo {
+fn build_fallback_crash_report_info(
+    path: &Path,
+    size: u64,
+    modified: Option<SystemTime>,
+) -> CrashReportInfo {
     let timestamp = modified
         .map(format_system_time_rfc3339)
         .unwrap_or_else(|| Local::now().to_rfc3339());
@@ -653,8 +654,12 @@ fn read_crash_manifest_from_zip(path: &Path) -> Result<Option<CrashManifest>, St
     entry
         .read_to_string(&mut json)
         .map_err(|e| format!("Failed to read crash manifest from {}: {e}", path.display()))?;
-    let manifest = serde_json::from_str::<CrashManifest>(&json)
-        .map_err(|e| format!("Failed to parse crash manifest from {}: {e}", path.display()))?;
+    let manifest = serde_json::from_str::<CrashManifest>(&json).map_err(|e| {
+        format!(
+            "Failed to parse crash manifest from {}: {e}",
+            path.display()
+        )
+    })?;
 
     Ok(Some(manifest))
 }
@@ -692,9 +697,12 @@ fn list_crash_report_entries_in_dir(
             continue;
         }
 
-        let metadata = entry
-            .metadata()
-            .map_err(|e| format!("Failed to read crash report metadata {}: {e}", path.display()))?;
+        let metadata = entry.metadata().map_err(|e| {
+            format!(
+                "Failed to read crash report metadata {}: {e}",
+                path.display()
+            )
+        })?;
         let report_path = path.to_string_lossy().to_string();
 
         if let Some(record) = pending_by_path.get(&report_path) {
@@ -713,11 +721,7 @@ fn list_crash_report_entries_in_dir(
         let report = if let Some(manifest) = manifest {
             build_crash_report_info_from_manifest(manifest, report_path, metadata.len())
         } else {
-            build_fallback_crash_report_info(
-                &path,
-                metadata.len(),
-                metadata.modified().ok(),
-            )
+            build_fallback_crash_report_info(&path, metadata.len(), metadata.modified().ok())
         };
         reports.push(report);
     }
@@ -1204,7 +1208,10 @@ mod tests {
         dir: &Path,
         pending: &[PendingCrashRecord],
     ) -> Result<Vec<CrashReportEntry>, String> {
-        let pending_paths: HashSet<&str> = pending.iter().map(|record| record.report_path.as_str()).collect();
+        let pending_paths: HashSet<&str> = pending
+            .iter()
+            .map(|record| record.report_path.as_str())
+            .collect();
         let mut reports = Vec::new();
 
         let entries =
@@ -1507,24 +1514,10 @@ mod tests {
             includes_runtime_breadcrumbs: true,
         };
 
-        let _ = build_zip_bundle(
-            &older_output,
-            None,
-            None,
-            None,
-            Some(&older_manifest),
-            None,
-        )
-        .unwrap();
-        let _ = build_zip_bundle(
-            &newer_output,
-            None,
-            None,
-            None,
-            Some(&newer_manifest),
-            None,
-        )
-        .unwrap();
+        let _ =
+            build_zip_bundle(&older_output, None, None, None, Some(&older_manifest), None).unwrap();
+        let _ =
+            build_zip_bundle(&newer_output, None, None, None, Some(&newer_manifest), None).unwrap();
 
         let pending = vec![PendingCrashRecord {
             id: "frontend-runtime-newer".into(),

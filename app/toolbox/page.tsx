@@ -3,10 +3,10 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/layout/page-header';
-import { useToolbox } from '@/hooks/use-toolbox';
-import { usePlugins } from '@/hooks/use-plugins';
+import { useToolbox } from '@/hooks/toolbox/use-toolbox';
+import { usePlugins } from '@/hooks/plugins/use-plugins';
 import { useLocale } from '@/components/providers/locale-provider';
-import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts';
+import { useKeyboardShortcuts } from '@/hooks/shared/use-keyboard-shortcuts';
 import {
   ToolGrid,
   ToolCategoryNav,

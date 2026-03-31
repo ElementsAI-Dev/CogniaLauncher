@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -8,12 +10,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Select,
   SelectContent,
@@ -23,22 +19,21 @@ import {
 } from "@/components/ui/select";
 import {
   Package,
-  Search,
-  Download,
-  Trash2,
-  Loader2,
   RefreshCw,
+  Loader2,
   ArrowUpCircle,
 } from "lucide-react";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { usePackages } from "@/hooks/use-packages";
-import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import type { UpdateInfo } from "@/types/tauri";
+import { usePackages } from "@/hooks/packages/use-packages";
+import type { BatchResult, ProviderInfo } from "@/lib/tauri";
+import {
+  PackageOperationPanel,
+} from "@/components/packages/shared/package-operation-panel";
+import {
+  PackageOperationProvider,
+  type PackageOperationContextValue,
+} from "@/components/packages/shared/package-operation-context";
+import { cn } from "@/lib/utils";
 
 // Map environment types to their associated package manager provider IDs
 export const ENV_TYPE_TO_PROVIDERS: Record<string, string[]> = {
@@ -79,6 +74,27 @@ interface EnvDetailPackagesProps {
   t: (key: string, params?: Record<string, string | number>) => string;
 }
 
+function toProviderInfos(providerIds: string[]): ProviderInfo[] {
+  return providerIds.map((providerId, index) => ({
+    id: providerId,
+    display_name: providerId,
+    capabilities: ["Search", "Install"],
+    platforms: ["Windows", "Linux", "macOS"],
+    priority: index + 1,
+    is_environment_provider: true,
+    enabled: true,
+  }));
+}
+
+function createEmptyBatchResult(): BatchResult {
+  return {
+    successful: [],
+    failed: [],
+    skipped: [],
+    total_time_ms: 0,
+  };
+}
+
 export function EnvDetailPackages({ envType, t }: EnvDetailPackagesProps) {
   const {
     installedPackages,
@@ -91,23 +107,36 @@ export function EnvDetailPackages({ envType, t }: EnvDetailPackagesProps) {
     installPackages,
     uninstallPackages,
     checkForUpdates,
+    preflightSummary,
+    preflightPackages,
+    isPreflightOpen,
+    confirmPreflight,
+    dismissPreflight,
   } = usePackages();
-
-  const [searchQuery, setSearchQuery] = useState("");
-  const [activeView, setActiveView] = useState("installed");
-  const [providerUpdates, setProviderUpdates] = useState<UpdateInfo[]>([]);
-  const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
 
   const relevantProviders = ENV_TYPE_TO_PROVIDERS[envType] || [];
   const [selectedProvider, setSelectedProvider] = useState(
     relevantProviders[0] || "",
   );
-  const activeProvider = selectedProvider || relevantProviders[0];
+  const [providerUpdates, setProviderUpdates] = useState<
+    Array<{
+      name: string;
+      provider: string;
+      current_version: string;
+      latest_version: string;
+    }>
+  >([]);
+  const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
 
-  // Fetch installed packages for the active provider on mount or provider change
+  const activeProvider = selectedProvider || relevantProviders[0];
+  const providers = useMemo(
+    () => toProviderInfos(relevantProviders),
+    [relevantProviders],
+  );
+
   useEffect(() => {
     if (activeProvider) {
-      fetchInstalledPackages(activeProvider);
+      void fetchInstalledPackages(activeProvider);
       setProviderUpdates([]);
     }
   }, [activeProvider, fetchInstalledPackages]);
@@ -122,12 +151,7 @@ export function EnvDetailPackages({ envType, t }: EnvDetailPackagesProps) {
 
   const handleSearch = async (query: string) => {
     if (!query.trim()) return;
-    setActiveView("search");
     await searchPackages(query, activeProvider);
-  };
-
-  const handleInstall = async (packageName: string) => {
-    await handleInstallWithProvider(activeProvider, packageName);
   };
 
   const handleInstallWithProvider = async (
@@ -145,20 +169,19 @@ export function EnvDetailPackages({ envType, t }: EnvDetailPackagesProps) {
       );
     } catch (err) {
       toast.error(String(err));
+      throw err;
     }
   };
 
-  const handleUninstall = async (packageName: string) => {
+  const handleUninstall = async (packageSpec: string) => {
     try {
-      const pkgSpec = activeProvider
-        ? `${activeProvider}:${packageName}`
-        : packageName;
-      await uninstallPackages([pkgSpec]);
+      await uninstallPackages([packageSpec]);
       toast.success(
-        t("environments.detail.packageUninstalled", { name: packageName }),
+        t("environments.detail.packageUninstalled", { name: packageSpec }),
       );
     } catch (err) {
       toast.error(String(err));
+      throw err;
     }
   };
 
@@ -177,28 +200,13 @@ export function EnvDetailPackages({ envType, t }: EnvDetailPackagesProps) {
     }
   };
 
-  if (relevantProviders.length === 0) {
-    return (
-      <div className="text-center py-12 text-muted-foreground">
-        <Package className="h-12 w-12 mx-auto mb-4 opacity-50" />
-        <h3 className="text-lg font-medium">
-          {t("environments.detail.noPackageManager")}
-        </h3>
-        <p className="text-sm mt-1">
-          {t("environments.detail.noPackageManagerDesc")}
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-6">
-      {/* Search & Actions */}
+  const headerContent: ReactNode = (
+    <>
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3">
             <div>
-              <CardTitle className="text-base flex items-center gap-2">
+              <CardTitle className="flex items-center gap-2 text-base">
                 <Package className="h-4 w-4" />
                 {t("environments.detail.packages")}
               </CardTitle>
@@ -208,28 +216,25 @@ export function EnvDetailPackages({ envType, t }: EnvDetailPackagesProps) {
                 })}
               </CardDescription>
             </div>
-            <div className="flex gap-2">
-              {relevantProviders.length > 1 && (
-                <Select
-                  value={activeProvider}
-                  onValueChange={setSelectedProvider}
-                >
+            <div className="flex flex-wrap items-center gap-2">
+              {relevantProviders.length > 1 ? (
+                <Select value={activeProvider} onValueChange={setSelectedProvider}>
                   <SelectTrigger className="h-9 w-[130px] text-xs">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {relevantProviders.map((p) => (
-                      <SelectItem key={p} value={p}>
-                        {p}
+                    {relevantProviders.map((providerId) => (
+                      <SelectItem key={providerId} value={providerId}>
+                        {providerId}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-              )}
+              ) : null}
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => fetchInstalledPackages(activeProvider)}
+                onClick={() => void fetchInstalledPackages(activeProvider, true)}
                 disabled={loading}
                 className="gap-1.5"
               >
@@ -241,7 +246,7 @@ export function EnvDetailPackages({ envType, t }: EnvDetailPackagesProps) {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={handleCheckUpdates}
+                onClick={() => void handleCheckUpdates()}
                 disabled={isCheckingUpdates}
                 className="gap-1.5"
               >
@@ -255,68 +260,12 @@ export function EnvDetailPackages({ envType, t }: EnvDetailPackagesProps) {
             </div>
           </div>
         </CardHeader>
-        <CardContent>
-          <div className="flex gap-2">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder={t("environments.detail.searchPackages")}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleSearch(searchQuery);
-                }}
-                className="pl-9"
-              />
-            </div>
-            <Button
-              onClick={() => handleSearch(searchQuery)}
-              disabled={!searchQuery.trim() || loading}
-            >
-              {t("environments.detail.searchBtn")}
-            </Button>
-          </div>
-
-          {/* View Toggle */}
-          <Tabs value={activeView} onValueChange={setActiveView} className="mt-3">
-            <TabsList>
-              <TabsTrigger value="installed" className="gap-1.5">
-                {t("environments.detail.installedTab")}
-                {installedPackages.length > 0 && (
-                  <Badge variant="secondary" className="ml-1">
-                    {installedPackages.length}
-                  </Badge>
-                )}
-              </TabsTrigger>
-              <TabsTrigger
-                value="search"
-                className="gap-1.5"
-                disabled={searchResults.length === 0}
-              >
-                {t("environments.detail.searchResults")}
-                {searchResults.length > 0 && (
-                  <Badge variant="secondary" className="ml-1">
-                    {searchResults.length}
-                  </Badge>
-                )}
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
-        </CardContent>
       </Card>
 
-      {/* Error Display */}
-      {error && (
-        <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-
-      {/* Available Updates */}
-      {visibleUpdates.length > 0 && activeView === "installed" && (
-        <Card className="border-yellow-200 dark:border-yellow-800 bg-yellow-50/50 dark:bg-yellow-950/30">
+      {visibleUpdates.length > 0 ? (
+        <Card className="border-yellow-200 bg-yellow-50/50 dark:border-yellow-800 dark:bg-yellow-950/30">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base flex items-center gap-2">
+            <CardTitle className="flex items-center gap-2 text-base">
               <ArrowUpCircle className="h-4 w-4 text-yellow-600" />
               {t("environments.detail.updatesAvailable")}
             </CardTitle>
@@ -326,9 +275,9 @@ export function EnvDetailPackages({ envType, t }: EnvDetailPackagesProps) {
               {visibleUpdates.slice(0, 10).map((update) => (
                 <div
                   key={`${update.provider}:${update.name}`}
-                  className="flex items-center justify-between p-2 rounded bg-background/60"
+                  className="flex items-center justify-between gap-3 rounded bg-background/60 p-2"
                 >
-                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <div className="flex min-w-0 flex-1 items-center gap-2">
                     <span className="font-mono text-sm">{update.name}</span>
                     <span className="text-xs text-muted-foreground">
                       {update.current_version} → {update.latest_version}
@@ -337,9 +286,9 @@ export function EnvDetailPackages({ envType, t }: EnvDetailPackagesProps) {
                   <Button
                     variant="outline"
                     size="sm"
-                    className="gap-1 shrink-0 text-xs h-7"
+                    className="h-7 shrink-0 gap-1 text-xs"
                     onClick={() =>
-                      handleInstallWithProvider(
+                      void handleInstallWithProvider(
                         update.provider,
                         update.name,
                         update.latest_version,
@@ -356,136 +305,72 @@ export function EnvDetailPackages({ envType, t }: EnvDetailPackagesProps) {
                   </Button>
                 </div>
               ))}
-              {visibleUpdates.length > 10 && (
-                <p className="text-xs text-muted-foreground text-center">
+              {visibleUpdates.length > 10 ? (
+                <p className="text-center text-xs text-muted-foreground">
                   +{visibleUpdates.length - 10} more
                 </p>
-              )}
+              ) : null}
             </div>
           </CardContent>
         </Card>
-      )}
+      ) : null}
+    </>
+  );
 
-      {/* Package List */}
-      <Card>
-        <CardContent className="p-0">
-          <ScrollArea className="h-[400px]">
-            {loading && (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-              </div>
-            )}
+  if (relevantProviders.length === 0) {
+    return (
+      <div className="py-12 text-center text-muted-foreground">
+        <Package className="mx-auto mb-4 h-12 w-12 opacity-50" />
+        <h3 className="text-lg font-medium">
+          {t("environments.detail.noPackageManager")}
+        </h3>
+        <p className="mt-1 text-sm">
+          {t("environments.detail.noPackageManagerDesc")}
+        </p>
+      </div>
+    );
+  }
 
-            {!loading && activeView === "installed" && (
-              <>
-                {installedPackages.length === 0 ? (
-                  <div className="text-center py-12 text-muted-foreground">
-                    <Package className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                    <p className="text-sm">
-                      {t("environments.detail.noPackagesInstalled")}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="divide-y">
-                    {installedPackages.map((pkg) => (
-                      <div
-                        key={`${pkg.provider}:${pkg.name}:${pkg.version}`}
-                        className="flex items-center justify-between p-3 hover:bg-muted/30 transition-colors"
-                      >
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono text-sm font-medium truncate">
-                              {pkg.name}
-                            </span>
-                            <Badge variant="outline" className="text-xs font-mono shrink-0">
-                              {pkg.version}
-                            </Badge>
-                          </div>
-                        </div>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-destructive hover:text-destructive shrink-0"
-                              onClick={() => handleUninstall(pkg.name)}
-                              disabled={isPackageInstalling(pkg.provider, pkg.name)}
-                            >
-                              {isPackageInstalling(pkg.provider, pkg.name) ? (
-                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                              ) : (
-                                <Trash2 className="h-3.5 w-3.5" />
-                              )}
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>{t("common.uninstall")}</TooltipContent>
-                        </Tooltip>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </>
-            )}
+  const contextValue: PackageOperationContextValue = {
+    mode: "environment",
+    features: {
+      updates: false,
+      batch: false,
+      installedFilter: false,
+    },
+    providers,
+    installedPackages,
+    searchResults,
+    availableUpdates: visibleUpdates,
+    installing,
+    loading,
+    error,
+    preflightSummary,
+    preflightPackages,
+    isPreflightOpen,
+    topContent: headerContent,
+    onSearch: (query) => handleSearch(query),
+    onGetSuggestions: async () => [],
+    onInstall: async (packageSpec) => {
+      await installPackages([packageSpec]);
+      toast.success(
+        t("environments.detail.packageInstalled", { name: packageSpec }),
+      );
+    },
+    onUninstall: (packageSpec) => handleUninstall(packageSpec),
+    onUpdateSelected: async () => createEmptyBatchResult(),
+    onUpdateAll: async () => createEmptyBatchResult(),
+    onCheckUpdates: handleCheckUpdates,
+    onConfirmPreflight: confirmPreflight,
+    onDismissPreflight: dismissPreflight,
+  };
 
-            {!loading && activeView === "search" && (
-              <>
-                {searchResults.length === 0 ? (
-                  <div className="text-center py-12 text-muted-foreground">
-                    <Search className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                    <p className="text-sm">
-                      {t("environments.detail.noSearchResults")}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="divide-y">
-                    {searchResults.map((pkg) => (
-                      <div
-                        key={`${pkg.provider}:${pkg.name}`}
-                        className="flex items-center justify-between p-3 hover:bg-muted/30 transition-colors"
-                      >
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono text-sm font-medium truncate">
-                              {pkg.name}
-                            </span>
-                            {pkg.latest_version && (
-                              <Badge
-                                variant="outline"
-                                className="text-xs font-mono shrink-0"
-                              >
-                                {pkg.latest_version}
-                              </Badge>
-                            )}
-                          </div>
-                          {pkg.description && (
-                            <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                              {pkg.description}
-                            </p>
-                          )}
-                        </div>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="gap-1.5 shrink-0"
-                          onClick={() => handleInstall(pkg.name)}
-                          disabled={isPackageInstalling(activeProvider, pkg.name)}
-                        >
-                          {isPackageInstalling(activeProvider, pkg.name) ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <Download className="h-3.5 w-3.5" />
-                          )}
-                          {t("common.install")}
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </>
-            )}
-          </ScrollArea>
-        </CardContent>
-      </Card>
-    </div>
+  return (
+    <PackageOperationProvider value={contextValue}>
+      <PackageOperationPanel
+        mode="environment"
+        features={{ updates: false, batch: false, installedFilter: false }}
+      />
+    </PackageOperationProvider>
   );
 }

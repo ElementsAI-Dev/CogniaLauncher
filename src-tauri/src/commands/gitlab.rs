@@ -1,20 +1,20 @@
 //! GitLab repository commands for download integration
 
-use crate::SharedSecretVault;
 use crate::commands::secrets::{
-    ProviderSecretStatus, provider_secret_clear_internal, provider_secret_save_internal,
-    provider_secret_status_internal, resolve_provider_secret,
+    provider_secret_clear_internal, provider_secret_save_internal, provider_secret_status_internal,
+    resolve_provider_secret, ProviderSecretStatus,
 };
 use crate::error::CogniaError;
 use crate::provider::gitlab::{
     GitLabBranch, GitLabProvider, GitLabRelease, GitLabReleaseLink, GitLabTag,
 };
+use crate::SharedSecretVault;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use super::download::{
-    DownloadRequest, DownloadRequestPreset, SharedDownloadManager, SharedSettings,
-    build_download_request_preset, download_add,
+    build_download_request_preset, download_add, DownloadRequest, DownloadRequestPreset,
+    SharedDownloadManager, SharedSettings,
 };
 
 fn map_gitlab_error(e: CogniaError) -> String {
@@ -304,11 +304,31 @@ fn infer_artifact_profile(
         ],
     };
 
+    let platform = if lower.contains("windows") || lower.contains("win") {
+        crate::download::ArtifactPlatform::Windows
+    } else if lower.contains("darwin") || lower.contains("macos") || lower.contains("osx") {
+        crate::download::ArtifactPlatform::Macos
+    } else if lower.contains("linux") {
+        crate::download::ArtifactPlatform::Linux
+    } else {
+        crate::download::ArtifactPlatform::Unknown
+    };
+
+    let arch = if lower.contains("arm64") || lower.contains("aarch64") {
+        crate::download::ArtifactArch::Arm64
+    } else if lower.contains("x64") || lower.contains("x86_64") || lower.contains("amd64") {
+        crate::download::ArtifactArch::X64
+    } else if lower.contains("x86") || lower.contains("i386") || lower.contains("i686") {
+        crate::download::ArtifactArch::X86
+    } else {
+        crate::download::ArtifactArch::Unknown
+    };
+
     crate::download::ArtifactProfile {
         artifact_kind,
         source_kind,
-        platform: crate::download::ArtifactPlatform::Unknown,
-        arch: crate::download::ArtifactArch::Unknown,
+        platform,
+        arch,
         install_intent,
         suggested_follow_ups,
     }
@@ -908,5 +928,17 @@ mod tests {
         assert!(request.source_descriptor.is_some());
         assert!(request.artifact_profile.is_some());
         assert!(request.install_intent.is_some());
+    }
+
+    #[test]
+    fn infer_artifact_profile_detects_platform_and_arch_from_gitlab_assets() {
+        let profile = infer_artifact_profile(
+            "tool-windows-x64.zip",
+            crate::download::SourceKind::GitlabReleaseAsset,
+        );
+
+        assert_eq!(profile.platform, crate::download::ArtifactPlatform::Windows);
+        assert_eq!(profile.arch, crate::download::ArtifactArch::X64);
+        assert_eq!(profile.artifact_kind, crate::download::ArtifactKind::Archive);
     }
 }

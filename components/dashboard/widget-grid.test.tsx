@@ -7,6 +7,7 @@ jest.mock("@/components/providers/locale-provider", () => ({
 
 let mockWidgets: Array<{ id: string; type: string; size: string; visible: boolean }> = [];
 let mockIsEditMode = false;
+let mockPresentation = { density: "comfortable", emphasis: "balanced" } as const;
 let capturedOnDragEnd: ((event: { active: { id: string }; over: { id: string } | null }) => void) | undefined;
 const mockRemoveWidget = jest.fn();
 const mockToggleWidgetVisibility = jest.fn();
@@ -21,6 +22,7 @@ jest.mock("@/lib/stores/dashboard", () => ({
     selector({
       widgets: mockWidgets,
       isEditMode: mockIsEditMode,
+      presentation: mockPresentation,
       addWidget: jest.fn(),
       removeWidget: (...args: unknown[]) => mockRemoveWidget(...args),
       toggleWidgetVisibility: (...args: unknown[]) => mockToggleWidgetVisibility(...args),
@@ -76,6 +78,7 @@ jest.mock("./widget-wrapper", () => ({
     onRemove,
     onToggleVisibility,
     onResize,
+    presentation,
     toolbarExtras,
   }: {
     widget: { id: string };
@@ -83,9 +86,14 @@ jest.mock("./widget-wrapper", () => ({
     onRemove: (id: string) => void;
     onToggleVisibility: (id: string) => void;
     onResize: (id: string, size: "sm" | "md" | "lg" | "full") => void;
+    presentation?: { density: string; emphasis: string };
     toolbarExtras?: React.ReactNode;
   }) => (
-    <div data-testid={`widget-wrapper-${widget.id}`}>
+    <div
+      data-testid={`widget-wrapper-${widget.id}`}
+      data-density={presentation?.density}
+      data-emphasis={presentation?.emphasis}
+    >
       <button data-testid={`widget-remove-${widget.id}`} onClick={() => onRemove(widget.id)}>
         remove
       </button>
@@ -114,15 +122,39 @@ jest.mock("@/components/dashboard/quick-search", () => ({
 }));
 
 jest.mock("@/components/dashboard/environment-list", () => ({
-  EnvironmentList: () => <div data-testid="environment-list">EnvironmentList</div>,
+  EnvironmentList: ({ presentation }: { presentation?: { density: string; emphasis: string } }) => (
+    <div
+      data-testid="environment-list"
+      data-density={presentation?.density}
+      data-emphasis={presentation?.emphasis}
+    >
+      EnvironmentList
+    </div>
+  ),
 }));
 
 jest.mock("@/components/dashboard/package-list", () => ({
-  PackageList: () => <div data-testid="package-list">PackageList</div>,
+  PackageList: ({ presentation }: { presentation?: { density: string; emphasis: string } }) => (
+    <div
+      data-testid="package-list"
+      data-density={presentation?.density}
+      data-emphasis={presentation?.emphasis}
+    >
+      PackageList
+    </div>
+  ),
 }));
 
 jest.mock("@/components/dashboard/quick-actions", () => ({
-  QuickActions: () => <div data-testid="quick-actions">QuickActions</div>,
+  QuickActions: ({ presentation }: { presentation?: { density: string; emphasis: string } }) => (
+    <div
+      data-testid="quick-actions"
+      data-density={presentation?.density}
+      data-emphasis={presentation?.emphasis}
+    >
+      QuickActions
+    </div>
+  ),
 }));
 
 jest.mock("@/components/dashboard/widgets/environment-chart", () => ({
@@ -154,7 +186,15 @@ jest.mock("@/components/dashboard/widgets/wsl-status-widget", () => ({
 }));
 
 jest.mock("@/components/dashboard/widgets/health-check-widget", () => ({
-  HealthCheckWidget: () => <div data-testid="health-check">HealthCheck</div>,
+  HealthCheckWidget: ({ presentation }: { presentation?: { density: string; emphasis: string } }) => (
+    <div
+      data-testid="health-check"
+      data-density={presentation?.density}
+      data-emphasis={presentation?.emphasis}
+    >
+      HealthCheck
+    </div>
+  ),
 }));
 
 jest.mock("@/components/dashboard/widgets/updates-widget", () => ({
@@ -179,6 +219,10 @@ jest.mock("@/components/dashboard/widgets/workspace-trends-widget", () => ({
 
 jest.mock("@/components/dashboard/widgets/provider-health-matrix-widget", () => ({
   ProviderHealthMatrixWidget: () => <div data-testid="provider-health-matrix">ProviderHealthMatrix</div>,
+}));
+
+jest.mock("@/components/dashboard/widgets/envvar-status-widget", () => ({
+  EnvVarStatusWidget: () => <div data-testid="envvar-status">EnvVarStatus</div>,
 }));
 
 const defaultProps = {
@@ -209,6 +253,7 @@ describe("WidgetGrid", () => {
   beforeEach(() => {
     mockWidgets = [];
     mockIsEditMode = false;
+    mockPresentation = { density: "comfortable", emphasis: "balanced" };
     capturedOnDragEnd = undefined;
     jest.clearAllMocks();
     mockCanRemoveWidgetById.mockReturnValue(true);
@@ -333,6 +378,12 @@ describe("WidgetGrid", () => {
     expect(screen.getByTestId("provider-health-matrix")).toBeInTheDocument();
   });
 
+  it("renders envvar-status widget", () => {
+    mockWidgets = [{ id: "w-16", type: "envvar-status", size: "md", visible: true }];
+    render(<WidgetGrid {...defaultProps} />);
+    expect(screen.getByTestId("envvar-status")).toBeInTheDocument();
+  });
+
   it("renders unknown widget type with fallback message", () => {
     mockWidgets = [{ id: "w-99", type: "nonexistent-widget", size: "md", visible: true }];
     render(<WidgetGrid {...defaultProps} />);
@@ -349,6 +400,25 @@ describe("WidgetGrid", () => {
     expect(screen.getByTestId("quick-search")).toBeInTheDocument();
     expect(screen.getByTestId("health-check")).toBeInTheDocument();
     expect(screen.getByTestId("wsl-status")).toBeInTheDocument();
+  });
+
+  it("threads presentation tokens into widget wrappers and compatible widgets", () => {
+    mockPresentation = { density: "compact", emphasis: "strong" };
+    mockWidgets = [
+      { id: "w-list", type: "environment-list", size: "md", visible: true },
+      { id: "w-packages", type: "package-list", size: "md", visible: true },
+      { id: "w-actions", type: "quick-actions", size: "full", visible: true },
+      { id: "w-health", type: "health-check", size: "md", visible: true },
+    ];
+
+    render(<WidgetGrid {...defaultProps} />);
+
+    expect(screen.getByTestId("widget-wrapper-w-list")).toHaveAttribute("data-density", "compact");
+    expect(screen.getByTestId("widget-wrapper-w-list")).toHaveAttribute("data-emphasis", "strong");
+    expect(screen.getByTestId("environment-list")).toHaveAttribute("data-density", "compact");
+    expect(screen.getByTestId("package-list")).toHaveAttribute("data-density", "compact");
+    expect(screen.getByTestId("quick-actions")).toHaveAttribute("data-emphasis", "strong");
+    expect(screen.getByTestId("health-check")).toHaveAttribute("data-emphasis", "strong");
   });
 
   it("wires drag end to reorder widgets with source and target indices", () => {

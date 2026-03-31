@@ -62,7 +62,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { isTauri } from "@/lib/tauri";
-import { useConda } from "@/hooks/use-conda";
+import { useConda } from "@/hooks/environments/use-conda";
 import { cn } from "@/lib/utils";
 
 export function CondaEnvironmentPanel() {

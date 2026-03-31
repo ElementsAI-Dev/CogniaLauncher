@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { LogPanel } from "@/components/log";
 import { LogFileViewer } from "@/components/log/log-file-viewer";
 import { LogDiagnosticsCard } from "@/components/log/log-diagnostics-card";
@@ -8,6 +8,7 @@ import { LogManagementCard } from "@/components/log/log-management-card";
 import { LogStatsStrip } from "@/components/log/log-stats-strip";
 import { LogFileListCard } from "@/components/log/log-file-list-card";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,16 +27,18 @@ import {
   useLogs,
   type LogCleanupPreviewSummary,
   type LogMutationSummary,
-} from "@/hooks/use-logs";
-import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
+} from "@/hooks/logs/use-logs";
+import { useKeyboardShortcuts } from "@/hooks/shared/use-keyboard-shortcuts";
 import {
   buildLogsWorkspaceOverview,
   getLatestLogsWorkspaceAction,
+  parseLogsWorkspaceRouteContext,
 } from "@/lib/log-workspace";
 import { isTauri } from "@/lib/tauri";
 import type { LogCleanupOptions, LogCleanupPolicyInput } from "@/types/tauri";
 import { formatBytes } from "@/lib/utils";
 import { writeClipboard } from "@/lib/clipboard";
+import { useSearchParams } from "next/navigation";
 import {
   ScrollText,
   FolderOpen,
@@ -61,10 +64,45 @@ interface DeleteIntent {
   fileNames: string[];
 }
 
+interface LogManagementUnavailableCardProps {
+  title: string;
+  description: string;
+}
+
+function LogManagementUnavailableCard({
+  title,
+  description,
+}: LogManagementUnavailableCardProps) {
+  return (
+    <Card className="h-fit" data-testid="log-management-unavailable-card">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base flex items-center gap-2">
+          <Settings2 className="h-4 w-4" />
+          {title}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="text-sm text-muted-foreground">
+        {description}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function LogsPage() {
   const { t } = useLocale();
-  const { logFiles, getLogStats, selectedLogFile, setSelectedLogFile, filter } =
-    useLogStore();
+  const searchParams = useSearchParams();
+  const desktopRuntime = isTauri();
+  const routeContextAppliedRef = useRef(false);
+  const {
+    logFiles,
+    getLogStats,
+    selectedLogFile,
+    setSelectedLogFile,
+    filter,
+    setSearch,
+    setFilter,
+    setShowBookmarksOnly,
+  } = useLogStore();
   const {
     crashReports,
     observability,
@@ -116,7 +154,7 @@ export default function LogsPage() {
   });
 
   const refreshLogsPage = useCallback(async () => {
-    if (!isTauri()) return;
+    if (!desktopRuntime) return;
 
     setLoading(true);
     try {
@@ -142,7 +180,7 @@ export default function LogsPage() {
     } finally {
       setLoading(false);
     }
-  }, [getLogDirectory, loadCrashReports, loadLogFiles, t]);
+  }, [desktopRuntime, getLogDirectory, loadCrashReports, loadLogFiles, t]);
 
   useEffect(() => {
     refreshLogsPage();
@@ -171,10 +209,51 @@ export default function LogsPage() {
     }
   }, [logFiles, selectedLogFile, setSelectedLogFile]);
 
+  useEffect(() => {
+    if (routeContextAppliedRef.current) {
+      return;
+    }
+    routeContextAppliedRef.current = true;
+
+    const routeContext = parseLogsWorkspaceRouteContext(searchParams);
+    if (!routeContext) {
+      return;
+    }
+
+    if (routeContext.tab) {
+      setActiveTab(routeContext.tab);
+    }
+
+    if (routeContext.search !== undefined) {
+      setSearch(routeContext.search);
+    }
+
+    if (routeContext.levels && routeContext.levels.length > 0) {
+      setFilter({ levels: routeContext.levels });
+    }
+
+    if (typeof routeContext.showBookmarksOnly === "boolean") {
+      setShowBookmarksOnly(routeContext.showBookmarksOnly);
+    }
+
+    if (routeContext.selectedFile) {
+      setSelectedLogFile(routeContext.selectedFile);
+      if (!routeContext.tab) {
+        setActiveTab("files");
+      }
+    }
+  }, [
+    searchParams,
+    setFilter,
+    setSearch,
+    setSelectedLogFile,
+    setShowBookmarksOnly,
+  ]);
+
   // --- Handlers ---
 
   const handleOpenLogDir = async () => {
-    if (!logDir || !isTauri()) return;
+    if (!logDir || !desktopRuntime) return;
     try {
       const { revealItemInDir } = await import("@tauri-apps/plugin-opener");
       await revealItemInDir(logDir);
@@ -186,7 +265,7 @@ export default function LogsPage() {
 
   const handleRevealPath = useCallback(
     async (path: string) => {
-      if (!isTauri()) return;
+      if (!desktopRuntime) return;
       try {
         const { revealItemInDir } = await import("@tauri-apps/plugin-opener");
         await revealItemInDir(path);
@@ -195,7 +274,7 @@ export default function LogsPage() {
         toast.error(t("logs.openDirError"));
       }
     },
-    [t],
+    [desktopRuntime, t],
   );
 
   const handleCloseViewer = useCallback(
@@ -281,6 +360,22 @@ export default function LogsPage() {
     [t],
   );
 
+  const buildFailedMutationSummary = useCallback(
+    (message: string): LogMutationSummary => ({
+      deletedCount: 0,
+      freedBytes: 0,
+      protectedCount: 0,
+      skippedCount: 0,
+      status: "failed",
+      reasonCode: null,
+      warnings: message ? [message] : [],
+      policyFingerprint: null,
+      maxRetentionDays: null,
+      maxTotalSizeMb: null,
+    }),
+    [],
+  );
+
   const handleCopyPath = useCallback(
     async (path: string) => {
       try {
@@ -352,7 +447,13 @@ export default function LogsPage() {
           ? await deleteLogFile(deleteIntent.fileNames[0])
           : await deleteLogFiles(deleteIntent.fileNames);
       if (!result.ok) {
-        toast.error(result.error || t("logs.deleteFailed"));
+        const failureMessage = result.error || t("logs.deleteFailed");
+        toast.error(failureMessage);
+        setLastMutationSummary({
+          mode: "delete",
+          summary: buildFailedMutationSummary(failureMessage),
+          at: Date.now(),
+        });
         return;
       }
       showMutationFeedback(result.data, "delete");
@@ -368,12 +469,25 @@ export default function LogsPage() {
     } finally {
       setDeleting(false);
     }
-  }, [deleteIntent, deleteLogFile, deleteLogFiles, showMutationFeedback, t]);
+  }, [
+    buildFailedMutationSummary,
+    deleteIntent,
+    deleteLogFile,
+    deleteLogFiles,
+    showMutationFeedback,
+    t,
+  ]);
 
   const handleClearHistory = useCallback(async () => {
     const result = await clearLogFile();
     if (!result.ok) {
-      toast.error(result.error || t("logs.deleteFailed"));
+      const failureMessage = result.error || t("logs.deleteFailed");
+      toast.error(failureMessage);
+      setLastMutationSummary({
+        mode: "cleanup",
+        summary: buildFailedMutationSummary(failureMessage),
+        at: Date.now(),
+      });
       return;
     }
     setLastMutationSummary({
@@ -384,7 +498,7 @@ export default function LogsPage() {
     showMutationFeedback(result.data, "cleanup");
     setSelectedFiles(new Set());
     setCleanupPreview(null);
-  }, [clearLogFile, showMutationFeedback, t]);
+  }, [buildFailedMutationSummary, clearLogFile, showMutationFeedback, t]);
 
   const handleManagementRefresh = useCallback(() => {
     setCleanupPreview(null);
@@ -394,19 +508,26 @@ export default function LogsPage() {
   const handleManagementCleanup = useCallback(
     async (options: LogCleanupOptions) => {
       const result = await cleanupLogs(options);
-      if (result.ok) {
+      if (!result.ok) {
         setLastMutationSummary({
           mode: "cleanup",
-          summary: result.data,
+          summary: buildFailedMutationSummary(result.error || t("logs.deleteFailed")),
           at: Date.now(),
         });
+        return result;
       }
-      if (result.ok && result.data.status !== "failed") {
+
+      setLastMutationSummary({
+        mode: "cleanup",
+        summary: result.data,
+        at: Date.now(),
+      });
+      if (result.data.status !== "failed") {
         setCleanupPreview(null);
       }
       return result;
     },
-    [cleanupLogs],
+    [buildFailedMutationSummary, cleanupLogs, t],
   );
 
   const handleDeleteDialogOpenChange = useCallback(
@@ -472,7 +593,7 @@ export default function LogsPage() {
         render: () => (
           <LogDiagnosticsCard
             className="h-fit"
-            isDesktopRuntime={isTauri()}
+            isDesktopRuntime={desktopRuntime}
             observability={observability}
             crashReports={crashReports}
             latestDiagnosticAction={latestDiagnosticAction}
@@ -483,29 +604,32 @@ export default function LogsPage() {
           />
         ),
       },
-      ...(isTauri()
-        ? [
-            {
-              key: "management",
-              render: () => (
-                <LogManagementCard
-                  className="h-fit"
-                  totalSize={totalSize}
-                  fileCount={logFiles.length}
-                  previewResult={cleanupPreview}
-                  onPreviewCleanup={handlePreviewCleanup}
-                  onCleanup={handleManagementCleanup}
-                  onRefresh={handleManagementRefresh}
-                  onPreviewStaleChange={setIsCleanupPreviewStale}
-                />
-              ),
-            },
-          ]
-        : []),
+      {
+        key: "management",
+        render: () =>
+          desktopRuntime ? (
+            <LogManagementCard
+              className="h-fit"
+              totalSize={totalSize}
+              fileCount={logFiles.length}
+              previewResult={cleanupPreview}
+              onPreviewCleanup={handlePreviewCleanup}
+              onCleanup={handleManagementCleanup}
+              onRefresh={handleManagementRefresh}
+              onPreviewStaleChange={setIsCleanupPreviewStale}
+            />
+          ) : (
+            <LogManagementUnavailableCard
+              title={t("logs.desktopOnly")}
+              description={t("logs.managementDesktopOnlyDescription")}
+            />
+          ),
+      },
     ],
     [
       cleanupPreview,
       crashReports,
+      desktopRuntime,
       handleCopyPath,
       handleExportDiagnostic,
       handleManagementCleanup,
@@ -516,6 +640,7 @@ export default function LogsPage() {
       logFiles.length,
       observability,
       refreshLogsPage,
+      t,
       totalSize,
     ],
   );
@@ -570,7 +695,7 @@ export default function LogsPage() {
                 variant="outline"
                 size="sm"
                 onClick={handleExportDiagnostic}
-                disabled={!isTauri()}
+                disabled={!desktopRuntime}
                 className="h-8 sm:h-9"
               >
                 <ShieldAlert className="h-4 w-4 sm:mr-2" />

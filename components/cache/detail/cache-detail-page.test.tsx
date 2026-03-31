@@ -5,6 +5,7 @@ const mockCacheInfo = jest.fn();
 const mockGetCacheAccessStats = jest.fn();
 const mockListCacheEntries = jest.fn();
 let mockIsTauri = false;
+let mockSearchParams = new URLSearchParams();
 
 jest.mock("@/components/providers/locale-provider", () => ({
   useLocale: () => ({ t: (key: string) => key }),
@@ -58,6 +59,10 @@ jest.mock("next/link", () => {
   return MockLink;
 });
 
+jest.mock("next/navigation", () => ({
+  useSearchParams: () => mockSearchParams,
+}));
+
 jest.mock("sonner", () => ({
   toast: { success: jest.fn(), error: jest.fn(), warning: jest.fn() },
 }));
@@ -77,7 +82,17 @@ jest.mock("@/components/layout/page-header", () => ({
 }));
 
 jest.mock("./cache-detail-external", () => ({
-  CacheDetailExternalView: () => <div data-testid="external-view">External View</div>,
+  CacheDetailExternalView: ({
+    targetId,
+    targetType,
+  }: {
+    targetId?: string | null;
+    targetType?: string | null;
+  }) => (
+    <div data-testid="external-view">
+      External View:{targetId ?? "none"}:{targetType ?? "none"}
+    </div>
+  ),
 }));
 
 const cacheInfoData = {
@@ -126,6 +141,7 @@ describe("CacheDetailPage", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockIsTauri = false;
+    mockSearchParams = new URLSearchParams();
     mockListenCacheChanged.mockResolvedValue(() => {});
     mockCacheInfo.mockResolvedValue(cacheInfoData);
     mockGetCacheAccessStats.mockResolvedValue(accessStatsData);
@@ -164,6 +180,14 @@ describe("CacheDetailPage", () => {
   it("delegates to CacheDetailExternalView for external type", () => {
     render(<CacheDetailPageClient cacheType="external" />);
     expect(screen.getByTestId("external-view")).toBeInTheDocument();
+  });
+
+  it("reads external drilldown search params from the client router", () => {
+    mockSearchParams = new URLSearchParams("target=custom_docs&targetType=custom");
+    render(<CacheDetailPageClient cacheType="external" />);
+    expect(screen.getByTestId("external-view")).toHaveTextContent(
+      "External View:custom_docs:custom",
+    );
   });
 
   it("treats default-downloads as a valid cache detail type", () => {

@@ -1,6 +1,6 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { HealthCheckPanel } from "./health-check-panel";
-import { useHealthCheck } from "@/hooks/use-health-check";
+import { useHealthCheck } from "@/hooks/health/use-health-check";
 
 jest.mock("@/components/providers/locale-provider", () => ({
   useLocale: () => ({
@@ -8,7 +8,7 @@ jest.mock("@/components/providers/locale-provider", () => ({
   }),
 }));
 
-jest.mock("@/hooks/use-health-check", () => ({
+jest.mock("@/hooks/health/use-health-check", () => ({
   useHealthCheck: jest.fn(),
 }));
 
@@ -167,5 +167,77 @@ describe("HealthCheckPanel", () => {
   it("accepts className prop", () => {
     const { container } = render(<HealthCheckPanel className="my-custom" />);
     expect(container.querySelector(".my-custom")).toBeInTheDocument();
+  });
+
+  it("renders envvar diagnostics in a dedicated section", () => {
+    mockUseHealthCheck.mockReturnValue({
+      ...defaultMock,
+      systemHealth: {
+        overall_status: "warning",
+        checked_at: new Date().toISOString(),
+        envvar_issues: [
+          {
+            message: "System PATH contains duplicate entries",
+            severity: "info",
+            category: "path_conflict",
+            details: "Duplicate entries: C:\\Tools (2x)",
+            fix_command: null,
+            fix_description: null,
+            remediation_id: null,
+            check_id: "envvar_path_duplicates:system",
+          },
+        ],
+        system_issues: [
+          {
+            message: "Disk space low",
+            severity: "warning",
+            category: "other",
+            details: "Less than 1GB",
+            fix_command: null,
+            fix_description: null,
+          },
+        ],
+        environments: [],
+        package_managers: [],
+      },
+    });
+
+    render(<HealthCheckPanel />);
+
+    expect(screen.getByText("environments.healthCheck.envvarIssues")).toBeInTheDocument();
+    expect(screen.getByText("System PATH contains duplicate entries")).toBeInTheDocument();
+    expect(screen.getByText("environments.healthCheck.systemIssues")).toBeInTheDocument();
+  });
+
+  it("renders WSL health issues in a dedicated section", () => {
+    mockUseHealthCheck.mockReturnValue({
+      ...defaultMock,
+      systemHealth: {
+        overall_status: "warning",
+        checked_at: new Date().toISOString(),
+        envvar_issues: [],
+        system_issues: [],
+        environments: [],
+        package_managers: [],
+        wsl_health: {
+          status: "warning",
+          checked_at: new Date().toISOString(),
+          issues: [
+            {
+              message: "WSL DNS resolution failed",
+              severity: "warning",
+              category: "network_error",
+              details: "nslookup returned non-zero",
+              fix_command: null,
+              fix_description: null,
+            },
+          ],
+        },
+      },
+    });
+
+    render(<HealthCheckPanel />);
+    expect(screen.getByText("environments.healthCheck.wslIssues")).toBeInTheDocument();
+    expect(screen.getByText("WSL DNS resolution failed")).toBeInTheDocument();
   });
 });

@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useWsl } from '@/hooks/use-wsl';
+import { useWsl } from '@/hooks/wsl/use-wsl';
+import { useWslStore } from '@/lib/stores/wsl';
 import { useLocale } from '@/components/providers/locale-provider';
 import { isTauri } from '@/lib/tauri';
 import { PageHeader } from '@/components/layout/page-header';
@@ -51,6 +52,9 @@ import {
   WslDistroNetwork,
   WslDistroServices,
   WslDistroDocker,
+  WslDistroEnvvars,
+  WslBackupCard,
+  WslBackupScheduleCard,
 } from '@/components/wsl';
 import {
   RefreshCw,
@@ -62,6 +66,7 @@ import {
   FolderOpen,
   Network,
   Cog,
+  Variable,
   Star,
   Download,
   Trash2,
@@ -71,6 +76,7 @@ import {
   Expand,
   HardDrive,
   Copy,
+  Archive,
   Container,
   Activity,
   MoreHorizontal,
@@ -94,12 +100,17 @@ export function WslDistroDetailPage({
   continueAction,
 }: WslDistroDetailPageProps) {
   const { t } = useLocale();
+  const backupSchedules = useWslStore((state) => state.backupSchedules);
+  const upsertBackupSchedule = useWslStore((state) => state.upsertBackupSchedule);
+  const removeBackupSchedule = useWslStore((state) => state.removeBackupSchedule);
   const router = useRouter();
   const isDesktop = isTauri();
   const {
     available,
     distros,
     capabilities,
+    config,
+    status,
     distroInfoByName,
     loading,
     error,
@@ -109,9 +120,11 @@ export function WslDistroDetailPage({
     refreshDistros,
     refreshRuntimeInfo,
     refreshStatus,
+    shutdown,
     terminate,
     setDefault,
     setVersion,
+    setNetworkingMode,
     exportDistro,
     launch,
     execCommand,
@@ -124,6 +137,10 @@ export function WslDistroDetailPage({
     getDistroConfig,
     setDistroConfigValue,
     detectDistroEnv,
+    exportWindowsEnv,
+    readDistroEnv,
+    getWslenv,
+    setWslenv,
     listUsers,
     getDistroResources,
     updateDistroPackages,
@@ -135,6 +152,10 @@ export function WslDistroDetailPage({
     listPortForwards,
     addPortForward,
     removePortForward,
+    backupDistro,
+    listBackups,
+    restoreBackup,
+    deleteBackup,
     getAssistanceActions,
     executeAssistanceAction,
     mapErrorToAssistance,
@@ -175,11 +196,19 @@ export function WslDistroDetailPage({
     | null
   >(null);
   const distroInfoMap = distroInfoByName ?? {};
-  const refreshRuntimeInfoAction = refreshRuntimeInfo ?? (async () => {
-    await refreshStatus();
-    return null;
-  });
-  const refreshDistroInfoAction = refreshDistroInfo ?? (async () => null);
+  const refreshRuntimeInfoAction = useMemo(
+    () =>
+      refreshRuntimeInfo ??
+      (async () => {
+        await refreshStatus();
+        return null;
+      }),
+    [refreshRuntimeInfo, refreshStatus],
+  );
+  const refreshDistroInfoAction = useMemo(
+    () => refreshDistroInfo ?? (async () => null),
+    [refreshDistroInfo],
+  );
 
   // Initialize on mount
   useEffect(() => {
@@ -516,6 +545,8 @@ export function WslDistroDetailPage({
   const moveUnsupported = capabilities?.move === false;
   const resizeUnsupported = capabilities?.resize === false;
   const sparseUnsupported = capabilities?.setSparse === false;
+  const runningCount = status?.runningDistros?.length ?? distros.filter((entry) => entry.state.toLowerCase() === 'running').length;
+  const currentNetworkingMode = config?.['wsl2']?.['networkingMode'] ?? 'NAT';
   const moveHint = moveUnsupported
     ? t('wsl.capabilityUnsupported')
         .replace('{feature}', t('wsl.move'))
@@ -1042,6 +1073,14 @@ export function WslDistroDetailPage({
             <Cog className="h-3.5 w-3.5" />
             {t('wsl.detail.tabServices')}
           </TabsTrigger>
+          <TabsTrigger value="envvars" className="gap-1.5">
+            <Variable className="h-3.5 w-3.5" />
+            {t('wsl.detail.tabEnvVars')}
+          </TabsTrigger>
+          <TabsTrigger value="backup" className="gap-1.5">
+            <Archive className="h-3.5 w-3.5" />
+            {t('wsl.detail.tabBackup')}
+          </TabsTrigger>
           <TabsTrigger value="docker" className="gap-1.5">
             <Container className="h-3.5 w-3.5" />
             {t('wsl.detail.tabDocker')}
@@ -1088,11 +1127,24 @@ export function WslDistroDetailPage({
           <WslDistroNetwork
             distroName={distroName}
             isRunning={isRunning}
+            info={distroInfoMap[distroName] ?? null}
+            onRefreshInfo={() => refreshDistroInfoAction(distroName).then(() => undefined)}
             getIpAddress={getIpAddress}
             onExec={execCommand}
             listPortForwards={listPortForwards}
             addPortForward={addPortForward}
             removePortForward={removePortForward}
+            setNetworkingMode={setNetworkingMode}
+            currentNetworkingMode={currentNetworkingMode}
+            runningCount={runningCount}
+            onShutdownAll={shutdown}
+            onRefreshRuntime={async () => {
+              await Promise.all([
+                refreshDistros(),
+                refreshRuntimeInfoAction(),
+                refreshDistroInfoAction(distroName),
+              ]);
+            }}
             t={t}
           />
         </TabsContent>
@@ -1104,6 +1156,40 @@ export function WslDistroDetailPage({
             onExec={execCommand}
             t={t}
           />
+        </TabsContent>
+
+        <TabsContent value="envvars">
+          <WslDistroEnvvars
+            distroName={distroName}
+            readDistroEnv={readDistroEnv}
+            exportWindowsEnv={exportWindowsEnv}
+            getWslenv={getWslenv}
+            setWslenv={setWslenv}
+            t={t}
+          />
+        </TabsContent>
+
+        <TabsContent value="backup">
+          <div className="space-y-4">
+            <WslBackupCard
+              distroNames={[distroName]}
+              activeWorkspaceDistroName={distroName}
+              backupDistro={backupDistro}
+              listBackups={listBackups}
+              restoreBackup={restoreBackup}
+              deleteBackup={deleteBackup}
+              onRestoreSuccess={handleRefresh}
+              onMutationSuccess={handleRefresh}
+              t={t}
+            />
+            <WslBackupScheduleCard
+              distroNames={[distroName]}
+              schedules={backupSchedules.filter((schedule) => schedule.distro_name === distroName)}
+              onUpsert={upsertBackupSchedule}
+              onDelete={removeBackupSchedule}
+              t={t}
+            />
+          </div>
         </TabsContent>
 
         <TabsContent value="docker">

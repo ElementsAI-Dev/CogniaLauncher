@@ -1,7 +1,6 @@
 "use client";
 
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
@@ -13,6 +12,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
+import { DashboardLegendList } from "@/components/dashboard/dashboard-primitives";
 import { RefreshCw, CircleGauge } from "lucide-react";
 import type { AboutInsightGroupState, AboutInsights } from "@/types/about";
 
@@ -62,11 +62,10 @@ function statusLabel(
   }
 }
 
-function statusVariant(state: AboutInsightGroupState): "default" | "secondary" | "destructive" | "outline" {
-  if (state === "ok") return "secondary";
-  if (state === "failed") return "destructive";
-  if (state === "loading") return "outline";
-  return "outline";
+function statusTone(state: AboutInsightGroupState): "success" | "danger" | "muted" {
+  if (state === "ok") return "success";
+  if (state === "failed") return "danger";
+  return "muted";
 }
 
 function ValueRow({
@@ -118,6 +117,29 @@ export function AboutInsightsCard({
       ? insights.storageSummary.cacheTotalSizeHuman
       : statusLabel(insights?.sections.cache ?? "unavailable", t);
 
+  const legendItems = insights
+    ? [
+        {
+          key: "providers",
+          label: t("about.insightsGroupProviders"),
+          value: statusLabel(insights.sections.providers, t),
+          tone: statusTone(insights.sections.providers),
+        },
+        {
+          key: "logs",
+          label: t("about.insightsGroupLogs"),
+          value: statusLabel(insights.sections.logs, t),
+          tone: statusTone(insights.sections.logs),
+        },
+        {
+          key: "cache",
+          label: t("about.insightsGroupCache"),
+          value: statusLabel(insights.sections.cache, t),
+          tone: statusTone(insights.sections.cache),
+        },
+      ] as const
+    : [];
+
   return (
     <Card role="region" aria-labelledby="about-insights-heading">
       <CardHeader>
@@ -162,46 +184,33 @@ export function AboutInsightsCard({
           </Empty>
         ) : (
           <>
-        <ValueRow
-          label={t("about.insightsRuntimeMode")}
-          value={runtimeMode}
-          loading={insightsLoading}
-        />
-        <ValueRow
-          label={t("about.insightsProviderSummary")}
-          value={providerSummaryValue}
-          loading={insightsLoading}
-        />
-        <ValueRow
-          label={t("about.insightsLogsSize")}
-          value={logSummaryValue}
-          loading={insightsLoading}
-        />
-        <ValueRow
-          label={t("about.insightsCacheSize")}
-          value={cacheSummaryValue}
-          loading={insightsLoading}
-        />
+            <ValueRow
+              label={t("about.insightsRuntimeMode")}
+              value={runtimeMode}
+              loading={insightsLoading}
+            />
+            <ValueRow
+              label={t("about.insightsProviderSummary")}
+              value={providerSummaryValue}
+              loading={insightsLoading}
+            />
+            <ValueRow
+              label={t("about.insightsLogsSize")}
+              value={logSummaryValue}
+              loading={insightsLoading}
+            />
+            <ValueRow
+              label={t("about.insightsCacheSize")}
+              value={cacheSummaryValue}
+              loading={insightsLoading}
+            />
 
-        {!insightsLoading && insights && (
-          <>
-            <Separator />
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline">{t("about.insightsGroupProviders")}</Badge>
-              <Badge variant={statusVariant(insights.sections.providers)}>
-                {statusLabel(insights.sections.providers, t)}
-              </Badge>
-              <Badge variant="outline">{t("about.insightsGroupLogs")}</Badge>
-              <Badge variant={statusVariant(insights.sections.logs)}>
-                {statusLabel(insights.sections.logs, t)}
-              </Badge>
-              <Badge variant="outline">{t("about.insightsGroupCache")}</Badge>
-              <Badge variant={statusVariant(insights.sections.cache)}>
-                {statusLabel(insights.sections.cache, t)}
-              </Badge>
-            </div>
-          </>
-        )}
+            {!insightsLoading && insights && legendItems.length > 0 && (
+              <>
+                <Separator />
+                <DashboardLegendList items={legendItems as Array<{ key: string; label: string; value: string; tone: "success" | "danger" | "muted" }>} />
+              </>
+            )}
           </>
         )}
       </CardContent>

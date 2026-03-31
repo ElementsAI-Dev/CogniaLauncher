@@ -313,7 +313,10 @@ impl PluginRegistry {
                     capability_declarations: tool.capabilities.clone(),
                     compatibility: compatibility.clone(),
                     plugin_point_id: point.as_ref().map(|entry| entry.point_id.clone()),
-                    discoverable: point.as_ref().map(|entry| entry.discoverable).unwrap_or(true),
+                    discoverable: point
+                        .as_ref()
+                        .map(|entry| entry.discoverable)
+                        .unwrap_or(true),
                     exclusion_reason: point
                         .as_ref()
                         .and_then(|entry| entry.blocking_reason.clone()),

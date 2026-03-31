@@ -13,6 +13,8 @@ let mockLastActionProgress: {
   pluginId: string;
   phase: "preparing" | "downloading" | "verifying" | "installing" | "completed" | "failed";
   downloadTaskId: string | null;
+  toolId: string | null;
+  sourceLabel: string | null;
   timestamp: number;
 } | null = null;
 
@@ -103,7 +105,7 @@ jest.mock("@/components/layout/page-header", () => ({
   ),
 }));
 
-jest.mock("@/hooks/use-toolbox-marketplace", () => ({
+jest.mock("@/hooks/toolbox/use-toolbox-marketplace", () => ({
   useToolboxMarketplace: () => ({
     filteredListings: mockListings,
     featuredListings: mockListings,
@@ -215,11 +217,17 @@ describe("ToolboxMarketplacePage", () => {
       pluginId: "com.cognia.hello-world",
       phase: "downloading",
       downloadTaskId: "task-123",
+      toolId: "plugin:com.cognia.hello-world:hello",
+      sourceLabel: "CogniaLauncher Team",
       timestamp: Date.now(),
     };
     render(<ToolboxMarketplacePage />);
 
     expect(screen.getByText(/Action: marketplace-install/)).toBeInTheDocument();
     expect(screen.getByText(/Phase: downloading/)).toBeInTheDocument();
+    expect(screen.getByText(/Source: CogniaLauncher Team/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Target: plugin:com.cognia.hello-world:hello/),
+    ).toBeInTheDocument();
   });
 });

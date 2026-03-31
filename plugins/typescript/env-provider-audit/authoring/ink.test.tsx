@@ -1,7 +1,7 @@
 import React from 'react';
 
 jest.mock('ink', () => {
-  const ReactLocal = require('react');
+  const ReactLocal = jest.requireActual<typeof import('react')>('react');
   return {
     Box: ({ children }: { children: React.ReactNode }) =>
       ReactLocal.createElement(ReactLocal.Fragment, null, children),

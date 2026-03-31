@@ -30,7 +30,7 @@ import {
   usePackageExport,
   ExportedPackageList,
   type ImportPreviewEntry,
-} from "@/hooks/use-package-export";
+} from "@/hooks/packages/use-package-export";
 import { toast } from "sonner";
 import type { ExportImportDialogProps } from "@/types/packages";
 

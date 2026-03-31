@@ -13,7 +13,7 @@ import {
   TooltipContent,
 } from "@/components/ui/tooltip";
 import { WindowControls } from "@/components/layout/window-controls";
-import { useWindowControls } from "@/hooks/use-window-controls";
+import { useWindowControls } from "@/hooks/desktop/use-window-controls";
 import { BackgroundImage } from "@/components/layout/background-image";
 import { Breadcrumb } from "@/components/layout/breadcrumb";
 import { LogDrawer } from "@/components/log/log-drawer";
@@ -28,13 +28,13 @@ import { LanguageToggle } from "@/components/language-toggle";
 import { useLocale } from "@/components/providers/locale-provider";
 import { useLogStore } from "@/lib/stores/log";
 import { useAppearanceStore } from "@/lib/stores/appearance";
-import { useSettings } from "@/hooks/use-settings";
-import { useAppearanceConfigSync } from "@/hooks/use-appearance-config-sync";
-import { useAutoUpdate } from "@/hooks/use-auto-update";
-import { useDesktopActionExecutor } from "@/hooks/use-desktop-action-executor";
-import { useGlobalShortcuts } from "@/hooks/use-global-shortcuts";
-import { useAppInit } from "@/hooks/use-app-init";
-import { useOnboarding } from "@/hooks/use-onboarding";
+import { useSettings } from "@/hooks/settings/use-settings";
+import { useAppearanceConfigSync } from "@/hooks/settings/use-appearance-config-sync";
+import { useAutoUpdate } from "@/hooks/desktop/use-auto-update";
+import { useDesktopActionExecutor } from "@/hooks/desktop/use-desktop-action-executor";
+import { useGlobalShortcuts } from "@/hooks/desktop/use-global-shortcuts";
+import { useAppInit } from "@/hooks/desktop/use-app-init";
+import { useOnboarding } from "@/hooks/onboarding/use-onboarding";
 import {
   DESKTOP_ACTION_EVENT,
   type DesktopActionId,

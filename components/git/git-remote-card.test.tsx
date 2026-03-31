@@ -107,30 +107,32 @@ describe('GitRemoteCard', () => {
 
   it('calls onRename after prompt input', async () => {
     const onRename = jest.fn().mockResolvedValue('renamed');
-    const promptSpy = jest.spyOn(window, 'prompt').mockReturnValue('upstream-new');
     render(<GitRemoteCard remotes={remotes} onRename={onRename} />);
 
     fireEvent.click(screen.getAllByTitle('git.remoteAction.rename')[0]);
+    fireEvent.change(screen.getByDisplayValue('origin'), {
+      target: { value: 'upstream-new' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'common.confirm' }));
 
     await waitFor(() => {
       expect(onRename).toHaveBeenCalledWith('origin', 'upstream-new');
     });
-
-    promptSpy.mockRestore();
   });
 
   it('calls onSetUrl after prompt input', async () => {
     const onSetUrl = jest.fn().mockResolvedValue('updated');
-    const promptSpy = jest.spyOn(window, 'prompt').mockReturnValue('https://example.com/new.git');
     render(<GitRemoteCard remotes={remotes} onSetUrl={onSetUrl} />);
 
     fireEvent.click(screen.getAllByTitle('git.remoteAction.setUrl')[0]);
+    fireEvent.change(screen.getByDisplayValue('https://github.com/user/repo.git'), {
+      target: { value: 'https://example.com/new.git' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'common.confirm' }));
 
     await waitFor(() => {
       expect(onSetUrl).toHaveBeenCalledWith('origin', 'https://example.com/new.git');
     });
-
-    promptSpy.mockRestore();
   });
 
   it('calls onPrune when prune action clicked', async () => {

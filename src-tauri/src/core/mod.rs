@@ -12,6 +12,7 @@ pub mod project_env_detect;
 pub mod shim;
 pub mod system_info;
 pub mod terminal;
+pub mod validation;
 
 pub use batch::*;
 pub use custom_detection::*;
@@ -24,3 +25,4 @@ pub use profiles::*;
 pub use project_env_detect::*;
 pub use shim::*;
 pub use system_info::*;
+pub use validation::*;

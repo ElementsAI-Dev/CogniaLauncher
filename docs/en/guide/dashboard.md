@@ -25,16 +25,34 @@ The top of the dashboard displays installed runtime environment status:
 Homepage customization is split into two coordinated entry points:
 
 - **Header Edit Mode** — Enables in-grid controls for drag reorder, resize, hide/show, and remove.
+- **Header Style Summary** — Shows the active homepage style preset and provides a quick-switch menu without leaving the dashboard.
 - **Widget Settings Toolbar** — Insight widgets can now adjust lightweight settings such as range, view mode, grouping, shared-range override, and item limits directly from the edit toolbar.
-- **Customize Dialog** — Manages widget catalog, category filtering, add actions, configurable widget badges, analytics capability badges, and reset-to-default.
+- **Customize Dialog** — Manages widget catalog, curated style presets, category filtering, add actions, configurable widget badges, analytics capability badges, preset recovery, and reset-to-default.
 
 Behavior guarantees:
 
 - **Single source widget policy** — All add/remove/visibility operations use the same widget registry policy (`allowMultiple`, `required`, `defaultVisible`).
 - **Registry-defined widget settings** — Configurable insight widgets initialize and reset from canonical defaults defined in the dashboard widget registry.
 - **Policy-aware add actions** — Widgets that reach instance limit are shown as unavailable in the dialog.
+- **Preset divergence feedback** — The dashboard can tell when the current layout has diverged from the active curated preset without discarding the user’s edits.
+- **Preset recovery path** — Users can restore the active preset snapshot from the customize dialog, or use reset-to-default to return to the canonical default preset.
 - **Deterministic reset** — Reset always restores the canonical default widget set and order.
 - **Persistence and migration safety** — Stored layouts are normalized on restore/migration (invalid size, duplicate IDs, unknown widgets, malformed payload fallback, invalid widget settings reset to defaults).
+
+### Dashboard Style Presets
+
+The homepage ships with curated style presets so users do not need to rebuild the dashboard from scratch each time:
+
+- **Balanced Workbench** — Default preset that keeps overview, actions, diagnostics, and recent activity in a balanced layout.
+- **Focus Flow** — Prioritizes quick actions, follow-up widgets, and attention items for active operational work.
+- **Analytics Deck** — Uses a denser presentation tuned for trend widgets, activity analysis, and health scanning.
+
+Preset behavior is intentionally explicit:
+
+- **Quick switch from the header** — Applying a preset from the header summary rewrites the homepage to that preset’s canonical snapshot.
+- **Divergence badge** — Subsequent widget or presentation edits show that the layout has been modified from the active preset.
+- **Custom layout fallback** — Existing customized layouts remain intact after upgrade and are represented as a custom layout until the user explicitly applies a preset.
+- **Default recovery** — Reset-to-default restores the canonical default preset state and closes the customize flow cleanly.
 
 ### Dashboard Insights Workbench
 
@@ -88,7 +106,7 @@ Key widget behavior:
 | useDashboardInsights | `hooks/use-dashboard-insights.ts` | Insight aggregation and visible-widget demand loading |
 | WidgetGrid | `components/dashboard/widget-grid.tsx` | Widget grid rendering and edit operations |
 | WidgetWrapper | `components/dashboard/widget-wrapper.tsx` | Per-widget edit toolbar |
-| CustomizeDialog | `components/dashboard/customize-dialog.tsx` | Widget catalog and reset controls |
+| CustomizeDialog | `components/dashboard/customize-dialog.tsx` | Widget catalog, style presets, and reset/recovery controls |
 | Widgets | `components/dashboard/widgets/` | Widget collection |
 
 ---
@@ -99,6 +117,7 @@ Dashboard layout data is stored in `lib/stores/dashboard.ts` (Zustand):
 
 - Widget order, size, and visibility
 - Shared dashboard visual context such as the current analytics range
+- Active dashboard style preset identity and divergence-aware presentation tokens
 - Widget-specific settings for configurable insight widgets
 - Widget instance-policy helpers shared by store and UI
 - Persisted layout migration and normalization

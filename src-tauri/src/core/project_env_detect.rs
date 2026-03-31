@@ -4491,6 +4491,8 @@ rust-version = "1.70"
             );
             let expected_last = if *env_type == "zig" {
                 "build.zig.zon (minimum_zig_version)"
+            } else if *env_type == "java" {
+                JAVA_MAVEN_WRAPPER_SOURCE
             } else {
                 "mise.toml"
             };

@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SettingsSearch } from "./settings-search";
-import type { UseSettingsSearchReturn } from "@/hooks/use-settings-search";
+import type { UseSettingsSearchReturn } from "@/hooks/settings/use-settings-search";
 import { fireEvent } from "@testing-library/react";
 
 const mockT = (key: string, params?: Record<string, string | number>) => {

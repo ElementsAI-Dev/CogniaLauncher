@@ -9,7 +9,7 @@ const mockExportToClipboard = jest.fn();
 const mockGetImportPreview = jest.fn();
 const mockGetNormalizedBookmarks = jest.fn();
 
-jest.mock("@/hooks/use-package-export", () => ({
+jest.mock("@/hooks/packages/use-package-export", () => ({
   usePackageExport: () => ({
     exportPackages: mockExportPackages,
     importPackages: mockImportPackages,

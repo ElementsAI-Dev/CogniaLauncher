@@ -38,7 +38,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DestinationPicker } from "@/components/downloads/destination-picker";
-import { usePlugins } from "@/hooks/use-plugins";
+import { usePlugins } from "@/hooks/plugins/use-plugins";
 import {
   getPluginMarketplaceHref,
   getPluginSourceLabelKey,
@@ -87,6 +87,7 @@ import Link from "next/link";
 import type {
   PluginInfo,
   PluginPermissionState,
+  PluginSdkCapabilityCoverage,
   PluginToolInfo,
   PluginToolPreview,
   PluginLanguage,
@@ -2082,16 +2083,38 @@ export default function PluginsPage() {
                     <p className="font-medium">SDK capability coverage</p>
                     <div className="mt-1 space-y-1">
                       {detailDialogCapabilityCoverage.map((coverage) => (
-                        <p
-                          key={`${coverage.capabilityId}:${coverage.status}`}
-                          className={
-                            coverage.status === "covered"
-                              ? "font-mono"
-                              : "text-red-800 dark:text-red-300"
-                          }
-                        >
-                          {coverage.reason ?? `${coverage.capabilityId}: ${coverage.status}`}
-                        </p>
+                        <div key={`${coverage.capabilityId}:${coverage.status}`} className="rounded-md border p-2">
+                          <p
+                            className={
+                              coverage.status === "covered"
+                                ? "font-mono"
+                                : "text-red-800 dark:text-red-300"
+                            }
+                          >
+                            {coverage.reason ?? `${coverage.capabilityId}: ${coverage.status}`}
+                          </p>
+                          {coverage.preferredWorkflow && (
+                            <>
+                              <p className="mt-1 text-muted-foreground">
+                                {formatPreferredWorkflowLabel(coverage)}
+                              </p>
+                              {coverage.preferredWorkflow.workflowIntents?.length ? (
+                                <p className="text-muted-foreground">
+                                  Intents: {coverage.preferredWorkflow.workflowIntents.join(", ")}
+                                </p>
+                              ) : null}
+                            </>
+                          )}
+                          {coverage.status !== "covered" && coverage.recoveryActions.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {coverage.recoveryActions.map((action) => (
+                                <Link key={`${coverage.capabilityId}:${action}`} href="/toolbox/plugins" className="underline">
+                                  {formatRecoveryActionLabel(action)}
+                                </Link>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       ))}
                     </div>
                   </div>
@@ -2503,6 +2526,30 @@ export default function PluginsPage() {
   );
 }
 
+function formatPreferredWorkflowLabel(coverage: PluginSdkCapabilityCoverage): string {
+  const preferredWorkflow = coverage.preferredWorkflow;
+  if (!preferredWorkflow) {
+    return "Preferred workflow: unavailable";
+  }
+
+  const workflowId = preferredWorkflow.toolId ?? preferredWorkflow.path;
+  const interactionMode = preferredWorkflow.interactionMode ?? preferredWorkflow.surface;
+  return `Preferred workflow: ${workflowId} (${interactionMode})`;
+}
+
+function formatRecoveryActionLabel(action: string): string {
+  if (action === "manage-plugin") {
+    return "Manage Plugin";
+  }
+  if (action === "grant-permissions") {
+    return "Grant Permissions";
+  }
+  if (action === "use-desktop") {
+    return "Use Desktop";
+  }
+  return "Open Guidance";
+}
+
 function normalizeOptionalText(
   value: string | null | undefined,
 ): string | null {
@@ -2811,6 +2858,14 @@ function PluginCard({
                 {`Last marketplace action: ${plugin.marketplaceAcquisition.action} (${plugin.marketplaceAcquisition.outcome})`}
               </p>
             )}
+            {plugin.marketplaceAcquisition?.toolId && (
+              <p className="mt-1 text-blue-800/90 dark:text-blue-200/90">
+                <span>{t("toolbox.plugin.marketplaceNextTarget")}</span>:{" "}
+                <span className="font-mono">
+                  {plugin.marketplaceAcquisition.toolId}
+                </span>
+              </p>
+            )}
           </div>
         )}
         {!marketplaceListing && plugin.marketplaceAcquisition && (
@@ -2825,6 +2880,14 @@ function PluginCard({
             <p className="mt-1">
               {`Last marketplace action: ${plugin.marketplaceAcquisition.action} (${plugin.marketplaceAcquisition.outcome})`}
             </p>
+            {plugin.marketplaceAcquisition.toolId && (
+              <p className="mt-1">
+                <span>{t("toolbox.plugin.marketplaceNextTarget")}</span>:{" "}
+                <span className="font-mono">
+                  {plugin.marketplaceAcquisition.toolId}
+                </span>
+              </p>
+            )}
           </div>
         )}
         <Separator className="mb-3" />

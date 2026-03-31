@@ -8,6 +8,7 @@ describe('useWslStore', () => {
       distroTags: {},
       availableTags: ['dev', 'test', 'prod', 'experiment'],
       customProfiles: [],
+      backupSchedules: [],
       workflowPresets: [],
       workflowSummaries: [],
       overviewContext: { tab: 'installed', tag: null, origin: 'overview' },
@@ -66,6 +67,43 @@ describe('useWslStore', () => {
 
     useWslStore.getState().removeCustomProfile('custom-1');
     expect(useWslStore.getState().customProfiles).toEqual([]);
+  });
+
+  it('adds, updates, and removes backup schedules', () => {
+    useWslStore.getState().upsertBackupSchedule({
+      distro_name: 'Ubuntu',
+      interval: 'daily',
+      time: '09:00',
+      retention: 3,
+      last_run: null,
+      next_run: '2026-03-30T01:00:00.000Z',
+    });
+
+    expect(useWslStore.getState().backupSchedules).toHaveLength(1);
+    expect(useWslStore.getState().backupSchedules[0]).toMatchObject({
+      distro_name: 'Ubuntu',
+      interval: 'daily',
+    });
+
+    useWslStore.getState().upsertBackupSchedule({
+      distro_name: 'Ubuntu',
+      interval: 'daily',
+      time: '09:00',
+      retention: 5,
+      last_run: '2026-03-29T01:00:00.000Z',
+      next_run: '2026-03-30T01:00:00.000Z',
+    });
+
+    expect(useWslStore.getState().backupSchedules).toHaveLength(1);
+    expect(useWslStore.getState().backupSchedules[0].retention).toBe(5);
+    expect(useWslStore.getState().backupSchedules[0].last_run).toBe('2026-03-29T01:00:00.000Z');
+
+    useWslStore.getState().removeBackupSchedule({
+      distro_name: 'Ubuntu',
+      interval: 'daily',
+      time: '09:00',
+    });
+    expect(useWslStore.getState().backupSchedules).toEqual([]);
   });
 
   it('stores WSL overview workflow context', () => {

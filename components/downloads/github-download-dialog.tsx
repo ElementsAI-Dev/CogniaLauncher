@@ -23,13 +23,13 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { useLocale } from "@/components/providers/locale-provider";
-import { useGitHubDownloads } from "@/hooks/use-github-downloads";
+import { useGitHubDownloads } from "@/hooks/downloads/use-github-downloads";
 import {
   useAssetMatcher,
   getPlatformLabel,
   getArchLabel,
   type ParsedAsset,
-} from "@/hooks/use-asset-matcher";
+} from "@/hooks/downloads/use-asset-matcher";
 import { isTauri } from "@/lib/tauri";
 import { GITHUB_ARCHIVE_FORMATS } from "@/lib/constants/downloads";
 import {

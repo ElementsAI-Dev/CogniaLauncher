@@ -11,7 +11,7 @@ import {
   DashboardMetricItem,
   DashboardStatusBadge,
 } from "@/components/dashboard/dashboard-primitives";
-import type { DashboardHealthMatrixModel } from "@/hooks/use-dashboard-insights";
+import type { DashboardHealthMatrixModel } from "@/hooks/dashboard/use-dashboard-insights";
 
 interface ProviderHealthMatrixWidgetProps {
   model: DashboardHealthMatrixModel;

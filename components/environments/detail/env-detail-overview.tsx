@@ -26,7 +26,7 @@ import type {
   EnvironmentInfo,
   HealthStatus,
 } from "@/lib/tauri";
-import { useHealthCheck } from "@/hooks/use-health-check";
+import { useHealthCheck } from "@/hooks/health/use-health-check";
 import { UpdateCheckerCard } from "@/components/environments/update-checker";
 import { IssueCard } from "@/components/environments/health-check-panel";
 import { formatSize } from "@/lib/utils";

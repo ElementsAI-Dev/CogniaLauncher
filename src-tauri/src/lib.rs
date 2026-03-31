@@ -91,7 +91,8 @@ pub fn run() {
 
     builder = builder.plugin(tauri_plugin_positioner::init());
     builder = builder.plugin(tauri_plugin_os::init());
-    builder = builder.plugin(tauri_plugin_stronghold::Builder::with_argon2(&stronghold_salt_path).build());
+    builder = builder
+        .plugin(tauri_plugin_stronghold::Builder::with_argon2(&stronghold_salt_path).build());
 
     builder
         .setup(|app| {
@@ -558,6 +559,7 @@ pub fn run() {
             commands::package::package_search,
             commands::package::package_info,
             commands::package::package_install,
+            commands::package::pre_install_validate,
             commands::package::package_uninstall,
             commands::package::package_list,
             commands::package::provider_list,
@@ -570,6 +572,7 @@ pub fn run() {
             commands::package::provider_enable,
             commands::package::provider_disable,
             commands::package::provider_set_priority,
+            commands::package::resolve_dependency_conflict,
             // Config commands
             commands::config::config_get,
             commands::config::config_set,
@@ -679,6 +682,8 @@ pub fn run() {
             commands::profiles::profile_export,
             commands::profiles::profile_import,
             commands::profiles::profile_create_from_current,
+            commands::profiles::profile_capture_wsl_snapshot,
+            commands::profiles::profile_apply_wsl_snapshot,
             // Search commands
             commands::search::advanced_search,
             commands::search::search_suggestions,
@@ -711,6 +716,7 @@ pub fn run() {
             commands::envvar::envvar_restore_snapshot,
             commands::envvar::envvar_delete_snapshot,
             commands::envvar::envvar_list_all,
+            commands::envvar::envvar_get_overview,
             commands::envvar::envvar_list_process_summaries,
             commands::envvar::envvar_get,
             commands::envvar::envvar_reveal_value,
@@ -850,6 +856,8 @@ pub fn run() {
             tray::tray_set_icon_state,
             tray::tray_update_tooltip,
             tray::tray_set_active_downloads,
+            tray::tray_set_wsl_state,
+            tray::tray_set_terminal_profiles,
             tray::tray_set_has_update,
             tray::tray_set_has_error,
             tray::tray_set_language,
@@ -913,9 +921,14 @@ pub fn run() {
             commands::wsl::wsl_list_running,
             commands::wsl::wsl_is_available,
             commands::wsl::wsl_exec,
+            commands::wsl::wsl_export_windows_env,
+            commands::wsl::wsl_read_distro_env,
+            commands::wsl::wsl_get_wslenv,
+            commands::wsl::wsl_set_wslenv,
             commands::wsl::wsl_convert_path,
             commands::wsl::wsl_get_config,
             commands::wsl::wsl_set_config,
+            commands::wsl::wsl_set_networking_mode,
             commands::wsl::wsl_disk_usage,
             commands::wsl::wsl_import_in_place,
             commands::wsl::wsl_mount,
@@ -1307,6 +1320,12 @@ pub fn run() {
             commands::plugin::plugin_set_setting,
             commands::plugin::plugin_check_all_updates,
             commands::plugin::plugin_update_all,
+            commands::plugin::toolbox_cancel_tool,
+            // Built-in toolbox backend bridge commands
+            commands::toolbox::toolbox_hash_file,
+            commands::toolbox::toolbox_read_file_for_tool,
+            commands::toolbox::toolbox_write_tool_output,
+            commands::toolbox::toolbox_resolve_path,
             // Winget-specific commands
             commands::winget::winget_pin_list,
             commands::winget::winget_pin_add,

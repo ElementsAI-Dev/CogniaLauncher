@@ -14,8 +14,8 @@ import {
   ToolOutputBlock,
 } from '@/components/toolbox/tool-layout';
 import { useLocale } from '@/components/providers/locale-provider';
-import { useCopyToClipboard } from '@/hooks/use-clipboard';
-import { useToolPreferences } from '@/hooks/use-tool-preferences';
+import { useCopyToClipboard } from '@/hooks/shared/use-clipboard';
+import { useToolPreferences } from '@/hooks/toolbox/use-tool-preferences';
 import { TOOLBOX_LIMITS } from '@/lib/constants/toolbox-limits';
 import { ShieldCheck, ShieldAlert } from 'lucide-react';
 import type { ToolComponentProps } from '@/types/toolbox';

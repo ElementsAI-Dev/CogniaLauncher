@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useCallback, useState } from 'react';
+import { toast } from 'sonner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   EnvDetailHeader,
@@ -18,11 +19,12 @@ import { ENV_TYPE_TO_PROVIDERS } from '@/components/environments/detail/env-deta
 import { VersionBrowserPanel } from '@/components/environments/version-browser-panel';
 import { InstallationProgressDialog } from '@/components/environments/installation-progress-dialog';
 import { EnvironmentWorkflowBanner } from '@/components/environments/environment-workflow-banner';
-import { useEnvironments } from '@/hooks/use-environments';
-import { useEnvironmentDetection } from '@/hooks/use-environment-detection';
-import { useEnvironmentWorkflow } from '@/hooks/use-environment-workflow';
+import { useEnvironments } from '@/hooks/environments/use-environments';
+import { useEnvironmentDetection } from '@/hooks/environments/use-environment-detection';
+import { useEnvironmentWorkflow } from '@/hooks/environments/use-environment-workflow';
 import { useEnvironmentStore, getLogicalEnvType } from '@/lib/stores/environment';
-import { useAutoVersionSwitch, useProjectPath } from '@/hooks/use-auto-version';
+import { useTerminalStore } from '@/lib/stores/terminal';
+import { useAutoVersionSwitch, useProjectPath } from '@/hooks/environments/use-auto-version';
 import { useLocale } from '@/components/providers/locale-provider';
 import {
   Empty,
@@ -32,7 +34,7 @@ import {
   EmptyDescription,
 } from '@/components/ui/empty';
 import { LayoutDashboard, Layers, Package, Settings2, Terminal, Link2, Monitor, Wrench } from 'lucide-react';
-import { isTauri } from '@/lib/tauri';
+import { isTauri, terminalLaunchProfile } from '@/lib/tauri';
 
 interface EnvDetailPageClientProps {
   envType: string;
@@ -65,6 +67,10 @@ export function EnvDetailPageClient({ envType }: EnvDetailPageClientProps) {
     setSelectedProvider,
   } = useEnvironmentStore();
   const { syncWorkflowContext, setWorkflowActionState } = useEnvironmentWorkflow();
+  const defaultProfileId = useTerminalStore((state) => state.defaultProfileId);
+  const terminalStoreLoading = useTerminalStore((state) => state.loading);
+  const hydrateTerminalStore = useTerminalStore((state) => state.hydrate);
+  const markProfileLaunched = useTerminalStore((state) => state.markProfileLaunched);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const { getProjectDetectedForEnv } = useEnvironmentDetection({
     detectedVersions,
@@ -85,6 +91,16 @@ export function EnvDetailPageClient({ envType }: EnvDetailPageClientProps) {
     fetchProviders();
     detectVersions(projectPath || '.');
   }, [fetchEnvironments, fetchProviders, detectVersions, isDesktop, projectPath]);
+
+  useEffect(() => {
+    if (!isDesktop || defaultProfileId || terminalStoreLoading) return;
+    void hydrateTerminalStore();
+  }, [
+    defaultProfileId,
+    hydrateTerminalStore,
+    isDesktop,
+    terminalStoreLoading,
+  ]);
 
   // Find current environment data
   // Backend returns env_type as provider ID (e.g., "fnm"), but URL uses language type (e.g., "node")
@@ -194,6 +210,28 @@ export function EnvDetailPageClient({ envType }: EnvDetailPageClientProps) {
     openVersionBrowser(envType);
   }, [envType, openVersionBrowser]);
 
+  const handleOpenInTerminal = useCallback(async () => {
+    if (!defaultProfileId) {
+      toast.error(t('environments.detail.openInTerminalMissingDefaultProfile'));
+      return;
+    }
+
+    await terminalLaunchProfile(defaultProfileId, {
+      envType,
+      envVersion: env?.current_version ?? detectedVersion?.version ?? undefined,
+      cwd: projectPath || undefined,
+    });
+    markProfileLaunched(defaultProfileId);
+  }, [
+    defaultProfileId,
+    detectedVersion?.version,
+    env?.current_version,
+    envType,
+    markProfileLaunched,
+    projectPath,
+    t,
+  ]);
+
   if (!isDesktop) {
     return (
       <div className="p-4 md:p-6">
@@ -219,6 +257,7 @@ export function EnvDetailPageClient({ envType }: EnvDetailPageClientProps) {
         isRefreshing={isRefreshing}
         onRefresh={handleRefresh}
         onOpenVersionBrowser={handleOpenVersionBrowser}
+        onOpenInTerminal={handleOpenInTerminal}
         t={t}
       />
       <EnvironmentWorkflowBanner

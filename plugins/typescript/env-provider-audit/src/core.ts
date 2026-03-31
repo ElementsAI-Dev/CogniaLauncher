@@ -149,6 +149,16 @@ export function runEnvProviderAudit(
   input: Required<EnvProviderAuditInput>,
   host: EnvProviderAuditHost,
 ): EnvProviderAuditSuccess {
+  const result = buildEnvProviderAuditSuccess(input, host);
+  emitEnvProviderAuditCompletion(input, result, host);
+  notifyEnvProviderAuditIssues(input, result, host);
+  return result;
+}
+
+export function buildEnvProviderAuditSuccess(
+  input: Required<EnvProviderAuditInput>,
+  host: EnvProviderAuditHost,
+): EnvProviderAuditSuccess {
   const platform = host.platform.info();
   const knownEnvironmentIds = new Set(host.env.list().map((entry) => entry.id));
   const providers = input.includeProviders
@@ -182,22 +192,6 @@ export function runEnvProviderAudit(
   );
   const pluginId = safeGetPluginId(host);
 
-  if (input.emitEvent) {
-    host.event.emit('builtin.env_provider_audit.completed', {
-      pluginId,
-      issueCount: issues.length,
-      auditedEnvTypes: environments.map((item) => item.envType),
-      providerCount: providers.length,
-    });
-  }
-
-  if (input.notifyOnIssues && issues.length > 0) {
-    host.notification.send(
-      'Environment audit found issues',
-      `${issues.length} issue(s) detected in ${environments.length} checks.`,
-    );
-  }
-
   return {
     ok: true,
     pluginId,
@@ -212,6 +206,38 @@ export function runEnvProviderAudit(
         ? 'Environment provider audit completed with no issues.'
         : `Environment provider audit completed with ${issues.length} issue(s).`,
   };
+}
+
+export function emitEnvProviderAuditCompletion(
+  input: Required<EnvProviderAuditInput>,
+  result: EnvProviderAuditSuccess,
+  host: EnvProviderAuditHost,
+): void {
+  if (!input.emitEvent) {
+    return;
+  }
+
+  host.event.emit('builtin.env_provider_audit.completed', {
+    pluginId: result.pluginId,
+    issueCount: result.issues.length,
+    auditedEnvTypes: result.environments.map((item) => item.envType),
+    providerCount: result.providers.length,
+  });
+}
+
+export function notifyEnvProviderAuditIssues(
+  input: Required<EnvProviderAuditInput>,
+  result: EnvProviderAuditSuccess,
+  host: EnvProviderAuditHost,
+): void {
+  if (!input.notifyOnIssues || result.issues.length === 0) {
+    return;
+  }
+
+  host.notification.send(
+    'Environment audit found issues',
+    `${result.issues.length} issue(s) detected in ${result.environments.length} checks.`,
+  );
 }
 
 export function summarizeEnvProviderIssues(

@@ -10,7 +10,7 @@ import {
   DashboardEmptyState,
   DashboardStatusBadge,
 } from "@/components/dashboard/dashboard-primitives";
-import type { DashboardAttentionModel } from "@/hooks/use-dashboard-insights";
+import type { DashboardAttentionModel } from "@/hooks/dashboard/use-dashboard-insights";
 
 interface AttentionCenterWidgetProps {
   model: DashboardAttentionModel;

@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { useLocale } from '@/components/providers/locale-provider';
-import { useToolbox } from '@/hooks/use-toolbox';
+import { useToolbox } from '@/hooks/toolbox/use-toolbox';
 import { DynamicIcon } from '@/components/ui/dynamic-icon';
 import { Wrench, ArrowRight } from 'lucide-react';
 import { getCategoryMeta } from '@/lib/constants/toolbox';

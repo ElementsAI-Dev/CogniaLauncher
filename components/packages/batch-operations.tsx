@@ -40,6 +40,7 @@ import type { BatchOperationsProps, OperationType } from "@/types/packages";
 
 export function BatchOperations({
   selectedPackages,
+  allowedOperations = ["install", "update", "uninstall"],
   onBatchInstall,
   onBatchUninstall,
   onBatchUpdate,
@@ -232,30 +233,36 @@ export function BatchOperations({
           <Separator orientation="vertical" className="h-6" />
 
           <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="default"
-              onClick={() => openDialog("install")}
-            >
-              <Download className="h-4 w-4 mr-1" />
-              {t("common.install")}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => openDialog("update")}
-            >
-              <RefreshCw className="h-4 w-4 mr-1" />
-              {t("common.update")}
-            </Button>
-            <Button
-              size="sm"
-              variant="destructive"
-              onClick={() => openDialog("uninstall")}
-            >
-              <Trash2 className="h-4 w-4 mr-1" />
-              {t("common.uninstall")}
-            </Button>
+            {allowedOperations.includes("install") ? (
+              <Button
+                size="sm"
+                variant="default"
+                onClick={() => openDialog("install")}
+              >
+                <Download className="h-4 w-4 mr-1" />
+                {t("common.install")}
+              </Button>
+            ) : null}
+            {allowedOperations.includes("update") ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => openDialog("update")}
+              >
+                <RefreshCw className="h-4 w-4 mr-1" />
+                {t("common.update")}
+              </Button>
+            ) : null}
+            {allowedOperations.includes("uninstall") ? (
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={() => openDialog("uninstall")}
+              >
+                <Trash2 className="h-4 w-4 mr-1" />
+                {t("common.uninstall")}
+              </Button>
+            ) : null}
           </div>
 
           <Separator orientation="vertical" className="h-6" />

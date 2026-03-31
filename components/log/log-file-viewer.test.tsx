@@ -8,7 +8,7 @@ const mockQueryLogFile = jest.fn();
 const mockExportLogFile = jest.fn();
 const mockExportDiagnosticBundle = jest.fn();
 
-jest.mock("@/hooks/use-logs", () => ({
+jest.mock("@/hooks/logs/use-logs", () => ({
   useLogs: () => ({
     queryLogFile: mockQueryLogFile,
     exportLogFile: mockExportLogFile,

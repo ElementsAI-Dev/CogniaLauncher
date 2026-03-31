@@ -1,23 +1,25 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useCopyToClipboard } from '@/hooks/use-clipboard';
+import { useCopyToClipboard } from '@/hooks/shared/use-clipboard';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import {
+  ToolActionRow,
   ToolSection,
   ToolTextArea,
   ToolValidationMessage,
   ToolOptionGroup,
 } from '@/components/toolbox/tool-layout';
 import { useLocale } from '@/components/providers/locale-provider';
-import { useToolPreferences } from '@/hooks/use-tool-preferences';
+import { useToolPreferences } from '@/hooks/toolbox/use-tool-preferences';
 import { TOOLBOX_LIMITS } from '@/lib/constants/toolbox-limits';
 import { digestWithSubtle, supportsSubtleDigest } from '@/lib/toolbox/browser-api';
-import { Hash, Copy, Check, ShieldCheck, ShieldX } from 'lucide-react';
+import { isTauri, toolboxHashFile } from '@/lib/tauri';
+import { Hash, Copy, Check, ShieldCheck, ShieldX, FolderOpen } from 'lucide-react';
 import type { ToolComponentProps } from '@/types/toolbox';
 
 const ALGORITHMS = ['SHA-1', 'SHA-256', 'SHA-384', 'SHA-512'] as const;
@@ -48,6 +50,10 @@ async function computeHash(algo: string, text: string): Promise<string> {
   return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+function toBackendAlgorithm(algo: Algorithm): string {
+  return algo.toLowerCase().replace('-', '');
+}
+
 export default function HashGenerator({ className }: ToolComponentProps) {
   const { t } = useLocale();
   const { preferences, setPreferences } = useToolPreferences('hash-generator', DEFAULT_PREFERENCES);
@@ -56,14 +62,59 @@ export default function HashGenerator({ className }: ToolComponentProps) {
   const [computing, setComputing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [compareHash, setCompareHash] = useState('');
+  const [activeSource, setActiveSource] = useState<'text' | 'file'>('text');
+  const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const { copy, error: clipboardError } = useCopyToClipboard();
   const [copiedAlgo, setCopiedAlgo] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isDesktop = isTauri();
 
   const enabledAlgorithms = ALGORITHMS.filter((algo) => preferences[ALGO_KEY_MAP[algo]]);
 
   // Real-time debounced hashing
   useEffect(() => {
+    if (activeSource === 'file') {
+      if (!selectedFilePath || enabledAlgorithms.length === 0) {
+        setResults({});
+        setError(null);
+        setComputing(false);
+        return;
+      }
+
+      let cancelled = false;
+      setComputing(true);
+
+      void Promise.all(
+        enabledAlgorithms.map(async (algo) => [
+          algo,
+          await toolboxHashFile(selectedFilePath, toBackendAlgorithm(algo)),
+        ] as const),
+      )
+        .then((entries) => {
+          if (cancelled) return;
+          setResults(Object.fromEntries(entries));
+          setError(null);
+        })
+        .catch((err) => {
+          if (cancelled) return;
+          const message =
+            err instanceof Error && err.message
+              ? err.message
+              : t('toolbox.tools.hashGenerator.fileHashFailed');
+          setResults({});
+          setError(message);
+        })
+        .finally(() => {
+          if (!cancelled) {
+            setComputing(false);
+          }
+        });
+
+      return () => {
+        cancelled = true;
+      };
+    }
+
     if (!input.trim() || enabledAlgorithms.length === 0) {
       setResults({});
       setError(null);
@@ -108,7 +159,7 @@ export default function HashGenerator({ className }: ToolComponentProps) {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [input, enabledAlgorithms.join(',')]);
+  }, [activeSource, enabledAlgorithms.join(','), input, selectedFilePath]);
 
   const handleCopy = useCallback(
     async (algo: string, value: string) => {
@@ -127,6 +178,25 @@ export default function HashGenerator({ className }: ToolComponentProps) {
     setCopiedAlgo('all');
     setTimeout(() => setCopiedAlgo(null), 1500);
   }, [copy, results]);
+
+  const handleSelectFile = useCallback(async () => {
+    try {
+      const dialogModule = await import('@tauri-apps/plugin-dialog');
+      const selected = await dialogModule.open({
+        multiple: false,
+        directory: false,
+      });
+      if (typeof selected !== 'string') return;
+      setSelectedFilePath(selected);
+      setActiveSource('file');
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : t('toolbox.tools.hashGenerator.filePickerFailed');
+      setError(message);
+    }
+  }, [t]);
 
   // Compare logic
   const compareResult = (() => {
@@ -148,7 +218,10 @@ export default function HashGenerator({ className }: ToolComponentProps) {
           <ToolTextArea
             label=""
             value={input}
-            onChange={setInput}
+            onChange={(value) => {
+              setInput(value);
+              setActiveSource('text');
+            }}
             placeholder={t('toolbox.tools.hashGenerator.placeholder')}
             showPaste
             showClear
@@ -175,6 +248,20 @@ export default function HashGenerator({ className }: ToolComponentProps) {
             })}
           </ToolOptionGroup>
         </ToolSection>
+
+        {isDesktop && (
+          <ToolActionRow>
+            <Button onClick={handleSelectFile} variant="outline" size="sm" className="gap-1.5">
+              <FolderOpen className="h-3.5 w-3.5" />
+              {t('toolbox.tools.hashGenerator.hashFile')}
+            </Button>
+            {activeSource === 'file' && selectedFilePath ? (
+              <span className="max-w-full break-all text-xs text-muted-foreground">
+                {t('toolbox.tools.hashGenerator.fileSelected', { path: selectedFilePath })}
+              </span>
+            ) : null}
+          </ToolActionRow>
+        )}
 
         {error && <ToolValidationMessage message={error} />}
 

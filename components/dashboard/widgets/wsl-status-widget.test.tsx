@@ -22,7 +22,7 @@ jest.mock('@/components/providers/locale-provider', () => ({
   }),
 }));
 
-jest.mock('@/hooks/use-wsl-status', () => ({
+jest.mock('@/hooks/wsl/use-wsl-status', () => ({
   useWslStatus: () => mockUseWslStatus(),
 }));
 

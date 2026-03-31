@@ -2,6 +2,8 @@ use super::traits::*;
 use crate::error::{CogniaError, CogniaResult};
 use crate::platform::env::{EnvModifications, Platform};
 use crate::platform::process;
+use crate::provider::cpp_compiler::{fingerprint_cpp_compiler, CppCompilerMetadata};
+use crate::provider::support::SupportReason;
 use async_trait::async_trait;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -382,7 +384,12 @@ impl SystemEnvironmentType {
                 manifest_files: vec![],
             },
             Self::Cpp => SystemDetectionConfig {
-                commands: vec!["g++", "c++"],
+                #[cfg(windows)]
+                commands: vec!["clang-cl", "clang++", "g++", "c++"],
+                #[cfg(target_os = "macos")]
+                commands: vec!["clang++", "c++", "g++"],
+                #[cfg(all(not(windows), not(target_os = "macos")))]
+                commands: vec!["g++", "clang++", "c++"],
                 version_args: vec!["--version"],
                 version_pattern: r"(\d+\.\d+\.\d+)",
                 version_files: vec![".tool-versions"],
@@ -438,6 +445,13 @@ pub struct SystemDetectionConfig {
     pub manifest_files: Vec<(&'static str, &'static str)>,
 }
 
+#[derive(Debug, Clone)]
+pub struct SystemExecutableDetection {
+    pub version: String,
+    pub path: PathBuf,
+    pub compiler_metadata: Option<CppCompilerMetadata>,
+}
+
 /// Provider for detecting system-installed environments
 /// This detects environments installed directly via official installers,
 /// package managers (apt, brew, winget, scoop), or other means
@@ -445,6 +459,7 @@ pub struct SystemEnvironmentProvider {
     env_type: SystemEnvironmentType,
     cached_version: tokio::sync::RwLock<Option<String>>,
     cached_path: tokio::sync::RwLock<Option<PathBuf>>,
+    cached_cpp_compiler: tokio::sync::RwLock<Option<CppCompilerMetadata>>,
 }
 
 impl SystemEnvironmentProvider {
@@ -453,14 +468,18 @@ impl SystemEnvironmentProvider {
             env_type,
             cached_version: tokio::sync::RwLock::new(None),
             cached_path: tokio::sync::RwLock::new(None),
+            cached_cpp_compiler: tokio::sync::RwLock::new(None),
         }
     }
 
     /// Detect version from system executable
-    async fn detect_system_version(&self) -> CogniaResult<Option<(String, PathBuf)>> {
+    pub async fn detect_system_runtime(&self) -> CogniaResult<Option<SystemExecutableDetection>> {
         let config = self.env_type.detection_config();
+        let version_re = Regex::new(config.version_pattern)
+            .map_err(|error| CogniaError::Provider(error.to_string()))?;
+        let mut detections: Vec<(usize, String, SystemExecutableDetection)> = Vec::new();
 
-        for cmd in &config.commands {
+        for (priority, cmd) in config.commands.iter().enumerate() {
             // Check if command exists in PATH
             if let Some(path) = process::which(cmd).await {
                 let path = PathBuf::from(&path);
@@ -475,23 +494,77 @@ impl SystemEnvironmentProvider {
                             &output.stdout
                         };
 
-                        if let Ok(re) = Regex::new(config.version_pattern) {
-                            if let Some(caps) = re.captures(output_text) {
-                                if let Some(version) = caps.get(1) {
-                                    let mut ver = version.as_str().to_string();
-                                    // Normalize Lua versions: "5.4" -> "5.4.0"
-                                    if matches!(self.env_type, SystemEnvironmentType::Lua) {
-                                        if ver.matches('.').count() == 1 {
-                                            ver.push_str(".0");
-                                        }
+                        if let Some(caps) = version_re.captures(output_text) {
+                            if let Some(version) = caps.get(1) {
+                                let mut ver = version.as_str().to_string();
+                                // Normalize Lua versions: "5.4" -> "5.4.0"
+                                if matches!(self.env_type, SystemEnvironmentType::Lua) {
+                                    if ver.matches('.').count() == 1 {
+                                        ver.push_str(".0");
                                     }
-                                    return Ok(Some((ver, path)));
                                 }
+
+                                detections.push((
+                                    priority,
+                                    path.to_string_lossy().to_string(),
+                                    SystemExecutableDetection {
+                                        version: ver,
+                                        path: path.clone(),
+                                        compiler_metadata: if matches!(
+                                            self.env_type,
+                                            SystemEnvironmentType::Cpp
+                                        ) {
+                                            fingerprint_cpp_compiler(
+                                                cmd,
+                                                &path,
+                                                &output.stdout,
+                                                &output.stderr,
+                                                Some("path"),
+                                            )
+                                        } else {
+                                            None
+                                        },
+                                    },
+                                ));
                             }
                         }
                     }
                 }
             }
+        }
+
+        detections.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
+
+        Ok(detections
+            .into_iter()
+            .next()
+            .map(|(_, _, detection)| detection))
+    }
+
+    async fn detect_system_version(&self) -> CogniaResult<Option<(String, PathBuf)>> {
+        Ok(self
+            .detect_system_runtime()
+            .await?
+            .map(|detection| (detection.version, detection.path)))
+    }
+
+    pub async fn current_cpp_compiler_metadata(&self) -> CogniaResult<Option<CppCompilerMetadata>> {
+        if !matches!(self.env_type, SystemEnvironmentType::Cpp) {
+            return Ok(None);
+        }
+
+        {
+            let cache = self.cached_cpp_compiler.read().await;
+            if let Some(metadata) = cache.clone() {
+                return Ok(Some(metadata));
+            }
+        }
+
+        let detected = self.detect_system_runtime().await?;
+        if let Some(metadata) = detected.and_then(|detection| detection.compiler_metadata) {
+            let mut cache = self.cached_cpp_compiler.write().await;
+            *cache = Some(metadata.clone());
+            return Ok(Some(metadata));
         }
 
         Ok(None)
@@ -580,8 +653,10 @@ impl SystemEnvironmentProvider {
                                     )
                                 }
                                 "gradle/wrapper/gradle-wrapper.properties" => {
-                                    crate::provider::sdkman::extract_gradle_wrapper_version(&content)
-                                        .map(|version| format!("gradle@{}", version))
+                                    crate::provider::sdkman::extract_gradle_wrapper_version(
+                                        &content,
+                                    )
+                                    .map(|version| format!("gradle@{}", version))
                                 }
                                 ".mvn/wrapper/maven-wrapper.properties" => {
                                     crate::provider::sdkman::extract_maven_wrapper_version(&content)
@@ -654,6 +729,21 @@ impl Provider for SystemEnvironmentProvider {
             return true;
         }
         false
+    }
+
+    async fn unavailable_reason(&self) -> Option<SupportReason> {
+        if !matches!(self.env_type, SystemEnvironmentType::Cpp) {
+            return None;
+        }
+
+        let commands = self.env_type.detection_config().commands.join(", ");
+        Some(SupportReason {
+            code: "cpp-compiler-not-found",
+            message: format!(
+                "No runnable C++ compiler was found in PATH (checked {})",
+                commands
+            ),
+        })
     }
 
     async fn search(
@@ -746,14 +836,19 @@ impl EnvironmentProvider for SystemEnvironmentProvider {
         }
 
         // Detect and cache
-        if let Ok(Some((version, path))) = self.detect_system_version().await {
+        if let Ok(Some(detection)) = self.detect_system_runtime().await {
+            let version = detection.version;
             {
                 let mut cache = self.cached_version.write().await;
                 *cache = Some(version.clone());
             }
             {
                 let mut path_cache = self.cached_path.write().await;
-                *path_cache = Some(path);
+                *path_cache = Some(detection.path);
+            }
+            {
+                let mut compiler_cache = self.cached_cpp_compiler.write().await;
+                *compiler_cache = detection.compiler_metadata;
             }
             return Ok(Some(version));
         }
@@ -895,7 +990,12 @@ mod tests {
         assert_eq!(provider.id(), "system-cpp");
         assert_eq!(provider.display_name(), "C++ (System)");
         let config = SystemEnvironmentType::Cpp.detection_config();
-        assert_eq!(config.commands, vec!["g++", "c++"]);
+        #[cfg(windows)]
+        assert_eq!(config.commands, vec!["clang-cl", "clang++", "g++", "c++"]);
+        #[cfg(target_os = "macos")]
+        assert_eq!(config.commands, vec!["clang++", "c++", "g++"]);
+        #[cfg(all(not(windows), not(target_os = "macos")))]
+        assert_eq!(config.commands, vec!["g++", "clang++", "c++"]);
         assert_eq!(config.version_args, vec!["--version"]);
         assert_eq!(config.version_pattern, r"(\d+\.\d+\.\d+)");
         assert_eq!(config.version_files, vec![".tool-versions"]);
@@ -914,7 +1014,11 @@ mod tests {
         .unwrap();
 
         let provider = SystemEnvironmentProvider::new(SystemEnvironmentType::Java);
-        let detected = provider.detect_from_project_files(root).await.unwrap().unwrap();
+        let detected = provider
+            .detect_from_project_files(root)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(detected.version, "21.0.2-tem");
         assert!(matches!(detected.source, VersionSource::LocalFile));
         assert_eq!(
@@ -941,7 +1045,11 @@ mod tests {
         .unwrap();
 
         let provider = SystemEnvironmentProvider::new(SystemEnvironmentType::Java);
-        let detected = provider.detect_from_project_files(root).await.unwrap().unwrap();
+        let detected = provider
+            .detect_from_project_files(root)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(detected.version, "gradle@8.11.1");
         assert!(matches!(detected.source, VersionSource::Manifest));
     }
@@ -966,7 +1074,11 @@ mod tests {
         .unwrap();
 
         let provider = SystemEnvironmentProvider::new(SystemEnvironmentType::Java);
-        let detected = provider.detect_from_project_files(root).await.unwrap().unwrap();
+        let detected = provider
+            .detect_from_project_files(root)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(detected.version, "17");
         assert!(matches!(detected.source, VersionSource::Manifest));
         assert_eq!(
@@ -1009,7 +1121,11 @@ mod tests {
         .unwrap();
 
         let provider = SystemEnvironmentProvider::new(SystemEnvironmentType::Java);
-        let detected = provider.detect_from_project_files(root).await.unwrap().unwrap();
+        let detected = provider
+            .detect_from_project_files(root)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(detected.version, "21");
         assert!(matches!(detected.source, VersionSource::LocalFile));
     }
@@ -1100,6 +1216,15 @@ mod tests {
             println!("C++ compiler version: {:?}", version);
             assert!(version.is_some());
         }
+    }
+
+    #[tokio::test]
+    async fn test_system_cpp_unavailable_reason_is_compiler_specific() {
+        let provider = SystemEnvironmentProvider::new(SystemEnvironmentType::Cpp);
+        let reason = provider.unavailable_reason().await.unwrap();
+
+        assert_eq!(reason.code, "cpp-compiler-not-found");
+        assert!(reason.message.contains("C++ compiler"));
     }
 
     #[test]
@@ -1250,8 +1375,12 @@ mod tests {
                 manifest_file,
                 label
             );
-            let re = regex::Regex::new(pattern)
-                .unwrap_or_else(|e| panic!("Invalid regex for {} (label: {}): {}", manifest_file, label, e));
+            let re = regex::Regex::new(pattern).unwrap_or_else(|e| {
+                panic!(
+                    "Invalid regex for {} (label: {}): {}",
+                    manifest_file, label, e
+                )
+            });
             if let Some(caps) = re.captures(content) {
                 let version = caps.get(1).map(|m| m.as_str()).unwrap_or("");
                 assert_eq!(
@@ -1295,11 +1424,15 @@ mod tests {
         let re = regex::Regex::new(config.version_pattern).unwrap();
 
         // OpenJDK modern
-        let caps = re.captures("openjdk version \"21.0.5\" 2024-10-15").unwrap();
+        let caps = re
+            .captures("openjdk version \"21.0.5\" 2024-10-15")
+            .unwrap();
         assert_eq!(caps.get(1).unwrap().as_str(), "21.0.5");
 
         // Oracle JDK 8 with underscore build number
-        let caps = re.captures("java version \"1.8.0_412\" 2024-04-16").unwrap();
+        let caps = re
+            .captures("java version \"1.8.0_412\" 2024-04-16")
+            .unwrap();
         assert_eq!(caps.get(1).unwrap().as_str(), "1.8.0_412");
 
         // Simple major version

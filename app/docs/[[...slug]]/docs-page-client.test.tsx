@@ -156,6 +156,19 @@ describe('DocsPageClient', () => {
     expect(container.querySelector('time[datetime="2026-01-15T12:00:00.000Z"]')).toBeInTheDocument();
   });
 
+  it('omits last updated metadata when the rendered doc has no timestamp', () => {
+    const { container } = render(
+      <DocsPageClient
+        docZh={createDoc('zh', '# 内容')}
+        docEn={createDoc('en', '# Content', { lastModified: null })}
+        slug={['guide']}
+      />
+    );
+
+    expect(container.textContent).not.toContain('Last updated');
+    expect(container.querySelector('time')).not.toBeInTheDocument();
+  });
+
   it('renders DocsHomeCards on index page', () => {
     render(<DocsPageClient docZh={createDoc('zh', '# 首页')} docEn={createDoc('en', '# Home')} />);
     expect(screen.getByTestId('home-cards')).toBeInTheDocument();
@@ -231,6 +244,20 @@ describe('DocsPageClient', () => {
     render(<DocsPageClient docZh={createDoc('zh', '# A')} docEn={createDoc('en', '# B')} slug={['guide']} />);
     window.location.hash = '#next-heading';
     fireEvent(window, new HashChangeEvent('hashchange'));
+
+    expect(scrollMock).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
+    document.body.removeChild(target);
+  });
+
+  it('keeps the raw hash when decoding fails', () => {
+    const target = document.createElement('div');
+    target.id = '%E0%A4%A';
+    const scrollMock = jest.fn();
+    Object.defineProperty(target, 'scrollIntoView', { value: scrollMock, writable: true });
+    document.body.appendChild(target);
+    window.location.hash = '#%E0%A4%A';
+
+    render(<DocsPageClient docZh={createDoc('zh', '# A')} docEn={createDoc('en', '# B')} slug={['guide']} />);
 
     expect(scrollMock).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
     document.body.removeChild(target);

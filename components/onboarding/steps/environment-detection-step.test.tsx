@@ -25,7 +25,7 @@ jest.mock("@/lib/tauri", () => ({
     mockEnvListProviders(...args),
 }));
 
-jest.mock("@/hooks/use-environment-detection", () => ({
+jest.mock("@/hooks/environments/use-environment-detection", () => ({
   useEnvironmentDetection: () => ({
     detectSystemEnvironments: mockDetectSystemEnvironments,
     buildOnboardingDetections: mockBuildOnboardingDetections,
@@ -239,6 +239,7 @@ describe("EnvironmentDetectionStep", () => {
         providerId: "msvc",
         providerName: "MSVC",
         version: "19.40",
+        compilerLabel: "cl 19.40 x64",
         available: true,
         scope: "system" as const,
       },
@@ -261,6 +262,7 @@ describe("EnvironmentDetectionStep", () => {
       expect(screen.getByText("MSVC")).toBeInTheDocument();
       expect(screen.getByText("MSYS2")).toBeInTheDocument();
       expect(screen.getByText("19.40")).toBeInTheDocument();
+      expect(screen.getByText("cl 19.40 x64")).toBeInTheDocument();
       expect(screen.getByText("13.2")).toBeInTheDocument();
     });
   });

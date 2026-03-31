@@ -103,4 +103,78 @@ describe('env-provider-audit helpers', () => {
 
     expect(recommendations).toContain('Enable includeProviders=true to inspect provider capabilities for deeper diagnostics.');
   });
+
+  it('renders guided workflow form for the initial declarative state', () => {
+    const response = testApi.renderGuided('');
+
+    expect(response.ui).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'heading', content: 'Env Provider Audit Workflow' }),
+        expect.objectContaining({
+          type: 'form',
+          id: 'env-provider-audit-guided-form',
+        }),
+      ]),
+    );
+    expect(response.state).toMatchObject({
+      lastInput: {
+        envTypes: ['node', 'python', 'rust'],
+        includeProviders: true,
+      },
+    });
+    expect(response.outputChannels?.summary).toEqual(
+      expect.objectContaining({
+        status: 'info',
+      }),
+    );
+  });
+
+  it('preserves audit results when notification follow-up fails in guided workflow mode', () => {
+    notifyMock.mockImplementation(() => {
+      throw new Error('notification permission denied');
+    });
+
+    const response = testApi.renderGuided(JSON.stringify({
+      action: 'form_submit',
+      formId: 'env-provider-audit-guided-form',
+      formData: {
+        envTypes: ['node', 'python'],
+        includeProviders: true,
+        notifyOnIssues: true,
+        emitEvent: true,
+      },
+    }));
+
+    expect(response.outputChannels?.summary).toEqual(
+      expect.objectContaining({
+        status: 'warning',
+        message: expect.stringContaining('completed with'),
+      }),
+    );
+    expect(response.outputChannels?.stream).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          level: 'warning',
+          message: expect.stringContaining('notification'),
+        }),
+      ]),
+    );
+    expect(response.outputChannels?.artifacts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'env-provider-audit-report',
+          action: 'copy',
+        }),
+      ]),
+    );
+    expect(response.state).toMatchObject({
+      degradedCapabilities: [
+        expect.objectContaining({ capability: 'notification' }),
+      ],
+      lastSuccess: expect.objectContaining({
+        ok: true,
+        environments: expect.any(Array),
+      }),
+    });
+  });
 });

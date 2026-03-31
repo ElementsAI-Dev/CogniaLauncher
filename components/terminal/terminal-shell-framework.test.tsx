@@ -188,6 +188,49 @@ describe('TerminalShellFramework', () => {
     ).toBeInTheDocument();
   });
 
+  it('surfaces stale plugin readout state and offers a retry action', async () => {
+    const user = userEvent.setup();
+    const onFetchPlugins = jest.fn().mockResolvedValue(undefined);
+
+    render(
+      <TerminalShellFramework
+        shells={shells}
+        frameworks={frameworks}
+        plugins={[]}
+        frameworkReadouts={{
+          'zsh:Oh My Zsh:/home/user/.oh-my-zsh': {
+            key: 'zsh:Oh My Zsh:/home/user/.oh-my-zsh',
+            shellType: 'zsh',
+            status: 'stale',
+            degradedReason: 'Plugin inventory is stale because refresh failed.',
+            pluginCount: 2,
+            freshness: 'stale',
+            lastUpdatedAt: Date.now(),
+          },
+        }}
+        onDetectFrameworks={jest.fn()}
+        onFetchPlugins={onFetchPlugins}
+      />,
+    );
+
+    await user.click(screen.getByText('Oh My Zsh'));
+
+    expect(screen.getByText('terminal.readoutStatusStale')).toBeInTheDocument();
+    expect(
+      screen.getByText('Plugin inventory is stale because refresh failed.'),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /common\.refresh/i }));
+
+    expect(onFetchPlugins).toHaveBeenCalledTimes(2);
+    expect(onFetchPlugins).toHaveBeenLastCalledWith(
+      'Oh My Zsh',
+      '/home/user/.oh-my-zsh',
+      'zsh',
+      '/home/user/.zshrc',
+    );
+  });
+
   it('disables detect button when no shells provided', () => {
     render(
       <TerminalShellFramework

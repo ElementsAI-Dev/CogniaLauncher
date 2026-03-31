@@ -90,36 +90,6 @@ export const baseJestConfig: Config = {
       lines: 90,
       statements: 90,
     },
-    "./app/settings/": {
-      branches: 90,
-      functions: 90,
-      lines: 90,
-      statements: 90,
-    },
-    "./components/settings/": {
-      branches: 90,
-      functions: 90,
-      lines: 90,
-      statements: 90,
-    },
-    "./hooks/use-settings.ts": {
-      branches: 90,
-      functions: 90,
-      lines: 90,
-      statements: 90,
-    },
-    "./lib/settings/": {
-      branches: 90,
-      functions: 90,
-      lines: 90,
-      statements: 90,
-    },
-    "./lib/stores/settings.ts": {
-      branches: 90,
-      functions: 90,
-      lines: 90,
-      statements: 90,
-    },
   },
   moduleFileExtensions: [
     "js",

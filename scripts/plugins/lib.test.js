@@ -114,6 +114,28 @@ describe('scripts/plugins lib helpers', () => {
     ).toThrow('Unknown plugin selector');
   });
 
+  it('rejects builtin TypeScript catalog entries missing maintainer test metadata', () => {
+    const missingPackageName = {
+      plugins: [
+        {
+          ...catalog.plugins[0],
+          packageName: '',
+        },
+      ],
+    };
+    expect(() => pluginLib.validateCatalogShape(missingPackageName)).toThrow('packageName');
+
+    const missingTestFile = {
+      plugins: [
+        {
+          ...catalog.plugins[0],
+          testFile: '',
+        },
+      ],
+    };
+    expect(() => pluginLib.validateCatalogShape(missingTestFile)).toThrow('testFile');
+  });
+
   it('detects framework-specific metadata drift against project files', () => {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'builtin-script-lib-'));
 
@@ -497,6 +519,280 @@ describe('scripts/plugins lib helpers', () => {
           },
         ),
       ).not.toThrow();
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects builtin-primary runtime usage paths that omit toolbox workflow metadata', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'builtin-sdk-usage-guided-required-'));
+
+    try {
+      const pluginRoot = path.join(tempRoot, 'plugins', 'typescript', 'alpha');
+      fs.mkdirSync(pluginRoot, { recursive: true });
+      fs.writeFileSync(
+        path.join(pluginRoot, 'plugin.toml'),
+        [
+          '[plugin]',
+          'id = "com.example.alpha"',
+          'name = "Alpha"',
+          'version = "1.0.0"',
+          '',
+          '[[tools]]',
+          'id = "alpha-guided"',
+          'name_en = "Alpha Guided"',
+          'description_en = "Alpha guided workflow"',
+          'entry = "alpha_entry"',
+          'ui_mode = "declarative"',
+          '',
+          '[permissions]',
+          'env_read = true',
+        ].join('\n'),
+        'utf8',
+      );
+      fs.mkdirSync(path.join(pluginRoot, 'src'), { recursive: true });
+      fs.writeFileSync(
+        path.join(pluginRoot, 'src', 'index.ts'),
+        'export function alpha_entry() { return 0; }\n',
+        'utf8',
+      );
+
+      expect(() =>
+        pluginLib.validateSdkUsageInventoryShape(
+          {
+            schemaVersion: 1,
+            capabilities: [
+              {
+                id: 'env',
+                permissionGuidance: ['env_read'],
+                hostPrerequisites: [],
+                usagePaths: [
+                  {
+                    type: 'builtin-plugin',
+                    coverage: 'builtin-primary',
+                    pluginId: 'com.example.alpha',
+                    path: 'plugins/typescript/alpha',
+                    entrypoints: ['alpha_entry'],
+                    requiredPermissions: ['env_read'],
+                  },
+                ],
+              },
+            ],
+          },
+          {
+            officialCapabilities: ['env'],
+            catalog: {
+              plugins: [catalog.plugins[0]],
+            },
+            sdkCapabilityMatrix: {
+              schemaVersion: 1,
+              requiredPluginIds: [],
+              supportedSdkCapabilities: ['env'],
+              plugins: [
+                {
+                  id: 'com.example.alpha',
+                  sdkCapabilities: ['env'],
+                  expectedPermissions: ['env_read'],
+                  primaryEntrypoints: ['alpha_entry'],
+                },
+              ],
+            },
+            extensionPointMatrix: {
+              schemaVersion: 1,
+              pluginPoints: [],
+            },
+            repoRoot: tempRoot,
+          },
+        ),
+      ).toThrow('builtin-primary runtime usage path must declare a non-empty toolId');
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects builtin workflow tool metadata drift for tool id and interaction mode', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'builtin-sdk-usage-guided-tool-'));
+
+    try {
+      const pluginRoot = path.join(tempRoot, 'plugins', 'typescript', 'alpha');
+      fs.mkdirSync(pluginRoot, { recursive: true });
+      fs.writeFileSync(
+        path.join(pluginRoot, 'plugin.toml'),
+        [
+          '[plugin]',
+          'id = "com.example.alpha"',
+          'name = "Alpha"',
+          'version = "1.0.0"',
+          '',
+          '[[tools]]',
+          'id = "alpha-guided"',
+          'name_en = "Alpha Guided"',
+          'description_en = "Alpha guided workflow"',
+          'entry = "alpha_guided"',
+          'ui_mode = "declarative"',
+          '',
+          '[permissions]',
+          'env_read = true',
+        ].join('\n'),
+        'utf8',
+      );
+      fs.mkdirSync(path.join(pluginRoot, 'src'), { recursive: true });
+      fs.writeFileSync(
+        path.join(pluginRoot, 'src', 'index.ts'),
+        'export function alpha_guided() { return 0; }\n',
+        'utf8',
+      );
+
+      expect(() =>
+        pluginLib.validateSdkUsageInventoryShape(
+          {
+            schemaVersion: 1,
+            capabilities: [
+              {
+                id: 'env',
+                permissionGuidance: ['env_read'],
+                hostPrerequisites: [],
+                usagePaths: [
+                  {
+                    type: 'builtin-plugin',
+                    coverage: 'builtin-primary',
+                    pluginId: 'com.example.alpha',
+                    path: 'plugins/typescript/alpha',
+                    toolId: 'alpha-guided',
+                    interactionMode: 'text',
+                    discoverable: true,
+                    workflowIntents: ['audit-env'],
+                    entrypoints: ['alpha_guided'],
+                    requiredPermissions: ['env_read'],
+                  },
+                ],
+              },
+            ],
+          },
+          {
+            officialCapabilities: ['env'],
+            catalog: {
+              plugins: [catalog.plugins[0]],
+            },
+            sdkCapabilityMatrix: {
+              schemaVersion: 1,
+              requiredPluginIds: [],
+              supportedSdkCapabilities: ['env'],
+              plugins: [
+                {
+                  id: 'com.example.alpha',
+                  sdkCapabilities: ['env'],
+                  expectedPermissions: ['env_read'],
+                  primaryEntrypoints: ['alpha_guided'],
+                },
+              ],
+            },
+            extensionPointMatrix: {
+              schemaVersion: 1,
+              pluginPoints: [],
+            },
+            repoRoot: tempRoot,
+          },
+        ),
+      ).toThrow("com.example.alpha workflow interactionMode drift for tool 'alpha-guided'.");
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects builtin-primary workflow inventory that drifts from guided workflow matrix metadata', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'builtin-sdk-usage-guided-matrix-'));
+
+    try {
+      const pluginRoot = path.join(tempRoot, 'plugins', 'typescript', 'alpha');
+      fs.mkdirSync(pluginRoot, { recursive: true });
+      fs.writeFileSync(
+        path.join(pluginRoot, 'plugin.toml'),
+        [
+          '[plugin]',
+          'id = "com.example.alpha"',
+          'name = "Alpha"',
+          'version = "1.0.0"',
+          '',
+          '[[tools]]',
+          'id = "alpha-tool"',
+          'name_en = "Alpha Tool"',
+          'description_en = "Alpha"',
+          'entry = "alpha_entry"',
+          '',
+          '[[tools]]',
+          'id = "alpha-guided"',
+          'name_en = "Alpha Guided"',
+          'description_en = "Alpha guided workflow"',
+          'entry = "alpha_guided"',
+          'ui_mode = "declarative"',
+          '',
+          '[permissions]',
+          'env_read = true',
+        ].join('\n'),
+        'utf8',
+      );
+      fs.mkdirSync(path.join(pluginRoot, 'src'), { recursive: true });
+      fs.writeFileSync(
+        path.join(pluginRoot, 'src', 'index.ts'),
+        'export function alpha_entry() { return 0; }\nexport function alpha_guided() { return 0; }\n',
+        'utf8',
+      );
+
+      expect(() =>
+        pluginLib.validateSdkUsageInventoryShape(
+          {
+            schemaVersion: 1,
+            capabilities: [
+              {
+                id: 'env',
+                permissionGuidance: ['env_read'],
+                hostPrerequisites: [],
+                usagePaths: [
+                  {
+                    type: 'builtin-plugin',
+                    coverage: 'builtin-primary',
+                    pluginId: 'com.example.alpha',
+                    path: 'plugins/typescript/alpha',
+                    toolId: 'alpha-guided',
+                    interactionMode: 'declarative',
+                    discoverable: true,
+                    workflowIntents: ['audit-env'],
+                    entrypoints: ['alpha_guided'],
+                    requiredPermissions: ['env_read'],
+                  },
+                ],
+              },
+            ],
+          },
+          {
+            officialCapabilities: ['env'],
+            catalog: {
+              plugins: [catalog.plugins[0]],
+            },
+            sdkCapabilityMatrix: {
+              schemaVersion: 1,
+              requiredPluginIds: [],
+              supportedSdkCapabilities: ['env'],
+              plugins: [
+                {
+                  id: 'com.example.alpha',
+                  sdkCapabilities: ['env'],
+                  expectedPermissions: ['env_read'],
+                  primaryEntrypoints: ['alpha_entry'],
+                  guidedWorkflowEntrypoints: ['alpha_guided_mismatch'],
+                  guidedWorkflowToolIds: ['alpha-guided'],
+                },
+              ],
+            },
+            extensionPointMatrix: {
+              schemaVersion: 1,
+              pluginPoints: [],
+            },
+            repoRoot: tempRoot,
+          },
+        ),
+      ).toThrow("com.example.alpha guided workflow entrypoints drift from sdk-capability-matrix guidedWorkflowEntrypoints.");
     } finally {
       fs.rmSync(tempRoot, { recursive: true, force: true });
     }

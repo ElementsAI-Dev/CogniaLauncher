@@ -22,6 +22,9 @@ use tauri::{
 };
 use tokio::sync::RwLock;
 
+#[cfg(target_os = "windows")]
+use crate::provider::wsl::WslProvider;
+
 pub const TRAY_ICON_ID: &str = "cognia-tray";
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -219,6 +222,8 @@ pub struct TrayState {
     pub icon_state: TrayIconState,
     pub language: TrayLanguage,
     pub active_downloads: AtomicUsize,
+    pub wsl_running_count: usize,
+    pub wsl_default_distro: Option<String>,
     pub has_update: bool,
     pub has_error: bool,
     pub click_behavior: TrayClickBehavior,
@@ -230,6 +235,8 @@ pub struct TrayState {
     pub notification_events: Vec<TrayNotificationEvent>,
     pub always_on_top: AtomicBool,
     pub menu_config: TrayMenuConfig,
+    pub terminal_default_profile_id: Option<String>,
+    pub terminal_recent_profiles: Vec<TrayTerminalProfileEntry>,
 }
 
 impl Default for TrayState {
@@ -238,6 +245,8 @@ impl Default for TrayState {
             icon_state: TrayIconState::default(),
             language: TrayLanguage::default(),
             active_downloads: AtomicUsize::new(0),
+            wsl_running_count: 0,
+            wsl_default_distro: None,
             has_update: false,
             has_error: false,
             click_behavior: TrayClickBehavior::default(),
@@ -249,11 +258,26 @@ impl Default for TrayState {
             notification_events: TrayNotificationEvent::defaults(),
             always_on_top: AtomicBool::new(false),
             menu_config: TrayMenuConfig::default(),
+            terminal_default_profile_id: None,
+            terminal_recent_profiles: Vec::new(),
         }
     }
 }
 
 pub type SharedTrayState = Arc<RwLock<TrayState>>;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrayTerminalProfileEntry {
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TrayTerminalLaunchPayload {
+    profile_id: String,
+}
 
 /// Menu labels for different languages
 struct MenuLabels {
@@ -287,6 +311,12 @@ struct MenuLabels {
     nav_downloads: &'static str,
     nav_cache: &'static str,
     nav_logs: &'static str,
+    wsl_submenu: &'static str,
+    wsl_launch_default: &'static str,
+    wsl_shutdown_all: &'static str,
+    wsl_open_manager: &'static str,
+    terminal_submenu: &'static str,
+    terminal_open_default: &'static str,
     // Downloads submenu
     downloads_submenu: &'static str,
     downloads_active: &'static str,
@@ -329,6 +359,12 @@ impl MenuLabels {
                 nav_downloads: "Downloads",
                 nav_cache: "Cache",
                 nav_logs: "Logs",
+                wsl_submenu: "WSL",
+                wsl_launch_default: "Launch Default",
+                wsl_shutdown_all: "Shutdown All",
+                wsl_open_manager: "Open WSL Manager",
+                terminal_submenu: "Terminal",
+                terminal_open_default: "Open Default Terminal",
                 downloads_submenu: "Downloads",
                 downloads_active: "active download(s)",
                 downloads_no_active: "No active downloads",
@@ -366,6 +402,12 @@ impl MenuLabels {
                 nav_downloads: "下载",
                 nav_cache: "缓存",
                 nav_logs: "日志",
+                wsl_submenu: "WSL",
+                wsl_launch_default: "启动默认发行版",
+                wsl_shutdown_all: "关闭全部发行版",
+                wsl_open_manager: "打开 WSL 管理器",
+                terminal_submenu: "终端",
+                terminal_open_default: "打开默认终端",
                 downloads_submenu: "下载",
                 downloads_active: "个活动下载",
                 downloads_no_active: "无活动下载",
@@ -414,17 +456,29 @@ fn get_status_summary(state: &TrayState) -> Option<String> {
 
     if active_downloads > 0 {
         return Some(match state.language {
-            TrayLanguage::En => format!("{}: {} {}", labels.status_summary, active_downloads, labels.status_downloading),
-            TrayLanguage::Zh => format!("{}: {} {}", labels.status_summary, active_downloads, labels.status_downloading),
+            TrayLanguage::En => format!(
+                "{}: {} {}",
+                labels.status_summary, active_downloads, labels.status_downloading
+            ),
+            TrayLanguage::Zh => format!(
+                "{}: {} {}",
+                labels.status_summary, active_downloads, labels.status_downloading
+            ),
         });
     }
 
     if state.has_update {
-        return Some(format!("{}: {}", labels.status_summary, labels.status_update));
+        return Some(format!(
+            "{}: {}",
+            labels.status_summary, labels.status_update
+        ));
     }
 
     if state.has_error {
-        return Some(format!("{}: {}", labels.status_summary, labels.status_error));
+        return Some(format!(
+            "{}: {}",
+            labels.status_summary, labels.status_error
+        ));
     }
 
     None
@@ -633,6 +687,72 @@ fn build_nav_submenu<R: Runtime>(
     Ok(submenu)
 }
 
+fn build_terminal_submenu<R: Runtime>(
+    app: &AppHandle<R>,
+    labels: &MenuLabels,
+    state: &TrayState,
+) -> Result<Option<Submenu<R>>, Box<dyn std::error::Error>> {
+    if state.terminal_default_profile_id.is_none() && state.terminal_recent_profiles.is_empty() {
+        return Ok(None);
+    }
+
+    let default_item = if state.terminal_default_profile_id.is_some() {
+        Some(MenuItem::with_id(
+            app,
+            "terminal_open_default",
+            labels.terminal_open_default,
+            true,
+            None::<&str>,
+        )?)
+    } else {
+        None
+    };
+
+    let separator = if state.terminal_recent_profiles.is_empty() {
+        None
+    } else {
+        Some(PredefinedMenuItem::separator(app)?)
+    };
+
+    let recent_items = state
+        .terminal_recent_profiles
+        .iter()
+        .map(|profile| {
+            MenuItem::with_id(
+                app,
+                format!("terminal_recent::{}", profile.id),
+                &profile.name,
+                true,
+                None::<&str>,
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let mut item_refs: Vec<&dyn tauri::menu::IsMenuItem<R>> = Vec::new();
+
+    if let Some(ref item) = default_item {
+        item_refs.push(item);
+    }
+
+    if let Some(ref item) = separator {
+        item_refs.push(item);
+    }
+
+    for item in &recent_items {
+        item_refs.push(item);
+    }
+
+    let submenu = Submenu::with_id_and_items(
+        app,
+        "terminal_submenu",
+        labels.terminal_submenu,
+        true,
+        &item_refs,
+    )?;
+
+    Ok(Some(submenu))
+}
+
 /// Build a Downloads submenu with dynamic status
 fn build_downloads_submenu<R: Runtime>(
     app: &AppHandle<R>,
@@ -684,6 +804,57 @@ fn build_downloads_submenu<R: Runtime>(
     Ok(submenu)
 }
 
+fn should_show_wsl_submenu(state: &TrayState) -> bool {
+    state.wsl_running_count > 0 || state.wsl_default_distro.is_some()
+}
+
+fn build_wsl_submenu<R: Runtime>(
+    app: &AppHandle<R>,
+    labels: &MenuLabels,
+    state: &TrayState,
+) -> Result<Option<Submenu<R>>, Box<dyn std::error::Error>> {
+    if !should_show_wsl_submenu(state) {
+        return Ok(None);
+    }
+
+    let launch_default = MenuItem::with_id(
+        app,
+        "wsl_launch_default",
+        labels.wsl_launch_default,
+        state.wsl_default_distro.is_some(),
+        None::<&str>,
+    )?;
+    let shutdown_all = MenuItem::with_id(
+        app,
+        "wsl_shutdown_all",
+        labels.wsl_shutdown_all,
+        state.wsl_running_count > 0,
+        None::<&str>,
+    )?;
+    let open_manager = MenuItem::with_id(
+        app,
+        "wsl_open_manager",
+        labels.wsl_open_manager,
+        true,
+        None::<&str>,
+    )?;
+
+    let submenu = Submenu::with_id_and_items(
+        app,
+        "wsl_submenu",
+        labels.wsl_submenu,
+        true,
+        &[
+            &launch_default,
+            &shutdown_all,
+            &PredefinedMenuItem::separator(app)?,
+            &open_manager,
+        ],
+    )?;
+
+    Ok(Some(submenu))
+}
+
 /// Build the tray menu driven by TrayMenuConfig
 fn build_menu<R: Runtime>(
     app: &AppHandle<R>,
@@ -699,9 +870,16 @@ fn build_menu<R: Runtime>(
     let mut need_separator = false;
 
     if let Some(summary) = get_status_summary(state) {
-        let status_item =
-            MenuItem::with_id(app, "status_summary", &summary, false, None::<&str>)?;
+        let status_item = MenuItem::with_id(app, "status_summary", &summary, false, None::<&str>)?;
         menu.append(&status_item)?;
+        need_separator = true;
+    }
+
+    if let Some(terminal_submenu) = build_terminal_submenu(app, &labels, state)? {
+        if need_separator {
+            menu.append(&PredefinedMenuItem::separator(app)?)?;
+        }
+        menu.append(&terminal_submenu)?;
         need_separator = true;
     }
 
@@ -745,6 +923,10 @@ fn build_menu<R: Runtime>(
             TrayMenuItemId::Settings => {
                 if need_separator {
                     menu.append(&PredefinedMenuItem::separator(app)?)?;
+                }
+                if let Some(wsl_submenu) = build_wsl_submenu(app, &labels, state)? {
+                    menu.append(&wsl_submenu)?;
+                    need_separator = true;
                 }
                 let item =
                     MenuItem::with_id(app, "settings", labels.open_settings, true, None::<&str>)?;
@@ -803,13 +985,8 @@ fn build_menu<R: Runtime>(
                 need_separator = true;
             }
             TrayMenuItemId::ToggleLogs => {
-                let item = MenuItem::with_id(
-                    app,
-                    "toggle_logs",
-                    labels.toggle_logs,
-                    true,
-                    None::<&str>,
-                )?;
+                let item =
+                    MenuItem::with_id(app, "toggle_logs", labels.toggle_logs, true, None::<&str>)?;
                 menu.append(&item)?;
                 need_separator = true;
             }
@@ -858,24 +1035,14 @@ fn build_menu<R: Runtime>(
                 need_separator = true;
             }
             TrayMenuItemId::GoToolbox => {
-                let item = MenuItem::with_id(
-                    app,
-                    "go_toolbox",
-                    labels.go_toolbox,
-                    true,
-                    None::<&str>,
-                )?;
+                let item =
+                    MenuItem::with_id(app, "go_toolbox", labels.go_toolbox, true, None::<&str>)?;
                 menu.append(&item)?;
                 need_separator = true;
             }
             TrayMenuItemId::ReportBug => {
-                let item = MenuItem::with_id(
-                    app,
-                    "report_bug",
-                    labels.report_bug,
-                    true,
-                    None::<&str>,
-                )?;
+                let item =
+                    MenuItem::with_id(app, "report_bug", labels.report_bug, true, None::<&str>)?;
                 menu.append(&item)?;
                 need_separator = true;
             }
@@ -932,6 +1099,9 @@ enum TrayActionId {
     NavigateDownloads,
     NavigateCache,
     NavigateLogs,
+    WslLaunchDefault,
+    WslShutdownAll,
+    OpenWslManager,
     PauseAllDownloads,
     ResumeAllDownloads,
     OpenDownloadsPage,
@@ -963,12 +1133,8 @@ fn quick_action_to_action(action: TrayQuickAction) -> TrayActionId {
         TrayQuickAction::InstallPlugin => {
             TrayActionId::DesktopAction(TrayQuickAction::InstallPlugin)
         }
-        TrayQuickAction::CreatePlugin => {
-            TrayActionId::DesktopAction(TrayQuickAction::CreatePlugin)
-        }
-        TrayQuickAction::GoDashboard => {
-            TrayActionId::DesktopAction(TrayQuickAction::GoDashboard)
-        }
+        TrayQuickAction::CreatePlugin => TrayActionId::DesktopAction(TrayQuickAction::CreatePlugin),
+        TrayQuickAction::GoDashboard => TrayActionId::DesktopAction(TrayQuickAction::GoDashboard),
         TrayQuickAction::GoToolbox => TrayActionId::DesktopAction(TrayQuickAction::GoToolbox),
         TrayQuickAction::ReportBug => TrayActionId::DesktopAction(TrayQuickAction::ReportBug),
     }
@@ -984,6 +1150,9 @@ fn tray_action_from_menu_id(id: &str) -> Option<TrayActionId> {
         "nav_downloads" => Some(TrayActionId::NavigateDownloads),
         "nav_cache" => Some(TrayActionId::NavigateCache),
         "nav_logs" => Some(TrayActionId::NavigateLogs),
+        "wsl_launch_default" => Some(TrayActionId::WslLaunchDefault),
+        "wsl_shutdown_all" => Some(TrayActionId::WslShutdownAll),
+        "wsl_open_manager" => Some(TrayActionId::OpenWslManager),
         "download_pause_all" => Some(TrayActionId::PauseAllDownloads),
         "download_resume_all" => Some(TrayActionId::ResumeAllDownloads),
         "download_open_page" => Some(TrayActionId::OpenDownloadsPage),
@@ -991,16 +1160,14 @@ fn tray_action_from_menu_id(id: &str) -> Option<TrayActionId> {
         "check_updates" => Some(TrayActionId::CheckUpdates),
         "toggle_notifications" => Some(TrayActionId::ToggleNotifications),
         "open_logs" => Some(TrayActionId::OpenLogsDir),
-        "open_command_palette" => {
-            Some(TrayActionId::DesktopAction(TrayQuickAction::OpenCommandPalette))
-        }
-        "open_quick_search" => {
-            Some(TrayActionId::DesktopAction(TrayQuickAction::OpenQuickSearch))
-        }
+        "open_command_palette" => Some(TrayActionId::DesktopAction(
+            TrayQuickAction::OpenCommandPalette,
+        )),
+        "open_quick_search" => Some(TrayActionId::DesktopAction(
+            TrayQuickAction::OpenQuickSearch,
+        )),
         "toggle_logs" => Some(TrayActionId::DesktopAction(TrayQuickAction::ToggleLogs)),
-        "manage_plugins" => {
-            Some(TrayActionId::DesktopAction(TrayQuickAction::ManagePlugins))
-        }
+        "manage_plugins" => Some(TrayActionId::DesktopAction(TrayQuickAction::ManagePlugins)),
         "install_plugin" => Some(TrayActionId::DesktopAction(TrayQuickAction::InstallPlugin)),
         "create_plugin" => Some(TrayActionId::DesktopAction(TrayQuickAction::CreatePlugin)),
         "go_dashboard" => Some(TrayActionId::DesktopAction(TrayQuickAction::GoDashboard)),
@@ -1051,6 +1218,13 @@ fn dispatch_desktop_action<R: Runtime>(app: &AppHandle<R>, action: TrayQuickActi
     let _ = app.emit("desktop-action", action);
 }
 
+fn emit_terminal_launch<R: Runtime>(app: &AppHandle<R>, profile_id: String) {
+    let _ = app.emit(
+        "tray-terminal-launch",
+        TrayTerminalLaunchPayload { profile_id },
+    );
+}
+
 fn execute_tray_action<R: Runtime>(app: &AppHandle<R>, action: TrayActionId) {
     match action {
         TrayActionId::ShowWindow => {
@@ -1084,6 +1258,48 @@ fn execute_tray_action<R: Runtime>(app: &AppHandle<R>, action: TrayActionId) {
         TrayActionId::NavigateDownloads => show_and_navigate(app, "/downloads"),
         TrayActionId::NavigateCache => show_and_navigate(app, "/cache"),
         TrayActionId::NavigateLogs => show_and_navigate(app, "/logs"),
+        TrayActionId::WslLaunchDefault => {
+            #[cfg(target_os = "windows")]
+            if let Some(tray_state) = app.try_state::<SharedTrayState>() {
+                if let Ok(guard) = tray_state.try_read() {
+                    if let Some(default_distro) = guard.wsl_default_distro.clone() {
+                        let app_handle = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let provider = WslProvider::new();
+                            let launch_result = provider.launch_distro(&default_distro, None).await;
+                            if let Some(state) = app_handle.try_state::<SharedTrayState>() {
+                                if let Ok(mut tray_guard) = state.try_write() {
+                                    tray_guard.has_error = launch_result.is_err();
+                                }
+                            }
+                            let _ = refresh_tray_visual_state(&app_handle);
+                            update_menu_state(&app_handle);
+                        });
+                    }
+                }
+            }
+        }
+        TrayActionId::WslShutdownAll => {
+            #[cfg(target_os = "windows")]
+            {
+                let app_handle = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    let provider = WslProvider::new();
+                    let shutdown_result = provider.shutdown_all().await;
+                    if let Some(state) = app_handle.try_state::<SharedTrayState>() {
+                        if let Ok(mut tray_guard) = state.try_write() {
+                            tray_guard.has_error = shutdown_result.is_err();
+                            if shutdown_result.is_ok() {
+                                tray_guard.wsl_running_count = 0;
+                            }
+                        }
+                    }
+                    let _ = refresh_tray_visual_state(&app_handle);
+                    update_menu_state(&app_handle);
+                });
+            }
+        }
+        TrayActionId::OpenWslManager => show_and_navigate(app, "/wsl"),
         TrayActionId::PauseAllDownloads => {
             let _ = app.emit("download-pause-all", ());
         }
@@ -1174,6 +1390,22 @@ fn execute_tray_action<R: Runtime>(app: &AppHandle<R>, action: TrayActionId) {
 
 /// Handle menu events
 fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
+    if event.id.as_ref() == "terminal_open_default" {
+        if let Some(state) = app.try_state::<SharedTrayState>() {
+            if let Ok(guard) = state.try_read() {
+                if let Some(profile_id) = &guard.terminal_default_profile_id {
+                    emit_terminal_launch(app, profile_id.clone());
+                }
+            }
+        }
+        return;
+    }
+
+    if let Some(profile_id) = event.id.as_ref().strip_prefix("terminal_recent::") {
+        emit_terminal_launch(app, profile_id.to_string());
+        return;
+    }
+
     if let Some(action) = tray_action_from_menu_id(event.id.as_ref()) {
         execute_tray_action(app, action);
     }
@@ -1385,6 +1617,40 @@ pub async fn tray_set_active_downloads(
     refresh_tray_visual_state(&app)
 }
 
+#[tauri::command]
+pub async fn tray_set_wsl_state(
+    app: AppHandle<Wry>,
+    state: State<'_, SharedTrayState>,
+    running_count: usize,
+    default_distro: Option<String>,
+) -> Result<(), String> {
+    {
+        let mut guard = state.write().await;
+        guard.wsl_running_count = running_count;
+        guard.wsl_default_distro = default_distro;
+    }
+
+    update_menu_state(&app);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn tray_set_terminal_profiles(
+    app: AppHandle<Wry>,
+    state: State<'_, SharedTrayState>,
+    default_profile_id: Option<String>,
+    recent_profiles: Vec<TrayTerminalProfileEntry>,
+) -> Result<(), String> {
+    {
+        let mut guard = state.write().await;
+        guard.terminal_default_profile_id = default_profile_id;
+        guard.terminal_recent_profiles = recent_profiles;
+    }
+
+    update_menu_state(&app);
+    Ok(())
+}
+
 /// Set whether an update is available
 #[tauri::command]
 pub async fn tray_set_has_update(
@@ -1591,6 +1857,8 @@ pub async fn tray_get_state(state: State<'_, SharedTrayState>) -> Result<TraySta
         icon_state: guard.icon_state,
         language: guard.language,
         active_downloads: guard.active_downloads.load(Ordering::SeqCst),
+        wsl_running_count: guard.wsl_running_count,
+        wsl_default_distro: guard.wsl_default_distro.clone(),
         has_update: guard.has_update,
         has_error: guard.has_error,
         click_behavior: guard.click_behavior,
@@ -1612,6 +1880,8 @@ pub struct TrayStateInfo {
     pub icon_state: TrayIconState,
     pub language: TrayLanguage,
     pub active_downloads: usize,
+    pub wsl_running_count: usize,
+    pub wsl_default_distro: Option<String>,
     pub has_update: bool,
     pub has_error: bool,
     pub click_behavior: TrayClickBehavior,
@@ -2042,5 +2312,47 @@ mod tests {
             get_status_summary(&state),
             Some("Status: Last tray action failed".to_string())
         );
+    }
+
+    #[test]
+    fn should_show_wsl_submenu_when_default_or_running_state_exists() {
+        let mut state = TrayState::default();
+        assert!(!should_show_wsl_submenu(&state));
+
+        state.wsl_default_distro = Some("Ubuntu".to_string());
+        assert!(should_show_wsl_submenu(&state));
+
+        state.wsl_default_distro = None;
+        state.wsl_running_count = 2;
+        assert!(should_show_wsl_submenu(&state));
+    }
+
+    #[test]
+    fn tray_get_state_shape_includes_wsl_runtime_fields() {
+        let mut state = TrayState::default();
+        state.wsl_running_count = 1;
+        state.wsl_default_distro = Some("Ubuntu".to_string());
+
+        let info = TrayStateInfo {
+            icon_state: state.icon_state,
+            language: state.language,
+            active_downloads: state.active_downloads.load(Ordering::SeqCst),
+            wsl_running_count: state.wsl_running_count,
+            wsl_default_distro: state.wsl_default_distro.clone(),
+            has_update: state.has_update,
+            has_error: state.has_error,
+            click_behavior: state.click_behavior,
+            quick_action: state.quick_action,
+            minimize_to_tray: state.minimize_to_tray,
+            start_minimized: state.start_minimized,
+            show_notifications: state.show_notifications,
+            notification_level: state.notification_level,
+            notification_events: state.notification_events.clone(),
+            always_on_top: state.always_on_top.load(Ordering::SeqCst),
+            menu_config: state.menu_config.clone(),
+        };
+
+        assert_eq!(info.wsl_running_count, 1);
+        assert_eq!(info.wsl_default_distro.as_deref(), Some("Ubuntu"));
     }
 }

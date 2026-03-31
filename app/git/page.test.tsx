@@ -33,6 +33,8 @@ const mockMerge = jest.fn().mockResolvedValue('merged');
 const mockCommit = jest.fn().mockResolvedValue('committed');
 const mockQuickRebase = jest.fn().mockResolvedValue('ok');
 const mockQuickSquash = jest.fn().mockResolvedValue('ok');
+const mockCreateBranch = jest.fn().mockResolvedValue('created');
+const mockCreateTag = jest.fn().mockResolvedValue('tag');
 
 const createSupportSnapshot = () => ({
   gitAvailable: true,
@@ -141,7 +143,7 @@ jest.mock('@/lib/tauri', () => ({
   revealPath: jest.fn().mockResolvedValue(undefined),
 }));
 
-jest.mock('@/hooks/use-git', () => ({
+jest.mock('@/hooks/git/use-git', () => ({
   useGit: () => ({
     available: true,
     version: '2.42.0',
@@ -223,7 +225,7 @@ jest.mock('@/hooks/use-git', () => ({
     updateGit: jest.fn().mockResolvedValue('updated'),
     initRepo: jest.fn().mockResolvedValue('initialized'),
     checkoutBranch: jest.fn().mockResolvedValue('checked'),
-    createBranch: jest.fn().mockResolvedValue('created'),
+    createBranch: mockCreateBranch,
     deleteBranch: jest.fn().mockResolvedValue('deleted'),
     branchRename: jest.fn().mockResolvedValue('renamed'),
     branchSetUpstream: jest.fn().mockResolvedValue('set'),
@@ -238,7 +240,7 @@ jest.mock('@/hooks/use-git', () => ({
     stashSave: jest.fn().mockResolvedValue('saved'),
     stashPushFiles: jest.fn().mockResolvedValue('saved files'),
     stashShowDiff: mockStashShowDiff,
-    createTag: jest.fn().mockResolvedValue('tag'),
+    createTag: mockCreateTag,
     deleteTag: jest.fn().mockResolvedValue('tag'),
     pushTags: jest.fn().mockResolvedValue('tags'),
     push: jest.fn().mockResolvedValue('pushed'),
@@ -269,7 +271,7 @@ jest.mock('@/hooks/use-git', () => ({
   }),
 }));
 
-jest.mock('@/hooks/use-git-advanced', () => ({
+jest.mock('@/hooks/git/use-git-advanced', () => ({
   useGitAdvanced: () => ({
     submodules: [],
     worktrees: [],
@@ -350,7 +352,7 @@ jest.mock('@/hooks/use-git-advanced', () => ({
   }),
 }));
 
-jest.mock('@/hooks/use-git-lfs', () => ({
+jest.mock('@/hooks/git/use-git-lfs', () => ({
   useGitLfs: () => ({
     lfsAvailable: true,
     lfsVersion: '3.4.0',
@@ -402,11 +404,15 @@ jest.mock('@/components/git', () => ({
   GitCommitGraph: ({
     onResetTo,
     onSelectCommit,
+    onCreateBranch,
+    onCreateTag,
     selectedHash,
     refreshKey,
   }: {
     onResetTo?: (hash: string) => void;
     onSelectCommit?: (hash: string) => void;
+    onCreateBranch?: (hash: string) => void;
+    onCreateTag?: (hash: string) => void;
     selectedHash?: string | null;
     refreshKey?: number;
   }) => (
@@ -415,6 +421,8 @@ jest.mock('@/components/git', () => ({
       <div data-testid="graph-refresh">{String(refreshKey ?? '')}</div>
       <div data-testid="graph-selected">{String(selectedHash ?? '')}</div>
       <button data-testid="select-from-graph" onClick={() => onSelectCommit?.('abc1234')}>select</button>
+      <button data-testid="create-branch-from-graph" onClick={() => onCreateBranch?.('abc1234')}>branch</button>
+      <button data-testid="create-tag-from-graph" onClick={() => onCreateTag?.('abc1234')}>tag</button>
       <button data-testid="reset-from-graph" onClick={() => onResetTo?.('abc1234')}>reset</button>
     </div>
   ),
@@ -508,6 +516,8 @@ jest.mock('@/components/git', () => ({
   GitBisectCard: () => <div data-testid="bisect-card">bisect</div>,
   GitArchiveCard: () => <div data-testid="archive-card">archive</div>,
   GitPatchCard: () => <div data-testid="patch-card">patch</div>,
+  GitStatsStrip: () => <div data-testid="git-stats-strip">stats</div>,
+  GitDiffToolbar: () => <div data-testid="git-diff-toolbar">toolbar</div>,
 }));
 
 describe('GitPage', () => {
@@ -515,7 +525,6 @@ describe('GitPage', () => {
     jest.clearAllMocks();
     mockSupportSnapshot = createSupportSnapshot();
     mockRefreshSupportSnapshot.mockImplementation(async () => mockSupportSnapshot);
-    jest.spyOn(window, 'confirm').mockReturnValue(true);
     act(() => {
       useGitRepoStore.setState({
         recentRepos: [],
@@ -610,6 +619,7 @@ describe('GitPage', () => {
     await user.click(screen.getByRole('tab', { name: /graph/i }));
     expect(screen.getByTestId('graph-refresh')).toHaveTextContent('0');
     await user.click(screen.getByTestId('reset-from-graph'));
+    await user.click(screen.getByRole('button', { name: 'common.confirm' }));
 
     await waitFor(() => {
       expect(mockResetHead).toHaveBeenCalledWith('mixed', 'abc1234', true);
@@ -633,6 +643,29 @@ describe('GitPage', () => {
     });
   });
 
+  it('wires graph branch and tag creation through prompt dialogs', async () => {
+    const user = userEvent.setup();
+    await renderGitPage();
+
+    await user.click(screen.getByRole('tab', { name: /graph/i }));
+
+    await user.click(screen.getByTestId('create-branch-from-graph'));
+    await user.type(screen.getByLabelText('git.branchAction.newBranchName'), 'feature/from-graph');
+    await user.click(screen.getByRole('button', { name: 'common.confirm' }));
+
+    await waitFor(() => {
+      expect(mockCreateBranch).toHaveBeenCalledWith('feature/from-graph', 'abc1234');
+    });
+
+    await user.click(screen.getByTestId('create-tag-from-graph'));
+    await user.type(screen.getByLabelText('git.tagAction.namePlaceholder'), 'v1.2.3');
+    await user.click(screen.getByRole('button', { name: 'common.confirm' }));
+
+    await waitFor(() => {
+      expect(mockCreateTag).toHaveBeenCalledWith('v1.2.3', 'abc1234');
+    });
+  });
+
   it('wires reflog reset action and refreshes graph-related data', async () => {
     const user = userEvent.setup();
     await renderGitPage();
@@ -640,6 +673,7 @@ describe('GitPage', () => {
 
     await user.click(screen.getByRole('tab', { name: /history/i }));
     await user.click(screen.getByTestId('reflog-reset'));
+    await user.click(screen.getByRole('button', { name: 'common.confirm' }));
 
     await waitFor(() => {
       expect(mockResetHead).toHaveBeenCalledWith('hard', 'def5678', true);

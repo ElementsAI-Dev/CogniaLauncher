@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { SettingItem } from "./setting-item";
 import { isTauri } from "@/lib/platform";
 import { Info, Loader2, Search, Wifi } from "lucide-react";
-import { useProxyTools } from "@/hooks/use-proxy-tools";
+import { useProxyTools } from "@/hooks/settings/use-proxy-tools";
 
 interface NetworkSettingsProps {
   localConfig: Record<string, string>;

@@ -668,7 +668,6 @@ async fn collect_tail_lines_with_numbers(
     path: &std::path::Path,
     max_scan_lines: usize,
 ) -> Result<TailLinesWithCount, String> {
-
     let file = fs::File::open(path)
         .await
         .map_err(|e| format!("Failed to open log file: {}", e))?;
@@ -1290,7 +1289,10 @@ pub async fn log_cleanup_preview(
 }
 
 #[tauri::command]
-pub async fn log_delete_file(app: AppHandle, file_name: String) -> Result<LogCleanupResult, String> {
+pub async fn log_delete_file(
+    app: AppHandle,
+    file_name: String,
+) -> Result<LogCleanupResult, String> {
     let log_dir = get_log_dir(&app).ok_or("Failed to get log directory")?;
     let log_path = log_dir.join(&file_name);
 
@@ -1330,7 +1332,10 @@ pub async fn log_delete_file(app: AppHandle, file_name: String) -> Result<LogCle
         }
     }
 
-    let freed_bytes = fs::metadata(&log_path).await.map(|meta| meta.len()).unwrap_or(0);
+    let freed_bytes = fs::metadata(&log_path)
+        .await
+        .map(|meta| meta.len())
+        .unwrap_or(0);
     match fs::remove_file(&log_path).await {
         Ok(()) => Ok(LogCleanupResult {
             deleted_count: 1,
@@ -1954,14 +1959,26 @@ mod tests {
             collect_messages(&cached_result.entries),
             collect_messages(&tail_scan_result.entries)
         );
-        assert_eq!(cached_result.meta.window_start_line, tail_scan_result.meta.window_start_line);
-        assert_eq!(cached_result.meta.window_end_line, tail_scan_result.meta.window_end_line);
-        assert_eq!(cached_result.meta.scanned_lines, tail_scan_result.meta.scanned_lines);
+        assert_eq!(
+            cached_result.meta.window_start_line,
+            tail_scan_result.meta.window_start_line
+        );
+        assert_eq!(
+            cached_result.meta.window_end_line,
+            tail_scan_result.meta.window_end_line
+        );
+        assert_eq!(
+            cached_result.meta.scanned_lines,
+            tail_scan_result.meta.scanned_lines
+        );
         assert_eq!(
             cached_result.meta.source_line_count,
             tail_scan_result.meta.source_line_count
         );
-        assert_eq!(cached_result.meta.scan_truncated, tail_scan_result.meta.scan_truncated);
+        assert_eq!(
+            cached_result.meta.scan_truncated,
+            tail_scan_result.meta.scan_truncated
+        );
     }
 
     #[test]

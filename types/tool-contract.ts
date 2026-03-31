@@ -25,6 +25,7 @@ export type ToolLifecyclePhase =
   | 'execute'
   | 'postProcess'
   | 'success'
+  | 'cancelled'
   | 'failure';
 
 export interface ToolLifecycleSnapshot {

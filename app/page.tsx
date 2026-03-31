@@ -15,10 +15,10 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { useEnvironments } from '@/hooks/use-environments';
-import { usePackages } from '@/hooks/use-packages';
-import { useSettings } from '@/hooks/use-settings';
-import { useDashboardInsights } from '@/hooks/use-dashboard-insights';
+import { useEnvironments } from '@/hooks/environments/use-environments';
+import { usePackages } from '@/hooks/packages/use-packages';
+import { useSettings } from '@/hooks/settings/use-settings';
+import { useDashboardInsights } from '@/hooks/dashboard/use-dashboard-insights';
 import { useLocale } from '@/components/providers/locale-provider';
 import { DASHBOARD_STYLE_PRESETS, useDashboardStore } from '@/lib/stores/dashboard';
 import { DashboardStatusBadge } from '@/components/dashboard/dashboard-primitives';

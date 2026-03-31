@@ -97,6 +97,20 @@ export function TerminalShellFramework({
     ? frameworkReadouts[`${selectedFramework.shellType}:${selectedFramework.name}:${selectedFramework.path}`]
     : null;
 
+  const readoutStatusKey = selectedFrameworkReadout
+    ? `terminal.readoutStatus${selectedFrameworkReadout.status
+      .split('-')
+      .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+      .join('')}`
+    : null;
+
+  const readoutStatusVariant: 'default' | 'secondary' | 'outline' | 'destructive' =
+    selectedFrameworkReadout?.status === 'failed'
+      ? 'destructive'
+      : selectedFrameworkReadout?.status === 'stale'
+        ? 'secondary'
+        : 'outline';
+
   const handleDetectAll = async () => {
     setDetecting(true);
     try {
@@ -412,8 +426,32 @@ export function TerminalShellFramework({
 
         {selectedFramework && selectedFrameworkReadout?.degradedReason && (
           <Alert>
-            <AlertTitle>{t('terminal.plugins')}</AlertTitle>
-            <AlertDescription>{selectedFrameworkReadout.degradedReason}</AlertDescription>
+            <AlertTitle className="flex items-center gap-2">
+              <span>{t('terminal.plugins')}</span>
+              {readoutStatusKey && (
+                <Badge variant={readoutStatusVariant} className="text-[10px]">
+                  {t(readoutStatusKey)}
+                </Badge>
+              )}
+            </AlertTitle>
+            <AlertDescription className="space-y-3">
+              <p>{selectedFrameworkReadout.degradedReason}</p>
+              {(selectedFrameworkReadout.status === 'stale' || selectedFrameworkReadout.status === 'failed') && selectedFramework.pluginSupportStatus === 'supported' && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void onFetchPlugins(
+                    selectedFramework.name,
+                    selectedFramework.path,
+                    selectedFramework.shellType,
+                    selectedFramework.configPath,
+                  )}
+                >
+                  <RefreshCw className="mr-1 h-3.5 w-3.5" />
+                  {t('common.refresh')}
+                </Button>
+              )}
+            </AlertDescription>
           </Alert>
         )}
 

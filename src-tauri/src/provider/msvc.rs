@@ -4,6 +4,9 @@ use crate::platform::{
     env::Platform,
     process::{self, ProcessOptions},
 };
+use crate::provider::cpp_compiler::{
+    build_msvc_compiler_metadata, infer_msvc_host_target, CppCompilerMetadata,
+};
 use crate::provider::support::SupportReason;
 use async_trait::async_trait;
 use once_cell::sync::Lazy;
@@ -138,6 +141,7 @@ struct ResolvedMsvcToolchain {
     instance: VsInstance,
     toolset_version: String,
     cl_exe_path: PathBuf,
+    discovery_origin: &'static str,
 }
 
 fn choose_more_actionable_issue(
@@ -290,6 +294,7 @@ impl MsvcProvider {
             instance,
             toolset_version,
             cl_exe_path,
+            discovery_origin: "vswhere",
         })
     }
 
@@ -346,6 +351,15 @@ impl MsvcProvider {
         self.resolve_usable_toolchain()
             .await
             .map_err(|issue| issue.to_error())
+    }
+
+    pub async fn current_cpp_compiler_metadata(&self) -> CogniaResult<CppCompilerMetadata> {
+        let resolved = self.get_usable_toolchain().await?;
+        Ok(build_msvc_compiler_metadata(
+            &resolved.cl_exe_path,
+            &resolved.toolset_version,
+            resolved.discovery_origin,
+        ))
     }
 
     async fn resolve_developer_shell_toolchain(
@@ -417,6 +431,7 @@ impl MsvcProvider {
                 },
                 toolset_version,
                 cl_exe_path: candidate,
+                discovery_origin: "developer-shell",
             });
         }
 
@@ -507,45 +522,30 @@ fn read_toolset_version(install_path: &Path) -> Option<String> {
 
 /// Construct the path to cl.exe within a VS installation
 fn find_cl_exe(install_path: &Path, toolset_version: &str) -> Option<PathBuf> {
-    let cl_path = install_path
+    let root = install_path
         .join("VC")
         .join("Tools")
         .join("MSVC")
-        .join(toolset_version)
-        .join("bin")
-        .join("HostX64")
-        .join("x64")
-        .join("cl.exe");
-
-    if cl_path.exists() {
-        Some(cl_path)
-    } else {
-        // Try Hostx86 fallback
-        let cl_path_x86 = install_path
-            .join("VC")
-            .join("Tools")
-            .join("MSVC")
-            .join(toolset_version)
-            .join("bin")
-            .join("Hostx86")
-            .join("x86")
-            .join("cl.exe");
-
-        if cl_path_x86.exists() {
-            Some(cl_path_x86)
-        } else {
-            None
-        }
-    }
+        .join(toolset_version);
+    let mut candidates = candidate_cl_paths_from_vctools_install_dir(&root);
+    sort_msvc_candidates_in_place(&mut candidates);
+    candidates.into_iter().find(|candidate| candidate.exists())
 }
 
 fn candidate_cl_paths_from_vctools_install_dir(root: &Path) -> Vec<PathBuf> {
-    [
-        root.join("bin").join("Hostx64").join("x64").join("cl.exe"),
+    vec![
+        root.join("bin").join("HostX64").join("x64").join("cl.exe"),
+        root.join("bin")
+            .join("HostX64")
+            .join("arm64")
+            .join("cl.exe"),
+        root.join("bin")
+            .join("HostArm64")
+            .join("arm64")
+            .join("cl.exe"),
         root.join("bin").join("Hostx86").join("x86").join("cl.exe"),
+        root.join("bin").join("Hostx86").join("x64").join("cl.exe"),
     ]
-    .into_iter()
-    .collect()
 }
 
 fn candidate_cl_paths_from_vcinstall_dir(root: &Path) -> Vec<PathBuf> {
@@ -557,7 +557,50 @@ fn candidate_cl_paths_from_vcinstall_dir(root: &Path) -> Vec<PathBuf> {
             candidates.extend(candidate_cl_paths_from_vctools_install_dir(&version_root));
         }
     }
+    sort_msvc_candidates_in_place(&mut candidates);
     candidates
+}
+
+fn sort_msvc_candidates_in_place(candidates: &mut Vec<PathBuf>) {
+    candidates.sort_by(|left, right| {
+        score_msvc_candidate_path(left)
+            .cmp(&score_msvc_candidate_path(right))
+            .then_with(|| left.cmp(right))
+    });
+    candidates.dedup();
+}
+
+fn score_msvc_candidate_path(path: &Path) -> (u8, u8, String) {
+    let (host_architecture, target_architecture) = infer_msvc_host_target(path);
+    let preferred = preferred_msvc_architecture();
+    let host_score = architecture_preference_score(host_architecture.as_deref(), preferred);
+    let target_score = architecture_preference_score(target_architecture.as_deref(), preferred);
+
+    (
+        target_score,
+        host_score,
+        path.to_string_lossy().to_string().to_ascii_lowercase(),
+    )
+}
+
+fn preferred_msvc_architecture() -> &'static str {
+    match std::env::consts::ARCH {
+        "x86_64" => "x64",
+        "aarch64" => "arm64",
+        "x86" => "x86",
+        _ => "x64",
+    }
+}
+
+fn architecture_preference_score(actual: Option<&str>, preferred: &str) -> u8 {
+    match actual {
+        Some(value) if value.eq_ignore_ascii_case(preferred) => 0,
+        Some("x64") => 1,
+        Some("arm64") => 2,
+        Some("x86") => 3,
+        Some(_) => 4,
+        None => 5,
+    }
 }
 
 fn infer_toolset_version_from_cl_path(path: &Path) -> Option<String> {
@@ -1110,5 +1153,38 @@ mod tests {
             infer_toolset_version_from_cl_path(&path).as_deref(),
             Some("14.44.35207")
         );
+    }
+
+    #[test]
+    fn test_candidate_cl_paths_include_arm64_variants() {
+        let paths = candidate_cl_paths_from_vctools_install_dir(Path::new(
+            r"C:\VS\VC\Tools\MSVC\14.42.34433",
+        ));
+        let as_strings = paths
+            .iter()
+            .map(|path| path.to_string_lossy().to_string())
+            .collect::<Vec<_>>();
+
+        assert!(as_strings
+            .iter()
+            .any(|path| path.contains(r"HostX64\arm64\cl.exe")));
+        assert!(as_strings
+            .iter()
+            .any(|path| path.contains(r"HostArm64\arm64\cl.exe")));
+    }
+
+    #[test]
+    fn test_sort_msvc_candidates_prefers_current_host_target_architecture() {
+        let preferred = preferred_msvc_architecture().to_string();
+        let mut candidates = vec![
+            PathBuf::from(r"C:\VS\VC\Tools\MSVC\14.42.34433\bin\Hostx86\x86\cl.exe"),
+            PathBuf::from(r"C:\VS\VC\Tools\MSVC\14.42.34433\bin\Hostx64\x64\cl.exe"),
+            PathBuf::from(r"C:\VS\VC\Tools\MSVC\14.42.34433\bin\HostArm64\arm64\cl.exe"),
+        ];
+
+        sort_msvc_candidates_in_place(&mut candidates);
+        let (_, target) = infer_msvc_host_target(&candidates[0]);
+
+        assert_eq!(target.as_deref(), Some(preferred.as_str()));
     }
 }

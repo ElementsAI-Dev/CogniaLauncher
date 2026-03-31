@@ -25,7 +25,7 @@ const tauriMocks = jest.requireMock("@/lib/tauri") as {
 const mockUpdateConfigValue = jest.fn();
 const mockFetchConfig = jest.fn();
 
-jest.mock("@/hooks/use-settings", () => ({
+jest.mock("@/hooks/settings/use-settings", () => ({
   useSettings: jest.fn(() => ({
     updateConfigValue: mockUpdateConfigValue,
     fetchConfig: mockFetchConfig,

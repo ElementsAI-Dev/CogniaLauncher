@@ -28,7 +28,7 @@ const mockSummary = {
   actionableIssueCount: 0,
 };
 
-jest.mock("@/hooks/use-health-check", () => ({
+jest.mock("@/hooks/health/use-health-check", () => ({
   useHealthCheck: () => ({
     systemHealth: mockSystemHealth,
     loading: mockLoading,
@@ -94,6 +94,7 @@ describe("HealthCheckWidget", () => {
     mockSystemHealth = {
       overall_status: "healthy",
       environments: [{ status: "healthy" }, { status: "healthy" }],
+      envvar_issues: [],
       system_issues: [],
     };
     mockSummary.environmentCount = 2;
@@ -106,6 +107,7 @@ describe("HealthCheckWidget", () => {
     mockSystemHealth = {
       overall_status: "warning",
       environments: [{ status: "healthy" }, { status: "warning" }],
+      envvar_issues: [],
       system_issues: [],
     };
     mockSummary.environmentCount = 2;
@@ -119,6 +121,7 @@ describe("HealthCheckWidget", () => {
     mockSystemHealth = {
       overall_status: "error",
       environments: [{ status: "error" }],
+      envvar_issues: [],
       system_issues: [],
     };
     mockSummary.environmentCount = 1;
@@ -136,6 +139,7 @@ describe("HealthCheckWidget", () => {
         { status: "warning" },
         { status: "error" },
       ],
+      envvar_issues: [],
       system_issues: [],
     };
     mockSummary.environmentCount = 4;
@@ -155,6 +159,7 @@ describe("HealthCheckWidget", () => {
     mockSystemHealth = {
       overall_status: "error",
       environments: [],
+      envvar_issues: [],
       system_issues: [
         { severity: "critical", message: "Disk space low" },
         { severity: "warning", message: "Outdated version" },
@@ -170,6 +175,7 @@ describe("HealthCheckWidget", () => {
     mockSystemHealth = {
       overall_status: "warning",
       environments: [],
+      envvar_issues: [],
       system_issues: [{ severity: "warning", message: "Issue 1" }],
     };
     mockSummary.issueCount = 1;
@@ -219,5 +225,27 @@ describe("HealthCheckWidget", () => {
     expect(screen.getByText("dashboard.widgets.sectionNeedsAttention")).toBeInTheDocument();
     fireEvent.click(screen.getByText("dashboard.widgets.retry"));
     expect(mockCheckAll).toHaveBeenCalledWith({ force: true });
+  });
+
+  it("surfaces envvar issues in the widget issue list", () => {
+    mockSystemHealth = {
+      overall_status: "warning",
+      environments: [],
+      envvar_issues: [{ severity: "warning", message: "User PATH contains invalid entries" }],
+      system_issues: [],
+    };
+
+    render(<HealthCheckWidget />);
+    expect(screen.getByText("User PATH contains invalid entries")).toBeInTheDocument();
+  });
+
+  it("applies compact presentation styling attributes", () => {
+    render(
+      <HealthCheckWidget presentation={{ density: "compact", emphasis: "strong" }} />,
+    );
+
+    const card = screen.getByText("dashboard.widgets.healthCheck").closest("[data-density]");
+    expect(card).toHaveAttribute("data-density", "compact");
+    expect(card).toHaveAttribute("data-emphasis", "strong");
   });
 });

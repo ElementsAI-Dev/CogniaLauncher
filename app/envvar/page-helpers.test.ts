@@ -2,6 +2,8 @@ import type { EnvVarRow } from '@/lib/envvar';
 import type { EnvVarSupportSnapshot } from '@/types/tauri';
 import {
   getActionLabel,
+  getBackupProtectionBadgeVariant,
+  getCanonicalRecoveryAction,
   getDetectionStatusText,
   getFilteredRowCount,
   getSupportForAction,
@@ -153,6 +155,7 @@ describe('page helpers', () => {
       ['path-reorder', 'envvar.pathEditor.title'],
       ['path-deduplicate', 'envvar.pathEditor.deduplicate'],
       ['path-repair', 'envvar.pathEditor.applyRepair'],
+      ['snapshot-restore', 'envvar.snapshots.restore'],
     ] satisfies Array<[Parameters<typeof getActionLabel>[0], string]>)(
       'maps %s to the expected translation key',
       (action, translationKey) => {
@@ -162,6 +165,59 @@ describe('page helpers', () => {
 
     it('falls back to the generic error label for unknown actions', () => {
       expect(getActionLabel('unknown-action' as never, t)).toBe('common.error');
+    });
+  });
+
+  describe('getCanonicalRecoveryAction', () => {
+    it('maps UI aliases to backend recovery action ids', () => {
+      expect(getCanonicalRecoveryAction('conflict-resolve')).toBe('conflict_resolve');
+      expect(getCanonicalRecoveryAction('path-repair')).toBe('path_repair_apply');
+      expect(getCanonicalRecoveryAction('snapshot-restore')).toBe('snapshot_restore');
+    });
+
+    it('passes through already canonical actions', () => {
+      expect(getCanonicalRecoveryAction('import_apply')).toBe('import_apply');
+      expect(getCanonicalRecoveryAction('path_add')).toBe('path_add');
+      expect(getCanonicalRecoveryAction('persistent_remove')).toBe('persistent_remove');
+    });
+  });
+
+  describe('getBackupProtectionBadgeVariant', () => {
+    it('maps blocked protection to destructive badges', () => {
+      expect(getBackupProtectionBadgeVariant({
+        action: 'import_apply',
+        scope: 'user',
+        state: 'blocked',
+        reasonCode: 'permission_denied',
+        reason: 'blocked',
+        nextSteps: [],
+        snapshot: null,
+      })).toBe('destructive');
+    });
+
+    it('maps unprotected protection to outline badges', () => {
+      expect(getBackupProtectionBadgeVariant({
+        action: 'import_apply',
+        scope: 'user',
+        state: 'unprotected',
+        reasonCode: 'unprotected',
+        reason: 'unprotected',
+        nextSteps: [],
+        snapshot: null,
+      })).toBe('outline');
+    });
+
+    it('defaults to secondary badges for reusable or missing protection state', () => {
+      expect(getBackupProtectionBadgeVariant({
+        action: 'import_apply',
+        scope: 'user',
+        state: 'will_reuse',
+        reasonCode: 'compatible_snapshot_available',
+        reason: 'protected',
+        nextSteps: [],
+        snapshot: null,
+      })).toBe('secondary');
+      expect(getBackupProtectionBadgeVariant(null)).toBe('secondary');
     });
   });
 

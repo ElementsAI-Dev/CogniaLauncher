@@ -33,7 +33,7 @@ import {
 import type { EnvironmentInfo, DetectedEnvironment } from "@/lib/tauri";
 import { isTauri } from "@/lib/tauri";
 import { useEnvironmentStore, getLogicalEnvType } from "@/lib/stores/environment";
-import { useEnvironmentWorkflow } from "@/hooks/use-environment-workflow";
+import { useEnvironmentWorkflow } from "@/hooks/environments/use-environment-workflow";
 import {
   Download,
   Trash2,

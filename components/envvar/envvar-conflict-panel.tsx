@@ -66,7 +66,7 @@ export function EnvVarConflictPanel({
   busy = false,
   t,
 }: EnvVarConflictPanelProps) {
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
   const [dismissed, setDismissed] = useState(false);
   const [compactView, setCompactView] = useState(false);
   const [customIgnoredKeys, setCustomIgnoredKeys] = useState<string[]>(() => readPersistedIgnoredKeys());
@@ -167,6 +167,17 @@ export function EnvVarConflictPanel({
               )}
             </div>
             <div className="flex items-center gap-1">
+              {collapsed && visibleConflicts.length > 0 && (
+                <Button
+                  variant="link"
+                  size="sm"
+                  className="h-auto p-0 text-xs"
+                  onClick={() => setCollapsed(false)}
+                  data-testid="envvar-conflicts-review"
+                >
+                  {t('envvar.conflicts.review')}
+                </Button>
+              )}
               <CollapsibleTrigger asChild>
                 <Button
                   variant="ghost"

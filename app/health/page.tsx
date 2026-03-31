@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { PageHeader } from '@/components/layout/page-header';
 import { IssueCard } from '@/components/health/issue-card';
-import { useHealthCheck } from '@/hooks/use-health-check';
+import { useHealthCheck } from '@/hooks/health/use-health-check';
 import { useLocale } from '@/components/providers/locale-provider';
 import { isTauri } from '@/lib/tauri';
 import { writeClipboard } from '@/lib/clipboard';
@@ -99,8 +99,14 @@ export default function HealthPage() {
     writeClipboard(text);
   }, []);
 
+  const isEnvvarSystemIssue = useCallback(
+    (issue: { check_id?: string | null }) => issue.check_id?.startsWith('envvar_') ?? false,
+    [],
+  );
+
   const copyDiagnostics = useCallback(() => {
     if (!systemHealth) return;
+    const envvarIssues = systemHealth.envvar_issues ?? [];
     const formatIssue = (prefix: string, index: number, issue: {
       severity: string;
       message: string;
@@ -134,6 +140,12 @@ export default function HealthPage() {
         (issue, idx) => formatIssue('S', idx + 1, issue),
       ),
     ];
+
+    if (envvarIssues.length > 0) {
+      lines.push('', `EnvVar Issues (${envvarIssues.length}):`, ...envvarIssues.map(
+        (issue, idx) => formatIssue('E', idx + 1, issue),
+      ));
+    }
 
     const environmentIssues = systemHealth.environments.flatMap((env) =>
       env.issues.map((issue, idx) => formatIssue(`${env.env_type}#`, idx + 1, issue)),
@@ -169,6 +181,12 @@ export default function HealthPage() {
   const overallStatus: HealthStatus = systemHealth?.overall_status ?? 'unknown';
   const overallConfig = HEALTH_STATUS_CONFIG[overallStatus];
   const OverallIcon = overallConfig.icon;
+  const envvarIssues = systemHealth?.envvar_issues ?? [];
+  const envvarSystemIssues = envvarIssues.length > 0
+    ? envvarIssues
+    : systemHealth?.system_issues.filter(isEnvvarSystemIssue) ?? [];
+  const otherSystemIssues =
+    systemHealth?.system_issues.filter((issue) => !isEnvvarSystemIssue(issue)) ?? [];
 
   if (!isDesktop) {
     return (
@@ -373,13 +391,34 @@ export default function HealthPage() {
             )}
 
             {/* System Issues */}
-            {systemHealth.system_issues.length > 0 && (
+            {envvarSystemIssues.length > 0 && (
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">{t('envvarIssues')}</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {envvarSystemIssues.map((issue, idx) => (
+                    <IssueCard
+                      key={`envvar-${idx}`}
+                      issue={issue}
+                      onCopy={copyToClipboard}
+                      onPreviewRemediation={previewRemediation}
+                      onApplyRemediation={applyRemediation}
+                      activeRemediationId={activeRemediationId}
+                      t={t}
+                    />
+                  ))}
+                </CardContent>
+              </Card>
+            )}
+
+            {otherSystemIssues.length > 0 && (
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base">{t('systemIssues')}</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-2">
-                  {systemHealth.system_issues.map((issue, idx) => (
+                  {otherSystemIssues.map((issue, idx) => (
                     <IssueCard
                       key={idx}
                       issue={issue}
@@ -394,7 +433,7 @@ export default function HealthPage() {
               </Card>
             )}
 
-            {systemHealth.system_issues.length === 0 && envCount === 0 && (
+            {envvarSystemIssues.length === 0 && otherSystemIssues.length === 0 && envCount === 0 && (
               <div className="text-center py-8 text-muted-foreground text-sm">
                 {t('noIssues')}
               </div>

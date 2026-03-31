@@ -4,8 +4,8 @@ use crate::core::{
     EnvironmentManager, SharedVersionCache,
 };
 use crate::provider::{
-    EnvironmentProvider, InstallProgressEvent, InstallRequest, InstallStage, ProgressSender,
-    Provider, ProviderRegistry, InstalledVersion,
+    CppCompilerMetadata, EnvironmentProvider, InstallProgressEvent, InstallRequest, InstallStage,
+    InstalledVersion, ProgressSender, Provider, ProviderRegistry, SystemEnvironmentProvider,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -476,6 +476,67 @@ fn resolve_provider_executable_path(
     selected.map(|version| version.install_path.to_string_lossy().to_string())
 }
 
+async fn provider_detected_cpp_metadata(
+    provider: &Arc<dyn EnvironmentProvider>,
+) -> Option<CppCompilerMetadata> {
+    let system_provider = provider
+        .as_any()
+        .downcast_ref::<SystemEnvironmentProvider>()?;
+    system_provider
+        .current_cpp_compiler_metadata()
+        .await
+        .ok()
+        .flatten()
+}
+
+#[cfg(windows)]
+async fn detect_windows_cpp_provider_rows() -> Vec<ProviderDetectedEnvironmentInfo> {
+    use crate::provider::{msvc::MsvcProvider, msys2::Msys2Provider, SystemPackageProvider};
+
+    let mut rows = Vec::new();
+
+    let msvc = MsvcProvider::new();
+    if msvc.is_available().await {
+        if let (Ok(version), Ok(path), Ok(metadata)) = (
+            msvc.get_version().await,
+            msvc.get_executable_path().await,
+            msvc.current_cpp_compiler_metadata().await,
+        ) {
+            rows.push(ProviderDetectedEnvironmentInfo {
+                env_type: "cpp".into(),
+                provider_id: "msvc".into(),
+                provider_name: msvc.display_name().to_string(),
+                version,
+                executable_path: Some(path.to_string_lossy().to_string()),
+                source: "msvc".into(),
+                scope: "system".into(),
+                compiler_metadata: Some(metadata),
+            });
+        }
+    }
+
+    let msys2 = Msys2Provider::new();
+    if let Ok(Some((version, path, metadata))) = msys2.detect_cpp_compiler().await {
+        rows.push(ProviderDetectedEnvironmentInfo {
+            env_type: "cpp".into(),
+            provider_id: "msys2".into(),
+            provider_name: msys2.display_name().to_string(),
+            version,
+            executable_path: Some(path.to_string_lossy().to_string()),
+            source: "msys2".into(),
+            scope: "system".into(),
+            compiler_metadata: Some(metadata),
+        });
+    }
+
+    rows
+}
+
+#[cfg(not(windows))]
+async fn detect_windows_cpp_provider_rows() -> Vec<ProviderDetectedEnvironmentInfo> {
+    Vec::new()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -611,6 +672,7 @@ mod tests {
                 executable_path: Some("C:\\\\VS\\\\cl.exe".into()),
                 source: "msvc".into(),
                 scope: "system".into(),
+                compiler_metadata: None,
             },
             ProviderDetectedEnvironmentInfo {
                 env_type: "cpp".into(),
@@ -620,6 +682,7 @@ mod tests {
                 executable_path: Some("C:\\\\msys64\\\\ucrt64\\\\bin\\\\g++.exe".into()),
                 source: "msys2".into(),
                 scope: "system".into(),
+                compiler_metadata: None,
             },
             ProviderDetectedEnvironmentInfo {
                 env_type: "cpp".into(),
@@ -629,6 +692,7 @@ mod tests {
                 executable_path: Some("C:\\\\msys64\\\\ucrt64\\\\bin\\\\g++.exe".into()),
                 source: "msys2".into(),
                 scope: "system".into(),
+                compiler_metadata: None,
             },
         ];
 
@@ -660,10 +724,7 @@ mod tests {
         ];
 
         let resolved = resolve_provider_executable_path(&installed_versions, "18.20.0");
-        assert_eq!(
-            resolved,
-            Some(current_path.to_string_lossy().to_string())
-        );
+        assert_eq!(resolved, Some(current_path.to_string_lossy().to_string()));
     }
 
     #[test]
@@ -687,10 +748,7 @@ mod tests {
         ];
 
         let resolved = resolve_provider_executable_path(&installed_versions, "3.12.1");
-        assert_eq!(
-            resolved,
-            Some(version_path.to_string_lossy().to_string())
-        );
+        assert_eq!(resolved, Some(version_path.to_string_lossy().to_string()));
     }
 }
 
@@ -1813,6 +1871,8 @@ pub struct SystemEnvironmentInfo {
     pub version: String,
     pub executable_path: Option<String>,
     pub source: String,
+    #[serde(default)]
+    pub compiler_metadata: Option<CppCompilerMetadata>,
 }
 
 /// Provider-aware environment detection information.
@@ -1827,6 +1887,8 @@ pub struct ProviderDetectedEnvironmentInfo {
     pub executable_path: Option<String>,
     pub source: String,
     pub scope: String,
+    #[serde(default)]
+    pub compiler_metadata: Option<CppCompilerMetadata>,
 }
 
 /// Detect all system-installed environments (not managed by version managers)
@@ -1868,6 +1930,11 @@ pub async fn env_detect_system_all(
                     version,
                     executable_path: path,
                     source: "system".to_string(),
+                    compiler_metadata: provider
+                        .current_cpp_compiler_metadata()
+                        .await
+                        .ok()
+                        .flatten(),
                 });
             }
         }
@@ -1932,6 +1999,7 @@ pub async fn env_detect_providers_all(
         let versions = provider.list_installed_versions().await.unwrap_or_default();
         let executable_path = resolve_provider_executable_path(&versions, &version);
         let logical_env_type = EnvironmentManager::logical_env_type(&provider_id);
+        let compiler_metadata = provider_detected_cpp_metadata(&provider).await;
 
         results.push(ProviderDetectedEnvironmentInfo {
             env_type: logical_env_type,
@@ -1941,8 +2009,11 @@ pub async fn env_detect_providers_all(
             executable_path,
             source: provider_id.clone(),
             scope: provider_detection_scope(&provider_id).to_string(),
+            compiler_metadata,
         });
     }
+
+    results.extend(detect_windows_cpp_provider_rows().await);
 
     let normalized = dedupe_and_sort_provider_detections(results);
 
@@ -2030,6 +2101,11 @@ pub async fn env_detect_system(
             version,
             executable_path: path,
             source: "system".to_string(),
+            compiler_metadata: provider
+                .current_cpp_compiler_metadata()
+                .await
+                .ok()
+                .flatten(),
         })
     } else {
         None

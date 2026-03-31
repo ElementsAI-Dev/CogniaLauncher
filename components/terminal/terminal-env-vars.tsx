@@ -1,20 +1,17 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
-import { writeClipboard } from '@/lib/clipboard';
+import { useCallback, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
-import { Search, Copy, RefreshCw, ExternalLink, ChevronRight, Eye, Loader2 } from 'lucide-react';
+import { Search, RefreshCw, ExternalLink } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
-import { toast } from 'sonner';
 import { categorizeVar, ENV_VAR_CATEGORY_KEYS, type EnvVarCategory } from '@/lib/constants/terminal';
+import { EnvVarKvEditor } from '@/components/envvar/shared/env-var-kv-editor';
 import type { TerminalEnvVarSummary } from '@/types/tauri';
 
 interface TerminalEnvVarsProps {
@@ -23,7 +20,6 @@ interface TerminalEnvVarsProps {
   onRevealShellEnvVar?: (key: string) => Promise<string | null>;
   loading?: boolean;
 }
-
 
 export function TerminalEnvVars({
   shellEnvVars,
@@ -34,17 +30,16 @@ export function TerminalEnvVars({
   const { t } = useLocale();
   const [search, setSearch] = useState('');
   const [revealedValues, setRevealedValues] = useState<Record<string, string>>({});
-  const [revealingKeys, setRevealingKeys] = useState<Record<string, boolean>>({});
 
   const filtered = useMemo(() => {
     if (!search) return shellEnvVars;
-    const q = search.toLowerCase();
+    const query = search.toLowerCase();
     return shellEnvVars.filter(
       ({ key, value }) =>
-        key.toLowerCase().includes(q)
-        || (revealedValues[key] ?? value.displayValue).toLowerCase().includes(q),
+        key.toLowerCase().includes(query)
+        || (revealedValues[key] ?? value.displayValue).toLowerCase().includes(query),
     );
-  }, [revealedValues, shellEnvVars, search]);
+  }, [revealedValues, search, shellEnvVars]);
 
   const pathVarCount = useMemo(
     () => shellEnvVars.filter(({ key }) => key.toLowerCase().includes('path')).length,
@@ -59,43 +54,21 @@ export function TerminalEnvVars({
       other: [],
     };
     for (const entry of filtered) {
-      const cat = categorizeVar(entry.key);
-      groups[cat].push(entry);
+      groups[categorizeVar(entry.key)].push(entry);
     }
     return groups;
   }, [filtered]);
 
-  const revealValue = useCallback(async (entry: TerminalEnvVarSummary) => {
-    if (!entry.value.masked || revealedValues[entry.key] != null || !onRevealShellEnvVar) {
-      return revealedValues[entry.key] ?? entry.value.displayValue;
+  const revealValue = useCallback(async (key: string) => {
+    if (!onRevealShellEnvVar) {
+      return null;
     }
-
-    setRevealingKeys((current) => ({ ...current, [entry.key]: true }));
-    try {
-      const revealed = await onRevealShellEnvVar(entry.key);
-      if (revealed != null) {
-        setRevealedValues((current) => ({ ...current, [entry.key]: revealed }));
-        return revealed;
-      }
-      return entry.value.displayValue;
-    } finally {
-      setRevealingKeys((current) => {
-        const next = { ...current };
-        delete next[entry.key];
-        return next;
-      });
+    const revealed = await onRevealShellEnvVar(key);
+    if (revealed != null) {
+      setRevealedValues((current) => ({ ...current, [key]: revealed }));
     }
-  }, [onRevealShellEnvVar, revealedValues]);
-
-  const handleCopy = async (entry: TerminalEnvVarSummary) => {
-    try {
-      const value = await revealValue(entry);
-      await writeClipboard(value);
-      toast.success(t('terminal.copyValue') || `Copied ${entry.key}`);
-    } catch {
-      toast.error('Failed to copy');
-    }
-  };
+    return revealed;
+  }, [onRevealShellEnvVar]);
 
   if (loading) {
     return (
@@ -105,8 +78,8 @@ export function TerminalEnvVars({
           <Skeleton className="h-4 w-64" />
         </CardHeader>
         <CardContent className="space-y-2">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-8 w-full" />
+          {Array.from({ length: 5 }).map((_, index) => (
+            <Skeleton key={index} className="h-8 w-full" />
           ))}
         </CardContent>
       </Card>
@@ -125,7 +98,7 @@ export function TerminalEnvVars({
         <CardDescription>{t('terminal.shellEnvVarsDesc')}</CardDescription>
         <CardAction className="flex items-center gap-2">
           <Button size="sm" variant="outline" onClick={onFetchShellEnvVars}>
-            <RefreshCw className="h-3.5 w-3.5 mr-1" />
+            <RefreshCw className="mr-1 h-3.5 w-3.5" />
             {t('common.refresh')}
           </Button>
           <Button size="sm" variant="outline" asChild>
@@ -151,7 +124,7 @@ export function TerminalEnvVars({
             className="pl-9"
             placeholder={t('terminal.searchEnvVars')}
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(event) => setSearch(event.target.value)}
           />
         </div>
 
@@ -167,114 +140,32 @@ export function TerminalEnvVars({
             </EmptyHeader>
           </Empty>
         ) : (
-          <div className="overflow-y-auto max-h-[60vh]">
+          <div className="max-h-[60vh] overflow-y-auto">
             <div className="space-y-4">
               {(Object.entries(grouped) as [EnvVarCategory, TerminalEnvVarSummary[]][])
                 .filter(([, vars]) => vars.length > 0)
                 .map(([category, vars]) => (
                   <div key={category}>
-                    <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
+                    <h4 className="mb-2 flex items-center gap-2 text-sm font-medium">
                       {t(ENV_VAR_CATEGORY_KEYS[category])}
                       <Badge variant="secondary">{vars.length}</Badge>
                     </h4>
-                    <div className="rounded-md border divide-y overflow-hidden">
-                      {vars.map(({ key, value }) => {
-                        const displayValue = revealedValues[key] ?? value.displayValue;
-                        const canReveal = value.masked && revealedValues[key] == null && Boolean(onRevealShellEnvVar);
-                        const isRevealing = Boolean(revealingKeys[key]);
-                        return (
-                          <div
-                            key={key}
-                            className="relative px-3 py-2 group overflow-hidden"
-                          >
-                            <div className="flex items-center gap-2 min-w-0 overflow-hidden">
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <span className="text-xs font-mono font-semibold text-primary truncate shrink-0 max-w-[200px] cursor-default">
-                                    {key}
-                                  </span>
-                                </TooltipTrigger>
-                                {key.length > 30 && (
-                                  <TooltipContent side="top" className="font-mono text-xs">
-                                    {key}
-                                  </TooltipContent>
-                                )}
-                              </Tooltip>
-                              {canReveal && (
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <Button
-                                      size="icon"
-                                      variant="ghost"
-                                      className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                                      onClick={() => void revealValue({ key, value })}
-                                      disabled={isRevealing}
-                                      aria-label={t('terminal.revealSensitiveValue')}
-                                    >
-                                      {isRevealing ? (
-                                        <Loader2 className="h-3 w-3 animate-spin" />
-                                      ) : (
-                                        <Eye className="h-3 w-3" />
-                                      )}
-                                    </Button>
-                                  </TooltipTrigger>
-                                  <TooltipContent side="top">
-                                    {t(isRevealing ? 'terminal.revealingSensitiveValue' : 'terminal.revealSensitiveValue')}
-                                  </TooltipContent>
-                                </Tooltip>
-                              )}
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    size="icon"
-                                    variant="ghost"
-                                    className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                                    onClick={() => void handleCopy({ key, value })}
-                                  >
-                                    <Copy className="h-3 w-3" />
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent side="top">{t('terminal.copyValue')}</TooltipContent>
-                              </Tooltip>
-                            </div>
-                            {key.toLowerCase() === 'path' ? (
-                              <Collapsible>
-                                <CollapsibleTrigger asChild>
-                                  <Button variant="ghost" size="sm" className="h-6 text-xs gap-1 mt-0.5 px-1">
-                                    <ChevronRight className="h-3.5 w-3.5 transition-transform [[data-state=open]>svg&]:rotate-90" />
-                                    {displayValue.split(';').filter(Boolean).length} {t('terminal.pathEntries')}
-                                  </Button>
-                                </CollapsibleTrigger>
-                                <CollapsibleContent>
-                                  <div className="mt-1 space-y-0.5 pl-2 border-l-2 border-muted">
-                                    {displayValue.split(';').filter(Boolean).map((entry, i) => (
-                                      <div key={i} className="font-mono text-xs text-muted-foreground truncate" title={entry}>
-                                        {entry}
-                                      </div>
-                                    ))}
-                                  </div>
-                                </CollapsibleContent>
-                              </Collapsible>
-                            ) : displayValue.length > 80 ? (
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <p className="font-mono text-xs text-muted-foreground mt-0.5 truncate max-w-sm inline-block align-bottom cursor-help">
-                                    {displayValue.slice(0, 80)}…
-                                  </p>
-                                </TooltipTrigger>
-                                <TooltipContent side="bottom" className="max-w-lg font-mono text-xs break-all whitespace-pre-wrap">
-                                  {displayValue}
-                                </TooltipContent>
-                              </Tooltip>
-                            ) : (
-                              <p className="text-xs font-mono text-muted-foreground mt-0.5 truncate min-w-0 w-full cursor-default">
-                                {displayValue || <span className="italic opacity-50">(empty)</span>}
-                              </p>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
+                    <EnvVarKvEditor
+                      items={vars.map(({ key, value }) => ({
+                        key,
+                        value: revealedValues[key] ?? value.displayValue,
+                        masked: value.masked && revealedValues[key] == null,
+                      }))}
+                      readOnly
+                      revealable
+                      onReveal={revealValue}
+                      labels={{
+                        empty: t('terminal.noEnvVars'),
+                        copy: t('terminal.copyValue'),
+                        copyError: 'Failed to copy',
+                        reveal: t('terminal.revealSensitiveValue'),
+                      }}
+                    />
                   </div>
                 ))}
             </div>

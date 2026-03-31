@@ -1,6 +1,6 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { WindowControls } from "./window-controls";
-import type { WindowControlsState } from "@/hooks/use-window-controls";
+import type { WindowControlsState } from "@/hooks/desktop/use-window-controls";
 
 jest.mock("@/components/providers/locale-provider", () => ({
   useLocale: () => ({

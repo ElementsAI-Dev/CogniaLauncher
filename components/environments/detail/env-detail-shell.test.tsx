@@ -8,7 +8,7 @@ const mockGetEnvInfo = jest.fn();
 const mockWhichProgram = jest.fn();
 const mockClearOutput = jest.fn();
 
-jest.mock("@/hooks/use-launch", () => ({
+jest.mock("@/hooks/environments/use-launch", () => ({
   useLaunch: () => ({
     loading: false,
     error: null,

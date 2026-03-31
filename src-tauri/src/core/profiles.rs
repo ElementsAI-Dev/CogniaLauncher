@@ -1,4 +1,10 @@
+use crate::commands::envvar::{
+    capture_envvar_snapshot_payload, write_envvar_snapshot_bundle, EnvVarSnapshotCreationMode,
+};
+use crate::config::Settings;
 use crate::error::{CogniaError, CogniaResult};
+use crate::platform::env::{self, EnvVarScope};
+use crate::provider::wsl::{WslProfileApplyResult, WslProfileSnapshot, WslProvider};
 use crate::provider::ProviderRegistry;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -22,6 +28,10 @@ pub struct EnvironmentProfile {
     pub name: String,
     pub description: Option<String>,
     pub environments: Vec<ProfileEnvironment>,
+    #[serde(default)]
+    pub env_snapshot: Option<HashMap<String, String>>,
+    #[serde(default)]
+    pub wsl_snapshot: Option<WslProfileSnapshot>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -34,6 +44,8 @@ impl EnvironmentProfile {
             name: name.into(),
             description: None,
             environments: Vec::new(),
+            env_snapshot: None,
+            wsl_snapshot: None,
             created_at: now.clone(),
             updated_at: now,
         }
@@ -65,6 +77,8 @@ pub struct ProfileApplyResult {
     pub successful: Vec<ProfileEnvironmentResult>,
     pub failed: Vec<ProfileEnvironmentError>,
     pub skipped: Vec<ProfileEnvironmentSkipped>,
+    #[serde(default)]
+    pub wsl_snapshot: Option<WslProfileApplyResult>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -210,6 +224,7 @@ impl ProfileManager {
             successful: Vec::new(),
             failed: Vec::new(),
             skipped: Vec::new(),
+            wsl_snapshot: None,
         };
 
         let registry = self.registry.read().await;
@@ -278,6 +293,12 @@ impl ProfileManager {
             }
         }
 
+        self.apply_env_snapshot_if_present(profile.env_snapshot.as_ref(), &profile.name)
+            .await?;
+        result.wsl_snapshot = self
+            .apply_wsl_snapshot_if_present(profile.wsl_snapshot.as_ref())
+            .await?;
+
         Ok(result)
     }
 
@@ -305,7 +326,12 @@ impl ProfileManager {
     }
 
     /// Create a profile from current environment state
-    pub async fn create_from_current(&mut self, name: &str) -> CogniaResult<EnvironmentProfile> {
+    pub async fn create_from_current(
+        &mut self,
+        name: &str,
+        include_wsl_configuration: bool,
+        include_env_snapshot: bool,
+    ) -> CogniaResult<EnvironmentProfile> {
         let mut profile = EnvironmentProfile::new(name);
 
         // Collect environment info while holding the read lock
@@ -331,7 +357,169 @@ impl ProfileManager {
             }
         } // registry lock is dropped here
 
+        profile.env_snapshot = self
+            .capture_env_snapshot_if_requested(include_env_snapshot)
+            .await?;
+        profile.wsl_snapshot = self
+            .capture_wsl_snapshot_if_requested(include_wsl_configuration)
+            .await?;
+
         self.create(profile).await
+    }
+
+    async fn capture_wsl_snapshot_if_requested(
+        &self,
+        include_wsl_configuration: bool,
+    ) -> CogniaResult<Option<WslProfileSnapshot>> {
+        if !include_wsl_configuration {
+            return Ok(None);
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            let provider = WslProvider::new();
+            if !provider.detect_runtime_snapshot().await.available {
+                return Ok(None);
+            }
+
+            return provider.capture_snapshot().await.map(Some);
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            Ok(None)
+        }
+    }
+
+    async fn capture_env_snapshot_if_requested(
+        &self,
+        include_env_snapshot: bool,
+    ) -> CogniaResult<Option<HashMap<String, String>>> {
+        if !include_env_snapshot {
+            return Ok(None);
+        }
+
+        let vars = env::list_persistent_vars(EnvVarScope::User).await?;
+        Ok(Some(vars.into_iter().collect()))
+    }
+
+    async fn apply_env_snapshot_if_present(
+        &self,
+        snapshot: Option<&HashMap<String, String>>,
+        profile_name: &str,
+    ) -> CogniaResult<()> {
+        let Some(snapshot) = snapshot else {
+            return Ok(());
+        };
+
+        self.create_env_recovery_snapshot("profile_apply", profile_name)
+            .await?;
+
+        let current_vars = env::list_persistent_vars(EnvVarScope::User).await?;
+        let current_map: HashMap<String, String> = current_vars.into_iter().collect();
+
+        let removed_keys: Vec<String> = current_map
+            .keys()
+            .filter(|key| !snapshot.contains_key(*key))
+            .cloned()
+            .collect();
+        for key in removed_keys {
+            env::remove_persistent_var(&key, EnvVarScope::User).await?;
+        }
+
+        for (key, value) in snapshot {
+            env::set_persistent_var(key, value, EnvVarScope::User).await?;
+        }
+
+        Ok(())
+    }
+
+    async fn create_env_recovery_snapshot(
+        &self,
+        action: &str,
+        profile_name: &str,
+    ) -> CogniaResult<()> {
+        let payload = capture_envvar_snapshot_payload(&[EnvVarScope::User]).await?;
+        let settings = self.settings_for_env_snapshots();
+        write_envvar_snapshot_bundle(
+            &settings,
+            &payload,
+            EnvVarSnapshotCreationMode::Automatic,
+            Some(action),
+            Some(&format!(
+                "Recovery snapshot before applying profile '{}'",
+                profile_name
+            )),
+            None,
+        )
+        .await?;
+        Ok(())
+    }
+
+    fn settings_for_env_snapshots(&self) -> Settings {
+        let mut settings = Settings::default();
+        let state_dir = if self.storage_path.ends_with("profiles") {
+            self.storage_path
+                .parent()
+                .map(PathBuf::from)
+                .unwrap_or_else(|| self.storage_path.clone())
+        } else {
+            self.storage_path.clone()
+        };
+        let root_dir = state_dir
+            .parent()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| state_dir.clone());
+        settings.paths.root = Some(root_dir);
+        settings
+    }
+
+    async fn apply_wsl_snapshot_if_present(
+        &self,
+        snapshot: Option<&WslProfileSnapshot>,
+    ) -> CogniaResult<Option<WslProfileApplyResult>> {
+        let Some(snapshot) = snapshot else {
+            return Ok(None);
+        };
+
+        #[cfg(target_os = "windows")]
+        {
+            let provider = WslProvider::new();
+            if !provider.detect_runtime_snapshot().await.available {
+                return Ok(Some(WslProfileApplyResult {
+                    applied: false,
+                    skipped: snapshot
+                        .distros
+                        .iter()
+                        .map(|distro| crate::provider::wsl::WslProfileApplySkipped {
+                            distro_name: distro.name.clone(),
+                            reason: "WSL is unavailable on this machine".to_string(),
+                            expected_version: Some(distro.version.clone()),
+                            installed_version: None,
+                        })
+                        .collect(),
+                }));
+            }
+
+            return provider.apply_snapshot(snapshot).await.map(Some);
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            Ok(Some(WslProfileApplyResult {
+                applied: false,
+                skipped: snapshot
+                    .distros
+                    .iter()
+                    .map(|distro| crate::provider::wsl::WslProfileApplySkipped {
+                        distro_name: distro.name.clone(),
+                        reason: "WSL snapshots are only supported on Windows".to_string(),
+                        expected_version: Some(distro.version.clone()),
+                        installed_version: None,
+                    })
+                    .collect(),
+            }))
+        }
     }
 
     /// Map environment type to default provider ID
@@ -389,6 +577,7 @@ mod tests {
         assert!(!profile.id.is_empty());
         assert!(profile.description.is_none());
         assert!(profile.environments.is_empty());
+        assert!(profile.wsl_snapshot.is_none());
         assert!(!profile.created_at.is_empty());
         assert_eq!(profile.created_at, profile.updated_at);
     }
@@ -397,6 +586,21 @@ mod tests {
     fn test_environment_profile_with_description() {
         let profile = EnvironmentProfile::new("Dev Profile").with_description("My dev environment");
         assert_eq!(profile.description, Some("My dev environment".to_string()));
+    }
+
+    #[test]
+    fn test_environment_profile_serde_defaults_missing_env_snapshot_to_none() {
+        let json = r#"{
+            "id": "profile-1",
+            "name": "Legacy Profile",
+            "description": null,
+            "environments": [],
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-01T00:00:00Z"
+        }"#;
+
+        let deser: EnvironmentProfile = serde_json::from_str(json).unwrap();
+        assert!(deser.env_snapshot.is_none());
     }
 
     #[test]
@@ -471,6 +675,10 @@ mod tests {
             version: "22.0.0".into(),
             provider_id: Some("volta".into()),
         });
+        profile.env_snapshot = Some(HashMap::from([
+            ("NODE_ENV".to_string(), "development".to_string()),
+            ("JAVA_HOME".to_string(), "/jdk".to_string()),
+        ]));
 
         let json = serde_json::to_string(&profile).unwrap();
         let deser: EnvironmentProfile = serde_json::from_str(&json).unwrap();
@@ -480,6 +688,44 @@ mod tests {
         assert_eq!(deser.environments.len(), 1);
         assert_eq!(deser.environments[0].env_type, "node");
         assert_eq!(deser.environments[0].provider_id, Some("volta".into()));
+        assert_eq!(
+            deser
+                .env_snapshot
+                .as_ref()
+                .and_then(|snapshot| snapshot.get("NODE_ENV")),
+            Some(&"development".to_string())
+        );
+    }
+
+    #[test]
+    fn test_environment_profile_serde_roundtrip_with_wsl_snapshot() {
+        let mut profile = EnvironmentProfile::new("WSL Profile");
+        profile.wsl_snapshot = Some(WslProfileSnapshot {
+            wslconfig_content: "[wsl2]\nmemory=8GB".to_string(),
+            distros: vec![
+                crate::provider::wsl::WslProfileSnapshotDistro {
+                    name: "Ubuntu".to_string(),
+                    version: "WSL 2".to_string(),
+                    is_default: true,
+                },
+                crate::provider::wsl::WslProfileSnapshotDistro {
+                    name: "Debian".to_string(),
+                    version: "WSL 2".to_string(),
+                    is_default: false,
+                },
+            ],
+            default_distro: Some("Ubuntu".to_string()),
+        });
+
+        let json = serde_json::to_string(&profile).unwrap();
+        let deser: EnvironmentProfile = serde_json::from_str(&json).unwrap();
+
+        let wsl_snapshot = deser.wsl_snapshot.expect("wsl snapshot");
+        assert_eq!(wsl_snapshot.wslconfig_content, "[wsl2]\nmemory=8GB");
+        assert_eq!(wsl_snapshot.default_distro.as_deref(), Some("Ubuntu"));
+        assert_eq!(wsl_snapshot.distros.len(), 2);
+        assert_eq!(wsl_snapshot.distros[0].name, "Ubuntu");
+        assert!(wsl_snapshot.distros[0].is_default);
     }
 
     #[test]
@@ -517,6 +763,7 @@ mod tests {
                 provider_id: Some("goenv".into()),
                 reason: "Provider not available".into(),
             }],
+            wsl_snapshot: None,
         };
 
         let json = serde_json::to_string(&result).unwrap();
@@ -613,6 +860,8 @@ mod tests {
             name: "Duplicate".into(),
             description: None,
             environments: vec![],
+            env_snapshot: None,
+            wsl_snapshot: None,
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
         };
@@ -776,5 +1025,134 @@ mod tests {
             assert!(loaded.is_some());
             assert_eq!(loaded.unwrap().name, "Persist Test");
         }
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn test_profile_manager_create_from_current_captures_env_snapshot_when_requested() {
+        let registry = Arc::new(RwLock::new(ProviderRegistry::new()));
+        let dir = tempfile::tempdir().unwrap();
+        let storage_path = dir.path().join("state").join("profiles");
+        let home_dir = dir.path().join("home");
+        let bashrc = home_dir.join(".bashrc");
+        std::fs::create_dir_all(bashrc.parent().unwrap()).unwrap();
+        std::fs::write(&bashrc, "").unwrap();
+        crate::platform::env::configure_env_test_fixture(
+            home_dir,
+            crate::platform::env::ShellType::Bash,
+            dir.path().join("etc-environment"),
+        );
+
+        crate::platform::env::set_persistent_var(
+            "COGNIA_PROFILE_CAPTURED",
+            "captured-value",
+            crate::platform::env::EnvVarScope::User,
+        )
+        .await
+        .unwrap();
+
+        let mut manager = ProfileManager::new(storage_path, registry);
+        let profile = manager
+            .create_from_current("Captured", false, true)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            profile
+                .env_snapshot
+                .as_ref()
+                .and_then(|snapshot| snapshot.get("COGNIA_PROFILE_CAPTURED")),
+            Some(&"captured-value".to_string())
+        );
+
+        crate::platform::env::remove_persistent_var(
+            "COGNIA_PROFILE_CAPTURED",
+            crate::platform::env::EnvVarScope::User,
+        )
+        .await
+        .unwrap();
+        crate::platform::env::reset_env_test_overrides();
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn test_profile_manager_apply_restores_env_snapshot_and_creates_recovery_snapshot() {
+        let registry = Arc::new(RwLock::new(ProviderRegistry::new()));
+        let dir = tempfile::tempdir().unwrap();
+        let storage_path = dir.path().join("state").join("profiles");
+        let home_dir = dir.path().join("home");
+        let bashrc = home_dir.join(".bashrc");
+        std::fs::create_dir_all(bashrc.parent().unwrap()).unwrap();
+        std::fs::write(&bashrc, "").unwrap();
+        crate::platform::env::configure_env_test_fixture(
+            home_dir,
+            crate::platform::env::ShellType::Bash,
+            dir.path().join("etc-environment"),
+        );
+
+        crate::platform::env::set_persistent_var(
+            "COGNIA_PROFILE_OLD",
+            "before",
+            crate::platform::env::EnvVarScope::User,
+        )
+        .await
+        .unwrap();
+        crate::platform::env::set_persistent_var(
+            "COGNIA_PROFILE_REMOVE",
+            "remove-me",
+            crate::platform::env::EnvVarScope::User,
+        )
+        .await
+        .unwrap();
+
+        let mut manager = ProfileManager::new(storage_path.clone(), registry);
+        let mut profile = EnvironmentProfile::new("Apply env snapshot");
+        profile.env_snapshot = Some(HashMap::from([
+            ("COGNIA_PROFILE_OLD".to_string(), "after".to_string()),
+            ("COGNIA_PROFILE_NEW".to_string(), "created".to_string()),
+        ]));
+
+        let created = manager.create(profile).await.unwrap();
+        manager.apply(&created.id).await.unwrap();
+
+        let updated = crate::platform::env::get_persistent_var(
+            "COGNIA_PROFILE_OLD",
+            crate::platform::env::EnvVarScope::User,
+        )
+        .await
+        .unwrap();
+        let created_value = crate::platform::env::get_persistent_var(
+            "COGNIA_PROFILE_NEW",
+            crate::platform::env::EnvVarScope::User,
+        )
+        .await
+        .unwrap();
+        let removed = crate::platform::env::get_persistent_var(
+            "COGNIA_PROFILE_REMOVE",
+            crate::platform::env::EnvVarScope::User,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(updated.as_deref(), Some("after"));
+        assert_eq!(created_value.as_deref(), Some("created"));
+        assert!(removed.is_none());
+
+        let snapshot_dir = dir.path().join("state").join("envvar-snapshots");
+        assert!(snapshot_dir.exists());
+
+        crate::platform::env::remove_persistent_var(
+            "COGNIA_PROFILE_OLD",
+            crate::platform::env::EnvVarScope::User,
+        )
+        .await
+        .unwrap();
+        crate::platform::env::remove_persistent_var(
+            "COGNIA_PROFILE_NEW",
+            crate::platform::env::EnvVarScope::User,
+        )
+        .await
+        .unwrap();
+        crate::platform::env::reset_env_test_overrides();
     }
 }

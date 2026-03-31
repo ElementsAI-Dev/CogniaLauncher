@@ -58,6 +58,7 @@ const SUBCOMMANDS: &[&str] = &[
     "envvar",
     "log",
     "download",
+    "wsl",
 ];
 
 const ENV_SUBCOMMANDS: &[&str] = &["list", "install", "use", "detect", "remove", "resolve"];
@@ -116,6 +117,7 @@ const DOWNLOAD_SUBCOMMANDS: &[&str] = &[
     "queue-resume",
     "queue-cancel",
 ];
+const WSL_SUBCOMMANDS: &[&str] = &["list", "status", "launch", "terminate", "shutdown", "exec"];
 #[cfg(test)]
 const CLI_P0_DOMAINS: &[&str] = &["backup", "profiles", "envvar", "log", "download"];
 
@@ -176,6 +178,7 @@ pub fn handle_cli(app: &tauri::AppHandle) -> Option<i32> {
             "envvar" => cmd_envvar(&ctx, &subcmd.matches, json_mode).await,
             "log" => cmd_log(&ctx, &subcmd.matches, json_mode).await,
             "download" => cmd_download(&ctx, &subcmd.matches, json_mode).await,
+            "wsl" => cmd_wsl(&ctx, &subcmd.matches, json_mode).await,
             other => usage_error(other, json_mode, format!("Unknown subcommand: {}", other)),
         }
     });
@@ -269,6 +272,31 @@ fn print_command_json<T: Serialize>(command: &str, data: &T) {
     }
 }
 
+fn doctor_status_from_issues(issues: &[crate::core::HealthIssue]) -> HealthStatus {
+    if issues.iter().any(|issue| {
+        matches!(
+            issue.severity,
+            crate::core::Severity::Critical | crate::core::Severity::Error
+        ) && issue.confidence != Some(crate::core::HealthEvidenceConfidence::Inferred)
+    }) {
+        HealthStatus::Error
+    } else if issues.iter().any(|issue| {
+        matches!(issue.severity, crate::core::Severity::Warning)
+            && issue.confidence != Some(crate::core::HealthEvidenceConfidence::Inferred)
+    }) {
+        HealthStatus::Warning
+    } else {
+        HealthStatus::Healthy
+    }
+}
+
+fn doctor_envvar_payload(issues: &[crate::core::HealthIssue]) -> serde_json::Value {
+    json!({
+        "status": doctor_status_from_issues(issues),
+        "issues": issues,
+    })
+}
+
 fn print_table(headers: &[&str], rows: &[Vec<String>]) {
     if rows.is_empty() {
         return;
@@ -308,6 +336,66 @@ fn print_table(headers: &[&str], rows: &[Vec<String>]) {
             .join("  ");
         println!("{}", line);
     }
+}
+
+fn format_wsl_default_flag(is_default: bool) -> String {
+    if is_default {
+        "yes".to_string()
+    } else {
+        "no".to_string()
+    }
+}
+
+fn wsl_list_rows(distros: &[crate::provider::wsl::WslDistroInfo]) -> Vec<Vec<String>> {
+    distros
+        .iter()
+        .map(|distro| {
+            vec![
+                distro.name.clone(),
+                distro.state.clone(),
+                distro.wsl_version.clone(),
+                format_wsl_default_flag(distro.is_default),
+            ]
+        })
+        .collect()
+}
+
+fn wsl_status_payload(
+    version: String,
+    version_info: Option<&crate::provider::wsl::WslVersionInfo>,
+    default_distribution: Option<String>,
+    default_version: Option<String>,
+    running_distros: Vec<String>,
+    status_info: String,
+) -> serde_json::Value {
+    json!({
+        "version": version,
+        "kernel_version": version_info.and_then(|info| info.kernel_version.clone()),
+        "wslg_version": version_info.and_then(|info| info.wslg_version.clone()),
+        "default_distribution": default_distribution,
+        "default_version": default_version,
+        "running_distros": running_distros,
+        "status_info": status_info,
+    })
+}
+
+fn wsl_exec_payload(
+    distro: String,
+    command: String,
+    user: Option<String>,
+    stdout: String,
+    stderr: String,
+    exit_code: i32,
+) -> serde_json::Value {
+    json!({
+        "distro": distro,
+        "command": command,
+        "user": user,
+        "stdout": stdout,
+        "stderr": stderr,
+        "exit_code": exit_code,
+        "success": exit_code == 0,
+    })
 }
 
 fn usage_error(command: &str, json_mode: bool, message: impl AsRef<str>) -> i32 {
@@ -2197,6 +2285,23 @@ async fn cmd_doctor(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_
     }
 
     if let Some(ref env_type) = type_filter {
+        if env_type.eq_ignore_ascii_case("envvar") {
+            match manager.check_envvar_health().await {
+                Ok(issues) => {
+                    let status = doctor_status_from_issues(&issues);
+                    let payload = doctor_envvar_payload(&issues);
+                    if json_mode {
+                        print_command_json(COMMAND, &payload);
+                    } else {
+                        print_envvar_health(&issues);
+                    }
+                    return doctor_exit_code(status);
+                }
+                Err(e) => {
+                    return runtime_error(COMMAND, json_mode, format!("Health check error: {}", e));
+                }
+            }
+        }
         match manager.check_environment(env_type).await {
             Ok(result) => {
                 if json_mode {
@@ -2221,6 +2326,29 @@ async fn cmd_doctor(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_
             Err(e) => runtime_error(COMMAND, json_mode, format!("Health check error: {}", e)),
         }
     }
+}
+
+fn format_envvar_health(issues: &[crate::core::HealthIssue]) -> String {
+    let mut lines = vec!["Environment Variables:".to_string()];
+    if issues.is_empty() {
+        lines.push("  No envvar diagnostics findings".to_string());
+        return lines.join("\n");
+    }
+
+    for issue in issues {
+        lines.push(format!("  - [{:?}] {}", issue.severity, issue.message));
+        if let Some(check_id) = &issue.check_id {
+            lines.push(format!("      check: {}", check_id));
+        }
+        if let Some(remediation_id) = &issue.remediation_id {
+            lines.push(format!("      remediation: {}", remediation_id));
+        }
+        if let Some(command) = &issue.fix_command {
+            lines.push(format!("      fix: {}", command));
+        }
+    }
+
+    lines.join("\n")
 }
 
 fn doctor_exit_code(status: HealthStatus) -> i32 {
@@ -2280,6 +2408,7 @@ fn print_package_manager_health(result: &PackageManagerHealthResult) {
 
 fn print_system_health(result: &SystemHealthResult) {
     let has_findings = !result.system_issues.is_empty()
+        || !result.envvar_issues.is_empty()
         || result.environments.iter().any(|env| !env.issues.is_empty())
         || result
             .package_managers
@@ -2292,6 +2421,11 @@ fn print_system_health(result: &SystemHealthResult) {
     }
 
     println!("Health diagnostics complete:\n");
+
+    if !result.envvar_issues.is_empty() {
+        print_envvar_health(&result.envvar_issues);
+        println!();
+    }
 
     if !result.system_issues.is_empty() {
         println!("System:");
@@ -2326,6 +2460,10 @@ fn print_system_health(result: &SystemHealthResult) {
             print_package_manager_health(provider);
         }
     }
+}
+
+fn print_envvar_health(issues: &[crate::core::HealthIssue]) {
+    println!("{}", format_envvar_health(issues));
 }
 
 // ── Subcommand: providers ────────────────────────────────────────
@@ -2461,10 +2599,7 @@ async fn cmd_backup(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_
                 if !result.issues.is_empty() {
                     for item in &result.issues {
                         if let Some(content_type) = &item.content_type {
-                            eprintln!(
-                                "Issue [{}] ({}): {}",
-                                item.code, content_type, item.message
-                            );
+                            eprintln!("Issue [{}] ({}): {}", item.code, content_type, item.message);
                         } else {
                             eprintln!("Issue [{}]: {}", item.code, item.message);
                         }
@@ -2524,10 +2659,7 @@ async fn cmd_backup(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_
                 if !result.issues.is_empty() {
                     for item in &result.issues {
                         if let Some(content_type) = &item.content_type {
-                            eprintln!(
-                                "Issue [{}] ({}): {}",
-                                item.code, content_type, item.message
-                            );
+                            eprintln!("Issue [{}] ({}): {}", item.code, content_type, item.message);
                         } else {
                             eprintln!("Issue [{}]: {}", item.code, item.message);
                         }
@@ -2778,7 +2910,7 @@ async fn cmd_profiles(
                 Ok(mgr) => mgr,
                 Err(msg) => return runtime_error(command, json_mode, msg),
             };
-            match manager.create_from_current(&name).await {
+            match manager.create_from_current(&name, false, false).await {
                 Ok(profile) => {
                     if json_mode {
                         print_command_json(command, &profile);
@@ -2807,11 +2939,7 @@ async fn cmd_profiles(
 
 // ── Subcommand: envvar ──────────────────────────────────────────
 
-async fn cmd_envvar(
-    ctx: &CliContext,
-    matches: &tauri_plugin_cli::Matches,
-    json_mode: bool,
-) -> i32 {
+async fn cmd_envvar(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_mode: bool) -> i32 {
     const COMMAND: &str = "envvar";
     let subcmd = match matches.subcommand.as_ref() {
         Some(s) => s,
@@ -2904,17 +3032,17 @@ async fn cmd_envvar(
                 Err(msg) => return usage_error(command, json_mode, msg),
             };
             let set_result = match scope {
-                EnvVarScope::Process => crate::commands::envvar::envvar_set_process(
-                    key.clone(),
-                    value.clone(),
-                )
-                .await,
-                _ => crate::commands::envvar::envvar_set_persistent(
-                    key.clone(),
-                    value.clone(),
-                    scope,
-                )
-                .await,
+                EnvVarScope::Process => {
+                    crate::commands::envvar::envvar_set_process(key.clone(), value.clone()).await
+                }
+                _ => {
+                    crate::commands::envvar::envvar_set_persistent(
+                        key.clone(),
+                        value.clone(),
+                        scope,
+                    )
+                    .await
+                }
             };
             match set_result {
                 Ok(result) => {
@@ -2935,10 +3063,16 @@ async fn cmd_envvar(
                             "Set {} ({}) blocked: {}",
                             key,
                             scope_to_string(scope),
-                            result.message.unwrap_or_else(|| "unknown error".to_string())
+                            result
+                                .message
+                                .unwrap_or_else(|| "unknown error".to_string())
                         );
                     }
-                    if result.success { EXIT_OK } else { EXIT_ERROR }
+                    if result.success {
+                        EXIT_OK
+                    } else {
+                        EXIT_ERROR
+                    }
                 }
                 Err(e) => runtime_error(command, json_mode, format!("Set env var error: {}", e)),
             }
@@ -2959,7 +3093,9 @@ async fn cmd_envvar(
                 Err(msg) => return usage_error(command, json_mode, msg),
             };
             let remove_result = match scope {
-                EnvVarScope::Process => crate::commands::envvar::envvar_remove_process(key.clone()).await,
+                EnvVarScope::Process => {
+                    crate::commands::envvar::envvar_remove_process(key.clone()).await
+                }
                 _ => crate::commands::envvar::envvar_remove_persistent(key.clone(), scope).await,
             };
             match remove_result {
@@ -2981,10 +3117,16 @@ async fn cmd_envvar(
                             "Remove {} ({}) blocked: {}",
                             key,
                             scope_to_string(scope),
-                            result.message.unwrap_or_else(|| "unknown error".to_string())
+                            result
+                                .message
+                                .unwrap_or_else(|| "unknown error".to_string())
                         );
                     }
-                    if result.success { EXIT_OK } else { EXIT_ERROR }
+                    if result.success {
+                        EXIT_OK
+                    } else {
+                        EXIT_ERROR
+                    }
                 }
                 Err(e) => runtime_error(command, json_mode, format!("Remove env var error: {}", e)),
             }
@@ -3118,21 +3260,34 @@ async fn cmd_envvar(
                     Ok(value) => value,
                     Err(msg) => return usage_error(command, json_mode, msg),
                 };
-            match crate::commands::envvar::envvar_set_persistent(key.clone(), value.clone(), scope).await {
+            match crate::commands::envvar::envvar_set_persistent(key.clone(), value.clone(), scope)
+                .await
+            {
                 Ok(result) => {
                     if json_mode {
                         print_command_json(command, &result);
                     } else if result.success {
-                        println!("Set persistent {} ({}) [{}]", key, scope_to_string(scope), result.status);
+                        println!(
+                            "Set persistent {} ({}) [{}]",
+                            key,
+                            scope_to_string(scope),
+                            result.status
+                        );
                     } else {
                         eprintln!(
                             "Set persistent {} ({}) blocked: {}",
                             key,
                             scope_to_string(scope),
-                            result.message.unwrap_or_else(|| "unknown error".to_string())
+                            result
+                                .message
+                                .unwrap_or_else(|| "unknown error".to_string())
                         );
                     }
-                    if result.success { EXIT_OK } else { EXIT_ERROR }
+                    if result.success {
+                        EXIT_OK
+                    } else {
+                        EXIT_ERROR
+                    }
                 }
                 Err(e) => runtime_error(
                     command,
@@ -3171,10 +3326,16 @@ async fn cmd_envvar(
                             "Remove persistent {} ({}) blocked: {}",
                             key,
                             scope_to_string(scope),
-                            result.message.unwrap_or_else(|| "unknown error".to_string())
+                            result
+                                .message
+                                .unwrap_or_else(|| "unknown error".to_string())
                         );
                     }
-                    if result.success { EXIT_OK } else { EXIT_ERROR }
+                    if result.success {
+                        EXIT_OK
+                    } else {
+                        EXIT_ERROR
+                    }
                 }
                 Err(e) => runtime_error(
                     command,
@@ -3239,20 +3400,32 @@ async fn cmd_envvar(
                 Err(msg) => return usage_error(command, json_mode, msg),
             };
 
-            match crate::commands::envvar::envvar_add_path_entry(path.clone(), scope, position).await {
+            match crate::commands::envvar::envvar_add_path_entry(path.clone(), scope, position)
+                .await
+            {
                 Ok(result) => {
                     if json_mode {
                         print_command_json(command, &result);
                     } else if result.success {
-                        println!("Added PATH entry ({}) [{}]", scope_to_string(scope), result.status);
+                        println!(
+                            "Added PATH entry ({}) [{}]",
+                            scope_to_string(scope),
+                            result.status
+                        );
                     } else {
                         eprintln!(
                             "Add PATH entry blocked ({}) : {}",
                             scope_to_string(scope),
-                            result.message.unwrap_or_else(|| "unknown error".to_string())
+                            result
+                                .message
+                                .unwrap_or_else(|| "unknown error".to_string())
                         );
                     }
-                    if result.success { EXIT_OK } else { EXIT_ERROR }
+                    if result.success {
+                        EXIT_OK
+                    } else {
+                        EXIT_ERROR
+                    }
                 }
                 Err(e) => runtime_error(command, json_mode, format!("Add PATH error: {}", e)),
             }
@@ -3275,15 +3448,25 @@ async fn cmd_envvar(
                     if json_mode {
                         print_command_json(command, &result);
                     } else if result.success {
-                        println!("Removed PATH entry ({}) [{}]", scope_to_string(scope), result.status);
+                        println!(
+                            "Removed PATH entry ({}) [{}]",
+                            scope_to_string(scope),
+                            result.status
+                        );
                     } else {
                         eprintln!(
                             "Remove PATH entry blocked ({}) : {}",
                             scope_to_string(scope),
-                            result.message.unwrap_or_else(|| "unknown error".to_string())
+                            result
+                                .message
+                                .unwrap_or_else(|| "unknown error".to_string())
                         );
                     }
-                    if result.success { EXIT_OK } else { EXIT_ERROR }
+                    if result.success {
+                        EXIT_OK
+                    } else {
+                        EXIT_ERROR
+                    }
                 }
                 Err(e) => runtime_error(command, json_mode, format!("Remove PATH error: {}", e)),
             }
@@ -3316,10 +3499,16 @@ async fn cmd_envvar(
                         eprintln!(
                             "Reorder PATH blocked ({}) : {}",
                             scope_to_string(scope),
-                            result.message.unwrap_or_else(|| "unknown error".to_string())
+                            result
+                                .message
+                                .unwrap_or_else(|| "unknown error".to_string())
                         );
                     }
-                    if result.success { EXIT_OK } else { EXIT_ERROR }
+                    if result.success {
+                        EXIT_OK
+                    } else {
+                        EXIT_ERROR
+                    }
                 }
                 Err(e) => runtime_error(command, json_mode, format!("Reorder PATH error: {}", e)),
             }
@@ -3345,7 +3534,11 @@ async fn cmd_envvar(
                             result.status
                         );
                     }
-                    if result.success { EXIT_OK } else { EXIT_ERROR }
+                    if result.success {
+                        EXIT_OK
+                    } else {
+                        EXIT_ERROR
+                    }
                 }
                 Err(e) => {
                     runtime_error(command, json_mode, format!("Deduplicate PATH error: {}", e))
@@ -3562,9 +3755,7 @@ async fn cmd_envvar(
                     } else {
                         println!(
                             "Imported {} variable(s), skipped {} [{}]",
-                            result.imported,
-                            result.skipped,
-                            result.status
+                            result.imported, result.skipped, result.status
                         );
                         for err in &result.errors {
                             eprintln!("Failed: {}", err);
@@ -3573,9 +3764,15 @@ async fn cmd_envvar(
                             println!("{}", message);
                         }
                     }
-                    if result.success { EXIT_OK } else { EXIT_ERROR }
+                    if result.success {
+                        EXIT_OK
+                    } else {
+                        EXIT_ERROR
+                    }
                 }
-                Err(e) => runtime_error(command, json_mode, format!("Import env vars error: {}", e)),
+                Err(e) => {
+                    runtime_error(command, json_mode, format!("Import env vars error: {}", e))
+                }
             }
         }
         "preview-import" => {
@@ -3636,22 +3833,26 @@ async fn cmd_envvar(
                 Err(msg) => return runtime_error(command, json_mode, msg),
             };
 
-            match crate::commands::envvar::envvar_apply_import_preview(content, scope, fingerprint).await {
+            match crate::commands::envvar::envvar_apply_import_preview(content, scope, fingerprint)
+                .await
+            {
                 Ok(result) => {
                     if json_mode {
                         print_command_json(command, &result);
                     } else {
                         println!(
                             "Imported {} variable(s), skipped {} [{}]",
-                            result.imported,
-                            result.skipped,
-                            result.status
+                            result.imported, result.skipped, result.status
                         );
                         if let Some(message) = &result.message {
                             println!("{}", message);
                         }
                     }
-                    if result.success { EXIT_OK } else { EXIT_ERROR }
+                    if result.success {
+                        EXIT_OK
+                    } else {
+                        EXIT_ERROR
+                    }
                 }
                 Err(e) => runtime_error(command, json_mode, format!("Apply import error: {}", e)),
             }
@@ -3679,7 +3880,11 @@ async fn cmd_envvar(
                     }
                     EXIT_OK
                 }
-                Err(e) => runtime_error(command, json_mode, format!("Preview PATH repair error: {}", e)),
+                Err(e) => runtime_error(
+                    command,
+                    json_mode,
+                    format!("Preview PATH repair error: {}", e),
+                ),
             }
         }
         "apply-path-repair" => {
@@ -3702,24 +3907,33 @@ async fn cmd_envvar(
                         print_command_json(command, &result);
                     } else {
                         println!(
-                            "Removed {} PATH entrie(s) [{}]",
-                            result.removed_count,
-                            result.status
+                            "Applied {}: removed {} PATH entrie(s) [{}]",
+                            result.operation, result.removed_count, result.status
                         );
                         if let Some(message) = &result.message {
                             println!("{}", message);
                         }
                     }
-                    if result.success { EXIT_OK } else { EXIT_ERROR }
+                    if result.success {
+                        EXIT_OK
+                    } else {
+                        EXIT_ERROR
+                    }
                 }
-                Err(e) => runtime_error(command, json_mode, format!("Apply PATH repair error: {}", e)),
+                Err(e) => runtime_error(
+                    command,
+                    json_mode,
+                    format!("Apply PATH repair error: {}", e),
+                ),
             }
         }
         "resolve-conflict" => {
             let command = "envvar.resolve-conflict";
             let key = match get_string(&subcmd.matches.args, "key") {
                 Some(value) => value,
-                None => return usage_error(command, json_mode, "environment variable key is required"),
+                None => {
+                    return usage_error(command, json_mode, "environment variable key is required")
+                }
             };
             let source_scope = match parse_env_scope(
                 get_string(&subcmd.matches.args, "source-scope"),
@@ -3736,13 +3950,15 @@ async fn cmd_envvar(
                 Err(msg) => return usage_error(command, json_mode, msg),
             };
 
-            match crate::commands::envvar::envvar_resolve_conflict(key, source_scope, target_scope).await {
+            match crate::commands::envvar::envvar_resolve_conflict(key, source_scope, target_scope)
+                .await
+            {
                 Ok(result) => {
                     if json_mode {
                         print_command_json(command, &result);
                     } else if result.success {
                         println!(
-                            "Resolved conflict to {} using {} scope value [{}]",
+                            "Applied conflict_resolve to {} using {} scope value [{}]",
                             scope_to_string(result.target_scope),
                             scope_to_string(result.source_scope),
                             result.status
@@ -3753,12 +3969,20 @@ async fn cmd_envvar(
                     } else {
                         eprintln!(
                             "Resolve conflict blocked: {}",
-                            result.message.unwrap_or_else(|| "unknown error".to_string())
+                            result
+                                .message
+                                .unwrap_or_else(|| "unknown error".to_string())
                         );
                     }
-                    if result.success { EXIT_OK } else { EXIT_ERROR }
+                    if result.success {
+                        EXIT_OK
+                    } else {
+                        EXIT_ERROR
+                    }
                 }
-                Err(e) => runtime_error(command, json_mode, format!("Resolve conflict error: {}", e)),
+                Err(e) => {
+                    runtime_error(command, json_mode, format!("Resolve conflict error: {}", e))
+                }
             }
         }
         "shell-guidance" => {
@@ -3768,7 +3992,11 @@ async fn cmd_envvar(
             let entries = get_string_list(&subcmd.matches.args, "entries");
             let auto_applied_shell = get_string(&subcmd.matches.args, "auto-applied-shell");
 
-            let path_entries = if entries.is_empty() { None } else { Some(entries) };
+            let path_entries = if entries.is_empty() {
+                None
+            } else {
+                Some(entries)
+            };
 
             match crate::commands::envvar::envvar_generate_shell_guidance(
                 key,
@@ -3789,7 +4017,11 @@ async fn cmd_envvar(
                                 vec![
                                     entry.shell.clone(),
                                     entry.config_path.clone(),
-                                    if entry.auto_applied { "yes".into() } else { "no".into() },
+                                    if entry.auto_applied {
+                                        "yes".into()
+                                    } else {
+                                        "no".into()
+                                    },
                                 ]
                             })
                             .collect();
@@ -3815,11 +4047,14 @@ async fn cmd_envvar(
                                 vec![
                                     item.name.clone(),
                                     item.creation_mode.as_str().to_string(),
-                                    item
-                                        .source_action
+                                    item.source_action
                                         .clone()
                                         .unwrap_or_else(|| "-".to_string()),
-                                    item.scopes.iter().map(|scope| scope_to_string(*scope)).collect::<Vec<_>>().join(","),
+                                    item.scopes
+                                        .iter()
+                                        .map(|scope| scope_to_string(*scope))
+                                        .collect::<Vec<_>>()
+                                        .join(","),
                                     item.integrity_state.clone(),
                                 ]
                             })
@@ -3853,10 +4088,17 @@ async fn cmd_envvar(
             let source_action = get_string(&subcmd.matches.args, "source-action");
             let note = get_string(&subcmd.matches.args, "note");
 
-            let payload = match crate::commands::envvar::capture_envvar_snapshot_payload(&scopes).await {
-                Ok(value) => value,
-                Err(e) => return runtime_error(command, json_mode, format!("Snapshot capture error: {}", e)),
-            };
+            let payload =
+                match crate::commands::envvar::capture_envvar_snapshot_payload(&scopes).await {
+                    Ok(value) => value,
+                    Err(e) => {
+                        return runtime_error(
+                            command,
+                            json_mode,
+                            format!("Snapshot capture error: {}", e),
+                        )
+                    }
+                };
             match crate::commands::envvar::write_envvar_snapshot_bundle(
                 &ctx.settings,
                 &payload,
@@ -3875,7 +4117,9 @@ async fn cmd_envvar(
                     }
                     EXIT_OK
                 }
-                Err(e) => runtime_error(command, json_mode, format!("Snapshot create error: {}", e)),
+                Err(e) => {
+                    runtime_error(command, json_mode, format!("Snapshot create error: {}", e))
+                }
             }
         }
         "snapshot-protection" => {
@@ -3884,10 +4128,12 @@ async fn cmd_envvar(
                 Some(value) => value,
                 None => return usage_error(command, json_mode, "action is required"),
             };
-            let scope = match parse_env_scope(get_string(&subcmd.matches.args, "scope"), EnvVarScope::User) {
-                Ok(value) => value,
-                Err(msg) => return usage_error(command, json_mode, msg),
-            };
+            let scope =
+                match parse_env_scope(get_string(&subcmd.matches.args, "scope"), EnvVarScope::User)
+                {
+                    Ok(value) => value,
+                    Err(msg) => return usage_error(command, json_mode, msg),
+                };
             match crate::commands::envvar::get_envvar_backup_protection_for_settings(
                 &ctx.settings,
                 &action,
@@ -3899,7 +4145,10 @@ async fn cmd_envvar(
                     if json_mode {
                         print_command_json(command, &state);
                     } else {
-                        println!("Protection state: {} [{}]", state.state, state.reason_code);
+                        println!(
+                            "Protection state for {}: {} [{}]",
+                            state.action, state.state, state.reason_code
+                        );
                         println!("{}", state.reason);
                     }
                     if matches!(state.state.as_str(), "will_create" | "will_reuse") {
@@ -3908,7 +4157,11 @@ async fn cmd_envvar(
                         EXIT_ERROR
                     }
                 }
-                Err(e) => runtime_error(command, json_mode, format!("Snapshot protection error: {}", e)),
+                Err(e) => runtime_error(
+                    command,
+                    json_mode,
+                    format!("Snapshot protection error: {}", e),
+                ),
             }
         }
         "snapshot-preview" => {
@@ -3925,12 +4178,19 @@ async fn cmd_envvar(
                     Err(msg) => return usage_error(command, json_mode, msg),
                 }
             }
-            match crate::commands::envvar::preview_envvar_snapshot_for_settings(&ctx.settings, &path, &scopes).await {
+            match crate::commands::envvar::preview_envvar_snapshot_for_settings(
+                &ctx.settings,
+                &path,
+                &scopes,
+            )
+            .await
+            {
                 Ok(preview) => {
                     if json_mode {
                         print_command_json(command, &preview);
                     } else {
                         println!("Snapshot preview for {}", preview.created_at);
+                        println!("Fingerprint: {}", preview.fingerprint);
                         let rows: Vec<Vec<String>> = preview
                             .segments
                             .iter()
@@ -3940,7 +4200,11 @@ async fn cmd_envvar(
                                     segment.added_variables.to_string(),
                                     segment.changed_variables.to_string(),
                                     segment.removed_variables.to_string(),
-                                    if segment.skipped { "yes".into() } else { "no".into() },
+                                    if segment.skipped {
+                                        "yes".into()
+                                    } else {
+                                        "no".into()
+                                    },
                                 ]
                             })
                             .collect();
@@ -3948,7 +4212,9 @@ async fn cmd_envvar(
                     }
                     EXIT_OK
                 }
-                Err(e) => runtime_error(command, json_mode, format!("Snapshot preview error: {}", e)),
+                Err(e) => {
+                    runtime_error(command, json_mode, format!("Snapshot preview error: {}", e))
+                }
             }
         }
         "snapshot-restore" => {
@@ -3956,6 +4222,12 @@ async fn cmd_envvar(
             let path = match get_string(&subcmd.matches.args, "path") {
                 Some(value) => value,
                 None => return usage_error(command, json_mode, "snapshot path is required"),
+            };
+            let fingerprint = match get_string(&subcmd.matches.args, "fingerprint") {
+                Some(value) => value,
+                None => {
+                    return usage_error(command, json_mode, "preview fingerprint is required")
+                }
             };
             let scope_values = get_string_list(&subcmd.matches.args, "scopes");
             let mut scopes = Vec::new();
@@ -3965,23 +4237,41 @@ async fn cmd_envvar(
                     Err(msg) => return usage_error(command, json_mode, msg),
                 }
             }
-            match crate::commands::envvar::restore_envvar_snapshot_for_settings(&ctx.settings, &path, &scopes).await {
+            match crate::commands::envvar::restore_envvar_snapshot_for_settings(
+                &ctx.settings,
+                &path,
+                &scopes,
+                Some(&fingerprint),
+            )
+            .await
+            {
                 Ok(result) => {
                     if json_mode {
                         print_command_json(command, &result);
                     } else {
                         println!(
                             "Restored scopes: {} [{}]",
-                            result.restored_scopes.iter().map(|scope| scope_to_string(*scope)).collect::<Vec<_>>().join(","),
+                            result
+                                .restored_scopes
+                                .iter()
+                                .map(|scope| scope_to_string(*scope))
+                                .collect::<Vec<_>>()
+                                .join(","),
                             result.status
                         );
                         if let Some(message) = &result.message {
                             println!("{}", message);
                         }
                     }
-                    if result.success { EXIT_OK } else { EXIT_ERROR }
+                    if result.success {
+                        EXIT_OK
+                    } else {
+                        EXIT_ERROR
+                    }
                 }
-                Err(e) => runtime_error(command, json_mode, format!("Snapshot restore error: {}", e)),
+                Err(e) => {
+                    runtime_error(command, json_mode, format!("Snapshot restore error: {}", e))
+                }
             }
         }
         "snapshot-delete" => {
@@ -3990,7 +4280,8 @@ async fn cmd_envvar(
                 Some(value) => value,
                 None => return usage_error(command, json_mode, "snapshot path is required"),
             };
-            let result = crate::core::backup::delete_backup_with_result(std::path::Path::new(&path)).await;
+            let result =
+                crate::core::backup::delete_backup_with_result(std::path::Path::new(&path)).await;
             if json_mode {
                 print_command_json(command, &result);
             } else if result.success {
@@ -4001,7 +4292,11 @@ async fn cmd_envvar(
                     result.error.unwrap_or_else(|| "unknown error".to_string())
                 );
             }
-            if result.success { EXIT_OK } else { EXIT_ERROR }
+            if result.success {
+                EXIT_OK
+            } else {
+                EXIT_ERROR
+            }
         }
         other => usage_error(
             COMMAND,
@@ -4420,6 +4715,254 @@ async fn cmd_download(
     }
 }
 
+// ── Subcommand: wsl ─────────────────────────────────────────────
+
+async fn cmd_wsl(_ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_mode: bool) -> i32 {
+    const COMMAND: &str = "wsl";
+    let subcmd = match matches.subcommand.as_ref() {
+        Some(s) => s,
+        None => {
+            return usage_error(
+                COMMAND,
+                json_mode,
+                format!("wsl subcommand required ({})", WSL_SUBCOMMANDS.join(", ")),
+            );
+        }
+    };
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        return runtime_error(
+            &format!("wsl.{}", subcmd.name),
+            json_mode,
+            "WSL only available on Windows",
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let provider = crate::provider::wsl::WslProvider::new();
+
+        match subcmd.name.as_str() {
+            "list" => {
+                let command = "wsl.list";
+                match provider.run_wsl_lenient(&["--list", "--verbose"]).await {
+                    Ok(output) => {
+                        let distros =
+                            crate::provider::wsl::WslProvider::parse_list_verbose(&output);
+                        if json_mode {
+                            let payload: Vec<serde_json::Value> = distros
+                                .iter()
+                                .map(|distro| {
+                                    json!({
+                                        "name": distro.name,
+                                        "state": distro.state,
+                                        "wsl_version": distro.wsl_version,
+                                        "is_default": distro.is_default,
+                                    })
+                                })
+                                .collect();
+                            print_command_json(command, &payload);
+                        } else if distros.is_empty() {
+                            println!("No WSL distributions found");
+                        } else {
+                            let rows = wsl_list_rows(&distros);
+                            print_table(&["NAME", "STATE", "VERSION", "DEFAULT"], &rows);
+                        }
+                        EXIT_OK
+                    }
+                    Err(err) => {
+                        runtime_error(command, json_mode, format!("WSL list error: {}", err))
+                    }
+                }
+            }
+            "status" => {
+                let command = "wsl.status";
+                let version = provider
+                    .get_wsl_version_string()
+                    .await
+                    .unwrap_or_else(|_| "Unknown".to_string());
+                let version_info = provider.get_full_version_info().await.ok();
+                let status_output = provider
+                    .get_wsl_status()
+                    .await
+                    .unwrap_or_else(|_| "WSL status unavailable".to_string());
+                let running = provider.list_running().await.unwrap_or_default();
+                let (default_distro, default_version) =
+                    crate::provider::wsl::WslProvider::parse_status_output(&status_output);
+
+                let payload = wsl_status_payload(
+                    version,
+                    version_info.as_ref(),
+                    default_distro,
+                    default_version,
+                    running,
+                    status_output,
+                );
+
+                if json_mode {
+                    print_command_json(command, &payload);
+                } else {
+                    println!(
+                        "WSL Version: {}",
+                        payload["version"].as_str().unwrap_or("Unknown")
+                    );
+                    if let Some(kernel_version) = payload["kernel_version"].as_str() {
+                        println!("Kernel Version: {}", kernel_version);
+                    }
+                    if let Some(default_distribution) = payload["default_distribution"].as_str() {
+                        println!("Default Distribution: {}", default_distribution);
+                    }
+                    if let Some(default_version) = payload["default_version"].as_str() {
+                        println!("Default WSL Version: {}", default_version);
+                    }
+                    let running_distros = payload["running_distros"]
+                        .as_array()
+                        .map(|items| {
+                            items
+                                .iter()
+                                .filter_map(|item| item.as_str())
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        })
+                        .unwrap_or_default();
+                    println!(
+                        "Running Distros: {}",
+                        if running_distros.is_empty() {
+                            "none".to_string()
+                        } else {
+                            running_distros
+                        }
+                    );
+                }
+                EXIT_OK
+            }
+            "launch" => {
+                let command = "wsl.launch";
+                let distro = match get_string(&subcmd.matches.args, "distro") {
+                    Some(value) => value,
+                    None => return usage_error(command, json_mode, "distro name is required"),
+                };
+                let user = get_string(&subcmd.matches.args, "user");
+                match provider.launch_distro(&distro, user.as_deref()).await {
+                    Ok(()) => {
+                        if json_mode {
+                            print_command_json(
+                                command,
+                                &json!({
+                                    "distro": distro,
+                                    "user": user,
+                                    "status": "launched",
+                                }),
+                            );
+                        } else {
+                            println!("Launched WSL distribution: {}", distro);
+                        }
+                        EXIT_OK
+                    }
+                    Err(err) => {
+                        runtime_error(command, json_mode, format!("WSL launch error: {}", err))
+                    }
+                }
+            }
+            "terminate" => {
+                let command = "wsl.terminate";
+                let distro = match get_string(&subcmd.matches.args, "distro") {
+                    Some(value) => value,
+                    None => return usage_error(command, json_mode, "distro name is required"),
+                };
+                match provider.terminate_distro(&distro).await {
+                    Ok(()) => {
+                        if json_mode {
+                            print_command_json(
+                                command,
+                                &json!({
+                                    "distro": distro,
+                                    "status": "terminated",
+                                }),
+                            );
+                        } else {
+                            println!("Terminated WSL distribution: {}", distro);
+                        }
+                        EXIT_OK
+                    }
+                    Err(err) => {
+                        runtime_error(command, json_mode, format!("WSL terminate error: {}", err))
+                    }
+                }
+            }
+            "shutdown" => {
+                let command = "wsl.shutdown";
+                match provider.shutdown_all().await {
+                    Ok(()) => {
+                        if json_mode {
+                            print_command_json(command, &json!({ "status": "shutdown" }));
+                        } else {
+                            println!("Shut down all WSL distributions");
+                        }
+                        EXIT_OK
+                    }
+                    Err(err) => {
+                        runtime_error(command, json_mode, format!("WSL shutdown error: {}", err))
+                    }
+                }
+            }
+            "exec" => {
+                let command = "wsl.exec";
+                let distro = match get_string(&subcmd.matches.args, "distro") {
+                    Some(value) => value,
+                    None => return usage_error(command, json_mode, "distro name is required"),
+                };
+                let shell_command = match get_string(&subcmd.matches.args, "command") {
+                    Some(value) => value,
+                    None => return usage_error(command, json_mode, "command is required"),
+                };
+                let user = get_string(&subcmd.matches.args, "user");
+                match provider
+                    .exec_command(&distro, &shell_command, user.as_deref())
+                    .await
+                {
+                    Ok((stdout, stderr, exit_code)) => {
+                        let success = exit_code == 0;
+                        let payload = wsl_exec_payload(
+                            distro,
+                            shell_command,
+                            user,
+                            stdout,
+                            stderr,
+                            exit_code,
+                        );
+                        if json_mode {
+                            print_command_json(command, &payload);
+                        } else {
+                            if !payload["stdout"].as_str().unwrap_or_default().is_empty() {
+                                println!("{}", payload["stdout"].as_str().unwrap_or_default());
+                            }
+                            if !payload["stderr"].as_str().unwrap_or_default().is_empty() {
+                                eprintln!("{}", payload["stderr"].as_str().unwrap_or_default());
+                            }
+                            println!("Exit Code: {}", exit_code);
+                        }
+                        if success {
+                            EXIT_OK
+                        } else {
+                            EXIT_ERROR
+                        }
+                    }
+                    Err(err) => {
+                        runtime_error(command, json_mode, format!("WSL exec error: {}", err))
+                    }
+                }
+            }
+            other => usage_error(
+                COMMAND,
+                json_mode,
+                format!("Unknown wsl subcommand: {}", other),
+            ),
+        }
+    }
+}
+
 // ── Tests ────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -4463,6 +5006,7 @@ mod tests {
             "envvar",
             "log",
             "download",
+            "wsl",
         ];
         for cmd in &expected {
             assert!(SUBCOMMANDS.contains(cmd), "Missing subcommand: {}", cmd);
@@ -4471,7 +5015,92 @@ mod tests {
 
     #[test]
     fn test_subcommands_count() {
-        assert_eq!(SUBCOMMANDS.len(), 16);
+        assert_eq!(SUBCOMMANDS.len(), 17);
+    }
+
+    #[test]
+    fn test_wsl_list_rows_formats_default_flag() {
+        let rows = wsl_list_rows(&[
+            crate::provider::wsl::WslDistroInfo {
+                name: "Ubuntu".to_string(),
+                state: "Running".to_string(),
+                wsl_version: "2".to_string(),
+                is_default: true,
+            },
+            crate::provider::wsl::WslDistroInfo {
+                name: "Debian".to_string(),
+                state: "Stopped".to_string(),
+                wsl_version: "1".to_string(),
+                is_default: false,
+            },
+        ]);
+
+        assert_eq!(
+            rows,
+            vec![
+                vec![
+                    "Ubuntu".to_string(),
+                    "Running".to_string(),
+                    "2".to_string(),
+                    "yes".to_string(),
+                ],
+                vec![
+                    "Debian".to_string(),
+                    "Stopped".to_string(),
+                    "1".to_string(),
+                    "no".to_string(),
+                ],
+            ]
+        );
+    }
+
+    #[test]
+    fn test_wsl_status_payload_includes_runtime_summary_fields() {
+        let payload = wsl_status_payload(
+            "2.4.0".to_string(),
+            Some(&crate::provider::wsl::WslVersionInfo {
+                kernel_version: Some("6.6.87.2-1".to_string()),
+                wslg_version: Some("1.0.66".to_string()),
+                ..Default::default()
+            }),
+            Some("Ubuntu".to_string()),
+            Some("2".to_string()),
+            vec!["Ubuntu".to_string()],
+            "Ready".to_string(),
+        );
+
+        assert_eq!(payload["version"], json!("2.4.0"));
+        assert_eq!(payload["kernel_version"], json!("6.6.87.2-1"));
+        assert_eq!(payload["wslg_version"], json!("1.0.66"));
+        assert_eq!(payload["default_distribution"], json!("Ubuntu"));
+        assert_eq!(payload["default_version"], json!("2"));
+        assert_eq!(payload["running_distros"], json!(["Ubuntu"]));
+        assert_eq!(payload["status_info"], json!("Ready"));
+    }
+
+    #[test]
+    fn test_wsl_exec_payload_reports_success_from_exit_code() {
+        let success_payload = wsl_exec_payload(
+            "Ubuntu".to_string(),
+            "echo ok".to_string(),
+            Some("root".to_string()),
+            "ok".to_string(),
+            String::new(),
+            0,
+        );
+        let failed_payload = wsl_exec_payload(
+            "Ubuntu".to_string(),
+            "false".to_string(),
+            None,
+            String::new(),
+            "boom".to_string(),
+            1,
+        );
+
+        assert_eq!(success_payload["success"], json!(true));
+        assert_eq!(success_payload["user"], json!("root"));
+        assert_eq!(failed_payload["success"], json!(false));
+        assert_eq!(failed_payload["stderr"], json!("boom"));
     }
 
     #[test]
@@ -4594,6 +5223,15 @@ mod tests {
             assert!(
                 DOWNLOAD_SUBCOMMANDS.contains(cmd),
                 "Missing download subcommand: {}",
+                cmd
+            );
+        }
+
+        let wsl_expected = ["list", "status", "launch", "terminate", "shutdown", "exec"];
+        for cmd in &wsl_expected {
+            assert!(
+                WSL_SUBCOMMANDS.contains(cmd),
+                "Missing wsl subcommand: {}",
                 cmd
             );
         }
@@ -4730,6 +5368,15 @@ mod tests {
             declared_download, runtime_download,
             "download subcommands drift"
         );
+
+        let wsl_subcommands = subcommands_obj["wsl"]["subcommands"]
+            .as_object()
+            .expect("wsl.subcommands object");
+        let mut declared_wsl: Vec<String> = wsl_subcommands.keys().cloned().collect();
+        declared_wsl.sort();
+        let mut runtime_wsl: Vec<String> = WSL_SUBCOMMANDS.iter().map(|s| s.to_string()).collect();
+        runtime_wsl.sort();
+        assert_eq!(declared_wsl, runtime_wsl, "wsl subcommands drift");
     }
 
     #[test]
@@ -4914,8 +5561,8 @@ mod tests {
         assert!(envvar_resolve_conflict_names.contains(&"source-scope"));
         assert!(envvar_resolve_conflict_names.contains(&"target-scope"));
 
-        let envvar_shell_guidance_args = subcommands_obj["envvar"]["subcommands"]
-            ["shell-guidance"]["args"]
+        let envvar_shell_guidance_args = subcommands_obj["envvar"]["subcommands"]["shell-guidance"]
+            ["args"]
             .as_array()
             .expect("envvar.shell-guidance args");
         let envvar_shell_guidance_names: Vec<&str> = envvar_shell_guidance_args
@@ -5256,6 +5903,74 @@ mod tests {
             serde_json::json!("download.history-stats")
         );
         assert!(payload.get("data").is_some());
+    }
+
+    #[test]
+    fn test_doctor_status_from_issues_treats_inferred_warning_as_advisory() {
+        let issues = vec![crate::core::HealthIssue::new(
+            crate::core::Severity::Warning,
+            crate::core::IssueCategory::PathConflict,
+            "Duplicate PATH entries",
+        )
+        .with_evidence(
+            crate::core::HealthSignalSource::PathHeuristic,
+            crate::core::HealthEvidenceConfidence::Inferred,
+            "envvar_path_duplicates:user",
+        )];
+
+        assert_eq!(doctor_status_from_issues(&issues), HealthStatus::Healthy);
+    }
+
+    #[test]
+    fn test_doctor_envvar_payload_includes_structured_issue_data() {
+        let issues = vec![crate::core::HealthIssue::new(
+            crate::core::Severity::Error,
+            crate::core::IssueCategory::ConfigError,
+            "Required environment variables are missing",
+        )
+        .with_evidence(
+            crate::core::HealthSignalSource::SystemProbe,
+            crate::core::HealthEvidenceConfidence::Verified,
+            "envvar_required_vars",
+        )
+        .with_details("Missing variables: TEMP")];
+
+        let payload = doctor_envvar_payload(&issues);
+
+        assert_eq!(payload["status"], serde_json::json!("error"));
+        assert_eq!(
+            payload["issues"][0]["check_id"],
+            serde_json::json!("envvar_required_vars")
+        );
+        assert_eq!(
+            payload["issues"][0]["details"],
+            serde_json::json!("Missing variables: TEMP")
+        );
+    }
+
+    #[test]
+    fn test_format_envvar_health_includes_heading_and_check_id() {
+        let issues = vec![crate::core::HealthIssue::new(
+            crate::core::Severity::Warning,
+            crate::core::IssueCategory::PathConflict,
+            "User PATH contains invalid entries",
+        )
+        .with_evidence(
+            crate::core::HealthSignalSource::SystemProbe,
+            crate::core::HealthEvidenceConfidence::Verified,
+            "envvar_path_validity:user",
+        )
+        .with_fix(
+            "cognia envvar apply-path-repair --scope user",
+            "Repair invalid entries",
+        )];
+
+        let output = format_envvar_health(&issues);
+
+        assert!(output.contains("Environment Variables:"));
+        assert!(output.contains("User PATH contains invalid entries"));
+        assert!(output.contains("check: envvar_path_validity:user"));
+        assert!(output.contains("fix: cognia envvar apply-path-repair --scope user"));
     }
 
     #[test]

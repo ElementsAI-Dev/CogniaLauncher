@@ -20,7 +20,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useLocale } from "@/components/providers/locale-provider";
-import { useGitLabDownloads } from "@/hooks/use-gitlab-downloads";
+import { useGitLabDownloads } from "@/hooks/downloads/use-gitlab-downloads";
 import { isTauri } from "@/lib/tauri";
 import { GITLAB_ARCHIVE_FORMATS } from "@/lib/constants/downloads";
 import { runDownloadPreflightWithUi } from "@/lib/downloads";

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
-import { useCopyToClipboard } from '@/hooks/use-clipboard';
+import { useCopyToClipboard } from '@/hooks/shared/use-clipboard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -15,7 +15,7 @@ import {
   ToolValidationMessage,
 } from '@/components/toolbox/tool-layout';
 import { TOOLBOX_LIMITS } from '@/lib/constants/toolbox-limits';
-import { useToolPreferences } from '@/hooks/use-tool-preferences';
+import { useToolPreferences } from '@/hooks/toolbox/use-tool-preferences';
 import { Clock, ArrowDownUp, Copy, Check, Calendar, RefreshCw } from 'lucide-react';
 import type { ToolComponentProps } from '@/types/toolbox';
 
@@ -92,7 +92,61 @@ function computeFormats(
 const DEFAULT_PREFERENCES = {
   mode: 'toDate',
   assumeMilliseconds: false,
+  timezone: 'local',
+  primaryFormat: 'iso',
 } as const;
+
+const PREFERRED_OUTPUT_FORMATS = ['iso', 'utc', 'local', 'date', 'time', 'relative'] as const;
+type PreferredOutputFormat = (typeof PREFERRED_OUTPUT_FORMATS)[number];
+type PreferredTimezone = 'local' | 'utc';
+
+function formatPreferredOutput(
+  date: Date,
+  format: PreferredOutputFormat,
+  timezone: PreferredTimezone,
+  t: (key: string, values?: Record<string, string | number>) => string,
+): string {
+  const timeZone = timezone === 'utc' ? 'UTC' : undefined;
+
+  switch (format) {
+    case 'iso':
+      return date.toISOString();
+    case 'utc':
+      return date.toUTCString();
+    case 'local':
+      return date.toLocaleString(undefined, timeZone ? { timeZone } : undefined);
+    case 'date':
+      return date.toLocaleDateString(undefined, timeZone ? { timeZone } : undefined);
+    case 'time':
+      return date.toLocaleTimeString(undefined, timeZone ? { timeZone } : undefined);
+    case 'relative':
+      return getRelativeTime(date, t);
+    default:
+      return date.toISOString();
+  }
+}
+
+function getPreferredFormatLabel(
+  format: PreferredOutputFormat,
+  t: (key: string, values?: Record<string, string | number>) => string,
+): string {
+  switch (format) {
+    case 'iso':
+      return t('toolbox.tools.timestampConverter.formatIso');
+    case 'utc':
+      return t('toolbox.tools.timestampConverter.formatUtc');
+    case 'local':
+      return t('toolbox.tools.timestampConverter.formatLocal');
+    case 'date':
+      return t('toolbox.tools.timestampConverter.formatDateOnly');
+    case 'time':
+      return t('toolbox.tools.timestampConverter.formatTimeOnly');
+    case 'relative':
+      return t('toolbox.tools.timestampConverter.formatRelative');
+    default:
+      return t('toolbox.tools.timestampConverter.formatIso');
+  }
+}
 
 /* ---------------------------------------------------------------------------
  * Component
@@ -108,6 +162,8 @@ export default function TimestampConverter({ className }: ToolComponentProps) {
 
   const mode = preferences.mode as 'toDate' | 'toTimestamp';
   const assumeMs = preferences.assumeMilliseconds as boolean;
+  const timezone = preferences.timezone as PreferredTimezone;
+  const primaryFormat = preferences.primaryFormat as PreferredOutputFormat;
 
   // Live ticker — updates input every second with current UNIX timestamp
   useEffect(() => {
@@ -124,14 +180,19 @@ export default function TimestampConverter({ className }: ToolComponentProps) {
   }, [mode]);
 
   // Real-time conversion via useMemo
-  const { results, error } = useMemo<{ results: FormatResult[] | null; error: string | null }>(() => {
-    if (!input.trim()) return { results: null, error: null };
+  const { results, error, sourceDate } = useMemo<{
+    results: FormatResult[] | null;
+    error: string | null;
+    sourceDate: Date | null;
+  }>(() => {
+    if (!input.trim()) return { results: null, error: null, sourceDate: null };
     if (input.length > TOOLBOX_LIMITS.converterChars) {
       return {
         results: null,
         error: t('toolbox.tools.shared.inputTooLarge', {
           limit: TOOLBOX_LIMITS.converterChars.toLocaleString(),
         }),
+        sourceDate: null,
       };
     }
     try {
@@ -141,16 +202,24 @@ export default function TimestampConverter({ className }: ToolComponentProps) {
         const ms = assumeMs ? num : (num > 1e12 ? num : num * 1000);
         const date = new Date(ms);
         if (isNaN(date.getTime())) throw new Error(t('toolbox.tools.timestampConverter.invalidTimestamp'));
-        return { results: computeFormats(date, t), error: null };
+        return { results: computeFormats(date, t), error: null, sourceDate: date };
       } else {
         const date = new Date(input.trim());
         if (isNaN(date.getTime())) throw new Error(t('toolbox.tools.timestampConverter.invalidDate'));
-        return { results: computeFormats(date, t), error: null };
+        return { results: computeFormats(date, t), error: null, sourceDate: date };
       }
     } catch (e) {
-      return { results: null, error: (e as Error).message };
+      return { results: null, error: (e as Error).message, sourceDate: null };
     }
   }, [input, mode, assumeMs, t]);
+
+  const preferredOutput = useMemo(() => {
+    if (!sourceDate) return null;
+    return {
+      label: getPreferredFormatLabel(primaryFormat, t),
+      value: formatPreferredOutput(sourceDate, primaryFormat, timezone, t),
+    };
+  }, [primaryFormat, sourceDate, t, timezone]);
 
   const handleNow = useCallback(() => {
     if (liveMode) {
@@ -292,6 +361,52 @@ export default function TimestampConverter({ className }: ToolComponentProps) {
                 </div>
               </ToolOptionGroup>
             )}
+
+            <ToolOptionGroup>
+              <div className="flex flex-col gap-2">
+                <span className="text-xs font-medium text-muted-foreground">
+                  {t('toolbox.tools.timestampConverter.preferredTimezone')}
+                </span>
+                <div className="flex flex-wrap gap-2">
+                  {(['local', 'utc'] as const).map((nextTimezone) => (
+                    <Button
+                      key={nextTimezone}
+                      type="button"
+                      size="sm"
+                      variant={timezone === nextTimezone ? 'default' : 'outline'}
+                      aria-pressed={timezone === nextTimezone}
+                      onClick={() => setPreferences({ timezone: nextTimezone })}
+                    >
+                      {t(
+                        nextTimezone === 'local'
+                          ? 'toolbox.tools.timestampConverter.timezoneLocal'
+                          : 'toolbox.tools.timestampConverter.timezoneUtc',
+                      )}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <span className="text-xs font-medium text-muted-foreground">
+                  {t('toolbox.tools.timestampConverter.preferredFormat')}
+                </span>
+                <div className="flex flex-wrap gap-2">
+                  {PREFERRED_OUTPUT_FORMATS.map((format) => (
+                    <Button
+                      key={format}
+                      type="button"
+                      size="sm"
+                      variant={primaryFormat === format ? 'default' : 'outline'}
+                      aria-pressed={primaryFormat === format}
+                      onClick={() => setPreferences({ primaryFormat: format })}
+                    >
+                      {getPreferredFormatLabel(format, t)}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            </ToolOptionGroup>
           </div>
         </ToolSection>
 
@@ -301,6 +416,23 @@ export default function TimestampConverter({ className }: ToolComponentProps) {
         {/* ---- Output Formats Section ---- */}
         {results && (
           <ToolSection title={t('toolbox.tools.timestampConverter.outputSection')}>
+            {preferredOutput && (
+              <div className="mb-4 rounded-md border bg-muted/20 px-3 py-2">
+                <p className="text-xs font-medium text-muted-foreground">
+                  {t('toolbox.tools.timestampConverter.preferredOutput')}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {preferredOutput.label} ·{' '}
+                  {t(
+                    timezone === 'local'
+                      ? 'toolbox.tools.timestampConverter.timezoneLocal'
+                      : 'toolbox.tools.timestampConverter.timezoneUtc',
+                  )}
+                </p>
+                <code className="mt-2 block break-all text-sm font-mono">{preferredOutput.value}</code>
+              </div>
+            )}
+
             <div className="grid grid-cols-[auto_1fr_auto] gap-x-3 gap-y-2 items-center">
               {results.map(({ key, label, value }) => (
                 <div key={key} className="contents">

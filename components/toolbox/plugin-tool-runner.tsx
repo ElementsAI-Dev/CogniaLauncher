@@ -10,12 +10,14 @@ import { PluginUiRenderer } from '@/components/plugin/plugin-ui-renderer';
 import { PluginIframeView } from '@/components/plugin/plugin-iframe-view';
 import { MarkdownRenderer } from '@/components/docs/markdown-renderer';
 import { useLocale } from '@/components/providers/locale-provider';
-import { usePlugins } from '@/hooks/use-plugins';
+import { usePlugins } from '@/hooks/plugins/use-plugins';
+import { useToolProgress } from '@/hooks/toolbox/use-tool-progress';
 import { useToolboxStore } from '@/lib/stores/toolbox';
 import { ToolRuntimeState } from '@/components/toolbox/tool-runtime-state';
 import { Play, AlertCircle, Loader2 } from 'lucide-react';
 import { isTauri } from '@/lib/tauri';
 import type { PluginToolInfo } from '@/types/plugin';
+import type { ToolExecutionError } from '@/types/toolbox';
 import type { UiBlock, PluginUiResponse, PluginUiAction } from '@/types/plugin-ui';
 
 interface PluginToolRunnerProps {
@@ -59,18 +61,21 @@ export function PluginToolRunner({ tool, className }: PluginToolRunnerProps) {
 
 function TextToolRunner({ tool, className }: PluginToolRunnerProps) {
   const { t } = useLocale();
-  const { callTool } = usePlugins();
+  const { callTool, cancelTool } = usePlugins();
   const setToolLifecycle = useToolboxStore((state) => state.setToolLifecycle);
   const clearToolLifecycle = useToolboxStore((state) => state.clearToolLifecycle);
   const unifiedToolId = toPluginUnifiedToolId(tool);
   const [input, setInput] = useState('');
   const [output, setOutput] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [structuredError, setStructuredError] = useState<ToolExecutionError | null>(null);
   const [running, setRunning] = useState(false);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [hasRun, setHasRun] = useState(false);
+  const [executionId, setExecutionId] = useState<string | null>(null);
   const cancelledRef = useRef(false);
   const runIdRef = useRef(0);
+  const progressState = useToolProgress(unifiedToolId, executionId);
   const capabilityCoverageIssues = (tool.sdkCapabilityCoverage ?? []).filter(
     (coverage) => coverage.status !== 'covered',
   );
@@ -86,19 +91,52 @@ function TextToolRunner({ tool, className }: PluginToolRunnerProps) {
     return () => clearInterval(id);
   }, [running]);
 
+  useEffect(() => {
+    if (progressState.phase === 'running') {
+      setToolLifecycle(unifiedToolId, 'execute', progressState.message ?? undefined);
+      return;
+    }
+    if (progressState.phase === 'complete') {
+      setToolLifecycle(unifiedToolId, 'success', progressState.message ?? undefined);
+      return;
+    }
+    if (progressState.phase === 'cancelled') {
+      setToolLifecycle(unifiedToolId, 'cancelled', progressState.message ?? undefined);
+      return;
+    }
+    if (progressState.phase === 'failed') {
+      setToolLifecycle(
+        unifiedToolId,
+        'failure',
+        progressState.error?.message ?? progressState.message ?? undefined,
+      );
+    }
+  }, [progressState.error, progressState.message, progressState.phase, setToolLifecycle, unifiedToolId]);
+
+  const createExecutionId = useCallback(
+    () =>
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+    [],
+  );
+
   const handleRun = useCallback(async () => {
     const currentRunId = ++runIdRef.current;
+    const nextExecutionId = createExecutionId();
     cancelledRef.current = false;
+    setExecutionId(nextExecutionId);
     setToolLifecycle(unifiedToolId, 'prepare');
     setToolLifecycle(unifiedToolId, 'validate');
     setRunning(true);
     setHasRun(false);
     setError(null);
+    setStructuredError(null);
     setOutput('');
     setElapsedMs(0);
     try {
       setToolLifecycle(unifiedToolId, 'execute');
-      const result = await callTool(tool.pluginId, tool.entry, input);
+      const result = await callTool(tool.pluginId, tool.entry, input, nextExecutionId, unifiedToolId);
       if (!cancelledRef.current && runIdRef.current === currentRunId) {
         setToolLifecycle(unifiedToolId, 'postProcess');
         setOutput(result ?? '');
@@ -108,24 +146,46 @@ function TextToolRunner({ tool, className }: PluginToolRunnerProps) {
     } catch (e) {
       if (!cancelledRef.current && runIdRef.current === currentRunId) {
         const message = (e as Error).message ?? String(e);
-        setError(message);
-        setToolLifecycle(unifiedToolId, 'failure', message);
+        if (
+          e &&
+          typeof e === 'object' &&
+          'kind' in e &&
+          'message' in e &&
+          typeof (e as { kind: unknown }).kind === 'string'
+        ) {
+          setStructuredError(e as ToolExecutionError);
+          setError(null);
+          setToolLifecycle(unifiedToolId, 'failure', (e as ToolExecutionError).message);
+        } else {
+          setStructuredError(null);
+          setError(message);
+          setToolLifecycle(unifiedToolId, 'failure', message);
+        }
       }
     } finally {
       if (runIdRef.current === currentRunId) {
         setRunning(false);
       }
     }
-  }, [callTool, tool.pluginId, tool.entry, input, setToolLifecycle, unifiedToolId]);
+  }, [callTool, createExecutionId, input, setToolLifecycle, tool.entry, tool.pluginId, unifiedToolId]);
 
   const handleCancel = useCallback(() => {
     cancelledRef.current = true;
+    if (executionId) {
+      void cancelTool(executionId);
+    }
     setRunning(false);
-    setError(t('toolbox.plugin.cancelled'));
-    setToolLifecycle(unifiedToolId, 'failure', t('toolbox.plugin.cancelled'));
-  }, [t, setToolLifecycle, unifiedToolId]);
+    setStructuredError({
+      kind: 'cancelled',
+      message: t('toolbox.plugin.cancelled'),
+    });
+    setError(null);
+    setToolLifecycle(unifiedToolId, 'cancelled', t('toolbox.plugin.cancelled'));
+  }, [cancelTool, executionId, t, setToolLifecycle, unifiedToolId]);
 
   const elapsedDisplay = running ? `${(elapsedMs / 1000).toFixed(1)}s` : null;
+  const runtimeError = progressState.error ?? structuredError;
+  const progressLabel = progressState.message ?? (running ? t('toolbox.plugin.running') : null);
 
   return (
     <div className={className}>
@@ -164,12 +224,12 @@ function TextToolRunner({ tool, className }: PluginToolRunnerProps) {
           </Alert>
         )}
 
-        {error && (
+        {error ? (
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
             <AlertDescription className="font-mono text-xs">{error}</AlertDescription>
           </Alert>
-        )}
+        ) : null}
 
         <div className="flex items-center gap-2">
           <Button
@@ -185,17 +245,37 @@ function TextToolRunner({ tool, className }: PluginToolRunnerProps) {
             )}
             {running ? t('toolbox.plugin.running') : t('toolbox.plugin.run')}
           </Button>
-          {running && (
-            <>
-              <Button onClick={handleCancel} size="sm" variant="outline" className="gap-1.5">
-                {t('common.cancel')}
-              </Button>
-              {elapsedDisplay && (
-                <span className="text-xs text-muted-foreground font-mono">{elapsedDisplay}</span>
-              )}
-            </>
-          )}
+          {running && elapsedDisplay ? (
+            <span className="text-xs text-muted-foreground font-mono">{elapsedDisplay}</span>
+          ) : null}
         </div>
+
+        {(running || progressState.phase === 'running' || runtimeError) ? (
+          <ToolRuntimeState
+            title={
+              runtimeError
+                ? t('toolbox.runtime.emptyTitle')
+                : t('toolbox.plugin.running')
+            }
+            description={
+              runtimeError?.message
+                ?? progressState.message
+                ?? t('toolbox.plugin.running')
+            }
+            progressValue={progressState.progress}
+            progressLabel={progressLabel}
+            indeterminate={running && progressState.progress == null}
+            error={runtimeError}
+            onCancel={running || progressState.phase === 'running' ? handleCancel : undefined}
+            actions={
+              runtimeError ? (
+                <Button type="button" size="sm" onClick={() => void handleRun()}>
+                  {t('common.retry')}
+                </Button>
+              ) : undefined
+            }
+          />
+        ) : null}
 
         {hasRun && !running && !error && output.length === 0 ? (
           <ToolRuntimeState
@@ -342,6 +422,8 @@ function DeclarativeToolRunner({ tool, className }: PluginToolRunnerProps) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
+  const lastSuccessfulBlocksRef = useRef<UiBlock[]>([]);
+  const lastSuccessfulStateRef = useRef<Record<string, unknown> | undefined>(undefined);
 
   // Initial render: call WASM with empty input to get initial UI
   const loadInitialUi = useCallback(async () => {
@@ -354,6 +436,8 @@ function DeclarativeToolRunner({ tool, className }: PluginToolRunnerProps) {
       setToolLifecycle(unifiedToolId, 'postProcess');
       setBlocks(normalized.blocks);
       setUiState(normalized.state);
+      lastSuccessfulBlocksRef.current = normalized.blocks;
+      lastSuccessfulStateRef.current = normalized.state;
       setError(null);
       setToolLifecycle(unifiedToolId, 'success');
     } catch (e) {
@@ -394,10 +478,16 @@ function DeclarativeToolRunner({ tool, className }: PluginToolRunnerProps) {
         setToolLifecycle(unifiedToolId, 'postProcess');
         setBlocks(response.blocks);
         setUiState(response.state);
+        lastSuccessfulBlocksRef.current = response.blocks;
+        lastSuccessfulStateRef.current = response.state;
         setError(null);
         setToolLifecycle(unifiedToolId, 'success');
       } catch (e) {
         const message = (e as Error).message ?? String(e);
+        if (lastSuccessfulBlocksRef.current.length > 0) {
+          setBlocks(lastSuccessfulBlocksRef.current);
+          setUiState(lastSuccessfulStateRef.current);
+        }
         setError(message);
         setToolLifecycle(unifiedToolId, 'failure', message);
       } finally {

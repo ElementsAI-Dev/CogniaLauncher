@@ -3,6 +3,7 @@ import {
   flattenNav,
   getDocTitle,
   getAdjacentDocs,
+  getBreadcrumbs,
   slugToArray,
   arrayToSlug,
   type DocNavItem,
@@ -209,6 +210,35 @@ describe('getAdjacentDocs', () => {
     // Last item of getting-started section → first item of guide section
     const { next } = getAdjacentDocs('getting-started/configuration');
     expect(next?.slug).toBe('guide');
+  });
+});
+
+describe('getBreadcrumbs', () => {
+  it('returns the docs root crumb for index pages', () => {
+    expect(getBreadcrumbs('index')).toEqual([
+      { title: '文档', titleEn: 'Docs', slug: 'index' },
+    ]);
+  });
+
+  it('returns the section index crumb for section landing pages', () => {
+    expect(getBreadcrumbs('guide')).toEqual([
+      { title: '文档', titleEn: 'Docs', slug: 'index' },
+      expect.objectContaining({ slug: 'guide', titleEn: 'User Guide' }),
+    ]);
+  });
+
+  it('returns both section and child crumbs for nested pages', () => {
+    expect(getBreadcrumbs('guide/environments')).toEqual([
+      { title: '文档', titleEn: 'Docs', slug: 'index' },
+      expect.objectContaining({ slug: 'guide', titleEn: 'User Guide' }),
+      expect.objectContaining({ slug: 'guide/environments', titleEn: 'Environments' }),
+    ]);
+  });
+
+  it('falls back to the docs root crumb for unknown pages', () => {
+    expect(getBreadcrumbs('missing-page')).toEqual([
+      { title: '文档', titleEn: 'Docs', slug: 'index' },
+    ]);
   });
 });
 

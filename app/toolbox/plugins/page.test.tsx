@@ -35,7 +35,7 @@ jest.mock('@/lib/tauri', () => ({
   isTauri: () => mockIsDesktop,
 }));
 
-jest.mock('@/hooks/use-plugins', () => ({
+jest.mock('@/hooks/plugins/use-plugins', () => ({
   usePlugins: () => ({
     plugins: mockPlugins,
     pluginTools: mockPluginTools,
@@ -380,6 +380,19 @@ describe('PluginsPage plugin bootstrap', () => {
         builtinCandidate: false,
         builtinSyncStatus: null,
         builtinSyncMessage: null,
+        marketplaceAcquisition: {
+          pluginId: 'com.cognia.hello-world',
+          listingId: 'hello-world-rust',
+          storeId: 'hello-world-rust',
+          toolId: 'plugin:com.cognia.hello-world:hello-world',
+          action: 'install',
+          phase: 'completed',
+          outcome: 'succeeded',
+          downloadTaskId: null,
+          sourceLabel: 'CogniaLauncher Team',
+          message: null,
+          timestamp: Date.now(),
+        },
       },
     ];
 
@@ -387,6 +400,12 @@ describe('PluginsPage plugin bootstrap', () => {
 
     expect(screen.getByText('CogniaLauncher Team')).toBeInTheDocument();
     expect(screen.getByText('Adds richer environment inspection and onboarding hints.')).toBeInTheDocument();
+    expect(
+      screen.getAllByText('toolbox.plugin.marketplaceNextTarget').length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.getByText('plugin:com.cognia.hello-world:hello-world'),
+    ).toBeInTheDocument();
   });
 
   it('runs local validation before import and blocks invalid plugin import', async () => {
@@ -828,6 +847,19 @@ describe('PluginsPage plugin bootstrap', () => {
             status: 'blocked',
             reason: 'Missing permissions: process_exec',
             missingPermissions: ['process_exec'],
+            preferredWorkflow: {
+              type: 'builtin-plugin',
+              coverage: 'builtin-primary',
+              surface: 'runtime',
+              path: 'plugins/typescript/port-inspector',
+              pluginId: 'com.example.governed',
+              toolId: 'port-inspect-guided',
+              entrypoints: ['port_inspect_guided'],
+              requiredPermissions: ['process_exec'],
+              interactionMode: 'declarative',
+              discoverable: true,
+              workflowIntents: ['inspect-local-ports'],
+            },
           },
         ],
       },
@@ -869,6 +901,9 @@ describe('PluginsPage plugin bootstrap', () => {
     expect(screen.getByText('toolbox.plugin.grantedCapabilities')).toBeInTheDocument();
     expect(screen.getAllByText('process.exec').length).toBeGreaterThan(0);
     expect(screen.getByText('Missing permissions: process_exec')).toBeInTheDocument();
+    expect(screen.getByText('Preferred workflow: port-inspect-guided (declarative)')).toBeInTheDocument();
+    expect(screen.getByText('Intents: inspect-local-ports')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Manage Plugin' })).toBeInTheDocument();
   });
 
   it('renders description fallback and tool preview states on cards, and full tools in detail view', () => {

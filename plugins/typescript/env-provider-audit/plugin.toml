@@ -18,6 +18,18 @@ keywords = ["environment", "provider", "diagnostics", "runtime", "node", "python
 icon = "ShieldCheck"
 entry = "env_provider_audit"
 
+[[tools]]
+id = "env-provider-audit-guided"
+name_en = "Env Provider Audit Guided"
+name_zh = "环境与提供器巡检向导"
+description_en = "Guided workflow for environment/provider diagnostics with structured outputs and recovery hints."
+description_zh = "带结构化输出与恢复提示的环境/提供器诊断向导工作流。"
+category = "developer"
+keywords = ["environment", "provider", "diagnostics", "workflow", "guided", "runtime"]
+icon = "Workflow"
+entry = "env_provider_audit_guided"
+ui_mode = "declarative"
+
 [permissions]
 env_read = true
 notification = true

@@ -233,6 +233,18 @@ pnpm tauri dev -- search react --limit 10 --json
 - `envvar remove-persistent <key> [--scope user|system]`
 - `envvar export <file> [--scope ...] [--format dotenv|shell|fish|powershell|nushell]`
 - `envvar import <file> [--scope process|user|system]`
+- `envvar snapshot-list`
+- `envvar snapshot-create [--scope user|system] [--mode manual|automatic] [--source-action <name>] [--note <text>]`
+- `envvar snapshot-protection --action <name> [--scope user|system]`
+- `envvar snapshot-preview <path> [--scope user|system ...]`
+- `envvar snapshot-restore <path> [--scope user|system ...]`
+- `envvar snapshot-delete <path>`
+
+环境变量恢复说明：
+
+- 风险较高的持久化环境变量操作会在执行前判断是复用现有安全快照还是创建新的安全快照。
+- 恢复流程默认先做预览，只支持持久化的 `user` / `system` 环境变量与 PATH；`process` 作用域仅用于诊断展示，不能作为持久恢复目标。
+- 自动安全快照会按保留策略单独清理，手动恢复点会一直保留，直到用户显式删除。
 
 日志/诊断子命令（P0）：
 

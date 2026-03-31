@@ -15,6 +15,14 @@ jest.mock("next/link", () => {
   };
 });
 
+jest.mock("@/lib/stores/feedback", () => ({
+  useFeedbackStore: () => ({ openDialog: jest.fn() }),
+}));
+
+jest.mock("@/lib/tauri", () => ({
+  openExternal: jest.fn(),
+}));
+
 const mockT = (
   key: string,
   params?: Record<string, string | number>,
@@ -52,6 +60,10 @@ const mockT = (
     "about.supportSectionProviders": "Providers",
     "about.supportSectionLogs": "Logs",
     "about.supportSectionCache": "Cache",
+    "about.openInNewTab": "Open in new tab",
+    "about.repository": "Repository",
+    "about.documentation": "Documentation",
+    "about.featureRequest": "Feature Request",
     "common.unknown": "Unknown",
   };
 

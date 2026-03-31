@@ -6,7 +6,7 @@ This directory hosts first-party production plugins shipped with CogniaLauncher.
 
 - `manifest.json`: Built-in plugin catalog (id/version/framework/checksum metadata).
 - `sdk-capability-matrix.json`: Capability governance for required built-ins (`sdkCapabilities`, `expectedPermissions`, `primaryEntrypoints`).
-- `sdk-usage-inventory.json`: Capability-centric coverage inventory for the full stable SDK export surface (`permissionGuidance`, maintained usage paths, toolbox/runtime prerequisites).
+- `sdk-usage-inventory.json`: Capability-centric coverage inventory for the full stable SDK export surface (`permissionGuidance`, maintained usage paths, toolbox/runtime prerequisites, reference-vs-guided workflow coverage).
 - `extension-point-matrix.json`: Official plugin-point support matrix (`manifestPrerequisites`, SDK coverage, scaffold support, reference examples).
 - `rust/*`: Rust SDK built-in plugins.
 - `typescript/*`: TypeScript SDK built-in plugins.
@@ -27,11 +27,18 @@ When creating a built-in plugin from Toolbox > Plugins > Create Plugin with life
 - Output directory must be the `plugins/` workspace root.
 - The scaffold generates:
   - `catalog-entry.sample.json`
+  - builtin TypeScript sample metadata aligned with generated `package.json`
+    and `src/index.test.ts` via `packageName` / `testFile`
   - `cognia.scaffold.json`
   - lifecycle handoff metadata for catalog/checksum/validation steps
+  - authoring selections summary for plugin points, host capabilities, and HTTP
+    domains when those advanced inputs were chosen
 - Standard onboarding commands remain:
   - `pnpm plugins:checksums`
   - `pnpm plugins:validate`
+- Use the generated `README.md` / `cognia.scaffold.json` command list as the
+  canonical per-plugin handoff. Do not invent alternate shell-specific steps
+  when the scaffold already emitted the build path.
 
 For external scaffolds, follow build -> validate -> import workflow first; built-in onboarding starts after the artifact is generated and validated.
 
@@ -73,6 +80,7 @@ When adding or modifying required built-ins:
 1. Update `plugins/sdk-capability-matrix.json`.
 2. Keep `expectedPermissions` aligned with `plugin.toml` `[permissions]`.
 3. Keep `primaryEntrypoints` aligned with `[[tools]].entry` and source exports.
+   Keep `guidedWorkflowEntrypoints` / `guidedWorkflowToolIds` aligned with any declarative companion tools that represent the preferred Toolbox workflow.
 4. Keep `plugins/sdk-usage-inventory.json` aligned with the maintained usage path you expect contributors and toolbox/runtime diagnostics to rely on.
 5. Keep `plugins/extension-point-matrix.json` reference examples and supported plugin-point coverage aligned with the built-in implementation.
 
@@ -93,6 +101,14 @@ Maintained usage paths may now describe both:
 - `runtime` surfaces: the production Launcher/WASM workflow.
 - `ink-authoring` surfaces: local terminal authoring companions with explicit
   `launchCommand` and `localPrerequisites`.
+- `coverage: "reference"`: automation-compatible text entrypoints or example assets.
+- `coverage: "builtin-primary"`: the preferred Toolbox-facing guided workflow for a first-party built-in.
+
+For guided built-ins, keep the governance story consistent across:
+
+- `plugin.toml` companion `ui_mode = "declarative"` tool entries
+- `sdk-capability-matrix.json` guided workflow metadata
+- `sdk-usage-inventory.json` preferred workflow paths, interaction mode, and workflow intents
 
 Keep those surfaces distinct in docs and inventory so contributors can tell
 which path is safe for production runtime and which one is for local preview.

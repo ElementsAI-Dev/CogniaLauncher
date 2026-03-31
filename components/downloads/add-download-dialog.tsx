@@ -65,6 +65,17 @@ function buildFormFromRequest(
   };
 }
 
+function buildDraftIdentity(
+  request?: Partial<DownloadRequest>,
+  initialUrl?: string
+) {
+  const url = request?.url?.trim() ?? initialUrl?.trim() ?? "";
+  const name = request?.name?.trim() ?? (url ? inferNameFromUrl(url) : "");
+  const provider = request?.provider?.trim() ?? "";
+
+  return { url, name, provider };
+}
+
 export function AddDownloadDialog({
   open,
   onOpenChange,
@@ -119,10 +130,46 @@ export function AddDownloadDialog({
   const urlValid = !urlTrimmed || isValidUrl(urlTrimmed);
   const isValid =
     urlTrimmed && urlValid && form.destination.trim() && form.name.trim();
+  const preservedDraftIdentity = useMemo(
+    () => buildDraftIdentity(initialRequest, initialUrl),
+    [initialRequest, initialUrl]
+  );
+  const preservedContextStillTrusted = useMemo(() => {
+    const hasPreservedContext = Boolean(
+      preservedDraftContext.sourceDescriptor ||
+        preservedDraftContext.artifactProfile ||
+        preservedDraftContext.installIntent
+    );
+
+    if (!hasPreservedContext) return false;
+
+    return (
+      urlTrimmed === preservedDraftIdentity.url &&
+      form.name.trim() === preservedDraftIdentity.name &&
+      form.provider.trim() === preservedDraftIdentity.provider
+    );
+  }, [
+    form.name,
+    form.provider,
+    preservedDraftContext.artifactProfile,
+    preservedDraftContext.installIntent,
+    preservedDraftContext.sourceDescriptor,
+    preservedDraftIdentity.name,
+    preservedDraftIdentity.provider,
+    preservedDraftIdentity.url,
+    urlTrimmed,
+  ]);
+  const effectiveDraftContext = preservedContextStillTrusted
+    ? preservedDraftContext
+    : {
+        sourceDescriptor: undefined,
+        artifactProfile: undefined,
+        installIntent: undefined,
+      };
   const previewProfile = useMemo(() => {
-    const sourceKind = preservedDraftContext.sourceDescriptor?.kind ?? "direct_url";
-    if (preservedDraftContext.artifactProfile) {
-      return preservedDraftContext.artifactProfile;
+    const sourceKind = effectiveDraftContext.sourceDescriptor?.kind ?? "direct_url";
+    if (effectiveDraftContext.artifactProfile) {
+      return effectiveDraftContext.artifactProfile;
     }
     if (!urlTrimmed) return null;
     return createArtifactProfilePreview({
@@ -131,9 +178,9 @@ export function AddDownloadDialog({
       sourceKind,
     });
   }, [
+    effectiveDraftContext.artifactProfile,
+    effectiveDraftContext.sourceDescriptor,
     form.name,
-    preservedDraftContext.artifactProfile,
-    preservedDraftContext.sourceDescriptor,
     urlTrimmed,
   ]);
 
@@ -158,9 +205,9 @@ export function AddDownloadDialog({
           segments: form.segments !== "1" ? Number(form.segments) : undefined,
           mirrorUrls: form.mirrorUrls,
           postAction: form.postAction as DownloadRequest['postAction'],
-          sourceDescriptor: preservedDraftContext.sourceDescriptor,
-          artifactProfile: preservedDraftContext.artifactProfile,
-          installIntent: preservedDraftContext.installIntent,
+          sourceDescriptor: effectiveDraftContext.sourceDescriptor,
+          artifactProfile: effectiveDraftContext.artifactProfile,
+          installIntent: effectiveDraftContext.installIntent,
         })
       );
       onOpenChange(false);

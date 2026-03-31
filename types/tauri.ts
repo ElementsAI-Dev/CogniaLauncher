@@ -72,6 +72,7 @@ export interface EnvironmentInfo {
   available: boolean;
   total_size: number;
   version_count: number;
+  compiler_metadata?: CppCompilerMetadata | null;
 }
 
 export interface InstalledVersion {
@@ -101,12 +102,25 @@ export interface EnvVersionMutationResult {
   message: string | null;
 }
 
+export interface CppCompilerMetadata {
+  family: string;
+  variant: string | null;
+  version: string | null;
+  target_architecture: string | null;
+  host_architecture: string | null;
+  target_triple: string | null;
+  subsystem: string | null;
+  discovery_origin: string | null;
+  executable_name: string | null;
+}
+
 /** System-detected environment information (not managed by version managers) */
 export interface SystemEnvironmentInfo {
   env_type: string;
   version: string;
   executable_path: string | null;
   source: string;
+  compiler_metadata?: CppCompilerMetadata | null;
 }
 
 /** Provider-aware environment detection info (supports same-language multi-provider rows) */
@@ -118,6 +132,7 @@ export interface ProviderDetectedEnvironmentInfo {
   executable_path: string | null;
   source: string;
   scope: 'system' | 'managed';
+  compiler_metadata?: CppCompilerMetadata | null;
 }
 
 /** Environment type mapping from provider ID to logical type */
@@ -292,6 +307,29 @@ export interface InstalledPackage {
   install_path: string;
   installed_at: string;
   is_global: boolean;
+}
+
+export type PackageValidationStatus = 'pass' | 'warning' | 'failure';
+
+export interface PackageValidationResult {
+  validator_id: string;
+  validator_name: string;
+  status: PackageValidationStatus;
+  summary: string;
+  details: string[];
+  remediation: string | null;
+  package: string | null;
+  provider_id: string | null;
+  blocking: boolean;
+  timed_out: boolean;
+}
+
+export interface PackagePreflightSummary {
+  results: PackageValidationResult[];
+  can_proceed: boolean;
+  has_warnings: boolean;
+  has_failures: boolean;
+  checked_at: string;
 }
 
 // ============================================================================
@@ -1033,6 +1071,28 @@ export interface RequiredVersion {
   constraint: string;
 }
 
+export type ConflictResolutionStrategy =
+  | 'latest_compatible'
+  | 'minimal_upgrade'
+  | 'manual';
+
+export interface ConflictResolutionRecommendation {
+  package_name: string;
+  provider_id: string | null;
+  selected_version: string;
+  available_versions: string[];
+  strategy: ConflictResolutionStrategy;
+  reason: string;
+}
+
+export interface ConflictResolutionResult {
+  success: boolean;
+  strategy: ConflictResolutionStrategy;
+  recommendations: ConflictResolutionRecommendation[];
+  unresolved: string[];
+  message: string | null;
+}
+
 // ============================================================================
 // Search Types
 // ============================================================================
@@ -1541,10 +1601,17 @@ export interface TrayMenuConfig {
   priorityItems: TrayMenuItemId[];
 }
 
+export interface TrayTerminalProfileEntry {
+  id: string;
+  name: string;
+}
+
 export interface TrayStateInfo {
   iconState: TrayIconState;
   language: TrayLanguage;
   activeDownloads: number;
+  wslRunningCount: number;
+  wslDefaultDistro: string | null;
   hasUpdate: boolean;
   hasError: boolean;
   clickBehavior: TrayClickBehavior;
@@ -1720,12 +1787,20 @@ export interface PackageManagerHealthResult {
   checked_at: string;
 }
 
+export interface WslHealthResult {
+  status: HealthStatus;
+  issues: HealthIssue[];
+  checked_at: string;
+}
+
 /** Result of a full system health check */
 export interface SystemHealthResult {
   overall_status: HealthStatus;
   environments: EnvironmentHealthResult[];
   package_managers: PackageManagerHealthResult[];
+  envvar_issues: HealthIssue[];
   system_issues: HealthIssue[];
+  wsl_health?: WslHealthResult | null;
   skipped_providers: string[];
   checked_at: string;
 }
@@ -1756,12 +1831,45 @@ export interface ProfileEnvironment {
   provider_id: string | null;
 }
 
+export interface WslProfileSnapshotDistro {
+  name: string;
+  version: string;
+  is_default: boolean;
+}
+
+export interface WslProfileSnapshot {
+  wslconfig_content: string;
+  distros: WslProfileSnapshotDistro[];
+  default_distro: string | null;
+}
+
+export interface WslProfileApplySkipped {
+  distro_name: string;
+  reason: string;
+  expected_version?: string | null;
+  installed_version?: string | null;
+}
+
+export interface WslProfileApplyResult {
+  applied: boolean;
+  skipped: WslProfileApplySkipped[];
+}
+
+export interface WslPortForwardRule {
+  listenAddress: string;
+  listenPort: string;
+  connectAddress: string;
+  connectPort: string;
+}
+
 /** An environment profile containing multiple environment configurations */
 export interface EnvironmentProfile {
   id: string;
   name: string;
   description: string | null;
   environments: ProfileEnvironment[];
+  env_snapshot?: Record<string, string> | null;
+  wsl_snapshot?: WslProfileSnapshot | null;
   created_at: string;
   updated_at: string;
 }
@@ -1773,6 +1881,7 @@ export interface ProfileApplyResult {
   successful: ProfileEnvironmentResult[];
   failed: ProfileEnvironmentError[];
   skipped: ProfileEnvironmentSkipped[];
+  wsl_snapshot?: WslProfileApplyResult | null;
 }
 
 export interface ProfileEnvironmentResult {
@@ -1970,6 +2079,27 @@ export interface WslDistroResources {
   swapUsedKb: number;
   cpuCount: number;
   loadAvg: [number, number, number];
+}
+
+export interface WslEnvVarEntry {
+  key: string;
+  value: string;
+}
+
+export interface WslExportWindowsEnvResult {
+  distro: string;
+  targetPath: string;
+  variableCount: number;
+}
+
+export interface WslDistroEnvReadResult {
+  distro: string;
+  variables: WslEnvVarEntry[];
+}
+
+export interface WslEnvEntry {
+  key: string;
+  flags: string[];
 }
 
 /** A user account inside a WSL distribution */
@@ -2523,6 +2653,8 @@ export interface EnvVarImportResult {
   skipped: number;
   errors: string[];
   scope: EnvVarScope;
+  recoveryAction?: string | null;
+  protectionState?: EnvVarBackupProtectionState['state'] | null;
   success: boolean;
   verified: boolean;
   status: 'verified' | 'verification_failed' | 'manual_followup_required' | 'blocked';
@@ -2530,6 +2662,7 @@ export interface EnvVarImportResult {
   message?: string | null;
   primaryShellTarget?: string | null;
   shellGuidance: EnvVarShellGuidance[];
+  snapshot?: EnvVarSnapshotInfo | null;
 }
 
 export type EnvVarImportPreviewAction = 'add' | 'update' | 'noop' | 'invalid' | 'skipped';
@@ -2584,6 +2717,8 @@ export interface EnvVarConflictResolutionResult {
   targetScope: EnvVarScope;
   appliedValue: string;
   appliedValueSummary: EnvVarValueSummary;
+  recoveryAction?: string | null;
+  protectionState?: EnvVarBackupProtectionState['state'] | null;
   success: boolean;
   verified: boolean;
   status: 'verified' | 'verification_failed' | 'manual_followup_required' | 'blocked';
@@ -2591,6 +2726,7 @@ export interface EnvVarConflictResolutionResult {
   message?: string | null;
   primaryShellTarget?: string | null;
   shellGuidance: EnvVarShellGuidance[];
+  snapshot?: EnvVarSnapshotInfo | null;
 }
 
 export interface EnvVarShellProfileReadResult {
@@ -2624,6 +2760,16 @@ export interface EnvVarConflict {
   effectiveValue: string;
 }
 
+export interface EnvVarOverview {
+  totalVars: number;
+  processCount: number;
+  userCount: number;
+  systemCount: number;
+  conflictCount: number;
+  pathIssueCount: number;
+  latestSnapshotAt?: string | null;
+}
+
 export interface EnvVarActionSupport {
   action: string;
   scope?: EnvVarScope | null;
@@ -2648,6 +2794,8 @@ export interface EnvVarMutationResult {
   operation: string;
   key: string;
   scope: EnvVarScope;
+  recoveryAction?: string | null;
+  protectionState?: EnvVarBackupProtectionState['state'] | null;
   success: boolean;
   verified: boolean;
   status: 'verified' | 'verification_failed' | 'manual_followup_required' | 'blocked';
@@ -2656,11 +2804,14 @@ export interface EnvVarMutationResult {
   effectiveValueSummary?: EnvVarValueSummary | null;
   primaryShellTarget?: string | null;
   shellGuidance: EnvVarShellGuidance[];
+  snapshot?: EnvVarSnapshotInfo | null;
 }
 
 export interface EnvVarPathMutationResult {
   operation: string;
   scope: EnvVarScope;
+  recoveryAction?: string | null;
+  protectionState?: EnvVarBackupProtectionState['state'] | null;
   success: boolean;
   verified: boolean;
   status: 'verified' | 'verification_failed' | 'manual_followup_required' | 'blocked';
@@ -2670,6 +2821,7 @@ export interface EnvVarPathMutationResult {
   pathEntries: PathEntryInfo[];
   primaryShellTarget?: string | null;
   shellGuidance: EnvVarShellGuidance[];
+  snapshot?: EnvVarSnapshotInfo | null;
 }
 
 export type EnvVarSnapshotCreationMode = 'manual' | 'automatic';
@@ -2728,6 +2880,7 @@ export interface EnvVarSnapshotRestorePreviewSegment {
 
 export interface EnvVarSnapshotRestorePreview {
   createdAt: string;
+  fingerprint: string;
   segments: EnvVarSnapshotRestorePreviewSegment[];
 }
 

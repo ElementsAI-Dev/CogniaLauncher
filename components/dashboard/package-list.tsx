@@ -35,6 +35,7 @@ import {
 import { useLocale } from "@/components/providers/locale-provider";
 import { cn } from "@/lib/utils";
 import type { InstalledPackage } from "@/lib/tauri";
+import type { DashboardPresentation } from "@/lib/stores/dashboard";
 import {
   DashboardClickableRow,
   DashboardEmptyState,
@@ -48,6 +49,7 @@ interface PackageListProps {
   isLoading?: boolean;
   error?: string | null;
   onRecover?: () => void;
+  presentation?: DashboardPresentation;
 }
 
 export function PackageList({
@@ -57,6 +59,7 @@ export function PackageList({
   isLoading = false,
   error = null,
   onRecover,
+  presentation = { density: "comfortable", emphasis: "balanced" },
 }: PackageListProps) {
   const router = useRouter();
   const { t } = useLocale();
@@ -96,8 +99,15 @@ export function PackageList({
   const extraItems = filteredPackages.slice(initialLimit);
 
   return (
-    <Card className={cn(className)}>
-      <CardHeader className="pb-3">
+    <Card
+      className={cn(
+        presentation.emphasis === "strong" && "border-primary/20 shadow-sm",
+        className,
+      )}
+      data-density={presentation.density}
+      data-emphasis={presentation.emphasis}
+    >
+      <CardHeader className={cn("pb-3", presentation.density === "compact" && "pb-2")}>
         <CardTitle className="text-base font-medium">
           {t("dashboard.packageList.title")}
         </CardTitle>
@@ -116,7 +126,7 @@ export function PackageList({
           </Button>
         </CardAction>
       </CardHeader>
-      <CardContent>
+      <CardContent className={cn(presentation.density === "compact" && "pt-0")}>
         {error && (
           <Alert variant="destructive" className="mb-3">
             <AlertTitle>{t("dashboard.widgets.sectionNeedsAttention")}</AlertTitle>
@@ -133,14 +143,17 @@ export function PackageList({
 
         {/* Search Input */}
         {packages.length > 3 && (
-          <div className="relative mb-3">
+          <div className={cn("relative mb-3", presentation.density === "compact" && "mb-2.5")}>
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               type="search"
               placeholder={t("dashboard.packageList.searchPlaceholder")}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-9 pl-9 pr-9"
+              className={cn(
+                "h-9 pl-9 pr-9",
+                presentation.density === "compact" && "h-8 text-sm",
+              )}
             />
             {searchQuery && (
               <Button
@@ -190,6 +203,7 @@ export function PackageList({
                   key={`${pkg.provider}-${pkg.name}-${pkg.version}-${index}`}
                   package={pkg}
                   onClick={() => handlePackageClick(pkg)}
+                  presentation={presentation}
                 />
               ))}
             </div>
@@ -203,6 +217,7 @@ export function PackageList({
                         key={`${pkg.provider}-${pkg.name}-${pkg.version}-extra-${index}`}
                         package={pkg}
                         onClick={() => handlePackageClick(pkg)}
+                        presentation={presentation}
                       />
                     ))}
                   </div>
@@ -239,19 +254,26 @@ export function PackageList({
 interface PackageItemProps {
   package: InstalledPackage;
   onClick: () => void;
+  presentation: DashboardPresentation;
 }
 
-function PackageItem({ package: pkg, onClick }: PackageItemProps) {
+function PackageItem({ package: pkg, onClick, presentation }: PackageItemProps) {
   return (
     <DashboardClickableRow
       onClick={onClick}
       aria-label={pkg.name}
+      className={cn(presentation.density === "compact" && "px-2.5 py-2.5")}
     >
       <div className="flex items-center gap-3 min-w-0 flex-1">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted">
+        <div
+          className={cn(
+            "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted",
+            presentation.density === "compact" && "h-9 w-9",
+          )}
+        >
           <Package className="h-5 w-5 text-muted-foreground" />
         </div>
-        <div className="text-left min-w-0">
+        <div className={cn("text-left min-w-0", presentation.density === "compact" && "text-sm")}>
           <div className="font-medium truncate">{pkg.name}</div>
           <div className="text-xs text-muted-foreground">{pkg.provider}</div>
         </div>
@@ -259,7 +281,10 @@ function PackageItem({ package: pkg, onClick }: PackageItemProps) {
 
       <div className="flex items-center gap-2 shrink-0">
         <DashboardStatusBadge
-          className="font-mono text-xs max-w-30 truncate"
+          className={cn(
+            "font-mono text-xs max-w-30 truncate",
+            presentation.density === "compact" && "px-1.5 py-0",
+          )}
         >
           {pkg.version}
         </DashboardStatusBadge>

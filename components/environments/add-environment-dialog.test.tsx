@@ -2,13 +2,13 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AddEnvironmentDialog } from "./add-environment-dialog";
 import { useEnvironmentStore } from "@/lib/stores/environment";
-import { useEnvironments } from "@/hooks/use-environments";
+import { useEnvironments } from "@/hooks/environments/use-environments";
 
 jest.mock("@/lib/stores/environment", () => ({
   useEnvironmentStore: jest.fn(),
 }));
 
-jest.mock("@/hooks/use-environments", () => ({
+jest.mock("@/hooks/environments/use-environments", () => ({
   useEnvironments: jest.fn(),
 }));
 

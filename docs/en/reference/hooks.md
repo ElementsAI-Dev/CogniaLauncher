@@ -25,7 +25,7 @@ CogniaLauncher includes 29 custom React Hooks that encapsulate business logic an
 
 | Hook | File | Purpose |
 |------|------|------|
-| `useEnvVar` | `use-envvar.ts` | Environment variable list/mutation, backend readiness snapshot loading, verified mutation result handling, preview-first import flows, PATH repair previews, conflict resolution, shell guidance, and import/export flows |
+| `useEnvVar` | `hooks/envvar/use-envvar.ts` | Environment variable list/mutation, backend readiness snapshot loading, exact-action snapshot protection preflight, snapshot history, scope-aware restore preview and verified restore handling, preview-first import flows, PATH repair previews, conflict resolution, shell guidance, and import/export flows |
 
 ## Package Management
 
