@@ -4225,9 +4225,7 @@ async fn cmd_envvar(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_
             };
             let fingerprint = match get_string(&subcmd.matches.args, "fingerprint") {
                 Some(value) => value,
-                None => {
-                    return usage_error(command, json_mode, "preview fingerprint is required")
-                }
+                None => return usage_error(command, json_mode, "preview fingerprint is required"),
             };
             let scope_values = get_string_list(&subcmd.matches.args, "scopes");
             let mut scopes = Vec::new();

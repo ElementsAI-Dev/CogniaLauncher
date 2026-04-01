@@ -29,6 +29,7 @@ const mockFetchEnvironments = jest.fn().mockResolvedValue(undefined);
 const mockFetchInstalledPackages = jest.fn().mockResolvedValue(undefined);
 const mockFetchProviders = jest.fn().mockResolvedValue(undefined);
 const mockFetchCacheInfo = jest.fn().mockResolvedValue(undefined);
+const mockFetchConfig = jest.fn().mockResolvedValue({});
 const mockFetchPlatformInfo = jest.fn().mockResolvedValue(undefined);
 const mockUseDashboardInsights = jest.fn(() => ({
   attentionCenter: {},
@@ -49,6 +50,7 @@ let mockDashboardIsEditMode = false;
 let mockDashboardVisualContext = { range: "7d" };
 let mockDashboardActiveStylePresetId = "balanced-workbench";
 let mockDashboardHasPresetDiverged = false;
+let mockSettingsConfig: Record<string, string> = {};
 
 // Mock hooks used by the dashboard page
 jest.mock("@/hooks/environments/use-environments", () => ({
@@ -87,6 +89,9 @@ jest.mock("@/hooks/packages/use-packages", () => ({
 
 jest.mock("@/hooks/settings/use-settings", () => ({
   useSettings: () => ({
+    config: mockSettingsConfig,
+    fetchConfig: (...args: Parameters<typeof mockFetchConfig>) =>
+      mockFetchConfig(...args),
     cacheInfo: {
       download_cache: { entry_count: 5, size: 1024, size_human: "1 KB", location: "" },
       metadata_cache: { entry_count: 10, size: 2048, size_human: "2 KB", location: "" },
@@ -329,6 +334,17 @@ function renderWithProviders(ui: React.ReactElement) {
   return render(ui, { wrapper: TestWrapper });
 }
 
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+
+  return { promise, resolve, reject };
+}
+
 describe("Dashboard Page", () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -341,6 +357,7 @@ describe("Dashboard Page", () => {
     mockDashboardVisualContext = { range: "7d" };
     mockDashboardActiveStylePresetId = "balanced-workbench";
     mockDashboardHasPresetDiverged = false;
+    mockSettingsConfig = {};
   });
 
   it("renders the dashboard title", async () => {
@@ -681,6 +698,66 @@ describe("Dashboard Page", () => {
 
     await waitFor(() => {
       expect(screen.getAllByText("Package fetch failed").length).toBeGreaterThan(0);
+    });
+  });
+
+  it("skips heavy startup scans when startup config disables them", async () => {
+    mockSettingsConfig = {
+      "startup.scan_environments": "false",
+      "startup.scan_packages": "false",
+    };
+
+    renderWithProviders(<DashboardPage />);
+
+    await waitFor(() => {
+      expect(mockFetchProviders).toHaveBeenCalledTimes(1);
+      expect(mockFetchPlatformInfo).toHaveBeenCalledTimes(1);
+      expect(mockFetchCacheInfo).toHaveBeenCalledTimes(1);
+    });
+
+    expect(mockFetchConfig).not.toHaveBeenCalled();
+    expect(mockFetchEnvironments).not.toHaveBeenCalled();
+    expect(mockFetchInstalledPackages).not.toHaveBeenCalled();
+  });
+
+  it("runs heavy startup scans sequentially after startup config loads", async () => {
+    const configDeferred = createDeferred<Record<string, string>>();
+    const envDeferred = createDeferred<void>();
+
+    mockFetchConfig.mockImplementation(() => configDeferred.promise);
+    mockFetchEnvironments.mockImplementation(() => envDeferred.promise);
+    mockFetchInstalledPackages.mockResolvedValue(undefined);
+
+    renderWithProviders(<DashboardPage />);
+
+    await waitFor(() => {
+      expect(mockFetchProviders).toHaveBeenCalledTimes(1);
+      expect(mockFetchPlatformInfo).toHaveBeenCalledTimes(1);
+    });
+
+    expect(mockFetchEnvironments).not.toHaveBeenCalled();
+    expect(mockFetchInstalledPackages).not.toHaveBeenCalled();
+
+    await act(async () => {
+      configDeferred.resolve({
+        "startup.scan_environments": "true",
+        "startup.scan_packages": "true",
+      });
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(mockFetchEnvironments).toHaveBeenCalledTimes(1);
+    });
+    expect(mockFetchInstalledPackages).not.toHaveBeenCalled();
+
+    await act(async () => {
+      envDeferred.resolve(undefined);
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(mockFetchInstalledPackages).toHaveBeenCalledTimes(1);
     });
   });
 });

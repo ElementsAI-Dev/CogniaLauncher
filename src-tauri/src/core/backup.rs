@@ -1930,7 +1930,15 @@ mod tests {
     async fn test_delete_backup_with_result_nonexistent_backup() {
         let dir = tempfile::tempdir().unwrap();
         let nonexistent = dir.path().join("does_not_exist");
-        let result = delete_backup_with_result(&nonexistent).await;
+        let mut result = delete_backup_with_result(&nonexistent).await;
+        for _ in 0..5 {
+            if result.reason_code.as_deref() == Some("operation_in_progress") {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                result = delete_backup_with_result(&nonexistent).await;
+                continue;
+            }
+            break;
+        }
         assert!(!result.success);
         assert_eq!(result.status, BackupOperationStatus::Skipped);
         assert_eq!(result.reason_code.as_deref(), Some("backup_not_found"));
@@ -2322,7 +2330,15 @@ mod tests {
         tokio::fs::create_dir(&empty_dir).await.unwrap();
         let dest = dir.path().join("out.zip");
 
-        let result = export_backup_with_result(&empty_dir, &dest).await;
+        let mut result = export_backup_with_result(&empty_dir, &dest).await;
+        for _ in 0..5 {
+            if result.reason_code.as_deref() == Some("operation_in_progress") {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                result = export_backup_with_result(&empty_dir, &dest).await;
+                continue;
+            }
+            break;
+        }
         assert!(!result.success);
         assert_eq!(result.status, BackupOperationStatus::Failed);
         assert_eq!(
@@ -2463,7 +2479,15 @@ mod tests {
         let mut settings = Settings::default();
         settings.paths.root = Some(dir.path().to_path_buf());
 
-        let result = cleanup_old_backups_with_result(&settings, 5, 30).await;
+        let mut result = cleanup_old_backups_with_result(&settings, 5, 30).await;
+        for _ in 0..5 {
+            if result.reason_code.as_deref() == Some("operation_in_progress") {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                result = cleanup_old_backups_with_result(&settings, 5, 30).await;
+                continue;
+            }
+            break;
+        }
         assert!(!result.success);
         assert_eq!(result.deleted, 0);
         assert_eq!(result.status, BackupOperationStatus::Skipped);

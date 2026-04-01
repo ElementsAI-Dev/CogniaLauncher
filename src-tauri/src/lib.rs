@@ -168,6 +168,10 @@ pub fn run() {
 
             // Get app handles before the async block
             let app_handle_for_init = app.handle().clone();
+            let mut cognia_dir_for_plugins = std::path::PathBuf::new();
+            let mut startup_window_effect = String::new();
+            let mut startup_theme = String::new();
+            let mut startup_start_minimized = false;
 
             // ═══════════════════════════════════════════════════════════════════
             // CRITICAL PATH (block_on) — only fast, essential operations.
@@ -210,6 +214,10 @@ pub fn run() {
                     } else {
                         TrayLanguage::En
                     };
+                    startup_start_minimized = tray_guard.start_minimized;
+                    startup_window_effect = settings_guard.appearance.window_effect.clone();
+                    startup_theme = settings_guard.appearance.theme.clone();
+                    cognia_dir_for_plugins = settings_guard.get_root_dir();
                 }
                 emit_init_progress(&app_handle_for_init, "settings", 15, "splash.loadingSettings");
 
@@ -273,7 +281,6 @@ pub fn run() {
             app.manage(terminal_mgr.clone());
 
             // PluginManager::new() is synchronous — safe to call here
-            let cognia_dir_for_plugins = tauri::async_runtime::block_on(async { settings.read().await.get_root_dir() });
             let plugin_deps = plugin::PluginDeps {
                 registry: registry.clone(),
                 settings: settings.clone(),
@@ -399,18 +406,18 @@ pub fn run() {
 
             // Apply window effect from persisted settings
             {
-                let s = tauri::async_runtime::block_on(settings.read());
-                let effect = s.appearance.window_effect.clone();
-                let theme = s.appearance.theme.clone();
-                drop(s);
                 if let Some(window) = app.get_webview_window("main") {
-                    let dark = match theme.as_str() {
+                    let dark = match startup_theme.as_str() {
                         "dark" => Some(true),
                         "light" => Some(false),
                         _ => None,
                     };
                     if let Err(e) =
-                        commands::window_effect::apply_effect_to_window(&window, &effect, dark)
+                        commands::window_effect::apply_effect_to_window(
+                            &window,
+                            &startup_window_effect,
+                            dark,
+                        )
                     {
                         info!("Window effect apply failed: {}", e);
                     }
@@ -423,7 +430,7 @@ pub fn run() {
             }
 
             // Hide window if start-minimized is enabled
-            if tray::should_start_minimized(app.handle()) {
+            if startup_start_minimized || tray::should_start_minimized(app.handle()) {
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.hide();
                     info!("Started minimized to tray");

@@ -926,7 +926,6 @@ fn build_menu<R: Runtime>(
                 }
                 if let Some(wsl_submenu) = build_wsl_submenu(app, &labels, state)? {
                     menu.append(&wsl_submenu)?;
-                    need_separator = true;
                 }
                 let item =
                     MenuItem::with_id(app, "settings", labels.open_settings, true, None::<&str>)?;
@@ -1449,6 +1448,36 @@ fn update_menu_state<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
+fn clone_tray_state_for_setup(state: &TrayState) -> TrayState {
+    TrayState {
+        icon_state: state.icon_state,
+        language: state.language,
+        active_downloads: AtomicUsize::new(state.active_downloads.load(Ordering::SeqCst)),
+        wsl_running_count: state.wsl_running_count,
+        wsl_default_distro: state.wsl_default_distro.clone(),
+        has_update: state.has_update,
+        has_error: state.has_error,
+        click_behavior: state.click_behavior,
+        quick_action: state.quick_action,
+        minimize_to_tray: state.minimize_to_tray,
+        start_minimized: state.start_minimized,
+        show_notifications: state.show_notifications,
+        notification_level: state.notification_level,
+        notification_events: state.notification_events.clone(),
+        always_on_top: AtomicBool::new(state.always_on_top.load(Ordering::SeqCst)),
+        menu_config: state.menu_config.clone(),
+        terminal_default_profile_id: state.terminal_default_profile_id.clone(),
+        terminal_recent_profiles: state.terminal_recent_profiles.clone(),
+    }
+}
+
+fn try_clone_tray_state_for_setup(state: &SharedTrayState) -> Option<TrayState> {
+    state
+        .try_read()
+        .ok()
+        .map(|guard| clone_tray_state_for_setup(&guard))
+}
+
 /// Setup the system tray
 pub fn setup_tray(app: &AppHandle<Wry>) -> Result<(), Box<dyn std::error::Error>> {
     let tray_state = app
@@ -1456,26 +1485,24 @@ pub fn setup_tray(app: &AppHandle<Wry>) -> Result<(), Box<dyn std::error::Error>
         .map(|s| s.inner().clone());
 
     let default_state = TrayState::default();
+    let is_visible = app
+        .get_webview_window("main")
+        .map(|w| w.is_visible().unwrap_or(true))
+        .unwrap_or(true);
 
     let (click_behavior, tooltip, resolved_icon_state, menu) =
-        if let Some(ref state_arc) = tray_state {
-            let guard = futures::executor::block_on(state_arc.read());
-            let is_visible = app
-                .get_webview_window("main")
-                .map(|w| w.is_visible().unwrap_or(true))
-                .unwrap_or(true);
-            let m = build_menu(app, is_visible, &guard)?;
+        if let Some(state) = tray_state
+            .as_ref()
+            .and_then(try_clone_tray_state_for_setup)
+        {
+            let m = build_menu(app, is_visible, &state)?;
             (
-                guard.click_behavior,
-                get_tooltip(&guard),
-                resolve_icon_state(&guard),
+                state.click_behavior,
+                get_tooltip(&state),
+                resolve_icon_state(&state),
                 m,
             )
         } else {
-            let is_visible = app
-                .get_webview_window("main")
-                .map(|w| w.is_visible().unwrap_or(true))
-                .unwrap_or(true);
             let m = build_menu(app, is_visible, &default_state)?;
             (
                 TrayClickBehavior::default(),
@@ -2354,5 +2381,51 @@ mod tests {
 
         assert_eq!(info.wsl_running_count, 1);
         assert_eq!(info.wsl_default_distro.as_deref(), Some("Ubuntu"));
+    }
+
+    #[test]
+    fn try_clone_tray_state_for_setup_returns_none_when_locked() {
+        let shared = Arc::new(RwLock::new(TrayState::default()));
+        let _guard = shared.try_write().expect("write lock should be available");
+
+        assert!(try_clone_tray_state_for_setup(&shared).is_none());
+    }
+
+    #[test]
+    fn try_clone_tray_state_for_setup_copies_runtime_fields() {
+        let shared = Arc::new(RwLock::new(TrayState::default()));
+        {
+            let mut state = shared.try_write().expect("write lock should be available");
+            state.language = TrayLanguage::Zh;
+            state.click_behavior = TrayClickBehavior::QuickAction;
+            state.quick_action = TrayQuickAction::OpenLogs;
+            state.has_update = true;
+            state.has_error = true;
+            state.start_minimized = true;
+            state.active_downloads.store(3, Ordering::SeqCst);
+            state.always_on_top.store(true, Ordering::SeqCst);
+            state.terminal_default_profile_id = Some("pwsh".to_string());
+            state.terminal_recent_profiles = vec![TrayTerminalProfileEntry {
+                id: "pwsh".to_string(),
+                name: "PowerShell".to_string(),
+            }];
+        }
+
+        let snapshot = try_clone_tray_state_for_setup(&shared)
+            .expect("snapshot should be available when no write lock is held");
+
+        assert_eq!(snapshot.language, TrayLanguage::Zh);
+        assert_eq!(snapshot.click_behavior, TrayClickBehavior::QuickAction);
+        assert_eq!(snapshot.quick_action, TrayQuickAction::OpenLogs);
+        assert!(snapshot.has_update);
+        assert!(snapshot.has_error);
+        assert!(snapshot.start_minimized);
+        assert_eq!(snapshot.active_downloads.load(Ordering::SeqCst), 3);
+        assert!(snapshot.always_on_top.load(Ordering::SeqCst));
+        assert_eq!(
+            snapshot.terminal_default_profile_id.as_deref(),
+            Some("pwsh")
+        );
+        assert_eq!(snapshot.terminal_recent_profiles.len(), 1);
     }
 }

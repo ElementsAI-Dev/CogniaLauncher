@@ -939,6 +939,9 @@ mod tests {
 
         assert_eq!(profile.platform, crate::download::ArtifactPlatform::Windows);
         assert_eq!(profile.arch, crate::download::ArtifactArch::X64);
-        assert_eq!(profile.artifact_kind, crate::download::ArtifactKind::Archive);
+        assert_eq!(
+            profile.artifact_kind,
+            crate::download::ArtifactKind::Archive
+        );
     }
 }

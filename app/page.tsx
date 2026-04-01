@@ -30,6 +30,55 @@ import {
 } from '@/lib/cache/invalidation';
 import { Settings2, Pencil, Check, CheckCircle2, AlertCircle, X, RefreshCw, Sparkles } from 'lucide-react';
 
+const DEFAULT_STARTUP_SCAN_FLAGS = {
+  scanEnvironments: true,
+  scanPackages: true,
+} as const;
+
+function resolveStartupScanFlags(config: Record<string, string> | null | undefined) {
+  const readFlag = (
+    key: 'startup.scan_environments' | 'startup.scan_packages',
+    fallback: boolean,
+  ) => {
+    const value = config?.[key];
+    if (typeof value !== 'string') {
+      return fallback;
+    }
+
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'true') {
+      return true;
+    }
+    if (normalized === 'false') {
+      return false;
+    }
+
+    return fallback;
+  };
+
+  return {
+    scanEnvironments: readFlag(
+      'startup.scan_environments',
+      DEFAULT_STARTUP_SCAN_FLAGS.scanEnvironments,
+    ),
+    scanPackages: readFlag(
+      'startup.scan_packages',
+      DEFAULT_STARTUP_SCAN_FLAGS.scanPackages,
+    ),
+  };
+}
+
+async function yieldToBrowser() {
+  await new Promise<void>((resolve) => {
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(() => resolve());
+      return;
+    }
+
+    setTimeout(resolve, 0);
+  });
+}
+
 export default function DashboardPage() {
   const { environments, fetchEnvironments, loading: envsLoading, error: envsError } = useEnvironments();
   const {
@@ -41,6 +90,8 @@ export default function DashboardPage() {
     error: pkgsError,
   } = usePackages();
   const {
+    config,
+    fetchConfig,
     cacheInfo,
     fetchCacheInfo,
     platformInfo,
@@ -74,32 +125,47 @@ export default function DashboardPage() {
   useEffect(() => {
     if (initialFetchDone.current) return;
     initialFetchDone.current = true;
+    let cancelled = false;
 
     // Phased loading to avoid firing all heavy backend calls at once.
     // Phase 1 (immediate, lightweight): provider metadata + platform info
     // Phase 2 (deferred): cache info
-    // Phase 3 (after Phase 1): environments + packages (heaviest — subprocess spawns)
+    // Phase 3 (after config): environments + packages (heaviest — subprocess spawns)
     const loadData = async () => {
-      // Phase 1: lightweight metadata (no subprocess spawns)
-      await Promise.all([
+      const [loadedConfig] = await Promise.all([
+        Object.keys(config).length > 0 ? Promise.resolve(config) : fetchConfig(),
         fetchProviders(),
         fetchPlatformInfo(),
       ]);
 
       // Phase 2: cache info (moderate I/O, deferred)
-      fetchCacheInfo();
+      void fetchCacheInfo();
 
-      // Phase 3: heavy scans (subprocess-intensive, run after UI has rendered)
-      await Promise.all([
-        fetchEnvironments(),
-        fetchInstalledPackages(),
-      ]);
+      const startupFlags = resolveStartupScanFlags(loadedConfig);
 
-      setLastRefreshed(new Date());
+      // Phase 3: heavy scans (subprocess-intensive, run after UI has rendered).
+      // Keep them serialized so startup does not trigger both global scans at once.
+      if (startupFlags.scanEnvironments) {
+        await yieldToBrowser();
+        await fetchEnvironments();
+      }
+
+      if (startupFlags.scanPackages) {
+        await yieldToBrowser();
+        await fetchInstalledPackages();
+      }
+
+      if (!cancelled) {
+        setLastRefreshed(new Date());
+      }
     };
 
-    loadData();
-  }, [fetchEnvironments, fetchInstalledPackages, fetchProviders, fetchCacheInfo, fetchPlatformInfo]);
+    void loadData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [config, fetchConfig, fetchEnvironments, fetchInstalledPackages, fetchProviders, fetchCacheInfo, fetchPlatformInfo]);
 
   const scheduleCacheInfoRefresh = useCallback(() => {
     if (!isTauri()) return;

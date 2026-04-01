@@ -125,3 +125,9 @@ tokio-test = "0.4"
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
+
+[profile.test]
+# Full debug info makes `cargo test --no-run` link the large Tauri lib target
+# with excessive memory usage on Windows. Line tables keep useful backtraces
+# while substantially reducing linker pressure for test-only builds.
+debug = 1

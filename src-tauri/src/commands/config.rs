@@ -236,88 +236,12 @@ pub fn get_cognia_dir() -> Result<String, String> {
 
 #[tauri::command]
 pub async fn get_platform_info() -> Result<PlatformInfo, String> {
-    use sysinfo::System;
-
-    let os = crate::platform::env::current_platform()
-        .as_str()
-        .to_string();
-    let arch = crate::platform::env::current_arch().as_str().to_string();
-
-    let os_version = System::os_version().unwrap_or_default();
-    let os_long_version = System::long_os_version().unwrap_or_default();
-    let kernel_version = System::kernel_version().unwrap_or_default();
-    let hostname = System::host_name().unwrap_or_default();
-    let os_name = System::name().unwrap_or_default();
-    let distribution_id = System::distribution_id();
-    let cpu_arch = System::cpu_arch();
-    let boot_time = System::boot_time();
-    let load_avg = System::load_average();
-
-    let mut sys = System::new();
-    sys.refresh_cpu_all();
-    sys.refresh_memory();
-
-    // sysinfo requires two CPU refreshes with a delay for accurate usage data.
-    // MINIMUM_CPU_UPDATE_INTERVAL is ~200ms.
-    std::thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
-    sys.refresh_cpu_usage();
-
-    let cpu_model = sys
-        .cpus()
-        .first()
-        .map(|cpu| cpu.brand().to_string())
-        .unwrap_or_default();
-    let cpu_vendor_id = sys
-        .cpus()
-        .first()
-        .map(|cpu| cpu.vendor_id().to_string())
-        .unwrap_or_default();
-    let cpu_frequency = sys.cpus().first().map(|cpu| cpu.frequency()).unwrap_or(0);
-    let cpu_cores = sys.cpus().len() as u32;
-    let physical_core_count = sys.physical_core_count().map(|c| c as u32);
-    let global_cpu_usage = sys.global_cpu_usage();
-
-    let total_memory = sys.total_memory();
-    let available_memory = sys.available_memory();
-    let used_memory = sys.used_memory();
-    let total_swap = sys.total_swap();
-    let used_swap = sys.used_swap();
-    let uptime = System::uptime();
-
-    // GPU detection (async, platform-native)
-    let gpus = detect_gpus().await;
-
-    Ok(PlatformInfo {
-        os,
-        arch,
-        os_version,
-        os_long_version,
-        kernel_version,
-        hostname,
-        os_name,
-        distribution_id,
-        cpu_arch,
-        cpu_model,
-        cpu_vendor_id,
-        cpu_frequency,
-        cpu_cores,
-        physical_core_count,
-        global_cpu_usage,
-        total_memory,
-        available_memory,
-        used_memory,
-        total_swap,
-        used_swap,
-        uptime,
-        boot_time,
-        load_average: [load_avg.one, load_avg.five, load_avg.fifteen],
-        gpus,
-        app_version: env!("CARGO_PKG_VERSION").to_string(),
-    })
+    Ok(crate::core::system_info::collect_platform_info(false).await.into())
 }
 
 #[cfg(test)]
 mod tests {
+    use super::PlatformInfo;
     use super::config_list_defaults;
     use super::should_refresh_network_clients_for_key;
     use super::CONFIG_LIST_STATIC_KEYS;
@@ -493,6 +417,49 @@ mod tests {
             Some("toggle_window")
         );
     }
+
+    #[test]
+    fn platform_info_from_core_snapshot_preserves_fields() {
+        let core = crate::core::system_info::PlatformInfo {
+            os: "windows".to_string(),
+            arch: "x86_64".to_string(),
+            os_version: "11".to_string(),
+            os_long_version: "Windows 11".to_string(),
+            kernel_version: "10.0".to_string(),
+            hostname: "devbox".to_string(),
+            os_name: "Windows".to_string(),
+            distribution_id: "windows".to_string(),
+            cpu_arch: "x86_64".to_string(),
+            cpu_model: "CPU".to_string(),
+            cpu_vendor_id: "GenuineIntel".to_string(),
+            cpu_frequency: 3200,
+            cpu_cores: 16,
+            physical_core_count: Some(8),
+            global_cpu_usage: 12.5,
+            total_memory: 64,
+            available_memory: 32,
+            used_memory: 32,
+            total_swap: 8,
+            used_swap: 1,
+            uptime: 120,
+            boot_time: 42,
+            load_average: [0.1, 0.2, 0.3],
+            gpus: vec![crate::core::system_info::GpuInfo {
+                name: "GPU".to_string(),
+                vram_mb: Some(8192),
+                driver_version: Some("1.0".to_string()),
+                vendor: Some("Vendor".to_string()),
+            }],
+            app_version: "0.1.0".to_string(),
+        };
+
+        let platform = PlatformInfo::from(core);
+        assert_eq!(platform.os, "windows");
+        assert_eq!(platform.cpu_model, "CPU");
+        assert_eq!(platform.physical_core_count, Some(8));
+        assert_eq!(platform.gpus.len(), 1);
+        assert_eq!(platform.app_version, "0.1.0");
+    }
 }
 
 #[derive(Serialize, Clone)]
@@ -502,6 +469,17 @@ pub struct GpuInfo {
     pub vram_mb: Option<u64>,
     pub driver_version: Option<String>,
     pub vendor: Option<String>,
+}
+
+impl From<crate::core::system_info::GpuInfo> for GpuInfo {
+    fn from(value: crate::core::system_info::GpuInfo) -> Self {
+        Self {
+            name: value.name,
+            vram_mb: value.vram_mb,
+            driver_version: value.driver_version,
+            vendor: value.vendor,
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -532,6 +510,38 @@ pub struct PlatformInfo {
     pub load_average: [f64; 3],
     pub gpus: Vec<GpuInfo>,
     pub app_version: String,
+}
+
+impl From<crate::core::system_info::PlatformInfo> for PlatformInfo {
+    fn from(value: crate::core::system_info::PlatformInfo) -> Self {
+        Self {
+            os: value.os,
+            arch: value.arch,
+            os_version: value.os_version,
+            os_long_version: value.os_long_version,
+            kernel_version: value.kernel_version,
+            hostname: value.hostname,
+            os_name: value.os_name,
+            distribution_id: value.distribution_id,
+            cpu_arch: value.cpu_arch,
+            cpu_model: value.cpu_model,
+            cpu_vendor_id: value.cpu_vendor_id,
+            cpu_frequency: value.cpu_frequency,
+            cpu_cores: value.cpu_cores,
+            physical_core_count: value.physical_core_count,
+            global_cpu_usage: value.global_cpu_usage,
+            total_memory: value.total_memory,
+            available_memory: value.available_memory,
+            used_memory: value.used_memory,
+            total_swap: value.total_swap,
+            used_swap: value.used_swap,
+            uptime: value.uptime,
+            boot_time: value.boot_time,
+            load_average: value.load_average,
+            gpus: value.gpus.into_iter().map(GpuInfo::from).collect(),
+            app_version: value.app_version,
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -691,6 +701,7 @@ pub fn get_network_interfaces() -> Result<Vec<NetworkInterfaceInfo>, String> {
 }
 
 /// Detect GPU information using platform-native methods
+#[allow(dead_code)]
 async fn detect_gpus() -> Vec<GpuInfo> {
     #[cfg(target_os = "windows")]
     {
@@ -712,6 +723,7 @@ async fn detect_gpus() -> Vec<GpuInfo> {
 }
 
 #[cfg(target_os = "windows")]
+#[allow(dead_code)]
 async fn detect_gpus_windows() -> Vec<GpuInfo> {
     use crate::platform::process;
 
@@ -802,6 +814,7 @@ async fn detect_gpus_windows() -> Vec<GpuInfo> {
 /// Parse PowerShell Get-CimInstance JSON output for GPU info.
 /// Output can be a single object or an array of objects.
 #[cfg(target_os = "windows")]
+#[allow(dead_code)]
 fn parse_powershell_gpu_json(json_str: &str) -> Option<Vec<GpuInfo>> {
     let json_str = json_str.trim();
     if json_str.is_empty() {

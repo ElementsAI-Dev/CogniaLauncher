@@ -758,7 +758,12 @@ pub async fn envvar_set_persistent(
     let key = env::normalize_env_var_key(&key)?;
     let support = build_action_support("persistent_set", Some(scope));
     if !support.supported {
-        return Ok(blocked_mutation_result("persistent_set", &key, scope, &support));
+        return Ok(blocked_mutation_result(
+            "persistent_set",
+            &key,
+            scope,
+            &support,
+        ));
     }
 
     env::set_persistent_var(&key, &value, scope).await?;
@@ -799,7 +804,12 @@ pub async fn envvar_remove_persistent(
     let key = env::normalize_env_var_key(&key)?;
     let support = build_action_support("persistent_remove", Some(scope));
     if !support.supported {
-        return Ok(blocked_mutation_result("persistent_remove", &key, scope, &support));
+        return Ok(blocked_mutation_result(
+            "persistent_remove",
+            &key,
+            scope,
+            &support,
+        ));
     }
 
     env::remove_persistent_var(&key, scope).await?;
@@ -1441,7 +1451,11 @@ pub async fn envvar_apply_path_repair(
 ) -> Result<EnvVarPathMutationResult, CogniaError> {
     let support = build_action_support("path_repair_apply", Some(scope));
     if !support.supported {
-        return Ok(blocked_path_mutation_result("path_repair_apply", scope, &support));
+        return Ok(blocked_path_mutation_result(
+            "path_repair_apply",
+            scope,
+            &support,
+        ));
     }
 
     let preview = build_path_repair_preview(scope).await?;
@@ -2177,15 +2191,9 @@ pub(crate) async fn create_envvar_snapshot_for_settings(
     let _gate = crate::core::backup::try_acquire_backup_mutation_gate("create")
         .map_err(CogniaError::Config)?;
     let payload = capture_envvar_snapshot_payload(scopes).await?;
-    let snapshot = write_envvar_snapshot_bundle(
-        settings,
-        &payload,
-        creation_mode,
-        source_action,
-        note,
-        None,
-    )
-    .await?;
+    let snapshot =
+        write_envvar_snapshot_bundle(settings, &payload, creation_mode, source_action, note, None)
+            .await?;
 
     Ok(EnvVarSnapshotCreateResult {
         success: true,
@@ -2196,6 +2204,7 @@ pub(crate) async fn create_envvar_snapshot_for_settings(
     })
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) async fn cleanup_envvar_snapshot_bundles(
     settings: &Settings,
     max_count: u32,
@@ -2767,8 +2776,8 @@ pub async fn envvar_restore_snapshot(
         &scopes,
         preview_fingerprint.as_deref(),
     )
-        .await
-        .map_err(|error| error.to_string())
+    .await
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -3337,7 +3346,9 @@ mod tests {
         )
         .await;
 
-        assert!(matches!(result, Err(CogniaError::Config(message)) if message.contains("already running")));
+        assert!(
+            matches!(result, Err(CogniaError::Config(message)) if message.contains("already running"))
+        );
     }
 
     #[cfg(not(windows))]
@@ -3617,10 +3628,9 @@ mod tests {
             .actions
             .iter()
             .any(|item| item.action == "persistent_set" && item.scope == Some(EnvVarScope::User)));
-        assert!(snapshot
-            .actions
-            .iter()
-            .any(|item| item.action == "persistent_remove" && item.scope == Some(EnvVarScope::User)));
+        assert!(snapshot.actions.iter().any(
+            |item| item.action == "persistent_remove" && item.scope == Some(EnvVarScope::User)
+        ));
         assert!(snapshot
             .actions
             .iter()
@@ -3682,7 +3692,9 @@ mod tests {
             restore_envvar_snapshot_for_settings(&settings, &created.path, &[], Some("missing"))
                 .await;
 
-        assert!(matches!(result, Err(CogniaError::Config(message)) if message.contains("already running")));
+        assert!(
+            matches!(result, Err(CogniaError::Config(message)) if message.contains("already running"))
+        );
     }
 
     #[test]
@@ -3738,9 +3750,10 @@ mod tests {
         .await
         .expect("create snapshot bundle");
 
-        let preview = preview_envvar_snapshot_for_settings(&settings, &created.path, &[EnvVarScope::User])
-            .await
-            .expect("preview snapshot restore");
+        let preview =
+            preview_envvar_snapshot_for_settings(&settings, &created.path, &[EnvVarScope::User])
+                .await
+                .expect("preview snapshot restore");
 
         assert!(!preview.fingerprint.is_empty());
         assert_eq!(preview.segments.len(), 1);
@@ -3763,9 +3776,10 @@ mod tests {
         .await
         .expect("create snapshot bundle");
 
-        let preview = preview_envvar_snapshot_for_settings(&settings, &created.path, &[EnvVarScope::User])
-            .await
-            .expect("preview snapshot restore");
+        let preview =
+            preview_envvar_snapshot_for_settings(&settings, &created.path, &[EnvVarScope::User])
+                .await
+                .expect("preview snapshot restore");
 
         let result = restore_envvar_snapshot_for_settings(
             &settings,
