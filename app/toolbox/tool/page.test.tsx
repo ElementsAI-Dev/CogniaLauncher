@@ -4,14 +4,22 @@ import LegacyToolDetailPage from "./page";
 
 const mockReplace = jest.fn();
 const mockGet = jest.fn();
+let mockSearchParamsShouldSuspend = false;
+const mockSearchParamsSuspensePromise = Promise.resolve();
 
 jest.mock("next/navigation", () => ({
   useRouter: () => ({
     replace: (href: string) => mockReplace(href),
   }),
-  useSearchParams: () => ({
-    get: (key: string) => mockGet(key),
-  }),
+  useSearchParams: () => {
+    if (mockSearchParamsShouldSuspend) {
+      throw mockSearchParamsSuspensePromise;
+    }
+
+    return {
+      get: (key: string) => mockGet(key),
+    };
+  },
 }));
 
 jest.mock("@/components/toolbox/tool-detail-page-client", () => ({
@@ -20,9 +28,14 @@ jest.mock("@/components/toolbox/tool-detail-page-client", () => ({
   ),
 }));
 
+jest.mock("@/components/layout/page-loading-skeleton", () => ({
+  PageLoadingSkeleton: () => <div data-testid="page-loading-skeleton">Loading</div>,
+}));
+
 describe("LegacyToolDetailPage", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockSearchParamsShouldSuspend = false;
   });
 
   it("keeps built-in tool ids on legacy query route", async () => {
@@ -58,6 +71,14 @@ describe("LegacyToolDetailPage", () => {
       "",
     );
     expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it("renders a suspense fallback while search params are pending", () => {
+    mockSearchParamsShouldSuspend = true;
+
+    render(<LegacyToolDetailPage />);
+
+    expect(screen.getByTestId("page-loading-skeleton")).toBeInTheDocument();
   });
 
   it("keeps plugin tool ids on legacy query route", async () => {

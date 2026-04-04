@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useMemo } from 'react';
+import { Suspense, useEffect, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { PageLoadingSkeleton } from '@/components/layout/page-loading-skeleton';
 import { ToolDetailPageClient } from '@/components/toolbox/tool-detail-page-client';
 import {
   decodeToolIdFromPath,
@@ -9,7 +10,7 @@ import {
   shouldUseLegacyToolboxDetailRoute,
 } from '@/lib/toolbox-route';
 
-export default function LegacyToolDetailPage() {
+function LegacyToolDetailPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const toolId = useMemo(() => {
@@ -30,4 +31,12 @@ export default function LegacyToolDetailPage() {
   }, [router, toolId]);
 
   return <ToolDetailPageClient toolId={toolId} />;
+}
+
+export default function LegacyToolDetailPage() {
+  return (
+    <Suspense fallback={<PageLoadingSkeleton variant="detail" />}>
+      <LegacyToolDetailPageContent />
+    </Suspense>
+  );
 }
