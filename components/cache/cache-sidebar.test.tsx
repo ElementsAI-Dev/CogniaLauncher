@@ -22,6 +22,10 @@ jest.mock("./cache-path-card", () => ({
   },
 }));
 
+jest.mock("./cache-scan-settings", () => ({
+  CacheScanSettings: () => <div data-testid="cache-scan-settings" />,
+}));
+
 describe("CacheSidebar", () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -48,6 +52,7 @@ describe("CacheSidebar", () => {
 
     expect(screen.getByTestId("cache-settings-card")).toBeInTheDocument();
     expect(screen.getByTestId("cache-path-card")).toBeInTheDocument();
+    expect(screen.getByTestId("cache-scan-settings")).toBeInTheDocument();
 
     expect(mockCacheSettingsCard).toHaveBeenCalledWith(
       expect.objectContaining({

@@ -164,13 +164,13 @@ export function useExternalCache({
   const fetchInFlightRef = useRef<Promise<void> | null>(null);
   const queuedRefreshRef = useRef(false);
 
-  const fillSizesProgressively = useCallback(async (providers: string[], waveId: number) => {
+  const fillSizesProgressively = useCallback(async (providers: string[], waveId: number, concurrency = 4) => {
     if (providers.length === 0) return;
 
     const { calculateExternalCacheSize } = await import('@/lib/tauri');
     const queue = [...providers];
 
-    const CONCURRENCY = 4;
+    const CONCURRENCY = concurrency;
     let idx = 0;
 
     async function next(): Promise<void> {
@@ -233,6 +233,16 @@ export function useExternalCache({
 
     try {
       const tauri = await import('@/lib/tauri');
+
+      // Read scan settings for configurable concurrency
+      let probeConcurrency = 4;
+      try {
+        const scanSettings = await tauri.getScanSettings();
+        probeConcurrency = Math.max(1, Math.min(16, scanSettings.probe_concurrency ?? 4));
+      } catch {
+        // Fall back to default
+      }
+
       const fetchPathInfos = () => {
         if (!includePathInfos) return;
         tauri.getExternalCachePaths().then((paths) => {
@@ -262,7 +272,7 @@ export function useExternalCache({
         const pendingProviders = normalizedFast
           .filter((cache) => cache.sizePending)
           .map((cache) => cache.provider);
-        await fillSizesProgressively(pendingProviders, waveId);
+        await fillSizesProgressively(pendingProviders, waveId, probeConcurrency);
       };
 
       const supportsProgressiveProbing = (
@@ -301,9 +311,9 @@ export function useExternalCache({
       }
 
       const queue = normalizedCandidates.map((cache) => cache.provider);
-      const runSizeLimited = createLimiter(4);
+      const runSizeLimited = createLimiter(probeConcurrency);
       const pendingSizeTasks: Promise<unknown>[] = [];
-      const PROBE_CONCURRENCY = 4;
+      const PROBE_CONCURRENCY = probeConcurrency;
       let idx = 0;
 
       async function probeNext(): Promise<void> {

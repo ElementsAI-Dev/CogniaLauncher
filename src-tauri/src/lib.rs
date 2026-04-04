@@ -819,6 +819,14 @@ pub fn run() {
             commands::cache::cache_force_clean_external,
             // External cache paths
             commands::cache::get_external_cache_paths,
+            // Scan configuration
+            commands::cache::get_scan_presets,
+            commands::cache::get_scan_settings,
+            commands::cache::set_scan_settings,
+            commands::cache::set_scan_preset,
+            commands::cache::start_cache_scan,
+            commands::cache::cancel_cache_scan,
+            commands::cache::get_scan_status,
             // Database optimization & size history
             commands::cache::cache_optimize,
             commands::cache::get_cache_size_history,

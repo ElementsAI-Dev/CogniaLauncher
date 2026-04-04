@@ -18,7 +18,9 @@ pub use download::DownloadCache;
 pub use download_history::{DownloadHistory, DownloadRecord, DownloadStatus, HistoryStats};
 pub use download_resumer::{DownloadResumer, PartialDownload};
 pub use external::{
-    CombinedCacheStats, ExternalCacheCleanResult, ExternalCacheInfo, ExternalCacheProvider,
+    CacheScanProgress, CombinedCacheStats, ExternalCacheCleanResult, ExternalCacheInfo,
+    ExternalCacheProvider, ScanConfig, ScanPhase, ScanPreset, ScanPresetInfo, ScanProviderProgress,
+    ScanStatus,
 };
 pub use history::{
     CleanedFileInfo, CleanupHistory, CleanupRecord, CleanupRecordBuilder, CleanupSummary,

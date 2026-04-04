@@ -1940,7 +1940,11 @@ pub async fn discover_external_caches(
     let s = settings.read().await;
     let excluded = s.general.external_cache_excluded_providers.clone();
     let custom = s.general.custom_cache_entries.clone();
+    let scan_config = s.general.cache_scan_settings.to_scan_config();
     drop(s);
+    // Full discovery still uses default for size calc (backward compat) but
+    // benefits from category filter and provider priority via the config.
+    let _ = &scan_config; // reserved for future full-discovery config pass-through
     external::discover_all_caches_full_with_custom(&excluded, &custom)
         .await
         .map_err(|e| e.to_string())
@@ -1956,8 +1960,12 @@ pub async fn discover_external_caches_fast(
     let s = settings.read().await;
     let excluded = s.general.external_cache_excluded_providers.clone();
     let custom = s.general.custom_cache_entries.clone();
+    let scan_config = s.general.cache_scan_settings.to_scan_config();
     drop(s);
-    Ok(external::discover_all_caches_cached_with_custom(&excluded, &custom).await)
+    Ok(
+        external::discover_all_caches_cached_with_scan_config(&excluded, &custom, &scan_config)
+            .await,
+    )
 }
 
 /// Return lightweight candidate rows for progressive provider probing.
@@ -1968,9 +1976,12 @@ pub async fn discover_external_cache_candidates(
     let s = settings.read().await;
     let excluded = s.general.external_cache_excluded_providers.clone();
     let custom = s.general.custom_cache_entries.clone();
+    let scan_config = s.general.cache_scan_settings.to_scan_config();
     drop(s);
-    Ok(external::discover_cache_candidates_with_custom(
-        &excluded, &custom,
+    Ok(external::discover_cache_candidates_with_scan_config(
+        &excluded,
+        &custom,
+        &scan_config,
     ))
 }
 
@@ -1983,8 +1994,9 @@ pub async fn probe_external_cache_provider(
     let s = settings.read().await;
     let excluded = s.general.external_cache_excluded_providers.clone();
     let custom = s.general.custom_cache_entries.clone();
+    let scan_config = s.general.cache_scan_settings.to_scan_config();
     drop(s);
-    external::probe_cache_provider_with_custom(&provider, &excluded, &custom)
+    external::probe_cache_provider_with_scan_config(&provider, &excluded, &custom, &scan_config)
         .await
         .map_err(|e| e.to_string())
 }
@@ -2745,6 +2757,98 @@ fn get_provider_env_vars(provider: Option<external::ExternalCacheProvider>) -> V
 }
 
 // EnhancedCacheSettings removed: unified into CacheSettings (get/set_cache_settings)
+
+// ============================================================================
+// Scan Configuration
+// ============================================================================
+
+/// Return metadata for all built-in scan presets.
+#[tauri::command]
+pub async fn get_scan_presets() -> Result<Vec<external::ScanPresetInfo>, String> {
+    Ok(external::list_scan_presets())
+}
+
+/// Get the current scan settings.
+#[tauri::command]
+pub async fn get_scan_settings(
+    settings: State<'_, SharedSettings>,
+) -> Result<crate::config::settings::CacheScanSettings, String> {
+    let s = settings.read().await;
+    Ok(s.general.cache_scan_settings.clone())
+}
+
+/// Update scan settings (merged into general settings and persisted).
+#[tauri::command]
+pub async fn set_scan_settings(
+    new_settings: crate::config::settings::CacheScanSettings,
+    settings: State<'_, SharedSettings>,
+) -> Result<(), String> {
+    let mut s = settings.write().await;
+    s.general.cache_scan_settings = new_settings;
+    s.save().await.map_err(|e| e.to_string())?;
+    // Invalidate discovery cache so next fetch uses new config
+    drop(s);
+    external::invalidate_discovery_cache().await;
+    Ok(())
+}
+
+/// Start a background cache scan with progress events.
+/// Returns the scan ID. Subscribe to `cache-scan-progress` events for updates.
+#[tauri::command]
+pub async fn start_cache_scan(
+    scan_id: Option<String>,
+    app: AppHandle,
+    settings: State<'_, SharedSettings>,
+) -> Result<String, String> {
+    let s = settings.read().await;
+    let excluded = s.general.external_cache_excluded_providers.clone();
+    let custom = s.general.custom_cache_entries.clone();
+    let scan_config = s.general.cache_scan_settings.to_scan_config();
+    drop(s);
+
+    let id = if let Some(id) = scan_id {
+        id
+    } else {
+        external::start_scan_with_progress(&app, &excluded, &custom, &scan_config).await
+    };
+    Ok(id)
+}
+
+/// Cancel the currently active cache scan.
+#[tauri::command]
+pub async fn cancel_cache_scan() -> Result<bool, String> {
+    Ok(external::cancel_active_scan().await)
+}
+
+/// Get status of the currently active scan.
+#[tauri::command]
+pub async fn get_scan_status() -> Result<Option<external::ScanStatus>, String> {
+    Ok(external::get_active_scan_status().await)
+}
+
+/// Quick-apply a named scan preset. Convenience wrapper around `set_scan_settings`.
+#[tauri::command]
+pub async fn set_scan_preset(
+    preset: String,
+    settings: State<'_, SharedSettings>,
+) -> Result<crate::config::settings::CacheScanSettings, String> {
+    use crate::config::settings::CacheScanPreset;
+
+    let new_preset = match preset.to_ascii_lowercase().as_str() {
+        "quick" => CacheScanPreset::Quick,
+        "standard" => CacheScanPreset::Standard,
+        "deep" => CacheScanPreset::Deep,
+        other => return Err(format!("Unknown scan preset: {}", other)),
+    };
+
+    let mut s = settings.write().await;
+    s.general.cache_scan_settings.preset = new_preset;
+    s.save().await.map_err(|e| e.to_string())?;
+    let result = s.general.cache_scan_settings.clone();
+    drop(s);
+    external::invalidate_discovery_cache().await;
+    Ok(result)
+}
 
 // ============================================================================
 // Cache Database Optimization

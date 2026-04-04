@@ -2,6 +2,7 @@
 
 import { CacheSettingsCard } from './cache-settings-card';
 import { CachePathCard } from './cache-path-card';
+import { CacheScanSettings } from './cache-scan-settings';
 import type { CacheSettings } from '@/lib/tauri';
 
 export interface CacheSidebarProps {
@@ -40,6 +41,7 @@ export function CacheSidebar({
         handleSettingsChange={handleSettingsChange}
         handleSaveSettings={handleSaveSettings}
       />
+      <CacheScanSettings />
       <CachePathCard
         refreshTrigger={pathRefreshTrigger}
         onPathChanged={onPathChanged}

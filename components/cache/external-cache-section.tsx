@@ -66,6 +66,7 @@ import { deriveExternalCacheMaintenanceMetadata } from "@/lib/cache/maintenance"
 import { buildExternalCacheDetailHref } from "@/lib/cache/scopes";
 import type { ExternalCacheSectionProps } from "@/types/cache";
 import { useExternalCache } from "@/hooks/cache/use-external-cache";
+import { useScanProgress } from "@/hooks/cache/use-scan-progress";
 import type { ExternalCacheCleanResult } from "@/lib/tauri";
 import { writeClipboard } from "@/lib/clipboard";
 
@@ -97,6 +98,7 @@ export function ExternalCacheSection({
     setUseTrash,
   });
 
+  const scanProgress = useScanProgress();
   const cleaningAll = cleaning === "all";
 
   const diagHintKeyByReason: Record<string, string> = {
@@ -154,6 +156,49 @@ export function ExternalCacheSection({
         )}
       </div>
 
+      {/* Scan progress */}
+      {scanProgress.active && (
+        <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+          <div className="flex items-center justify-between text-xs">
+            <div className="flex items-center gap-2">
+              <RefreshCw className="h-3.5 w-3.5 animate-spin text-primary" />
+              <span className="font-medium">
+                {scanProgress.phase === "probing"
+                  ? t("cache.scanPhaseProbing")
+                  : t("cache.scanPhaseSizing")}
+              </span>
+              {scanProgress.currentProviderDisplay && (
+                <span className="text-muted-foreground">
+                  — {scanProgress.currentProviderDisplay}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="text-muted-foreground tabular-nums">
+                {scanProgress.completedProviders}/{scanProgress.totalProviders}
+              </span>
+              <span className="text-muted-foreground tabular-nums">
+                {(scanProgress.elapsedMs / 1000).toFixed(1)}s
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-xs"
+                onClick={scanProgress.cancelScan}
+              >
+                {t("common.cancel")}
+              </Button>
+            </div>
+          </div>
+          <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+            <div
+              className="h-full rounded-full bg-primary transition-all duration-300"
+              style={{ width: `${scanProgress.percent}%` }}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Toolbar */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -170,11 +215,13 @@ export function ExternalCacheSection({
           <Button
             variant="outline"
             size="sm"
-            onClick={fetchExternalCaches}
-            disabled={loading}
+            onClick={() => {
+              scanProgress.startScan();
+            }}
+            disabled={loading || scanProgress.active}
           >
             <RefreshCw
-              className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`}
+              className={`h-4 w-4 mr-2 ${(loading || scanProgress.active) ? "animate-spin" : ""}`}
             />
             {t("common.refresh")}
           </Button>

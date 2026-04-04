@@ -594,6 +594,446 @@ const DISCOVERY_CACHE_TTL_SECS: u64 = 60;
 const FAST_DISCOVERY_PROBE_TIMEOUT_MS: u64 = 450;
 const FAST_DISCOVERY_PROBE_CONCURRENCY: usize = 6;
 
+// ── Scan configuration ──────────────────────────────────────────────────────
+
+/// User-configurable scan parameters.
+/// All discovery and size-calculation functions accept an optional `ScanConfig`
+/// reference; passing `None` (or using the convenience wrappers) falls back to
+/// `ScanConfig::default()` which matches the original hard-coded constants.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, rename_all = "snake_case")]
+pub struct ScanConfig {
+    /// Per-provider probe timeout in milliseconds.
+    pub probe_timeout_ms: u64,
+    /// Maximum number of concurrent provider probes.
+    pub probe_concurrency: usize,
+    /// Maximum directory depth when calculating cache size.
+    pub size_calc_max_depth: u32,
+    /// Maximum number of files to traverse when calculating cache size.
+    pub size_calc_max_files: u64,
+    /// Timeout in seconds for each provider's size calculation.
+    pub size_calc_timeout_secs: u64,
+    /// TTL in seconds for the per-provider size cache.
+    pub size_cache_ttl_secs: u64,
+    /// TTL in seconds for the discovery result cache.
+    pub discovery_cache_ttl_secs: u64,
+    /// Optional category filter – when non-empty, only providers whose category
+    /// matches one of these strings are included in discovery.
+    pub categories: Vec<String>,
+    /// Ordered list of provider IDs to scan first; providers listed earlier are
+    /// probed before others. Providers not in this list retain their original
+    /// order after the prioritised ones.
+    pub provider_priority: Vec<String>,
+}
+
+impl Default for ScanConfig {
+    fn default() -> Self {
+        Self {
+            probe_timeout_ms: FAST_DISCOVERY_PROBE_TIMEOUT_MS,
+            probe_concurrency: FAST_DISCOVERY_PROBE_CONCURRENCY,
+            size_calc_max_depth: 15,
+            size_calc_max_files: 500_000,
+            size_calc_timeout_secs: 10,
+            size_cache_ttl_secs: PROVIDER_SIZE_CACHE_TTL_SECS,
+            discovery_cache_ttl_secs: DISCOVERY_CACHE_TTL_SECS,
+            categories: Vec::new(),
+            provider_priority: Vec::new(),
+        }
+    }
+}
+
+impl ScanConfig {
+    /// Quick preset – minimal I/O for fast startup.
+    pub fn quick() -> Self {
+        Self {
+            probe_timeout_ms: 200,
+            probe_concurrency: 3,
+            size_calc_max_depth: 8,
+            size_calc_max_files: 100_000,
+            size_calc_timeout_secs: 5,
+            size_cache_ttl_secs: 30,
+            discovery_cache_ttl_secs: 120,
+            ..Self::default()
+        }
+    }
+
+    /// Deep preset – thorough scan for accurate results.
+    pub fn deep() -> Self {
+        Self {
+            probe_timeout_ms: 2000,
+            probe_concurrency: 8,
+            size_calc_max_depth: 25,
+            size_calc_max_files: 2_000_000,
+            size_calc_timeout_secs: 30,
+            size_cache_ttl_secs: 90,
+            discovery_cache_ttl_secs: 30,
+            ..Self::default()
+        }
+    }
+
+    /// Build a `ScanConfig` from the persisted `ScanPreset` + overrides.
+    pub fn from_preset(preset: &ScanPreset) -> Self {
+        match preset {
+            ScanPreset::Quick => Self::quick(),
+            ScanPreset::Standard => Self::default(),
+            ScanPreset::Deep => Self::deep(),
+            ScanPreset::Custom => Self::default(), // caller must overlay custom fields
+        }
+    }
+}
+
+/// Named presets for scan aggressiveness.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ScanPreset {
+    Quick,
+    Standard,
+    Deep,
+    Custom,
+}
+
+impl Default for ScanPreset {
+    fn default() -> Self {
+        Self::Standard
+    }
+}
+
+/// Summary of a scan preset for display in the frontend.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScanPresetInfo {
+    pub id: String,
+    pub display_name: String,
+    pub description: String,
+    pub config: ScanConfig,
+}
+
+/// Return metadata about all built-in presets so the frontend can show them.
+pub fn list_scan_presets() -> Vec<ScanPresetInfo> {
+    vec![
+        ScanPresetInfo {
+            id: "quick".into(),
+            display_name: "Quick Scan".into(),
+            description: "Fast startup scan with reduced depth and shorter timeouts".into(),
+            config: ScanConfig::quick(),
+        },
+        ScanPresetInfo {
+            id: "standard".into(),
+            display_name: "Standard Scan".into(),
+            description: "Balanced scan with default parameters".into(),
+            config: ScanConfig::default(),
+        },
+        ScanPresetInfo {
+            id: "deep".into(),
+            display_name: "Deep Scan".into(),
+            description: "Thorough scan with higher concurrency and deeper directory traversal"
+                .into(),
+            config: ScanConfig::deep(),
+        },
+    ]
+}
+
+// ── Scan progress reporting ─────────────────────────────────────────────────
+
+/// Current phase of a cache scan.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ScanPhase {
+    Probing,
+    CalculatingSize,
+    Complete,
+    Cancelled,
+}
+
+/// Lightweight per-provider result included in progress events.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScanProviderProgress {
+    pub provider: String,
+    pub display_name: String,
+    pub size: u64,
+    pub size_human: String,
+    pub detection_state: ExternalCacheDetectionState,
+    pub done: bool,
+}
+
+/// Progress event emitted during a scan.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CacheScanProgress {
+    pub scan_id: String,
+    pub phase: ScanPhase,
+    pub total_providers: usize,
+    pub completed_providers: usize,
+    pub current_provider: Option<String>,
+    pub current_provider_display: Option<String>,
+    pub elapsed_ms: u64,
+    pub partial_results: Vec<ScanProviderProgress>,
+}
+
+/// Status of a running or completed scan.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScanStatus {
+    pub scan_id: String,
+    pub phase: ScanPhase,
+    pub total_providers: usize,
+    pub completed_providers: usize,
+    pub elapsed_ms: u64,
+}
+
+/// Active scan state for cancellation support.
+static ACTIVE_SCAN: Lazy<RwLock<Option<ActiveScan>>> = Lazy::new(|| RwLock::new(None));
+
+struct ActiveScan {
+    scan_id: String,
+    cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    started: Instant,
+    total: usize,
+    completed: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    phase: std::sync::Arc<RwLock<ScanPhase>>,
+}
+
+/// Start a background scan with progress events emitted to the given `AppHandle`.
+/// Returns the scan ID.
+pub async fn start_scan_with_progress(
+    app: &tauri::AppHandle,
+    excluded: &[String],
+    custom_entries: &[crate::config::settings::CustomCacheEntry],
+    config: &ScanConfig,
+) -> String {
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use tauri::Emitter;
+
+    let scan_id = uuid::Uuid::new_v4().to_string();
+    let cancelled = std::sync::Arc::new(AtomicBool::new(false));
+    let completed = std::sync::Arc::new(AtomicUsize::new(0));
+    let phase = std::sync::Arc::new(RwLock::new(ScanPhase::Probing));
+
+    let candidates = collect_discovery_candidates_with_config(excluded, custom_entries, config);
+    let total = candidates.len();
+
+    {
+        let mut guard = ACTIVE_SCAN.write().await;
+        *guard = Some(ActiveScan {
+            scan_id: scan_id.clone(),
+            cancelled: cancelled.clone(),
+            started: Instant::now(),
+            total,
+            completed: completed.clone(),
+            phase: phase.clone(),
+        });
+    }
+
+    let scan_id_clone = scan_id.clone();
+    let app_clone = app.clone();
+    let probe_timeout = Duration::from_millis(config.probe_timeout_ms);
+    let probe_concurrency = config.probe_concurrency;
+    let scan_config = config.clone();
+
+    tokio::spawn(async move {
+        let started = Instant::now();
+        let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(probe_concurrency));
+        let results: std::sync::Arc<tokio::sync::Mutex<Vec<ScanProviderProgress>>> =
+            std::sync::Arc::new(tokio::sync::Mutex::new(Vec::new()));
+
+        // Phase 1: Probing
+        let mut probe_futures = Vec::new();
+        for candidate in &candidates {
+            if cancelled.load(Ordering::Relaxed) {
+                break;
+            }
+            let sem = sem.clone();
+            let candidate = candidate.clone();
+            let cancelled = cancelled.clone();
+            let completed = completed.clone();
+            let results = results.clone();
+            let app = app_clone.clone();
+            let scan_id = scan_id_clone.clone();
+            let total = total;
+
+            probe_futures.push(tokio::spawn(async move {
+                let _permit = sem.acquire().await.ok();
+                if cancelled.load(Ordering::Relaxed) {
+                    return;
+                }
+                let (include, state, _reason, _error) =
+                    probe_discovery_state_with_timeout(&candidate, probe_timeout).await;
+
+                let done_count = completed.fetch_add(1, Ordering::Relaxed) + 1;
+                let progress_item = ScanProviderProgress {
+                    provider: candidate.provider.clone(),
+                    display_name: candidate.display_name.clone(),
+                    size: 0,
+                    size_human: "0 B".into(),
+                    detection_state: if include {
+                        state
+                    } else {
+                        ExternalCacheDetectionState::Skipped
+                    },
+                    done: true,
+                };
+
+                {
+                    let mut guard = results.lock().await;
+                    guard.push(progress_item);
+                }
+
+                let _ = app.emit(
+                    "cache-scan-progress",
+                    CacheScanProgress {
+                        scan_id: scan_id.clone(),
+                        phase: ScanPhase::Probing,
+                        total_providers: total,
+                        completed_providers: done_count,
+                        current_provider: Some(candidate.provider.clone()),
+                        current_provider_display: Some(candidate.display_name.clone()),
+                        elapsed_ms: started.elapsed().as_millis() as u64,
+                        partial_results: Vec::new(), // omit for throttling
+                    },
+                );
+            }));
+        }
+
+        futures::future::join_all(probe_futures).await;
+
+        if cancelled.load(Ordering::Relaxed) {
+            *phase.write().await = ScanPhase::Cancelled;
+            let _ = app_clone.emit(
+                "cache-scan-progress",
+                CacheScanProgress {
+                    scan_id: scan_id_clone.clone(),
+                    phase: ScanPhase::Cancelled,
+                    total_providers: total,
+                    completed_providers: completed.load(Ordering::Relaxed),
+                    current_provider: None,
+                    current_provider_display: None,
+                    elapsed_ms: started.elapsed().as_millis() as u64,
+                    partial_results: Vec::new(),
+                },
+            );
+        } else {
+            // Phase 2: Size calculation
+            *phase.write().await = ScanPhase::CalculatingSize;
+            completed.store(0, Ordering::Relaxed);
+
+            let size_sem = std::sync::Arc::new(tokio::sync::Semaphore::new(probe_concurrency));
+            let mut size_futures = Vec::new();
+
+            for candidate in &candidates {
+                if cancelled.load(Ordering::Relaxed) {
+                    break;
+                }
+                let sem = size_sem.clone();
+                let candidate = candidate.clone();
+                let cancelled = cancelled.clone();
+                let completed = completed.clone();
+                let results = results.clone();
+                let app = app_clone.clone();
+                let scan_id = scan_id_clone.clone();
+                let total = total;
+                let config = scan_config.clone();
+
+                size_futures.push(tokio::spawn(async move {
+                    let _permit = sem.acquire().await.ok();
+                    if cancelled.load(Ordering::Relaxed) {
+                        return;
+                    }
+
+                    let size = if let Some(path) = candidate.cache_path.as_ref() {
+                        if path.exists() {
+                            calculate_dir_size_with_config(path, &config).await
+                        } else {
+                            0
+                        }
+                    } else {
+                        0
+                    };
+
+                    let done_count = completed.fetch_add(1, Ordering::Relaxed) + 1;
+
+                    // Update size in results
+                    {
+                        let mut guard = results.lock().await;
+                        if let Some(item) = guard
+                            .iter_mut()
+                            .find(|item| item.provider == candidate.provider)
+                        {
+                            item.size = size;
+                            item.size_human = format_size(size);
+                        }
+                    }
+
+                    let _ = app.emit(
+                        "cache-scan-progress",
+                        CacheScanProgress {
+                            scan_id: scan_id.clone(),
+                            phase: ScanPhase::CalculatingSize,
+                            total_providers: total,
+                            completed_providers: done_count,
+                            current_provider: Some(candidate.provider.clone()),
+                            current_provider_display: Some(candidate.display_name.clone()),
+                            elapsed_ms: started.elapsed().as_millis() as u64,
+                            partial_results: Vec::new(),
+                        },
+                    );
+                }));
+            }
+
+            futures::future::join_all(size_futures).await;
+
+            // Phase 3: Complete
+            *phase.write().await = ScanPhase::Complete;
+            let final_results = results.lock().await.clone();
+            let _ = app_clone.emit(
+                "cache-scan-progress",
+                CacheScanProgress {
+                    scan_id: scan_id_clone.clone(),
+                    phase: ScanPhase::Complete,
+                    total_providers: total,
+                    completed_providers: total,
+                    current_provider: None,
+                    current_provider_display: None,
+                    elapsed_ms: started.elapsed().as_millis() as u64,
+                    partial_results: final_results,
+                },
+            );
+        }
+
+        // Clean up active scan
+        let mut guard = ACTIVE_SCAN.write().await;
+        if guard.as_ref().map(|s| &s.scan_id) == Some(&scan_id_clone) {
+            *guard = None;
+        }
+    });
+
+    scan_id
+}
+
+/// Cancel the currently active scan.
+pub async fn cancel_active_scan() -> bool {
+    let guard = ACTIVE_SCAN.read().await;
+    if let Some(scan) = guard.as_ref() {
+        scan.cancelled
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        true
+    } else {
+        false
+    }
+}
+
+/// Get status of the currently active scan.
+pub async fn get_active_scan_status() -> Option<ScanStatus> {
+    let guard = ACTIVE_SCAN.read().await;
+    guard.as_ref().map(|scan| ScanStatus {
+        scan_id: scan.scan_id.clone(),
+        phase: *scan.phase.blocking_read(),
+        total_providers: scan.total,
+        completed_providers: scan.completed.load(std::sync::atomic::Ordering::Relaxed),
+        elapsed_ms: scan.started.elapsed().as_millis() as u64,
+    })
+}
+
 /// A shared in-flight future for provider size calculations.
 type SharedSizeFuture = Shared<BoxFuture<'static, u64>>;
 
@@ -1379,19 +1819,83 @@ pub async fn is_provider_available(provider: ExternalCacheProvider) -> bool {
 /// Calculate directory size recursively (with timeout).
 /// Returns best-effort partial size on timeout instead of 0.
 pub async fn calculate_dir_size(path: &Path) -> u64 {
+    calculate_dir_size_with_config(path, &ScanConfig::default()).await
+}
+
+/// Calculate directory size with configurable depth, file limit, and timeout.
+/// When depth >= 10 and the top-level directory has 4+ subdirectories, uses
+/// parallel walking across top-level entries for better throughput on large caches.
+pub async fn calculate_dir_size_with_config(path: &Path, config: &ScanConfig) -> u64 {
     if !path.exists() {
         return 0;
     }
 
-    let path = path.to_path_buf();
+    let max_depth = config.size_calc_max_depth.min(u16::MAX as u32) as u16;
+    let max_files = config.size_calc_max_files;
+    let timeout_secs = config.size_calc_timeout_secs;
     let partial = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+
+    // Try parallel walk for deep scans with many top-level entries.
+    if max_depth >= 10 {
+        let top_entries = {
+            let p = path.to_path_buf();
+            tokio::task::spawn_blocking(move || {
+                std::fs::read_dir(&p)
+                    .ok()
+                    .map(|rd| {
+                        rd.filter_map(|e| e.ok().map(|e| e.path()))
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default()
+            })
+            .await
+            .unwrap_or_default()
+        };
+
+        if top_entries.len() >= 4 {
+            let per_file_budget = max_files / (top_entries.len() as u64).max(1);
+            let sub_depth = max_depth.saturating_sub(1);
+            let mut handles = Vec::new();
+            for entry_path in top_entries {
+                let partial = partial.clone();
+                handles.push(tokio::task::spawn_blocking(move || {
+                    if entry_path.is_dir() {
+                        calculate_dir_size_sync(
+                            &entry_path,
+                            &partial,
+                            1, // already at depth 1
+                            sub_depth + 1,
+                            per_file_budget,
+                        )
+                    } else {
+                        let size = entry_path.metadata().map(|m| m.len()).unwrap_or(0);
+                        partial.fetch_add(size, std::sync::atomic::Ordering::Relaxed);
+                        size
+                    }
+                }));
+            }
+
+            let result = tokio::time::timeout(
+                Duration::from_secs(timeout_secs),
+                futures::future::join_all(handles),
+            )
+            .await;
+
+            return match result {
+                Ok(results) => results.into_iter().filter_map(|r| r.ok()).sum(),
+                Err(_) => partial.load(std::sync::atomic::Ordering::Relaxed),
+            };
+        }
+    }
+
+    // Fallback: single-threaded walk.
+    let path = path.to_path_buf();
     let partial_clone = partial.clone();
     let handle = tokio::task::spawn_blocking(move || {
-        calculate_dir_size_sync(&path, &partial_clone, 0, 15, 500_000)
+        calculate_dir_size_sync(&path, &partial_clone, 0, max_depth, max_files)
     });
-    match tokio::time::timeout(Duration::from_secs(10), handle).await {
+    match tokio::time::timeout(Duration::from_secs(timeout_secs), handle).await {
         Ok(Ok(size)) => size,
-        // On timeout or panic, return whatever partial size was accumulated
         _ => partial.load(std::sync::atomic::Ordering::Relaxed),
     }
 }
@@ -1533,10 +2037,32 @@ fn collect_discovery_candidates(
     excluded: &[String],
     custom_entries: &[crate::config::settings::CustomCacheEntry],
 ) -> Vec<ExternalDiscoveryCandidate> {
+    collect_discovery_candidates_with_config(excluded, custom_entries, &ScanConfig::default())
+}
+
+fn collect_discovery_candidates_with_config(
+    excluded: &[String],
+    custom_entries: &[crate::config::settings::CustomCacheEntry],
+    config: &ScanConfig,
+) -> Vec<ExternalDiscoveryCandidate> {
+    let category_filter: Vec<String> = config
+        .categories
+        .iter()
+        .map(|c| c.trim().to_ascii_lowercase())
+        .filter(|c| !c.is_empty())
+        .collect();
+
     let mut candidates = Vec::new();
 
     for provider in ExternalCacheProvider::all() {
         if should_exclude_provider(provider.id(), excluded) {
+            continue;
+        }
+
+        // Apply category filter when non-empty.
+        if !category_filter.is_empty()
+            && !category_filter.contains(&provider.category().to_ascii_lowercase())
+        {
             continue;
         }
 
@@ -1558,6 +2084,13 @@ fn collect_discovery_candidates(
             continue;
         }
 
+        // Apply category filter to custom entries too.
+        if !category_filter.is_empty()
+            && !category_filter.contains(&entry.category.trim().to_ascii_lowercase())
+        {
+            continue;
+        }
+
         let cache_path = if entry.path.trim().is_empty() {
             None
         } else {
@@ -1572,6 +2105,45 @@ fn collect_discovery_candidates(
             is_available: true,
             has_clean_command: false,
             is_custom: true,
+        });
+    }
+
+    // Apply priority ordering.
+    // When the user has set explicit priorities, those come first in specified order.
+    // Otherwise, apply smart category-based default ordering:
+    //   package_manager (most likely to be large) > devtools > system > terminal > other
+    if !config.provider_priority.is_empty() {
+        let priority_map: HashMap<String, usize> = config
+            .provider_priority
+            .iter()
+            .enumerate()
+            .map(|(i, id)| (id.trim().to_ascii_lowercase(), i))
+            .collect();
+        candidates.sort_by(|a, b| {
+            let pa = priority_map.get(&a.provider.to_ascii_lowercase()).copied();
+            let pb = priority_map.get(&b.provider.to_ascii_lowercase()).copied();
+            match (pa, pb) {
+                (Some(ia), Some(ib)) => ia.cmp(&ib),
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                (None, None) => std::cmp::Ordering::Equal,
+            }
+        });
+    } else {
+        // Smart default: prioritise by category (likely large caches first),
+        // then by availability (available providers first).
+        candidates.sort_by(|a, b| {
+            let cat_rank = |c: &str| match c {
+                "package_manager" => 0,
+                "devtools" => 1,
+                "system" => 2,
+                "terminal" => 3,
+                _ => 4,
+            };
+            let ra = cat_rank(&a.category);
+            let rb = cat_rank(&b.category);
+            ra.cmp(&rb)
+                .then_with(|| b.is_available.cmp(&a.is_available)) // available first
         });
     }
 
@@ -1914,11 +2486,19 @@ pub async fn discover_all_caches_fast_with_custom(
     excluded: &[String],
     custom_entries: &[crate::config::settings::CustomCacheEntry],
 ) -> Vec<ExternalCacheInfo> {
-    let candidates = collect_discovery_candidates(excluded, custom_entries);
-    let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(
-        FAST_DISCOVERY_PROBE_CONCURRENCY,
-    ));
-    let probe_timeout = Duration::from_millis(FAST_DISCOVERY_PROBE_TIMEOUT_MS);
+    discover_all_caches_fast_with_scan_config(excluded, custom_entries, &ScanConfig::default())
+        .await
+}
+
+/// Fast discovery with scan config for tunable timeouts and concurrency.
+pub async fn discover_all_caches_fast_with_scan_config(
+    excluded: &[String],
+    custom_entries: &[crate::config::settings::CustomCacheEntry],
+    config: &ScanConfig,
+) -> Vec<ExternalCacheInfo> {
+    let candidates = collect_discovery_candidates_with_config(excluded, custom_entries, config);
+    let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(config.probe_concurrency));
+    let probe_timeout = Duration::from_millis(config.probe_timeout_ms);
 
     let futures: Vec<_> = candidates
         .into_iter()
@@ -1952,7 +2532,16 @@ pub fn discover_cache_candidates_with_custom(
     excluded: &[String],
     custom_entries: &[crate::config::settings::CustomCacheEntry],
 ) -> Vec<ExternalCacheInfo> {
-    let mut candidates = collect_discovery_candidates(excluded, custom_entries)
+    discover_cache_candidates_with_scan_config(excluded, custom_entries, &ScanConfig::default())
+}
+
+/// Return lightweight candidate rows with configurable category filter and priority.
+pub fn discover_cache_candidates_with_scan_config(
+    excluded: &[String],
+    custom_entries: &[crate::config::settings::CustomCacheEntry],
+    config: &ScanConfig,
+) -> Vec<ExternalCacheInfo> {
+    let mut candidates = collect_discovery_candidates_with_config(excluded, custom_entries, config)
         .into_iter()
         .map(|candidate| build_probe_pending_cache_info(&candidate))
         .collect::<Vec<_>>();
@@ -1966,7 +2555,23 @@ pub async fn probe_cache_provider_with_custom(
     excluded: &[String],
     custom_entries: &[crate::config::settings::CustomCacheEntry],
 ) -> CogniaResult<ExternalCacheInfo> {
-    let candidates = collect_discovery_candidates(excluded, custom_entries);
+    probe_cache_provider_with_scan_config(
+        provider_id,
+        excluded,
+        custom_entries,
+        &ScanConfig::default(),
+    )
+    .await
+}
+
+/// Probe a single provider with configurable timeout.
+pub async fn probe_cache_provider_with_scan_config(
+    provider_id: &str,
+    excluded: &[String],
+    custom_entries: &[crate::config::settings::CustomCacheEntry],
+    config: &ScanConfig,
+) -> CogniaResult<ExternalCacheInfo> {
+    let candidates = collect_discovery_candidates_with_config(excluded, custom_entries, config);
     let Some(candidate) = candidates
         .into_iter()
         .find(|candidate| candidate.provider.eq_ignore_ascii_case(provider_id))
@@ -1979,7 +2584,7 @@ pub async fn probe_cache_provider_with_custom(
 
     let (include, state, reason, error) = probe_discovery_state_with_timeout(
         &candidate,
-        Duration::from_millis(FAST_DISCOVERY_PROBE_TIMEOUT_MS),
+        Duration::from_millis(config.probe_timeout_ms),
     )
     .await;
 
@@ -2227,13 +2832,24 @@ pub async fn discover_all_caches_cached_with_custom(
     excluded: &[String],
     custom_entries: &[crate::config::settings::CustomCacheEntry],
 ) -> Vec<ExternalCacheInfo> {
+    discover_all_caches_cached_with_scan_config(excluded, custom_entries, &ScanConfig::default())
+        .await
+}
+
+/// Cached fast discovery with full scan config support.
+pub async fn discover_all_caches_cached_with_scan_config(
+    excluded: &[String],
+    custom_entries: &[crate::config::settings::CustomCacheEntry],
+    config: &ScanConfig,
+) -> Vec<ExternalCacheInfo> {
     let cache_key = discovery_cache_key(excluded, custom_entries);
+    let ttl = config.discovery_cache_ttl_secs;
 
     // Check if cache is fresh
     {
         let guard = DISCOVERY_CACHE.read().await;
         if let Some(entry) = guard.get(&cache_key) {
-            if entry.timestamp.elapsed().as_secs() < DISCOVERY_CACHE_TTL_SECS {
+            if entry.timestamp.elapsed().as_secs() < ttl {
                 log::debug!(
                     "external_cache_discovery_with_custom cache hit excluded={} custom={} providers={}",
                     excluded.len(),
@@ -2245,9 +2861,9 @@ pub async fn discover_all_caches_cached_with_custom(
         }
     }
 
-    // Cache miss or stale - re-discover with custom entries
+    // Cache miss or stale - re-discover with custom entries and config
     let started = Instant::now();
-    let result = discover_all_caches_fast_with_custom(excluded, custom_entries).await;
+    let result = discover_all_caches_fast_with_scan_config(excluded, custom_entries, config).await;
     log::debug!(
         "external_cache_discovery_with_custom cache miss excluded={} custom={} providers={} elapsed_ms={}",
         excluded.len(),

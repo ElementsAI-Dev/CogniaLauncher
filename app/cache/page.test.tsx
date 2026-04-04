@@ -241,6 +241,41 @@ jest.mock("@/lib/tauri", () => ({
     tableCounts: { cache_entries: 10 },
   }),
   getCacheSizeHistory: jest.fn().mockResolvedValue([]),
+  getScanPresets: jest.fn().mockResolvedValue([
+    {
+      id: "balanced",
+      label: "Balanced",
+      description: "Balanced scan preset",
+      settings: {
+        preset: "balanced",
+        probe_timeout_ms: 1500,
+        probe_concurrency: 4,
+        size_calc_max_depth: 4,
+        size_calc_timeout_secs: 10,
+        provider_priority: ["npm", "pnpm"],
+        category_filter: ["download", "metadata"],
+      },
+    },
+  ]),
+  getScanSettings: jest.fn().mockResolvedValue({
+    preset: "balanced",
+    probe_timeout_ms: 1500,
+    probe_concurrency: 4,
+    size_calc_max_depth: 4,
+    size_calc_timeout_secs: 10,
+    provider_priority: ["npm", "pnpm"],
+    category_filter: ["download", "metadata"],
+  }),
+  setScanSettings: jest.fn().mockResolvedValue(undefined),
+  setScanPreset: jest.fn().mockResolvedValue({
+    preset: "balanced",
+    probe_timeout_ms: 1500,
+    probe_concurrency: 4,
+    size_calc_max_depth: 4,
+    size_calc_timeout_secs: 10,
+    provider_priority: ["npm", "pnpm"],
+    category_filter: ["download", "metadata"],
+  }),
 }));
 
 jest.mock("@/lib/cache/invalidation", () => ({
