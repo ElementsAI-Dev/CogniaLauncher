@@ -1,7 +1,5 @@
 use super::*;
 
-use super::*;
-
 #[test]
 fn test_lockfile_filename_constant() {
     assert_eq!(LOCKFILE_FILENAME, "CogniaLauncher-lock.yaml");

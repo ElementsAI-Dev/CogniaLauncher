@@ -1,7 +1,5 @@
 use super::*;
 
-use super::*;
-
 #[test]
 fn test_manifest_filename_constant() {
     assert_eq!(MANIFEST_FILENAME, "CogniaLauncher.yaml");

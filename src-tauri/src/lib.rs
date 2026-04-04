@@ -109,6 +109,7 @@ fn reset_startup_status() {
     }
 }
 
+#[cfg_attr(test, allow(dead_code))]
 fn set_startup_timeout_ms(timeout_ms: u64) {
     mutate_startup_status(|status| {
         status.startup_timeout_ms = timeout_ms;
