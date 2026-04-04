@@ -55,7 +55,6 @@ function truncate(text: string, maxLength: number): string {
 export function GitStatsStrip({
   repoInfo,
   aheadBehind,
-  statusFiles,
   commits,
   stashes,
   branches,

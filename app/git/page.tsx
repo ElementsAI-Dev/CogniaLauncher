@@ -495,7 +495,7 @@ export default function GitPage() {
         fallbackPath: configFilePath,
       };
     }
-  }, [configFilePath, git, probeConfigEditor, runEditorActionFlow, t]);
+  }, [configFilePath, git, probeConfigEditor, t]);
 
   const handleOpenConfigLocation = useCallback(async (): Promise<void> => {
     if (!configFilePath) return;
