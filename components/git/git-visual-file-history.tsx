@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,15 @@ import type { GitFileStatEntry } from '@/types/tauri';
 import type { GitVisualFileHistoryProps } from '@/types/git';
 
 const FILE_STATS_PAGE_SIZE = 50;
+const emptySubscribe = () => () => {};
+
+function useChartMounted() {
+  return useSyncExternalStore(
+    emptySubscribe,
+    () => true,
+    () => false,
+  );
+}
 
 export function GitVisualFileHistory({
   repoPath,
@@ -19,6 +28,7 @@ export function GitVisualFileHistory({
   queryState,
 }: GitVisualFileHistoryProps) {
   const { t } = useLocale();
+  const chartMounted = useChartMounted();
   const [filePath, setFilePath] = useState('');
   const [stats, setStats] = useState<GitFileStatEntry[]>([]);
   const [loading, setLoading] = useState(false);
@@ -103,7 +113,8 @@ export function GitVisualFileHistory({
           </p>
         ) : (
           <div className="h-[200px]">
-            <ResponsiveContainer width="100%" height="100%">
+            {chartMounted ? (
+              <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData} stackOffset="sign">
                 <XAxis
                   dataKey="date"
@@ -128,7 +139,10 @@ export function GitVisualFileHistory({
                 <Bar dataKey="additions" stackId="a" fill="#22c55e" radius={[2, 2, 0, 0]} />
                 <Bar dataKey="deletions" stackId="a" fill="#ef4444" radius={[0, 0, 2, 2]} />
               </BarChart>
-            </ResponsiveContainer>
+              </ResponsiveContainer>
+            ) : (
+              <div aria-hidden="true" className="h-full w-full rounded-md bg-transparent" />
+            )}
           </div>
         )}
         {filePath && chartData.length > 0 && (queryState?.hasMore ?? stats.length >= FILE_STATS_PAGE_SIZE) && (

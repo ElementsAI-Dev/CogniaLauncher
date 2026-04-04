@@ -9,7 +9,17 @@ jest.mock("@/components/providers/locale-provider", () => ({
 jest.mock("recharts", () => ({
   ResponsiveContainer: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   Area: () => null,
-  AreaChart: ({ children }: { children: React.ReactNode }) => <svg>{children}</svg>,
+  AreaChart: ({
+    children,
+    data,
+  }: {
+    children: React.ReactNode;
+    data?: unknown;
+  }) => (
+    <svg data-testid="activity-area-chart" data-chart-data={JSON.stringify(data ?? [])}>
+      {children}
+    </svg>
+  ),
   XAxis: () => null,
   YAxis: () => null,
   CartesianGrid: () => null,
@@ -97,6 +107,34 @@ describe("ActivityChart", () => {
     expect(screen.getByText("dashboard.widgets.distributionOverviewDesc")).toBeInTheDocument();
     expect(screen.getByTestId("activity-chart-shared-scope")).toBeInTheDocument();
     expect(screen.getByText("dashboard.widgets.settingsViewMode_intensity")).toBeInTheDocument();
+  });
+
+  it("normalizes fallback chart data into a stable area-chart shape", () => {
+    render(<ActivityChart environments={mockEnvironments} packages={mockPackages} />);
+
+    const rawChartData = screen.getByTestId("activity-area-chart").getAttribute("data-chart-data");
+    const chartData = JSON.parse(rawChartData ?? "[]") as Array<Record<string, number | string>>;
+
+    expect(chartData).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "node",
+          environments: 2,
+          packages: 0,
+          downloads: 0,
+          toolbox: 0,
+          total: 0,
+        }),
+        expect.objectContaining({
+          name: "npm",
+          environments: 0,
+          packages: 2,
+          downloads: 0,
+          toolbox: 0,
+          total: 0,
+        }),
+      ]),
+    );
   });
 
   it("does not show empty state message when data exists", () => {

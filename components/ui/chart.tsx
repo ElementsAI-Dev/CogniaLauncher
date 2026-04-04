@@ -22,6 +22,16 @@ type ChartContextProps = {
   config: ChartConfig;
 };
 
+const emptySubscribe = () => () => {};
+
+function useChartMounted() {
+  return React.useSyncExternalStore(
+    emptySubscribe,
+    () => true,
+    () => false,
+  );
+}
+
 const ChartContext = React.createContext<ChartContextProps | null>(null);
 
 function useChart() {
@@ -45,6 +55,7 @@ const ChartContainer = React.forwardRef<
 >(({ id, className, children, config, ...props }, ref) => {
   const uniqueId = React.useId();
   const chartId = `chart-${id || uniqueId.replace(/:/g, "")}`;
+  const mounted = useChartMounted();
 
   return (
     <ChartContext.Provider value={{ config }}>
@@ -58,9 +69,16 @@ const ChartContainer = React.forwardRef<
         {...props}
       >
         <ChartStyle id={chartId} config={config} />
-        <RechartsPrimitive.ResponsiveContainer minWidth={0}>
-          {children}
-        </RechartsPrimitive.ResponsiveContainer>
+        {mounted ? (
+          <RechartsPrimitive.ResponsiveContainer minWidth={0}>
+            {children}
+          </RechartsPrimitive.ResponsiveContainer>
+        ) : (
+          <div
+            aria-hidden="true"
+            className="h-full w-full rounded-[inherit] bg-transparent"
+          />
+        )}
       </div>
     </ChartContext.Provider>
   );

@@ -35,14 +35,24 @@ interface ActivityChartProps {
   className?: string;
 }
 
+interface ActivityChartPoint {
+  name: string;
+  environments: number;
+  packages: number;
+  downloads: number;
+  toolbox: number;
+  total: number;
+}
+
 export function ActivityChart({ environments, packages, model, className }: ActivityChartProps) {
   const { t } = useLocale();
   const areaGradient = getChartGradientDefinition("area");
 
-  const chartData = useMemo(() => {
+  const chartData = useMemo<ActivityChartPoint[]>(() => {
     if (model) {
       return model.points.map((point) => ({
         name: point.label,
+        environments: 0,
         downloads: point.downloads,
         packages: point.packages,
         toolbox: point.toolbox,
@@ -71,6 +81,9 @@ export function ActivityChart({ environments, packages, model, className }: Acti
       name: label,
       environments: envsByType.get(label) || 0,
       packages: providerCounts.get(label) || 0,
+      downloads: 0,
+      toolbox: 0,
+      total: 0,
     }));
   }, [environments, model, packages]);
 
@@ -155,7 +168,7 @@ export function ActivityChart({ environments, packages, model, className }: Acti
             <>
               <DashboardMetricItem
                 label={t("dashboard.widgets.environments")}
-                value={chartData.reduce((sum, item) => sum + ("environments" in item ? item.environments : 0), 0)}
+                value={chartData.reduce((sum, item) => sum + item.environments, 0)}
               />
               <DashboardMetricItem
                 label={t("dashboard.widgets.packages")}
