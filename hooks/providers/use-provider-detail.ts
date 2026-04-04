@@ -238,6 +238,55 @@ export function useProviderDetail(providerId: string) {
     }
   }, [providerId, searchSharedPackages]);
 
+  // Fetch all pinned packages
+  const fetchPinnedPackages = useCallback(async () => {
+    try {
+      const pinned = await tauri.getPinnedPackages();
+      setPinnedPackages(pinned);
+      return pinned;
+    } catch (err) {
+      setError(formatError(err));
+      return [];
+    }
+  }, []);
+
+  // Check for updates for packages from this provider
+  const checkUpdates = useCallback(async () => {
+    setLoadingUpdates(true);
+    try {
+      const summary = await runUpdateCheck({
+        providerId,
+        syncStore: false,
+      });
+      setAvailableUpdates(summary.updates);
+      return summary.updates;
+    } catch (err) {
+      setError(formatError(err));
+      return [];
+    } finally {
+      setLoadingUpdates(false);
+    }
+  }, [providerId, runUpdateCheck]);
+
+  const refreshPackageSurface = useCallback(async (forcePackages = true) => {
+    const packagesPromise = fetchInstalledPackages(forcePackages);
+    const historyPromise = refreshHistory().catch((historyErr) => {
+      setHistoryError(formatError(historyErr));
+      return [];
+    });
+    const updatesPromise = checkUpdates();
+    const pinnedPromise = fetchPinnedPackages();
+
+    const [packages] = await Promise.all([
+      packagesPromise,
+      historyPromise,
+      updatesPromise,
+      pinnedPromise,
+    ]);
+
+    return packages;
+  }, [checkUpdates, fetchInstalledPackages, fetchPinnedPackages, refreshHistory]);
+
   // Install a package via this provider (optionally with version)
   const installPackage = useCallback(async (packageName: string, version?: string) => {
     try {
@@ -349,18 +398,6 @@ export function useProviderDetail(providerId: string) {
     }
   }, [refreshPackageSurface]);
 
-  // Fetch all pinned packages
-  const fetchPinnedPackages = useCallback(async () => {
-    try {
-      const pinned = await tauri.getPinnedPackages();
-      setPinnedPackages(pinned);
-      return pinned;
-    } catch (err) {
-      setError(formatError(err));
-      return [];
-    }
-  }, []);
-
   // Rollback a package to a specific version
   const rollbackPackage = useCallback(async (packageName: string, toVersion: string) => {
     try {
@@ -408,43 +445,6 @@ export function useProviderDetail(providerId: string) {
       return [];
     }
   }, [providerId]);
-
-  // Check for updates for packages from this provider
-  const checkUpdates = useCallback(async () => {
-    setLoadingUpdates(true);
-    try {
-      const summary = await runUpdateCheck({
-        providerId,
-        syncStore: false,
-      });
-      setAvailableUpdates(summary.updates);
-      return summary.updates;
-    } catch (err) {
-      setError(formatError(err));
-      return [];
-    } finally {
-      setLoadingUpdates(false);
-    }
-  }, [providerId, runUpdateCheck]);
-
-  async function refreshPackageSurface(forcePackages = true) {
-    const packagesPromise = fetchInstalledPackages(forcePackages);
-    const historyPromise = refreshHistory().catch((historyErr) => {
-      setHistoryError(formatError(historyErr));
-      return [];
-    });
-    const updatesPromise = checkUpdates();
-    const pinnedPromise = fetchPinnedPackages();
-
-    const [packages] = await Promise.all([
-      packagesPromise,
-      historyPromise,
-      updatesPromise,
-      pinnedPromise,
-    ]);
-
-    return packages;
-  }
 
   // Update a single package
   const updatePackage = useCallback(async (packageName: string): Promise<BatchResult | null> => {

@@ -70,7 +70,6 @@ export function ProviderPackagesTab({
   providerId,
   installedPackages,
   searchResults,
-  searchQuery: _searchQuery,
   loadingPackages,
   loadingSearch,
   pinnedPackages = [],

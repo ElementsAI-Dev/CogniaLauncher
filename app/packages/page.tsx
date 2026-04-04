@@ -2,9 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import { DashboardMetricGrid, DashboardMetricItem } from '@/components/dashboard/dashboard-primitives';
@@ -32,7 +30,7 @@ import { useKeyboardShortcuts } from '@/hooks/shared/use-keyboard-shortcuts';
 import { isPackageSurfaceProvider } from '@/lib/constants/providers';
 import { isTauri } from '@/lib/tauri';
 import {
-  AlertCircle, GitBranch, GitCompare, History,
+  AlertCircle, GitCompare,
   Package as PackageIcon, Server, ArrowUp, Pin, Star,
 } from 'lucide-react';
 import { toast } from 'sonner';
