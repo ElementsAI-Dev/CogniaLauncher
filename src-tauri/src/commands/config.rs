@@ -236,14 +236,16 @@ pub fn get_cognia_dir() -> Result<String, String> {
 
 #[tauri::command]
 pub async fn get_platform_info() -> Result<PlatformInfo, String> {
-    Ok(crate::core::system_info::collect_platform_info(false).await.into())
+    Ok(crate::core::system_info::collect_platform_info(false)
+        .await
+        .into())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::PlatformInfo;
     use super::config_list_defaults;
     use super::should_refresh_network_clients_for_key;
+    use super::PlatformInfo;
     use super::CONFIG_LIST_STATIC_KEYS;
 
     #[test]
@@ -459,6 +461,23 @@ mod tests {
         assert_eq!(platform.physical_core_count, Some(8));
         assert_eq!(platform.gpus.len(), 1);
         assert_eq!(platform.app_version, "0.1.0");
+    }
+
+    #[test]
+    fn app_check_init_reports_structured_startup_defaults() {
+        crate::reset_startup_status();
+        let status = super::app_check_init();
+        let json = serde_json::to_value(&status).unwrap();
+
+        assert_eq!(json["initialized"], false);
+        assert_eq!(json["interactive"], false);
+        assert_eq!(json["degraded"], false);
+        assert_eq!(json["phase"], "checking");
+        assert_eq!(json["progress"], 0);
+        assert_eq!(json["message"], "splash.starting");
+        assert_eq!(json["startupTimeoutMs"], 30_000);
+        assert_eq!(json["timedOutPhases"], serde_json::json!([]));
+        assert_eq!(json["skippedPhases"], serde_json::json!([]));
     }
 }
 
@@ -1281,18 +1300,9 @@ async fn detect_battery_linux() -> Option<BatteryInfo> {
     })
 }
 
-#[derive(serde::Serialize)]
-pub struct AppInitStatus {
-    pub initialized: bool,
-    pub version: String,
-}
-
 #[tauri::command]
-pub fn app_check_init() -> AppInitStatus {
-    AppInitStatus {
-        initialized: crate::is_initialized(),
-        version: env!("CARGO_PKG_VERSION").to_string(),
-    }
+pub fn app_check_init() -> crate::StartupStatus {
+    crate::get_startup_status()
 }
 
 /// Export the full backend config as a TOML string

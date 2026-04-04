@@ -38,7 +38,6 @@ export type {
   GoCacheInfo,
   PackageSummary,
   PackageInfo,
-  PackageValidationResult,
   PackagePreflightSummary,
   VersionInfo,
   InstalledPackage,
@@ -325,7 +324,6 @@ import type {
   GoCacheInfo,
   PackageSummary,
   PackageInfo,
-  PackageValidationResult,
   PackagePreflightSummary,
   VersionInfo,
   InstalledPackage,
@@ -906,7 +904,15 @@ export const packageVersions = (
 // App initialization status
 export interface AppInitStatus {
   initialized: boolean;
+  interactive?: boolean;
+  degraded?: boolean;
+  phase?: string;
+  progress?: number;
+  message?: string;
   version: string;
+  startupTimeoutMs?: number;
+  timedOutPhases?: string[];
+  skippedPhases?: string[];
 }
 
 export const appCheckInit = () => invoke<AppInitStatus>("app_check_init");
@@ -916,6 +922,9 @@ export interface InitProgressEvent {
   phase: string;
   progress: number;
   message: string;
+  degraded?: boolean;
+  timedOutPhases?: string[];
+  skippedPhases?: string[];
 }
 
 export async function listenInitProgress(
@@ -1111,6 +1120,85 @@ export const cleanAllExternalCaches = (useTrash: boolean) =>
   invoke<ExternalCacheCleanResult[]>("clean_all_external_caches", { useTrash });
 export const getCombinedCacheStats = () =>
   invoke<CombinedCacheStats>("get_combined_cache_stats");
+
+// Scan configuration
+export type ScanPreset = "quick" | "standard" | "deep" | "custom";
+
+export interface ScanConfig {
+  probe_timeout_ms: number;
+  probe_concurrency: number;
+  size_calc_max_depth: number;
+  size_calc_max_files: number;
+  size_calc_timeout_secs: number;
+  size_cache_ttl_secs: number;
+  discovery_cache_ttl_secs: number;
+  categories: string[];
+  provider_priority: string[];
+}
+
+export interface ScanPresetInfo {
+  id: string;
+  displayName: string;
+  description: string;
+  config: ScanConfig;
+}
+
+export interface CacheScanSettings {
+  preset: ScanPreset;
+  probe_timeout_ms: number;
+  probe_concurrency: number;
+  size_calc_max_depth: number;
+  size_calc_timeout_secs: number;
+  provider_priority: string[];
+  category_filter: string[];
+}
+
+export const getScanPresets = () =>
+  invoke<ScanPresetInfo[]>("get_scan_presets");
+export const getScanSettings = () =>
+  invoke<CacheScanSettings>("get_scan_settings");
+export const setScanSettings = (newSettings: CacheScanSettings) =>
+  invoke<void>("set_scan_settings", { newSettings });
+export const setScanPreset = (preset: string) =>
+  invoke<CacheScanSettings>("set_scan_preset", { preset });
+
+// Scan progress
+export type ScanPhase = "probing" | "calculating_size" | "complete" | "cancelled";
+
+export interface ScanProviderProgress {
+  provider: string;
+  displayName: string;
+  size: number;
+  sizeHuman: string;
+  detectionState: ExternalCacheDetectionState;
+  done: boolean;
+}
+
+export interface CacheScanProgress {
+  scanId: string;
+  phase: ScanPhase;
+  totalProviders: number;
+  completedProviders: number;
+  currentProvider: string | null;
+  currentProviderDisplay: string | null;
+  elapsedMs: number;
+  partialResults: ScanProviderProgress[];
+}
+
+export interface ScanStatus {
+  scanId: string;
+  phase: ScanPhase;
+  totalProviders: number;
+  completedProviders: number;
+  elapsedMs: number;
+}
+
+export const startCacheScan = (scanId?: string) =>
+  invoke<string>("start_cache_scan", { scanId: scanId ?? null });
+export const cancelCacheScan = () =>
+  invoke<boolean>("cancel_cache_scan");
+export const getScanStatus = () =>
+  invoke<ScanStatus | null>("get_scan_status");
 
 // Cache size monitoring
 export interface CacheSizeMonitor {

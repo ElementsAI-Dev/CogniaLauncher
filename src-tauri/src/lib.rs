@@ -29,6 +29,8 @@ use provider::ProviderRegistry;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::LazyLock;
+use std::sync::RwLock as StdRwLock;
 use tauri::Emitter;
 #[cfg(not(test))]
 use tauri::Manager;
@@ -46,10 +48,114 @@ pub type CancellationTokens = Arc<RwLock<HashMap<String, Arc<AtomicBool>>>>;
 
 /// Flag to indicate if initialization is complete
 pub static INITIALIZED: AtomicBool = AtomicBool::new(false);
+static STARTUP_STATUS: LazyLock<StdRwLock<StartupStatus>> =
+    LazyLock::new(|| StdRwLock::new(StartupStatus::default()));
+
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StartupStatus {
+    pub initialized: bool,
+    pub interactive: bool,
+    pub degraded: bool,
+    pub phase: String,
+    pub progress: u8,
+    pub message: String,
+    pub version: String,
+    pub startup_timeout_ms: u64,
+    pub timed_out_phases: Vec<String>,
+    pub skipped_phases: Vec<String>,
+}
+
+impl Default for StartupStatus {
+    fn default() -> Self {
+        Self {
+            initialized: false,
+            interactive: false,
+            degraded: false,
+            phase: "checking".to_string(),
+            progress: 0,
+            message: "splash.starting".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            startup_timeout_ms: 30_000,
+            timed_out_phases: Vec::new(),
+            skipped_phases: Vec::new(),
+        }
+    }
+}
 
 /// Helper to check if the app is fully initialized
 pub fn is_initialized() -> bool {
     INITIALIZED.load(Ordering::SeqCst)
+}
+
+pub fn get_startup_status() -> StartupStatus {
+    STARTUP_STATUS
+        .read()
+        .map(|guard| guard.clone())
+        .unwrap_or_else(|_| StartupStatus::default())
+}
+
+fn mutate_startup_status(mutator: impl FnOnce(&mut StartupStatus)) {
+    if let Ok(mut guard) = STARTUP_STATUS.write() {
+        mutator(&mut guard);
+        INITIALIZED.store(guard.initialized, Ordering::SeqCst);
+    }
+}
+
+fn reset_startup_status() {
+    INITIALIZED.store(false, Ordering::SeqCst);
+    if let Ok(mut guard) = STARTUP_STATUS.write() {
+        *guard = StartupStatus::default();
+    }
+}
+
+fn set_startup_timeout_ms(timeout_ms: u64) {
+    mutate_startup_status(|status| {
+        status.startup_timeout_ms = timeout_ms;
+    });
+}
+
+fn mark_startup_phase(phase: &str, progress: u8, message: &str) {
+    mutate_startup_status(|status| {
+        status.phase = phase.to_string();
+        status.progress = status.progress.max(progress);
+        status.message = message.to_string();
+        if phase == "ready" {
+            status.initialized = true;
+            status.interactive = true;
+        }
+    });
+}
+
+fn record_startup_skip(phase: &str) {
+    mutate_startup_status(|status| {
+        if !status.skipped_phases.iter().any(|entry| entry == phase) {
+            status.skipped_phases.push(phase.to_string());
+        }
+    });
+}
+
+fn mark_startup_phase_timed_out(phase: &str, progress: u8, message: &str) {
+    mutate_startup_status(|status| {
+        status.interactive = true;
+        status.degraded = true;
+        status.phase = phase.to_string();
+        status.progress = status.progress.max(progress);
+        status.message = message.to_string();
+        if !status.timed_out_phases.iter().any(|entry| entry == phase) {
+            status.timed_out_phases.push(phase.to_string());
+        }
+    });
+}
+
+fn mark_startup_ready() {
+    mutate_startup_status(|status| {
+        status.initialized = true;
+        status.interactive = true;
+        status.phase = "ready".to_string();
+        status.progress = 100;
+        status.message = "splash.ready".to_string();
+    });
 }
 
 #[cfg(not(test))]
@@ -57,6 +163,7 @@ pub fn is_initialized() -> bool {
 pub fn run() {
     // Install panic hook BEFORE anything else so crashes generate reports
     commands::diagnostic::install_panic_hook();
+    reset_startup_status();
 
     #[cfg(debug_assertions)]
     let devtools_plugin = tauri_plugin_devtools::init();
@@ -194,6 +301,9 @@ pub fn run() {
                 // remains consistent across restarts.
                 {
                     let settings_guard = settings.read().await;
+                    set_startup_timeout_ms(
+                        u64::from(settings_guard.startup.startup_timeout_secs).saturating_mul(1000),
+                    );
                     let mut tray_guard = tray_state.write().await;
                     tray_guard.click_behavior = settings_guard.tray.click_behavior;
                     tray_guard.quick_action = settings_guard.tray.quick_action;
@@ -307,10 +417,12 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 // Read startup settings once for the entire deferred init
                 let startup_cfg = bg_settings.read().await.startup.clone();
+                let phase_timeout =
+                    Duration::from_secs(u64::from(startup_cfg.startup_timeout_secs.max(1)));
 
                 // ── Resource integrity check (config parsability, cache DB) ──
                 emit_init_progress(&bg_app, "resources", 50, "splash.checkingResources");
-                {
+                if tokio::time::timeout(phase_timeout, async {
                     let s = bg_settings.read().await;
                     let cache_dir = s.get_cache_dir();
                     drop(s);
@@ -344,15 +456,26 @@ pub fn run() {
                             }
                         }
                     } else {
+                        record_startup_skip("resources.integrity_check");
                         info!("Cache DB integrity check skipped (disabled in startup settings)");
                     }
 
                     info!("Resource integrity check complete");
+                })
+                .await
+                .is_err()
+                {
+                    info!(
+                        "Startup phase 'resources' timed out after {}s",
+                        phase_timeout.as_secs()
+                    );
+                    mark_startup_phase_timed_out("resources", 50, "splash.checkingResources");
+                    emit_startup_status(&bg_app);
                 }
 
                 // ── Custom detection manager ──
                 emit_init_progress(&bg_app, "detection", 60, "splash.loadingDetection");
-                {
+                if tokio::time::timeout(phase_timeout, async {
                     let mut custom_detection_guard = bg_custom_detection.write().await;
                     *custom_detection_guard = CustomDetectionManager::new(&bg_config_dir);
                     if let Err(e) = custom_detection_guard.load().await {
@@ -360,20 +483,40 @@ pub fn run() {
                     } else {
                         info!("Custom detection rules loaded");
                     }
+                })
+                .await
+                .is_err()
+                {
+                    info!(
+                        "Startup phase 'detection' timed out after {}s",
+                        phase_timeout.as_secs()
+                    );
+                    mark_startup_phase_timed_out("detection", 60, "splash.loadingDetection");
+                    emit_startup_status(&bg_app);
                 }
 
                 // ── Download manager (replaces pre-registered default) ──
                 emit_init_progress(&bg_app, "downloads", 70, "splash.loadingDownloads");
-                {
+                if tokio::time::timeout(phase_timeout, async {
                     let settings_guard = bg_settings.read().await;
                     setup_download_manager(bg_download, bg_app.clone(), &settings_guard).await;
                     drop(settings_guard);
                     info!("Download manager initialized");
+                })
+                .await
+                .is_err()
+                {
+                    info!(
+                        "Startup phase 'downloads' timed out after {}s",
+                        phase_timeout.as_secs()
+                    );
+                    mark_startup_phase_timed_out("downloads", 70, "splash.loadingDownloads");
+                    emit_startup_status(&bg_app);
                 }
 
                 // ── Terminal profile manager (replaces pre-registered empty) ──
                 emit_init_progress(&bg_app, "terminal", 80, "splash.loadingTerminal");
-                {
+                if tokio::time::timeout(phase_timeout, async {
                     let cognia_dir = bg_settings.read().await.get_root_dir();
                     match TerminalProfileManager::new(&cognia_dir).await {
                         Ok(mgr) => {
@@ -385,21 +528,51 @@ pub fn run() {
                             // Keep the empty placeholder — commands will return empty lists
                         }
                     }
+                })
+                .await
+                .is_err()
+                {
+                    info!(
+                        "Startup phase 'terminal' timed out after {}s",
+                        phase_timeout.as_secs()
+                    );
+                    mark_startup_phase_timed_out("terminal", 80, "splash.loadingTerminal");
+                    emit_startup_status(&bg_app);
                 }
 
                 // ── Plugin manager (init discovers & loads plugins) ──
                 emit_init_progress(&bg_app, "plugins", 90, "splash.loadingPlugins");
-                {
-                    let mut plugin_guard = bg_plugin.write().await;
-                    if let Err(e) = plugin_guard.init().await {
-                        info!("Plugin manager init error: {}", e);
+                if tokio::time::timeout(phase_timeout, async {
+                    let auto_load_plugins = {
+                        let settings_guard = bg_settings.read().await;
+                        settings_guard.plugin.auto_load_on_startup
+                    };
+
+                    if !auto_load_plugins {
+                        record_startup_skip("plugins.auto_load_on_startup");
+                        info!("Plugin manager startup init skipped (auto_load_on_startup=false)");
                     } else {
-                        info!("Plugin manager initialized");
+                        let mut plugin_guard = bg_plugin.write().await;
+                        if let Err(e) = plugin_guard.init().await {
+                            info!("Plugin manager init error: {}", e);
+                        } else {
+                            info!("Plugin manager initialized");
+                        }
                     }
+                })
+                .await
+                .is_err()
+                {
+                    info!(
+                        "Startup phase 'plugins' timed out after {}s",
+                        phase_timeout.as_secs()
+                    );
+                    mark_startup_phase_timed_out("plugins", 90, "splash.loadingPlugins");
+                    emit_startup_status(&bg_app);
                 }
 
                 // Mark initialization as complete
-                INITIALIZED.store(true, Ordering::SeqCst);
+                mark_startup_ready();
                 emit_init_progress(&bg_app, "ready", 100, "splash.ready");
                 info!("Application initialization complete");
             });
@@ -1387,14 +1560,6 @@ pub fn run() {
 pub fn run() {}
 
 #[cfg_attr(test, allow(dead_code))]
-#[derive(Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-struct InitProgressEvent {
-    phase: &'static str,
-    progress: u8,
-    message: &'static str,
-}
-
 #[cfg_attr(test, allow(dead_code))]
 fn emit_init_progress(
     app: &tauri::AppHandle,
@@ -1402,14 +1567,75 @@ fn emit_init_progress(
     progress: u8,
     message: &'static str,
 ) {
-    let _ = app.emit(
-        "init-progress",
-        InitProgressEvent {
-            phase,
-            progress,
-            message,
-        },
-    );
+    mark_startup_phase(phase, progress, message);
+    emit_startup_status(app);
+}
+
+#[cfg_attr(test, allow(dead_code))]
+fn emit_startup_status(app: &tauri::AppHandle) {
+    let _ = app.emit("init-progress", get_startup_status());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn startup_status_defaults_are_consistent() {
+        reset_startup_status();
+        let status = get_startup_status();
+
+        assert!(!status.initialized);
+        assert!(!status.interactive);
+        assert!(!status.degraded);
+        assert_eq!(status.phase, "checking");
+        assert_eq!(status.progress, 0);
+        assert_eq!(status.message, "splash.starting");
+        assert_eq!(status.startup_timeout_ms, 30_000);
+        assert!(status.timed_out_phases.is_empty());
+        assert!(status.skipped_phases.is_empty());
+    }
+
+    #[test]
+    fn startup_timeout_marks_interactive_degraded_state() {
+        reset_startup_status();
+        mark_startup_phase("plugins", 90, "splash.loadingPlugins");
+        mark_startup_phase_timed_out("plugins", 90, "splash.loadingPlugins");
+
+        let status = get_startup_status();
+        assert!(!status.initialized);
+        assert!(status.interactive);
+        assert!(status.degraded);
+        assert_eq!(status.phase, "plugins");
+        assert_eq!(status.progress, 90);
+        assert_eq!(status.timed_out_phases, vec!["plugins".to_string()]);
+    }
+
+    #[test]
+    fn startup_skip_records_phase_without_marking_ready() {
+        reset_startup_status();
+        record_startup_skip("plugins.auto_load_on_startup");
+
+        let status = get_startup_status();
+        assert!(!status.initialized);
+        assert_eq!(
+            status.skipped_phases,
+            vec!["plugins.auto_load_on_startup".to_string()]
+        );
+    }
+
+    #[test]
+    fn startup_ready_marks_initialized_and_interactive() {
+        reset_startup_status();
+        mark_startup_ready();
+
+        let status = get_startup_status();
+        assert!(status.initialized);
+        assert!(status.interactive);
+        assert_eq!(status.phase, "ready");
+        assert_eq!(status.progress, 100);
+        assert_eq!(status.message, "splash.ready");
+    }
 }
 
 #[cfg_attr(test, allow(dead_code))]

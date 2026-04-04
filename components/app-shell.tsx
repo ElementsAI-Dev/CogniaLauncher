@@ -47,10 +47,19 @@ import {
   type WindowEffect,
 } from "@/lib/theme/window-effects";
 import { ScrollText, Search } from "lucide-react";
-import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { ReactNode, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 
 interface AppShellProps {
   children: ReactNode;
+}
+
+function AppSidebarFallback() {
+  return (
+    <div
+      data-testid="app-sidebar-fallback"
+      className="hidden w-14 shrink-0 border-r border-sidebar-border bg-sidebar/40 md:block"
+    />
+  );
 }
 
 export function AppShell({ children }: AppShellProps) {
@@ -207,12 +216,13 @@ export function AppShell({ children }: AppShellProps) {
 
   // Show splash screen during Tauri initialization
   const showSplash = isDesktopMode && !splashDismissed;
+  const splashPhase = isReady && phase !== "web-mode" ? "ready" : phase;
 
   return (
     <>
       {showSplash && (
         <SplashScreen
-          phase={phase}
+          phase={splashPhase}
           progress={progress}
           message={message}
           version={version}
@@ -240,7 +250,9 @@ export function AppShell({ children }: AppShellProps) {
           <SidebarProvider
             className={isDesktopMode ? "min-h-0" : undefined}
           >
-            <AppSidebar />
+            <Suspense fallback={<AppSidebarFallback />}>
+              <AppSidebar />
+            </Suspense>
             <SidebarInset>
               <header
                 data-tauri-drag-region

@@ -17,6 +17,13 @@ use tokio::time::{sleep, Duration};
 
 pub type SharedPluginManager = Arc<RwLock<PluginManager>>;
 
+async fn ensure_plugin_manager_initialized(
+    manager: &State<'_, SharedPluginManager>,
+) -> Result<(), String> {
+    let mut mgr = manager.write().await;
+    mgr.ensure_initialized().await.map_err(|e| e.to_string())
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PluginMarketplaceActionError {
@@ -219,6 +226,7 @@ fn success_marketplace_result(
 pub async fn plugin_list(
     manager: State<'_, SharedPluginManager>,
 ) -> Result<Vec<PluginInfo>, String> {
+    ensure_plugin_manager_initialized(&manager).await?;
     let mgr = manager.read().await;
     Ok(mgr.list_plugins().await)
 }
@@ -229,6 +237,7 @@ pub async fn plugin_get_info(
     plugin_id: String,
     manager: State<'_, SharedPluginManager>,
 ) -> Result<PluginManifest, String> {
+    ensure_plugin_manager_initialized(&manager).await?;
     let mgr = manager.read().await;
     mgr.get_plugin_manifest(&plugin_id)
         .await
@@ -240,6 +249,7 @@ pub async fn plugin_get_info(
 pub async fn plugin_list_all_tools(
     manager: State<'_, SharedPluginManager>,
 ) -> Result<Vec<PluginToolInfo>, String> {
+    ensure_plugin_manager_initialized(&manager).await?;
     let mgr = manager.read().await;
     Ok(mgr.list_all_tools().await)
 }
@@ -250,6 +260,7 @@ pub async fn plugin_get_tools(
     plugin_id: String,
     manager: State<'_, SharedPluginManager>,
 ) -> Result<Vec<PluginToolInfo>, String> {
+    ensure_plugin_manager_initialized(&manager).await?;
     let mgr = manager.read().await;
     let all = mgr.list_all_tools().await;
     Ok(all
@@ -264,6 +275,7 @@ pub async fn plugin_import_local(
     path: String,
     manager: State<'_, SharedPluginManager>,
 ) -> Result<String, String> {
+    ensure_plugin_manager_initialized(&manager).await?;
     let mut mgr = manager.write().await;
     mgr.install_from_path(&PathBuf::from(path))
         .await
@@ -276,6 +288,7 @@ pub async fn plugin_install(
     source: String,
     manager: State<'_, SharedPluginManager>,
 ) -> Result<String, String> {
+    ensure_plugin_manager_initialized(&manager).await?;
     let mut mgr = manager.write().await;
     if source.starts_with("http://") || source.starts_with("https://") {
         mgr.install_from_url(&source)
@@ -293,6 +306,7 @@ pub async fn plugin_install_marketplace(
     store_id: String,
     manager: State<'_, SharedPluginManager>,
 ) -> Result<String, String> {
+    ensure_plugin_manager_initialized(&manager).await?;
     let mut mgr = manager.write().await;
     mgr.install_from_marketplace(&store_id)
         .await
@@ -304,6 +318,7 @@ pub async fn plugin_install_marketplace_with_result(
     store_id: String,
     manager: State<'_, SharedPluginManager>,
 ) -> Result<PluginMarketplaceActionResult, String> {
+    ensure_plugin_manager_initialized(&manager).await?;
     let mut mgr = manager.write().await;
     match mgr.install_from_marketplace_with_report(&store_id).await {
         Ok(report) => Ok(success_marketplace_result("install", report)),
@@ -327,6 +342,7 @@ pub async fn plugin_uninstall(
     plugin_id: String,
     manager: State<'_, SharedPluginManager>,
 ) -> Result<(), String> {
+    ensure_plugin_manager_initialized(&manager).await?;
     let mut mgr = manager.write().await;
     mgr.uninstall(&plugin_id).await.map_err(|e| e.to_string())
 }
@@ -337,6 +353,7 @@ pub async fn plugin_enable(
     plugin_id: String,
     manager: State<'_, SharedPluginManager>,
 ) -> Result<(), String> {
+    ensure_plugin_manager_initialized(&manager).await?;
     let mut mgr = manager.write().await;
     mgr.enable(&plugin_id).await.map_err(|e| e.to_string())
 }
@@ -347,6 +364,7 @@ pub async fn plugin_disable(
     plugin_id: String,
     manager: State<'_, SharedPluginManager>,
 ) -> Result<(), String> {
+    ensure_plugin_manager_initialized(&manager).await?;
     let mut mgr = manager.write().await;
     mgr.disable(&plugin_id).await.map_err(|e| e.to_string())
 }
@@ -357,6 +375,7 @@ pub async fn plugin_reload(
     plugin_id: String,
     manager: State<'_, SharedPluginManager>,
 ) -> Result<(), String> {
+    ensure_plugin_manager_initialized(&manager).await?;
     let mut mgr = manager.write().await;
     mgr.reload(&plugin_id).await.map_err(|e| e.to_string())
 }
@@ -373,6 +392,9 @@ pub async fn plugin_call_tool(
     app: AppHandle,
     tokens: State<'_, crate::CancellationTokens>,
 ) -> Result<String, ToolExecutionError> {
+    ensure_plugin_manager_initialized(&manager)
+        .await
+        .map_err(|message| classify_tool_execution_error(&message))?;
     let resolved_execution_id = execution_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let resolved_tool_id =
         tool_id.unwrap_or_else(|| format!("plugin:{}:{}", plugin_id, tool_entry));
@@ -470,6 +492,7 @@ pub async fn plugin_get_permissions(
     plugin_id: String,
     manager: State<'_, SharedPluginManager>,
 ) -> Result<PluginPermissionState, String> {
+    ensure_plugin_manager_initialized(&manager).await?;
     let mgr = manager.read().await;
     mgr.get_permissions(&plugin_id)
         .await
@@ -481,6 +504,7 @@ pub async fn plugin_get_permissions(
 pub async fn plugin_get_permission_mode(
     manager: State<'_, SharedPluginManager>,
 ) -> Result<String, String> {
+    ensure_plugin_manager_initialized(&manager).await?;
     let mgr = manager.read().await;
     let mode = mgr.get_permission_mode().await;
     let value = match mode {
@@ -497,6 +521,7 @@ pub async fn plugin_grant_permission(
     permission: String,
     manager: State<'_, SharedPluginManager>,
 ) -> Result<(), String> {
+    ensure_plugin_manager_initialized(&manager).await?;
     let mgr = manager.read().await;
     mgr.grant_permission(&plugin_id, &permission)
         .await
@@ -510,6 +535,7 @@ pub async fn plugin_revoke_permission(
     permission: String,
     manager: State<'_, SharedPluginManager>,
 ) -> Result<(), String> {
+    ensure_plugin_manager_initialized(&manager).await?;
     let mgr = manager.read().await;
     mgr.revoke_permission(&plugin_id, &permission)
         .await
@@ -522,6 +548,7 @@ pub async fn plugin_get_data_dir(
     plugin_id: String,
     manager: State<'_, SharedPluginManager>,
 ) -> Result<String, String> {
+    ensure_plugin_manager_initialized(&manager).await?;
     let mgr = manager.read().await;
     let dir = mgr.get_plugin_data_dir(&plugin_id).await;
     Ok(dir.display().to_string())
@@ -533,6 +560,7 @@ pub async fn plugin_get_locales(
     plugin_id: String,
     manager: State<'_, SharedPluginManager>,
 ) -> Result<HashMap<String, HashMap<String, String>>, String> {
+    ensure_plugin_manager_initialized(&manager).await?;
     let mgr = manager.read().await;
     mgr.get_plugin_locales(&plugin_id)
         .await
@@ -561,6 +589,7 @@ pub async fn plugin_check_update(
     plugin_id: String,
     manager: State<'_, SharedPluginManager>,
 ) -> Result<Option<PluginUpdateInfo>, String> {
+    ensure_plugin_manager_initialized(&manager).await?;
     let mgr = manager.read().await;
     mgr.check_update(&plugin_id)
         .await
@@ -573,6 +602,7 @@ pub async fn plugin_update(
     plugin_id: String,
     manager: State<'_, SharedPluginManager>,
 ) -> Result<(), String> {
+    ensure_plugin_manager_initialized(&manager).await?;
     let mut mgr = manager.write().await;
     mgr.update_plugin(&plugin_id)
         .await
@@ -584,6 +614,7 @@ pub async fn plugin_update_with_result(
     plugin_id: String,
     manager: State<'_, SharedPluginManager>,
 ) -> Result<PluginMarketplaceActionResult, String> {
+    ensure_plugin_manager_initialized(&manager).await?;
     let mut mgr = manager.write().await;
     match mgr.update_plugin_with_report(&plugin_id).await {
         Ok(report) => Ok(success_marketplace_result("update", report)),
@@ -631,6 +662,7 @@ pub async fn plugin_get_ui_entry(
     plugin_id: String,
     manager: State<'_, SharedPluginManager>,
 ) -> Result<PluginUiEntry, String> {
+    ensure_plugin_manager_initialized(&manager).await?;
     let mgr = manager.read().await;
 
     let ui_config = mgr
@@ -671,6 +703,7 @@ pub async fn plugin_get_ui_asset(
     asset_path: String,
     manager: State<'_, SharedPluginManager>,
 ) -> Result<Vec<u8>, String> {
+    ensure_plugin_manager_initialized(&manager).await?;
     // Security: reject path traversal
     if asset_path.contains("..") {
         return Err("Path traversal not allowed".to_string());
@@ -725,6 +758,7 @@ pub async fn plugin_get_health(
     plugin_id: String,
     manager: State<'_, SharedPluginManager>,
 ) -> Result<PluginHealth, String> {
+    ensure_plugin_manager_initialized(&manager).await?;
     let mgr = manager.read().await;
     Ok(mgr.get_plugin_health(&plugin_id))
 }
@@ -734,6 +768,7 @@ pub async fn plugin_get_health(
 pub async fn plugin_get_all_health(
     manager: State<'_, SharedPluginManager>,
 ) -> Result<HashMap<String, PluginHealth>, String> {
+    ensure_plugin_manager_initialized(&manager).await?;
     let mgr = manager.read().await;
     Ok(mgr.get_all_health())
 }
@@ -744,6 +779,7 @@ pub async fn plugin_get_capability_audit(
     plugin_id: Option<String>,
     manager: State<'_, SharedPluginManager>,
 ) -> Result<Vec<CapabilityAuditRecord>, String> {
+    ensure_plugin_manager_initialized(&manager).await?;
     let mgr = manager.read().await;
     Ok(mgr.get_capability_audit(plugin_id.as_deref()))
 }
@@ -754,6 +790,7 @@ pub async fn plugin_reset_health(
     plugin_id: String,
     manager: State<'_, SharedPluginManager>,
 ) -> Result<(), String> {
+    ensure_plugin_manager_initialized(&manager).await?;
     let mut mgr = manager.write().await;
     mgr.reset_plugin_health(&plugin_id);
     Ok(())
@@ -765,6 +802,7 @@ pub async fn plugin_export_data(
     plugin_id: String,
     manager: State<'_, SharedPluginManager>,
 ) -> Result<String, String> {
+    ensure_plugin_manager_initialized(&manager).await?;
     let mgr = manager.read().await;
     let path = mgr
         .export_plugin_data(&plugin_id)
@@ -805,6 +843,7 @@ pub async fn plugin_get_settings_schema(
     plugin_id: String,
     manager: State<'_, SharedPluginManager>,
 ) -> Result<Vec<crate::plugin::manifest::SettingDeclaration>, String> {
+    ensure_plugin_manager_initialized(&manager).await?;
     let mgr = manager.read().await;
     mgr.get_plugin_settings_schema(&plugin_id)
         .await
@@ -817,6 +856,7 @@ pub async fn plugin_get_settings_values(
     plugin_id: String,
     manager: State<'_, SharedPluginManager>,
 ) -> Result<HashMap<String, serde_json::Value>, String> {
+    ensure_plugin_manager_initialized(&manager).await?;
     let mgr = manager.read().await;
     mgr.get_plugin_settings_values(&plugin_id)
         .await
@@ -831,6 +871,7 @@ pub async fn plugin_set_setting(
     value: serde_json::Value,
     manager: State<'_, SharedPluginManager>,
 ) -> Result<(), String> {
+    ensure_plugin_manager_initialized(&manager).await?;
     let mut mgr = manager.write().await;
     mgr.set_plugin_setting(&plugin_id, &key, value)
         .await
@@ -842,6 +883,7 @@ pub async fn plugin_set_setting(
 pub async fn plugin_check_all_updates(
     manager: State<'_, SharedPluginManager>,
 ) -> Result<Vec<PluginUpdateInfo>, String> {
+    ensure_plugin_manager_initialized(&manager).await?;
     let mgr = manager.read().await;
     Ok(mgr.check_all_updates().await)
 }
@@ -851,6 +893,7 @@ pub async fn plugin_check_all_updates(
 pub async fn plugin_update_all(
     manager: State<'_, SharedPluginManager>,
 ) -> Result<Vec<Result<String, String>>, String> {
+    ensure_plugin_manager_initialized(&manager).await?;
     let mut mgr = manager.write().await;
     Ok(mgr.update_all().await)
 }
@@ -862,6 +905,7 @@ pub async fn plugin_dispatch_event(
     payload: serde_json::Value,
     manager: State<'_, SharedPluginManager>,
 ) -> Result<(), String> {
+    ensure_plugin_manager_initialized(&manager).await?;
     let mut mgr = manager.write().await;
     mgr.dispatch_event(&event_name, &payload).await;
     Ok(())

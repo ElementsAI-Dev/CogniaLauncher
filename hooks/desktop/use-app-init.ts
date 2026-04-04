@@ -11,10 +11,13 @@ interface AppInitState {
   version: string | null;
   progress: number;
   message: string;
+  isDegraded: boolean;
+  timedOutPhases: string[];
+  skippedPhases: string[];
 }
 
 const POLL_INTERVAL_MS = 300;
-const INIT_TIMEOUT_MS = 30_000;
+const DEFAULT_INIT_TIMEOUT_MS = 30_000;
 
 export function useAppInit() {
   const [state, setState] = useState<AppInitState>(() => {
@@ -24,6 +27,9 @@ export function useAppInit() {
         version: null,
         progress: 100,
         message: 'splash.ready',
+        isDegraded: false,
+        timedOutPhases: [],
+        skippedPhases: [],
       };
     }
     return {
@@ -31,12 +37,16 @@ export function useAppInit() {
       version: null,
       progress: 0,
       message: 'splash.starting',
+      isDegraded: false,
+      timedOutPhases: [],
+      skippedPhases: [],
     };
   });
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const unlistenRef = useRef<(() => void) | null>(null);
+  const timeoutBudgetRef = useRef(DEFAULT_INIT_TIMEOUT_MS);
 
   const cleanup = useCallback(() => {
     if (pollRef.current) {
@@ -49,6 +59,31 @@ export function useAppInit() {
     }
     unlistenRef.current?.();
     unlistenRef.current = null;
+  }, []);
+
+  const scheduleTimeout = useCallback((timeoutMs: number) => {
+    timeoutBudgetRef.current = timeoutMs;
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
+    timeoutRef.current = setTimeout(() => {
+      timeoutRef.current = null;
+      setState((prev) => {
+        if (prev.phase === 'ready') return prev;
+        const timedOutPhases = prev.timedOutPhases.includes(prev.phase)
+          ? prev.timedOutPhases
+          : [...prev.timedOutPhases, prev.phase];
+        return {
+          phase: 'ready',
+          version: prev.version,
+          progress: 100,
+          message: 'splash.ready',
+          isDegraded: true,
+          timedOutPhases,
+          skippedPhases: prev.skippedPhases,
+        };
+      });
+    }, timeoutMs);
   }, []);
 
   useEffect(() => {
@@ -66,6 +101,9 @@ export function useAppInit() {
           phase: phase as InitPhase,
           progress: Math.max(prev.progress, progress),
           message,
+          isDegraded: event.degraded ?? prev.isDegraded,
+          timedOutPhases: event.timedOutPhases ?? prev.timedOutPhases,
+          skippedPhases: event.skippedPhases ?? prev.skippedPhases,
         };
       });
     }).then((fn) => {
@@ -76,14 +114,31 @@ export function useAppInit() {
     const checkInit = async () => {
       try {
         const status = await appCheckInit();
-        if (status.initialized) {
+        const nextTimeout = status.startupTimeoutMs ?? DEFAULT_INIT_TIMEOUT_MS;
+        if (nextTimeout !== timeoutBudgetRef.current) {
+          scheduleTimeout(nextTimeout);
+        }
+
+        if (status.initialized || status.interactive) {
           cleanup();
-          setState((prev) => ({
-            phase: 'ready',
-            version: status.version,
-            progress: 100,
-            message: prev.message === 'splash.starting' ? 'splash.ready' : prev.message,
-          }));
+          setState((prev) => {
+            const nextPhase = status.initialized
+              ? 'ready'
+              : ((status.phase as InitPhase | undefined) ?? prev.phase);
+            return {
+              phase: nextPhase,
+              version: status.version,
+              progress: status.initialized
+                ? 100
+                : Math.max(prev.progress, status.progress ?? prev.progress),
+              message: status.message ?? (status.initialized
+                ? (prev.message === 'splash.starting' ? 'splash.ready' : prev.message)
+                : prev.message),
+              isDegraded: status.degraded ?? prev.isDegraded,
+              timedOutPhases: status.timedOutPhases ?? prev.timedOutPhases,
+              skippedPhases: status.skippedPhases ?? prev.skippedPhases,
+            };
+          });
         }
       } catch {
         // Backend not ready yet, keep polling
@@ -93,24 +148,16 @@ export function useAppInit() {
     checkInit();
     pollRef.current = setInterval(checkInit, POLL_INTERVAL_MS);
 
-    // Timeout fallback: proceed anyway after INIT_TIMEOUT_MS
-    timeoutRef.current = setTimeout(() => {
-      cleanup();
-      setState((prev) => {
-        if (prev.phase === 'ready') return prev;
-        return {
-          phase: 'ready',
-          version: prev.version,
-          progress: 100,
-          message: 'splash.ready',
-        };
-      });
-    }, INIT_TIMEOUT_MS);
+    // Timeout fallback: proceed to interactive degraded mode using the current budget.
+    scheduleTimeout(DEFAULT_INIT_TIMEOUT_MS);
 
     return cleanup;
-  }, [cleanup]);
+  }, [cleanup, scheduleTimeout]);
 
-  const isReady = state.phase === 'ready' || state.phase === 'web-mode';
+  const isReady =
+    state.phase === 'ready' ||
+    state.phase === 'web-mode' ||
+    state.isDegraded;
 
   return { ...state, isReady };
 }

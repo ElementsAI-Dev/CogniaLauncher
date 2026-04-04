@@ -1,10 +1,15 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { AppShell } from "./app-shell";
 import { DESKTOP_ACTION_EVENT } from "@/lib/desktop-actions";
 
 const mockToggleDrawer = jest.fn();
 const mockFetchConfig = jest.fn();
 const mockRequestDashboardQuickSearchFocus = jest.fn();
+const mockUseAppInit = jest.fn();
+let mockPlatformIsTauri = false;
+let mockSettingsConfig: Record<string, string> = {};
+let mockSidebarShouldSuspend = false;
+const mockSidebarSuspensePromise = Promise.resolve();
 
 jest.mock("@/hooks/desktop/use-desktop-action-executor", () => ({
   useDesktopActionExecutor:
@@ -56,7 +61,7 @@ jest.mock("@/lib/stores/log", () => ({
 
 jest.mock("@/hooks/settings/use-settings", () => ({
   useSettings: () => ({
-    config: null,
+    config: mockSettingsConfig,
     fetchConfig: mockFetchConfig,
   }),
 }));
@@ -75,8 +80,12 @@ jest.mock("@/lib/stores/appearance", () => ({
 }));
 
 jest.mock("@/lib/platform", () => ({
-  isTauri: () => false,
+  isTauri: () => mockPlatformIsTauri,
   isWindows: () => false,
+}));
+
+jest.mock("@/hooks/desktop/use-app-init", () => ({
+  useAppInit: () => mockUseAppInit(),
 }));
 
 jest.mock("@/components/ui/sidebar", () => ({
@@ -90,7 +99,12 @@ jest.mock("@/components/ui/sidebar", () => ({
 }));
 
 jest.mock("@/components/app-sidebar", () => ({
-  AppSidebar: () => <div data-testid="app-sidebar">Sidebar</div>,
+  AppSidebar: () => {
+    if (mockSidebarShouldSuspend) {
+      throw mockSidebarSuspensePromise;
+    }
+    return <div data-testid="app-sidebar">Sidebar</div>;
+  },
 }));
 
 jest.mock("@/components/layout/window-controls", () => ({
@@ -239,6 +253,19 @@ jest.mock("@/components/onboarding", () => ({
 describe("AppShell", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockPlatformIsTauri = false;
+    mockSettingsConfig = {};
+    mockSidebarShouldSuspend = false;
+    mockUseAppInit.mockReturnValue({
+      phase: "ready",
+      progress: 100,
+      message: "splash.ready",
+      version: "1.0.0",
+      isReady: true,
+      isDegraded: false,
+      timedOutPhases: [],
+      skippedPhases: [],
+    });
     mockWindowControls.maximizeInsets = { top: 0, right: 0, bottom: 0, left: 0 };
     mockWindowControls.maximizePadding = 0;
     document.documentElement.removeAttribute("data-window-effect");
@@ -266,6 +293,18 @@ describe("AppShell", () => {
 
     expect(screen.getByTestId("sidebar-provider")).toBeInTheDocument();
     expect(screen.getByTestId("app-sidebar")).toBeInTheDocument();
+  });
+
+  it("renders a sidebar fallback when the sidebar suspends", () => {
+    mockSidebarShouldSuspend = true;
+
+    render(
+      <AppShell>
+        <div>Content</div>
+      </AppShell>,
+    );
+
+    expect(screen.getByTestId("app-sidebar-fallback")).toBeInTheDocument();
   });
 
   it("renders breadcrumb in header", () => {
@@ -411,5 +450,41 @@ describe("AppShell", () => {
     expect(screen.queryByTestId("onboarding-wizard")).not.toBeInTheDocument();
     expect(screen.queryByTestId("tour-overlay")).not.toBeInTheDocument();
     expect(screen.queryByTestId("bubble-hints")).not.toBeInTheDocument();
+  });
+
+  it("dismisses splash after startup becomes interactive even when the reported phase is still degraded", async () => {
+    jest.useFakeTimers();
+    mockPlatformIsTauri = true;
+    mockUseAppInit.mockReturnValue({
+      phase: "plugins",
+      progress: 90,
+      message: "splash.loadingPlugins",
+      version: "1.0.0",
+      isReady: true,
+      isDegraded: true,
+      timedOutPhases: ["plugins"],
+      skippedPhases: [],
+    });
+
+    try {
+      render(
+        <AppShell>
+          <div>Content</div>
+        </AppShell>,
+      );
+
+      expect(screen.getByText("splash.loadingPlugins")).toBeInTheDocument();
+
+      act(() => {
+        jest.advanceTimersByTime(900);
+      });
+
+      await waitFor(() => {
+        expect(screen.queryByText("splash.loadingPlugins")).not.toBeInTheDocument();
+      });
+      expect(screen.getByText("Content")).toBeInTheDocument();
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });

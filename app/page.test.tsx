@@ -51,8 +51,22 @@ let mockDashboardVisualContext = { range: "7d" };
 let mockDashboardActiveStylePresetId = "balanced-workbench";
 let mockDashboardHasPresetDiverged = false;
 let mockSettingsConfig: Record<string, string> = {};
+let mockStartupReady = true;
 
 // Mock hooks used by the dashboard page
+jest.mock("@/hooks/desktop/use-app-init", () => ({
+  useAppInit: () => ({
+    phase: mockStartupReady ? "ready" : "plugins",
+    progress: mockStartupReady ? 100 : 90,
+    message: mockStartupReady ? "splash.ready" : "splash.loadingPlugins",
+    version: "1.0.0",
+    isReady: mockStartupReady,
+    isDegraded: !mockStartupReady,
+    timedOutPhases: mockStartupReady ? [] : ["plugins"],
+    skippedPhases: [],
+  }),
+}));
+
 jest.mock("@/hooks/environments/use-environments", () => ({
   useEnvironments: () => ({
     environments: [
@@ -358,6 +372,7 @@ describe("Dashboard Page", () => {
     mockDashboardActiveStylePresetId = "balanced-workbench";
     mockDashboardHasPresetDiverged = false;
     mockSettingsConfig = {};
+    mockStartupReady = true;
   });
 
   it("renders the dashboard title", async () => {
@@ -759,5 +774,58 @@ describe("Dashboard Page", () => {
     await waitFor(() => {
       expect(mockFetchInstalledPackages).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it("waits until desktop startup is interactive before beginning heavy startup scans", async () => {
+    mockStartupReady = false;
+    mockSettingsConfig = {
+      "startup.scan_environments": "true",
+      "startup.scan_packages": "true",
+    };
+
+    const view = renderWithProviders(<DashboardPage />);
+
+    await waitFor(() => {
+      expect(mockFetchProviders).toHaveBeenCalledTimes(1);
+      expect(mockFetchPlatformInfo).toHaveBeenCalledTimes(1);
+      expect(mockFetchCacheInfo).toHaveBeenCalledTimes(1);
+    });
+
+    expect(mockFetchEnvironments).not.toHaveBeenCalled();
+    expect(mockFetchInstalledPackages).not.toHaveBeenCalled();
+
+    mockStartupReady = true;
+    view.rerender(<DashboardPage />);
+
+    await waitFor(() => {
+      expect(mockFetchEnvironments).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("keeps homepage startup sections in loading feedback while heavy scans are gated by startup readiness", async () => {
+    mockStartupReady = false;
+    mockSettingsConfig = {
+      "startup.scan_environments": "true",
+      "startup.scan_packages": "true",
+    };
+
+    renderWithProviders(<DashboardPage />);
+
+    const status = await screen.findByTestId("dashboard-workspace-status");
+    expect(within(status).getByText("2 section(s) are still loading")).toBeInTheDocument();
+    expect(within(status).getByText("Ready widgets stay interactive while the remaining sections finish loading.")).toBeInTheDocument();
+  });
+
+  it("keeps unaffected sections usable when one startup section degrades", async () => {
+    mockEnvsError = "Environment fetch failed";
+
+    renderWithProviders(<DashboardPage />);
+
+    const status = await screen.findByTestId("dashboard-workspace-status");
+    expect(within(status).getByText("1 section(s) need attention")).toBeInTheDocument();
+    expect(within(status).getByText("Packages")).toBeInTheDocument();
+    expect(within(status).getByText("System")).toBeInTheDocument();
+    expect(screen.getByTestId("dashboard-header-refresh")).toBeInTheDocument();
+    expect(screen.getByText("typescript")).toBeInTheDocument();
   });
 });

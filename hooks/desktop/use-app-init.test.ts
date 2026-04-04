@@ -5,7 +5,14 @@ import { useAppInit } from './use-app-init';
 const mockIsTauri = jest.fn(() => false);
 const mockAppCheckInit = jest.fn();
 const mockListenInitProgress = jest.fn();
-let capturedListener: ((event: { phase: string; progress: number; message: string }) => void) | null = null;
+let capturedListener: ((event: {
+  phase: string;
+  progress: number;
+  message: string;
+  degraded?: boolean;
+  timedOutPhases?: string[];
+  skippedPhases?: string[];
+}) => void) | null = null;
 
 jest.mock('@/lib/tauri', () => ({
   isTauri: () => mockIsTauri(),
@@ -117,6 +124,29 @@ describe('useAppInit', () => {
       expect(result.current.phase).toBe('resources');
       expect(result.current.progress).toBe(20);
       expect(result.current.message).toBe('splash.checkingResources');
+    });
+
+    it('captures degraded startup metadata from init-progress events', async () => {
+      mockAppCheckInit.mockResolvedValue({ initialized: false, version: null });
+
+      const { result } = renderHook(() => useAppInit());
+
+      await act(async () => {});
+
+      act(() => {
+        capturedListener?.({
+          phase: 'plugins',
+          progress: 90,
+          message: 'splash.loadingPlugins',
+          degraded: true,
+          timedOutPhases: ['plugins'],
+          skippedPhases: ['resources.integrity_check'],
+        });
+      });
+
+      expect(result.current.isDegraded).toBe(true);
+      expect(result.current.timedOutPhases).toEqual(['plugins']);
+      expect(result.current.skippedPhases).toEqual(['resources.integrity_check']);
     });
 
     it('should progress through all init phases via events', async () => {
@@ -232,6 +262,61 @@ describe('useAppInit', () => {
       expect(result.current.phase).toBe('ready');
       expect(result.current.isReady).toBe(true);
       expect(result.current.progress).toBe(100);
+    });
+
+    it('treats backend interactive degraded startup as ready while preserving degraded context', async () => {
+      mockAppCheckInit.mockResolvedValue({
+        initialized: false,
+        interactive: true,
+        degraded: true,
+        phase: 'plugins',
+        progress: 90,
+        message: 'splash.loadingPlugins',
+        version: '1.2.3',
+        timedOutPhases: ['plugins'],
+        skippedPhases: [],
+      });
+
+      const { result } = renderHook(() => useAppInit());
+
+      await act(async () => {});
+
+      expect(result.current.isReady).toBe(true);
+      expect(result.current.phase).toBe('plugins');
+      expect(result.current.progress).toBe(90);
+      expect(result.current.message).toBe('splash.loadingPlugins');
+      expect(result.current.version).toBe('1.2.3');
+      expect(result.current.isDegraded).toBe(true);
+      expect(result.current.timedOutPhases).toEqual(['plugins']);
+    });
+
+    it('uses backend-provided startup timeout instead of the fixed 30 second fallback', async () => {
+      mockAppCheckInit.mockResolvedValue({
+        initialized: false,
+        interactive: false,
+        degraded: false,
+        phase: 'checking',
+        progress: 0,
+        message: 'splash.starting',
+        version: null,
+        startupTimeoutMs: 45_000,
+        timedOutPhases: [],
+        skippedPhases: [],
+      });
+
+      const { result } = renderHook(() => useAppInit());
+
+      await act(async () => {});
+
+      await act(async () => {
+        jest.advanceTimersByTime(30_000);
+      });
+      expect(result.current.isReady).toBe(false);
+
+      await act(async () => {
+        jest.advanceTimersByTime(15_000);
+      });
+      expect(result.current.isReady).toBe(true);
     });
 
     it('should handle appCheckInit errors gracefully', async () => {

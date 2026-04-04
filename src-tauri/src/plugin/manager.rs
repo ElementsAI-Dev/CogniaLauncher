@@ -314,6 +314,7 @@ pub struct PluginManager {
     permissions: Arc<RwLock<PermissionManager>>,
     settings: Arc<RwLock<Settings>>,
     plugins_dir: PathBuf,
+    initialized: bool,
     health: HashMap<String, PluginHealth>,
     capability_audit: VecDeque<CapabilityAuditRecord>,
     builtin_sync: BuiltInSyncState,
@@ -349,6 +350,7 @@ impl PluginManager {
             permissions,
             settings,
             plugins_dir,
+            initialized: false,
             health: HashMap::new(),
             capability_audit: VecDeque::new(),
             builtin_sync: BuiltInSyncState::default(),
@@ -360,6 +362,9 @@ impl PluginManager {
 
     /// Initialize: discover plugins, restore persisted state, load enabled ones
     pub async fn init(&mut self) -> CogniaResult<()> {
+        if self.initialized {
+            return Ok(());
+        }
         let mode = {
             let settings = self.settings.read().await;
             PermissionEnforcementMode::from_config_value(
@@ -463,7 +468,16 @@ impl PluginManager {
             }
         }
 
+        self.initialized = true;
         Ok(())
+    }
+
+    pub async fn ensure_initialized(&mut self) -> CogniaResult<()> {
+        self.init().await
+    }
+
+    pub fn is_initialized(&self) -> bool {
+        self.initialized
     }
 
     /// Save current plugin state to disk
@@ -2930,6 +2944,39 @@ mod tests {
             .clone()
             .unwrap_or_default()
             .contains("user-managed"));
+    }
+
+    #[tokio::test]
+    async fn test_ensure_initialized_discovers_plugins_without_eager_runtime_load() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let mut manager = make_test_manager(temp_dir.path());
+        let plugin_id = "com.example.startup-skip";
+        let runtime_plugin_dir = temp_dir.path().join("plugins").join(plugin_id);
+
+        tokio::fs::create_dir_all(&runtime_plugin_dir)
+            .await
+            .unwrap();
+        tokio::fs::write(
+            runtime_plugin_dir.join("plugin.toml"),
+            format!(
+                "[plugin]\nid=\"{}\"\nname=\"Startup Skip\"\nversion=\"1.0.0\"\ndescription=\"startup test\"\nauthors=[]\n\n[permissions]\n",
+                plugin_id
+            ),
+        )
+        .await
+        .unwrap();
+        tokio::fs::write(runtime_plugin_dir.join("plugin.wasm"), b"\0asm\x01\0\0\0")
+            .await
+            .unwrap();
+
+        assert!(!manager.is_initialized());
+        manager.ensure_initialized().await.unwrap();
+        assert!(manager.is_initialized());
+
+        let reg = manager.registry.read().await;
+        assert!(reg.get(plugin_id).is_some());
+        drop(reg);
+        assert!(!manager.loader.is_loaded(plugin_id));
     }
 
     #[tokio::test]

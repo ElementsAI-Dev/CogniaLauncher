@@ -45,13 +45,12 @@ export default function RootLayout({
           enableColorScheme
         >
           <LocaleProvider initialLocale="en" messages={{ en, zh }}>
+            <AppShell>{children}</AppShell>
             <DeferredProviders>
               <TrayProvider>
                 <PluginUiEffectsProvider>
                   <DownloadRuntimeProvider>
-                    <LogProvider>
-                      <AppShell>{children}</AppShell>
-                    </LogProvider>
+                    <LogProvider>{null}</LogProvider>
                   </DownloadRuntimeProvider>
                 </PluginUiEffectsProvider>
               </TrayProvider>

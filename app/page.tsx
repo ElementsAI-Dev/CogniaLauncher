@@ -19,6 +19,7 @@ import { useEnvironments } from '@/hooks/environments/use-environments';
 import { usePackages } from '@/hooks/packages/use-packages';
 import { useSettings } from '@/hooks/settings/use-settings';
 import { useDashboardInsights } from '@/hooks/dashboard/use-dashboard-insights';
+import { useAppInit } from '@/hooks/desktop/use-app-init';
 import { useLocale } from '@/components/providers/locale-provider';
 import { DASHBOARD_STYLE_PRESETS, useDashboardStore } from '@/lib/stores/dashboard';
 import { DashboardStatusBadge } from '@/components/dashboard/dashboard-primitives';
@@ -100,12 +101,17 @@ export default function DashboardPage() {
     loading: settingsLoading,
     error: settingsError,
   } = useSettings();
+  const { isReady: isStartupReady } = useAppInit();
   const { t } = useLocale();
 
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [dismissedErrorSignature, setDismissedErrorSignature] = useState<string | null>(null);
-  const initialFetchDone = useRef(false);
+  const [startupConfig, setStartupConfig] = useState<Record<string, string> | null>(
+    Object.keys(config).length > 0 ? config : null,
+  );
+  const initialLightFetchDone = useRef(false);
+  const initialHeavyFetchDone = useRef(false);
   const cacheRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const insights = useDashboardInsights({
     environments,
@@ -121,29 +127,50 @@ export default function DashboardPage() {
   const setIsEditMode = useDashboardStore((s) => s.setIsEditMode);
   const setVisualContext = useDashboardStore((s) => s.setVisualContext);
   const applyStylePreset = useDashboardStore((s) => s.applyStylePreset);
+  const startupFlags = resolveStartupScanFlags(startupConfig ?? config);
+  const envScanBlockedByStartup = !isStartupReady && startupFlags.scanEnvironments;
+  const packageScanBlockedByStartup = !isStartupReady && startupFlags.scanPackages;
 
   useEffect(() => {
-    if (initialFetchDone.current) return;
-    initialFetchDone.current = true;
+    if (initialLightFetchDone.current) return;
+    initialLightFetchDone.current = true;
     let cancelled = false;
 
-    // Phased loading to avoid firing all heavy backend calls at once.
-    // Phase 1 (immediate, lightweight): provider metadata + platform info
+    // Phase 1 (immediate, lightweight): provider metadata + platform info + startup config
     // Phase 2 (deferred): cache info
-    // Phase 3 (after config): environments + packages (heaviest — subprocess spawns)
     const loadData = async () => {
       const [loadedConfig] = await Promise.all([
         Object.keys(config).length > 0 ? Promise.resolve(config) : fetchConfig(),
         fetchProviders(),
         fetchPlatformInfo(),
       ]);
+      if (!cancelled) {
+        setStartupConfig(loadedConfig);
+      }
 
       // Phase 2: cache info (moderate I/O, deferred)
       void fetchCacheInfo();
+    };
 
-      const startupFlags = resolveStartupScanFlags(loadedConfig);
+    void loadData();
 
-      // Phase 3: heavy scans (subprocess-intensive, run after UI has rendered).
+    return () => {
+      cancelled = true;
+    };
+  }, [config, fetchConfig, fetchEnvironments, fetchInstalledPackages, fetchProviders, fetchCacheInfo, fetchPlatformInfo]);
+
+  useEffect(() => {
+    if (initialHeavyFetchDone.current) return;
+    if (!isStartupReady) return;
+    if (startupConfig === null) return;
+
+    initialHeavyFetchDone.current = true;
+    let cancelled = false;
+
+    const runHeavyStartupScans = async () => {
+      const startupFlags = resolveStartupScanFlags(startupConfig);
+
+      // Phase 3: heavy scans (subprocess-intensive, run after UI is interactive).
       // Keep them serialized so startup does not trigger both global scans at once.
       if (startupFlags.scanEnvironments) {
         await yieldToBrowser();
@@ -160,12 +187,12 @@ export default function DashboardPage() {
       }
     };
 
-    void loadData();
+    void runHeavyStartupScans();
 
     return () => {
       cancelled = true;
     };
-  }, [config, fetchConfig, fetchEnvironments, fetchInstalledPackages, fetchProviders, fetchCacheInfo, fetchPlatformInfo]);
+  }, [fetchEnvironments, fetchInstalledPackages, isStartupReady, startupConfig]);
 
   const scheduleCacheInfoRefresh = useCallback(() => {
     if (!isTauri()) return;
@@ -272,13 +299,13 @@ export default function DashboardPage() {
     {
       id: 'environments',
       label: t('dashboard.overview.sections.environments'),
-      isLoading: envsLoading && environments.length === 0,
+      isLoading: (envsLoading && environments.length === 0) || envScanBlockedByStartup,
       error: envsError,
     },
     {
       id: 'packages',
       label: t('dashboard.overview.sections.packages'),
-      isLoading: pkgsLoading && installedPackages.length === 0,
+      isLoading: (pkgsLoading && installedPackages.length === 0) || packageScanBlockedByStartup,
       error: pkgsError,
     },
     {
