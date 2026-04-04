@@ -1491,10 +1491,7 @@ pub fn setup_tray(app: &AppHandle<Wry>) -> Result<(), Box<dyn std::error::Error>
         .unwrap_or(true);
 
     let (click_behavior, tooltip, resolved_icon_state, menu) =
-        if let Some(state) = tray_state
-            .as_ref()
-            .and_then(try_clone_tray_state_for_setup)
-        {
+        if let Some(state) = tray_state.as_ref().and_then(try_clone_tray_state_for_setup) {
             let m = build_menu(app, is_visible, &state)?;
             (
                 state.click_behavior,
