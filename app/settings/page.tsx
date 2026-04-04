@@ -254,7 +254,7 @@ export default function SettingsPage() {
   >({});
   const [saving, setSaving] = useState(false);
   const [failedSaveKeys, setFailedSaveKeys] = useState<string[]>([]);
-  const [failedSaveMessages, setFailedSaveMessages] = useState<
+  const [, setFailedSaveMessages] = useState<
     Record<string, string>
   >({});
   const [draftConflictKeys, setDraftConflictKeys] = useState<string[]>([]);

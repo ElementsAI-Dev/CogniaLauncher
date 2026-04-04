@@ -620,7 +620,6 @@ export function useEnvironments() {
     closeProgressDialog,
     updateEnvironment,
     reconcileEnvironmentWorkflow,
-    resolveProviderId,
     setError,
     setWorkflowActionState,
   ]);

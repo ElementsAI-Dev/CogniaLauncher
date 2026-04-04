@@ -137,7 +137,7 @@ export function WslDistroNetwork({
     } catch (err) {
       showMutationError(err);
     }
-  }, [addPortForward, refreshPortForwards, showMutationError, t]);
+  }, [addPortForward, refreshPortForwards, showMutationError]);
 
   const performRemovePortForward = useCallback(async (listenAddress: string, listenPort: number) => {
     try {
@@ -146,7 +146,7 @@ export function WslDistroNetwork({
     } catch (err) {
       showMutationError(err);
     }
-  }, [refreshPortForwards, removePortForward, showMutationError, t]);
+  }, [refreshPortForwards, removePortForward, showMutationError]);
 
   const handleApplyNetworkingMode = useCallback(async (
     mode: 'NAT' | 'mirrored' | 'virtioproxy',

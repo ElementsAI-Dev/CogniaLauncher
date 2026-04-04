@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -114,7 +113,10 @@ export function EnvDetailPackages({ envType, t }: EnvDetailPackagesProps) {
     dismissPreflight,
   } = usePackages();
 
-  const relevantProviders = ENV_TYPE_TO_PROVIDERS[envType] || [];
+  const relevantProviders = useMemo(
+    () => ENV_TYPE_TO_PROVIDERS[envType] ?? [],
+    [envType],
+  );
   const [selectedProvider, setSelectedProvider] = useState(
     relevantProviders[0] || "",
   );

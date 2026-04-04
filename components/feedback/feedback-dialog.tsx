@@ -226,7 +226,7 @@ export function FeedbackDialog() {
       }
       setRestoredFromDraft(true);
     }
-  }, [dialogOpen, preSelectedCategory, preFilledErrorContext, draft, resetForm]);
+  }, [dialogOpen, preSelectedCategory, preFilledErrorContext, preFilledReleaseContext, draft, resetForm]);
 
   useEffect(() => {
     return () => {
